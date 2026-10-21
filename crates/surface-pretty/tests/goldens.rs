@@ -1816,6 +1816,70 @@ fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398()
     }
 }
 
+/// #1441: a presentation lists each declaration's name it writes — an
+/// abstract type, a family, a declared value — at the bytes it wrote it, laid
+/// out at a page that breaks the type and on one line; a bound variable
+/// spelled with a family's name is written but not listed.
+#[test]
+fn each_written_constant_name_is_listed_where_it_stands_1441()
+{
+    let names = [Name::from("Nat"), Name::from("zero"), Name::from("Celsius")];
+    let context = [Some(Name::from("Nat"))];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = core.value_constant(ConstantIndex::from(1_usize));
+    let shadowing = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let path = core.value_type_path(nat, zero, shadowing);
+    let returns_path = core.comp_type_returner(path);
+    let celsius = core.value_type_abstract(ConstantIndex::from(2_usize));
+    let arrow = core.comp_type_arrow(celsius, returns_path);
+    let source = CoreSource::new(&core, &names).within(&context);
+    let root = CoreNode::CompType(arrow);
+    let listed = |presentation: &Presentation| -> Vec<(String, usize)> {
+        let text: &str = presentation.as_ref();
+        presentation
+            .names()
+            .iter()
+            .map(|name| {
+                let start = usize::try_from(u64::from(name.start())).expect("a byte");
+                let end = usize::try_from(u64::from(name.end())).expect("a byte");
+                (
+                    String::from(text.get(start .. end).expect("a name's bytes")),
+                    usize::from(name.constant()),
+                )
+            })
+            .collect()
+    };
+    let paged = present_type(
+        &source,
+        root,
+        PageWidth::from(12_u32),
+        Form::Explicit.into(),
+    )
+    .expect("the type lays out");
+    let line = present_type_line(&source, root, Form::Explicit.into()).expect("the type writes");
+    assert!(
+        paged.as_ref().contains('\n'),
+        "the narrow page breaks the type: {paged}"
+    );
+    assert_eq!(
+        line.as_ref().matches("Nat").count(),
+        2_usize,
+        "the bound variable is spelled as the family is: {line}"
+    );
+    for presentation in [&paged, &line] {
+        assert_eq!(
+            listed(presentation),
+            [
+                (String::from("Celsius"), 2_usize),
+                (String::from("Nat"), 0_usize),
+                (String::from("zero"), 1_usize),
+            ],
+            "{presentation}"
+        );
+    }
+}
+
 /// A dependent pair whose second factor names no binder — what a decode
 /// reducing its family away leaves (#771) — has no spelling of its own: the
 /// surface reads a record whose later field names no earlier one as a

@@ -7,6 +7,7 @@ use anodized::spec;
 use gandr_surface_layout::arena::DocArena;
 use gandr_surface_layout::arena::DocHandleStatus;
 use gandr_surface_layout::arena::DocId;
+use gandr_surface_layout::arena::MarkTag;
 use gandr_surface_layout::arena::StoredLineEnding;
 use gandr_surface_layout::arena::TextOwned;
 use gandr_surface_layout::arena::TextSource;
@@ -29,6 +30,7 @@ use gandr_surface_layout::measure::LayoutCost;
 use gandr_surface_layout::measure::LayoutOptions;
 use gandr_surface_layout::measure::PhysicalLineEnding;
 use gandr_surface_layout::measure::WidthTaint;
+use gandr_surface_layout::render::Marked;
 use gandr_surface_layout::render::render;
 use gandr_surface_layout::resolve::resolve;
 use gandr_surface_layout::units::BuildStepsUsed;
@@ -1747,6 +1749,54 @@ fn render_text_and_layout_metadata_are_exact() -> Result<(), RenderError>
     assert_eq!(rendered.width_tainted, WidthTaint::Untainted);
     assert_eq!(u64::from(meter.usage().output_bytes), 3u64);
     assert_eq!(u64::from(meter.usage().vm_steps), 1u64);
+    Ok(())
+}
+
+/// A marked text is reported at the byte the layout the resolver chooses
+/// writes it at: the same document flat and broken reports each mark at a
+/// different byte, and a choice reports only the alternative it takes.
+#[test]
+fn a_marked_text_is_reported_where_the_chosen_layout_writes_it() -> Result<(), RenderError>
+{
+    let mut build_meter = BuildMeter::new(generous_limits());
+    let mut builder = expect_build(DocBuilder::try_new(&mut build_meter));
+    let line = builder.line();
+    let head = expect_build(builder.text(TextSource::from("head")));
+    let x = expect_build(builder.marked_text(TextSource::from("x"), MarkTag::from(1_u32)));
+    let tail = expect_build(builder.marked_text(TextSource::from("tail"), MarkTag::from(2_u32)));
+    let broken_x = expect_build(builder.concat(line, x));
+    let nested = expect_build(builder.nest(NestAmount::from(2_u32), broken_x));
+    let broken_tail = expect_build(builder.concat(line, tail));
+    let body = expect_build(builder.concat(nested, broken_tail));
+    let spine = expect_build(builder.concat(head, body));
+    let grouped = expect_build(builder.group(spine));
+    let wide = expect_build(builder.marked_text(
+        TextSource::from("wider than the page"),
+        MarkTag::from(3_u32),
+    ));
+    let narrow = expect_build(builder.marked_text(TextSource::from("ok"), MarkTag::from(4_u32)));
+    let chosen = expect_build(builder.choice(wide, narrow));
+    let arena = expect_build(builder.finish());
+    let at = |tag: u32, byte: u64| Marked {
+        tag: MarkTag::from(tag),
+        at: OutputBytes::from(byte),
+    };
+    let mut meter = RenderMeter::new(generous_render_limits());
+    let flat = render(&arena, grouped, &LayoutOptions::default(), &mut meter)?;
+    assert_eq!(flat.text, "head x tail");
+    assert_eq!(flat.marks, [at(1_u32, 5_u64), at(2_u32, 7_u64)]);
+    let page = LayoutOptions::try_new(
+        PageWidth::from(4_u32),
+        ComputationWidth::from(40_u32),
+        PhysicalLineEnding::Lf,
+    )?;
+    let broken = render(&arena, grouped, &page, &mut meter)?;
+    // workflow-gates: allow-escaped-newline
+    assert_eq!(broken.text, "head\n  x\ntail");
+    assert_eq!(broken.marks, [at(1_u32, 7_u64), at(2_u32, 9_u64)]);
+    let alternative = render(&arena, chosen, &page, &mut meter)?;
+    assert_eq!(alternative.text, "ok");
+    assert_eq!(alternative.marks, [at(4_u32, 0_u64)]);
     Ok(())
 }
 

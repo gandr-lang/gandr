@@ -11,6 +11,7 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::DocArena;
+use crate::arena::MarkTag;
 use crate::error::RenderAllocationSite;
 use crate::error::RenderArithmetic;
 use crate::error::RenderError;
@@ -20,6 +21,7 @@ use crate::measure::PhysicalLineEnding;
 use crate::plan::PlanArena;
 use crate::plan::PlanId;
 use crate::plan::PlanNode;
+use crate::render::Marked;
 use crate::render::RenderedText;
 use crate::units::OutputBytes;
 use crate::units::PeakVmStack;
@@ -58,6 +60,8 @@ pub(crate) struct OutputBuffer
     text: String,
     /// Bytes appended so far.
     bytes: OutputBytes,
+    /// Each mark reached so far, in the order reached.
+    marks: Vec<Marked>,
 }
 
 impl OutputBuffer
@@ -109,15 +113,17 @@ impl OutputBuffer
         Ok(Self {
             text,
             bytes: OutputBytes::from(0u64),
+            marks: Vec::new(),
         })
     }
 
-    /// Converts complete output storage into the public text wrapper.
+    /// Converts complete output storage into the public text wrapper and the
+    /// marks reached.
     ///
     /// # Specification
     /// - requires: the machine has completed without an error.
     /// - ensures: ownership moves without another allocation.
-    /// - provides: the exact rendered bytes.
+    /// - provides: the exact rendered bytes and where each mark stood in them.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -131,14 +137,57 @@ impl OutputBuffer
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
     /// - witness: `tests::algebra::render_vm_stack_limit_is_checked_before_output`
+    /// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
     #[spec(
-        captures: before = (self.text.as_ptr(), self.text.len()),
-        ensures: |ret| ret.as_ptr() == before.0
-                && ret.len() == before.1
+        captures: before = (self.text.as_ptr(), self.text.len(), self.marks.len()),
+        ensures: |ret| ret.0.as_ptr() == before.0
+                && ret.0.len() == before.1
+                && ret.1.len() == before.2
     )]
-    pub(crate) fn into_text(self) -> RenderedText
+    pub(crate) fn into_parts(self) -> (RenderedText, Vec<Marked>)
     {
-        RenderedText::from(self.text)
+        (RenderedText::from(self.text), self.marks)
+    }
+
+    /// Records that the text marked `tag` starts at the bytes appended so far.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one mark appended, at the current byte count; nothing on
+    ///   refusal.
+    /// - provides: a mark's place in the output.
+    /// - fails: `AllocationFailed` at [`RenderAllocationSite::Marks`] when the
+    ///   list cannot grow.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns a typed render allocation error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mark reports the byte its place in the chosen
+    ///   layout reaches, in a broken and a flat layout of the same document.
+    /// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
+    #[spec(
+        captures: before = self.marks.len(),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.marks.len() == before,
+            |&()| self.marks.len() == before.saturating_add(1)
+                && self.marks.last() == Some(&Marked { tag, at: self.bytes }))
+    )]
+    fn reach(
+        &mut self,
+        tag: MarkTag,
+    ) -> Result<(), RenderError>
+    {
+        self.marks
+            .try_reserve(1usize)
+            .map_err(|_error| RenderError::AllocationFailed {
+                site: RenderAllocationSite::Marks,
+            })?;
+        self.marks.push(Marked {
+            tag,
+            at: self.bytes,
+        });
+        Ok(())
     }
 
     /// Charges and appends one UTF-8 fragment without allowing partial
@@ -280,6 +329,9 @@ pub(crate) fn execute(
                         invariant: RenderInvariant::DocumentIdentity,
                     });
                 };
+                if let Some(tag) = arena.mark_of(text) {
+                    buffer.reach(tag)?;
+                }
                 buffer.append(meter, &Fragment(identity.as_ref()))?;
             },
             PlanNode::Verbatim(verbatim) => {
@@ -426,7 +478,7 @@ mod tests
             })
         );
         assert_eq!(meter.usage(), before);
-        assert_eq!(output.into_text(), "é𐐀");
+        assert_eq!(output.into_parts().0, "é𐐀");
         let mut output = super::OutputBuffer::try_new(crate::units::OutputBytes::from(1_u64))
             .expect("overflow buffer");
         let mut meter = RenderMeter::new(RenderLimits {
@@ -444,7 +496,7 @@ mod tests
             })
         );
         assert_eq!(meter.usage(), before);
-        assert_eq!(output.into_text(), "");
+        assert_eq!(output.into_parts().0, "");
         let refusal = super::OutputBuffer::try_new(crate::units::OutputBytes::from(u64::MAX));
         if usize::try_from(u64::MAX).is_ok() {
             assert!(matches!(
@@ -511,7 +563,7 @@ mod tests
             &mut meter,
         )
         .expect("execution");
-        assert_eq!(output.into_text(), "é𐐀");
+        assert_eq!(output.into_parts().0, "é𐐀");
         assert_eq!(u64::from(meter.usage().output_bytes), 6);
         assert_eq!(u64::from(meter.usage().vm_steps), 3);
         let mut meter = RenderMeter::new(RenderLimits::default());

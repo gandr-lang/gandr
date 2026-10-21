@@ -2724,7 +2724,8 @@ mod tests
             &mut fused,
         )
         .expect("retained plan execution")
-        .into_text();
+        .into_parts()
+        .0;
         assert_eq!(output, "é𐐀");
         assert_eq!(u64::from(fused.usage().output_bytes), 11_u64);
         assert_eq!(resolved.cost(), expected_cost);

@@ -200,6 +200,54 @@ pub(crate) struct VerbatimId
     index: u32,
 }
 
+/// A client's name for a text leaf, which the render reports at the byte it
+/// writes the text at.
+///
+/// The layout gives a tag no meaning: two texts may carry the same tag, and a
+/// text in an alternative the resolver does not choose is never reported.
+///
+/// # Specification
+/// - requires: nothing; any value is a tag.
+/// - ensures: the value round-trips through `u32` unchanged.
+/// - provides: the tag of a marked text.
+/// - panics: none.
+/// - executable: none — a carrier; [`crate::build::DocBuilder::marked_text`]
+///   and [`crate::render::render`] state what a mark does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a marked text reports the byte the chosen layout writes
+///   it at, in a broken and a flat layout of the same document.
+/// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct MarkTag(u32);
+
+impl From<u32> for MarkTag
+{
+    /// The tag `tag`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(tag: u32) -> Self
+    {
+        Self(tag)
+    }
+}
+
+impl From<MarkTag> for u32
+{
+    /// The tag's value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(tag: MarkTag) -> Self
+    {
+        tag.0
+    }
+}
+
 /// A process-local token distinguishing one arena from every other.
 ///
 /// The key is what makes a handle checkable. Without it a dense ordinal from
@@ -1131,6 +1179,9 @@ pub struct DocArena
     verbatim: Vec<VerbatimText>,
     /// Each node's flattened image, computed at finalization.
     flattened: Vec<NodeId>,
+    /// Each text stored marked, with its tag, ascending by text: the order
+    /// texts are minted in.
+    marks: Vec<(TextId, MarkTag)>,
 }
 
 impl DocArena
@@ -1616,6 +1667,33 @@ impl DocArena
             .map_or(Maybe::Absent(stored::Absent::OutOfRange), Maybe::Present)
     }
 
+    /// The tag the text `text` was stored under, if it was stored marked.
+    ///
+    /// # Specification
+    /// - requires: `text` was minted by this arena.
+    /// - ensures: the tag [`crate::build::DocBuilder::marked_text`] stored with
+    ///   `text`; none for a text stored unmarked.
+    /// - provides: what the render machine reports as it writes a text.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked text reports the byte the chosen layout
+    ///   writes it at, in a broken and a flat layout of the same document.
+    /// - witness: `tests::algebra::a_marked_text_is_reported_where_the_chosen_layout_writes_it`
+    #[spec(ensures: |ret| ret.is_none() || !self.marks.is_empty())]
+    #[inline]
+    pub(crate) fn mark_of(
+        &self,
+        text: TextId,
+    ) -> Option<MarkTag>
+    {
+        self.marks
+            .binary_search_by_key(&text, |&(marked, _)| marked)
+            .ok()
+            .and_then(|at| self.marks.get(at))
+            .map(|&(_, tag)| tag)
+    }
+
     /// Returns a verbatim identity by its private store id.
     ///
     /// # Specification
@@ -1811,7 +1889,7 @@ impl DocArena
     /// - witness: `tests::algebra::flattening_is_idempotent`
     /// - witness: `tests::algebra::finalization_reuses_the_original_identity_when_nothing_changes`
     #[spec(
-        captures: before = (nodes.as_ptr(), nodes.len(), texts.as_ptr(), texts.len(), verbatim.as_ptr(), verbatim.len(), flattened.as_ptr(), flattened.len()),
+        captures: before = (nodes.as_ptr(), nodes.len(), texts.as_ptr(), texts.len(), verbatim.as_ptr(), verbatim.len(), flattened.as_ptr(), flattened.len(), marks.as_ptr(), marks.len()),
         ensures: |ret| ret.arena == arena
                 && ret.nodes.as_ptr() == before.0
                 && ret.nodes.len() == before.1
@@ -1821,12 +1899,14 @@ impl DocArena
                 && ret.verbatim.len() == before.5
                 && ret.flattened.as_ptr() == before.6
                 && ret.flattened.len() == before.7
+                && ret.marks.as_ptr() == before.8
+                && ret.marks.len() == before.9
     )]
     #[inline]
     pub(crate) fn from_parts(
         arena: ArenaKey,
         nodes: Vec<DocNode>,
-        texts: Vec<CheckedText>,
+        (texts, marks): (Vec<CheckedText>, Vec<(TextId, MarkTag)>),
         verbatim: Vec<VerbatimText>,
         flattened: Vec<NodeId>,
     ) -> Self
@@ -1837,6 +1917,7 @@ impl DocArena
             texts,
             verbatim,
             flattened,
+            marks,
         }
     }
 }
