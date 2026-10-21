@@ -46,6 +46,12 @@
 //!   attribute before the head answers the same, about the attributes. Inside a
 //!   body, a member answers by its own entries, never the declaration around
 //!   it.
+//! - **An import**, anywhere in it, about the import: the import as written,
+//!   then, for a path the document's closure read, the file it reads; for a
+//!   path it did not, why — no file there, a file under another root, a file
+//!   whose imports lead back, or one that does not parse. An address with a
+//!   scheme names its tracking issue, as a read file's module documentation
+//!   does.
 //! - **Any other tile** answers a stub, about the tile: the tile as written —
 //!   or, inside a refused declaration, that declaration's hover — then the gap
 //!   named and its tracking issue's line, by the families [`crate::tracking`]
@@ -148,6 +154,8 @@ use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out_shadowed;
+use gandr_surface_dispatcher::named_path;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_pretty::Form;
@@ -173,6 +181,7 @@ use crate::protocol::Hover;
 use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
+use crate::reading::ImportAt;
 use crate::reading::Reading;
 use crate::reading::Tile;
 use crate::reading::Written;
@@ -211,6 +220,11 @@ pub struct Hovering
     /// The canonical path of each source of the table's unit, in the unit's
     /// order; empty for a text typed alone.
     paths: Vec<PathBuf>,
+    /// The document's path, as the hover was asked about it.
+    document: PathBuf,
+    /// What each of the document's path imports resolved to, in the order the
+    /// document writes them; empty for a text typed alone.
+    targets: Vec<ImportTarget>,
     /// The names the table's unit declares, by name.
     names: Names,
     /// The heads the table's unit declares, by where each name is written.
@@ -360,31 +374,41 @@ pub fn hovering<Store, Blocks>(
             |roles| Signatures::of(grammar, roles, tree, unit),
         )
     };
-    let (typed, paths) = match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
-        Maybe::Present(laid) => {
-            let mut signatures = Signatures::default();
-            let table = session.type_held_unit(
-                SourceText::from(laid.text.as_str()),
-                (&laid.unit, laid.base),
-                |tree| signatures = heads(tree, &laid.unit),
-            );
-            (table.map(|table| (table, signatures)), laid.paths)
-        },
-        Maybe::Absent(_) => (
-            session.parse_held(text).ok().and_then(|parsed| {
-                let signatures = heads(parsed.tree(), &Unit::single());
-                TypeTable::of_parsed(grammar, parsed)
-                    .ok()
-                    .map(|table| (table, signatures))
-            }),
-            Vec::new(),
-        ),
-    };
+    let (typed, paths, targets) =
+        match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
+            Maybe::Present(laid) => {
+                let mut signatures = Signatures::default();
+                let table = session.type_held_unit(
+                    SourceText::from(laid.text.as_str()),
+                    (&laid.unit, laid.base),
+                    |tree| signatures = heads(tree, &laid.unit),
+                );
+                let targets = laid
+                    .unit
+                    .sources()
+                    .last()
+                    .map(|importer| importer.imports().to_vec())
+                    .unwrap_or_default();
+                (table.map(|table| (table, signatures)), laid.paths, targets)
+            },
+            Maybe::Absent(_) => (
+                session.parse_held(text).ok().and_then(|parsed| {
+                    let signatures = heads(parsed.tree(), &Unit::single());
+                    TypeTable::of_parsed(grammar, parsed)
+                        .ok()
+                        .map(|table| (table, signatures))
+                }),
+                Vec::new(),
+                Vec::new(),
+            ),
+        };
     let (table, signatures) = typed.unwrap_or_default();
     Hovering {
         names: Names::of(&table),
         table,
         paths,
+        document: path.to_path_buf(),
+        targets,
         signatures,
         found: OnceCell::new(),
     }
@@ -425,14 +449,15 @@ impl Style
 /// - requires: `reading` and `hovering` were read off `text`, and `session`
 ///   last checked `text`, as the server's synchronisation leaves them; a stale
 ///   session answers the documentation it last accepted.
-/// - ensures: on a declaration's name — from its first character to just past
-///   its last — [`declared`]'s block about the name's range: the name and its
-///   type when the table types it, the name and the lowering's refusal when the
-///   table holds one, else the declaration as written, a theory and a module
-///   always so; then the documentation the session filed for the form after a
-///   blank line. On a member's name with no entry inside the member, the member
-///   as written, about the name. Else, on a use of a declaration the text
-///   writes with no entry inside the use — the theory an `include` or a
+/// - ensures: in an import, its alias included, [`imported`]'s answer about the
+///   import. Else, on a declaration's name — from its first character to just
+///   past its last — [`declared`]'s block about the name's range: the name and
+///   its type when the table types it, the name and the lowering's refusal when
+///   the table holds one, else the declaration as written, a theory and a
+///   module always so; then the documentation the session filed for the form
+///   after a blank line. On a member's name with no entry inside the member,
+///   the member as written, about the name. Else, on a use of a declaration the
+///   text writes with no entry inside the use — the theory an `include` or a
 ///   `Model(…)` names — as on that declaration's name, about the use; in a run
 ///   a theory writes that declares nothing, with no entry inside it, the same
 ///   for the first such use in the run, about the run, and else the run as
@@ -482,6 +507,7 @@ impl Style
 /// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
 /// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+/// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -508,6 +534,10 @@ pub fn hover<Store, Blocks>(
         spans: reading.spans(),
     };
     let offset = ByteOffset::from(usize::from(position.byte(&index)));
+    if let Some(import) = reading.import_at(offset) {
+        return imported(hovering, import, &quoted, style)
+            .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present);
+    }
     let entry = table.at(offset, PageWidth::from(HOVER_WIDTH), style.printed());
     let entered = match entry {
         Maybe::Present(ref entry) => Some((
@@ -714,6 +744,94 @@ pub fn hover<Store, Blocks>(
         .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present)
 }
 
+/// The hover of `import`, an import of the document `hovering` was built for,
+/// about the import's bytes.
+///
+/// # Specification
+/// - requires: `quoted` is the document `import` was read from.
+/// - ensures: the import as written in a block; then, for a path the document's
+///   closure read, the file it reads and the module documentation's tracking
+///   line; for a path it did not, why: no file at the path, a file under
+///   another root, a file whose imports lead back to the document, or a file
+///   that does not parse; for an address with a scheme, its tracking line. None
+///   when the import's bytes split a character.
+/// - provides: the import half of [`hover`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a resolved import, a missing path and an address with a
+///   scheme are asserted at their exact answers.
+/// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
+fn imported(
+    hovering: &Hovering,
+    import: ImportAt<'_>,
+    quoted: &Quoted<'_>,
+    style: Style,
+) -> Option<Hover>
+{
+    let span = import.written.span;
+    let start = RenderOffset::from(usize::from(span.start()));
+    let range = Range::of_bytes(
+        quoted.index,
+        start,
+        RenderOffset::from(usize::from(span.end())),
+    )
+    .ok()?;
+    let mut code = Code::new(style.markup);
+    let text = <&str>::from(quoted.text)
+        .get(usize::from(start) .. usize::from(span.end()))
+        .unwrap_or_default();
+    quoted.quote(&mut code, SourceText::from(text), start);
+    let resolution = import.ordinal.map_or_else(
+        || Gap::Foreign.closing(),
+        |ordinal| {
+            let directory = hovering.document.parent().unwrap_or(&hovering.document);
+            let file = named_path(&directory.join(import.written.uri.as_ref()));
+            match hovering.targets.get(ordinal) {
+                Some(&ImportTarget::Source(source)) => format!(
+                    "Reads `{}`.\n\n{}",
+                    hovering
+                        .paths
+                        .get(usize::from(source))
+                        .unwrap_or(&file)
+                        .display(),
+                    Gap::Undocumented.closing()
+                ),
+                Some(&ImportTarget::Cycle) => format!(
+                    "`{}` imports this document back, so neither is read.",
+                    file.display()
+                ),
+                Some(&ImportTarget::Unresolved) | None => {
+                    if !file.is_file() {
+                        format!("No file at `{}`.", file.display())
+                    }
+                    else if classify(&file) != classify(&hovering.document) {
+                        format!(
+                            "`{}` is under another root than this document, so it is not read.",
+                            file.display()
+                        )
+                    }
+                    else {
+                        format!(
+                            "`{}` does not parse, so nothing it declares is read.",
+                            file.display()
+                        )
+                    }
+                },
+            }
+        },
+    );
+    Some(Hover {
+        contents: MarkupContent {
+            kind: "markdown",
+            value: format!("{}\n\n{resolution}", code.block()),
+        },
+        range,
+    })
+}
+
 /// Where a hover has nothing to show: the gap at a position, the tile holding
 /// it, and the refused declaration holding it, when one does.
 #[derive(Clone, Copy, Debug)]
@@ -728,9 +846,9 @@ struct Stub<'found>
 }
 
 /// The stub at `offset`, by the first family that holds it: inside a refused
-/// declaration, in a source never judged, inside an import, a tile a
-/// declaration writes itself, in a root form that declares nothing, else
-/// inside a declaration where the engine typed nothing.
+/// declaration, in a source never judged, a tile a declaration writes itself,
+/// in a root form that declares nothing, else inside a declaration where the
+/// engine typed nothing. An import answers before any stub, by [`imported`].
 ///
 /// # Specification
 /// - requires: `found` and `quoted` are of the text `reading` read, and `table`
@@ -781,9 +899,6 @@ fn stub<'found>(
         && table.declarations(page, printed).next().is_none()
     {
         Gap::Unjudged
-    }
-    else if reading.import_at(offset).is_some() {
-        Gap::Imported
     }
     else if tile.declares {
         Gap::Owned(tile.rule)
@@ -2067,10 +2182,11 @@ mod tests
                 match hover(text, &session, &reading, &hovering, position, PLAIN) {
                     Maybe::Absent(reason) => silent.push(format!("{at}: {reason:?}")),
                     Maybe::Present(shown)
-                        if shown
-                            .contents
-                            .value
-                            .contains("The tracking issue for this is:") =>
+                        if reading.import_at(tile.span.start()).is_none()
+                            && shown
+                                .contents
+                                .value
+                                .contains("The tracking issue for this is:") =>
                     {
                         let named = stub(
                             &hovering.table,
@@ -2102,6 +2218,72 @@ mod tests
             "{} stubs do not end with their gap's issue:\n{}",
             misnamed.len(),
             misnamed.join("\n")
+        );
+    }
+
+    /// An import answers the file it reads, or why it reads none: a path the
+    /// closure reads, a path naming no file, and an address with a scheme.
+    #[test]
+    fn an_import_hovers_the_file_it_reads_1203()
+    {
+        let corpus =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/fixture");
+        let at = |path: &std::path::Path, written: &str, needle: &str| {
+            let text = SourceText::from(written);
+            let index = LineIndex::new(written.into());
+            let offset = written.find(needle).expect("the import is written");
+            let position = Position::of_byte(&index, RenderOffset::from(offset))
+                .expect("the needle is on a boundary");
+            let session = checked(text);
+            let shown = hover(
+                text,
+                &session,
+                &Reading::of(text),
+                &hovering(text, path, &session, &gandr_surface_dispatcher::Unshadowed),
+                position,
+                PLAIN,
+            );
+            match shown {
+                Maybe::Present(shown) => shown.contents.value,
+                Maybe::Absent(reason) => panic!("the import hovers nothing: {reason:?}"),
+            }
+        };
+        let importer = corpus.join("model/identity/circle-elim.gandr");
+        let written = std::fs::read_to_string(&importer).expect("the importer is read");
+        let line = written
+            .lines()
+            .find(|line| line.starts_with("import "))
+            .expect("the importer imports");
+        let base =
+            gandr_surface_dispatcher::named_path(&corpus.join("model/identity/circle-base.gandr"));
+        assert_eq!(
+            at(&importer, &written, "circle-base"),
+            format!(
+                "{}\n\nReads `{}`.\n\nIts module documentation is not shown yet. The tracking issue \
+                 for this is: [#1135]\n\n[#1135]: https://github.com/gandr-lang/gandr/issues/1135",
+                fenced(SourceText::from(line)),
+                base.display()
+            ),
+            "a path the closure reads answers its file"
+        );
+        let missing = written.replacen("circle-base", "circle-nowhere", 1);
+        let nowhere = gandr_surface_dispatcher::named_path(
+            &corpus.join("model/identity/circle-nowhere.gandr"),
+        );
+        assert!(
+            at(&importer, &missing, "import")
+                .ends_with(&format!("No file at `{}`.", nowhere.display())),
+            "a path naming no file says so"
+        );
+        let foreign = corpus.join("surface/module-import.gandr");
+        let written = std::fs::read_to_string(&foreign).expect("the importer is read");
+        let shown = at(&foreign, &written, "prelude");
+        assert!(
+            shown.ends_with(
+                "An address with a scheme resolves to nothing yet. The tracking issue for this is: \
+                 [#1233]\n\n[#1233]: https://github.com/gandr-lang/gandr/issues/1233"
+            ),
+            "an address with a scheme names its tracking issue: {shown}"
         );
     }
 }
