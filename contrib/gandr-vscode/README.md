@@ -74,6 +74,8 @@ No setting selects the server's features. The client adopts what `initialize` ad
 
 `gandr.diagnostics.quiet` keeps the form you are typing free of red: a diagnostic of the form the cursor is in waits until the cursor leaves the form, the form's `;` or `}` arrives, or the file goes that many seconds without a change, 1.5 by default. A diagnostic elsewhere in the file shows at once. `0` shows every diagnostic at once.
 
+`gandr.inlineCompletion.trigger` chooses when the syntax the parser expects next shows as ghost text. `invoked`, the default, shows it only when asked for with **Trigger Inline Suggestion** (`Alt+\`), so typing never fills the line ahead of the cursor. `automatic` shows it as you type.
+
 `gandr.presentation.form` chooses how a hover spells a type. `sugared`, the default, writes every sugar the surface reads where the type has its shape: `Integer => String` for `+U (Integer -> -F String)`, `A * B`, `A + B`, `C & D`, and `(a, b)` for a tuple. `explicit` writes the formers the core is made of. **gandr: Toggle sugared/explicit types** in the Command Palette flips it and hovers again at the cursor.
 
 `gandr.presentation.spelling` chooses how hovers and diagnostics write a construct that has a glyph: `unicode` writes `≃`, `≅`, `⇝` and `∷`; `ascii` writes `<~>`, `Iso(A, B)`, `~~>` and `::`. Unset, the default, the server follows `presentation.spelling` in the user's `gandr/config.toml`, else Unicode. Changing it republishes the open files' diagnostics in the new spelling.
