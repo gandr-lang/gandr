@@ -233,6 +233,40 @@ fn a_closed_returned_code_runs_to_the_quote_it_returns()
     );
 }
 
+/// A model type's family field read at a binder, `tm(g)` under the `Σ` that
+/// binds `tm`, decodes `↑((force tm) g)`: a run stuck on a binder. Each weak
+/// head of such a decode asked the machine to run it, minting the claim it
+/// read back, so a record converted against a model type of the same shape
+/// ran the machine once per field it compared (#1369).
+#[test]
+fn a_call_of_a_binder_is_rigid_without_running_1369()
+{
+    let mut arena = CoreArena::new();
+    let definitions = CodeDefinitions::new();
+    let family = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let index = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(family);
+    let applied = arena.computation_application(forced, index);
+    let called = arena.value_returned(applied);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returning = arena.computation_return(bound);
+    let sequenced = arena.computation_bind(applied, returning);
+    let after_a_bind = arena.value_returned(sequenced);
+    for code in [called, after_a_bind] {
+        let before = arena.watermark();
+        assert_eq!(
+            definitions.reduce(&mut arena, code).unwrap(),
+            Maybe::Absent(unfolding::Absent::Rigid),
+            "a run whose head forces a binder is rigid"
+        );
+        assert_eq!(
+            arena.watermark(),
+            before,
+            "the rigid answer is read off the run's head, no claim minted to run it"
+        );
+    }
+}
+
 #[test]
 fn the_loose_reach_counts_only_binders_outside_the_root()
 {

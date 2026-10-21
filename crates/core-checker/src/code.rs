@@ -69,6 +69,8 @@
 //! decodes are the ones a signature writes. A call stuck on its binder,
 //! `el(c)`, reads back as a returned code and stays a decode over a neutral
 //! code: rigid, compared by its code, two nodes of one call the same syntax.
+//! A call of a binder itself, `tm(g)` with `tm` bound, is stuck before its
+//! first step, so its head is read and it is never run.
 //!
 //! This is the recorded design, a Tarski data universe: the codes are an
 //! ordinary datatype and `El` a decoder written over them, both bound at the
@@ -1004,7 +1006,10 @@ impl CodeDefinitions
     ///   `return v` with `v` no returned code, the step unfolding the returned
     ///   code at `code` to `v`. [`unfolding::Absent::Rigid`] for any other
     ///   node, for a run that waits on a binder before it returns a code — it
-    ///   reads back as a returned code — and for a run that reads back stuck.
+    ///   reads back as a returned code — and for a run that reads back stuck; a
+    ///   run whose head forces a binder, through applications, binds and
+    ///   ascriptions, is stuck before its first step and is rigid without being
+    ///   run.
     /// - provides: the reduct of `El` as unquote: a function to a universe
     ///   returns a quote, and the type at the code position is the quoted one,
     ///   open or closed.
@@ -1013,6 +1018,11 @@ impl CodeDefinitions
     ///   for a node `core` does not hold.
     /// - panics: none.
     ///
+    /// # Termination
+    /// The head walk steps from a computation to the one it applies, binds
+    /// first or ascribes, a node minted before it, so the walk descends the
+    /// arena's finite positions.
+    ///
     /// # Errors
     /// - [`CheckRefusal`] — as above.
     ///
@@ -1020,8 +1030,10 @@ impl CodeDefinitions
     /// - hypothesis: L3 — a closed call of a function selecting a quote by
     ///   `case` runs to that quote, and the same call on a variable is rigid; a
     ///   decoder's arm on a binder steps to the quote over the decodes its
-    ///   source wrote, and an open decode forged to another quote is refused.
+    ///   source wrote, and an open decode forged to another quote is refused; a
+    ///   call of a binder, bare and bound first, is rigid with no node minted.
     /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
+    /// - witness: `code::tests::a_call_of_a_binder_is_rigid_without_running_1369`
     /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
@@ -1037,10 +1049,24 @@ impl CodeDefinitions
         code: ValueId,
     ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
     {
-        let Some(&Value::Returned(_)) = core.value(code)
+        let Some(&Value::Returned(run)) = core.value(code)
         else {
             return Ok(Maybe::Absent(unfolding::Absent::Rigid));
         };
+        let mut head = run;
+        while let Some(
+            &(Computation::Application(applied, _)
+            | Computation::Bind(applied, _)
+            | Computation::Ascribe { body: applied, .. }),
+        ) = core.computation(head)
+        {
+            head = applied;
+        }
+        if let Some(&Computation::Force(forced)) = core.computation(head)
+            && matches!(core.value(forced), Some(&Value::Variable { .. }))
+        {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        }
         let reach = loose_reach(core, CoreNode::Term(TermNode::Value(code)))?;
         let mut body = core.computation_return(code);
         for _binder in 0 .. usize::from(reach) {

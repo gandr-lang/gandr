@@ -84,6 +84,7 @@ use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
+use gandr_surface_pretty::present_type_line;
 use gandr_surface_pretty::present_value;
 use gandr_surface_pretty::present_whole;
 use gandr_surface_pretty::whole;
@@ -1509,6 +1510,16 @@ fn every_type_former_spells_as_the_grammar_writes_it()
             faithful(Written(spelling)),
             "{root:?} spells as the grammar writes it"
         );
+        for form in [Form::Sugared, Form::Explicit] {
+            let wide = present_type(&source, root, PageWidth::from(4_096_u32), form.into())
+                .expect("the type lays out");
+            let line = present_type_line(&source, root, form.into()).expect("the type writes");
+            assert_eq!(
+                (line.as_ref(), line.fidelity()),
+                (wide.as_ref(), wide.fidelity()),
+                "{root:?} on one line is its wide layout"
+            );
+        }
     }
     let context = [Some(Name::from("x")), None, Some(Name::from("y"))];
     let within = CoreSource::new(&core, &names).within(&context);
