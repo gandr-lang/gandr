@@ -290,7 +290,8 @@ impl CommandArena
     /// - requires: nothing; a dangling address is admissible.
     /// - ensures: `Some` exactly when the arena holds the node, holding the
     ///   scope minting kept for it.
-    /// - provides: the read side of the scopes, for the crate's own readers.
+    /// - provides: the read side of the scopes, for the crate's own readers and
+    ///   for a runtime that closes a suspension over exactly what it names.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
     /// - executable: none — read once at a check's root and once per capture;
@@ -302,7 +303,8 @@ impl CommandArena
     ///   dangling address separate the three families and the absent case.
     /// - witness: `il::tests::an_unused_binder_thins_to_zero`
     #[inline]
-    pub(crate) fn node_scope(
+    #[must_use]
+    pub fn node_scope(
         &self,
         node: NodeAddress,
     ) -> Option<NodeScope<'_>>

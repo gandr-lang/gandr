@@ -519,12 +519,14 @@ pub extern "rust-preserve-none" fn stencil_ret(
 
 /// Allocate a closure entering at code operand A whose header's low 32 bits
 /// are operand B: its flavour in the tag, its capture count in the arity.
-/// The captures are the window's first slots.
+/// The captures are the words pushed before it, the first pushed first, which
+/// it pops.
 ///
 /// # Specification
-/// - requires: the window holds at least as many slots as the header's arity.
-/// - ensures: the value register holds a fresh closure; or the heap exit is
-///   taken.
+/// - requires: the frame region holds at least as many pushed words as the
+///   header's arity above the frame below them.
+/// - ensures: the value register holds a fresh closure and the pushed captures
+///   are popped; or the heap exit is taken.
 /// - executable: none — a stencil runs only inside a chain of tail calls whose
 ///   state no predicate can observe.
 ///
@@ -559,17 +561,24 @@ pub extern "rust-preserve-none" fn stencil_closure(
     unsafe {
         *heap.wrapping_add(1) = code;
     }
+    let captures = frames.wrapping_sub(count);
     let mut index = 0_usize;
     while index < count {
-        // SAFETY: the window holds the captured slots.
-        let capture = unsafe { *environment.wrapping_add(index) };
+        // SAFETY: the lowering pushed the captures below the top.
+        let capture = unsafe { *captures.wrapping_add(index) };
         // SAFETY: the closure fits below the heap's limit.
         unsafe {
             *heap.wrapping_add(index.wrapping_add(2)) = capture;
         }
         index = index.wrapping_add(1);
     }
-    become hole_next(runtime, next, frames, environment, Word::from_pointer(heap))
+    become hole_next(
+        runtime,
+        next,
+        captures,
+        environment,
+        Word::from_pointer(heap),
+    )
 }
 
 /// Generate a closure entry: allocate a window of A slots, copy the closure's
