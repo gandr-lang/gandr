@@ -1,0 +1,25 @@
+// The refusal beside `../../model/modules/model-manifest.gandr`: a model
+// sealed at `Model(T)` alone keeps its sort abstract. A manifest naming a sort
+// its theory does not present is refused at the module's header, where no
+// expectation stands; `a_manifest_sort_is_the_type_the_model_type_names_1226`
+// pins it.
+
+/// A ratio sort and its scale, as the model fixture's `Metering` has them.
+theory Scaled {
+  sort Ratio : Type;
+  oper scale : Ratio;
+}
+
+/// A model sealed with no manifest sort: its `Ratio` is a fresh atom.
+module Opaque :> Model(Scaled) {
+  type Ratio = Integer;
+  /// The scale.
+  @[ checks ]
+  def scale = 2;
+}
+
+/// The sealed scale read as an integer: the seal hides that the ratio is
+/// one.
+@[ refuses("TypeMismatch") ]
+def leaked : Integer ;
+def leaked = Opaque.scale ;

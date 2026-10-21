@@ -646,13 +646,15 @@ fn functor_application_tail() -> Regex
     ])
 }
 
-/// Build an applied signature former, `Model(CatShape)`: a former's name and
-/// the declaration it is applied to, in parentheses.
+/// Build an applied signature former, `Model(CatShape)`, and the manifest
+/// sorts it fixes, `Model(Metering) with sort Ratio = Integer`: a former's
+/// name, the declaration it is applied to in parentheses, then any number of
+/// `with sort` clauses, each a sort's name and the type it is.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a type name, an opening parenthesis, one type name and its
-///   closer.
+///   closer, then a repetition of `with`, `sort`, a type name, `=` and a type.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -662,7 +664,7 @@ fn functor_application_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.iter().zip(["type_identifier", "(", "type_identifier", ")"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.iter().zip(["type_identifier", "(", "type_identifier", ")"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
 fn signature_former() -> Regex
 {
     seq([
@@ -670,6 +672,13 @@ fn signature_former() -> Regex
         t(TileLabel("(")),
         t(TileLabel("type_identifier")),
         t(TileLabel(")")),
+        repeat(seq([
+            t(TileLabel("with")),
+            t(TileLabel("sort")),
+            t(TileLabel("type_identifier")),
+            t(TileLabel("=")),
+            h(Sort::Type),
+        ])),
     ])
 }
 

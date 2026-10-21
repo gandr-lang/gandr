@@ -49,7 +49,12 @@
 //! A derived sort states no kind (`component_kind::Absent::Derived`): its
 //! size is the model's, so `type Ob = Type` is a model whatever universe the
 //! written signature `type Ob : Type[+, 1]` would demand.
+//!
+//! `Model(S) with sort x = A` fixes the unindexed sort `x` to the type `A`: its
+//! component is manifest, as a written `type x = A` is, so a model need not
+//! define it, and a model sealed at that signature keeps it.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -99,6 +104,7 @@ use crate::model::ModelForm;
 use crate::model::ModelSignature;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
+use crate::resolve::SurfaceName;
 
 /// A model signature read off its `Model(S)`: the components the module
 /// states, the signature derived from `S`, and the `S` tile beside the slot of
@@ -335,41 +341,51 @@ impl<'source> Collector<'_, 'source>
         });
     }
 
-    /// Read a model signature, `Model(S)`, after its `:` or `:>`.
+    /// Read a model signature, `Model(S)` and any manifest sorts after it,
+    /// `with sort x = A`, after its `:` or `:>`.
     ///
     /// # Specification
     /// - requires: `cursor` stands on the former's name, just past the
     ///   ascription's `:` or `:>` of the module form `form`.
-    /// - ensures: the cursor past `)`; the signature derived from the value of
-    ///   the declaration `S` a `theory` block defined wholly before `form`, or
-    ///   one a source the module's source imports unqualified declares, and one
+    /// - ensures: the cursor past the last manifest sort's type, or past `)`
+    ///   when there is none; the signature derived from the value of the
+    ///   declaration `S` a `theory` block defined wholly before `form`, or one
+    ///   a source the module's source imports unqualified declares, and one
     ///   component per derived component in its order, each named by its
-    ///   member's name at the ascription's `S` tile: an unindexed sort an
-    ///   abstract component of no kind, an indexed sort a derived family, and
-    ///   every other component — one the derivation cannot state among them — a
-    ///   derived value; and the `S` tile beside the slot of the declaration it
-    ///   names.
+    ///   member's name at the ascription's `S` tile: an unindexed sort a
+    ///   manifest component of the type a `with sort` clause names for it, or
+    ///   else an abstract component of no kind; an indexed sort a derived
+    ///   family; and every other component — one the derivation cannot state
+    ///   among them — a derived value; and the `S` tile beside the slot of the
+    ///   declaration it names.
     /// - provides: the model half of [`Self::header`].
     /// - fails: a misplaced tile for a former out of shape; an unresolved head
     ///   for a former other than `Model`, or for an `S` that names no
     ///   declaration a `theory` block defined before the module or in an
     ///   imported source; a shadowed import for an `S` two imports bind; an
-    ///   unadmitted form for a value that codes no presentation.
+    ///   unadmitted form for a value that codes no presentation; an unknown
+    ///   member for a manifest sort `S` does not present, an unread ascription
+    ///   for one that is indexed, and a duplicate definition for a sort two
+    ///   clauses fix.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`],
     /// [`LoweringRefusal::UnresolvedTypeHead`],
-    /// [`LoweringRefusal::ImportShadows`] and
-    /// [`LoweringRefusal::OutOfFragment`].
+    /// [`LoweringRefusal::ImportShadows`],
+    /// [`LoweringRefusal::OutOfFragment`],
+    /// [`LoweringRefusal::UnknownMember`],
+    /// [`LoweringRefusal::UnreadAscription`] and
+    /// [`LoweringRefusal::DuplicateDefinition`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` model, a model of an imported theory
-    ///   (#726) and a former naming an undeclared theory, each asserted as the
-    ///   exact components or refusal.
+    ///   (#726), a former naming an undeclared theory and a manifest sort
+    ///   (#1226), each asserted as the exact components or refusal.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
     /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `tests::modules::models::a_manifest_sort_is_the_type_the_model_type_names_1226`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -385,6 +401,7 @@ impl<'source> Collector<'_, 'source>
                         && match derived.form {
                             | Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
                                 component.form == ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))
+                                    || matches!(component.form, ComponentForm::Manifest(_))
                             },
                             | Ok(ModelForm::Sort { .. }) => {
                                 component.form == ComponentForm::Family(FamilyForm::Derived)
@@ -416,6 +433,21 @@ impl<'source> Collector<'_, 'source>
         };
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let mut manifests: Vec<(Placed, Placed)> = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
+            if let Maybe::Absent(_) = cursor.tile(TileName::SORT) {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            };
+            if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+            let defined = one_in(FormName::MODULE, cursor.operands())?;
+            manifests.push((sort, defined));
         }
         let named = self.name_of(former);
         if named.as_ref() != "Model" {
@@ -495,25 +527,67 @@ impl<'source> Collector<'_, 'source>
                 boundary: FragmentBoundary::Unadmitted,
             });
         };
+        let derived: BTreeMap<SurfaceName<'source>, _> = model
+            .components
+            .iter()
+            .map(|component| (self.name_of(component.named), &component.form))
+            .collect();
+        let mut fixed: BTreeMap<SurfaceName<'source>, (Placed, Placed)> = BTreeMap::new();
+        for &(sort, defined) in &manifests {
+            let named = self.name_of(sort);
+            if let Some(&(first, _)) = fixed.get(&named) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: sort.span,
+                    name: named,
+                    first: first.span,
+                });
+            }
+            match derived.get(&named) {
+                Some(&&Ok(ModelForm::Sort { ref indices })) if indices.is_empty() => {},
+                Some(&&Ok(ModelForm::Sort { .. })) => {
+                    return Err(LoweringRefusal::UnreadAscription {
+                        span: sort.span,
+                        name: named,
+                        form: AscriptionForm::Parameterized,
+                    });
+                },
+                Some(_) | None => {
+                    return Err(LoweringRefusal::UnknownMember {
+                        span: sort.span,
+                        module: name,
+                        member: named,
+                    });
+                },
+            }
+            let _fresh = fixed.insert(named, (sort, defined));
+        }
         let components = model
             .components
             .iter()
-            .map(|derived| Component {
-                name: self.name_of(derived.named),
-                named: theory,
-                form: match derived.form {
-                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
-                        ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))
+            .map(|derived| {
+                let named = self.name_of(derived.named);
+                Component {
+                    name: named,
+                    named: theory,
+                    form: match derived.form {
+                        Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                            fixed.get(&named).map_or(
+                                ComponentForm::Abstract(Maybe::Absent(
+                                    component_kind::Absent::Derived,
+                                )),
+                                |&(_, defined)| ComponentForm::Manifest(defined),
+                            )
+                        },
+                        Ok(ModelForm::Sort { .. }) => ComponentForm::Family(FamilyForm::Derived),
+                        Ok(
+                            ModelForm::Operation { .. }
+                            | ModelForm::Constant(_)
+                            | ModelForm::Law { .. },
+                        )
+                        | Err(_) => ComponentForm::Derived,
                     },
-                    Ok(ModelForm::Sort { .. }) => ComponentForm::Family(FamilyForm::Derived),
-                    Ok(
-                        ModelForm::Operation { .. }
-                        | ModelForm::Constant(_)
-                        | ModelForm::Law { .. },
-                    )
-                    | Err(_) => ComponentForm::Derived,
-                },
-                mark: crate::module::Mark::Unmarked,
+                    mark: crate::module::Mark::Unmarked,
+                }
             })
             .collect();
 

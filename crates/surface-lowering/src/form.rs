@@ -571,6 +571,9 @@ impl TileName
     /// The reserved operation-member keyword `oper` of a data block, which
     /// also leads a capability scope's operation clause.
     pub const OPER: Self = Self("oper");
+    /// The sort keyword `sort` of a theory block and of a manifest sort,
+    /// `Model(T) with sort x = A`.
+    pub const SORT: Self = Self("sort");
     /// The reserved 2-cell member keyword `rule` of a data block.
     pub const RULE: Self = Self("rule");
     /// The boolean literal `true` written as a pattern's own tile.
