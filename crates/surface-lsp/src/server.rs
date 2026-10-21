@@ -114,6 +114,8 @@ use crate::protocol::CancelProgressParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::CodeAction;
 use crate::protocol::CodeActionParams;
+use crate::protocol::CodeLens;
+use crate::protocol::Command;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
@@ -142,6 +144,8 @@ use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
 use crate::protocol::LabelOffsets;
 use crate::protocol::LabelsDetailed;
+use crate::protocol::LensData;
+use crate::protocol::LensResolution;
 use crate::protocol::Linked;
 use crate::protocol::ListsFolders;
 use crate::protocol::Location;
@@ -161,6 +165,7 @@ use crate::protocol::Refreshing;
 use crate::protocol::RegistrationParams;
 use crate::protocol::RenameFilesParams;
 use crate::protocol::RenameParams;
+use crate::protocol::SHOW_REFERENCES;
 use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
 use crate::protocol::SemanticTokens;
@@ -252,6 +257,7 @@ use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
 use crate::uses::Written;
+use crate::uses::declared;
 use crate::uses::highlights;
 use crate::uses::located;
 use crate::uses::mirrored;
@@ -2958,9 +2964,15 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
-            (Phase::Running, "codeAction/resolve" | "codeLens/resolve" | "documentLink/resolve" | "workspaceSymbol/resolve") =>
+            (Phase::Running, "codeAction/resolve" | "documentLink/resolve" | "workspaceSymbol/resolve") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Unchanged(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "codeLens/resolve") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Unchanged(_) | Answer::Lens(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -3194,16 +3206,20 @@ impl Server
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
+            (Phase::Running, "codeLens/resolve") => match LensResolution::deserialize(&params) {
+                Ok(LensResolution {
+                    range,
+                    data: Some(data),
+                }) => success(id, workspace.resolve_lens(range, data, self.peer)),
+                Ok(LensResolution { data: None, .. }) => success(id, Answer::Unchanged(params)),
+                Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+            },
             (
                 Phase::Running,
-                name @ ("codeAction/resolve"
-                | "codeLens/resolve"
-                | "documentLink/resolve"
-                | "workspaceSymbol/resolve"),
+                name @ ("codeAction/resolve" | "documentLink/resolve" | "workspaceSymbol/resolve"),
             ) => {
                 let kind = match name {
                     "codeAction/resolve" => Unresolved::Action,
-                    "codeLens/resolve" => Unresolved::Lens,
                     "documentLink/resolve" => Unresolved::Link,
                     _ => Unresolved::Symbol,
                 };
@@ -3475,14 +3491,7 @@ impl Server
                 match serde_json::from_value::<DocumentParams>(params) {
                     Ok(params) => success(
                         id,
-                        match workspace.view(&params.text_document.uri, self.peer) {
-                            Maybe::Present(document) => Answer::Lenses(lenses(
-                                &params.text_document.uri,
-                                &document.proposals,
-                                self.applying,
-                            )),
-                            Maybe::Absent(_) => Answer::Nothing,
-                        },
+                        workspace.code_lenses(&params.text_document.uri, self.peer, self.applying),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -4271,7 +4280,7 @@ impl Workspace
             && tokens.result_id.is_some() == matches!(window, Window::Whole)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
     })]
@@ -4328,7 +4337,7 @@ impl Workspace
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
     })]
@@ -4873,15 +4882,39 @@ impl Workspace
         context: ReferenceContext,
     ) -> Answer
     {
+        self.referring(uri, peer, position, context)
+            .map_or(Answer::Nothing, Answer::Locations)
+    }
+
+    /// The locations [`Self::references`] answers, or none for an unknown
+    /// document or one whose session holds no grammar.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::references`], its `Nothing` as none.
+    /// - provides: what a reference request and a references lens count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::references`].
+    /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_none())]
+    fn referring(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        context: ReferenceContext,
+    ) -> Option<Vec<Location>>
+    {
         let shadows = self.shadowing(peer);
         let Maybe::Present(document) = self.view(uri, peer)
         else {
-            return Answer::Nothing;
+            return None;
         };
-        let Ok(session) = document.session.as_ref()
-        else {
-            return Answer::Nothing;
-        };
+        let session = document.session.as_ref().ok()?;
         let Some(name) = placed(
             document.text.source(),
             &named_path(&uri.path()),
@@ -4889,7 +4922,7 @@ impl Workspace
             position,
         )
         else {
-            return Answer::Locations(Vec::new());
+            return Some(Vec::new());
         };
         let mut found = Vec::new();
         if context.include_declaration
@@ -4925,7 +4958,124 @@ impl Workspace
             );
             Ok(())
         });
-        Answer::Locations(found)
+        Some(found)
+    }
+
+    /// What a code-lens request for the copy of the document at `uri` that
+    /// `peer` is answered from answers: the lens over each range a model's
+    /// kept proposals fill, and a references lens, unresolved, over each name
+    /// the document declares.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI is admitted.
+    /// - ensures: Nothing for an unknown document; otherwise the lenses
+    ///   [`lenses`] answers for its proposals, given whether the client
+    ///   `applies` edits, and one lens per range [`declared`] answers, carrying
+    ///   the URI and the range's start as its data and no command, in range
+    ///   order, a fill lens before a references lens over the same range. A
+    ///   document whose session holds no grammar declares nothing.
+    /// - provides: the answer to `textDocument/codeLens`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document declaring two names and a constructor
+    ///   lists a lens over each, with no command until it is resolved; a kept
+    ///   fill still lists its own lens.
+    /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
+        || matches!(ret, Answer::Lenses(ref lenses) if lenses.is_sorted_by(|earlier, later| earlier.range <= later.range)
+            && lenses.iter().all(|lens| lens.data.as_ref().is_none_or(|data|
+                &data.uri == uri && lens.command.is_none() && data.position == lens.range.start))))]
+    fn code_lenses(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        applies: AppliesEdits,
+    ) -> Answer
+    {
+        let shadows = self.shadowing(peer);
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let mut found = lenses(uri, &document.proposals, applies);
+        if let Ok(session) = document.session.as_ref() {
+            found.extend(
+                declared(
+                    document.text.source(),
+                    document.text.hovering(&uri.path(), session, &shadows),
+                )
+                .into_iter()
+                .map(|range| CodeLens {
+                    range,
+                    command: None,
+                    data: Some(LensData {
+                        uri: uri.clone(),
+                        position: range.start,
+                    }),
+                }),
+            );
+        }
+        found.sort_by_key(|lens| lens.range);
+        Answer::Lenses(found)
+    }
+
+    /// What a code-lens resolution of the references lens over `range`,
+    /// counting the name `data` places, answers for `peer`: the lens titled
+    /// with the number of uses a reference request finds, running the client's
+    /// [`SHOW_REFERENCES`] with the URI, the position and those uses.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI is admitted.
+    /// - ensures: the lens over `range` carrying `data`; its command titled `1
+    ///   reference` or `N references` with the count of what
+    ///   [`Self::referring`] answers at the position, the declaring name left
+    ///   out, running [`SHOW_REFERENCES`] with the URI, the position and those
+    ///   locations; no command when the document is not open.
+    /// - provides: the answer to `codeLens/resolve` for a references lens.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name used in its own document and in an open
+    ///   importer counts both, a name used once is singular, and a lens whose
+    ///   document was closed resolves to no command.
+    /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    #[spec(ensures: |ret| matches!(ret, Answer::Lens(ref lens) if lens.range == range
+        && lens.command.as_ref().is_none_or(|command| command.name == SHOW_REFERENCES
+            && command.arguments.len() == 3_usize)))]
+    fn resolve_lens(
+        &self,
+        range: Range,
+        data: LensData,
+        peer: Peer,
+    ) -> Answer
+    {
+        let command = self
+            .referring(&data.uri, peer, data.position, ReferenceContext {
+                include_declaration: false,
+            })
+            .map(|found| Command {
+                title: if found.len() == 1_usize {
+                    String::from("1 reference")
+                }
+                else {
+                    format!("{} references", found.len())
+                },
+                name: SHOW_REFERENCES,
+                arguments: Vec::from([
+                    serde_json::to_value(&data.uri).unwrap_or(Value::Null),
+                    serde_json::to_value(data.position).unwrap_or(Value::Null),
+                    serde_json::to_value(&found).unwrap_or(Value::Null),
+                ]),
+            });
+        Answer::Lens(CodeLens {
+            range,
+            command,
+            data: Some(data),
+        })
     }
 
     /// Visit each document that may write the name `written` places, as
@@ -6709,6 +6859,142 @@ mod tests
             "a document the server does not hold answers null"
         );
         let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The identity subject's base source, open beside an importer: a lens
+    /// over each name the base declares, each resolving to the count of its
+    /// uses in both documents, pinned row by row.
+    #[test]
+    fn a_references_lens_counts_a_name_s_uses_in_every_open_document()
+    {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity")
+            .canonicalize()
+            .expect("the identity subject is checked out");
+        let uri = |file: &str| format!("file://{}", corpus.join(file).display());
+        let mut server = initialized();
+        for file in ["circle-base.gandr", "circle-elim.gandr"] {
+            let text = std::fs::read_to_string(corpus.join(file)).expect("the source is read");
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let written =
+            std::fs::read_to_string(corpus.join("circle-base.gandr")).expect("the base is read");
+        let lines: Vec<&str> = written.lines().collect();
+        let listed = send(
+            &mut server,
+            Json(
+                &serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": "textDocument/codeLens",
+                    "params": {"textDocument": {"uri": uri("circle-base.gandr")}}})
+                .to_string(),
+            ),
+        )
+        .pointer("/0/result")
+        .cloned()
+        .unwrap_or(Value::Null);
+        let lenses = listed.as_array().cloned().unwrap_or_default();
+        assert!(
+            lenses.iter().all(|lens| lens.get("command").is_none()),
+            "a listed lens carries no command until it is resolved: {listed}"
+        );
+        let mut resolve = |lens: &Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 11_i32, "method": "codeLens/resolve",
+                "params": lens});
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let mut rows = Vec::new();
+        let mut shown = None;
+        for lens in &lenses {
+            let resolved = resolve(lens);
+            let line = lens
+                .pointer("/range/start/line")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let start = lens
+                .pointer("/range/start/character")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let end = lens
+                .pointer("/range/end/character")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let name = lines
+                .get(usize::try_from(line).unwrap_or(usize::MAX))
+                .and_then(|text| {
+                    text.get(
+                        usize::try_from(start).unwrap_or(0) .. usize::try_from(end).unwrap_or(0),
+                    )
+                })
+                .unwrap_or("");
+            let title = resolved
+                .pointer("/command/title")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if name == "invLooper" {
+                shown = Some(resolved.clone());
+            }
+            rows.push(format!("{}: {name}: {title}", line.saturating_add(1)));
+        }
+        assert_eq!(
+            rows,
+            [
+                "12: Empty: 0 references",
+                "17: Circle: 32 references",
+                "18: Base: 43 references",
+                "19: loop: 21 references",
+                "26: Int: 15 references",
+                "27: Z: 7 references",
+                "28: S: 4 references",
+                "29: P: 4 references",
+                "36: up: 1 reference",
+                "42: down: 1 reference",
+                "48: Nat: 3 references",
+                "49: Zero: 0 references",
+                "50: Succ: 0 references",
+                "56: wind: 4 references",
+                "68: spin: 4 references",
+                "78: loopOn: 1 reference",
+                "84: unloopOn: 1 reference",
+                "99: sect: 2 references",
+                "111: retr: 2 references",
+                "122: selfloop: 1 reference",
+                "130: selfrefl: 0 references",
+                "139: invLooper: 3 references",
+                "150: mul: 0 references",
+            ],
+            "each name the base declares, with its uses in both documents"
+        );
+        let location = |file: &str, line: u32, start: u32, end: u32| {
+            serde_json::json!({"uri": uri(file), "range": Range {
+                start: at(Line::from(line), Character::from(start)),
+                end: at(Line::from(line), Character::from(end)),
+            }})
+        };
+        assert_eq!(
+            shown.and_then(|lens| lens.get("command").cloned()),
+            Some(
+                serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
+                "arguments": [uri("circle-base.gandr"), at(Line::from(138_u32), Character::from(4_u32)), [
+                    location("circle-elim.gandr", 18, 46, 55),
+                    location("circle-elim.gandr", 18, 56, 65),
+                    location("circle-elim.gandr", 94, 35, 44),
+                ]]})
+            ),
+            "the flip's command shows the importer's three calls of it: twice in \
+             `involutive`'s type, once in `flipped`'s transport"
+        );
+        let closed = serde_json::json!({"range": {"start": at(Line::from(0_u32), Character::from(0_u32)),
+            "end": at(Line::from(0_u32), Character::from(3_u32))},
+            "data": {"uri": uri("closed.gandr"), "position": at(Line::from(0_u32), Character::from(0_u32))}});
+        assert_eq!(
+            resolve(&closed),
+            closed,
+            "a lens whose document is not open resolves to no command"
+        );
     }
 
     #[test]
@@ -10441,23 +10727,30 @@ mod tests
             "a cursor outside every proposal sees none: {outside}"
         );
         let lenses = asked(&workspace, Json("textDocument/codeLens"), Json(""));
+        let fills: Vec<&Value> = lenses
+            .as_array()
+            .map(|lenses| {
+                lenses
+                    .iter()
+                    .filter(|lens| lens.get("data").is_none())
+                    .collect()
+            })
+            .unwrap_or_default();
         assert_eq!(
-            lenses.as_array().map(|lenses| lenses
+            fills
                 .iter()
                 .map(|lens| lens.pointer("/command/title").cloned())
-                .collect::<Vec<_>>()),
-            Some(vec![
+                .collect::<Vec<_>>(),
+            vec![
                 Some(serde_json::json!("2 checked fills")),
                 Some(serde_json::json!("1 checked fill"))
-            ])
+            ]
         );
         assert!(
-            lenses
-                .as_array()
-                .is_some_and(|lenses| lenses.iter().all(|lens| {
-                    lens.pointer("/command/command") == Some(&serde_json::json!(""))
-                        && lens.pointer("/command/arguments").is_none()
-                })),
+            fills.iter().all(|lens| {
+                lens.pointer("/command/command") == Some(&serde_json::json!(""))
+                    && lens.pointer("/command/arguments").is_none()
+            }),
             "a client that applies no edit the server asks of it is offered no lens command: {lenses}"
         );
         let actions = asked(
@@ -10604,16 +10897,22 @@ mod tests
         );
         let range = serde_json::json!({"start": {"line": 1_u32, "character": 8_u32},
             "end": {"line": 1_u32, "character": 15_u32}});
+        let listed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/codeLens","params":{"textDocument":{"uri":"file:///tmp/fill.gandr"}}}"#,
+            ),
+        );
         assert_eq!(
-            send(
-                &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/codeLens","params":{"textDocument":{"uri":"file:///tmp/fill.gandr"}}}"#,
-                ),
-            )
-            .pointer("/0/result/0/command"),
-            Some(&serde_json::json!({"title": "1 checked fill", "command": "gandr.applyFill",
-                "arguments": ["file:///tmp/fill.gandr", range, "42"]})),
+            listed
+                .pointer("/0/result")
+                .and_then(Value::as_array)
+                .and_then(|lenses| lenses.iter().find(|lens| lens.get("data").is_none()))
+                .and_then(|lens| lens.get("command")),
+            Some(
+                &serde_json::json!({"title": "1 checked fill", "command": "gandr.applyFill",
+                "arguments": ["file:///tmp/fill.gandr", range, "42"]})
+            ),
             "the one fill's lens names the command and the fill"
         );
         let execute = |id: u32| {

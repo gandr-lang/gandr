@@ -1,3 +1,5 @@
+import type { Location, Position } from "vscode-languageclient/node";
+
 import * as vscode from "vscode";
 
 import { IMPORT_DROP, ImportDrop } from "./drop";
@@ -11,6 +13,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("gandr.showSyntaxTree", showSyntaxTree),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "gandr.showReferences",
+      (uri: string, position: Position, locations: Location[]) =>
+        showReferences(languageClient, uri, position, locations),
+    ),
   );
   context.subscriptions.push(
     vscode.languages.registerDocumentDropEditProvider(
@@ -42,6 +51,24 @@ async function toggleForm(languageClient: GandrLanguageClient): Promise<void> {
   if (vscode.window.activeTextEditor?.document.languageId === "gandr") {
     await vscode.commands.executeCommand("editor.action.showHover");
   }
+}
+
+// Show the uses a references lens counted, from the lens's command: the
+// server sends the document's URI, the name's position and the locations in
+// protocol shape, and the editor's references view takes them converted.
+async function showReferences(
+  languageClient: GandrLanguageClient,
+  uri: string,
+  position: Position,
+  locations: Location[],
+): Promise<void> {
+  const convert = languageClient.protocol2CodeConverter;
+  await vscode.commands.executeCommand(
+    "editor.action.showReferences",
+    convert.asUri(uri),
+    convert.asPosition(position),
+    locations.map((location) => convert.asLocation(location)),
+  );
 }
 
 // Open the molded tree of the active gandr editor's document beside it, as

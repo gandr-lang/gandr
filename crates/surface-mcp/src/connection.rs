@@ -1060,7 +1060,11 @@ mod tests
             .into_bytes(),
         ));
         assert_eq!(
-            lenses.pointer("/result/0/command/title"),
+            lenses
+                .pointer("/result")
+                .and_then(Value::as_array)
+                .and_then(|lenses| lenses.iter().find(|lens| lens.get("data").is_none()))
+                .and_then(|lens| lens.pointer("/command/title")),
             Some(&json!("1 checked fill")),
             "the editor sees the one fill that checked"
         );

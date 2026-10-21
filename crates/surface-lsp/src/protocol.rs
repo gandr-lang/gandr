@@ -2185,6 +2185,11 @@ pub struct CommandOptions
 /// asking the client to apply the fill's edit.
 pub const APPLY_FILL: &str = "gandr.applyFill";
 
+/// The command a references lens names: its arguments are the document's
+/// URI, the name's position and the locations of its uses. The client runs
+/// it, showing those uses; the server runs nothing for it.
+pub const SHOW_REFERENCES: &str = "gandr.showReferences";
+
 /// Every command the server runs.
 pub const COMMANDS: [&str; 1] = [APPLY_FILL];
 
@@ -2263,8 +2268,6 @@ pub enum Unresolved
 {
     /// A code action, its edit carried by the listing.
     Action,
-    /// A code lens, its command carried by the listing.
-    Lens,
     /// A document link, its target carried by the listing.
     Link,
     /// A workspace symbol, its location carried by the listing.
@@ -2274,8 +2277,8 @@ pub enum Unresolved
 impl Unresolved
 {
     /// Whether `item` holds what the protocol requires of this kind of item:
-    /// a code action's title, a code lens's or a document link's range, a
-    /// workspace symbol's name and location.
+    /// a code action's title, a document link's range, a workspace symbol's
+    /// name and location.
     ///
     /// # Specification
     /// - requires: nothing; any value is admissible input.
@@ -2300,7 +2303,7 @@ impl Unresolved
         };
         match self {
             Self::Action => String::deserialize(field("title")?).map(drop),
-            Self::Lens | Self::Link => Range::deserialize(field("range")?).map(drop),
+            Self::Link => Range::deserialize(field("range")?).map(drop),
             Self::Symbol => {
                 String::deserialize(field("name")?)?;
                 field("location").map(drop)
@@ -2541,6 +2544,9 @@ pub enum Answer
     Edits(Vec<TextEdit>),
     /// What a code-lens request answers for an open document.
     Lenses(Vec<CodeLens>),
+    /// What a code-lens resolution answers for a references lens: the lens
+    /// with its count and the command showing its uses.
+    Lens(CodeLens),
     /// What a code-action request answers over a range of an open document.
     Actions(Vec<CodeAction>),
     /// What a workspace-symbol request answers: the names found, each where
@@ -3069,14 +3075,41 @@ pub struct Command
     pub arguments: Vec<Value>,
 }
 
-/// A code lens: a command shown above a range.
+/// A code lens: a command shown above a range, or the position a resolution
+/// fills its command from.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CodeLens
 {
     /// The range the lens is about.
     pub range: Range,
-    /// What it shows.
-    pub command: Command,
+    /// What it shows; none until the lens is resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<Command>,
+    /// The name a resolution counts the references of.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<LensData>,
+}
+
+/// The name a references lens counts: where it is written.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LensData
+{
+    /// The document writing it.
+    pub uri: DocumentUri,
+    /// Where in that document.
+    pub position: Position,
+}
+
+/// A code lens a client asks to resolve: its range, and the name it counts
+/// when it is a references lens.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct LensResolution
+{
+    /// The range the lens is about.
+    pub range: Range,
+    /// The name it counts; none for a lens listed with its command.
+    #[serde(default)]
+    pub data: Option<LensData>,
 }
 
 /// A code action: an edit the client offers to apply, with the diagnostics it
@@ -3673,21 +3706,19 @@ mod tests
         let reads = |kind: Unresolved, item: &serde_json::Value| kind.read(item).is_ok();
         assert!(
             reads(Unresolved::Action, &action)
-                && reads(Unresolved::Lens, &lens)
                 && reads(Unresolved::Link, &link)
                 && reads(Unresolved::Symbol, &symbol),
             "each kind's item as listed reads, a field it does not require kept aside"
         );
         assert!(
             !reads(Unresolved::Action, &serde_json::json!({"kind": "quickfix"}))
-                && !reads(Unresolved::Lens, &serde_json::json!({"command": {}}))
                 && !reads(Unresolved::Link, &serde_json::json!({"range": "0:0"}))
                 && !reads(Unresolved::Symbol, &serde_json::json!({"name": "Succ"}))
                 && !reads(Unresolved::Symbol, &serde_json::json!([])),
             "an item without a required field, or with one of another shape, is refused"
         );
         assert!(
-            !reads(Unresolved::Action, &lens) && !reads(Unresolved::Lens, &action),
+            !reads(Unresolved::Action, &lens) && !reads(Unresolved::Link, &action),
             "an item of another kind is refused"
         );
     }
