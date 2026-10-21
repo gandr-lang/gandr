@@ -1,0 +1,26 @@
+// An unwind is a shielded section: it runs to completion under the empty row,
+// which carries no abandonment, so a cancellation written inside one is
+// refused, and no cancellation reaches a cancellation already running.
+
+// The task's protocol.
+import "../../model/cancellation/cancel-base.gandr" ;
+
+/// A scope whose exit clause abandons the rest from inside an unwind (#1334).
+@[ refuses("UnwindEffect") ]
+def shielded() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => {
+      hold n = 0;
+      access n as v { abort(v) } unwind { abandon(k) }
+    }
+  }
+}

@@ -25,6 +25,7 @@ fn every_role_has_its_own_name()
         FrameRole::PerformPayload,
         FrameRole::Next,
         FrameRole::Resume,
+        FrameRole::Abandon,
         FrameRole::Project,
         FrameRole::Reset,
         FrameRole::HandlerForm,

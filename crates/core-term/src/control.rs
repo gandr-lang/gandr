@@ -56,6 +56,8 @@ pub enum ControlFormer
     Handle,
     /// Application of a first-class stack.
     Resume,
+    /// Abandonment of a first-class stack.
+    Abandon,
     /// A delimited-control boundary.
     Reset,
     /// Capture of the continuation up to a reset.
@@ -254,6 +256,28 @@ impl CoreArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Resume(stack, body))
+    }
+
+    /// End a stack value without resuming it.
+    ///
+    /// # Specification
+    /// - requires: the stack resolves.
+    /// - ensures: appends the abandonment of exactly `stack`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — substitution under a shift binder leaves an abandoned
+    ///   bound stack alone and replaces an abandoned free one, and syntax
+    ///   equality tells the two apart.
+    /// - witness: `control::tests::an_abandoned_stack_keeps_its_binder`
+    #[spec(requires: self.value(stack).is_some(), ensures: |ret| self.computation(ret) == Some(&Computation::Abandon(stack)))]
+    #[inline]
+    pub fn computation_abandon(
+        &mut self,
+        stack: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Abandon(stack))
     }
 
     /// Delimit captures in `body` without introducing a value binder.

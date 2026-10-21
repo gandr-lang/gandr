@@ -1,0 +1,22 @@
+// A cancellation point not taken: the scope's clause resumes the rest of the
+// scope once, so the task's end it holds is read and closed exactly once.
+
+// The task's protocol.
+import "./cancel-base.gandr" ;
+
+/// A scope resumed at its exit while its task's end is open (#1334).
+@[ checks ]
+def resumed() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

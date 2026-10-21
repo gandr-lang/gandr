@@ -2062,7 +2062,11 @@ fn references(
                 Some(&Computation::Application(head, argument)) => {
                     pending.extend([Node::Computation(head), Node::Value(argument)]);
                 },
-                Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                Some(
+                    &(Computation::Return(value)
+                    | Computation::Abandon(value)
+                    | Computation::Force(value)),
+                ) => {
                     pending.push(Node::Value(value));
                 },
                 Some(&Computation::Bind(bound, rest)) => {

@@ -397,7 +397,8 @@ impl Machine<'_, '_>
             | Resident::Received { .. }
             | Resident::Buffer { .. }
             | Resident::View { .. }
-            | Resident::Capability { .. } => {
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. } => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::NotHeld,
@@ -909,7 +910,7 @@ impl Machine<'_, '_>
                     defect: LinearityDefect::BufferRead { site: at },
                 });
             },
-            Resident::Capability { .. } => AccessDefect::NotHeld,
+            Resident::Capability { .. } | Resident::Continuation { .. } => AccessDefect::NotHeld,
             Resident::Held { .. }
                 if self.sessions.lent.iter().any(|lent| {
                     lent.position == read.position
@@ -1141,7 +1142,8 @@ impl Machine<'_, '_>
                 | Resident::Received { .. }
                 | Resident::Buffer { .. }
                 | Resident::Held { .. }
-                | Resident::Capability { .. },
+                | Resident::Capability { .. }
+                | Resident::Continuation { .. },
                 _,
             ) => AccessDefect::NotAView,
         };

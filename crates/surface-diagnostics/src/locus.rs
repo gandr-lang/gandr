@@ -974,7 +974,11 @@ fn checked(
                 | LinearityDefect::Unbound { .. }
                 | LinearityDefect::BufferUnreturned { .. }
                 | LinearityDefect::BufferReturnedTwice { .. }
-                | LinearityDefect::BufferRead { .. },
+                | LinearityDefect::BufferRead { .. }
+                | LinearityDefect::ContinuationUnspent { .. }
+                | LinearityDefect::ContinuationUsedTwice { .. }
+                | LinearityDefect::ContinuationCaptured { .. }
+                | LinearityDefect::ContinuationAsValue { .. },
         }
         | CheckRefusal::Access { at, .. }
         | CheckRefusal::Codata { at, .. }
@@ -1429,6 +1433,20 @@ impl fmt::Display for Checked
                 | LinearityDefect::BufferRead { .. } => f.write_str(
                     "the buffer is read other than by the send, operation or resumption that returns it",
                 ),
+                | LinearityDefect::ContinuationUnspent { .. } => f.write_str(
+                    "the clause finishes without resuming or abandoning a continuation that holds something it must end",
+                ),
+                | LinearityDefect::ContinuationUsedTwice { .. } => {
+                    f.write_str("the continuation is resumed or abandoned after it was already ended")
+                },
+                | LinearityDefect::ContinuationCaptured { by, .. } => write!(
+                    f,
+                    "the continuation is named inside {}, which may end it other than once",
+                    Captor(by)
+                ),
+                | LinearityDefect::ContinuationAsValue { .. } => f.write_str(
+                    "the continuation is read as a value outside the resumption or abandonment that ends it",
+                ),
             },
             | CheckRefusal::Access { defect, .. } => match defect {
                 | AccessDefect::NotHeld => f.write_str("the access names a linear slot that holds no value"),
@@ -1733,7 +1751,7 @@ impl fmt::Display for Captor
     ///   independent observation of the destination's failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the five captors read as five distinct titles; exact
+    /// - hypothesis: L3 — the six captors read as six distinct titles; exact
     ///   wording and destination failures are outside this observation.
     /// - witness: `locus::tests::session_refusals_point_at_the_fork_and_name_the_action`
     #[inline]
@@ -1748,6 +1766,7 @@ impl fmt::Display for Captor
             Capture::Branch => "a branch of a case, a lazy product or a fold",
             Capture::Stack => "a first-class stack",
             Capture::Continuation => "a continuation a handler or a shift may resume",
+            Capture::Task => "a forked task, which no region bounds",
         })
     }
 }
@@ -1828,6 +1847,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::Perform => "an effect request at the pure kernel boundary",
             | UnadmittedFormer::Handle => "an effect handler at the pure kernel boundary",
             | UnadmittedFormer::Resume => "a resumption at the pure kernel boundary",
+            | UnadmittedFormer::Abandon => "an abandoned stack at the pure kernel boundary",
             | UnadmittedFormer::Reset => "an answer delimiter at the pure kernel boundary",
             | UnadmittedFormer::Shift => "a continuation capture at the pure kernel boundary",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
@@ -4198,6 +4218,7 @@ mod tests
             UnadmittedFormer::Perform,
             UnadmittedFormer::Handle,
             UnadmittedFormer::Resume,
+            UnadmittedFormer::Abandon,
             UnadmittedFormer::Reset,
             UnadmittedFormer::Shift,
             UnadmittedFormer::EffectRow,

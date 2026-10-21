@@ -1607,6 +1607,10 @@ where
             write_index(writer, stack)?;
             write_index(writer, body)?;
         },
+        ContentNode::Abandon(stack) => {
+            writer.tag(Tag(0x81));
+            write_index(writer, stack)?;
+        },
         ContentNode::Reset(body) => {
             writer.tag(Tag(0x77));
             write_index(writer, body)?;
@@ -2768,6 +2772,23 @@ where
             writer.tag(Tag(11));
             write_site(writer, site)?;
         },
+        Linearity::ContinuationUnspent { clause } => {
+            writer.tag(Tag(12));
+            write_site(writer, clause)?;
+        },
+        Linearity::ContinuationUsedTwice { clause } => {
+            writer.tag(Tag(13));
+            write_site(writer, clause)?;
+        },
+        Linearity::ContinuationCaptured { clause, by } => {
+            writer.tag(Tag(14));
+            write_site(writer, clause)?;
+            write_listed(writer, &CAPTURES, &by)?;
+        },
+        Linearity::ContinuationAsValue { clause } => {
+            writer.tag(Tag(15));
+            write_site(writer, clause)?;
+        },
     }
     Ok(())
 }
@@ -2826,6 +2847,19 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
         },
         11 => Linearity::BufferRead {
             site: read_site(reader)?,
+        },
+        12 => Linearity::ContinuationUnspent {
+            clause: read_site(reader)?,
+        },
+        13 => Linearity::ContinuationUsedTwice {
+            clause: read_site(reader)?,
+        },
+        14 => Linearity::ContinuationCaptured {
+            clause: read_site(reader)?,
+            by: read_listed(reader, &CAPTURES)?,
+        },
+        15 => Linearity::ContinuationAsValue {
+            clause: read_site(reader)?,
         },
         _ => return Err(CodecError::Corrupt),
     })
@@ -3464,6 +3498,7 @@ fn read_effect_row(
                     | ContentNode::Capability { .. } => tag == 0x7D,
                     | ContentNode::KeptType { .. } => tag == 0x7F,
                     | ContentNode::Resume(..) => tag == 0x76,
+                    | ContentNode::Abandon(_) => tag == 0x81,
                     | ContentNode::Reset(_) => tag == 0x77,
                     | ContentNode::Shift(_) => tag == 0x78,
                     | ContentNode::With(..) => tag == 0x79,
@@ -3804,6 +3839,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             }
         },
         0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
+        0x81 => ContentNode::Abandon(read_index(reader)?),
         0x77 => ContentNode::Reset(read_index(reader)?),
         0x78 => ContentNode::Shift(read_index(reader)?),
         0x79 => ContentNode::With(read_indices(reader)?),
@@ -5439,7 +5475,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 24] = [
+const FORMERS: [UnadmittedFormer; 25] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -5464,6 +5500,7 @@ const FORMERS: [UnadmittedFormer; 24] = [
     UnadmittedFormer::Memory,
     UnadmittedFormer::Stage,
     UnadmittedFormer::Buffer,
+    UnadmittedFormer::Abandon,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -5500,12 +5537,13 @@ const ACTIONS: [ActionKind; 5] = [
 const SIDES: [ForkSide; 3] = [ForkSide::Child, ForkSide::Parent, ForkSide::Received];
 
 /// What may run an endpoint's use other than once, in stable wire order.
-const CAPTURES: [Capture; 5] = [
+const CAPTURES: [Capture; 6] = [
     Capture::Thunk,
     Capture::Recursion,
     Capture::Branch,
     Capture::Stack,
     Capture::Continuation,
+    Capture::Task,
 ];
 
 /// Write a fixpoint's termination evidence: a tag in stable wire order, a
@@ -7364,7 +7402,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
+ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,

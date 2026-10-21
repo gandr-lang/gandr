@@ -1438,6 +1438,7 @@ impl<'arena> CoreSource<'arena>
         };
         match *held {
             Computation::Return(returned) => Former::Return(value(returned)),
+            Computation::Abandon(stack) => Former::Abandon(value(stack)),
             Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
             Computation::Ascribe { body, ty } => Former::Ascription {
                 body: computation(body),
@@ -1956,6 +1957,7 @@ impl Source for CoreSource<'_>
                 | Computation::Perform { .. }
                 | Computation::Exercise { .. }
                 | Computation::Resume(..)
+                | Computation::Abandon(_)
                 | Computation::Reset(_)
                 | Computation::Shift(_)
                 | Computation::Project(..) => None,
@@ -2128,6 +2130,7 @@ impl Source for CoreSource<'_>
                 | Computation::Perform { .. }
                 | Computation::Exercise { .. }
                 | Computation::Resume(..)
+                | Computation::Abandon(_)
                 | Computation::Reset(_)
                 | Computation::Shift(_)
                 | Computation::With(..)

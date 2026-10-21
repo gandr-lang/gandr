@@ -141,7 +141,7 @@ pub struct Unfolded(pub u64);
                     Computation::Handle { ref signature, ref clauses, .. } | Computation::Scope { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
                     Computation::Exercise { ref signature, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Resume(..) | Computation::Split { .. } | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) | Computation::Ascribe { .. } => 3,
-                    Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
+                    Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
@@ -450,7 +450,9 @@ pub fn unfolded(
                         pending.push(CoreNode::Computation(head));
                         pending.push(CoreNode::Value(argument));
                     },
-                    Computation::Return(value) | Computation::Force(value) => {
+                    Computation::Return(value)
+                    | Computation::Abandon(value)
+                    | Computation::Force(value) => {
                         pending.push(CoreNode::Value(value));
                     },
                     Computation::Bind(bound, body) => {

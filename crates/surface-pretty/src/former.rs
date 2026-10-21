@@ -814,6 +814,8 @@ pub enum Former<'source, Node>
     },
     /// A computation fed to a first-class stack, `resume(k, c)`.
     Resume(Node, Node),
+    /// A first-class stack ended without resuming it, `abandon(k)`.
+    Abandon(Node),
     /// A delimited-control boundary, `reset { c }`.
     Reset(Node),
     /// A capture to the nearest boundary, its body under the stack's binder:

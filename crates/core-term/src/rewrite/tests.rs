@@ -2286,6 +2286,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                         | crate::Computation::Exercise { .. }
                         | crate::Computation::Scope { .. }
                         | crate::Computation::Resume(..)
+                        | crate::Computation::Abandon(_)
                         | crate::Computation::Reset(_)
                         | crate::Computation::Shift(_)
                         | crate::Computation::With(..)

@@ -882,6 +882,20 @@ fn checked(
             LinearityDefect::BufferRead { .. } => f.write_str(
                 "a buffer can be used only by the `send`, the operation or the resumption that hands it back",
             ),
+            LinearityDefect::ContinuationUnspent { .. } => f.write_str(
+                "the operation's continuation holds something that must end, so the clause must `resume` it or `abandon` it exactly once",
+            ),
+            LinearityDefect::ContinuationUsedTwice { .. } => {
+                f.write_str("the continuation is resumed or abandoned a second time")
+            },
+            LinearityDefect::ContinuationCaptured { by, .. } => write!(
+                f,
+                "the continuation is used inside {}, which may end it other than once",
+                Captor(by)
+            ),
+            LinearityDefect::ContinuationAsValue { .. } => f.write_str(
+                "this continuation holds something that must end, so it can be used only by `resume` or `abandon`",
+            ),
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => {
@@ -1608,6 +1622,31 @@ mod tests
             CheckRefusal::Linearity {
                 at: node,
                 defect: LinearityDefect::BufferRead { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationUnspent {
+                    clause: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationUsedTwice {
+                    clause: computation,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationCaptured {
+                    clause: computation,
+                    by: Capture::Task,
+                },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationAsValue {
+                    clause: computation,
+                },
             },
             CheckRefusal::Access {
                 at: node,

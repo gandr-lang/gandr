@@ -1267,9 +1267,9 @@ Err(_) => false,
                     Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
                     },
-                    Computation::Return(value_term) | Computation::Force(value_term) => {
-                        one(value(value_term), Lowering::NONE)
-                    },
+                    Computation::Return(value_term)
+                    | Computation::Abandon(value_term)
+                    | Computation::Force(value_term) => one(value(value_term), Lowering::NONE),
                     Computation::Bind(bound, body) => {
                         two(computation(bound), computation(body), Lowering::ONE)
                     },

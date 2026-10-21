@@ -593,6 +593,18 @@ pub enum RefusalName
     /// A placed buffer read other than by the send, the operation or the
     /// resumption that returns it.
     BufferRead,
+    /// An operation clause owing its continuation, which holds an obligation,
+    /// finishing without resuming or abandoning it.
+    ContinuationUnspent,
+    /// A continuation holding an obligation resumed or abandoned a second
+    /// time.
+    ContinuationUsedTwice,
+    /// A continuation holding an obligation named where its end may run other
+    /// than once.
+    ContinuationCaptured,
+    /// A continuation holding an obligation read as a value, other than as
+    /// what a resumption or an abandonment ends.
+    ContinuationAsValue,
     /// An access naming a linear slot that holds no value.
     NotHeld,
     /// A held value read while an access lends it exclusively, or accessed
@@ -684,7 +696,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 183_usize] = [
+    pub const VOCABULARY: [Self; 187_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -835,6 +847,10 @@ impl RefusalName
         Self::BufferUnreturned,
         Self::BufferReturnedTwice,
         Self::BufferRead,
+        Self::ContinuationUnspent,
+        Self::ContinuationUsedTwice,
+        Self::ContinuationCaptured,
+        Self::ContinuationAsValue,
         Self::NotHeld,
         Self::HeldLent,
         Self::HeldCaptured,
@@ -1008,6 +1024,10 @@ impl RefusalName
         | (Self::BufferUnreturned, b"BufferUnreturned")
         | (Self::BufferReturnedTwice, b"BufferReturnedTwice")
         | (Self::BufferRead, b"BufferRead")
+        | (Self::ContinuationUnspent, b"ContinuationUnspent")
+        | (Self::ContinuationUsedTwice, b"ContinuationUsedTwice")
+        | (Self::ContinuationCaptured, b"ContinuationCaptured")
+        | (Self::ContinuationAsValue, b"ContinuationAsValue")
         | (Self::NotHeld, b"NotHeld")
         | (Self::HeldLent, b"HeldLent")
         | (Self::HeldCaptured, b"HeldCaptured")
@@ -1140,6 +1160,10 @@ impl RefusalName
             Self::BufferUnreturned => "BufferUnreturned",
             Self::BufferReturnedTwice => "BufferReturnedTwice",
             Self::BufferRead => "BufferRead",
+            Self::ContinuationUnspent => "ContinuationUnspent",
+            Self::ContinuationUsedTwice => "ContinuationUsedTwice",
+            Self::ContinuationCaptured => "ContinuationCaptured",
+            Self::ContinuationAsValue => "ContinuationAsValue",
             Self::NotHeld => "NotHeld",
             Self::HeldLent => "HeldLent",
             Self::HeldCaptured => "HeldCaptured",
@@ -1528,7 +1552,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
-        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead)
+        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
@@ -1829,6 +1853,10 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::BufferUnreturned { .. }, .. }, RefusalName::BufferUnreturned)
         | (CheckRefusal::Linearity { defect: LinearityDefect::BufferReturnedTwice { .. }, .. }, RefusalName::BufferReturnedTwice)
         | (CheckRefusal::Linearity { defect: LinearityDefect::BufferRead { .. }, .. }, RefusalName::BufferRead)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationUnspent { .. }, .. }, RefusalName::ContinuationUnspent)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationUsedTwice { .. }, .. }, RefusalName::ContinuationUsedTwice)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationCaptured { .. }, .. }, RefusalName::ContinuationCaptured)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationAsValue { .. }, .. }, RefusalName::ContinuationAsValue)
         | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
         | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
         | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
@@ -1952,6 +1980,10 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::BufferUnreturned { .. } => RefusalName::BufferUnreturned,
             LinearityDefect::BufferReturnedTwice { .. } => RefusalName::BufferReturnedTwice,
             LinearityDefect::BufferRead { .. } => RefusalName::BufferRead,
+            LinearityDefect::ContinuationUnspent { .. } => RefusalName::ContinuationUnspent,
+            LinearityDefect::ContinuationUsedTwice { .. } => RefusalName::ContinuationUsedTwice,
+            LinearityDefect::ContinuationCaptured { .. } => RefusalName::ContinuationCaptured,
+            LinearityDefect::ContinuationAsValue { .. } => RefusalName::ContinuationAsValue,
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => RefusalName::NotHeld,

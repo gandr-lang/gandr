@@ -438,6 +438,26 @@ fn an_abort_clause_performing_an_effect_is_refused()
     );
 }
 
+/// An unwind runs to completion under the empty row, which carries no
+/// abandonment: an `abandon` written in one is refused at the abandonment,
+/// before the stack it names is read (#1334).
+#[test]
+fn an_unwind_abandons_nothing_1334()
+{
+    let mut arena = CoreArena::new();
+    let units = units(&mut arena);
+    let unit = arena.value_unit();
+    let abandoned = arena.computation_abandon(unit);
+    let aborted = abort(&mut arena, l0());
+    let unwinding = access(&mut arena, l0(), aborted, abandoned);
+    let unwinding = hold(&mut arena, unwinding);
+    assert_eq!(
+        both(&mut arena, unwinding, units),
+        [Err(at(abandoned, AccessDefect::UnwindEffect)); 2],
+        "no cancellation reaches inside a running unwind"
+    );
+}
+
 #[test]
 fn a_view_escaping_its_access_is_refused()
 {

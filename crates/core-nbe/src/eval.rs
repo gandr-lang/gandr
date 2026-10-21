@@ -4481,6 +4481,9 @@ fn step_comp(
         Computation::Resume(..) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Resume,
         )),
+        Computation::Abandon(_) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Abandon,
+        )),
         Computation::Reset(_) => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Reset,
         )),

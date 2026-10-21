@@ -629,6 +629,57 @@ fn a_scope_handles_its_capability_and_resumes()
     );
 }
 
+/// `abandon(k)` in an operation clause ends the clause's continuation without
+/// running it, and the clause checks; a program that binds its own `abandon`
+/// calls it (#1334).
+#[test]
+fn a_clause_abandons_its_continuation_1334()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "def quit() -> -F Unit { handle c : Proc { c.exit(1) } with { pure(x) => pure x, oper exit(code, k) => abandon(k) } }\n",
+        "def abandon(n : Integer) -> -F Unit { pure unit }\n",
+        "def halt() -> -F Unit { abandon(1) }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    let quit = tail_of(&module, &arena, "quit".into());
+    let Some(&Computation::Scope { ref clauses, .. }) = arena.computation(quit)
+    else {
+        panic!("`handle` is a capability scope");
+    };
+    let Some(clause) = clauses.first()
+    else {
+        panic!("one operation clause");
+    };
+    let Some(&Computation::Abandon(continuation)) = arena.computation(clause.body)
+    else {
+        panic!(
+            "`abandon(k)` abandons: {:?}",
+            arena.computation(clause.body)
+        );
+    };
+    assert_eq!(
+        arena.value(continuation),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "the continuation, bound after the payload"
+    );
+    let halt = tail_of(&module, &arena, "halt".into());
+    assert!(
+        !matches!(arena.computation(halt), Some(&Computation::Abandon(_))),
+        "a program's own `abandon` is called: {:?}",
+        arena.computation(halt)
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "quit".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "quit".into())
+    );
+}
+
 #[test]
 fn a_scoped_capability_cannot_escape()
 {

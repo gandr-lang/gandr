@@ -987,6 +987,7 @@ fn formers(
                 ) => {
                     worklist.extend([Node::Value(value), Node::Computation(body)]);
                 },
+                Some(&Computation::Abandon(stack)) => worklist.push(Node::Value(stack)),
                 Some(
                     &(Computation::Reset(body)
                     | Computation::Shift(body)

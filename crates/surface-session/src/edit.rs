@@ -2637,7 +2637,7 @@ enum Agreement
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
                 ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
                 _ if children(old).next().is_none() => old == new,
-                ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
+                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -3369,6 +3369,7 @@ where
                 Computation::Scope { ref signature, .. } => matches!(ret, ContentNode::Scope { signature: ref mapped, .. } if signature.name() == mapped.name()),
                 Computation::Exercise { ref operation, ref signature, .. } => matches!(ret, ContentNode::Exercise { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
+                Computation::Abandon(_) => matches!(ret, ContentNode::Abandon(_)),
                 Computation::Split { arity, motive: SplitMotive::Ambient, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
                 Computation::Split { arity, motive: SplitMotive::Scrutinee(_), .. } => matches!(ret, ContentNode::DependentSplit { arity: actual, .. } if actual == arity),
                 Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
@@ -3524,6 +3525,7 @@ where
         Some(&Computation::Resume(stack, body)) => {
             ContentNode::Resume(child(Root::Value(stack)), child(Root::Computation(body)))
         },
+        Some(&Computation::Abandon(stack)) => ContentNode::Abandon(child(Root::Value(stack))),
         Some(&Computation::Split {
             scrutinee,
             arity,

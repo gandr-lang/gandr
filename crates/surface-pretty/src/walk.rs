@@ -435,7 +435,7 @@ enum Kind
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
         | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
-        | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
+        | Former::Scope { .. } | Former::Resume(..) | Former::Abandon(_) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
         | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Place { .. } | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
         | Former::AbortView(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
@@ -533,6 +533,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Exercise { .. }
         | Former::Scope { .. }
         | Former::Resume(..)
+        | Former::Abandon(_)
         | Former::Reset(_)
         | Former::Shift(_)
         | Former::Lazy(..)
@@ -1183,6 +1184,7 @@ where
         | Former::Forward(child)
         | Former::RunType(child)
         | Former::Return(child)
+        | Former::Abandon(child)
         | Former::Force(child)
         | Former::RecordProjection(child, _)
         | Former::TupleProjection(child, _)
@@ -5023,6 +5025,7 @@ impl Walk<'_, '_>
                 | Former::Exercise { .. }
                 | Former::Scope { .. }
                 | Former::Resume(..)
+                | Former::Abandon(_)
                 | Former::Reset(_)
                 | Former::Shift(_)
                 | Former::Lazy(..)
@@ -5963,6 +5966,7 @@ impl Walk<'_, '_>
             | Former::Exercise { .. }
             | Former::Scope { .. }
             | Former::Resume(..)
+            | Former::Abandon(_)
             | Former::Reset(_)
             | Former::Shift(_)
             | Former::Lazy(..)
@@ -7698,6 +7702,10 @@ impl Walk<'_, '_>
                     let _ = parts.text("resume").arguments(Arity(2_usize));
                     writes(Production("resume_expression"), Binding::Atom)
                 }
+            },
+            Former::Abandon(_) => {
+                let _ = parts.text("abandon").arguments(Arity(1_usize));
+                writes(Production("call_expression"), Binding::Atom)
             },
             Former::PathTransport { .. } | Former::Ride { .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {

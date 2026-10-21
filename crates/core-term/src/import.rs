@@ -231,6 +231,7 @@ impl Image
             )
             | Self::Computation(
                 Computation::Return(ref mut body)
+                | Computation::Abandon(ref mut body)
                 | Computation::Force(ref mut body)
                 | Computation::Perform {
                     payload: ref mut body,
@@ -832,6 +833,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::ListFold { .. }
                                 | Computation::ListCase { .. }
                                 | Computation::Resume(..)
+                                | Computation::Abandon(_)
                                 | Computation::Reset(_)
                                 | Computation::Shift(_)
                                 | Computation::Project(..) => {},
