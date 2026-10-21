@@ -31,6 +31,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_dispatcher::DeclaredHalf;
 use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_render_remote::LineIndex;
@@ -229,7 +230,8 @@ pub fn mirrored(
 }
 
 /// Where a name is written: its source's canonical path, its span in that
-/// source's text, its range there and how it is spelled.
+/// source's text, its range there and how it is spelled, and where a
+/// declaration written in two halves writes the name again.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Written
 {
@@ -241,6 +243,9 @@ pub struct Written
     pub range: Option<Range>,
     /// The text of its span.
     pub spelled: String,
+    /// The range of the name in the declaration's other half, in the same
+    /// source; none for a name written once, or whose span has no range.
+    pub second: Option<Range>,
 }
 
 /// Where the name a request at `position` of `text`, the document whose
@@ -251,16 +256,19 @@ pub struct Written
 /// - requires: `hovering` was read off `text`.
 /// - ensures: for the name [`named`] finds at the position's byte, `own` when
 ///   the document writes it and its source's path otherwise, with its span, its
-///   range and its text in that source's text; none when no name is found, its
-///   source names no path, or its span lies outside its source's text.
+///   range and its text in that source's text, and the range of the name in the
+///   other half of a declaration written in two; none when no name is found,
+///   its source names no path, or its span lies outside its source's text.
 /// - provides: what a reference or rename request looks for in every document.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a name the document declares and a sibling's name used in
-///   it are each placed in their own source.
+///   it are each placed in their own source, and a name declared in two halves
+///   is placed at its first with its second beside it.
 /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+/// - witness: `server::tests::references_leave_both_halves_out_with_the_declaration_1361`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|written| written.range.is_none_or(|range| range.start <= range.end)
     && written.spelled.len() == usize::from(written.named.end()).saturating_sub(usize::from(written.named.start()))))]
 #[must_use]
@@ -286,11 +294,17 @@ pub fn placed(
     let named = referent.named();
     let spelled = spelling(source, named)?;
     let source = LineIndex::new(<&str>::from(source).into());
+    let second = [DeclaredHalf::Signature, DeclaredHalf::Definition]
+        .into_iter()
+        .map(|half| table.half(referent, half).named())
+        .find(|&half| half != named)
+        .and_then(|half| ranged(&source, half));
     Some(Written {
         path,
         named,
         range: ranged(&source, named),
         spelled: String::from(<&str>::from(spelled)),
+        second,
     })
 }
 

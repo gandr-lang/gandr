@@ -4842,12 +4842,13 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document, and one whose session holds no grammar,
-    ///   yields Nothing; otherwise, for the name [`placed`] places, its
-    ///   declaring name first when `context` asks for it, at the open document
+    ///   yields Nothing; otherwise, for the name [`placed`] places, when
+    ///   `context` asks for it its declaring name first, then the name in its
+    ///   declaration's other half when written in two, at the open document
     ///   whose path is the name's source when one is open and at that path
     ///   otherwise; then the uses of it each document [`Self::writers`] visits
-    ///   makes, as [`located`] answers, in the order it visits them. No name
-    ///   answers the empty list.
+    ///   makes, as [`located`] answers, in the order it visits them, the other
+    ///   half left out. No name answers the empty list.
     /// - provides: the answer to `textDocument/references`.
     /// - fails: never.
     /// - panics: none.
@@ -4856,9 +4857,11 @@ impl Workspace
     /// - hypothesis: L3 — a sibling's name asked from an importer is found in
     ///   the sibling, in every open importer and in an importer no editor
     ///   holds, with its declaration when asked and without it otherwise; a
-    ///   binder's uses stay in its document; an unknown document answers
-    ///   `null`.
+    ///   binder's uses stay in its document; a declaration written in two
+    ///   halves answers both with its declaration and neither without; an
+    ///   unknown document answers `null`.
     /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
+    /// - witness: `server::tests::references_leave_both_halves_out_with_the_declaration_1361`
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Locations(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
@@ -4897,17 +4900,29 @@ impl Workspace
                 .cloned()
                 .or_else(|| DocumentUri::of_path(&name.path))
         {
-            found.push(Location { uri: target, range });
+            found.extend(
+                core::iter::once(range)
+                    .chain(name.second)
+                    .map(|range| Location {
+                        uri: target.clone(),
+                        range,
+                    }),
+            );
         }
         let Ok(()) = self.writers::<Infallible>(&name, peer, &shadows, &mut |writer| {
-            found.extend(located(
-                writer.text,
-                writer.uri,
-                writer.path,
-                writer.hovering,
-                &name.path,
-                name.named,
-            ));
+            let declaring = writer.path == name.path.as_path();
+            found.extend(
+                located(
+                    writer.text,
+                    writer.uri,
+                    writer.path,
+                    writer.hovering,
+                    &name.path,
+                    name.named,
+                )
+                .into_iter()
+                .filter(|location| !(declaring && Some(location.range) == name.second)),
+            );
             Ok(())
         });
         Answer::Locations(found)
@@ -10918,6 +10933,62 @@ mod tests
             starts(&found, "/0/result"),
             [(0, 4), (1, 4), (2, 8)],
             "the references are both halves' names and the use"
+        );
+    }
+
+    /// #1361: a reference search that leaves the declaration out leaves out
+    /// both halves of a name declared in two, and one that keeps it answers
+    /// the declaring half first, then the other.
+    #[test]
+    fn references_leave_both_halves_out_with_the_declaration_1361()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/unused.gandr","languageId":"gandr","version":1,
+                     "text":"def x : Integer ;\ndef x = 3 ;\ndef y = x ;\ndef z : Integer ;\ndef z = 4 ;\n"}}}"#,
+            ),
+        );
+        let mut references = |line: u32, character: u32, declared: bool| -> Vec<(u64, u64)> {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32,
+                "method": "textDocument/references", "params": {
+                    "textDocument": {"uri": "file:///tmp/unused.gandr"},
+                    "position": {"line": line, "character": character},
+                    "context": {"includeDeclaration": declared}}});
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|location| {
+                    Some((
+                        location.pointer("/range/start/line")?.as_u64()?,
+                        location.pointer("/range/start/character")?.as_u64()?,
+                    ))
+                })
+                .collect()
+        };
+        assert_eq!(
+            references(2, 8, false),
+            [(2, 8)],
+            "a used name without its declaration: the use alone, neither half"
+        );
+        assert_eq!(
+            references(1, 4, false),
+            [(2, 8)],
+            "asked from the definition half, the same"
+        );
+        assert_eq!(
+            references(3, 4, false),
+            [],
+            "an unused name declared in two halves has no reference"
+        );
+        assert_eq!(
+            references(0, 4, true),
+            [(0, 4), (1, 4), (2, 8)],
+            "with its declaration: the signature half, the definition half, then the use"
         );
     }
 }
