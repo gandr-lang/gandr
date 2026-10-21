@@ -46,11 +46,11 @@
 //! width. The alternative was the stepped formatting alone, which streams but
 //! leaves the formatter several times slower than the checker on the same tree;
 //! it reverses if a caller needs a source's line printed before the next is
-//! laid out. The formatted text is written with `std::fs::write`, which keeps
-//! the file's permissions and replaces its bytes in place; a write interrupted
-//! midway leaves a truncated source, which a temporary file renamed over the
-//! source would not. That alternative loses the file's permissions and any hard
-//! link to it, and reverses the choice if a truncated source is ever reported.
+//! laid out. The formatted text is written through the formatting's
+//! [`Reader`], as it was read: a source below the reader's crossover is
+//! rewritten in place, keeping its permissions and hard links, and a write
+//! interrupted midway leaves it truncated; one the reader may map is written
+//! beside the mapping and renamed over it ([`Reader::write`]).
 
 use core::cmp::Reverse;
 use core::num::NonZeroUsize;
@@ -77,6 +77,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::component;
 use crate::pool::Pool;
+use crate::reader::Reader;
 use crate::root;
 use crate::walk::Reached;
 use crate::walk::Traversal;
@@ -243,6 +244,8 @@ pub struct Formatting
     rewrite: Rewrite,
     /// The threads [`Formatting::visit`] lays sources out on.
     width: Width,
+    /// What every source is read and written back through.
+    reader: Reader,
 }
 
 impl Formatting
@@ -267,6 +270,7 @@ impl Formatting
             options,
             rewrite,
             width,
+            reader: Reader::new(),
         }
     }
 
@@ -322,7 +326,9 @@ impl Formatting
     /// - fails: never; every fault is a step, and the formatting continues past
     ///   it.
     /// - panics: none.
-    /// - intension: holds one source's text and its formatted text at a time.
+    /// - intension: lays out one source's text and its formatted text at a
+    ///   time; the reader holds the text of each source left unchanged until
+    ///   the formatting is dropped.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a tree holding a source out of layout, one in it, a
@@ -348,7 +354,7 @@ impl Formatting
         let path = self.traversal.path();
         let (grammar, options, rewrite) = (self.grammar.as_ref(), self.options, self.rewrite);
         Maybe::Present(step_of(path, reached, || {
-            lay_out(path, grammar, options, rewrite)
+            lay_out(&self.reader, path, grammar, options, rewrite)
         }))
     }
 
@@ -376,9 +382,10 @@ impl Formatting
     /// - executable: none — the steps are handed to an opaque visitor and the
     ///   effect is on files; the witnesses compare both against the serial
     ///   formatting.
-    /// - intension: the serial formatting holds one source at a time; a wider
-    ///   one holds every path reached and each source's outcome, never a text
-    ///   beyond the one a thread is laying out.
+    /// - intension: the serial formatting lays out one source at a time; a
+    ///   wider one holds every path reached and each source's outcome. The
+    ///   reader holds the text of each source left unchanged until the
+    ///   formatting is dropped, and of no source it wrote.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a tree holding sources in and out of layout, nested
@@ -431,7 +438,8 @@ impl Formatting
         let work = || {
             while let Some(&(_, position)) = order.get(cursor.fetch_add(1, Ordering::Relaxed)) {
                 if let (Some(path), Some(slot)) = (paths.get(position), laid.get(position)) {
-                    let _first = slot.set(lay_out(path, Ok(grammar), options, rewrite));
+                    let _first =
+                        slot.set(lay_out(&self.reader, path, Ok(grammar), options, rewrite));
                 }
             }
         };
@@ -447,7 +455,7 @@ impl Formatting
         for ((path, reached), slot) in paths.iter().zip(found).zip(laid) {
             let step = step_of(path, reached, || {
                 slot.into_inner()
-                    .unwrap_or_else(|| lay_out(path, Ok(grammar), options, rewrite))
+                    .unwrap_or_else(|| lay_out(&self.reader, path, Ok(grammar), options, rewrite))
             });
             visitor(step)?;
         }
@@ -491,14 +499,15 @@ enum Laid
     Changed(Vec<Kept>),
 }
 
-/// Read the source at `path`, format it under `grammar` at `options`, and
-/// under [`Rewrite::InPlace`] write a changed layout back.
+/// Read the source at `path` through `reader`, format it under `grammar` at
+/// `options`, and under [`Rewrite::InPlace`] write a changed layout back
+/// through `reader`.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the answer is whether the source's formatted text differs from
-///   its own. Only a changed layout under [`Rewrite::InPlace`] writes, and only
-///   to `path`.
+///   its own. Only a changed layout under [`Rewrite::InPlace`] writes, only to
+///   `path`, and through [`Reader::write`], so no mapping of the source faults.
 /// - fails: a read, grammar, parse, formatter or write fault.
 /// - panics: none.
 ///
@@ -507,27 +516,26 @@ enum Laid
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Formatting::step`]: changed and unchanged sources
-///   under both rewrites, observed by their bytes after the pass.
+///   under both rewrites, observed by their bytes after the pass, and a mapped
+///   source rewritten while its mapping is held.
 /// - witness: `format::tests::a_tree_is_formatted_in_place_once`
 /// - witness: `format::tests::checking_writes_nothing`
+/// - witness: `format::tests::a_mapped_source_is_formatted_in_place`
 #[spec(ensures: |ref ret| !(rewrite == Rewrite::Check
     && matches!(*ret, Err(FormatFault::Unwritable(_)))))]
 fn lay_out<'formatting>(
+    reader: &Reader,
     path: &Path,
     grammar: Result<&'formatting Pbg, &'formatting PbgError>,
     options: FormatOptions,
     rewrite: Rewrite,
 ) -> Result<Laid, FormatFault<'formatting>>
 {
-    let text = std::fs::read_to_string(path).map_err(FormatFault::Unreadable)?;
+    let read = reader.read(path).map_err(FormatFault::Unreadable)?;
+    let text = read.text();
     let grammar = grammar.map_err(FormatFault::Grammar)?;
-    let parsed = parse(grammar, SourceText::from(text.as_str())).map_err(FormatFault::Parse)?;
-    let closure = component::lay_out(
-        grammar,
-        path,
-        root::classify(path),
-        SourceText::from(text.as_str()),
-    );
+    let parsed = parse(grammar, text).map_err(FormatFault::Parse)?;
+    let closure = component::lay_out(grammar, path, root::classify(path), text);
     let beside = match closure {
         Maybe::Present(ref laid) => Beside::Imports {
             before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
@@ -540,14 +548,16 @@ fn lay_out<'formatting>(
     let withdrawn = formatted
         .withdrawn()
         .iter()
-        .map(|withdrawal| Kept::located(withdrawal.clone(), SourceText::from(text.as_str())))
+        .map(|withdrawal| Kept::located(withdrawal.clone(), text))
         .collect();
     let laid = <&str>::from(formatted.text());
-    if laid == text {
+    if laid == text.as_ref() {
         return Ok(Laid::Unchanged(withdrawn));
     }
     if rewrite == Rewrite::InPlace {
-        std::fs::write(path, laid).map_err(FormatFault::Unwritable)?;
+        reader
+            .write(path, SourceText::from(laid))
+            .map_err(FormatFault::Unwritable)?;
     }
     Ok(Laid::Changed(withdrawn))
 }
@@ -569,6 +579,7 @@ mod tests
     use super::Formatting;
     use super::Rewrite;
     use crate::pool::Pool;
+    use crate::reader::Reader;
     use crate::walk::tests::Scratch;
     use crate::width::Threads;
     use crate::width::Width;
@@ -727,5 +738,41 @@ mod tests
                 "the check writes nothing"
             );
         }
+    }
+
+    #[test]
+    fn a_mapped_source_is_formatted_in_place()
+    {
+        let scratch = Scratch::new(Path::new("format-mapped"));
+        scratch.file(Path::new("a.gandr"), SourceText::from("def  a =  1 ;\n"));
+        scratch.file(Path::new("b.gandr"), SourceText::from("def b   = 2 ;\n"));
+        scratch.file(Path::new("c.gandr"), SourceText::from("def c = 3 ;\n"));
+        let root = scratch.root();
+        let mut formatting = Formatting::new(
+            vec![root.to_path_buf()],
+            FormatOptions::default(),
+            Rewrite::InPlace,
+            three(),
+        );
+        formatting.reader = Reader::mapping_every_file();
+        let held = formatting
+            .reader
+            .read(&root.join("a.gandr"))
+            .expect("the source maps");
+        let mut seen = Vec::new();
+        let visited = formatting.visit(&Pool::new(three()), |step| {
+            seen.push(matches!(step, FormatStep::Changed { .. }));
+            ControlFlow::<Infallible>::Continue(())
+        });
+        assert_eq!(visited, ControlFlow::Continue(()));
+        assert_eq!(seen, [true, true, false], "every source answers, in order");
+        assert_eq!(
+            held.text().as_ref(),
+            "def  a =  1 ;\n",
+            "a mapping held across the rewrite keeps the text it mapped"
+        );
+        assert_eq!(read(&root.join("a.gandr")), "def a = 1 ;\n");
+        assert_eq!(read(&root.join("b.gandr")), "def b = 2 ;\n");
+        assert_eq!(read(&root.join("c.gandr")), "def c = 3 ;\n");
     }
 }
