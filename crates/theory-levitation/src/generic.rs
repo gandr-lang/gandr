@@ -856,17 +856,19 @@ fn render_oper_member(oper: &OperDesc) -> String
 }
 
 /// Render one port (`m : Nat`), spelling the sort bare when the port carries
-/// no authored name, and a restricted binder telescope as nested
-/// `pi+ (x : S) . T`, outermost binder first.
+/// no authored name, a restricted binder telescope as nested
+/// `pi+ (x : S) . T`, outermost binder first, and its atom abstractions as
+/// `bind (a : N) .` outside them.
 ///
 /// A binder is a form of a named port, so an anonymous port under one renders
 /// under the placeholder name `_`, which reads back as an anonymous port.
 ///
 /// # Specification
-/// - ensures: an anonymous port with no binder renders its bare sort, and under
-///   a binder renders as `_`, a colon separator and its sort; authored names
-///   render as the name, a colon separator and their sort. The sort ends with
-///   the port's own sort application, after one `pi+` prefix per binder.
+/// - ensures: an anonymous port with no binder and no abstraction renders its
+///   bare sort, and under either renders as `_`, a colon separator and its
+///   sort; authored names render as the name, a colon separator and their sort.
+///   The sort ends with the port's own sort application, after one `bind`
+///   prefix per abstraction and then one `pi+` prefix per binder.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -881,21 +883,30 @@ fn render_oper_member(oper: &OperDesc) -> String
         .and_then(|body| body.strip_prefix(" : "))
         .is_some_and(|body| body.ends_with(render_sort(&port.sort, &port.arguments).as_str())),
     Maybe::Absent(_) => text.ends_with(render_sort(&port.sort, &port.arguments).as_str())
-        && text.starts_with("_ : ") != port.bindings.is_empty(),
+        && text.starts_with("_ : ") != (port.bindings.is_empty() && port.abstractions.is_empty()),
 })]
 fn render_port(port: &SortRef) -> String
 {
     let mut sort = render_sort(&port.sort, &port.arguments);
-    for binder in port.bindings.iter().rev() {
+    let binders = port
+        .abstractions
+        .iter()
+        .map(|atom| ("bind", atom))
+        .chain(port.bindings.iter().map(|binder| ("pi+", binder)));
+    for (keyword, binder) in binders.rev() {
         sort = format!(
-            "pi+ ({} : {}) . {sort}",
+            "{keyword} ({} : {}) . {sort}",
             binder.name,
             render_sort(&binder.sort, &binder.arguments)
         );
     }
     match authored_name(port) {
         Maybe::Present(name) => format!("{name} : {sort}"),
-        Maybe::Absent(port_name::Absent::Anonymous) if port.bindings.is_empty() => sort,
+        Maybe::Absent(port_name::Absent::Anonymous)
+            if port.bindings.is_empty() && port.abstractions.is_empty() =>
+        {
+            sort
+        },
         Maybe::Absent(port_name::Absent::Anonymous) => format!("_ : {sort}"),
     }
 }

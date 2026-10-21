@@ -36,6 +36,10 @@ pub struct SortRef
     /// which `check_desc` enforces. This is object-language binding, not atom
     /// abstraction.
     pub bindings: Box<[SortIndex]>,
+    /// The atoms abstracted over this port, outermost first and outside its
+    /// π⁺ binders, `bind (a : N) .` each: the code universe's `⟨a⟩T`. Each
+    /// domain must be a declared atom sort, which `check_desc` enforces.
+    pub abstractions: Box<[SortIndex]>,
 }
 
 impl SortRef
@@ -59,6 +63,7 @@ impl SortRef
             sort: sort.into(),
             arguments: Box::default(),
             bindings: Box::default(),
+            abstractions: Box::default(),
         }
     }
 
@@ -96,6 +101,25 @@ impl SortRef
     {
         Self {
             bindings: bindings.into(),
+            ..self
+        }
+    }
+
+    /// Abstract atoms over this port, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn abstracting<I>(
+        self,
+        abstractions: I,
+    ) -> Self
+    where
+        I: Into<Box<[SortIndex]>>,
+    {
+        Self {
+            abstractions: abstractions.into(),
             ..self
         }
     }

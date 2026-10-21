@@ -94,6 +94,9 @@ pub enum TranslationError
     UnknownIndexSort(Name),
     /// An operation is not a single-output product of its input telescope.
     NonProductOperation(Name),
+    /// An operation abstracts an atom over a port, which the
+    /// single-substitution model has no context extension for.
+    AtomAbstraction(Name),
 }
 
 impl fmt::Display for TranslationError
@@ -116,6 +119,9 @@ impl fmt::Display for TranslationError
             Self::ReservedName(ref name) => write!(f, "reserved generated name: {name}"),
             Self::UnknownIndexSort(ref name) => write!(f, "undeclared index sort: {name}"),
             Self::NonProductOperation(ref name) => write!(f, "non-product operation: {name}"),
+            Self::AtomAbstraction(ref name) => {
+                write!(f, "operation abstracting an atom: {name}")
+            },
         }
     }
 }
@@ -243,8 +249,8 @@ pub fn first_order<G>(source: &TheoryDesc<G>) -> Result<TheoryDesc<G>, Translati
 ///
 /// # Specification
 /// - ensures: success exactly for well-formed operation signatures with
-///   declared index sorts, reserved-name-free names and single-output product
-///   telescopes.
+///   declared index sorts, reserved-name-free names, single-output product
+///   telescopes and no atom abstraction.
 /// - fails: malformed descriptions, non-signature members or the first
 ///   offending name or operation are refused.
 /// - panics: none.
@@ -252,14 +258,15 @@ pub fn first_order<G>(source: &TheoryDesc<G>) -> Result<TheoryDesc<G>, Translati
 /// # Errors
 /// Returns [`TranslationError::Malformed`],
 /// [`TranslationError::NonSignatureMembers`],
-/// [`TranslationError::ReservedName`], [`TranslationError::UnknownIndexSort`]
-/// or [`TranslationError::NonProductOperation`].
+/// [`TranslationError::ReservedName`], [`TranslationError::UnknownIndexSort`],
+/// [`TranslationError::NonProductOperation`] or
+/// [`TranslationError::AtomAbstraction`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — name, unknown-sort and non-product boundaries distinguish
 ///   the refusals from valid telescopes; each member kind and each product
 ///   condition (one output, one monomial, the inputs in order) is refused
-///   alone.
+///   alone, and so is a port abstracting an atom.
 /// - witness: `tests::glf::translation_refuses_non_signatures`
 /// - witness: `tests::glf::model::admission`
 #[spec(ensures: |ref result| result.is_err() || source.sorts.iter().all(|sort| !sort.name.as_ref().starts_with('$')))]
@@ -303,6 +310,15 @@ pub fn validate<G>(source: &TheoryDesc<G>) -> Result<(), TranslationError>
                 .eq(0 .. u32::try_from(op.arity.inputs.len()).unwrap_or(u32::MAX))
         {
             return Err(TranslationError::NonProductOperation(op.name.clone()));
+        }
+        if op
+            .arity
+            .inputs
+            .iter()
+            .chain(&op.arity.outputs)
+            .any(|port| !port.abstractions.is_empty())
+        {
+            return Err(TranslationError::AtomAbstraction(op.name.clone()));
         }
     }
     Ok(())

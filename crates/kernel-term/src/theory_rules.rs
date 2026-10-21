@@ -89,7 +89,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 23] = [
+pub const PRESENTATION_CODE: [(usize, usize); 24] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -113,6 +113,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 23] = [
     (1, 3),
     (1, 1),
     (1, 2),
+    (2, 4),
 ];
 
 /// The presentation code's constructor tags this module reads.

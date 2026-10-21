@@ -282,6 +282,7 @@ impl Reader<'_, '_>
             sort: Name::from(sort),
             indices: Vec::new(),
             bindings: Vec::new(),
+            abstractions: Vec::new(),
         };
         let written_port = |at: Placed| WrittenPort {
             named: Maybe::Absent(port_name::Absent::Generated),

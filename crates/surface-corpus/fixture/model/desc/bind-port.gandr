@@ -1,0 +1,67 @@
+// The nominal binding port (Pitts, _Nominal Sets_, CUP 2013, ch. 4; Gabbay
+// and Mathijssen, _Nominal (universal) algebra_, JLC 2009). `bind (a : N) . T`
+// abstracts an atom of the atom sort `N` over a port of sort `T`: swapping
+// renames the atom and it may escape, where `pi+ (x : S) . T` binds a variable
+// that substitution instantiates. Each block is a value of `Theory` that keeps
+// an abstracting port as an `Abstracted` link of its operation's port chain,
+// so a program reads it back by `case`.
+
+/// The π-calculus's processes: `nu` restricts a channel name over a process,
+/// abstracting it.
+@[ checks ]
+theory Restriction {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+}
+
+/// Both binders over one port, the abstraction outside: a fresh channel
+/// abstracted over a body that binds the value received on it.
+@[ checks ]
+theory Receive {
+  sort Name : Atom;
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : bind (c : Name) . pi+ (x : Val) . Proc) --> Proc;
+}
+
+/// Structural recursion over a port chain: one per `Abstracted` link, none
+/// for a `Port` or a `Bound` one.
+@[ checks ]
+def rec abstracted(chain : Theory) -> -F Integer {
+  case chain {
+    Abstracted(name, sort, indices, atoms, binders, rest) => {
+      run r <- abstracted[<](rest);
+      return r + 1
+    },
+    Port(name, sort, indices, rest) => become abstracted[<](rest),
+    Bound(name, sort, indices, binders, rest) => become abstracted[<](rest),
+    _ => 0
+  }
+}
+
+/// Structural recursion over an operation chain: the abstracting input ports
+/// of every operation.
+@[ checks ]
+def rec abstracting(chain : Theory) -> -F Integer {
+  case chain {
+    Oper(name, inputs, outputs, rest) => {
+      run here <- abstracted(inputs);
+      run r <- abstracting[<](rest);
+      return here + r
+    },
+    _ => 0
+  }
+}
+
+/// Of the restriction signature's three operations, `nu` alone abstracts.
+@[ runs("1") ]
+def abstractions : () => Integer ;
+def abstractions = thunk {
+  case Restriction {
+    Presents(sorts, opers, rules) => become abstracting(opers),
+    _ => 0
+  }
+} ;

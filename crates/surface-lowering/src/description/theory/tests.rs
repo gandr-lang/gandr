@@ -1162,7 +1162,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6
         ],
         "each constructor's names, then its recursions"
     );
@@ -1557,10 +1557,47 @@ fn a_rendered_signature_reparses_to_itself()
             ),
         ],
     );
+    // Processes under a restricted channel: an abstraction over a port, and
+    // one outside a binder.
+    let name = || SortDesc {
+        representability: Representability::Atom,
+        ..SortDesc::new("Name", DeclPolarity::Data)
+    };
+    let restriction = signature(
+        "Restriction",
+        vec![
+            name(),
+            SortDesc::new("Val", DeclPolarity::Data).representable(),
+            SortDesc::new("Proc", DeclPolarity::Data),
+        ],
+        vec![
+            operation(
+                "nu",
+                vec![SortRef::new("p", "Proc").abstracting([SortIndex::new("a", "Name")])],
+                SortRef::new("", "Proc"),
+            ),
+            operation(
+                "new",
+                vec![
+                    SortRef::new("p", "Proc")
+                        .pi_plus([SortIndex::new("x", "Val")])
+                        .abstracting([SortIndex::new("c", "Name")]),
+                ],
+                SortRef::new("", "Proc"),
+            ),
+        ],
+    );
     // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
     // an input port does not read yet (#718); every port here is named or
     // binds nothing.
-    for original in [lambda, identity_return, naturals, square, renaming] {
+    for original in [
+        lambda,
+        identity_return,
+        naturals,
+        square,
+        renaming,
+        restriction,
+    ] {
         let rendered = gandr_theory_levitation::serialize_desc(&original);
         let report = described(rendered.as_ref());
         assert_eq!(report.diagnostics, [], "{rendered:?} lowers whole");
@@ -1747,6 +1784,20 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
         ),
         "an atom is taken, never returned: {diagnostic:?}"
     );
+    let report =
+        described("theory Opened { sort Tm : Type; oper nu : (t : bind (a : Tm) . Tm) --> Tm; }");
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(
+            diagnostic.fault,
+            DescriptionFault::IllFormed(ref reason)
+                if reason.kind == gandr_theory_levitation::WfKind::NonAtomAbstraction
+        ),
+        "an abstraction ranges over an atom sort: {diagnostic:?}"
+    );
     // A binder belongs to an operation's input port: a domain, a result, a
     // sort's index and a circuit's wire bind nothing.
     for (source, refused, written) in [
@@ -1782,6 +1833,53 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
             report.diagnostics
         );
     }
+}
+
+#[test]
+fn an_abstraction_stands_outside_the_binders()
+{
+    let report = described(
+        "theory Inner { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : pi+ (x : Val) . bind (c : Name) . Proc) --> Proc; }",
+    );
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert_eq!(
+        diagnostic.fault,
+        DescriptionFault::Malformed,
+        "a `bind` inside a `pi+` is malformed"
+    );
+    let report = described(
+        "theory Outer { sort Name : Atom; sort Val : Type+; sort Proc : Type; oper new : (p : bind (c : Name) . bind (d : Name) . pi+ (x : Val) . Proc) --> Proc; }",
+    );
+    assert_eq!(report.diagnostics, [], "abstractions outside the binders");
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("one theory: {:?}", report.declarations)
+    };
+    let [ref new] = *theory.description.opers
+    else {
+        panic!("one operation")
+    };
+    let [ref port] = *new.arity.inputs
+    else {
+        panic!("one input")
+    };
+    assert_eq!(
+        (
+            port.abstractions
+                .iter()
+                .map(|atom| atom.name.as_ref())
+                .collect::<Vec<_>>(),
+            port.bindings
+                .iter()
+                .map(|binder| binder.name.as_ref())
+                .collect::<Vec<_>>(),
+        ),
+        (vec!["c", "d"], vec!["x"]),
+        "each abstraction and each binder in written order"
+    );
 }
 
 #[test]

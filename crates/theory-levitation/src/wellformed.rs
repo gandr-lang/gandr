@@ -124,6 +124,9 @@ pub enum WfKind
     /// An operation's output port sits at an atom sort: an atom is compared
     /// and swapped, never produced.
     AtomResult,
+    /// A port's atom abstraction, `bind (a : N) .`, ranges over a sort that is
+    /// undeclared or not an atom sort.
+    NonAtomAbstraction,
 }
 
 quenchant_shape::reason_enum! {
@@ -237,13 +240,15 @@ fn located(
 /// # Specification
 /// - ensures: every failure of the rules this module states, in a deterministic
 ///   order: sorting-discipline checks, then the π⁺ binder check, then the atom
-///   result check, then the shape checks, then attribute declines, then
-///   per-face checks, then per-arity checks, then per-circuit-rule checks; an
-///   empty result witnesses a well-formed description. The binder check reports
-///   one `NonRepresentableBinder` per binder, over every port of every
-///   operation, whose domain is not a declared representable sort; the atom
-///   result check one `AtomResult` per output port, over every operation, at a
-///   declared atom sort.
+///   abstraction check, then the atom result check, then the shape checks, then
+///   attribute declines, then per-face checks, then per-arity checks, then
+///   per-circuit-rule checks; an empty result witnesses a well-formed
+///   description. The binder check reports one `NonRepresentableBinder` per
+///   binder, over every port of every operation, whose domain is not a declared
+///   representable sort; the atom abstraction check one `NonAtomAbstraction`
+///   per abstraction, over every port of every operation, whose domain is not a
+///   declared atom sort; the atom result check one `AtomResult` per output
+///   port, over every operation, at a declared atom sort.
 /// - panics: none; total on any description, a mis-built one included.
 ///
 /// # Adequacy
@@ -272,6 +277,7 @@ fn located(
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
 /// - witness: `tests::glf::restricted_binding_requires_representability`
 /// - witness: `wellformed::tests::an_atom_is_taken_and_never_returned`
+/// - witness: `wellformed::tests::a_port_abstracts_atoms_of_an_atom_sort`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 /// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
@@ -284,8 +290,8 @@ fn located(
     | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding => matches!(diagnostic.span, Maybe::Present(_)),
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
-    | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName
-    | WfKind::FaceOutsideShape | WfKind::AtomResult => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+    | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName | WfKind::FaceOutsideShape
+    | WfKind::AtomResult | WfKind::NonAtomAbstraction => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
 }) && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::NonRepresentableBinder).count()
     == desc.opers.iter()
         .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
@@ -293,6 +299,13 @@ fn located(
         .filter(|binder| !desc.sorts.iter().any(|sort|
             sort.name == binder.sort && sort.representability == Representability::Representable))
         .count()
+    && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::NonAtomAbstraction).count()
+        == desc.opers.iter()
+            .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
+            .flat_map(|port| port.abstractions.iter())
+            .filter(|atom| !desc.sorts.iter().any(|sort|
+                sort.name == atom.sort && sort.representability == Representability::Atom))
+            .count()
     && diagnostics.iter().filter(|diagnostic| diagnostic.kind == WfKind::AtomResult).count()
         == desc.opers.iter()
             .flat_map(|op| op.arity.outputs.iter())
@@ -321,6 +334,20 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
                     format!(
                         "π⁺ domain '{}' of port '{}' is not representable",
                         binder.sort, port.name
+                    ),
+                ));
+            }
+        }
+        for atom in &port.abstractions {
+            if !desc.sorts.iter().any(|sort| {
+                sort.name == atom.sort && sort.representability == Representability::Atom
+            }) {
+                diagnostics.push(unlocated(
+                    WfKind::NonAtomAbstraction,
+                    named(&[&atom.sort, &port.name]),
+                    format!(
+                        "atom abstraction over '{}' of port '{}' is not over an atom sort",
+                        atom.sort, port.name
                     ),
                 ));
             }
@@ -1511,6 +1538,55 @@ mod tests
             )
             .is_empty(),
             "the same output at an ordinary sort passes: the refusal reads the atom sort"
+        );
+    }
+
+    #[test]
+    fn a_port_abstracts_atoms_of_an_atom_sort()
+    {
+        let named = |name: Representability, ops: Vec<OperDesc>| {
+            nat_with(Vec::new(), ops, Attrs::empty()).with_sorts([
+                SortDesc::new("Nat", DeclPolarity::Data),
+                SortDesc {
+                    representability: name,
+                    ..SortDesc::new("Name", DeclPolarity::Data)
+                },
+            ])
+        };
+        let nu = |over: &str| {
+            OperDesc::new(
+                "nu",
+                BridgeArity::tupled(
+                    [SortRef::new("p", "Nat").abstracting([SortIndex::new("a", over)])],
+                    [SortRef::new("q", "Nat")],
+                ),
+                Attrs::empty(),
+            )
+        };
+        assert!(
+            check_desc(&named(Representability::Atom, vec![nu("Name")])).is_empty(),
+            "a port abstracting an atom of an atom sort passes"
+        );
+        let kinds = |desc: &TheoryDesc<Grade>| {
+            check_desc(desc)
+                .into_iter()
+                .map(|diagnostic| diagnostic.kind)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            kinds(&named(Representability::Ordinary, vec![nu("Name")])),
+            [WfKind::NonAtomAbstraction],
+            "an abstraction over an ordinary sort is refused by name"
+        );
+        assert_eq!(
+            kinds(&named(Representability::Atom, vec![nu("Absent")])),
+            [WfKind::NonAtomAbstraction],
+            "an abstraction over an undeclared sort is refused by the same name"
+        );
+        assert_eq!(
+            kinds(&named(Representability::Representable, vec![nu("Name")])),
+            [WfKind::NonAtomAbstraction],
+            "a representable sort is bound by `pi+`, never abstracted"
         );
     }
 

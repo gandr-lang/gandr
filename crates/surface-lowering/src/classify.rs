@@ -136,7 +136,10 @@ impl LoweringRefusal<'_>
                 ..
             }
             | Self::UnstatedComponent {
-                fault: ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding,
+                fault: ModelFault::ManyOut
+                    | ModelFault::Circuit
+                    | ModelFault::Binding
+                    | ModelFault::Abstraction,
                 ..
             }
             | Self::UndescribedMember {
@@ -441,10 +444,10 @@ fn tracked_form(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a component relating a many-out operation's results, a circuit
-///   rule and a binding operation are unimplemented, each naming its issue; an
-///   unknown head, a wrong arity, an ill-sorted term, an unsorted variable, a
-///   constructor term and a component inheriting another's failure are
-///   malformed source.
+///   rule, a binding operation and an abstracting operation are unimplemented,
+///   each naming its issue; an unknown head, a wrong arity, an ill-sorted term,
+///   an unsorted variable, a constructor term and a component inheriting
+///   another's failure are malformed source.
 /// - provides: the lowering classifier's arm for `UnstatedComponent`.
 /// - fails: never.
 /// - panics: none.
@@ -454,7 +457,7 @@ fn tracked_form(
 /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
-        == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding)
+        == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding | ModelFault::Abstraction)
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
 )]
 #[must_use]
@@ -464,6 +467,7 @@ fn unstated(fault: ModelFault) -> FailureClass
         ModelFault::ManyOut => FailureClass::Unimplemented(TrackingIssue::MODEL_MANY_OUT),
         ModelFault::Circuit => FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
         ModelFault::Binding => FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
+        ModelFault::Abstraction => FailureClass::Unimplemented(TrackingIssue::MODEL_ABSTRACTION),
         ModelFault::UnknownHead
         | ModelFault::Arity
         | ModelFault::IllSorted

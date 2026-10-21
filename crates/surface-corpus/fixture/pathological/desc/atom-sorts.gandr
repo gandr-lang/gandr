@@ -12,7 +12,7 @@ theory Minting {
 
 /// A port binds a variable of the atom sort `Name`: `pi+` binds a variable of
 /// a representable sort (`NonRepresentableBinder`); an atom is abstracted by
-/// the nominal binding port instead (#1426).
+/// `bind` instead (`model/desc/bind-port.gandr`).
 @[ refuses("IllFormedDescription") ]
 theory AtomBinder {
   sort Name : Atom;
