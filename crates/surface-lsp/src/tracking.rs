@@ -28,8 +28,6 @@ impl TrackingIssue
     pub const INNER: Self = Self(1204);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
-    /// A tile a declaration writes itself, past its head.
-    pub const OWN_TILE: Self = Self(1202);
     /// A tile of a root form that declares nothing, which the lowering reads
     /// as no run target yet.
     pub const RUN_TARGET: Self = Self(1105);
@@ -69,8 +67,6 @@ pub enum Gap
     Foreign,
     /// The documentation of the module a path import reads.
     Undocumented,
-    /// A tile a declaration writes itself past its head, of the rule named.
-    Owned(&'static str),
     /// In a root form that declares nothing: a run target or a stray.
     Undeclared,
     /// Inside a declaration, where the engine typed nothing.
@@ -89,7 +85,6 @@ impl Gap
         match self {
             Self::Foreign => TrackingIssue::SCHEME,
             Self::Undocumented => TrackingIssue::DOCUMENTATION,
-            Self::Owned(_) => TrackingIssue::OWN_TILE,
             Self::Undeclared => TrackingIssue::RUN_TARGET,
             Self::Untyped => TrackingIssue::INNER,
         }
@@ -106,7 +101,6 @@ impl Gap
         let what = match self {
             Self::Foreign => String::from("An address with a scheme resolves to nothing yet."),
             Self::Undocumented => String::from("Its module documentation is not shown yet."),
-            Self::Owned(rule) => format!("A tile a `{rule}` writes itself has no hover yet."),
             Self::Undeclared => String::from("A form that declares nothing has no hover yet."),
             Self::Untyped => String::from("A form the engine typed nothing at has no hover yet."),
         };
