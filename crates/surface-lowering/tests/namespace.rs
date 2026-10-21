@@ -32,6 +32,8 @@ use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::circuit::SignatureFault;
+use gandr_surface_lowering::description::DescriptionFault;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Binding;
@@ -57,6 +59,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 /// The depth of the chain the iteration claim is made over.
@@ -1519,6 +1522,142 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
             .all(|&(_, ref outcome)| !outcome.starts_with("Refused")),
         "`Model(Nat)` reads the imported block as a local one: {declarations:?}"
     );
+}
+
+/// The include faults a lowering's descriptions report, in the order the
+/// unit's sources write them.
+///
+/// # Specification
+/// trivial.
+fn include_faults(module: &LoweredModule<'_>) -> Vec<SignatureFault>
+{
+    module
+        .descriptions()
+        .diagnostics
+        .iter()
+        .filter_map(|diagnostic| {
+            if let DescriptionFault::Signature(
+                ref
+                fault @ (SignatureFault::UnknownInclude(_) | SignatureFault::AmbiguousInclude(_)),
+            ) = diagnostic.fault
+            {
+                Some(fault.clone())
+            }
+            else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// #1224: an `include` names a theory of its own source or of one its source
+/// imports unqualified, in the whole unit's lowering and in a document's
+/// resumed after its closure alike. A theory two imports present is refused
+/// as ambiguous; one only an import's import presents, or an aliased import,
+/// is not seen.
+#[test]
+fn an_include_reads_the_theories_its_source_imports_1224()
+{
+    let pbg = grammar();
+    let magma =
+        SourceText::from("theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}");
+    let pointed = SourceText::from(
+        "import \"./magma.gandr\" ;\ntheory Pointed {\n  include Mag;\n  oper one : () --> \
+         M;\n}",
+    );
+    let mag = Name::from("Mag");
+    let (text, unit) = laid(&[
+        (magma, &[]),
+        (pointed, &[ImportTarget::Source(SourceIndex::from(0_usize))]),
+        (
+            SourceText::from(
+                "import \"./pointed.gandr\" ;\ntheory Through {\n  include Mag;\n  oper two : \
+                 () --> M;\n}",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(1_usize))],
+        ),
+        (
+            SourceText::from(
+                "import \"./magma.gandr\" as magma ;\ntheory Aliased {\n  include Mag;\n}",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+        (
+            SourceText::from(
+                "theory Mag {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./magma.gandr\" ;\nimport \"./other.gandr\" ;\ntheory Both {\n  include \
+                 Mag;\n}",
+            ),
+            &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(4_usize)),
+            ],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert_eq!(
+        include_faults(&module),
+        Vec::from([
+            SignatureFault::UnknownInclude(mag.clone()),
+            SignatureFault::UnknownInclude(mag.clone()),
+            SignatureFault::AmbiguousInclude(mag),
+        ]),
+        "`Pointed` reads its import's `Mag`; `Through` and `Aliased` see none, `Both` two"
+    );
+
+    let (text, unit) = laid(&[
+        (magma, &[]),
+        (pointed, &[ImportTarget::Source(SourceIndex::from(0_usize))]),
+    ]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(|source| usize::from(source.start()))
+        .expect("the importer is the second source");
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        String::from(text.get(.. start).expect("the closure's text")),
+        Unit::new(unit.sources().get(.. 1_usize).expect("the magma").to_vec())
+            .expect("the magma alone is a unit"),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    let joined = parse(
+        &pbg,
+        SourceText::from(text.get(start ..).expect("the importer's text")),
+    )
+    .expect("the document parses")
+    .after(closure.tree(), SourceText::from(text.as_str()))
+    .expect("the document lays after its closure")
+    .into_tree();
+    let mut arena = CoreArena::new();
+    let resumed = closure
+        .resume(&joined, &unit, &mut arena)
+        .expect("the unit lowers resumed");
+    assert_eq!(
+        include_faults(&resumed),
+        Vec::new(),
+        "the resumed document reads its closure's `Mag`"
+    );
+    let mut whole_arena = CoreArena::new();
+    let whole = lower_unit(
+        &pbg,
+        &joined,
+        &unit,
+        &mut whole_arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the unit lowers");
+    assert_eq!(resumed, whole, "the module the whole unit lowers to");
 }
 
 /// #776: a unit is lowered a source at a time, so a source lowers to the same

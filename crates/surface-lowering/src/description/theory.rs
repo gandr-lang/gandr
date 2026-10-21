@@ -211,6 +211,7 @@ use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
 use crate::description::DescribedDeclaration as Earlier;
+use crate::description::Visible;
 use crate::form::Piece;
 use crate::form::Placed;
 use crate::model::Included;
@@ -221,6 +222,7 @@ use crate::model::PresentedCircuit;
 use crate::model::SortTerm;
 use crate::model::presentation;
 use crate::model::presented_names;
+use crate::unit::SourceIndex;
 
 /// The two sides of a signature and its rewrite-sorted binders.
 struct Boundary
@@ -330,7 +332,7 @@ impl Reader<'_, '_>
     /// Read each theory member independently, preserving its declared sort set,
     /// into the block's `Theory` value and the description that value reads as.
     /// Each `include` member first extends the presentation by the members of
-    /// the block it names, read before this one in `earlier`; each `ext`
+    /// the block it names among those `visible` holds; each `ext`
     /// member declares its cell sort among the block's sorts and generates its
     /// operations and laws after the written ones.
     ///
@@ -344,9 +346,9 @@ impl Reader<'_, '_>
     ///   block's. An `ext` member's generated operations and laws follow the
     ///   written ones, each placed at the member's keyword.
     /// - fails: a malformed signature head refuses the whole declaration; an
-    ///   `include` that names no earlier block or whose members clash with the
-    ///   presentation's, and an `ext` member the block cannot generate, is that
-    ///   member's own diagnostic.
+    ///   `include` that names no visible block, names two, or whose members
+    ///   clash with the presentation's, and an `ext` member the block cannot
+    ///   generate, is that member's own diagnostic.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
     ///   source's members and the report, which the call does not retain.
@@ -371,7 +373,7 @@ impl Reader<'_, '_>
         at: Placed,
         run: &mut Run<'_>,
         serial: NominalSerial,
-        earlier: &[Earlier],
+        visible: &Visible<'_>,
         diagnostics: &mut Vec<DescriptionDiagnostic>,
     ) -> Result<DescribedDeclaration, DescriptionDiagnostic>
     {
@@ -398,7 +400,7 @@ impl Reader<'_, '_>
                 continue;
             }
             let (declaration, presented, included, include_tile) =
-                match self.included(&mut reading, earlier) {
+                match self.included(&mut reading, visible) {
                     Ok(found) => found,
                     Err(diagnostic) => {
                         diagnostics.push(diagnostic);
@@ -629,26 +631,32 @@ impl Reader<'_, '_>
         })
     }
 
-    /// The `theory` block an `include` member names, the last of `earlier`
-    /// that presents under that name, its presentation's members, and the
-    /// member's name tile.
+    /// The `theory` block an `include` member names, its presentation's
+    /// members, and the member's name tile: the last block of its own source
+    /// under that name, or else the one block of the sources it imports
+    /// unqualified.
     ///
     /// # Specification
     /// - requires: `run` stands just past the member's `include` keyword.
     /// - ensures: the block, its presentation, the parts its value decodes to,
-    ///   and the tile naming it.
-    /// - fails: a missing name is malformed; a name no block of `earlier`
-    ///   presents is [`SignatureFault::UnknownInclude`]; a value that does not
-    ///   decode is malformed.
+    ///   and the tile naming it; a block of the including source shadows the
+    ///   imported ones, and a later block of one imported source an earlier.
+    /// - fails: a missing name is malformed; a name no block of `visible`
+    ///   presents is [`SignatureFault::UnknownInclude`]; a name blocks of two
+    ///   imported sources present, and none of its own, is
+    ///   [`SignatureFault::AmbiguousInclude`]; a value that does not decode is
+    ///   malformed.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns the located diagnostic of the first failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::signature`].
+    /// - hypothesis: L3 — as [`Self::signature`]; one name presented by two
+    ///   imported sources is refused where one presented by one is read.
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
+    /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
     #[spec(ensures: |ret| match ret {
         | Ok((found, presented, _, _)) => {
             matches!(found.presentation, Maybe::Present(ref own) if own == presented)
@@ -658,7 +666,7 @@ impl Reader<'_, '_>
     fn included<'earlier>(
         &self,
         run: &mut Run<'_>,
-        earlier: &'earlier [Earlier],
+        visible: &Visible<'earlier>,
     ) -> Result<
         (
             &'earlier Earlier,
@@ -671,17 +679,38 @@ impl Reader<'_, '_>
     {
         let named = run.take()?;
         let Written(name) = self.text(named);
-        let found = earlier
+        let presents = |declaration: &'earlier Earlier| match declaration.presentation {
+            Maybe::Present(ref presented) if declaration.description.id.name.as_ref() == name => {
+                Some((declaration, presented))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        let mut found = visible
+            .own
             .iter()
             .rev()
-            .find_map(|declaration| match declaration.presentation {
-                Maybe::Present(ref presented)
-                    if declaration.description.id.name.as_ref() == name =>
-                {
-                    Some((declaration, presented))
-                },
-                Maybe::Present(_) | Maybe::Absent(_) => None,
-            });
+            .find_map(|&declaration| presents(declaration));
+        if found.is_none() {
+            let mut answered: Option<SourceIndex> = None;
+            for &(source, declaration) in visible.imported.iter().rev() {
+                let Some(presented) = presents(declaration)
+                else {
+                    continue;
+                };
+                match answered {
+                    Some(held) if held != source => {
+                        return Err(
+                            run.signature_fault(SignatureFault::AmbiguousInclude(Name::from(name)))
+                        );
+                    },
+                    Some(_) => {},
+                    None => {
+                        answered = Some(source);
+                        found = Some(presented);
+                    },
+                }
+            }
+        }
         let Some((declaration, presented)) = found
         else {
             return Err(run.signature_fault(SignatureFault::UnknownInclude(Name::from(name))));

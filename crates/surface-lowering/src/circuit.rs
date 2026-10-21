@@ -70,8 +70,12 @@ pub enum SignatureFault
     /// A port name written twice on an operation's boundary: two ports, not
     /// one wire.
     SharedPort(Name),
-    /// An `include` names no `theory` block read before the including one.
+    /// An `include` names no `theory` block its source reads before the
+    /// including one or imports unqualified.
     UnknownInclude(Name),
+    /// An `include` names a `theory` block of two sources its source imports
+    /// unqualified, and none of its own.
+    AmbiguousInclude(Name),
     /// The included theory's members do not extend the block's.
     IncludeClash(IncludeClash),
     /// An `ext` member states no extension type the block can generate.
