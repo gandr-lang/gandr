@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::fmt;
 use core::num::ParseIntError;
 use core::str::FromStr;
@@ -271,8 +272,9 @@ pub fn lower_median(mut samples: Vec<Seconds>) -> Maybe<Seconds, Unsampled>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one row per budget, in order, whose median is the lower median of
-///   the samples of its lane in its cone and whose count is theirs; samples of
-///   lanes without a budget are ignored.
+///   the samples of its lane and whose count is theirs: the samples in its own
+///   cone when the lane has a deep budget, and those of both cones when it has
+///   only the one; samples of lanes without a budget are ignored.
 /// - provides: the rows of either table.
 /// - fails: never.
 /// - panics: none.
@@ -280,17 +282,30 @@ pub fn lower_median(mut samples: Vec<Seconds>) -> Maybe<Seconds, Unsampled>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a cone-classified lane sampled in both cones beside a
-///   single-budget lane, one sampled three times and one never; grouping by the
-///   lane alone, or dropping the unsampled row, changes the rendered report.
+///   single-budget lane sampled in both, one sampled three times and one never;
+///   grouping by the lane alone, keying a single-budget lane's samples by cone,
+///   or dropping the unsampled row changes the rendered report.
 /// - witness: `report::tests::the_report_lists_every_budget_in_order`
 /// - witness: `report::tests::a_cone_classified_lane_holds_each_cone_to_its_own_budget`
+/// - witness: `report::tests::a_single_budget_lane_counts_both_cones`
 fn rows(
     budgets: &[Budget],
     samples: Vec<(Cone, Sample)>,
 ) -> Vec<Row>
 {
+    let classified: BTreeSet<&Lane> = budgets
+        .iter()
+        .filter(|budget| budget.cone == Cone::Deep)
+        .map(|budget| &budget.lane)
+        .collect();
     let mut by_lane: BTreeMap<(Lane, Cone), Vec<Seconds>> = BTreeMap::new();
     for (cone, sample) in samples {
+        let cone = if classified.contains(&sample.lane) {
+            cone
+        }
+        else {
+            Cone::Surface
+        };
         by_lane
             .entry((sample.lane, cone))
             .or_default()
@@ -672,6 +687,55 @@ mod tests
              \nRuns: 12, 11.\n"
         );
         assert_eq!(report.standing(), Standing::Within);
+    }
+
+    #[test]
+    fn a_single_budget_lane_counts_both_cones()
+    {
+        let budgets = [
+            "join the enforcing shards (linux)=120"
+                .parse::<Budget>()
+                .unwrap(),
+            "test enforcing targets (linux)=360".parse().unwrap(),
+            "test enforcing targets (linux):deep=540".parse().unwrap(),
+        ];
+        let sample = |cone: Cone, lane: &str, time: u64| {
+            (cone, Sample {
+                lane: Lane::from(lane),
+                time: Seconds::from(time),
+            })
+        };
+        let report = Report::new(
+            &budgets,
+            vec!["12".parse::<RunId>().unwrap(), "11".parse().unwrap()],
+            vec![
+                sample(Cone::Surface, "join the enforcing shards (linux)", 60),
+                sample(Cone::Deep, "join the enforcing shards (linux)", 150),
+                sample(Cone::Surface, "test enforcing targets (linux)", 300),
+                sample(Cone::Deep, "test enforcing targets (linux)", 500),
+            ],
+        );
+        // The join has one budget, so its deep landing's 150 s counts beside
+        // the surface 60 s; the enforcing lane keeps its cones apart.
+        let text = report.to_string();
+        assert!(
+            text.contains(
+                "| join the enforcing shards (linux) | surface | 1m 0s | 2m 0s | 2 | within |"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "| test enforcing targets (linux) | surface | 5m 0s | 6m 0s | 1 | within |"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "| test enforcing targets (linux) | deep | 8m 20s | 9m 0s | 1 | within |"
+            ),
+            "{text}"
+        );
     }
 
     #[test]
