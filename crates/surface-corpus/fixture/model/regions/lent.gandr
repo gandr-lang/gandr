@@ -1,0 +1,20 @@
+// A function over its caller's region, as Rust writes `fn read<'a>(k: &'a
+// T)`: `read` forces a thunk kept in whatever region its caller holds, and a
+// call places that region at the scope its argument is kept in.
+
+/// Reads the thunk it is lent, whatever region keeps it.
+@[ checks ]
+def read @[r : Region] (k : (() => Integer) at r) -> -F Integer { force k }
+
+/// Lends `read` a view kept in the handler's region, which the call reads it at.
+@[ runs("3") ]
+def lent() -> -F Integer {
+  hold s = 3;
+  handle c : Proc {
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    read(k)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, rest) => pure 0
+  }
+}

@@ -600,6 +600,7 @@ pub fn type_value(
         },
     };
     let outer = context.start_typings();
+    let abstracted = super::abstracted_by(context.arena(), goal);
     let mut machine = Machine {
         context,
         frames: Vec::new(),
@@ -610,7 +611,7 @@ pub fn type_value(
         marking: Marking::Total,
         anchors: Vec::new(),
         marks: Vec::new(),
-        sessions: super::Sessions::new(base),
+        sessions: super::Sessions::new(base, abstracted),
         root: quenchant_shape::shape::Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
     };

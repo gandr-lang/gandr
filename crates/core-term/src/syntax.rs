@@ -1114,14 +1114,18 @@ pub enum ValueType
     /// whole, through a send, an operation's payload or a resumption.
     Buffer,
     /// A value kept in a region: `A at c`, a value of `A` that may capture a
-    /// shared view lent while the capability scope at `region` lives, and so
-    /// lives as long as that scope rather than the access.
+    /// shared view lent while the region lives, and so lives as long as the
+    /// region rather than the access: a capability scope's or a hold's, or a
+    /// caller's region the definition abstracts, `A at r` under `@[r :
+    /// Region]`.
     Kept
     {
         /// The kept value's type.
         value: ValueTypeId,
-        /// The capability scope it lives in.
-        region: crate::effect::capability::RegionDepth,
+        /// The region it lives in:
+        /// [`crate::effect::capability::Region::Scoped`]
+        /// or [`crate::effect::capability::Region::Bound`].
+        region: crate::effect::capability::Region,
     },
     /// A type that names a world: `A at w`, a handle to a value meaningful
     /// at `w`, or `cap_w`, the one-shot authority to migrate to `w`.

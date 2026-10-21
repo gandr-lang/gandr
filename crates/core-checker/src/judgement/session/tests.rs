@@ -1466,7 +1466,10 @@ fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
         marking: Marking::Strict,
         anchors: Vec::new(),
         marks: Vec::new(),
-        sessions: Sessions::new(gandr_core_term::BinderDepth::default()),
+        sessions: Sessions::new(
+            gandr_core_term::BinderDepth::default(),
+            crate::capability::Reach::Clear,
+        ),
         root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
         staged_motives: Vec::new(),
     };
@@ -1503,7 +1506,9 @@ fn a_fork_carries_nothing_kept_in_a_region()
     let string = arena.value_type_base(BaseType::String);
     let kept = arena.value_type_kept(
         string,
-        gandr_core_term::effect::capability::RegionDepth::from(1_u32),
+        gandr_core_term::effect::capability::Region::Scoped(
+            gandr_core_term::effect::capability::RegionDepth::from(1_u32),
+        ),
     );
     // `?A. end`: the child receives one payload, then closes.
     let receiving = |arena: &mut CoreArena, payload| {

@@ -48,10 +48,12 @@
 //! displayed in.
 //!
 //! A renaming is the rewrite an instantiation needs. It names no binder: it
-//! replaces a constant by another and an atom by a type, wherever either
-//! stands, so a body written against one set of declarations reads against
-//! another. Constants and the types replacing atoms are closed, so a renaming
-//! carries nothing under the binders it crosses.
+//! replaces a constant by another, an atom by a type and a bound region by a
+//! region, wherever each stands, so a body written against one set of
+//! declarations reads against another and a signature abstracted over its
+//! caller's regions reads at one call's. Constants, the types replacing atoms
+//! and regions are closed, so a renaming carries nothing under the binders it
+//! crosses.
 //!
 //! # Elaborating nested computations
 //!
@@ -112,6 +114,8 @@ use crate::arena::ComputationId;
 use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
+use crate::effect::capability::Region;
+use crate::effect::capability::RegionBinder;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
@@ -3432,11 +3436,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             },
             ValueType::Kept { value, region } => {
                 let rewritten = Self::value_type(&mut self.results, value);
-                if rewritten == value {
+                let placed = self.renaming.placed(region);
+                if (rewritten, placed) == (value, region) {
                     id
                 }
                 else {
-                    self.arena.value_type_kept(rewritten, region)
+                    self.arena.value_type_kept(rewritten, placed)
                 }
             },
             ValueType::PathUniverse(source, target) => {
@@ -3513,11 +3518,12 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         Ok(row) => row,
                         Err(never) => match never {},
                     };
-                if rewritten == *authority {
+                let placed = self.renaming.placed(region);
+                if rewritten == *authority && placed == region {
                     id
                 }
                 else {
-                    self.arena.value_type_capability(rewritten, grade, region)
+                    self.arena.value_type_capability(rewritten, grade, placed)
                 }
             },
             ValueType::Product(ref components) | ValueType::Sum(ref components) => {
@@ -5557,14 +5563,14 @@ pub fn substitute_environment_traced(
     node_term(substituted, subject)
 }
 
-/// The constants and atoms one instantiation replaces: each constant by
-/// another, each atom by a type.
+/// The constants, atoms and bound regions one instantiation replaces: each
+/// constant by another, each atom by a type, each bound region by a region.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; a replacing type is a closed
 ///   type of the arena the renaming is applied in.
 /// - ensures: a later entry for a name replaces an earlier one, so the renaming
-///   is a function on constants and a function on atoms.
+///   is a function on constants, on atoms and on bound regions.
 /// - provides: what [`rename_value_traced`] and [`rename_value_type_traced`]
 ///   read.
 /// - fails: not applicable to the data item.
@@ -5575,6 +5581,7 @@ pub fn substitute_environment_traced(
 /// # Adequacy
 /// - hypothesis: L3 — as [`rename_value_traced`].
 /// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+/// - witness: `rewrite::tests::a_renaming_places_each_named_bound_region_wherever_it_stands`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Renaming
 {
@@ -5582,6 +5589,8 @@ pub struct Renaming
     constants: BTreeMap<ConstantIndex, ConstantIndex>,
     /// Each atom replaced, with the type replacing it.
     atoms: BTreeMap<ConstantIndex, ValueTypeId>,
+    /// Each bound region replaced, with the region replacing it.
+    regions: BTreeMap<RegionBinder, Region>,
 }
 
 impl Renaming
@@ -5597,6 +5606,7 @@ impl Renaming
         Self {
             constants: BTreeMap::new(),
             atoms: BTreeMap::new(),
+            regions: BTreeMap::new(),
         }
     }
 
@@ -5626,6 +5636,48 @@ impl Renaming
     )
     {
         let _replaced = self.atoms.insert(from, to);
+    }
+
+    /// Replace the bound region `from` by the region `to`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn region(
+        &mut self,
+        from: RegionBinder,
+        to: Region,
+    )
+    {
+        let _replaced = self.regions.insert(from, to);
+    }
+
+    /// The region `region` stands at under this renaming: the one it names
+    /// for a bound region it replaces, `region` itself otherwise.
+    ///
+    /// # Specification
+    /// - ensures: [`Region::Bound`] at a binder the renaming names is the
+    ///   region named for it; every other region is itself.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`rename_value_type_traced`].
+    /// - witness: `rewrite::tests::a_renaming_places_each_named_bound_region_wherever_it_stands`
+    #[spec(ensures: |ret| match region {
+        Region::Bound(binder) => ret == self.regions.get(&binder).copied().unwrap_or(region),
+        Region::Held | Region::Scoped(_) => ret == region,
+    })]
+    #[inline]
+    #[must_use]
+    fn placed(
+        &self,
+        region: Region,
+    ) -> Region
+    {
+        match region {
+            Region::Bound(binder) => self.regions.get(&binder).copied().unwrap_or(region),
+            Region::Held | Region::Scoped(_) => region,
+        }
     }
 }
 
@@ -5682,14 +5734,21 @@ pub fn rename_value_traced(
 /// # Specification
 /// - requires: as [`rename_value_traced`].
 /// - ensures: as [`rename_value_traced`], for a value type: an atom the
-///   renaming names standing as the whole subject is the type it names for it.
-/// - provides: instantiating a declared type, a kind or a representation.
+///   renaming names standing as the whole subject is the type it names for it,
+///   and a kept type or a capability at a bound region it names stands at the
+///   region it names for it.
+/// - provides: instantiating a declared type, a kind or a representation, and a
+///   signature abstracted over regions at one call's.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`rename_value_traced`].
+/// - hypothesis: L3 — as [`rename_value_traced`]; a function type keeping a
+///   value at a bound region in its domain and inside its returner's thunk,
+///   renamed at a scoped region, keeps both there and keeps an unnamed bound
+///   region and a scoped one as they stand.
 /// - witness: `rewrite::tests::a_renaming_replaces_exactly_the_named_constants_and_atoms`
+/// - witness: `rewrite::tests::a_renaming_places_each_named_bound_region_wherever_it_stands`
 #[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == subject || arena.value_type(ret).is_some()))]
 #[inline]
 #[must_use]

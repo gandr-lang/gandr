@@ -152,14 +152,15 @@ impl Machine<'_, '_>
         }
     }
 
-    /// Refuse an answer that names the innermost region, `region`, deep: the
+    /// Refuse an answer that names the innermost region deep, `around` being
+    /// the region the answer lands in, the one open around the innermost: the
     /// side condition `ρ ∉ fv(A)` of a region's body.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: nothing changes.
     /// - fails: [`CheckRefusal::CapabilityEscaped`] at `at` for an answer whose
-    ///   capability lives in `region` or a deeper one, and
+    ///   capability lives in a region that ends while `around` is live, and
     ///   [`CheckRefusal::Access`] naming [`AccessDefect::KeptEscaped`] at `at`
     ///   for one whose value is kept there; [`CheckRefusal::DanglingNode`] for
     ///   an answer outside the arena.
@@ -181,13 +182,13 @@ impl Machine<'_, '_>
         &self,
         at: ComputationId,
         answer: CompTypeId,
-        region: RegionDepth,
+        around: Region,
     ) -> Result<(), CheckRefusal>
     {
         match crate::capability::reaches(
             self.context.arena(),
             TypeNode::Computation(answer),
-            Region::Scoped(region),
+            around,
         )? {
             crate::capability::Reach::Clear => Ok(()),
             crate::capability::Reach::Mentions => Err(CheckRefusal::CapabilityEscaped {
@@ -268,12 +269,8 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::MachineInvariant);
         };
         if let Direction::Check(expected) = direction {
-            let region = u32::try_from(self.sessions.regions.len())
-                .ok()
-                .and_then(|open| open.checked_add(1_u32))
-                .map(RegionDepth::from)
-                .ok_or(CheckRefusal::MachineInvariant)?;
-            self.answers_outside(at, expected, region)?;
+            let around = Region::Scoped(self.innermost_region()?);
+            self.answers_outside(at, expected, around)?;
         }
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, held);
@@ -330,7 +327,10 @@ impl Machine<'_, '_>
             },
         };
         if let Some(ty) = synthesised {
-            self.answers_outside(at, ty, self.innermost_region()?)?;
+            let around = u32::from(self.innermost_region()?)
+                .checked_sub(1)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.answers_outside(at, ty, Region::Scoped(RegionDepth::from(around)))?;
         }
         self.close_region()?;
         let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;

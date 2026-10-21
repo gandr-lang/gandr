@@ -103,6 +103,8 @@ use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionBinder;
+use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::effect::host::AuthorityError;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_kernel_term::ConstantIndex;
@@ -323,15 +325,15 @@ impl HostGrant
     }
 }
 
-/// Whether a type mentions a region.
+/// Whether a type mentions a region that ends too soon.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Reach
 {
-    /// Nothing in the type lives in the region or a deeper one.
+    /// Nothing in the type lives in such a region.
     Clear,
-    /// A capability in the type lives in the region or a deeper one.
+    /// A capability in the type lives in such a region.
     Mentions,
-    /// A value in the type is kept in the region or a deeper one.
+    /// A value in the type is kept in such a region.
     Keeps,
 }
 
@@ -418,19 +420,24 @@ pub fn authorise(
     }
 }
 
-/// Whether the type `root` mentions the region `region` or one nested in it:
-/// the scope rule's side condition `ρ ∉ (A, ε)`, and the capture rule's.
+/// Whether the type `root` mentions a region that ends while `outside` is
+/// still live: the scope rule's side condition `ρ ∉ (A, ε)`, read from the
+/// region around the scope, and the capture rule's, read from the region the
+/// captor is kept in.
 ///
 /// # Specification
 /// - ensures: [`Reach::Mentions`] when a capability type reachable through
-///   `root`'s type formers lives in [`Region::Scoped`] at `region`'s depth or
-///   deeper, and [`Reach::Keeps`] when a kept type there is kept at that depth
-///   or deeper, whichever the walk meets first; [`Reach::Clear`] otherwise, and
-///   always for [`Region::Held`]. A data type's quoted arguments are read; a
-///   code is not decoded.
+///   `root`'s type formers lives in a region that does not outlive `outside`,
+///   and [`Reach::Keeps`] when a kept type there is kept in such a region,
+///   whichever the walk meets first; [`Reach::Clear`] otherwise. Every region
+///   outlives itself, so a type that names only `outside` and the regions
+///   around it is clear. A data type's quoted arguments are read; a code is not
+///   decoded.
 /// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
 ///   resolve.
 /// - panics: none.
+/// - executable: none — the walk is the specification; [`first_region`] states
+///   the walk.
 ///
 /// # Errors
 /// - [`CheckRefusal`] — as above.
@@ -439,20 +446,116 @@ pub fn authorise(
 /// - hypothesis: L3 — an answer returning the scope's own capability, one whose
 ///   row carries it, and one returning a held capability, each asserted as
 ///   refused or checked; a thunk kept at the scope's region returned from it is
-///   refused.
+///   refused, and one kept at a region its definition abstracts is not.
 /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
 /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
-#[spec(ensures: |ret| region != Region::Held || matches!(ret, Ok(Reach::Clear)))]
+/// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+#[inline]
 pub fn reaches(
     arena: &CoreArena,
     root: TypeNode,
-    region: Region,
+    outside: Region,
 ) -> Result<Reach, CheckRefusal>
 {
-    let Region::Scoped(floor) = region
-    else {
-        return Ok(Reach::Clear);
-    };
+    first_region(arena, root, |region| {
+        region.outlives(outside) == RegionOrder::EndsFirst
+    })
+}
+
+/// How the type `root` reaches a region its definition abstracts, `A at r`
+/// under `@[r : Region]`, anywhere a region stands in it.
+///
+/// # Specification
+/// - ensures: what [`first_region`] answers choosing every [`Region::Bound`]:
+///   [`Reach::Clear`] exactly when the type names no region binder.
+/// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
+///   resolve.
+/// - panics: none.
+/// - executable: none — as [`reaches`].
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function type keeping its parameter at a bound region
+///   names one, and the same type at a scope's region names none.
+/// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+#[inline]
+pub fn abstracts(
+    arena: &CoreArena,
+    root: TypeNode,
+) -> Result<Reach, CheckRefusal>
+{
+    first_region(arena, root, |region| matches!(region, Region::Bound(_)))
+}
+
+/// The region binders the type `root` names, `A at r` under `@[r : Region]`,
+/// wherever a region stands in it, each once, in ascending order.
+///
+/// # Specification
+/// - ensures: exactly the binders of the [`Region::Bound`] regions
+///   [`first_region`] meets, read through every capability and kept type.
+/// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
+///   resolve.
+/// - panics: none.
+/// - executable: none — as [`reaches`].
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function type keeping one value at each of two binders,
+///   one of them twice, names both once.
+/// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
+#[inline]
+pub fn binders(
+    arena: &CoreArena,
+    root: TypeNode,
+) -> Result<alloc::collections::BTreeSet<RegionBinder>, CheckRefusal>
+{
+    let mut named = alloc::collections::BTreeSet::new();
+    let _clear = first_region(arena, root, |region| {
+        if let Region::Bound(binder) = region {
+            let _first = named.insert(binder);
+        }
+        false
+    })?;
+    Ok(named)
+}
+
+/// The first capability or kept type the type `root` reaches through its
+/// formers whose region `chosen` picks: [`Reach::Mentions`] for a capability,
+/// [`Reach::Keeps`] for a kept type, [`Reach::Clear`] for none.
+///
+/// # Specification
+/// - ensures: a capability or kept type whose region `chosen` passes over is
+///   read through, its authority's types and its kept value; a data type's and
+///   a codata type's quoted arguments are read; a code is not decoded.
+/// - fails: [`CheckRefusal::DanglingNode`] for a reachable type that does not
+///   resolve.
+/// - panics: none.
+/// - executable: none — the answer is the walk itself; a clause restating it
+///   would walk the type again.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: the `while let` worklist, not recursion; each node is popped once
+///   per path that reaches it, and the arena is acyclic.
+/// - measure: the paths under `root` not yet popped.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`reaches`] and [`abstracts`].
+/// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+fn first_region<Chosen>(
+    arena: &CoreArena,
+    root: TypeNode,
+    mut chosen: Chosen,
+) -> Result<Reach, CheckRefusal>
+where
+    Chosen: FnMut(Region) -> bool,
+{
     let mut pending = alloc::vec![root];
     while let Some(node) = pending.pop() {
         let dangling = CheckRefusal::DanglingNode {
@@ -460,16 +563,13 @@ pub fn reaches(
         };
         match node {
             TypeNode::Value(at) => match *arena.value_type(at).ok_or(dangling)? {
-                ValueType::Capability {
-                    region: Region::Scoped(depth),
-                    ..
-                } if depth >= floor => return Ok(Reach::Mentions),
+                ValueType::Capability { region, .. } if chosen(region) => {
+                    return Ok(Reach::Mentions);
+                },
                 ValueType::Capability { ref authority, .. } => {
                     pending.extend(authority.types().map(TypeNode::Value));
                 },
-                ValueType::Kept { region: depth, .. } if depth >= floor => {
-                    return Ok(Reach::Keeps);
-                },
+                ValueType::Kept { region, .. } if chosen(region) => return Ok(Reach::Keeps),
                 ValueType::Kept { value, .. } => pending.push(TypeNode::Value(value)),
                 ValueType::Data { ref arguments, .. } => {
                     pending.extend(arguments.iter().filter_map(|&argument| {

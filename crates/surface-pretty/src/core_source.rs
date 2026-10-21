@@ -440,6 +440,9 @@ pub struct CoreSource<'arena>
     /// The names of the capability scopes the root stands in, outermost
     /// first.
     regions: &'arena [Option<Name<'arena>>],
+    /// The names of the region binders of the definition the root belongs
+    /// to, by ordinal.
+    binders: &'arena [Option<Name<'arena>>],
     /// The name the source writes for each dependent arrow's binder,
     /// ascending by the arrow.
     arrows: &'arena [(CompTypeId, Name<'arena>)],
@@ -469,6 +472,7 @@ impl<'arena> CoreSource<'arena>
             context: &[],
             recursive: None,
             regions: &[],
+            binders: &[],
             arrows: &[],
             relations: &[],
         }
@@ -583,6 +587,21 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { regions, ..self }
+    }
+
+    /// This source, its roots in a definition over region binders named by
+    /// `binders`, by ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn bounding(
+        self,
+        binders: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { binders, ..self }
     }
 
     /// This source, naming each dependent arrow's binder as `arrows` writes
@@ -2203,6 +2222,17 @@ impl Source for CoreSource<'_>
     fn regions(&self) -> &[Option<Name<'_>>]
     {
         self.regions
+    }
+
+    /// The names of the region binders of the definition the root belongs
+    /// to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn region_binders(&self) -> &[Option<Name<'_>>]
+    {
+        self.binders
     }
 
     /// The name the source writes for a dependent arrow's binder.

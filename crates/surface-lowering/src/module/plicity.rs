@@ -563,12 +563,14 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// How a telescope entry's sort `sort` binds: a stage when it is the
-    /// type head `Size`, a value otherwise.
+    /// type head `Size`, a region when it is the type head `Region`, a value
+    /// otherwise.
     ///
     /// # Specification
     /// - requires: `scratch` is free for reading pieces.
     /// - ensures: [`EntrySort::Stage`] exactly when the sort reads as one tile
-    ///   spelling `Size`.
+    ///   spelling `Size`, and [`EntrySort::Region`] exactly when it reads as
+    ///   one spelling `Region`.
     /// - fails: a form fault reading the sort's pieces.
     /// - panics: none.
     ///
@@ -576,9 +578,10 @@ impl<'source> Collector<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a stage binder and a type entry separate the two
-    ///   answers.
+    /// - hypothesis: L3 — a stage binder, a region binder and a type entry
+    ///   separate the three answers.
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
+    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |sorted| *sorted == EntrySort::Value || scratch.pieces.len() == 1))]
     fn sort_of(
         &self,
@@ -587,17 +590,16 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<EntrySort, LoweringRefusal<'source>>
     {
         read_pieces(self.pbg, self.tree, sort.node, scratch)?;
+        let [Piece::Tile { at, .. }] = *scratch.pieces.as_slice()
+        else {
+            return Ok(EntrySort::Value);
+        };
 
-        Ok(
-            if let [Piece::Tile { at, .. }] = *scratch.pieces.as_slice()
-                && self.name_of(at).as_ref() == "Size"
-            {
-                EntrySort::Stage
-            }
-            else {
-                EntrySort::Value
-            },
-        )
+        Ok(match self.name_of(at).as_ref() {
+            "Size" => EntrySort::Stage,
+            "Region" => EntrySort::Region,
+            _ => EntrySort::Value,
+        })
     }
 }
 
@@ -610,6 +612,9 @@ enum EntrySort
 {
     /// A stage, sorted by `Size`: the signature's quantifier.
     Stage,
+    /// A region, sorted by `Region`: the caller's region the definition
+    /// abstracts, erased.
+    Region,
     /// A value of the sort: an implicit parameter.
     Value,
 }

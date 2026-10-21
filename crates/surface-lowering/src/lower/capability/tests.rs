@@ -914,7 +914,7 @@ fn a_capability_at_a_scope_lives_in_its_region()
         kept(subject),
         (
             Some(ValueType::Base(BaseType::Integer)),
-            RegionDepth::from(1_u32)
+            Region::Scoped(RegionDepth::from(1_u32))
         ),
         "the integer kept in the scope's region"
     );
@@ -935,8 +935,8 @@ fn a_capability_at_a_scope_lives_in_its_region()
     assert_eq!(
         (kept(subject), kept(rest)),
         (
-            (integer.clone(), RegionDepth::from(1_u32)),
-            (integer, RegionDepth::from(2_u32))
+            (integer.clone(), Region::Scoped(RegionDepth::from(1_u32))),
+            (integer, Region::Scoped(RegionDepth::from(2_u32)))
         ),
         "`at s` names the hold's region and `at c` the scope's inside it"
     );
@@ -950,6 +950,58 @@ fn a_capability_at_a_scope_lives_in_its_region()
             verdict_of(&module, &report, name.into())
         );
     }
+}
+
+/// A kept type naming a region binder of its definition, `A at r` under
+/// `@[q : Region, r : Region]`, keeps its value at that binder's ordinal among
+/// the telescope's region binders, and the binder named as a value is refused
+/// as one (#1221).
+#[test]
+fn a_kept_type_at_a_region_binder_is_bound_to_it_1221()
+{
+    use gandr_core_term::effect::capability::RegionBinder;
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def read @[q : Region, r : Region] (k : (() => Integer) at r) -> -F Integer { force \
+             k }\n",
+            "def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }\n",
+        )),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "read".into())
+    else {
+        panic!(
+            "a definition over regions lowers: {:?}",
+            outcome_of(&module, "read".into())
+        );
+    };
+    let Some(&ValueType::Thunk(body)) = arena.value_type(declared_type)
+    else {
+        panic!("a function type");
+    };
+    let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(body)
+    else {
+        panic!("an arrow");
+    };
+    assert!(
+        matches!(
+            arena.value_type(domain),
+            Some(&ValueType::Kept { region, .. }) if region == Region::Bound(RegionBinder::from(1_u32))
+        ),
+        "`at r` keeps the parameter at r, the second region binder: {:?}",
+        arena.value_type(domain)
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "named".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::RegionAsValue { name, .. })
+                if name == SurfaceName::from("r")
+        ),
+        "a region binder is no value: {:?}",
+        outcome_of(&module, "named".into())
+    );
 }
 
 #[test]

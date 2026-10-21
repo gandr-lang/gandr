@@ -244,15 +244,15 @@ pub enum ValueTypeView<'arena>
         /// The stage.
         stage: gandr_kernel_term::Stage,
     },
-    /// A value kept in the region of the capability scope at `region`: only
-    /// a force and the capture rule read through it; every other rule meets it
-    /// as a former of its own.
+    /// A value kept in `region`, a capability scope's or a region the
+    /// definition abstracts: only a force and the capture rule read through
+    /// it; every other rule meets it as a former of its own.
     Kept
     {
         /// The kept value's type.
         value: ValueTypeId,
-        /// The capability scope it lives in.
-        region: gandr_core_term::effect::capability::RegionDepth,
+        /// The region it lives in.
+        region: gandr_core_term::effect::capability::Region,
     },
     /// A type that names a world: `A at w`, a handle to a value meaningful at
     /// `w`, or `cap_w`, the one-shot authority to migrate to `w`.

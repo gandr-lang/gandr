@@ -938,14 +938,14 @@ pub enum Former<'source, Node>
         /// The world, when the source names it.
         world: Option<Name<'source>>,
     },
-    /// A value type kept in the region of the capability scope at `region`,
-    /// `A at c`.
+    /// A value type kept in a region, `A at c`: a capability scope's or a
+    /// hold's, or a definition's region binder.
     Kept
     {
         /// The kept value's type.
         inner: Node,
-        /// The capability scope it lives in, counted from the outermost.
-        region: gandr_core_term::effect::capability::RegionDepth,
+        /// The region it lives in, a scope's counted from the outermost.
+        region: gandr_core_term::effect::capability::Region,
     },
     /// A hold of a value at the world it is computed at, `hold v`.
     WorldHold(Node),
@@ -1344,6 +1344,34 @@ pub trait Source
     /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
     #[inline]
     fn regions(&self) -> &[Option<Name<'_>>]
+    {
+        &[]
+    }
+
+    /// The names of the region binders of the definition the presented root
+    /// belongs to, by ordinal; an entry the source cannot name is none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per region binder the definition abstracts, so a
+    ///   kept type or a capability living at the binder of ordinal `n` reads as
+    ///   the `n`-th entry, counted from zero. The default is none: a root in no
+    ///   definition over regions.
+    /// - provides: the binder a kept type's `at` names inside a definition over
+    ///   regions.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition over a region binder spells the binder
+    ///   at each type kept there; a type kept there outside one spells without
+    ///   it, approximately.
+    /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+    #[inline]
+    fn region_binders(&self) -> &[Option<Name<'_>>]
     {
         &[]
     }

@@ -3688,6 +3688,44 @@ fn a_function_definition_spells_whole_941()
     );
 }
 
+/// A definition over region binders spells whole with its telescope,
+/// `@[r : Region]`, before its parameters, and each type kept at a binder
+/// names it; a binder below the greatest one kept at is written though
+/// nothing is kept there, so each `at` reads back at its own ordinal (#1221).
+#[test]
+fn a_definition_over_a_region_spells_its_binder_1221()
+{
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
+
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let [first, second] = [0_u32, 1].map(|ordinal| {
+        let kept = core.value_type_kept(nat, Region::Bound(RegionBinder::from(ordinal)));
+        let returns = core.comp_type_returner(kept);
+        let function = core.comp_type_arrow(kept, returns);
+        core.value_type_thunk(function)
+    });
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let lambda = core.computation_lambda(returned);
+    let passed = core.value_thunk(lambda);
+    let source = CoreSource::new(&core, &names);
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let wide = PageWidth::from(100_u32);
+    assert_eq!(
+        [first, second].map(|ty| declared_whole(&source, (ty, passed), wide)),
+        [
+            written("def down @[r : Region] (a : Nat at r) -> -F (Nat at r) {\n  a\n}"),
+            written(
+                "def down @[r : Region, r1 : Region] (a : Nat at r1) -> -F (Nat at r1) {\n  a\n}"
+            ),
+        ],
+        "the binder is written and named at each kept type, every ordinal below it too"
+    );
+}
+
 /// A projection out of a forced parameter of a definition written whole is
 /// the observation it lowered from, `a.i` by position, read against the
 /// lazy product or codata type the parameter's binder states; a projection
@@ -4323,13 +4361,16 @@ fn a_scoped_capability_names_its_scope_400()
 
 /// A value kept in the region of a capability scope the term opens names
 /// that scope by the name its binder takes, `A at a`, as a capability does
-/// in the scopes the source names.
+/// in the scopes the source names; one kept at a definition's region binder,
+/// whose name the core keeps no record of, writes `?` there.
 #[test]
 fn a_kept_value_names_the_scope_it_is_kept_in()
 {
     use gandr_core_term::effect::EffectName;
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
     use gandr_core_term::effect::capability::RegionDepth;
 
     let mut core = CoreArena::new();
@@ -4341,7 +4382,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
         reply: unit,
     }])
     .expect("one operation is a signature");
-    let kept = core.value_type_kept(integer, RegionDepth::from(1_u32));
+    let kept = core.value_type_kept(integer, Region::Scoped(RegionDepth::from(1_u32)));
     let returns = core.comp_type_returner(kept);
     let three = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let pure = core.computation_return(three);
@@ -4351,12 +4392,27 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     let subject = core.computation_bind(ascribed, returned);
     let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let on_return = core.computation_return(answer);
-    let scoped = core.computation_scope(signature, subject, on_return, Arc::from([]));
+    let scoped = core.computation_scope(signature.clone(), subject, on_return, Arc::from([]));
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
             "handle a : Proc { run b : Integer at a <- pure a ; b } with { pure(a) => a }"
+        ))
+    );
+    let bound = core.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
+    let bound_returns = core.comp_type_returner(bound);
+    let bound_ascribed = core.computation_ascribe(pure, bound_returns);
+    let bound_subject = core.computation_bind(bound_ascribed, returned);
+    let bound_scoped = core.computation_scope(signature, bound_subject, on_return, Arc::from([]));
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(
+            &source,
+            Root::Computation(CoreNode::Computation(bound_scoped))
+        ),
+        approximate(Written(
+            "handle a : Proc { run b : Integer at ? <- pure a ; b } with { pure(a) => a }"
         ))
     );
 }
@@ -4366,13 +4422,14 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
 #[test]
 fn a_kept_value_names_the_hold_it_is_kept_in()
 {
+    use gandr_core_term::effect::capability::Region;
     use gandr_core_term::effect::capability::RegionDepth;
     use gandr_core_term::memory::HoldGrade;
     use gandr_core_term::memory::MemoryForm;
 
     let mut core = CoreArena::new();
     let unit = core.value_type_product(&[]);
-    let kept = core.value_type_kept(unit, RegionDepth::from(1_u32));
+    let kept = core.value_type_kept(unit, Region::Scoped(RegionDepth::from(1_u32)));
     let returns = core.comp_type_returner(kept);
     let held = core.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
     let pure = core.computation_return(held);

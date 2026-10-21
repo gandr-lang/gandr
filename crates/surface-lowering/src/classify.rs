@@ -153,6 +153,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::RegionAsValue { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -199,6 +200,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::RegionAsValue { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -446,7 +448,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 50_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 51_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -659,6 +661,10 @@ mod tests
                 function: SurfaceName::from("same"),
                 implicit: SurfaceName::from("a"),
             },
+            LoweringRefusal::RegionAsValue {
+                span: empty,
+                name: SurfaceName::from("r"),
+            },
         ]
     }
 
@@ -713,6 +719,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

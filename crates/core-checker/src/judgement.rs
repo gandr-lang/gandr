@@ -1284,6 +1284,45 @@ fn declared_head(
     Ok(head)
 }
 
+/// How a run checking `goal` reaches a region its definition abstracts, `A at
+/// r` under `@[r : Region]`, with no region open: through the type it checks
+/// against.
+///
+/// # Specification
+/// - ensures: for a goal checked against a type, what
+///   [`crate::capability::abstracts`] answers for it, and
+///   [`crate::capability::Reach::Keeps`] where that refuses, so a type the walk
+///   cannot read runs the fence; [`crate::capability::Reach::Clear`] for a goal
+///   that synthesises, a form and a stack.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition over `@[r : Region]` that stashes a value
+///   kept at `r` in a thunk kept in no region is refused, and one that forces
+///   it or hands it back at `r` checks.
+/// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
+#[spec(ensures: |ret| ret == crate::capability::Reach::Clear || matches!(goal, Goal::Value { direction: Direction::Check(_), .. } | Goal::Computation { direction: Direction::Check(_), .. }))]
+fn abstracted_by(
+    arena: &gandr_core_term::CoreArena,
+    goal: Goal,
+) -> crate::capability::Reach
+{
+    let checked = match goal {
+        Goal::Value {
+            direction: Direction::Check(expected),
+            ..
+        } => TypeNode::Value(expected),
+        Goal::Computation {
+            direction: Direction::Check(expected),
+            ..
+        } => TypeNode::Computation(expected),
+        Goal::Value { .. } | Goal::Computation { .. } | Goal::Form(_) | Goal::Stack { .. } => {
+            return crate::capability::Reach::Clear;
+        },
+    };
+    crate::capability::abstracts(arena, checked).unwrap_or(crate::capability::Reach::Keeps)
+}
+
 /// The completed premise of a native List fold rule.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ListPhase
@@ -3300,13 +3339,50 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }))
     }
 
-    /// The region the next capability scope introduces: one deeper than every
-    /// region enclosing it, each counted by the frame waiting on its body —
-    /// a scope's subject or a hold's scope.
+    /// The depth of the regions enclosing the next capability scope, each
+    /// counted by the frame waiting on its body — a scope's subject or a
+    /// hold's scope.
     ///
     /// # Specification
-    /// - ensures: [`Region::Scoped`] at one past the number of waiting
-    ///   [`Frame::ScopeSubject`] and [`Frame::HoldBody`] frames.
+    /// - ensures: the number of waiting [`Frame::ScopeSubject`] and
+    ///   [`Frame::HoldBody`] frames.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
+    ///   counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::next_region`].
+    /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body counts the waiting region frames once; the check counts them once more"
+        )
+    )]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&open| usize::try_from(u32::from(open)).ok() == Some(self.frames.iter().filter(|waiting| matches!(waiting.frame, Frame::ScopeSubject { .. } | Frame::HoldBody { .. })).count())))]
+    fn regions_open(&self) -> Result<RegionDepth, CheckRefusal>
+    {
+        u32::try_from(
+            self.frames
+                .iter()
+                .filter(|waiting| {
+                    matches!(
+                        waiting.frame,
+                        Frame::ScopeSubject { .. } | Frame::HoldBody { .. }
+                    )
+                })
+                .count(),
+        )
+        .map(RegionDepth::from)
+        .map_err(|_overflow| CheckRefusal::MachineInvariant)
+    }
+
+    /// The region the next capability scope introduces: one deeper than every
+    /// region enclosing it.
+    ///
+    /// # Specification
+    /// - ensures: [`Region::Scoped`] at one past [`Self::regions_open`].
     /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
     ///   counts.
     /// - panics: none.
@@ -3318,20 +3394,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Region::Scoped(_))))]
     fn next_region(&self) -> Result<Region, CheckRefusal>
     {
-        let depth = self
-            .frames
-            .iter()
-            .filter(|waiting| {
-                matches!(
-                    waiting.frame,
-                    Frame::ScopeSubject { .. } | Frame::HoldBody { .. }
-                )
-            })
-            .count()
+        let depth = u32::from(self.regions_open()?)
             .checked_add(1)
-            .and_then(|depth| u32::try_from(depth).ok())
             .ok_or(CheckRefusal::MachineInvariant)?;
         Ok(Region::Scoped(RegionDepth::from(depth)))
+    }
+
+    /// The region the next capability scope's answer lands in: the innermost
+    /// region enclosing the scope, or at depth zero the definition's own body.
+    ///
+    /// # Specification
+    /// - ensures: [`Region::Scoped`] at [`Self::regions_open`].
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the depth a region
+    ///   counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope answering its own capability is refused at
+    ///   the region around it, and one answering a value kept at a region its
+    ///   definition abstracts checks.
+    /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
+    /// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Region::Scoped(_))))]
+    fn enclosing_region(&self) -> Result<Region, CheckRefusal>
+    {
+        Ok(Region::Scoped(self.regions_open()?))
     }
 
     /// Type an operation exercised through a capability, once the capability
@@ -3402,7 +3489,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             &operation,
         )?;
         // A capability of the unknown type may be any scope's, so any handler
-        // may receive the operation's continuation.
+        // may receive the operation's continuation; so may one at a region the
+        // definition abstracts, whose scope stands outside the run.
         let answerer = if let ValueTypeView::Capability { region, .. } =
             value_type_view(self.context.arena(), head)?
         {
@@ -3412,6 +3500,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     depth,
                     operation: &operation,
                 },
+                Region::Bound(_) => session::Answerer::Anyone,
             }
         }
         else {
@@ -3486,11 +3575,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::HandlerCoverage { at });
         }
         let signature = signature.clone();
-        let region = self.next_region()?;
+        let around = self.enclosing_region()?;
         match crate::capability::reaches(
             self.context.arena(),
             TypeNode::Computation(answer),
-            region,
+            around,
         )? {
             crate::capability::Reach::Clear => {},
             crate::capability::Reach::Mentions => {
@@ -3722,6 +3811,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let foresight = context.foresight();
         let remaining = usize::from(context.budget());
         let base = context.depth(Zone::Linear);
+        let abstracted = abstracted_by(context.arena(), goal);
         let mut machine = Machine {
             context,
             frames: Vec::new(),
@@ -3732,7 +3822,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             marking,
             anchors: Vec::new(),
             marks: Vec::new(),
-            sessions: Sessions::new(base),
+            sessions: Sessions::new(base, abstracted),
             root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
             staged_motives: Vec::new(),
         };
@@ -4296,11 +4386,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Constant(constant) => match self.context.consult(constant) {
                 Maybe::Present(declared) => {
                     self.located_constant(term, constant, declared.id())?;
-                    match self.quantified_at(constant, declared.id())? {
-                        Maybe::Present(staged) => {
-                            Ok(Step::Ascend(Produced::ValueType(Relocated::from(staged))))
+                    let read = match self.quantified_at(constant, declared.id())? {
+                        Maybe::Present(staged) => staged,
+                        Maybe::Absent(crate::quantified::Unread::Plain) => declared.id(),
+                    };
+                    match self.regioned_at(read)? {
+                        Maybe::Present(placed) => {
+                            Ok(Step::Ascend(Produced::ValueType(Relocated::from(placed))))
                         },
-                        Maybe::Absent(crate::quantified::Unread::Plain) => produced(declared),
+                        Maybe::Absent(_) if read != declared.id() => {
+                            Ok(Step::Ascend(Produced::ValueType(Relocated::from(read))))
+                        },
+                        Maybe::Absent(_) => produced(declared),
                     }
                 },
                 Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
@@ -6947,21 +7044,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
         };
-        let mut waiting = self.frames.iter().rev();
-        let Some(&Frame::Force { value: head }) = waiting.next().map(|top| &top.frame)
+        let Some((head, spine)) = self.forced_call()
         else {
             return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
         };
-        let spine: Vec<ValueId> = waiting
-            .map_while(|waiting| {
-                if let Frame::ApplicationHead { argument, .. } = waiting.frame {
-                    Some(argument)
-                }
-                else {
-                    None
-                }
-            })
-            .collect();
         let context = &*self.context;
         let supplied: Vec<(gandr_kernel_term::StageBinder, gandr_kernel_term::Stage)> = context
             .supplies()
@@ -6978,6 +7064,92 @@ impl<'context, 'arena> Machine<'context, 'arena>
         )?;
         crate::quantified::restaged(self.context.arena_mut(), declared, &signature, &at)
             .map(Maybe::Present)
+    }
+
+    /// The value the force the machine has just reached forces, and the
+    /// arguments the applications waiting on that force apply, first applied
+    /// first: the call a constant just synthesised heads.
+    ///
+    /// # Specification
+    /// - ensures: present exactly when the innermost waiting frame is a
+    ///   [`Frame::Force`], with every [`Frame::ApplicationHead`] directly
+    ///   beneath it, innermost first.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::quantified_at`] and [`Self::regioned_at`].
+    /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
+    #[spec(ensures: |ret| ret.is_some() == matches!(self.frames.last(), Some(Waiting { frame: Frame::Force { .. }, .. })))]
+    fn forced_call(&self) -> Option<(ValueId, Vec<ValueId>)>
+    {
+        let mut waiting = self.frames.iter().rev();
+        let Some(&Frame::Force { value: head }) = waiting.next().map(|top| &top.frame)
+        else {
+            return None;
+        };
+        let spine = waiting
+            .map_while(|waiting| {
+                if let Frame::ApplicationHead { argument, .. } = waiting.frame {
+                    Some(argument)
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        Some((head, spine))
+    }
+
+    /// The type `read`, a constant's declared type as its call reads its
+    /// stages, has where the call forces it: each region binder it names
+    /// placed at the region the call's arguments show it at, or at the
+    /// call's innermost region.
+    ///
+    /// # Specification
+    /// - requires: the constant is the term the machine has just synthesised.
+    /// - ensures: present for a type naming a region binder that a force waits
+    ///   on, renamed by `crate::regioned::placement` at the arguments the
+    ///   applications waiting on that force apply, first applied first, and at
+    ///   the region [`Self::enclosing_region`] names; absent for a type naming
+    ///   none and for one read outside a call, which keeps its binders.
+    /// - fails: the placement's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call lending a thunk kept in a capability scope's
+    ///   region to a definition over `@[r : Region]` reads its parameter at
+    ///   that region.
+    /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |placed| match *placed {
+        Maybe::Present(placed) => self.context.arena().value_type(placed).is_some(),
+        Maybe::Absent(_) => true,
+    }))]
+    fn regioned_at(
+        &mut self,
+        read: ValueTypeId,
+    ) -> Result<Maybe<ValueTypeId, crate::regioned::Unread>, CheckRefusal>
+    {
+        let Some((_head, spine)) = self.forced_call()
+        else {
+            return Ok(Maybe::Absent(crate::regioned::Unread::Unabstracted));
+        };
+        let innermost = self.enclosing_region()?;
+        let context = &*self.context;
+        let renaming =
+            match crate::regioned::placement(context.arena(), read, (&spine, innermost), |index| {
+                context.hypothesis(index)
+            })? {
+                Maybe::Present(renaming) => renaming,
+                Maybe::Absent(unread) => return Ok(Maybe::Absent(unread)),
+            };
+        Ok(Maybe::Present(crate::regioned::instantiated(
+            self.context.arena_mut(),
+            read,
+            &renaming,
+        )))
     }
 
     /// Note that a type after `value` reads it, so a pure run there stands

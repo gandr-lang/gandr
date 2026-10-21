@@ -1261,6 +1261,58 @@ fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
     Ok(NodeIndex::from(count.0))
 }
 
+/// Write the region a capability or a kept type lives in: the held region, a
+/// scope's at its depth, or a definition's region binder at its ordinal.
+///
+/// # Specification
+/// trivial.
+fn write_region<Out>(
+    writer: &mut Writer<'_, Out>,
+    region: gandr_core_term::effect::capability::Region,
+) where
+    Out: Sink,
+{
+    use gandr_core_term::effect::capability::Region;
+    match region {
+        Region::Held => writer.tag(Tag(0)),
+        Region::Scoped(depth) => {
+            writer.tag(Tag(1));
+            writer.word(Word(u64::from(u32::from(depth))));
+        },
+        Region::Bound(binder) => {
+            writer.tag(Tag(2));
+            writer.word(Word(u64::from(u32::from(binder))));
+        },
+    }
+}
+
+/// Read a region [`write_region`] wrote.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`CodecError::Corrupt`] for a tag naming no region, or a depth or an
+/// ordinal past 32 bits.
+fn read_region(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_term::effect::capability::Region, CodecError>
+{
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
+    use gandr_core_term::effect::capability::RegionDepth;
+    let tag = reader.tag()?.0;
+    if tag == 0 {
+        return Ok(Region::Held);
+    }
+    let ordinal = u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
+    match tag {
+        1 => Ok(Region::Scoped(RegionDepth::from(ordinal))),
+        2 => Ok(Region::Bound(RegionBinder::from(ordinal))),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
 /// Write one content node.
 ///
 /// # Specification
@@ -1589,18 +1641,12 @@ where
                 gandr_core_term::effect::capability::CapabilityGrade::Durable => Tag(0),
                 gandr_core_term::effect::capability::CapabilityGrade::Consumable => Tag(1),
             });
-            match region {
-                gandr_core_term::effect::capability::Region::Held => writer.tag(Tag(0)),
-                gandr_core_term::effect::capability::Region::Scoped(depth) => {
-                    writer.tag(Tag(1));
-                    writer.word(Word(u64::from(u32::from(depth))));
-                },
-            }
+            write_region(writer, region);
         },
         ContentNode::KeptType { value, region } => {
             writer.tag(Tag(0x7F));
             write_index(writer, value)?;
-            writer.word(Word(u64::from(u32::from(region))));
+            write_region(writer, region);
         },
         ContentNode::Resume(stack, body) => {
             writer.tag(Tag(0x76));
@@ -3807,35 +3853,23 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         0x7D => {
             use gandr_core_term::effect::capability::CapabilityGrade;
-            use gandr_core_term::effect::capability::Region;
-            use gandr_core_term::effect::capability::RegionDepth;
             let authority = read_effect_row(reader)?;
             let grade = match reader.tag()?.0 {
                 0 => CapabilityGrade::Durable,
                 1 => CapabilityGrade::Consumable,
                 _ => return Err(CodecError::Corrupt),
             };
-            let region = match reader.tag()?.0 {
-                0 => Region::Held,
-                1 => {
-                    let depth =
-                        u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
-                    Region::Scoped(RegionDepth::from(depth))
-                },
-                _ => return Err(CodecError::Corrupt),
-            };
             ContentNode::Capability {
                 authority,
                 grade,
-                region,
+                region: read_region(reader)?,
             }
         },
         0x7F => {
             let value = read_index(reader)?;
-            let depth = u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
             ContentNode::KeptType {
                 value,
-                region: gandr_core_term::effect::capability::RegionDepth::from(depth),
+                region: read_region(reader)?,
             }
         },
         0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),

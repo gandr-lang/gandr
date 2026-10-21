@@ -771,7 +771,7 @@ enum Task
     /// Assemble the type on the stack refined at the held stage.
     StagedType(gandr_kernel_term::Stage),
     /// Assemble the type on the stack kept in the held region.
-    KeptType(gandr_core_term::effect::capability::RegionDepth),
+    KeptType(gandr_core_term::effect::capability::Region),
     /// Assemble a handle type at the held world from the type on the stack.
     LocatedType(gandr_core_term::world::World),
     /// Assemble a thunk type from the computation type on the stack.
