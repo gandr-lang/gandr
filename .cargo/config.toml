@@ -6,3 +6,8 @@ build-dist = ["build", "--config=.cargo/config.dist.toml", "--profile=dist"]
 check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
 
 [unstable]
+# Freshness is by source content, not mtime. A worktree starts with a copy of
+# another worktree's `target/` stamped after its own sources, and a CI runner
+# restores a cached one under fresh checkout mtimes; either way an artifact
+# whose source changed would otherwise pass for fresh (#1285).
+checksum-freshness = true

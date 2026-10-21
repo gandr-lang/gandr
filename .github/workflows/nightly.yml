@@ -29,7 +29,6 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
-  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
   # Must match ci.yml and the image. The image checks the list at build time.

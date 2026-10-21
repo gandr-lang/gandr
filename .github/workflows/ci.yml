@@ -59,8 +59,6 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
-  # Checkout mtimes change on every runner; validate cached source contents.
-  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
 
   # Opt back into quickinstall (jdx/mise PR 10923 flipped the default off) and
   # mise's built-in binstall, in env form so both bind regardless of
