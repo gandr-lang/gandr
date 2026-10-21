@@ -49,6 +49,7 @@ The control subjects take a case that is hard in other languages and write it as
 | ---- | ------- | ------------- |
 | Completion-based I/O | `completion` | io_uring's submission and completion queues; Rust's owned-buffer completion APIs |
 | Move semantics | `moves` | C++'s moved-from objects and move constructors; Rust's `Copy` and move split, and `mem::forget` |
+| Structured concurrency | `tasks` | Trio's nurseries; Rust's scoped threads (`std::thread::scope`) |
 
 ## Writing to the corpus
 

@@ -1,0 +1,18 @@
+// The tasks subject's shared declarations, written once and imported by every
+// source that reads them (`import "./task-base.gandr" ;`): a task forked as
+// its parent's peer hands back what it found over its end. A fork is the
+// parallel product of two strategies and an operation a move of one of them
+// (Melliès and Stefanesco, doi:10.1145/3373718.3394762); the parent joins its
+// task by reading the end to its close, so no task outlives its parent, as no
+// task outlives the nursery that started it in Trio.
+
+/// A task: the protocol its end carries back to the parent, and the path it
+/// reads.
+module Task :> #{
+  type Join = !String. end,
+  notes : String
+} {
+  /// The path a task reads.
+  @[ checks ]
+  def notes = "notes";
+}

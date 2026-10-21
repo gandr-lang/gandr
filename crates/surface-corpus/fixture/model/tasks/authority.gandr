@@ -1,0 +1,31 @@
+// The host answers an operation made through a capability it holds for the
+// run exactly once, so an end stays open across it: a task exercises the
+// authority its parent hands it, and a parent acts while its task runs.
+
+// The task's protocol.
+import "./task-base.gandr" ;
+
+/// A task reading through its parent's capability and handing back what it
+/// read (#1334).
+@[ checks ]
+def reader(c : Cap {read}) -> -F [Fs] Unit {
+  fork (task : Task.Join) {
+    run text <- c.read(Task.notes);
+    send(task, text);
+    close(task)
+  } as found;
+  recv(found) as text;
+  close(found)
+}
+
+/// A parent exiting through its capability while its task's end is open.
+@[ checks ]
+def exiter(c : Cap {exit}) -> -F [Proc] Unit {
+  fork (task : Task.Join) {
+    send(task, Task.notes);
+    close(task)
+  } as found;
+  c.exit(1);
+  recv(found) as text;
+  close(found)
+}

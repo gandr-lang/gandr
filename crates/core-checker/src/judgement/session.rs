@@ -21,7 +21,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::Purity;
+use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::AccessMode;
@@ -925,6 +925,79 @@ impl Machine<'_, '_>
         Ok(())
     }
 
+    /// Refuse the child `term` of the fork `at` naming a variable that lives
+    /// in a region: the child runs as a peer no region bounds, so the region
+    /// could end while the child still holds the variable.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::CapabilityEscaped`] at the fork for the first
+    ///   free intuitionistic variable whose type reaches a capability living in
+    ///   a region, and [`CheckRefusal::Access`] naming
+    ///   [`AccessDefect::KeptEscaped`] for one whose type reaches a value kept
+    ///   in one; [`CheckRefusal::DanglingNode`] and
+    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child exercising its scope's capability is refused
+    ///   whether or not it still holds its end, and a child exercising a
+    ///   capability held for the run checks.
+    /// - witness: `judgement::session::tests::a_child_exercises_only_what_outlives_every_region_1334`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::CapabilityEscaped { at: refused, .. }) => refused == TermNode::Computation(at),
+        | Err(CheckRefusal::Access { at: refused, defect }) => refused == CoreNode::Term(TermNode::Computation(at)) && defect == AccessDefect::KeptEscaped,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn unbounded(
+        &mut self,
+        term: CoreTerm,
+        at: ComputationId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            let declared = self
+                .context
+                .binders()
+                .declared(Zone::Intuitionistic, index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            match crate::capability::reaches(
+                self.context.arena(),
+                TypeNode::Value(declared),
+                Region::Scoped(RegionDepth::from(1_u32)),
+            )? {
+                crate::capability::Reach::Clear => {},
+                crate::capability::Reach::Mentions => {
+                    return Err(CheckRefusal::CapabilityEscaped {
+                        at: TermNode::Computation(at),
+                        found: TypeNode::Value(declared),
+                    });
+                },
+                crate::capability::Reach::Keeps => {
+                    return Err(CheckRefusal::Access {
+                        at: node,
+                        defect: AccessDefect::KeptEscaped,
+                    });
+                },
+            }
+        }
+        Ok(())
+    }
+
     /// End the innermost region, a capability scope's or a hold's: its mark
     /// dropped and every slot kept in it released to an exclusive access.
     ///
@@ -1097,13 +1170,12 @@ impl Machine<'_, '_>
     ///   synthesises the returner of the payload, a selection advances it to
     ///   the chosen branch and a close consumes it at `end`, both synthesising
     ///   the returner of the unit; an offer checks its first arm with the
-    ///   endpoint at that arm's branch; a fork standing at a pure returner
-    ///   forms its protocol annotation.
+    ///   endpoint at that arm's branch; a fork forms its protocol annotation.
     /// - fails: [`CheckRefusal::SessionMismatch`] for an action the state does
     ///   not admit, a label it does not offer, or arms that are not exactly its
-    ///   labels; [`CheckRefusal::Linearity`] for an action after close, a
-    ///   payload naming its own endpoint or another, and a fork at an impure
-    ///   type; [`CheckRefusal::NotSynthesisable`] for an offer in synthesis.
+    ///   labels; [`CheckRefusal::Linearity`] for an action after close and a
+    ///   payload naming its own endpoint or another;
+    ///   [`CheckRefusal::NotSynthesisable`] for an offer in synthesis.
     /// - panics: none.
     ///
     /// # Errors
@@ -1156,9 +1228,6 @@ impl Machine<'_, '_>
                 })
             },
             (&SessionAction::Fork { protocol, .. }, _) => {
-                if let Direction::Check(expected) = direction {
-                    self.pure_fork(term, expected)?;
-                }
                 self.wait(Frame::ForkProtocol {
                     at: term,
                     direction,
@@ -2050,67 +2119,103 @@ impl Machine<'_, '_>
         Ok(())
     }
 
-    /// Refuse a fork that stands at `ty` unless `ty` is a pure returner or
-    /// the unknown type.
+    /// Refuse, at the operation `at` handing on `payload` that `answerer`
+    /// answers, a live resident the operation's continuation ends: the host
+    /// answers once and captures nothing, a scope's clause receives the rest
+    /// of the scope's region as a continuation it may drop or resume twice,
+    /// and an operation anyone may answer captures every slot the run opened.
+    /// A received value, which a read copies, passes, and so does the buffer
+    /// `payload` names, which the operation hands back whole. An operation an
+    /// unwind performs passes: the unwind runs under the empty row, so no
+    /// clause answers it, and the row refuses it by name.
     ///
     /// # Specification
-    /// - requires: `ty` is formed.
+    /// - requires: `payload` stands where `at` does.
     /// - ensures: nothing changes.
-    /// - fails: [`CheckRefusal::Linearity`] naming
-    ///   [`LinearityDefect::Captured`] by [`Capture::Continuation`] with the
-    ///   fork's child end: an operation in the fork's scope could be resumed
-    ///   twice by a handler.
+    /// - fails: as [`captured`] by [`Capture::Continuation`] at `at`, for the
+    ///   outermost slot the continuation captures whose use is still available
+    ///   and whose resident is neither a received value nor the buffer
+    ///   `payload` is; [`CheckRefusal::MachineInvariant`] for a slot the
+    ///   binders do not hold; [`CheckRefusal::DanglingNode`] for a payload
+    ///   outside the arena.
     /// - panics: none.
     ///
     /// # Errors
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fork checked against an effectful returner is
-    ///   refused while the same fork against the pure one checks.
-    /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
-    #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::Linearity { at: refused, defect: LinearityDefect::Captured { endpoint, by } }) => {
-            refused == CoreNode::Term(TermNode::Computation(at))
-                && endpoint.fork == at
-                && by == Capture::Continuation
-        },
-        | _ => true,
-    })]
-    fn pure_fork(
+    /// - hypothesis: L3 — a parent exercising its scope's capability while it
+    ///   holds an endpoint opened in the scope is refused, the same exercise
+    ///   after the endpoint closed checks, and one exercising a capability held
+    ///   for the run checks with the endpoint open.
+    /// - witness: `judgement::session::tests::an_operation_a_scope_answers_captures_what_the_scope_opened_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant | CheckRefusal::DanglingNode { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. })))]
+    pub(super) fn region_captured(
         &mut self,
         at: ComputationId,
-        ty: CompTypeId,
+        answerer: Answerer,
+        payload: ValueId,
     ) -> Result<(), CheckRefusal>
     {
-        let head = self.context.whnf_comp_type(ty)?;
-        let pure = match comp_type_view(self.context.arena(), head)? {
-            CompTypeView::Returner { effects, .. } => effects.purity() == Purity::Pure,
-            CompTypeView::Unknown => true,
-            CompTypeView::With(..)
-            | CompTypeView::Arrow { .. }
-            | CompTypeView::Pi { .. }
-            | CompTypeView::Element { .. }
-            | CompTypeView::Codata { .. } => false,
+        let mark = match answerer {
+            Answerer::Host => return Ok(()),
+            // A depth past the open regions reads as the outermost mark.
+            Answerer::Scope(depth) => usize::try_from(u32::from(depth))
+                .ok()
+                .and_then(|depth| depth.checked_sub(1))
+                .and_then(|region| self.sessions.regions.get(region))
+                .copied()
+                .unwrap_or_default(),
+            Answerer::Anyone => 0,
         };
-        if pure {
+        if matches!(self.carrier(None), Some(Frame::AccessUnwind { .. })) {
             return Ok(());
         }
-        Err(CheckRefusal::Linearity {
-            at: CoreNode::Term(TermNode::Computation(at)),
-            defect: LinearityDefect::Captured {
-                endpoint: Endpoint {
-                    fork: at,
-                    side: ForkSide::Child,
-                },
-                by: Capture::Continuation,
-            },
-        })
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let handed = if let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        {
+            Some(index)
+        }
+        else {
+            None
+        };
+        let opened = self.sessions.opened.len();
+        for position in mark .. opened {
+            let index = opened
+                .checked_sub(position)
+                .and_then(|above| above.checked_sub(1))
+                .and_then(|index| u32::try_from(index).ok())
+                .map(DeBruijnIndex::from)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let use_state = self
+                .context
+                .binders()
+                .linear_use(index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            if use_state != LinearUse::Available {
+                continue;
+            }
+            let resident = self
+                .sessions
+                .opened
+                .get(position)
+                .ok_or(CheckRefusal::MachineInvariant)?
+                .resident;
+            let returned = handed == Some(index) && matches!(resident, Resident::Buffer { .. });
+            if !returned && !matches!(resident, Resident::Received { .. }) {
+                return captured(node, resident, Capture::Continuation);
+            }
+        }
+        Ok(())
     }
 
     /// Continue a fork whose protocol annotation formed: split the zone, bind
-    /// the child's end at the annotation and check the child against the pure
-    /// returner of the unit.
+    /// the child's end at the annotation and check the child against the
+    /// returner of the unit at the fork's own row, the unknown type's row
+    /// empty.
     ///
     /// # Specification
     /// - requires: the annotation formed.
@@ -2121,10 +2226,11 @@ impl Machine<'_, '_>
     ///   at its weak head; [`CheckRefusal::Access`] naming
     ///   [`AccessDefect::KeptEscaped`] for a protocol that carries a value kept
     ///   in a region, and [`CheckRefusal::CapabilityEscaped`] for one that
-    ///   carries a capability living in one: the child runs as a peer no region
-    ///   bounds, so a region could end while it holds the value;
-    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::UsedTwice`] for
-    ///   an enclosing endpoint both halves name.
+    ///   carries a capability living in one, and the same for a variable the
+    ///   child names: the child runs as a peer no region bounds, so a region
+    ///   could end while it holds the value; [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::UsedTwice`] for an enclosing endpoint both halves
+    ///   name.
     /// - panics: none.
     ///
     /// # Errors
@@ -2134,7 +2240,9 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — the seat exchange forks at its protocol's alias, and
     ///   an endpoint both halves of an inner fork name is refused; a protocol
     ///   receiving a string checks and one receiving a string kept in a region
-    ///   is refused.
+    ///   is refused; a child reading through a capability its parent holds for
+    ///   the run checks, and one naming its scope's capability is refused.
+    /// - witness: `judgement::session::tests::a_child_exercises_only_what_outlives_every_region_1334`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
     /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
@@ -2187,6 +2295,9 @@ impl Machine<'_, '_>
                 });
             },
         }
+        if !self.sessions.regions.is_empty() {
+            self.unbounded(CoreTerm::Computation(child), at)?;
+        }
         let shared = self.free_linear(CoreTerm::Computation(parent))?;
         let shared: BTreeSet<DeBruijnIndex> = shared.into_iter().collect();
         for index in self.free_linear(CoreTerm::Computation(child))? {
@@ -2222,7 +2333,26 @@ impl Machine<'_, '_>
             }),
             depth,
         });
-        let unit = self.unit_returner();
+        let row = match direction {
+            Direction::Check(expected) => {
+                let expected = self.context.whnf_comp_type(expected)?;
+                match comp_type_view(self.context.arena(), expected)? {
+                    CompTypeView::Returner { effects, .. } => effects.clone(),
+                    CompTypeView::Unknown
+                    | CompTypeView::With(..)
+                    | CompTypeView::Arrow { .. }
+                    | CompTypeView::Pi { .. }
+                    | CompTypeView::Element { .. }
+                    | CompTypeView::Codata { .. } => EffectRow::EMPTY,
+                }
+            },
+            Direction::Synthesise => EffectRow::EMPTY,
+        };
+        let unit = self.context.atom(Atom::Unit).id();
+        let returner = self
+            .context
+            .arena_mut()
+            .comp_type_returner_with_effects(unit, row);
         self.wait(Frame::ForkChild {
             at,
             direction,
@@ -2230,7 +2360,7 @@ impl Machine<'_, '_>
         });
         Ok(Step::Descend(Goal::Computation {
             term: child,
-            direction: Direction::Check(unit),
+            direction: Direction::Check(returner),
         }))
     }
 
@@ -2344,14 +2474,13 @@ impl Machine<'_, '_>
     }
 
     /// Finish a fork whose parent was judged: require the parent's end spent
-    /// and hand the parent's result on, a synthesised type required pure.
+    /// and hand the parent's result on.
     ///
     /// # Specification
     /// - requires: the parent was judged in `direction`.
     /// - ensures: the parent's slot is closed; the fork checked, or synthesised
     ///   the parent's type.
-    /// - fails: as [`Self::spend`]; as [`Self::pure_fork`] for a synthesised
-    ///   type.
+    /// - fails: as [`Self::spend`].
     /// - panics: none.
     ///
     /// # Errors
@@ -2374,7 +2503,6 @@ impl Machine<'_, '_>
         match (direction, produced) {
             (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
             (Direction::Synthesise, Produced::CompType(ty)) => {
-                self.pure_fork(at, ty)?;
                 Ok(Step::Ascend(Produced::CompType(ty)))
             },
             (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
@@ -2473,6 +2601,22 @@ enum Owing
     Something,
     /// Nothing a read does not copy.
     Nothing,
+}
+
+/// Who answers an operation, and so how much of the run its continuation
+/// holds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Answerer
+{
+    /// The host, through a capability it holds for the run: it answers once.
+    Host,
+    /// The clause of the capability scope whose region stands at this depth.
+    Scope(RegionDepth),
+    /// Whichever handler stands nearest when the operation runs.
+    Anyone,
 }
 
 #[cfg(test)]

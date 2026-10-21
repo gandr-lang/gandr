@@ -3303,7 +3303,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Type an operation exercised through a capability, once the capability
-    /// synthesised `classifier`: the Exercise rule.
+    /// synthesised `classifier`: the Exercise rule. The host answers an
+    /// operation through a capability it holds exactly once; a scope's clause
+    /// answers one through the scope's capability with the rest of the scope
+    /// as a continuation, which may run twice or never.
     ///
     /// # Specification
     /// - requires: `at` is an exercise whose capability synthesised
@@ -3317,15 +3320,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`ExpectedShape::Capability`] for a capability of another former;
     ///   [`CheckRefusal::CapabilityOutsideAuthority`] for an operation the
     ///   capability's authority does not grant with the interface's own payload
-    ///   and reply types.
+    ///   and reply types; as [`Self::region_captured`] for a capability living
+    ///   in a scope's region while a resident opened in that region still owes
+    ///   something, and for one of the unknown type while any does.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a granted operation synthesising its interface's row,
     ///   an operation of the interface the authority withholds, a value of
     ///   another type in capability position and an operation outside the
-    ///   interface, each asserted as the exact type or refusal.
+    ///   interface, each asserted as the exact type or refusal; an endpoint
+    ///   held across an operation the host answers checks, and one held across
+    ///   an operation its scope's clause answers is refused.
     /// - witness: `capability::tests::an_operation_is_exercised_only_within_the_authority`
+    /// - witness: `judgement::session::tests::an_operation_a_scope_answers_captures_what_the_scope_opened_1334`
     #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(ret, Ok(Step::Descend(Goal::Form(_))))))]
     fn exercise(
         &mut self,
@@ -3358,6 +3366,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
             &signature,
             &operation,
         )?;
+        // A capability of the unknown type may be any scope's, so any handler
+        // may receive the operation's continuation.
+        let answerer = if let ValueTypeView::Capability { region, .. } =
+            value_type_view(self.context.arena(), head)?
+        {
+            match region {
+                Region::Held => session::Answerer::Host,
+                Region::Scoped(depth) => session::Answerer::Scope(depth),
+            }
+        }
+        else {
+            session::Answerer::Anyone
+        };
+        self.region_captured(at, answerer, payload)?;
         let effects = gandr_core_term::effect::EffectRow::singleton(signature);
         let result = self
             .context
@@ -5126,6 +5148,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let expected = operation.payload;
                 let reply = operation.reply;
                 let effects = gandr_core_term::effect::EffectRow::singleton(signature.clone());
+                // An operation performed by name goes to whichever handler
+                // stands nearest when it runs, so any of them may receive the
+                // rest of the run as a continuation.
+                self.region_captured(term, session::Answerer::Anyone, payload)?;
                 let result = self
                     .context
                     .arena_mut()

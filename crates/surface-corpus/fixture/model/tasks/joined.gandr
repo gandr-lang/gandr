@@ -1,0 +1,23 @@
+// A scope's clause receives the rest of the scope as a continuation it may
+// drop or resume twice. Once the parent has joined its task, nothing in that
+// rest owes anything, so the scope's operation checks.
+
+// The task's protocol.
+import "./task-base.gandr" ;
+
+/// A scope exiting after the parent read its task's end to its close.
+@[ checks ]
+def joined() -> -F Unit {
+  handle c : Proc {
+    fork (task : Task.Join) {
+      send(task, Task.notes);
+      close(task)
+    } as found;
+    recv(found) as text;
+    close(found);
+    c.exit(1)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

@@ -12,7 +12,6 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
@@ -40,7 +39,6 @@ use crate::refusal::CoreNode;
 use crate::refusal::Mismatch;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
-use crate::session::Capture;
 use crate::session::LinearityDefect;
 use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
@@ -55,17 +53,15 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: `term` is a memory form.
-    /// - ensures: a hold standing at a pure returner waits on its value's
-    ///   synthesis; an access of the whole value opens its view at the held
-    ///   slot's type and waits on its body in `direction`; an access at a place
-    ///   whose held slot it may lend waits on its index's check against the
-    ///   integer type; a resume waits on its value's check against the view's
-    ///   type; an abort spends its view and synthesises the returner of the
-    ///   unit.
-    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldCaptured`]
-    ///   for a hold at an impure type, [`AccessDefect::NotHeld`] for an access
-    ///   of a slot that holds no value, [`AccessDefect::Lent`] for an access
-    ///   its slot's lending excludes, [`AccessDefect::NotAView`] for an
+    /// - ensures: a hold waits on its value's synthesis; an access of the whole
+    ///   value opens its view at the held slot's type and waits on its body in
+    ///   `direction`; an access at a place whose held slot it may lend waits on
+    ///   its index's check against the integer type; a resume waits on its
+    ///   value's check against the view's type; an abort spends its view and
+    ///   synthesises the returner of the unit.
+    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for
+    ///   an access of a slot that holds no value, [`AccessDefect::Lent`] for an
+    ///   access its slot's lending excludes, [`AccessDefect::NotAView`] for an
     ///   eliminator of a slot that is no view, [`AccessDefect::Spent`] for one
     ///   of a spent view and [`AccessDefect::ReadOnly`] for one of a shared
     ///   view; [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`]
@@ -98,9 +94,6 @@ impl Machine<'_, '_>
             MemoryForm::Hold { value, grade, .. } => {
                 if grade == HoldGrade::One {
                     self.entered_in_place(value)?;
-                }
-                if let Direction::Check(expected) = direction {
-                    self.pure_hold(term, expected)?;
                 }
                 self.wait(Frame::HoldValue {
                     at: term,
@@ -157,58 +150,6 @@ impl Machine<'_, '_>
                 self.spend_view(node, view)
             },
         }
-    }
-
-    /// Refuse a hold that stands at `ty` unless `ty` is a pure returner or the
-    /// unknown type.
-    ///
-    /// # Specification
-    /// - requires: `ty` is formed.
-    /// - ensures: nothing changes.
-    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldCaptured`]
-    ///   by [`Capture::Continuation`] at the hold: an operation in its scope
-    ///   could be resumed twice by a handler, running its accesses twice.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As above.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a hold checked against an effectful returner is
-    ///   refused while the same hold against the pure one checks.
-    /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
-    #[spec(ensures: |ret| match ret {
-        | Err(CheckRefusal::Access { at: refused, defect }) => {
-            refused == CoreNode::Term(TermNode::Computation(at))
-                && defect == AccessDefect::HeldCaptured { by: Capture::Continuation }
-        },
-        | _ => true,
-    })]
-    fn pure_hold(
-        &mut self,
-        at: ComputationId,
-        ty: CompTypeId,
-    ) -> Result<(), CheckRefusal>
-    {
-        let head = self.context.whnf_comp_type(ty)?;
-        let pure = match comp_type_view(self.context.arena(), head)? {
-            CompTypeView::Returner { effects, .. } => effects.purity() == Purity::Pure,
-            CompTypeView::Unknown => true,
-            CompTypeView::With(..)
-            | CompTypeView::Arrow { .. }
-            | CompTypeView::Pi { .. }
-            | CompTypeView::Element { .. }
-            | CompTypeView::Codata { .. } => false,
-        };
-        if pure {
-            return Ok(());
-        }
-        Err(CheckRefusal::Access {
-            at: CoreNode::Term(TermNode::Computation(at)),
-            defect: AccessDefect::HeldCaptured {
-                by: Capture::Continuation,
-            },
-        })
     }
 
     /// Refuse an answer that names the innermost region, `region`, deep: the
@@ -350,7 +291,7 @@ impl Machine<'_, '_>
 
     /// Finish a hold whose scope was judged: end the hold's region, drop the
     /// held slot and hand the scope's result on, a synthesised type required
-    /// pure and outside the hold's region.
+    /// outside the hold's region.
     ///
     /// # Specification
     /// - requires: the scope was judged in `direction`, under the hold's
@@ -359,9 +300,8 @@ impl Machine<'_, '_>
     ///   slot is closed and its entry dropped; the hold checked, or synthesised
     ///   the scope's type.
     /// - fails: as [`Self::answers_outside`] for a synthesised type that names
-    ///   the hold's region, then as [`Self::pure_hold`];
-    ///   [`CheckRefusal::MachineInvariant`] when no region is open or the
-    ///   innermost slot is not this hold's.
+    ///   the hold's region; [`CheckRefusal::MachineInvariant`] when no region
+    ///   is open or the innermost slot is not this hold's.
     /// - panics: none.
     ///
     /// # Errors
@@ -410,7 +350,6 @@ impl Machine<'_, '_>
         else {
             return Ok(Step::Ascend(Produced::Checked));
         };
-        self.pure_hold(at, ty)?;
         Ok(Step::Ascend(Produced::CompType(ty)))
     }
 
@@ -1080,16 +1019,7 @@ impl Machine<'_, '_>
             Control::Resuming(waiting) => Some(waiting.frame),
             Control::Starting(_) | Control::Handing => None,
         };
-        let innermost = resumed
-            .into_iter()
-            .chain(self.frames.iter().rev().map(|waiting| waiting.frame))
-            .find(|frame| {
-                !matches!(
-                    frame,
-                    Frame::BindBound { .. } | Frame::BindBody { .. } | Frame::CompBridge { .. }
-                )
-            });
-        if !matches!(innermost, Some(Frame::AccessUnwind { .. })) {
+        if !matches!(self.carrier(resumed), Some(Frame::AccessUnwind { .. })) {
             return refusal;
         }
         match self.exceeds(synthesised, expected) {
@@ -1099,6 +1029,27 @@ impl Machine<'_, '_>
             },
             Ok(RowInclusion::Included) | Err(_) => refusal,
         }
+    }
+
+    /// The innermost frame waiting on the step, `resumed` first, past the
+    /// binds and bridges that only carry the step's expected type.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn carrier(
+        &self,
+        resumed: Option<Frame>,
+    ) -> Option<Frame>
+    {
+        resumed
+            .into_iter()
+            .chain(self.frames.iter().rev().map(|waiting| waiting.frame))
+            .find(|frame| {
+                !matches!(
+                    frame,
+                    Frame::BindBound { .. } | Frame::BindBody { .. } | Frame::CompBridge { .. }
+                )
+            })
     }
 
     /// Whether the row of the returner `synthesised` lies within the row of
