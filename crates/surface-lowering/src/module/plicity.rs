@@ -12,7 +12,10 @@
 //! written after it, `@[i : Fin(n)] (n : Nat)`, which places the implicit
 //! after it; an explicit parameter's type reads the parameters before it as
 //! it always has, so a later explicit name it mentions orders nothing. A
-//! cycle through the telescope is refused, naming two of its parameters.
+//! name a type binds itself — the key of a group's entry, `x` in `(x : A) =>
+//! B`, over the entries after it and an arrow's codomain — mentions no
+//! parameter, whatever its spelling. A cycle through the telescope is
+//! refused, naming two of its parameters.
 //!
 //! Which parameters are implicit is the declaration's metadata
 //! ([`super::Collected::plicities`]), never type structure: the declared type
@@ -279,8 +282,8 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: when the header opens a telescope one of whose entries `a :
     ///   T` sorts other than by `Size`, and a parameter list follows it, every
     ///   such entry and every explicit parameter, in the order [`merge_order`]
-    ///   gives over what each one's type mentions; absent otherwise. `header`
-    ///   is left where it was.
+    ///   gives over what each one's type mentions, a name the type binds itself
+    ///   mentioning nothing; absent otherwise. `header` is left where it was.
     /// - provides: the plicity metadata of [`super::Collected::plicities`].
     /// - fails: [`LoweringRefusal::TelescopeCycle`] at the declaration, naming
     ///   two parameters standing in a cycle; a form fault reading a type's
@@ -292,9 +295,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an implicit before the parameter its type mentions is
-    ///   placed after it; a cycle is refused naming both; a telescope of stage
-    ///   binders alone merges nothing.
+    ///   placed after it, and one whose type binds a later parameter's name is
+    ///   not; a cycle is refused naming both; a telescope of stage binders
+    ///   alone merges nothing.
     /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
     /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
@@ -368,24 +373,69 @@ impl<'source> Collector<'_, 'source>
             .map(|(position, entry)| (entry.name, TelescopePosition(position)))
             .collect();
         let mut after = Vec::new();
-        let mut pending: Vec<NodeIndex> = Vec::new();
+        // Each node still to read, with the innermost binder of the type's
+        // own around it: a type binds the keys of its groups, `(x : A) => B`,
+        // and a name such a key binds mentions no parameter (#1350).
+        let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::new();
+        let mut binders: Vec<(SurfaceName<'source>, Option<usize>)> = Vec::new();
+        let mut keyed = Pieces::new();
+        let mut named = Pieces::new();
         for (later, entry) in entries.iter().enumerate() {
             let Maybe::Present(typed) = entry.declared
             else {
                 continue;
             };
             let later = TelescopePosition(later);
-            pending.push(typed.node);
-            while let Some(node) = pending.pop() {
+            binders.clear();
+            pending.push((typed.node, None));
+            while let Some((node, mut scope)) = pending.pop() {
                 read_pieces(self.pbg, self.tree, node, &mut scratch)?;
-                for piece in &scratch.pieces {
+                let pieces = core::mem::take(&mut scratch.pieces);
+                for (index, piece) in pieces.iter().enumerate() {
+                    let next = pieces.get(index.saturating_add(1));
                     match *piece {
-                        Piece::Operand(operand) => pending.push(operand.node),
+                        Piece::Operand(operand) => match next {
+                            Some(&Piece::Tile { label, .. }) if label == TileName::COLON => {
+                                if let Some(name) = self.key(operand.node, &mut named)? {
+                                    binders.push((name, scope));
+                                    scope = Some(binders.len().saturating_sub(1));
+                                }
+                            },
+                            Some(&Piece::Tile { label, .. })
+                                if label == TileName::ARROW || label == TileName::FAT_ARROW =>
+                            {
+                                pending.push((operand.node, scope));
+                                read_pieces(self.pbg, self.tree, operand.node, &mut keyed)?;
+                                for (at, held) in keyed.pieces.iter().enumerate() {
+                                    if let (&Piece::Operand(key), Some(&Piece::Tile { label, .. })) =
+                                        (held, keyed.pieces.get(at.saturating_add(1)))
+                                        && label == TileName::COLON
+                                        && let Some(name) = self.key(key.node, &mut named)?
+                                    {
+                                        binders.push((name, scope));
+                                        scope = Some(binders.len().saturating_sub(1));
+                                    }
+                                }
+                            },
+                            _ => pending.push((operand.node, scope)),
+                        },
                         Piece::Tile { label, at }
                             if label == TileName::IDENTIFIER
                                 || label == TileName::TYPE_VARIABLE =>
                         {
-                            let mentioned = positions.get(&self.name_of(at)).copied();
+                            let name = self.name_of(at);
+                            let mut enclosing = scope;
+                            let mut bound = false;
+                            while let Some(binder) = enclosing
+                                && let Some(&(held, outer)) = binders.get(binder)
+                            {
+                                if held == name {
+                                    bound = true;
+                                    break;
+                                }
+                                enclosing = outer;
+                            }
+                            let mentioned = positions.get(&name).copied().filter(|_| !bound);
                             if let Some(earlier) = mentioned
                                 && earlier != later
                                 && entries.get(usize::from(earlier)).is_some_and(|other| {
@@ -400,6 +450,7 @@ impl<'source> Collector<'_, 'source>
                         Piece::Tile { .. } => {},
                     }
                 }
+                scratch.pieces = pieces;
             }
         }
         let end = TelescopePosition(entries.len());
@@ -422,6 +473,41 @@ impl<'source> Collector<'_, 'source>
                 .filter_map(|&position| entries.get(usize::from(position)).copied())
                 .collect(),
         ))
+    }
+
+    /// The name the key `node` of a group's entry `k : T` binds, when the key
+    /// is one name, read through `scratch`.
+    ///
+    /// # Specification
+    /// - ensures: the name exactly when the key's one piece is an identifier or
+    ///   a type variable.
+    /// - fails: a form fault reading the key's pieces.
+    /// - panics: none.
+    /// - executable: none — the name is read from the key's own tile, which a
+    ///   predicate over the answer would read again.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function type's binder in an implicit's type, named
+    ///   as a later parameter, orders nothing.
+    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
+    fn key(
+        &self,
+        node: NodeIndex,
+        scratch: &mut Pieces,
+    ) -> Result<Option<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        read_pieces(self.pbg, self.tree, node, scratch)?;
+        Ok(match *scratch.pieces.as_slice() {
+            [Piece::Tile { label, at }]
+                if label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                Some(self.name_of(at))
+            },
+            _ => None,
+        })
     }
 
     /// The stage binders of the function whose header `header` stands just

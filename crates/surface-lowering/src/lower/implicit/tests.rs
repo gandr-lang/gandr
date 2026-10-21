@@ -109,6 +109,33 @@ fn a_forward_reference_from_the_prefix_binds_after_its_target()
 }
 
 #[test]
+fn a_binder_of_an_implicit_s_type_mentions_no_parameter_1350()
+{
+    let source = "\
+def named @[m : Type, combine : (x : m) => m] (x : m) -> -F m { become combine(x) }
+def bare @[m : Type, combine : m => m] (x : m) -> -F m { become combine(x) }
+def twin(m : Type, combine : m => m, x : m) -> -F m { become combine(x) }
+def keyed @[c : (y : t) => t] (t : Type, v : t) -> -F t { become c(v) }
+def keyedTwin(t : Type, c : t => t, v : t) -> -F t { become c(v) }
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (implicit, explicit) in [("named", "twin"), ("bare", "twin"), ("keyed", "keyedTwin")] {
+        assert_eq!(
+            equal_type_syntax(
+                &arena,
+                declared_type_of(&module, SurfaceName::from(implicit)),
+                declared_type_of(&module, SurfaceName::from(explicit)),
+            ),
+            CertificateEquality::Equal,
+            "`{implicit}` binds in the order `{explicit}` writes: a name its implicit's type \
+             binds mentions no parameter, and a name it reads still orders"
+        );
+    }
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
 fn a_telescope_cycle_is_refused_naming_the_cycle()
 {
     let source = "def tangled @[a : b, b : a] (x : a) -> -F a { return x }\n";
