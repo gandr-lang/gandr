@@ -1,0 +1,33 @@
+// A buffer the ring allocates is live from its allocation until it is freed:
+// the kernel owns it while an operation is in flight and hands it back with
+// the completion (boats, _Notes on io-uring_, 2020), so the program holds it
+// exactly once at every step. `Buf` is the host's buffer, allocated and freed
+// through the `Ring` interface; a scope handling `Ring` serves the buffers
+// itself, minting each one its `alloc` clause resumes with and reclaiming
+// each one its `free` clause receives.
+
+/// A buffer allocated and freed: the allocation places it live, and the free
+/// hands it back to the scope that minted it. The `alloc` clause lends its
+/// mint to a mock kernel, which fills it and hands it back with the
+/// completion, before the clause resumes with it.
+@[ checks ]
+def bufferReturned() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => {
+      fork (kernel : ?Buf. !Buf. end) {
+        recv(kernel) as held;
+        send(kernel, held);
+        close(kernel)
+      } as ring;
+      send(ring, b);
+      recv(ring) as filled;
+      close(ring);
+      k(filled)
+    },
+    oper free(b, k) => k(unit)
+  }
+}

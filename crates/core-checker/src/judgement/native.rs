@@ -1254,6 +1254,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),
         };

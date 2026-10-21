@@ -969,7 +969,12 @@ fn checked(
         ]),
         CheckRefusal::Linearity {
             at,
-            defect: LinearityDefect::Unrestricted | LinearityDefect::Unbound { .. },
+            defect:
+                LinearityDefect::Unrestricted
+                | LinearityDefect::Unbound { .. }
+                | LinearityDefect::BufferUnreturned { .. }
+                | LinearityDefect::BufferReturnedTwice { .. }
+                | LinearityDefect::BufferRead { .. },
         }
         | CheckRefusal::Access { at, .. }
         | CheckRefusal::Codata { at, .. }
@@ -1415,6 +1420,15 @@ impl fmt::Display for Checked
                     "the action names linear index {}, which no fork or receive bound",
                     u32::from(index)
                 ),
+                | LinearityDefect::BufferUnreturned { .. } => f.write_str(
+                    "the body under a placed buffer finishes with the buffer never handed back",
+                ),
+                | LinearityDefect::BufferReturnedTwice { .. } => {
+                    f.write_str("the buffer is handed back after it was already returned")
+                },
+                | LinearityDefect::BufferRead { .. } => f.write_str(
+                    "the buffer is read other than by the send, operation or resumption that returns it",
+                ),
             },
             | CheckRefusal::Access { defect, .. } => match defect {
                 | AccessDefect::NotHeld => f.write_str("the access names a linear slot that holds no value"),
@@ -1838,6 +1852,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::Stage => {
                 "a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel"
             },
+            | UnadmittedFormer::Buffer => "a buffer at the pure kernel boundary",
         })
     }
 }
@@ -4193,6 +4208,7 @@ mod tests
             UnadmittedFormer::HigherFlow,
             UnadmittedFormer::Memory,
             UnadmittedFormer::Stage,
+            UnadmittedFormer::Buffer,
         ]
         .into_iter()
         .map(|former| title(CheckRefusal::OutOfFragment { at: comp, former }))

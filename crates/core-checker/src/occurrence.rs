@@ -1119,7 +1119,12 @@ where
                             .map(|inner| (AnyNode::ValueType(inner), reach.nest())),
                     );
                 },
-                Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Unknown))
+                Some(
+                    &(ValueType::Base(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Unknown
+                    | ValueType::Buffer),
+                )
                 | None => {},
             },
             AnyNode::CompType(id) => match arena.comp_type(id) {

@@ -698,6 +698,7 @@ pub fn decode_bridge(
         | ValueTypeView::List(_)
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Unit
@@ -1104,7 +1105,8 @@ fn convert(
                     | (_, ValueTypeView::Unknown)
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
-                    | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
+                    | (ValueTypeView::Unit, ValueTypeView::Unit)
+                    | (ValueTypeView::Buffer, ValueTypeView::Buffer) => true,
                     // Where a found type meets a wanted one a stage is
                     // subsumed by the order; invariantly it equals only
                     // itself.
@@ -1342,6 +1344,7 @@ fn convert(
                         | ValueTypeView::Session(_)
                         | ValueTypeView::StaticPi { .. }
                         | ValueTypeView::Capability { .. }
+                        | ValueTypeView::Buffer
                         | ValueTypeView::Staged { .. }
                         | ValueTypeView::Kept { .. }
                         | ValueTypeView::World(_),
@@ -1817,6 +1820,7 @@ fn value_head(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
@@ -2067,6 +2071,7 @@ fn relocated_values(
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }

@@ -3080,7 +3080,8 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Scope
         | UnadmittedFormer::Run
         | UnadmittedFormer::HigherFlow
-        | UnadmittedFormer::Memory => Residence::Checker,
+        | UnadmittedFormer::Memory
+        | UnadmittedFormer::Buffer => Residence::Checker,
         UnadmittedFormer::ValueLift
         | UnadmittedFormer::NumericLiteral
         | UnadmittedFormer::NumericAtom

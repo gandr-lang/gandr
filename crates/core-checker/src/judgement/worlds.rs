@@ -298,6 +298,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_) => {
                 return Err(located(
                     CoreNode::Term(TermNode::Computation(at)),

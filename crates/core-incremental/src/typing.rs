@@ -221,6 +221,26 @@ pub enum Linearity
         /// The index.
         index: DeBruijnIndex,
     },
+    /// A buffer placed live reached the end of its scope never returned.
+    BufferUnreturned
+    {
+        /// The computation that placed it live.
+        site: Site,
+    },
+    /// A buffer was returned a second time.
+    BufferReturnedTwice
+    {
+        /// The computation that placed it live.
+        site: Site,
+    },
+    /// A buffer was read other than by what returns it, or a buffer never
+    /// placed live was returned.
+    BufferRead
+    {
+        /// The computation that placed it live, or the action returning a
+        /// buffer no slot holds.
+        site: Site,
+    },
 }
 
 /// The world a located refusal names, projected: the host's, or the
@@ -1154,6 +1174,15 @@ impl Projection<'_, '_, '_, '_>
             },
             LinearityDefect::Unrestricted => Linearity::Unrestricted,
             LinearityDefect::Unbound { index } => Linearity::Unbound { index },
+            LinearityDefect::BufferUnreturned { site } => Linearity::BufferUnreturned {
+                site: self.site(ArenaNode::Computation(site)),
+            },
+            LinearityDefect::BufferReturnedTwice { site } => Linearity::BufferReturnedTwice {
+                site: self.site(ArenaNode::Computation(site)),
+            },
+            LinearityDefect::BufferRead { site } => Linearity::BufferRead {
+                site: self.site(ArenaNode::Computation(site)),
+            },
         }
     }
 

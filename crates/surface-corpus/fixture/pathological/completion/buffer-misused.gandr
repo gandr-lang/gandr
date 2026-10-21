@@ -1,0 +1,107 @@
+// A ring buffer held other than exactly once. The kernel owns a buffer while
+// an operation is in flight and hands it back with the completion (boats,
+// _Notes on io-uring_, 2020): a buffer never handed back leaks its slot in
+// the registered area, one handed back twice is reclaimed while the kernel
+// may still own it, and one read while held would observe bytes the kernel
+// may still be writing.
+
+/// A buffer allocated and never freed.
+@[ refuses("BufferUnreturned") ]
+def neverFreed() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    pure unit
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}
+
+/// A buffer freed twice.
+@[ refuses("BufferReturnedTwice") ]
+def freedTwice() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    run first <- r.free(b);
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}
+
+/// A buffer read as a value while it is held.
+@[ refuses("BufferRead") ]
+def readWhileHeld() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    run copied : Buf <- pure b;
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}
+
+/// An `alloc` clause that drops the buffer its scope minted rather than
+/// resuming with it.
+@[ refuses("BufferUnreturned") ]
+def mintDropped() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => pure unit,
+    oper free(b, k) => k(unit)
+  }
+}
+
+/// A mock kernel that receives a buffer and never hands it back: the receive
+/// placed it live, and the kernel's body ends holding it.
+@[ refuses("BufferUnreturned") ]
+def receivedKept() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => {
+      fork (kernel : ?Buf. end) {
+        recv(kernel) as held;
+        close(kernel)
+      } as ring;
+      send(ring, b);
+      close(ring)
+    },
+    oper free(b, k) => k(unit)
+  }
+}
+
+/// A mock kernel that hands the buffer it received back twice.
+@[ refuses("BufferReturnedTwice") ]
+def receivedReturnedTwice() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => {
+      fork (kernel : ?Buf. !Buf. !Buf. end) {
+        recv(kernel) as held;
+        send(kernel, held);
+        send(kernel, held);
+        close(kernel)
+      } as ring;
+      send(ring, b);
+      recv(ring) as first;
+      recv(ring) as second;
+      close(ring);
+      k(first)
+    },
+    oper free(b, k) => k(unit)
+  }
+}

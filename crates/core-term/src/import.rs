@@ -158,6 +158,7 @@ impl Image
                 | ValueType::Abstract(_)
                 | ValueType::Capability { .. }
                 | ValueType::Unknown
+                | ValueType::Buffer
                 | ValueType::Session(_)
                 | ValueType::World(_),
             )
@@ -892,6 +893,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Kept { .. }
                                 | ValueType::StaticPi { .. }
                                 | ValueType::Unknown
+                                | ValueType::Buffer
                                 | ValueType::Stack { .. } => {},
                             }
                         },

@@ -564,7 +564,8 @@ impl CoreArena
             ValueType::Base(_)
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
-            | ValueType::Unknown => {},
+            | ValueType::Unknown
+            | ValueType::Buffer => {},
             ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                 for &component in components {
                     self.value_type_into(&mut union, component, at);

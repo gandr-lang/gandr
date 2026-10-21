@@ -2832,7 +2832,8 @@ fn arm() -> Regex
 
 /// Build one clause of a capability scope: the return clause `pure(x) => e`,
 /// or an operation clause `oper op(p, k) => e` binding the payload and the
-/// resumption.
+/// resumption, or `oper op(p, b, k) => e` binding as well the buffer the
+/// scope mints for an operation that replies one.
 ///
 /// Both clauses open on a keyword: `pure`, the returner's, and `oper`, the
 /// one a signature declares an operation with. A clause opening on the
@@ -2842,7 +2843,7 @@ fn arm() -> Regex
 /// # Specification
 /// - requires: nothing.
 /// - ensures: two alternatives, `pure ( identifier ) => E` and `oper identifier
-///   ( identifier , identifier ) => E`.
+///   ( identifier , identifier [, identifier] ) => E`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2869,6 +2870,7 @@ fn handler_clause() -> Regex
             t(TileLabel("identifier")),
             t(TileLabel(",")),
             t(TileLabel("identifier")),
+            opt(seq([t(TileLabel(",")), t(TileLabel("identifier"))])),
             t(TileLabel(")")),
             t(TileLabel("=>")),
             h(Sort::Expression),

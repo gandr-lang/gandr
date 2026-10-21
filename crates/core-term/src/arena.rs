@@ -2594,6 +2594,16 @@ impl CoreArena
         self.alloc_value_type(ValueType::Unknown)
     }
 
+    /// Mint the buffer token type `Buf`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_buffer(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Buffer)
+    }
+
     /// Mint the unknown computation type.
     ///
     /// # Specification

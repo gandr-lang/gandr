@@ -175,7 +175,7 @@ const OPERATORS: &[&str] = &[
 
 /// The primitive type spellings, and the universes.
 const PRIMITIVE_TYPES: &[&str] = &[
-    "Any", "Boolean", "Cap", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type",
+    "Any", "Boolean", "Buf", "Cap", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type",
     "Type+", "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
 ];
 

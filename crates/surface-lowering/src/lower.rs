@@ -1670,6 +1670,10 @@ enum StatementBinding
     /// `run x <- c ;` names the value for the rest of the block; the node is
     /// the name's own.
     Named(NodeIndex),
+    /// `run b <- c.alloc(n) ;` names, under `b`'s linear binder, the buffer
+    /// an exercise replies, placed live over the rest of the block; the
+    /// reply's own binder is one no name reaches. The node is the name's own.
+    Placed(NodeIndex),
     /// `c ;` discards it, splitting it as the unit under a binder no name
     /// reaches.
     Discarded,
@@ -7795,7 +7799,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. })
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -7878,6 +7882,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
             });
             return Ok(Frame::Inner(self.scope.extend(
                 frame,
+                name,
+                Maybe::Present(binder.span),
+            )));
+        }
+        if self.placing(statement, frame, bound)? == capability::Reply::Minted {
+            self.read(bound.node, Reading::Computation(frame));
+            self.statements.push(Statement {
+                origin: run.node,
+                bound: bound.node,
+                binding: StatementBinding::Placed(binder.node),
+                rest: exits::Rest::Bound,
+            });
+            let reply = self.scope.extend(
+                frame,
+                SurfaceName::from(""),
+                Maybe::Absent(binder_site::Absent::Unwritten),
+            );
+            return Ok(Frame::Inner(self.scope.extend_linear(
+                Frame::Inner(reply),
                 name,
                 Maybe::Present(binder.span),
             )));
@@ -13311,6 +13334,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let split = match statement.binding {
                 StatementBinding::Named(_)
+                | StatementBinding::Placed(_)
                 | StatementBinding::Typed { .. }
                 | StatementBinding::Forked { .. }
                 | StatementBinding::Received { .. }
@@ -13327,6 +13351,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let split = sink.arena.computation_split(tuple, arity, chain);
                 sink.origins.record_computation(split, origin);
                 chain = split;
+            }
+            if let StatementBinding::Placed(name) = statement.binding {
+                // The reply's binder holds the buffer; the rest of the block
+                // holds it live under the name's linear binder.
+                let reply = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(reply, origin);
+                let placed = sink.arena.computation_session(SessionAction::Place {
+                    payload: reply,
+                    body: chain,
+                });
+                sink.origins.record_computation(placed, origin);
+                if let Maybe::Present(name) = self.origin_at(name) {
+                    sink.origins.record_binder(placed, name);
+                }
+                chain = placed;
             }
             let bound = match statement.binding {
                 StatementBinding::Typed { annotation, .. } => {
@@ -13352,6 +13393,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     ascribed
                 },
                 StatementBinding::Named(_)
+                | StatementBinding::Placed(_)
                 | StatementBinding::Discarded
                 | StatementBinding::Split { .. }
                 | StatementBinding::Forked { .. }
@@ -13361,8 +13403,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let id = sink.arena.computation_bind(bound, chain);
             sink.origins.record_computation(id, origin);
-            if let StatementBinding::Named(name) | StatementBinding::Typed { name, .. } =
-                statement.binding
+            if let StatementBinding::Named(name)
+            | StatementBinding::Placed(name)
+            | StatementBinding::Typed { name, .. } = statement.binding
                 && let Maybe::Present(name) = self.origin_at(name)
             {
                 sink.origins.record_binder(id, name);
@@ -13372,6 +13415,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             // computation: a rewrite of the block may leave no bind and no
             // use naming it (#298).
             if let StatementBinding::Named(written)
+            | StatementBinding::Placed(written)
             | StatementBinding::Typed { name: written, .. }
             | StatementBinding::Split {
                 pattern: written, ..
@@ -13434,6 +13478,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .and_then(|_bound| self.value_type_at(annotation))
                 .map(|_annotation| ()),
             StatementBinding::Named(_)
+            | StatementBinding::Placed(_)
             | StatementBinding::Discarded
             | StatementBinding::Split { .. } => {
                 self.computation_at(statement.bound).map(|_bound| ())
@@ -15852,6 +15897,7 @@ impl Sink<'_>
                 TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
+                TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
             },
             | _ => false,
         },
@@ -15868,9 +15914,11 @@ impl Sink<'_>
                 self.origins.record_value_type(unit, origin);
                 self.arena.value_type_sum(&[unit, unit])
             },
-            TypeAtom::Unit | TypeAtom::Integer | TypeAtom::Text | TypeAtom::Void => {
-                atom_type(self.arena, atom)
-            },
+            TypeAtom::Unit
+            | TypeAtom::Integer
+            | TypeAtom::Text
+            | TypeAtom::Void
+            | TypeAtom::Buffer => atom_type(self.arena, atom),
         };
         self.origins.record_value_type(id, origin);
 
@@ -15883,8 +15931,8 @@ impl Sink<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
-///   integers, the strings and the empty sum for `Unit`, `Integer`, `Text` and
-///   `Void`.
+///   integers, the strings, the empty sum and the buffer for `Unit`, `Integer`,
+///   `Text`, `Void` and `Buffer`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -15908,6 +15956,7 @@ pub fn atom_type(
         TypeAtom::Integer => arena.value_type_base(BaseType::Integer),
         TypeAtom::Text => arena.value_type_base(BaseType::String),
         TypeAtom::Void => arena.value_type_sum(&[]),
+        TypeAtom::Buffer => arena.value_type_buffer(),
     }
 }
 

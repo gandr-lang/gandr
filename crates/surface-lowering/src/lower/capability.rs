@@ -74,6 +74,28 @@
 //! alone, so a resumption written elsewhere names nothing. Coverage — one
 //! clause per operation of `I` — is the checker's.
 //!
+//! # A clause that mints a buffer
+//!
+//! An operation replying a buffer, `Ring.alloc`, has its clause written
+//! `oper alloc(n, b, k) => N`: the scope mints `b`, the buffer the clause
+//! resumes with, and the clause holds it live. The core clause keeps its two
+//! binders: its payload binder holds the pair of the payload and the mint,
+//! which the body splits, and the mint is placed under `b`'s linear binder,
+//! so `N` returns it exactly once, through `k(b)`.
+//!
+//! - choice: the mint rides the payload binder, so every walk over a clause's
+//!   binders is unchanged; the placement is the session action
+//!   `SessionAction::Place` the perform site uses.
+//! - alternatives: a third clause binder for the mint, which every pass over
+//!   clauses would learn; a scope that resumes with a buffer of its own, the
+//!   clause resuming with unit, which leaves the handler no buffer to recycle.
+//! - reversal: a clause former whose binders are read off its operation.
+//!
+//! A run statement `run b <- c.alloc(n) ;` binds the reply under a binder no
+//! name reaches and places it under `b`'s linear binder, so the rest of the
+//! block holds `b` live: it hands `b` back to a `free`, or on through a send,
+//! exactly once, and never reads it.
+//!
 //! # Exits across a scope
 //!
 //! Each clause is a body of its own, as a lambda's is: an exit written
@@ -109,9 +131,12 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::Zone;
 use gandr_core_term::control::EffectClause;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::EffectOp;
@@ -122,6 +147,8 @@ use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::session::SessionAction;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -161,6 +188,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
+use crate::resolve::binder_site;
 
 #[cfg(test)]
 mod tests;
@@ -200,6 +228,55 @@ fn host<'source>(site: Site) -> Result<HostSignatures, LoweringRefusal<'source>>
         .map_err(|_conflict| site.out(FragmentBoundary::Unadmitted))
 }
 
+/// What the reply of an operation is to the scope handling it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Reply
+{
+    /// A buffer the scope mints, which its performer holds live.
+    Minted,
+    /// Any other value.
+    Plain,
+}
+
+/// What the reply of the host operation `operation` is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Reply::Minted`] exactly for an operation a host interface
+///   offers whose reply is the buffer type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Ring.alloc` mints, `Ring.free` and `Proc.exit` do not.
+/// - witness: `lower::capability::tests::an_allocated_buffer_is_placed_live_and_freed`
+#[spec(ensures: |ret| ret == Reply::Plain || matches!(HostSignatures::new(&mut CoreArena::new()), Ok(ref table) if matches!(table.offering(operation), Maybe::Present(_))))]
+pub(super) fn mints(operation: &OperationName) -> Reply
+{
+    let mut arena = CoreArena::new();
+    let Ok(table) = HostSignatures::new(&mut arena)
+    else {
+        return Reply::Plain;
+    };
+    let Maybe::Present(offered) = table.offering(operation)
+    else {
+        return Reply::Plain;
+    };
+    let Maybe::Present(requested) = offered.operation(operation)
+    else {
+        return Reply::Plain;
+    };
+    if matches!(arena.value_type(requested.reply), Some(&ValueType::Buffer)) {
+        Reply::Minted
+    }
+    else {
+        Reply::Plain
+    }
+}
+
 /// The operations a capability type grants, named bare.
 pub(super) type Authority = BTreeSet<OperationName>;
 
@@ -237,9 +314,45 @@ pub(super) struct Scoped
     subject: Block,
     /// The return clause's body, under its result's binder.
     on_return: NodeIndex,
-    /// Each operation clause's body, under its payload's binder and its
-    /// continuation's, in written order.
-    clauses: Vec<(OperationName, NodeIndex)>,
+    /// Each operation clause, in written order.
+    clauses: Vec<Clause>,
+}
+
+/// An operation clause of a capability scope, as the classification read
+/// it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Clause
+{
+    /// The operation the clause handles.
+    operation: OperationName,
+    /// The body, under the clause's binders.
+    body: NodeIndex,
+    /// The buffer the scope mints for the clause, for an operation that
+    /// replies one.
+    mint: Mint,
+}
+
+/// The buffer a clause's scope mints, by the names its clause gives it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mint
+{
+    /// The operation replies no buffer: the payload binder holds the payload.
+    Unminted,
+    /// The payload binder holds the pair of the payload and the mint, split
+    /// into the payload's name and the mint's, the mint placed live.
+    Minted
+    {
+        /// The payload's name, as written.
+        payload: NodeIndex,
+        /// The mint's name, as written.
+        mint: NodeIndex,
+    },
 }
 
 /// The host signatures the mint sweep has minted into the module's arena.
@@ -704,48 +817,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Projection)) = self.form_at(head)?
+        let Some((target, selected)) = self.exercised(site, site.reading.frame(), head)?
         else {
             return Ok(Planned(false));
         };
-        let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, head.node, &mut pieces)?;
-        let &[
-            Piece::Operand(target),
-            Piece::Tile {
-                label: TileName::DOT,
-                ..
-            },
-            Piece::Tile {
-                label: TileName::IDENTIFIER,
-                at: selected,
-            },
-        ] = pieces.pieces.as_slice()
-        else {
-            return Ok(Planned(false));
-        };
-        let Some((_, Former::Name)) = self.form_at(target)?
-        else {
-            return Ok(Planned(false));
-        };
-        // Resolved at the call, whose declaration already owns it: the holder's
-        // own node inherits its owner only once the projection is read.
-        let resolved = self.resolve_name(site, site.reading.frame(), self.name_at(target));
-        let holder = match resolved {
-            Ok(Maybe::Present(Resolved::Binder(bound)))
-                if self.capabilities.contains(&bound.binder) =>
-            {
-                Holder::Capability
-            },
-            Ok(Maybe::Present(Resolved::Binder(bound))) => self.written_holder(bound.declared)?,
-            Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
-                self.written_holder(declared)?
-            },
-            Ok(Maybe::Absent(_)) | Err(_) => Holder::Other,
-        };
-        if holder == Holder::Other {
-            return Ok(Planned(false));
-        }
         let name = self.name_at(selected);
         let operation = OperationName::from(name.as_ref());
         let table = host(site)?;
@@ -783,6 +858,115 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(Planned(true))
+    }
+
+    /// The capability and the operation a call head `c.op` selects, when `c`
+    /// holds a capability where `frame` stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name `c` and the selected `op` for a projection off a
+    ///   name bound or declared at a written `Cap` type, or bound by a
+    ///   capability scope; nothing for any other head.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::exercise`].
+    /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    fn exercised(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::Projection)) = self.form_at(head)?
+        else {
+            return Ok(None);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, head.node, &mut pieces)?;
+        let &[
+            Piece::Operand(target),
+            Piece::Tile {
+                label: TileName::DOT,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: selected,
+            },
+        ] = pieces.pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        let Some((_, Former::Name)) = self.form_at(target)?
+        else {
+            return Ok(None);
+        };
+        // Resolved at the call, whose declaration already owns it: the holder's
+        // own node inherits its owner only once the projection is read.
+        let resolved = self.resolve_name(site, frame, self.name_at(target));
+        let holder = match resolved {
+            Ok(Maybe::Present(Resolved::Binder(bound)))
+                if self.capabilities.contains(&bound.binder) =>
+            {
+                Holder::Capability
+            },
+            Ok(Maybe::Present(Resolved::Binder(bound))) => self.written_holder(bound.declared)?,
+            Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
+                self.written_holder(declared)?
+            },
+            Ok(Maybe::Absent(_)) | Err(_) => Holder::Other,
+        };
+        Ok((holder == Holder::Capability).then_some((target, selected)))
+    }
+
+    /// Whether the computation `bound` a run statement binds, read where
+    /// `frame` stands, exercises an operation the scope handling it mints a
+    /// buffer for, so the statement places the buffer live.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly for a call `c.op(…)` whose head is a selection
+    ///   off a capability and whose `op` replies a buffer.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `run b <- r.alloc(n) ;` places `b`, a run of any
+    ///   other exercise names its reply.
+    /// - witness: `lower::capability::tests::an_allocated_buffer_is_placed_live_and_freed`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn placing(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        bound: Placed,
+    ) -> Result<Reply, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::Call)) = self.form_at(bound)?
+        else {
+            return Ok(Reply::Plain);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, bound.node, &mut pieces)?;
+        let Some(&Piece::Operand(head)) = pieces.pieces.first()
+        else {
+            return Ok(Reply::Plain);
+        };
+        Ok(match self.exercised(site, frame, head)? {
+            Some((_, selected)) => mints(&OperationName::from(self.name_at(selected).as_ref())),
+            None => Reply::Plain,
+        })
     }
 
     /// Classify the call at `site` as a resumption when its head is a
@@ -958,18 +1142,64 @@ impl<'source> Lowerer<'_, 'source>
                         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                     };
                     closed(site, &mut cursor, TileName::COMMA)?;
-                    let Maybe::Present(continuation) = cursor.tile(TileName::IDENTIFIER)
+                    let Maybe::Present(second) = cursor.tile(TileName::IDENTIFIER)
                     else {
                         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    let operation = OperationName::from(self.name_at(at).as_ref());
+                    // An operation replying a buffer names its mint between
+                    // the payload and the continuation.
+                    let (minted, continuation) = if mints(&operation) == Reply::Minted {
+                        closed(site, &mut cursor, TileName::COMMA)?;
+                        let Maybe::Present(continuation) = cursor.tile(TileName::IDENTIFIER)
+                        else {
+                            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                        };
+                        (Some(second), continuation)
+                    }
+                    else {
+                        (None, second)
                     };
                     closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
                     closed(site, &mut cursor, TileName::FAT_ARROW)?;
                     let body = site.one(cursor.operands())?;
-                    let bound = self.bind(payload, frame)?;
-                    let resumed = self.bind(continuation, Frame::Inner(bound))?;
-                    let _first = self.resumptions.insert(resumed);
-                    self.clause(site, body.node, Frame::Inner(resumed))?;
-                    clauses.push((OperationName::from(self.name_at(at).as_ref()), body.node));
+                    let (under, mint) = if let Some(minted) = minted {
+                        // The payload binder holds the pair the body splits
+                        // into the payload and the mint, placed live.
+                        let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
+                        let pair = self.scope.extend(frame, SurfaceName::from(""), unwritten());
+                        let resumed = self.bind(continuation, Frame::Inner(pair))?;
+                        let _first = self.resumptions.insert(resumed);
+                        let split = self.bind(payload, Frame::Inner(resumed))?;
+                        let placed = self.scope.extend(
+                            Frame::Inner(split),
+                            SurfaceName::from(""),
+                            unwritten(),
+                        );
+                        let name = self.name_at(minted);
+                        self.note_binder(minted, name)?;
+                        let live = self.scope.extend_linear(
+                            Frame::Inner(placed),
+                            name,
+                            Maybe::Present(minted.span),
+                        );
+                        (Frame::Inner(live), Mint::Minted {
+                            payload: payload.node,
+                            mint: minted.node,
+                        })
+                    }
+                    else {
+                        let bound = self.bind(payload, frame)?;
+                        let resumed = self.bind(continuation, Frame::Inner(bound))?;
+                        let _first = self.resumptions.insert(resumed);
+                        (Frame::Inner(resumed), Mint::Unminted)
+                    };
+                    self.clause(site, body.node, under)?;
+                    clauses.push(Clause {
+                        operation,
+                        body: body.node,
+                        mint,
+                    });
                 },
                 Maybe::Present(piece) => {
                     return Err(site.fault(piece.placed().span, FormFault::MisplacedTile));
@@ -1362,12 +1592,43 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         let mut clauses: Vec<EffectClause> = Vec::with_capacity(scoped.clauses.len());
-        for (operation, body) in scoped.clauses.iter().cloned() {
-            let body: ComputationId = match self.mint_body(clause_body(body), sink, origin) {
-                Maybe::Present(body) => body,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-            clauses.push(EffectClause { operation, body });
+        for clause in &scoped.clauses {
+            let mut body: ComputationId =
+                match self.mint_body(clause_body(clause.body), sink, origin) {
+                    Maybe::Present(body) => body,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+            if let Mint::Minted { payload, mint } = clause.mint {
+                // Under the pair and the continuation: split the pair, the
+                // payload then the mint, and place the mint live.
+                let minted = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(minted, origin);
+                let placed = sink.arena.computation_session(SessionAction::Place {
+                    payload: minted,
+                    body,
+                });
+                sink.origins.record_computation(placed, origin);
+                if let Maybe::Present(name) = self.origin_at(mint) {
+                    sink.origins.record_binder(placed, name);
+                }
+                let pair = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+                sink.origins.record_value(pair, origin);
+                body = sink
+                    .arena
+                    .computation_split(pair, ComponentCount::from(2_usize), placed);
+                sink.origins.record_computation(body, origin);
+                if let Maybe::Present(name) = self.origin_at(payload) {
+                    sink.origins.record_binder(body, name);
+                }
+            }
+            clauses.push(EffectClause {
+                operation: clause.operation.clone(),
+                body,
+            });
         }
         sink.signature(&scoped.interface, origin).map(|signature| {
             let id =

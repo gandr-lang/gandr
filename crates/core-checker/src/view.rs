@@ -228,6 +228,9 @@ pub enum ValueTypeView<'arena>
         /// How long it lives.
         region: gandr_core_term::effect::capability::Region,
     },
+    /// The opaque buffer `Buf`: inhabited only by a receive's binder, live
+    /// until it is sent back.
+    Buffer,
     /// A session type: the protocol state an endpoint is at, with its
     /// payloads.
     Session(&'arena gandr_core_term::session::SessionType),
@@ -374,6 +377,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Staged { base, stage }) => matches!(arena.value_type(value_type), Some(&ValueType::Staged { base: found, stage: found_stage }) if found == base && found_stage == stage),
     | Ok(ValueTypeView::Kept { value, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Kept { value: found, region: found_region }) if found == value && found_region == region),
     | Ok(ValueTypeView::World(ty)) => matches!(arena.value_type(value_type), Some(&ValueType::World(found)) if found == ty),
+    | Ok(ValueTypeView::Buffer) => matches!(arena.value_type(value_type), Some(&ValueType::Buffer)),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
@@ -460,6 +464,7 @@ pub fn value_type_view(
             grade,
             region,
         }),
+        ValueType::Buffer => Ok(ValueTypeView::Buffer),
         ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),
         ValueType::Kept { value, region } => Ok(ValueTypeView::Kept { value, region }),
         ValueType::World(ty) => Ok(ValueTypeView::World(ty)),

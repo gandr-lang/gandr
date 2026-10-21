@@ -1291,6 +1291,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// A fork binds two endpoints rather than acting on one.
             Fork,
+            /// A placement binds a buffer rather than acting on an endpoint.
+            Place,
         }
     }
 }
@@ -1350,6 +1352,17 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The continuation, under the parent's end's linear binder.
         parent: C,
     },
+    /// `run b <- c.alloc(n) ;`, after its bind: place `payload`, a buffer the
+    /// bind returned, live in one linear binder and run `body` under it. The
+    /// slot opens available, and only a send, a resumption or an operation's
+    /// payload that returns the buffer spends it.
+    Place
+    {
+        /// The buffer, the bind's own binder.
+        payload: V,
+        /// The rest of the block, under the buffer's linear binder.
+        body: C,
+    },
 }
 
 impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
@@ -1357,15 +1370,17 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     /// The endpoint the action acts on.
     ///
     /// # Specification
-    /// - ensures: the linear index every action but a fork names.
-    /// - provides: [`subject::Absent::Fork`] for a fork.
+    /// - ensures: the linear index every action but a fork or a placement
+    ///   names.
+    /// - provides: [`subject::Absent::Fork`] for a fork and
+    ///   [`subject::Absent::Place`] for a placement.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every action's subject and the fork's absence are
     ///   asserted.
     /// - witness: `session::tests::actions_name_their_subject_and_children`
-    #[spec(ensures: |ret| matches!(*self, Self::Fork { .. }) == matches!(ret, Maybe::Absent(_)))]
+    #[spec(ensures: |ret| matches!(*self, Self::Fork { .. } | Self::Place { .. }) == matches!(ret, Maybe::Absent(_)))]
     #[inline]
     pub const fn endpoint(&self) -> Maybe<DeBruijnIndex, subject::Absent>
     {
@@ -1376,6 +1391,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
             | Self::Offer { endpoint, .. }
             | Self::Close { endpoint } => Maybe::Present(endpoint),
             Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
+            Self::Place { .. } => Maybe::Absent(subject::Absent::Place),
         }
     }
 
@@ -1383,13 +1399,14 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     ///
     /// # Specification
     /// - ensures: each action names its own kind.
-    /// - provides: [`subject::Absent::Fork`] for a fork.
+    /// - provides: [`subject::Absent::Fork`] for a fork and
+    ///   [`subject::Absent::Place`] for a placement.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every action's kind is asserted.
     /// - witness: `session::tests::actions_name_their_subject_and_children`
-    #[spec(ensures: |ret| matches!(*self, Self::Fork { .. }) == matches!(ret, Maybe::Absent(_)))]
+    #[spec(ensures: |ret| matches!(*self, Self::Fork { .. } | Self::Place { .. }) == matches!(ret, Maybe::Absent(_)))]
     #[inline]
     pub const fn kind(&self) -> Maybe<ActionKind, subject::Absent>
     {
@@ -1400,6 +1417,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
             Self::Offer { .. } => Maybe::Present(ActionKind::Offer),
             Self::Close { .. } => Maybe::Present(ActionKind::Close),
             Self::Fork { .. } => Maybe::Absent(subject::Absent::Fork),
+            Self::Place { .. } => Maybe::Absent(subject::Absent::Place),
         }
     }
 
@@ -1411,7 +1429,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub fn values(&self) -> impl DoubleEndedIterator<Item = V> + '_
     {
         match *self {
-            Self::Send { payload, .. } => Some(payload),
+            Self::Send { payload, .. } | Self::Place { payload, .. } => Some(payload),
             Self::Receive { .. }
             | Self::Select { .. }
             | Self::Offer { .. }
@@ -1432,7 +1450,9 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
         let (arms, fork) = match *self {
             Self::Offer { ref arms, .. } => (Some(arms.values().copied()), None),
             Self::Fork { child, parent, .. } => (None, Some([Some(child), Some(parent)])),
-            Self::Receive { body, .. } => (None, Some([Some(body), None])),
+            Self::Receive { body, .. } | Self::Place { body, .. } => {
+                (None, Some([Some(body), None]))
+            },
             Self::Send { .. } | Self::Select { .. } | Self::Close { .. } => (None, None),
         };
         arms.into_iter()
@@ -1450,7 +1470,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     pub const fn child_binders(&self) -> crate::Binders
     {
         match *self {
-            Self::Receive { .. } | Self::Fork { .. } => crate::Binders::ONE,
+            Self::Receive { .. } | Self::Fork { .. } | Self::Place { .. } => crate::Binders::ONE,
             Self::Send { .. } | Self::Select { .. } | Self::Offer { .. } | Self::Close { .. } => {
                 crate::Binders::NONE
             },
@@ -1470,7 +1490,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
             | Self::Receive { .. }
             | Self::Select { .. }
             | Self::Offer { .. }
-            | Self::Close { .. } => None,
+            | Self::Close { .. }
+            | Self::Place { .. } => None,
         }
         .into_iter()
     }
@@ -1531,7 +1552,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
         | (&Self::Receive { endpoint: a, .. }, &SessionAction::Receive { endpoint: b, .. })
         | (&Self::Close { endpoint: a }, &SessionAction::Close { endpoint: b }) => a == b,
         | (&Self::Select { endpoint: a, label: ref x }, &SessionAction::Select { endpoint: b, label: ref y }) => a == b && x == y,
-        | (&Self::Fork { .. }, &SessionAction::Fork { .. }) => true,
+        | (&Self::Fork { .. }, &SessionAction::Fork { .. }) | (&Self::Place { .. }, &SessionAction::Place { .. }) => true,
         | _ => false,
     }))]
     #[inline]
@@ -1605,6 +1626,22 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
                         protocol: value_type(state, protocol)?,
                         child,
                         parent,
+                    }
+                },
+            },
+            Self::Place { payload, body } => match order {
+                ChildOrder::Forward => {
+                    let payload = value(state, payload)?;
+                    SessionAction::Place {
+                        payload,
+                        body: computation(state, body)?,
+                    }
+                },
+                ChildOrder::Reverse => {
+                    let body = computation(state, body)?;
+                    SessionAction::Place {
+                        payload: value(state, payload)?,
+                        body,
                     }
                 },
             },

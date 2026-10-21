@@ -456,6 +456,7 @@ impl Machine<'_, '_>
             Resident::Held { .. } => {},
             Resident::Endpoint(_)
             | Resident::Received { .. }
+            | Resident::Buffer { .. }
             | Resident::View { .. }
             | Resident::Capability { .. } => {
                 return Err(CheckRefusal::Access {
@@ -604,7 +605,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
             | ValueTypeView::Stack { .. }
-            | ValueTypeView::Capability { .. } => {
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::Unindexed,
@@ -962,6 +964,12 @@ impl Machine<'_, '_>
         };
         let defect = match read.resident {
             Resident::Endpoint(_) => return self.endpoint_as_value(term, index),
+            Resident::Buffer { at } => {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::BufferRead { site: at },
+                });
+            },
             Resident::Capability { .. } => AccessDefect::NotHeld,
             Resident::Held { .. }
                 if self.sessions.lent.iter().any(|lent| {
@@ -1180,6 +1188,7 @@ impl Machine<'_, '_>
             (
                 Resident::Endpoint(_)
                 | Resident::Received { .. }
+                | Resident::Buffer { .. }
                 | Resident::Held { .. }
                 | Resident::Capability { .. },
                 _,

@@ -329,6 +329,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             LinearityDefect::ArmsDisagree { .. } => "an arm that leaves the endpoints otherwise",
             LinearityDefect::Unrestricted => "an endpoint outside a fork or a receive",
             LinearityDefect::Unbound { .. } => "no endpoint bound here",
+            LinearityDefect::BufferUnreturned { .. } => "a buffer never handed back",
+            LinearityDefect::BufferReturnedTwice { .. } => "a buffer already handed back",
+            LinearityDefect::BufferRead { .. } => "a buffer read other than by its return",
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => "no held value here",

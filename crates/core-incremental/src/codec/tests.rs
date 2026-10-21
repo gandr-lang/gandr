@@ -58,6 +58,7 @@ fn holes_marks_and_the_unknown_types_round_trip()
             body: NodeIndex::from(1_usize),
         },
         ContentNode::UnknownType,
+        ContentNode::BufferType,
         ContentNode::UnknownComputationType,
     ];
     let mut tags = BTreeSet::new();
@@ -1023,6 +1024,15 @@ fn session_refusals_round_trip_with_their_endpoints()
         Linearity::Unrestricted,
         Linearity::Unbound {
             index: DeBruijnIndex::from(2_u32),
+        },
+        Linearity::BufferUnreturned {
+            site: Site::Node(NodeIndex::from(5_usize)),
+        },
+        Linearity::BufferReturnedTwice {
+            site: Site::Node(NodeIndex::from(5_usize)),
+        },
+        Linearity::BufferRead {
+            site: Site::Unreached,
         },
     ] {
         refusals.push(Refusal::Linearity { at, defect });

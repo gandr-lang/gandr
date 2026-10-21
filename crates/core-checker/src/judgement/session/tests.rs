@@ -1211,3 +1211,126 @@ fn a_fork_carries_nothing_kept_in_a_region()
         "a child no region bounds receives nothing kept in one"
     );
 }
+
+/// The host's buffer interface.
+///
+/// # Specification
+/// trivial.
+fn ring(arena: &mut CoreArena) -> gandr_core_term::effect::EffectSig
+{
+    gandr_core_term::effect::host::HostSignatures::new(arena)
+        .expect("the host signatures are consistent")
+        .ring
+}
+
+/// The program `run b <- alloc(0) ; body` over `ring`, with `b` placed live
+/// over `body`, which `rest` mints from the placement's linear variable; and
+/// the placement.
+///
+/// # Specification
+/// trivial.
+fn allocated(
+    arena: &mut CoreArena,
+    ring: &gandr_core_term::effect::EffectSig,
+    rest: impl FnOnce(&mut CoreArena, ValueId) -> ComputationId,
+) -> (ComputationId, ComputationId)
+{
+    let size = arena.value_literal(crate::fixture::integer_literal());
+    let alloc = arena.computation_perform(ring.clone(), "alloc".into(), size);
+    let live = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let body = rest(arena, live);
+    let reply = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let place = arena.computation_session(SessionAction::Place {
+        payload: reply,
+        body,
+    });
+    (arena.computation_bind(alloc, place), place)
+}
+
+/// Check `term` against the returner of the unit performing `ring`.
+///
+/// # Specification
+/// trivial.
+fn check_ring(
+    arena: &mut CoreArena,
+    ring: gandr_core_term::effect::EffectSig,
+    term: ComputationId,
+) -> Result<(), CheckRefusal>
+{
+    let unit = arena.value_type_unit();
+    let returner = arena
+        .comp_type_returner_with_effects(unit, gandr_core_term::effect::EffectRow::singleton(ring));
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let returner = form_comp_type(&mut context, returner)?;
+    let checked = check_comp(&mut context, term, returner).map(|_| ());
+    assert_eq!(
+        context.depth(Zone::Linear),
+        gandr_core_term::BinderDepth::default(),
+        "a run leaves the linear zone as it found it"
+    );
+    checked
+}
+
+#[test]
+fn an_allocated_buffer_is_returned_once()
+{
+    let mut arena = CoreArena::new();
+    let ring = ring(&mut arena);
+    let (freed, _) = allocated(&mut arena, &ring, |arena, live| {
+        arena.computation_perform(ring.clone(), "free".into(), live)
+    });
+    assert_eq!(
+        check_ring(&mut arena, ring.clone(), freed),
+        Ok(()),
+        "the free returns the buffer the allocation placed"
+    );
+    let mut second = None;
+    let (twice, twice_placed) = allocated(&mut arena, &ring, |arena, live| {
+        let first = arena.computation_perform(ring.clone(), "free".into(), live);
+        let again = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        second = Some(again);
+        let then = arena.computation_perform(ring.clone(), "free".into(), again);
+        arena.computation_bind(first, then)
+    });
+    let again = second.expect("the second free was minted");
+    assert_eq!(
+        check_ring(&mut arena, ring.clone(), twice),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(again)),
+            defect: LinearityDefect::BufferReturnedTwice { site: twice_placed },
+        }),
+        "the second free returns a buffer already returned"
+    );
+    let (kept, kept_placed) = allocated(&mut arena, &ring, |arena, _live| {
+        let unit = arena.value_unit();
+        arena.computation_return(unit)
+    });
+    assert_eq!(
+        check_ring(&mut arena, ring, kept),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(kept_placed)),
+            defect: LinearityDefect::BufferUnreturned { site: kept_placed },
+        }),
+        "a body that never frees its buffer is refused at the placement"
+    );
+}
+
+#[test]
+fn a_buffer_no_slot_holds_is_never_returned()
+{
+    let mut arena = CoreArena::new();
+    let ring = ring(&mut arena);
+    let size = arena.value_literal(crate::fixture::integer_literal());
+    let alloc = arena.computation_perform(ring.clone(), "alloc".into(), size);
+    let reply = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let free = arena.computation_perform(ring.clone(), "free".into(), reply);
+    let unplaced = arena.computation_bind(alloc, free);
+    assert_eq!(
+        check_ring(&mut arena, ring, unplaced),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(reply)),
+            defect: LinearityDefect::BufferRead { site: free },
+        }),
+        "a reply no placement holds live is no buffer to return: returning it would forge one"
+    );
+}

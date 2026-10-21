@@ -4785,3 +4785,75 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
         "a pass handing the slots on out of order names the unwritten loop"
     );
 }
+
+/// A placed buffer is written by its bind's name, `run b <- a.alloc(4096) ;
+/// a.free(b)`, and a clause minting a buffer writes the payload, the mint
+/// and the continuation, `oper alloc(c, d, b)`, the split and the placement
+/// unwritten; a split of any other shape stays the case it is.
+#[test]
+fn a_placed_buffer_is_written_by_its_bind_s_name()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::host::HostSignatures;
+    use gandr_core_term::session::SessionAction;
+
+    let mut core = CoreArena::new();
+    let ring = HostSignatures::new(&mut core)
+        .expect("the host signatures are consistent")
+        .ring;
+    let variable = |core: &mut CoreArena, zone, index: u32| {
+        core.value_variable(zone, DeBruijnIndex::from(index))
+    };
+    let size = integer(&mut core, Sign::NonNegative, Written("4096"));
+    let held = variable(&mut core, Zone::Intuitionistic, 0);
+    let alloc = core.computation_exercise(held, ring.clone(), "alloc".into(), size);
+    let again = variable(&mut core, Zone::Intuitionistic, 1);
+    let live = variable(&mut core, Zone::Linear, 0);
+    let free = core.computation_exercise(again, ring.clone(), "free".into(), live);
+    let reply = variable(&mut core, Zone::Intuitionistic, 0);
+    let placed = core.computation_session(SessionAction::Place {
+        payload: reply,
+        body: free,
+    });
+    let subject = core.computation_bind(alloc, placed);
+    let answer = variable(&mut core, Zone::Intuitionistic, 0);
+    let on_return = core.computation_return(answer);
+    let mint = variable(&mut core, Zone::Linear, 0);
+    let resumed = core.computation_return(mint);
+    let continuation = variable(&mut core, Zone::Intuitionistic, 2);
+    let resume = core.computation_resume(continuation, resumed);
+    let minted = variable(&mut core, Zone::Intuitionistic, 0);
+    let place = core.computation_session(SessionAction::Place {
+        payload: minted,
+        body: resume,
+    });
+    let pair = variable(&mut core, Zone::Intuitionistic, 1);
+    let split = core.computation_split(pair, ComponentCount::from(2_usize), place);
+    let unit = core.value_unit();
+    let freed = core.computation_return(unit);
+    let continuation = variable(&mut core, Zone::Intuitionistic, 0);
+    let reclaim = core.computation_resume(continuation, freed);
+    let scoped = core.computation_scope(
+        ring,
+        subject,
+        on_return,
+        Arc::from([
+            EffectClause {
+                operation: "alloc".into(),
+                body: split,
+            },
+            EffectClause {
+                operation: "free".into(),
+                body: reclaim,
+            },
+        ]),
+    );
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
+        faithful(Written(
+            "handle a : Ring { run b <- a.alloc(4096) ; a.free(b\n  ) } with { pure(a) => a, oper \
+             alloc(c, d, b) => b(d), oper free(a, b) => b(unit) }"
+        ))
+    );
+}

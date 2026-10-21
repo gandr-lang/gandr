@@ -543,6 +543,7 @@ pub fn coverage(
                     | ValueTypeView::Staged { .. }
                     | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
+                    | ValueTypeView::Buffer
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => {

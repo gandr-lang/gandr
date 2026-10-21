@@ -5865,6 +5865,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     former: UnadmittedFormer::Capability,
                 });
             },
+            ValueTypeView::Buffer => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Buffer,
+                });
+            },
             ValueTypeView::List(element) => (
                 Frame::ListType { at },
                 CoreNode::Type(TypeNode::Value(element)),

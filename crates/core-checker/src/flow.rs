@@ -385,6 +385,7 @@ pub fn session_code(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => elsewhere,
@@ -688,6 +689,7 @@ pub fn endpoints(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
@@ -889,6 +891,7 @@ pub fn covariant(
                 | ValueType::Stack { .. }
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
+                | ValueType::Buffer
                 | ValueType::World(_) => return Err(refused),
             },
             Position::CompType(id) => match *arena.comp_type(id).ok_or_else(|| dangling(node))? {
@@ -1119,6 +1122,7 @@ fn computed(
             | ValueType::Stack { .. }
             | ValueType::Session(_)
             | ValueType::Capability { .. }
+            | ValueType::Buffer
             | ValueType::Staged { .. }
             | ValueType::Kept { .. }
             | ValueType::World(_) => return Err(unsupported),
@@ -1264,6 +1268,7 @@ pub fn run_premises(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_) => {
             return Err(CheckRefusal::ShapeMismatch {

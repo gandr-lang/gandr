@@ -1275,6 +1275,8 @@ enum Frame
     /// Check an operation payload after forming its interface.
     PerformPayload
     {
+        /// The perform or the exercise.
+        at: ComputationId,
         /// The supplied payload.
         payload: ValueId,
         /// Its interface classifier.
@@ -3100,6 +3102,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         };
         let (payload, reply, body) = (operation.payload, operation.reply, clause.body);
+        // An operation replying a buffer has the scope mint it: the clause
+        // receives the payload paired with the buffer, and resumes with it.
+        let minted = self.context.whnf_value_type(reply)?;
+        let payload = if matches!(
+            value_type_view(self.context.arena(), minted)?,
+            ValueTypeView::Buffer
+        ) {
+            self.context
+                .arena_mut()
+                .value_type_product(&[payload, reply])
+        }
+        else {
+            payload
+        };
         let head = self.context.whnf_comp_type(answer)?;
         let effects = match comp_type_view(self.context.arena(), head)? {
             CompTypeView::Returner { effects, .. } => effects.clone(),
@@ -3229,6 +3245,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .arena_mut()
             .comp_type_returner_with_effects(reply, effects);
         self.wait(Frame::PerformPayload {
+            at,
             payload,
             expected,
             result,
@@ -4983,6 +5000,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     .arena_mut()
                     .comp_type_returner_with_effects(reply, effects);
                 self.wait(Frame::PerformPayload {
+                    at: term,
                     payload,
                     expected,
                     result,
@@ -5457,7 +5475,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Computation::Session(
                 SessionAction::Receive { .. }
                 | SessionAction::Offer { .. }
-                | SessionAction::Fork { .. },
+                | SessionAction::Fork { .. }
+                | SessionAction::Place { .. },
             ) => self.session(term, Direction::Check(expected)),
             Computation::Memory(
                 gandr_core_term::memory::MemoryForm::Hold { .. }
@@ -6034,6 +6053,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Unit
+            | ValueTypeView::Buffer
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
             ValueTypeView::Abstract(atom) => {
                 let _level = self.context.abstract_level(atom)?;
@@ -6412,6 +6432,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
+                | ValueTypeView::Buffer
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -6482,6 +6503,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::List(_)
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
+                | ValueTypeView::Buffer
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -6967,6 +6989,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
             (Frame::Resume { stack, body }, Produced::ValueType(classifier)) => {
                 let classifier = classifier.settle(self.context.arena_mut());
                 let (input, output) = self.stack_expected(stack, classifier)?;
+                // A resumption hands a buffer on whole, as a send does: its
+                // slot is spent, never read.
+                if let Computation::Return(returned) = *self.computation(body)? {
+                    let head = self.context.whnf_comp_type(input)?;
+                    if let CompTypeView::Returner { result, .. } =
+                        comp_type_view(self.context.arena(), head)?
+                        && self.returned_buffer(body, returned, result)?
+                            == session::HandedOn::Buffer
+                    {
+                        return Ok(Step::Ascend(Produced::CompType(output)));
+                    }
+                }
                 self.wait(Frame::PrimitiveResult { result: output });
                 Ok(Step::Descend(Goal::Computation {
                     term: body,
@@ -7075,17 +7109,32 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     argument,
                     expected,
                     result,
-                }
-                | Frame::PerformPayload {
-                    payload: argument,
-                    expected,
-                    result,
                 },
                 Produced::Checked,
             ) => {
                 self.wait(Frame::PrimitiveResult { result });
                 Ok(Step::Descend(Goal::Value {
                     term: argument,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            (
+                Frame::PerformPayload {
+                    at,
+                    payload,
+                    expected,
+                    result,
+                },
+                Produced::Checked,
+            ) => {
+                // An operation's buffer payload is returned to the handler
+                // whole, as a send's is.
+                if self.returned_buffer(at, payload, expected)? == session::HandedOn::Buffer {
+                    return Ok(Step::Ascend(Produced::CompType(result)));
+                }
+                self.wait(Frame::PrimitiveResult { result });
+                Ok(Step::Descend(Goal::Value {
+                    term: payload,
                     direction: Direction::Check(expected),
                 }))
             },
@@ -8539,6 +8588,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {
                 at,

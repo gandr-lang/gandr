@@ -2202,7 +2202,7 @@ fn run(
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values && machine.comps.len() == entry_comps
-            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false })
+            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false })
             && machine.comp_types.len() == entry_comp_types
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
@@ -3095,7 +3095,7 @@ fn held_level(
         ValueType::Staged { base, stage } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StagedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == stage && *child == base && *child_frame == frame && *child_binders == binders),
         ValueType::Kept { value, region } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::KeptType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == region && *child == value && *child_frame == frame && *child_binders == binders),
         ValueType::World(gandr_core_term::world::WorldType::At { inner, world }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LocatedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == world && *child == inner && *child_frame == frame && *child_binders == binders),
-ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Capability { ref authority, .. } => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::CapabilityType { source: quoted })
             && new_tasks.len() == authority.types().count().saturating_add(1)
@@ -3232,6 +3232,7 @@ fn step_quoted_value_type(
         | ValueType::Universe { .. }
         | ValueType::Abstract(_)
         | ValueType::Unknown
+        | ValueType::Buffer
         | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => {
             machine.value_types.push(quoted);
         },

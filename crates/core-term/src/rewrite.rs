@@ -1508,7 +1508,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
@@ -1971,7 +1971,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
-                        | ValueType::Unknown => {},
+                        | ValueType::Unknown
+                        | ValueType::Buffer => {},
                         ValueType::Capability { ref authority, .. } => self.tasks.extend(
                             authority
                                 .types()
@@ -3330,7 +3331,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
@@ -3485,7 +3486,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             ValueType::Base(_)
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
-            | ValueType::Unknown => id,
+            | ValueType::Unknown
+            | ValueType::Buffer => id,
             ValueType::Capability {
                 ref authority,
                 grade,

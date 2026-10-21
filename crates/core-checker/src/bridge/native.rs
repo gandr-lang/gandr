@@ -209,6 +209,7 @@ impl Erasure<'_, '_>
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
+                    | ValueType::Buffer
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_) => return Err(Refusal::MachineInvariant),
@@ -503,6 +504,7 @@ impl Erasure<'_, '_>
                     | ValueType::Unknown
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
+                    | ValueType::Buffer
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_) => return Err(Refusal::MachineInvariant),

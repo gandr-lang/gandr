@@ -264,6 +264,7 @@ pub fn clause(
             | ValueType::Path { .. }
             | ValueType::Stack { .. }
             | ValueType::Capability { .. }
+            | ValueType::Buffer
             | ValueType::Lift { .. }
             | ValueType::StaticPi { .. }
             | ValueType::Sigma { .. }
