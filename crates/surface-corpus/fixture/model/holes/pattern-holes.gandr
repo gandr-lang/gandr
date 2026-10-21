@@ -15,9 +15,9 @@ data Shade : Type {
 @[ refuses("UndecidedCoverage") ]
 def rank(c : Shade) -> -F Integer {
   case c {
-    Crimson => return 0,
-    ? => return 1,
-    Navy => return 2
+    Crimson => 0,
+    ? => 1,
+    Navy => 2
   }
 }
 
@@ -32,8 +32,8 @@ data Option : Type {
 @[ refuses("UndecidedCoverage") ]
 def weigh(m : Option) -> -F Integer {
   case m {
-    Value(?) => return 100,
-    NoValue => return 200
+    Value(?) => 100,
+    NoValue => 200
   }
 }
 

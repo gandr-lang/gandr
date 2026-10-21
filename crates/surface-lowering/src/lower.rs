@@ -667,6 +667,7 @@ mod description;
 
 mod exits;
 
+pub use exits::ElidableExit;
 pub use exits::Exit;
 pub use exits::Explicitness;
 pub use exits::InferredExit;
@@ -2954,6 +2955,9 @@ struct Lowerer<'run, 'source>
     inferred: BTreeSet<NodeIndex>,
     /// Every inferred exit the mint sweep minted, with its tail's position.
     elided: Vec<(NodeIndex, Exit)>,
+    /// Every written `return` the mint sweep minted that the lowering would
+    /// infer were it left out, with its position and its operand's.
+    elidable: Vec<(NodeIndex, NodeIndex)>,
     /// The slots an `explicit_exits` attribute asks written exits of: a
     /// declaration it decorates, and every member of a module it decorates.
     asked: BTreeSet<SlotIndex>,
@@ -2967,6 +2971,10 @@ struct Lowerer<'run, 'source>
     /// Each block's last computation written as a statement, `c ;` before the
     /// closing brace, with the statement's span.
     stated: BTreeMap<NodeIndex, ByteSpan>,
+    /// The positions in tail position of a block's last computation written
+    /// as a statement, `c ;`: an exit there keeps `c` the block's end, so the
+    /// sugared form keeps it written.
+    stated_tails: BTreeSet<NodeIndex>,
     /// Each block's last statement that is not an exit and that does not
     /// leave on every path: the block runs it, discards its result and
     /// returns the unit.
@@ -3894,6 +3902,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.delimited.is_empty()
         && self.inferred.is_empty()
         && self.stated.is_empty()
+        && self.stated_tails.is_empty()
         && self.trailing.is_empty()
         && self.stage_marks.is_empty()
         && self.pattern_stated.is_empty()
@@ -3936,6 +3945,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.delimited.clear();
         self.inferred.clear();
         self.stated.clear();
+        self.stated_tails.clear();
         self.trailing.clear();
         self.stage_marks.clear();
         self.pattern_stated.clear();
@@ -3987,6 +3997,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.attribute(&mut attributes, arena)?;
         let documentation = self.document()?;
         let inferred = self.inferred_exits();
+        let elidable = self.elidable_exits();
         let nested = self.nested_sites(&origins, resumed);
         let declarations = self.assemble(&mut origins);
         let structures = self.structures();
@@ -4065,6 +4076,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_constructors(constructors)
         .with_codata(codata)
         .with_inferred_exits(inferred)
+        .with_elidable_exits(elidable)
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
@@ -4279,10 +4291,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             delimited: BTreeSet::new(),
             inferred: BTreeSet::new(),
             elided: Vec::new(),
+            elidable: Vec::new(),
             asked: BTreeSet::new(),
             asked_runs: BTreeMap::new(),
             leading: BTreeSet::new(),
             stated: BTreeMap::new(),
+            stated_tails: BTreeSet::new(),
             trailing: BTreeSet::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
@@ -11788,6 +11802,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Bridge::Inserted(Insertion::Return) => Exit::Return,
                     Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
                 }));
+            }
+            else if let Some(operand) = self.elidable_at(position) {
+                self.elidable.push((position, operand));
             }
         }
         if self.breaking.contains(&position)

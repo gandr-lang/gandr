@@ -21,32 +21,32 @@ module LCSyntax : Model(LC) {
   type Tm(g : N) = Term;
 
   /// The empty context has no variables.
-  def empty() -> -F N { return Z }
+  def empty() -> -F N { Z }
 
   /// A substitution applied to a term.
   def subTm(g : N, d : N, t : Term, s : Env) -> -F Term { become subst(t, s) }
 
   /// Context extension adds one variable.
-  def extendTm(g : N) -> -F N { return S(g) }
+  def extendTm(g : N) -> -F N { S(g) }
 
   /// Weakening shifts every index by one.
-  def pTm(g : N) -> -F Env { return Shift(S(Z)) }
+  def pTm(g : N) -> -F Env { Shift(S(Z)) }
 
   /// The newest variable is index zero.
-  def qTm(g : N) -> -F Term { return Ix(Z) }
+  def qTm(g : N) -> -F Term { Ix(Z) }
 
   /// Single substitution conses its term onto the identity.
-  def singleTm(g : N, a : Term) -> -F Env { return Cons(a, Shift(Z)) }
+  def singleTm(g : N, a : Term) -> -F Env { Cons(a, Shift(Z)) }
 
   /// Lifting is the substitution's constructor; its indices stand in the
   /// order their first occurrence gives, the target `d` before `g`.
-  def liftTm(d : N, g : N, s : Env) -> -F Env { return Lift(s) }
+  def liftTm(d : N, g : N, s : Env) -> -F Env { Lift(s) }
 
   /// Abstraction binds index zero.
-  def lam(g : N, t : Term) -> -F Term { return Lam(t) }
+  def lam(g : N, t : Term) -> -F Term { Lam(t) }
 
   /// Application.
-  def app(g : N, t : Term, u : Term) -> -F Term { return Ap(t, u) }
+  def app(g : N, t : Term, u : Term) -> -F Term { Ap(t, u) }
 
   /// Law 1, `subQSingle`.
   @[ checks ]

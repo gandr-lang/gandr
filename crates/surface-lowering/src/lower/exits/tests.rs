@@ -14,6 +14,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceText;
 
+use super::ElidableExit;
 use super::Exit;
 use super::Explicitness;
 use super::InferredExit;
@@ -621,6 +622,59 @@ fn an_explicit_exits_attribute_asks_within_its_form()
         ),
         "the declaration whose exit goes unlisted is refused"
     );
+}
+
+#[test]
+fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
+{
+    let source = format!(
+        "{NAT}def succeeded(n : Nat) -> -F Nat {{ return Succ(n) }}\n\
+         def succeeded_bare(n : Nat) -> -F Nat {{ Succ(n) }}\n\
+         def arms(m : Nat) -> -F Nat {{ case m {{ Zero => return m, Succ(p) => return p }} }}\n\
+         def arms_bare(m : Nat) -> -F Nat {{ case m {{ Zero => m, Succ(p) => p }} }}\n\
+         def early(k : Nat) -> -F Nat {{ case k {{ Zero => return k, Succ(j) => {{ run q <- case j {{ Zero => return j, Succ(r) => pure r }} ; pure q }} }} }}\n\
+         def computed(n : Nat) -> -F Nat {{ return succeeded(n) }}\n\
+         def stated(n : Nat) -> -F Nat {{ return n ; }}\n\
+         def grouped(n : Nat) -> -F Nat {{ return (Succ(n)) }}\n\
+         def quoted(t : Type) -> -F Type {{ return (+U (t -> -F t)) }}\n\
+         def held(c : Nat) -> -F Nat {{ case c {{ Zero => return c, Succ(s) => return s }} ; }}\n\
+         def holed(n : Nat) -> -F Nat {{ return ?h }}\n\
+         @[ explicit_exits ]\n\
+         def asked(n : Nat) -> -F Nat {{ return n }}\n\
+         @[ explicit_exits, explicit_exits ]\n\
+         def refused(n : Nat) -> -F Nat {{ return n }}\n"
+    );
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let elidable = |context: &str, written: &str, value: &str| ElidableExit {
+        span: at(context, written),
+        value: at(context, value),
+    };
+    assert_eq!(
+        module.elidable_exits(),
+        [
+            elidable("{ return Succ(n) }", "return Succ(n)", "Succ(n)"),
+            elidable("Zero => return m,", "return m", "m"),
+            elidable("=> return p }", "return p", "p"),
+            elidable("Zero => return k,", "return k", "k"),
+            elidable("{ return (Succ(n)) }", "return (Succ(n))", "(Succ(n))"),
+        ],
+        "a tail's return of a value is listed, in a body, in a match arm and grouped; an \
+         early one, one of a computation, of a grouped type or of a hole, one written as a \
+         statement or in tail position of one, one an attribute asks for and one in a \
+         refused declaration are not"
+    );
+    for (written, bare) in [("succeeded", "succeeded_bare"), ("arms", "arms_bare")] {
+        assert_same_body(
+            &module,
+            &arena,
+            (SurfaceName::from(written), SurfaceName::from(bare)),
+        );
+    }
 }
 
 #[test]

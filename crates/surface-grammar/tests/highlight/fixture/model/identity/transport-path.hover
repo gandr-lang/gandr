@@ -151,10 +151,9 @@
 33:89-33:89 x ⇒ x : a @33:89-33:90
 33:90-33:90 ) ⇒ Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) : Type @33:9-33:91
 33:92-33:92 { ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @30:1-35:2
-34:3-34:8 return ⇒ -F Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x⏎), x) @34:3-34:17
-34:10-34:14 here( ⇒ Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x),⏎  x) @34:10-34:17
-34:15-34:15 x ⇒ x : a @34:15-34:16
-34:16-34:16 ) ⇒ Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x),⏎  x) @34:10-34:17
+34:3-34:7 here( ⇒ Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x),⏎  x) @34:3-34:10
+34:8-34:8 x ⇒ x : a @34:8-34:9
+34:9-34:9 ) ⇒ Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x),⏎  x) @34:3-34:10
 35:1-35:1 } ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @30:1-35:2
 39:1-39:11 @[ checks ] ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @39:1-40:1
 40:1-40:3 def ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @40:1-40:72

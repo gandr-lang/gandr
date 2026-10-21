@@ -15,7 +15,7 @@ theory Counter {
 module Sealed :> Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { return 0 }
+  def start() -> -F Integer { 0 }
 
   def step(n : Integer) -> -F Integer { become n + 1 }
 }

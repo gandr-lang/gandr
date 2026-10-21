@@ -12,8 +12,8 @@ data Maybe : Type {
 @[ refuses("UndecidedCoverage") ]
 def describe(m : Maybe) -> -F Integer {
   case m {
-    Just(?) => return 100,
-    Nothing => return 200
+    Just(?) => 100,
+    Nothing => 200
   }
 }
 

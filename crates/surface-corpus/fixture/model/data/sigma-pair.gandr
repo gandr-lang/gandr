@@ -18,7 +18,7 @@ def tagged = (3, (MkIx : Ix(3))) ;
 @[ checks ]
 def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
   case p {
-    #{m, w} => return m
+    #{m, w} => m
   }
 }
 
@@ -69,7 +69,7 @@ def rebuilt(p : #{
   v : Path(Integer, n, n)
 }) -> -F Path(#{n : Integer, v : Path(Integer, n, n)}, p, p) {
   case p {
-    #{.n = m, .v = w} => return here((m, w))
+    #{.n = m, .v = w} => here((m, w))
   }
 }
 
@@ -78,7 +78,7 @@ def rebuilt(p : #{
 @[ checks ]
 def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> -F Integer {
   case t {
-    #{.a = x, .c = z} => return x
+    #{.a = x, .c = z} => x
   }
 }
 
@@ -111,5 +111,5 @@ def calledFiber(e : #{
   cell : Integer => Integer,
   fix : Path(Integer, cell(0), 0)
 }) -> -F Path(#{cell : Integer => Integer, fix : Path(Integer, cell(0), 0)}, (e.cell, e.fix), e) {
-  return here(e)
+  here(e)
 }

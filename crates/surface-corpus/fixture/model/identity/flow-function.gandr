@@ -13,7 +13,7 @@ module ReaderSchema {
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return (age, name)
+      #{name, age} => (age, name)
     }
   }
   /// The flow from the old schema to the new, by its translator.
@@ -28,7 +28,7 @@ module ReaderSchema {
   @[ checks ]
   def age(record : New) -> -F Integer {
     case record {
-      #{years, name} => return years
+      #{years, name} => years
     }
   }
   /// The reader of ages ridden back to the old schema.

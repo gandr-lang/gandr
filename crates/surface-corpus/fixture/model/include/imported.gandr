@@ -30,7 +30,7 @@ module Successor : Model(PointedMonoid) {
   }
 
   /// The identity function.
-  def ident(x : Integer) -> -F Integer { return x }
+  def ident(x : Integer) -> -F Integer { x }
 
   /// The successor.
   def succ(x : Integer) -> -F Integer { return x + 1 }
@@ -39,12 +39,12 @@ module Successor : Model(PointedMonoid) {
     f : Integer => Integer,
     g : Integer => Integer
   ) -> -F (Integer => Integer) {
-    return thunk { become andThen(f, g) }
+    thunk { become andThen(f, g) }
   }
 
-  def one() -> -F (Integer => Integer) { return ident }
+  def one() -> -F (Integer => Integer) { ident }
 
-  def point() -> -F (Integer => Integer) { return succ }
+  def point() -> -F (Integer => Integer) { succ }
 
   /// Associativity, included through the monoid.
   @[ checks ]
@@ -53,7 +53,7 @@ module Successor : Model(PointedMonoid) {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    return here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
+    here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
   }
 
   /// The left unit law, included.
@@ -63,7 +63,7 @@ module Successor : Model(PointedMonoid) {
     mul(one(), f),
     f
   ) {
-    return here(f)
+    here(f)
   }
 
   /// The right unit law, included.
@@ -73,7 +73,7 @@ module Successor : Model(PointedMonoid) {
     mul(f, one()),
     f
   ) {
-    return here(f)
+    here(f)
   }
 }
 

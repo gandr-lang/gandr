@@ -12,14 +12,14 @@ module Versions {
   @[ checks ]
   def toV2(record : V1) -> -F V2 {
     case record {
-      #{name, age} => return (age, name)
+      #{name, age} => (age, name)
     }
   }
   /// The second translator: a flag added.
   @[ checks ]
   def toV3(record : V2) -> -F V3 {
     case record {
-      #{age, name} => return (+{.1 = unit}, age, name)
+      #{age, name} => (+{.1 = unit}, age, name)
     }
   }
   /// The flow from the first version to the second.

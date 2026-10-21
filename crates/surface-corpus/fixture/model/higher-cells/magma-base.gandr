@@ -19,8 +19,8 @@ theory Magma {
 @[ checks ]
 def exchange(b : Bool) -> -F Bool {
   case b {
-    true => return +{.1 = unit},
-    false => return +{.0 = unit}
+    true => +{.1 = unit},
+    false => +{.0 = unit}
   }
 }
 
@@ -28,11 +28,11 @@ def exchange(b : Bool) -> -F Bool {
 /// apart from the flow former `stay`.
 @[ checks ]
 def boolId(b : Bool) -> -F Bool {
-  return b
+  b
 }
 
 /// The identity on the constant corolla's one element.
 @[ checks ]
 def keep(e : +{Unit}) -> -F +{Unit} {
-  return e
+  e
 }

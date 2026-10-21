@@ -12,7 +12,7 @@ data Nat : Type {
 @[ checks ]
 def next(n : Nat) -> -F Nat {
   run m : Nat <- pure Succ(n) ;
-  return Succ(m)
+  Succ(m)
 }
 
 /// The bind runs: `next` binds the successor and returns the next one.
@@ -23,7 +23,7 @@ def three = thunk { become next(Succ(Zero)) } ;
 /// A suspended function is named at its written type and called.
 @[ checks ]
 def apply(n : Nat) -> -F Nat {
-  run f : (Nat) => Nat <- pure thunk { fn (x) { return Succ(x) } } ;
+  run f : (Nat) => Nat <- pure thunk { fn (x) { Succ(x) } } ;
   f(n)
 }
 
@@ -31,5 +31,5 @@ def apply(n : Nat) -> -F Nat {
 @[ refuses("TypeMismatch") ]
 def mistyped(n : Nat) -> -F Nat {
   run m : Unit <- pure Succ(n) ;
-  return n
+  n
 }

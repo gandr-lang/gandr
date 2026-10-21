@@ -18,13 +18,13 @@ data Vec(a : Type) : Nat -> Type {
 /// The vector of one integer, one long.
 @[ checks ]
 def single() -> -F Vec(Integer, Succ(Zero)) {
-  return VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
+  VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
 }
 
 /// A vector of two integers, two long: each `VCons` one past its tail.
 @[ checks ]
 def pair() -> -F Vec(Integer, Succ(Succ(Zero))) {
-  return VCons(
+  VCons(
     Succ(Zero),
     1,
     (VCons(Zero, 2, (VNil : Vec(Integer, Zero))) : Vec(Integer, Succ(Zero)))

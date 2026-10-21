@@ -15,7 +15,7 @@ def exitWritten() -> -F Integer {
 @[ checks, explicit_runs ]
 def runWritten() -> -F Integer {
   run m <- exitWritten() ;
-  return m
+  m
 }
 
 /// A value laid out in the sugared form.

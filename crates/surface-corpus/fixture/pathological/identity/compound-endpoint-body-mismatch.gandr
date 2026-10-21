@@ -5,5 +5,5 @@ def dbl(x: Integer) -> -F Integer {
 
 @[ refuses("TypeMismatch") ]
 def refuted(x: Integer) -> -F Path(Integer, dbl(x), x) {
-  return 5
+  5
 }

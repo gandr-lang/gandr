@@ -108,11 +108,13 @@ pub struct Motives
     reach: Reach,
 }
 
-/// Which composites [`Motives`] holds a motive for.
+/// Which forms a table the lowering derived answers for: [`Motives`]'
+/// composites, `crate::tail::Tails`' exits.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum Reach
+pub enum Reach
 {
-    /// Those whose motive the lowering derived and the printer spells.
+    /// Those the lowering derived: a motive the printer spells, an exit the
+    /// lowering would infer.
     #[default]
     Derived,
     /// Every one, an empty motive standing in where none was derived: the
@@ -337,7 +339,7 @@ pub fn motives(
 ///
 /// # Specification
 /// trivial.
-fn within(
+pub fn within(
     span: ByteSpan,
     base: ByteOffset,
 ) -> Option<ByteSpan>

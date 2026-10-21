@@ -7,7 +7,7 @@
 /// A module whose one member takes no arguments.
 module Origin {
   /// The starting point.
-  def zero() -> -F Integer { return 0 }
+  def zero() -> -F Integer { 0 }
 }
 
 /// The member called through its module's name.

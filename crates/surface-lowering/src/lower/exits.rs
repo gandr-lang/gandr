@@ -268,6 +268,44 @@ pub struct InferredExit
     pub explicitness: Explicitness,
 }
 
+/// A written `return` the lowering would infer were it left out: the sugared
+/// form's tail, written as its value.
+///
+/// The `return` stands where a path through a body ends and is no statement
+/// before the closing brace; its operand is a value, through any grouping, so
+/// the exit the bare value's polarity names is the `return` written; it does
+/// not cross a handler's frame; and its declaration lowered, under no
+/// `explicit_exits` attribute. Leaving the keyword out therefore mints the
+/// same term. An early exit — one in a statement whose rest it distributes —
+/// is no tail and is never listed, nor is a `become`, which a sugared tail
+/// keeps.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the lowering produces it over
+///   the tree it lowered.
+/// - ensures: the span is the `return` form's own bytes and the value's lies
+///   inside it, after the keyword.
+/// - provides: the exits a formatter may leave out of a lowered module, in
+///   source order.
+/// - fails: not applicable to the record itself.
+/// - panics: not applicable to the record itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tail `return` of a value, in a body, a match arm and a
+///   grouping, is listed; one of a computation, one of a grouped type, one
+///   written as a statement, an early one, one an attribute asks for and one in
+///   a refused declaration are not; each listed one lowers as its tail written
+///   bare does.
+/// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ElidableExit
+{
+    /// The bytes of the `return` form.
+    pub span: ByteSpan,
+    /// The bytes of the value it returns: the tail left without the keyword.
+    pub value: ByteSpan,
+}
+
 quenchant_shape::reason_enum! {
     /// Why a rest continues no rest of its own.
     pub mod enclosing {
@@ -614,8 +652,8 @@ impl<'source> Lowerer<'_, 'source>
     /// through `outer`: where a path ends, where an exit may stand, where a
     /// local end continues a block, where a path through a loop's body ends,
     /// where a `break` or a `continue` may stand, where a handled subject's
-    /// result is, where a handler's frame is live, and the body the path runs
-    /// through.
+    /// result is, where a handler's frame is live, the body the path runs
+    /// through, and whether a statement written `c ;` holds it.
     ///
     /// # Specification
     /// - requires: `inner` stands in tail position of `outer`: a block's last
@@ -670,6 +708,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         if let Some(&body) = self.bodies.get(&outer) {
             let _owner = self.bodies.insert(inner, body);
+        }
+        if self.stated.contains_key(&outer) || self.stated_tails.contains(&outer) {
+            let _held = self.stated_tails.insert(inner);
         }
     }
 
@@ -1130,6 +1171,103 @@ impl<'source> Lowerer<'_, 'source>
                     span: tail.span(),
                     exit,
                     explicitness,
+                })
+            })
+            .collect();
+        found.sort_unstable();
+
+        found
+    }
+
+    /// The operand of the `return` at `position`, when the lowering would
+    /// infer that `return` were it left out.
+    ///
+    /// # Specification
+    /// - requires: the classification has read the body `position` stands in
+    ///   and the mint sweep has not left it, so its paths are still surveyed.
+    /// - ensures: the operand exactly when `position` is a written `return`
+    ///   where a path ends, written as no statement and in tail position of
+    ///   none, crossing no handler's frame, over an operand bridged bare as a
+    ///   value, as is every form a grouping of it holds: a grouped type is
+    ///   quoted, and a type bare at a tail takes no exit; and the form held is
+    ///   no hole, which a tail would read as a computation's.
+    /// - provides: what the mint sweep records of a written exit for
+    ///   [`Self::elidable_exits`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.is_none_or(|operand| self.exits.contains(&position)
+        && !self.stated.contains_key(&position)
+        && !self.stated_tails.contains(&position)
+        && matches!(self.plans.get(position), Some(&super::Plan::Return(written)) if written == operand)))]
+    pub(super) fn elidable_at(
+        &self,
+        position: NodeIndex,
+    ) -> Option<NodeIndex>
+    {
+        let tail = self.exits.contains(&position)
+            && !self.inferred.contains(&position)
+            && !self.stated.contains_key(&position)
+            && !self.stated_tails.contains(&position)
+            && !self.crossing.contains(&position);
+        let Some(&super::Plan::Return(operand)) = self.plans.get(position)
+        else {
+            return None;
+        };
+        if !tail {
+            return None;
+        }
+        let mut held = operand;
+        loop {
+            if self.bridges.get(usize::from(held)) != Some(&super::Bridge::Bare) {
+                return None;
+            }
+            match self.plans.get(held) {
+                Some(&super::Plan::Transparent(inner)) if !self.stand_ins.contains(&held) => {
+                    held = inner;
+                },
+                Some(&super::Plan::ValueHole(_)) => return None,
+                _ => return Some(operand),
+            }
+        }
+    }
+
+    /// Every written `return` the lowering would infer, in a declaration that
+    /// lowered, in source order.
+    ///
+    /// # Specification
+    /// - requires: the attribute pass and the documentation pass have run, so
+    ///   every refusal is offered and every asked slot is marked.
+    /// - ensures: one record per `return` the mint sweep found elidable, as
+    ///   [`Self::elidable_at`] reads it, under a slot no `explicit_exits` asks
+    ///   and holding no refusal; sorted by span.
+    /// - provides: the elidable exits a lowered module exposes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ElidableExit`].
+    /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
+    #[spec(ensures: |ret| ret.len() <= self.elidable.len() && ret.is_sorted())]
+    pub(super) fn elidable_exits(&self) -> Vec<ElidableExit>
+    {
+        let mut found: Vec<ElidableExit> = self
+            .elidable
+            .iter()
+            .filter(|&&(position, _)| {
+                !self.collected.refused(position).0
+                    && !matches!(
+                        self.collected.owner_of(position),
+                        Maybe::Present(slot) if self.asked.contains(&slot)
+                    )
+            })
+            .filter_map(|&(position, operand)| {
+                Some(ElidableExit {
+                    span: self.tree.node(position)?.span(),
+                    value: self.tree.node(operand)?.span(),
                 })
             })
             .collect();

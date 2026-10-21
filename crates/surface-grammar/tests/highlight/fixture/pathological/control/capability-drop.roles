@@ -23,6 +23,5 @@
 72..74 Keyword "-F"
 75..79 TypeBuiltin "Unit"
 80..81 Other "{"
-84..90 Keyword "return"
-91..95 Keyword "unit"
-96..97 Other "}"
+84..88 Keyword "unit"
+89..90 Other "}"

@@ -12,7 +12,7 @@ import "./syntax.gandr" ;
 /// Lifting as a definition, building the constructor.
 @[ checks ]
 def liftOf(s : Env) -> -F Env {
-  return Lift(s)
+  Lift(s)
 }
 
 /// Substitution lifting through `liftOf`.

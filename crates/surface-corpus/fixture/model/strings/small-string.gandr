@@ -24,8 +24,8 @@ def store(bs : List(Integer)) -> -F Repr {
   run n <- count(bs);
   run fits <- n <= inlineCapacity;
   case fits {
-    true => return Inline(bs),
-    false => return Shared(1, bs)
+    true => Inline(bs),
+    false => Shared(1, bs)
   }
 }
 
@@ -40,8 +40,8 @@ def own(cs : List(Integer)) -> -F Repr {
 @[ checks ]
 def place(s : Repr) -> -F Place {
   case s {
-    Inline(bs) => return Inside,
-    Shared(n, bs) => return OnHeap
+    Inline(bs) => Inside,
+    Shared(n, bs) => OnHeap
   }
 }
 

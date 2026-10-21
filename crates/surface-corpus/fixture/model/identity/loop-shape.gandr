@@ -25,7 +25,7 @@ theory CircleShape {
 def rec laws(chain : Theory) -> -F Integer {
   case chain {
     Rule(name, left, right, rest) => { run r <- laws[<](rest); return r + 1 },
-    _ => return 0
+    _ => 0
   }
 }
 
@@ -34,7 +34,7 @@ def rec laws(chain : Theory) -> -F Integer {
 def law_count(presented : Theory) -> -F Integer {
   case presented {
     Presents(sorts, opers, rules) => become laws(rules),
-    _ => return 0
+    _ => 0
   }
 }
 
@@ -53,18 +53,18 @@ module Winding : Model(CircleShape) {
 
   def base = Z ;
 
-  def turn(n : Int) -> -F Int { return S(n) }
+  def turn(n : Int) -> -F Int { S(n) }
 
-  def unturn(n : Int) -> -F Int { return P(n) }
+  def unturn(n : Int) -> -F Int { P(n) }
 
   @[ checks ]
   def turnUnturn(n : Int) -> -F Path(Int, turn(unturn(n)), n) {
-    return here(n)
+    here(n)
   }
 
   @[ checks ]
   def unturnTurn(n : Int) -> -F Path(Int, unturn(turn(n)), n) {
-    return here(n)
+    here(n)
   }
 
   @[ runs("S(S(Z))") ]

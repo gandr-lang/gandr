@@ -57,16 +57,16 @@ module Endo : Model(Monoid) {
   }
 
   /// The identity function.
-  def ident(x : Integer) -> -F Integer { return x }
+  def ident(x : Integer) -> -F Integer { x }
 
   def mul(
     f : Integer => Integer,
     g : Integer => Integer
   ) -> -F (Integer => Integer) {
-    return thunk { become andThen(f, g) }
+    thunk { become andThen(f, g) }
   }
 
-  def one() -> -F (Integer => Integer) { return ident }
+  def one() -> -F (Integer => Integer) { ident }
 
   /// Associativity, the included law.
   @[ checks ]
@@ -75,7 +75,7 @@ module Endo : Model(Monoid) {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    return here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
+    here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
   }
 
   /// The left unit law.
@@ -85,7 +85,7 @@ module Endo : Model(Monoid) {
     mul(one(), f),
     f
   ) {
-    return here(f)
+    here(f)
   }
 
   /// The right unit law.
@@ -95,7 +95,7 @@ module Endo : Model(Monoid) {
     mul(f, one()),
     f
   ) {
-    return here(f)
+    here(f)
   }
 }
 

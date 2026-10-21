@@ -42,7 +42,7 @@ def rec applied_at_again(n : Nat) -> -F Nat {
 /// checkers refuse the stage where the kernel could not read it (#392).
 @[ refuses("OutOfFragment") ]
 def integerAt @[i : Size] (n : Integer[i]) -> -F Integer {
-  return n
+  n
 }
 
 /// A stage in a path's carrier: a path places no stage, so the lowering
@@ -129,5 +129,5 @@ def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F 
 @[ refuses("OutOfFragment") ]
 def suppliedUnshown @[j : Size] (n : Nat) -> -F Nat {
   run m <- predAt[i = j](n);
-  return m
+  m
 }

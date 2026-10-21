@@ -19,9 +19,9 @@ import "./loop-winding.gandr" ;
 @[ checks ]
 def rec spinWords(n : Int) -> -F Words {
   case n {
-    Z => return Nil,
-    S(x) => { run c <- spinWords[<](x); return Loop(c) },
-    P(x) => { run c <- spinWords[<](x); return Unloop(c) }
+    Z => Nil,
+    S(x) => { run c <- spinWords[<](x); Loop(c) },
+    P(x) => { run c <- spinWords[<](x); Unloop(c) }
   }
 }
 
@@ -78,7 +78,7 @@ def spun_wound_lost = here(Nil) ;
 /// `around` applies the loop.
 @[ checks ]
 def unaround(c : Words) -> -F Words {
-  return Unloop(c)
+  Unloop(c)
 }
 
 /// Spinning undoes winding at every word: the round trip at a variable, by
@@ -94,7 +94,7 @@ def unaround(c : Words) -> -F Words {
 @[ checks ]
 def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
   case c {
-    Nil => return here(Nil),
+    Nil => here(Nil),
     Loop(x) => { run p <- sectWords[<](x); become cong(around, p) },
     Unloop(x) => { run p <- sectWords[<](x); become cong(unaround, p) }
   }
@@ -106,7 +106,7 @@ def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
 @[ checks ]
 def rec retrWords(n : Int) -> -F Path(Int, windWords(spinWords(n)), n) {
   case n {
-    Z => return here(Z),
+    Z => here(Z),
     S(x) => { run p <- retrWords[<](x); become cong(Winding.turn, p) },
     P(x) => { run p <- retrWords[<](x); become cong(Winding.unturn, p) }
   }

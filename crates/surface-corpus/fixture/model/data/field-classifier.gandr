@@ -29,31 +29,31 @@ data Packed : Type[+, 1] {
 /// inner by its own.
 @[ checks ]
 def short() -> -F Repr {
-  return Inline(Cons(104, Cons(105, Nil)))
+  Inline(Cons(104, Cons(105, Nil)))
 }
 
 /// A list in a field typed by the family's parameter, the box classified by
 /// the type the body answers.
 @[ checks ]
 def boxed() -> -F Box(Integer) {
-  return Wrap(Cons(1, Nil))
+  Wrap(Cons(1, Nil))
 }
 
 /// The same box under an annotation.
 @[ checks ]
 def annotated() -> -F Box(Integer) {
-  return (Wrap(Cons(1, Nil)) : Box(Integer))
+  (Wrap(Cons(1, Nil)) : Box(Integer))
 }
 
 /// A list in a field typed by the field before it.
 @[ checks ]
 def packed() -> -F Packed {
-  return Pack(Integer, Cons(1, Nil))
+  Pack(Integer, Cons(1, Nil))
 }
 
 /// A string where the field takes integers is refused by the checker, not
 /// as unannotated (#1171).
 @[ refuses("TypeMismatch") ]
 def mistyped() -> -F Box(Integer) {
-  return Wrap(Cons("no", Nil))
+  Wrap(Cons("no", Nil))
 }
