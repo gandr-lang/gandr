@@ -1912,6 +1912,54 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
 }
 
 #[test]
+fn an_importer_keeps_the_marks_its_import_holds_1199()
+{
+    let scratch = Scratch::new(Path::new("delegated"));
+    let base = "module P :> #{\n  type Buffer = end,\n  type Moving = ?Buffer. end\n} {\n}\n";
+    let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork (kernel : \
+                P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } as ring;\n  \
+                close(ring)\n}\n";
+    scratch.file(Path::new("strict/base.gandr"), SourceText::from(base));
+    scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
+    let mut found = Vec::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
+        Width::SERIAL,
+        |step| -> ControlFlow<Infallible> {
+            found.extend(
+                entries(&step, Verb::Check(Goals::Reported))
+                    .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
+            );
+            ControlFlow::Continue(())
+        },
+    );
+    let [ref refusal] = *found.as_slice()
+    else {
+        panic!("the importer reports its one refusal: {found:?}");
+    };
+    assert!(
+        matches!(refusal.primary(), Maybe::Absent(_)),
+        "the refused payload is the import's, so the importer's own text marks none"
+    );
+    // The base is laid first in the unit, so its bytes are the unit's.
+    let marked: Vec<&str> = refusal
+        .elsewhere
+        .iter()
+        .map(|mark| base.get(usize::from(mark.span.start()) .. usize::from(mark.span.end())))
+        .collect::<Option<_>>()
+        .expect("every mark lies in the base");
+    assert_eq!(
+        marked,
+        ["end", "?Buffer. end"],
+        "the refused payload, then the session type it was formed in"
+    );
+    assert_eq!(
+        refusal.elsewhere.first().map(|mark| mark.span),
+        Some(nth(SourceText::from(base), SourceText::from("end"))[0]),
+        "the payload is the `end` the buffer's type writes"
+    );
+}
+
+#[test]
 fn one_refusal_details_each_verbosity()
 {
     let diagnostic = only(Path::new("force.gandr"), SourceText::from(FORCE));

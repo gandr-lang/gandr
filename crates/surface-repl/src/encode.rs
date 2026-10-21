@@ -762,6 +762,7 @@ mod tests
             ),
             annotations: Vec::new(),
             contexts: Vec::new(),
+            elsewhere: Vec::new(),
             hypotheses: Vec::new(),
             note: Maybe::Absent(report_note::Absent::Statement),
             expression: Maybe::Absent(gandr_surface_diagnostics::expression::Absent::Unlocated),

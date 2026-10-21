@@ -546,6 +546,31 @@ pub struct Fix
     pub replacement: String,
 }
 
+/// A mark a diagnostic makes in a source laid before its own: the bytes of
+/// the text the diagnostic was built over, which the source's own text does
+/// not hold, and what the mark says there.
+///
+/// # Specification
+/// - requires: nothing to construct this data; [`Diagnostic::rebased`] makes it
+///   of a mark it moves out of the source.
+/// - ensures: the span is of the text the diagnostic was built over, before the
+///   source's own start.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer whose refusal stands in its import keeps the
+///   refused node's bytes and label.
+/// - witness: `tests::diagnostics::an_importer_keeps_the_marks_its_import_holds_1199`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Elsewhere
+{
+    /// The marked bytes, of the text the diagnostic was built over.
+    pub span: ByteSpan,
+    /// What the mark says.
+    pub label: String,
+}
+
 /// The vocabulary name a diagnostic is identified by: a refusal's or a
 /// lint's.
 ///
@@ -728,6 +753,10 @@ pub struct Diagnostic
     pub annotations: Vec<DiagnosticAnnotation>,
     /// The rules its refusal stood inside, outermost first.
     pub contexts: Vec<DiagnosticContext>,
+    /// The marks it makes in sources laid before its own, the primary one
+    /// first, then the annotations, then the contexts outermost first: none
+    /// until [`Diagnostic::rebased`] moves it out of a unit.
+    pub elsewhere: Vec<Elsewhere>,
     /// The hypotheses in scope where it was refused, outermost first.
     pub hypotheses: Vec<Binding>,
     /// The note it closes with.
@@ -788,10 +817,12 @@ impl Diagnostic
     ///   over, at the start of a line.
     /// - ensures: unchanged at offset zero. Otherwise every span, locus and
     ///   excerpt at or after the start is moved back by its bytes and lines; an
-    ///   annotation before it is dropped, a context's locus there is outside
-    ///   the text, a primary span there leaves the diagnostic unlocated, a fix
-    ///   there is not proposed, and an excerpt is cut to the lines from the
-    ///   start on, or dropped when it ends before it.
+    ///   annotation before it, the primary one among them, and a context's
+    ///   locus there move to [`Diagnostic::elsewhere`] at their unmoved bytes,
+    ///   in order, the context's locus then outside the text; a primary span
+    ///   there leaves the diagnostic unlocated, a fix there is not proposed,
+    ///   and an excerpt is cut to the lines from the start on, or dropped when
+    ///   it ends before it.
     /// - provides: the diagnostic of one source of a unit that lays its imports
     ///   before it, located in that source's own file.
     /// - fails: never.
@@ -799,8 +830,10 @@ impl Diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an importer's refusal is reported at its own line and
-    ///   column.
+    ///   column; one whose refused node stands in its import keeps that node's
+    ///   bytes and label elsewhere.
     /// - witness: `tests::diagnostics::an_importer_s_refusal_is_located_in_its_own_text`
+    /// - witness: `tests::diagnostics::an_importer_keeps_the_marks_its_import_holds_1199`
     #[inline]
     #[must_use]
     #[spec(
@@ -831,21 +864,30 @@ impl Diagnostic
             Maybe::Present(span) => start.measure(span),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
-        self.annotations = core::mem::take(&mut self.annotations)
-            .into_iter()
-            .filter_map(|annotation| {
-                Some(DiagnosticAnnotation {
-                    locus: moved(annotation.locus)?,
+        for annotation in core::mem::take(&mut self.annotations) {
+            match moved(annotation.locus) {
+                Some(locus) => self.annotations.push(DiagnosticAnnotation {
+                    locus,
                     ..annotation
-                })
-            })
-            .collect();
+                }),
+                None => self.elsewhere.push(Elsewhere {
+                    span: annotation.locus.span,
+                    label: annotation.label,
+                }),
+            }
+        }
         for context in &mut self.contexts {
             if let Maybe::Present(locus) = context.locus {
-                context.locus = moved(locus).map_or(
-                    Maybe::Absent(context_locus::Absent::OutsideText),
-                    Maybe::Present,
-                );
+                if let Some(own) = moved(locus) {
+                    context.locus = Maybe::Present(own);
+                }
+                else {
+                    self.elsewhere.push(Elsewhere {
+                        span: locus.span,
+                        label: context.label(),
+                    });
+                    context.locus = Maybe::Absent(context_locus::Absent::OutsideText);
+                }
             }
         }
         if let Maybe::Present(ref fix) = self.fix

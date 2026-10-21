@@ -531,23 +531,24 @@ pub struct Rechecked
 /// - ensures: the text is judged once, and each diagnostic the dispatcher's
 ///   walk yields for the judgement's step under `gandr check --goals` becomes
 ///   one LSP diagnostic, in that order, as [`diagnostic`] writes it at
-///   `verbosity`, every type it names in `spelling`: the range of its first
-///   primary annotation, the refusal's vocabulary name as its code, its
-///   message, primary label, unlocated contexts and note as its message, each
-///   context annotation and then each located context, outermost first, as a
-///   related location carrying its label, and the severity of a goal as
-///   information, of a warning as a warning, of a note as a hint and of every
-///   other diagnostic as an error; a diagnostic with no primary annotation, and
-///   a ledger line, at the document's origin. A fault that keeps the document
-///   from composing, and a grammar that did not build, is one error at the
-///   origin naming it. The timing carries the judgement's form census, the
-///   incremental checker's census, and the wall of the whole recheck; its
-///   admission is pending when the judgement left one. The form is
-///   [`caret_form`] of the judged tree at `caret`, `caret`'s own reason when it
-///   is absent, and [`formless::Absent::Unparsed`] when the judgement faulted
-///   or the grammar did not build. A text the session last judged, submitted
-///   again, molds no form and judges no item, and its diagnostics are the ones
-///   its previous recheck produced.
+///   `verbosity`, every type it names in `spelling`: the range of its primary
+///   annotation, else of its innermost located context, the refusal's
+///   vocabulary name as its code, its message, primary label, unlocated
+///   contexts and note as its message, each context annotation and then each
+///   located context, outermost first, as a related location carrying its
+///   label, then each mark it makes in an import at that import's file, and the
+///   severity of a goal as information, of a warning as a warning, of a note as
+///   a hint and of every other diagnostic as an error; a diagnostic locating
+///   nothing in the document, and a ledger line, at the document's origin. A
+///   fault that keeps the document from composing, and a grammar that did not
+///   build, is one error at the origin naming it. The timing carries the
+///   judgement's form census, the incremental checker's census, and the wall of
+///   the whole recheck; its admission is pending when the judgement left one.
+///   The form is [`caret_form`] of the judged tree at `caret`, `caret`'s own
+///   reason when it is absent, and [`formless::Absent::Unparsed`] when the
+///   judgement faulted or the grammar did not build. A text the session last
+///   judged, submitted again, molds no form and judges no item, and its
+///   diagnostics are the ones its previous recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -575,7 +576,7 @@ pub struct Rechecked
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
         && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION | Severity::HINT)
         && diagnostic.related_information.iter().all(|related|
-            related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
+            related.location.range.start <= related.location.range.end)))]
 #[must_use]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn recheck(
@@ -654,7 +655,11 @@ pub fn recheck(
             admitted::Absent::Unadmitted,
         ),
     };
-    let diagnostics = diagnostics_of(submission, uri, text, verbosity, spelling);
+    let laid = match laid {
+        Maybe::Present(ref laid) => Some(laid),
+        Maybe::Absent(_) => None,
+    };
+    let diagnostics = diagnostics_of(submission, (uri, laid), text, verbosity, spelling);
     Rechecked {
         diagnostics,
         form,
@@ -874,7 +879,14 @@ pub fn trial(
                     },
                     diagnostics: diagnostics_of(
                         submission,
-                        uri,
+                        (
+                            uri,
+                            laid.get(usize::from(candidate))
+                                .and_then(|laid| match *laid {
+                                    Maybe::Present(ref laid) => Some(laid),
+                                    Maybe::Absent(_) => None,
+                                }),
+                        ),
                         text,
                         Verbosity::User,
                         Spelling::Unicode,
@@ -955,15 +967,16 @@ fn own(
     }
 }
 
-/// The diagnostics `submission`, the judgement of `text` at `uri`, publishes
-/// at `verbosity` and in `spelling`: each diagnostic `gandr check --goals`
-/// prints for its step, in order.
+/// The diagnostics `submission`, the judgement of `text` at `uri` laid out in
+/// `laid` when it is judged after its imports, publishes at `verbosity` and in
+/// `spelling`: each diagnostic `gandr check --goals` prints for its step, in
+/// order.
 ///
 /// # Specification
 /// trivial.
 fn diagnostics_of(
     submission: Submission<'_>,
-    uri: &DocumentUri,
+    (uri, laid): (&DocumentUri, Option<&Laid>),
     text: SourceText<'_>,
     verbosity: Verbosity,
     spelling: Spelling,
@@ -979,59 +992,65 @@ fn diagnostics_of(
                 Diagnostic::at_origin(format!("{}: {}", found.path.display(), found.message.text))
             },
             Seriousness::Error | Seriousness::Warning | Seriousness::Goal | Seriousness::Note => {
-                diagnostic(&found, &index, uri, verbosity)
+                diagnostic(&found, &index, uri, verbosity, laid)
             },
         })
         .collect()
 }
 
-/// The editor diagnostic `found` is published as at `verbosity`.
+/// The editor diagnostic `found` is published as at `verbosity`, the document
+/// laid out in `laid` when it is judged after its imports.
 ///
 /// # Specification
 /// - requires: `index` was built from the text `found` is about; `found` is no
-///   ledger line.
+///   ledger line; `laid`, when given, is the unit `found` was judged in.
 /// - ensures: as [`recheck`] states for one diagnostic. A span the model
 ///   locates lies inside the text on character boundaries, so it always
 ///   projects; the origin stands in for one that would not. The range is the
-///   first primary annotation's. At [`Verbosity::Json`] the message is the
-///   diagnostic's JSON image; at every other level it is the plain message,
-///   then the primary annotation's label on its own line when it is located,
-///   then each unlocated context as `while …` on a line of its own, then its
-///   note on a line of its own after `note: ` when it closes with one, then
-///   each detail line the level adds: what the terminal prints, in the one text
-///   field the protocol gives a diagnostic. The related information is every
-///   annotation but the primary one, in order, then every located context,
-///   outermost first.
+///   primary annotation's; with none in the text, the innermost located
+///   context's; with none of those, the origin. At [`Verbosity::Json`] the
+///   message is the diagnostic's JSON image; at every other level it is the
+///   plain message, then the primary annotation's label on its own line when it
+///   is located, then each unlocated context as `while …` on a line of its own,
+///   then its note on a line of its own after `note: ` when it closes with one,
+///   then each detail line the level adds: what the terminal prints, in the one
+///   text field the protocol gives a diagnostic. The related information is
+///   every annotation but the primary one, in order, then every located
+///   context, outermost first, then each mark the diagnostic makes in an
+///   import, at that import's file, in order.
 /// - provides: the one map from a model diagnostic to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a type mismatch and duplicate signature have exact
-///   primary and causal locations, and a refused declaration's message carries
-///   its label and note. L2 — every corpus diagnostic agrees with its wire
-///   ranges, code, message and related labels, distinguishing omitted,
-///   misclassified or misprojected fields without pinning wording.
+///   primary and causal locations, a refused declaration's message carries its
+///   label and note, and a refusal whose refused node stands in an import is
+///   published at its innermost context with the node at the import's file. L2
+///   — every corpus diagnostic agrees with its wire ranges, code, message and
+///   related labels, distinguishing omitted, misclassified or misprojected
+///   fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
+/// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
 /// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
-    && ret.related_information.len() == found.annotations.iter()
+    && ret.related_information.len() >= found.annotations.iter()
         .filter(|annotation| annotation.kind == AnnotationKind::Context).count()
-        .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count())
-    && ret.related_information.iter().all(|related| related.location.uri == *uri))]
+        .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count()))]
 fn diagnostic(
     found: &gandr_surface_diagnostics::Diagnostic,
     index: &LineIndex<'_>,
     uri: &DocumentUri,
     verbosity: Verbosity,
+    laid: Option<&Laid>,
 ) -> Diagnostic
 {
     let range_of = |span: ByteSpan| {
@@ -1043,9 +1062,19 @@ fn diagnostic(
         .unwrap_or_default()
     };
     let primary = found.primary();
+    // A refusal whose refused node stands in an import is published where the
+    // document reaches it: the innermost rule it locates.
+    let innermost = found
+        .contexts
+        .iter()
+        .rev()
+        .find_map(|context| match context.locus {
+            Maybe::Present(locus) => Some(locus.span),
+            Maybe::Absent(_) => None,
+        });
     let range = match primary {
         Maybe::Present(annotation) => range_of(annotation.locus.span),
-        Maybe::Absent(_) => Range::default(),
+        Maybe::Absent(_) => innermost.map_or_else(Range::default, range_of),
     };
     let severity = match found.severity {
         Seriousness::Goal => Severity::INFORMATION,
@@ -1094,6 +1123,12 @@ fn diagnostic(
             }),
             Maybe::Absent(_) => None,
         });
+    let imports = found.elsewhere.iter().filter_map(|mark| {
+        Some(RelatedInformation {
+            location: imported(laid?, mark.span)?,
+            message: mark.label.clone(),
+        })
+    });
     diagnostic.related_information = found
         .annotations
         .iter()
@@ -1106,8 +1141,50 @@ fn diagnostic(
             message: annotation.label.clone(),
         })
         .chain(contexts)
+        .chain(imports)
         .collect();
     diagnostic
+}
+
+/// Where `span`, bytes of the text `laid` lays out, lies: the file of the
+/// source holding them, and their range in that source's own text.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the URI of the path `laid` gives the source holding the span's
+///   start, and the span measured from that source's start; none when the span
+///   leaves the source, splits a character, or its path is no file URI.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witness of [`diagnostic`] reads the refused node at
+///   its import's line and column.
+/// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|location| location.range.start <= location.range.end))]
+fn imported(
+    laid: &Laid,
+    span: ByteSpan,
+) -> Option<Location>
+{
+    let source = usize::from(laid.unit.source_at(span.start()));
+    let sources = laid.unit.sources();
+    let start = usize::from(sources.get(source)?.start());
+    let end = sources
+        .get(source.saturating_add(1_usize))
+        .map_or(laid.text.len(), |next| usize::from(next.start()));
+    let text = laid.text.get(start .. end)?;
+    let index = LineIndex::new(text.into());
+    let range = Range::of_bytes(
+        &index,
+        ByteOffset::from(usize::from(span.start()).checked_sub(start)?),
+        ByteOffset::from(usize::from(span.end()).checked_sub(start)?),
+    )
+    .ok()?;
+    Some(Location {
+        uri: DocumentUri::of_path(laid.paths.get(source)?)?,
+        range,
+    })
 }
 
 #[cfg(test)]
@@ -1331,7 +1408,7 @@ mod tests
         outermost.locus =
             Maybe::Absent(gandr_surface_diagnostics::context_locus::Absent::Unrecorded);
         let index = super::LineIndex::new(text.as_ref().into());
-        let published = super::diagnostic(force, &index, &uri, Verbosity::User);
+        let published = super::diagnostic(force, &index, &uri, Verbosity::User, None);
         assert_eq!(
             published.message.lines().collect::<Vec<_>>(),
             [
@@ -1543,6 +1620,54 @@ mod tests
             Vec::new(),
             "a pending source refused as a whole stands as its root expects"
         );
+    }
+
+    #[test]
+    fn a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-import-locus-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let base = "module P :> #{\n  type Buffer = end,\n  type Moving = ?Buffer. end\n} {\n}\n";
+        let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork \
+                    (kernel : P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } \
+                    as ring;\n  close(ring)\n}\n";
+        for (file, text) in [("base.gandr", base), ("user.gandr", user)] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| {
+            DocumentUri::of_path(&directory.join(file)).expect("the path is a file URI")
+        };
+        let diagnostics = checked(&uri("user.gandr"), SourceText::from(user));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("the importer publishes its one refusal: {diagnostics:?}");
+        };
+        assert_eq!(
+            diagnostic.range,
+            range(Span(3, 2, 3, 6)),
+            "the refused payload is the import's, so the refusal stands at the fork whose \
+             session type the importer forms, never at the origin"
+        );
+        let imported: Vec<(&DocumentUri, Range)> = diagnostic
+            .related_information
+            .iter()
+            .filter(|related| related.location.uri != uri("user.gandr"))
+            .map(|related| (&related.location.uri, related.location.range))
+            .collect();
+        assert_eq!(
+            imported,
+            [
+                (&uri("base.gandr"), range(Span(1, 16, 1, 19))),
+                (&uri("base.gandr"), range(Span(2, 16, 2, 28))),
+            ],
+            "the refused payload, then the session type it was formed in, at the import's own \
+             lines"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
