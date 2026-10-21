@@ -1,6 +1,7 @@
 //! Word-automaton floor over the public API.
 use alloc::collections::BTreeSet;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use gandr_theory_nominal_automata::handle::Arity;
 use gandr_theory_nominal_automata::handle::AutomatonError;
@@ -14,6 +15,7 @@ use gandr_theory_nominal_automata::handle::Transfer;
 use gandr_theory_nominal_automata::letter::Letter;
 use gandr_theory_nominal_automata::nda::Nda;
 use gandr_theory_nominal_automata::nda::Rule;
+use gandr_theory_nominal_automata::nda::RuleKind;
 use quenchant_shape::shape::Maybe::Present;
 
 use super::Name;
@@ -251,4 +253,60 @@ fn open_close_allocates_and_immediately_forgets()
         monitor.accepts(&[Letter::OpenClose(Name::User), Letter::Free(Name::User)]),
         Membership::Rejected
     );
+}
+/// Validation keeps the presentation it accepts: the controls, their
+/// arities, the initial configuration, the accepting controls and every
+/// rule's source, event, target and assignment, in the order given.
+#[test]
+fn a_validated_monitor_reads_back_its_presentation()
+{
+    let q0 = Control::ZERO;
+    let q1 = Control::from(1);
+    let admin = Register::ZERO;
+    let user = Register::from(1);
+    let monitor = session_monitor();
+    assert_eq!(monitor.arities(), &[Arity::from(1), Arity::from(2)]);
+    assert_eq!(usize::from(monitor.controls()), monitor.arities().len());
+    assert_eq!(monitor.initial(), &initial());
+    assert_eq!(monitor.finals(), &BTreeSet::from([q0]));
+    let rules: Vec<_> = monitor
+        .rules()
+        .iter()
+        .map(|rule| (rule.source(), rule.kind(), rule.target(), rule.transfer()))
+        .collect();
+    assert_eq!(rules, [
+        (
+            q0,
+            RuleKind::Open,
+            q1,
+            &[Transfer::Keep(admin), Transfer::Allocated][..]
+        ),
+        (
+            q1,
+            RuleKind::Close { register: user },
+            q0,
+            &[Transfer::Keep(admin)][..]
+        ),
+        (
+            q0,
+            RuleKind::Free { register: admin },
+            q0,
+            &[Transfer::Keep(admin)][..]
+        ),
+        (
+            q1,
+            RuleKind::Free { register: admin },
+            q1,
+            &[Transfer::Keep(admin), Transfer::Keep(user)][..]
+        ),
+    ]);
+}
+/// Every lifecycle letter names the atom it was written over.
+#[test]
+fn every_letter_names_its_atom()
+{
+    assert_eq!(Letter::Free(Name::Admin).atom(), Name::Admin);
+    assert_eq!(Letter::Open(Name::User).atom(), Name::User);
+    assert_eq!(Letter::Close(Name::Other).atom(), Name::Other);
+    assert_eq!(Letter::OpenClose(Name::User).atom(), Name::User);
 }
