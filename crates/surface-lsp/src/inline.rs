@@ -1889,6 +1889,41 @@ pub fn ghost(
     Labeled::new(text).ghost(grammar, forms, at)
 }
 
+/// Append `text` to `snippet` as literal text: each character the snippet
+/// syntax reads specially (`$`, `}` and `\`) behind a backslash.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `snippet` grows by `text` with a `\` before each `$`, `}` and
+///   `\`, and by nothing else.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a keyword's form and a call's parameters reach it with
+///   and without characters to escape.
+/// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
+/// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
+#[spec(
+    captures: before = snippet.len(),
+    ensures: before
+        .checked_add(<&str>::from(text).len())
+        .and_then(|grown| grown.checked_add(<&str>::from(text).matches(['$', '}', '\\']).count()))
+        == Some(snippet.len()),
+)]
+pub fn escape_into(
+    snippet: &mut String,
+    text: SourceText<'_>,
+)
+{
+    for character in <&str>::from(text).chars() {
+        if matches!(character, '$' | '}' | '\\') {
+            snippet.push('\\');
+        }
+        snippet.push(character);
+    }
+}
+
 /// `parts` spelled as a snippet to insert between `before` and `after`,
 /// behind `lead`.
 ///
@@ -1976,12 +2011,7 @@ fn spell(
         hollow = matches!(piece, Piece::Text("\"")) && quoting == Quoting::Outside;
         match piece {
             Piece::Text(text) => {
-                for character in text.chars() {
-                    if matches!(character, '$' | '}' | '\\') {
-                        snippet.push('\\');
-                    }
-                    snippet.push(character);
-                }
+                escape_into(&mut snippet, SourceText::from(text));
                 joint = joins(text.chars().next_back());
             },
             Piece::Stop(name) => {

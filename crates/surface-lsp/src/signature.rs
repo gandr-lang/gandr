@@ -29,6 +29,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt::Write as _;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Referent;
@@ -51,6 +52,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::hover::Hovering;
+use crate::inline::escape_into;
 use crate::position::Position;
 use crate::protocol::Answer;
 use crate::protocol::LabelOffsets;
@@ -334,6 +336,54 @@ impl Signature
     pub(crate) fn documentation(&self) -> Option<SourceText<'_>>
     {
         self.documentation.as_deref().map(SourceText::from)
+    }
+
+    /// A call of `name` with each parameter a tab stop, as a snippet: the stop
+    /// holds the name the parameter declares, or what it writes when it
+    /// declares none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none for a head with no parameters; otherwise `name`, `(`,
+    ///   one stop per parameter in written order, numbered from 1 and separated
+    ///   by `, `, then `)` and the final stop `$0`. A stop's text is the
+    ///   parameter's text before its first ` : ` when it has one and its whole
+    ///   text otherwise, escaped for the snippet syntax, as `name` is.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — named parameters of a function, a family and a
+    ///   constructor, the unnamed domains of a thunk, and a head with none.
+    /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
+    #[spec(ensures: |ret| ret.is_none() == self.parameters.is_empty()
+        && ret.as_ref().is_none_or(|snippet| snippet.ends_with(")$0")
+            && snippet.matches("${").count() >= self.parameters.len()))]
+    pub(crate) fn called(
+        &self,
+        name: SourceText<'_>,
+    ) -> Option<String>
+    {
+        if self.parameters.is_empty() {
+            return None;
+        }
+        let mut snippet = String::new();
+        escape_into(&mut snippet, name);
+        snippet.push('(');
+        for (stop, &Place { start, end }) in (1_usize ..).zip(&self.parameters) {
+            if stop > 1 {
+                snippet.push_str(", ");
+            }
+            let written = self.label.get(start .. end).unwrap_or_default();
+            let held = written
+                .split_once(" : ")
+                .map_or(written, |(named, _)| named);
+            let _written = write!(snippet, "${{{stop}:");
+            escape_into(&mut snippet, SourceText::from(held));
+            snippet.push('}');
+        }
+        snippet.push_str(")$0");
+        Some(snippet)
     }
 }
 

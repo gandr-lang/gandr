@@ -280,8 +280,10 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   detail starts with it, the detail whole as the description otherwise. When
 ///   `snippets` holds, a keyword whose form writes more than the keyword
 ///   inserts the form as [`KeywordForm::snippet`] spells it between the text
-///   before the word and the text after the cursor, read as a snippet and
-///   filtered by the keyword; every other item inserts its label. No item for a
+///   before the word and the text after the cursor, and a declared name whose
+///   head has parameters, where the text after the cursor opens no `(`, inserts
+///   its call as [`Signature::called`] spells it; each is read as a snippet and
+///   filtered by its label. Every other item inserts its label. No item for a
 ///   filled slot.
 /// - provides: the answer to `textDocument/completion` for a held document.
 /// - fails: never.
@@ -298,16 +300,20 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   in an importer; a binder, a function, a constructor, a family and a value
 ///   whose head is its name alone carry their exact details, with and without
 ///   label details; a keyword inserts its form as a snippet to a client that
-///   takes snippets and its word to one that does not.
+///   takes snippets and its word to one that does not; a function, a
+///   constructor and a family with parameters insert their call, and keep their
+///   name where a call is already written or with no snippets.
 /// - witness: `complete::tests::each_slot_offers_its_own_names`
 /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
 /// - witness: `complete::tests::a_binder_offers_only_where_it_is_in_scope_806`
 /// - witness: `complete::tests::each_item_carries_its_type_in_the_list`
 /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+/// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
 /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
 ///
 /// [`Signatures`]: crate::signature::Signatures
 /// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
+/// [`Signature::called`]: crate::signature::Signature::called
 #[spec(ensures: |ret| !ret.is_incomplete && ret.items.iter().all(|item| item.text_edit.range.end == position
     && item.label_details.is_some() == (labels.0 && item.detail.is_some())
     && item.insert_text_format.is_some() == item.filter_text.is_some()
@@ -363,27 +369,32 @@ pub fn completions(
             }
         }
     }
+    let after = SourceText::from(
+        <&str>::from(text)
+            .get(usize::from(at) ..)
+            .unwrap_or_default(),
+    );
+    // A name the text already calls keeps its call; rust-analyzer's
+    // `has_call_parens` reads the same.
+    let calls = snippets.0 && !<&str>::from(after).starts_with('(');
     for &(ref name, kind, ref referent) in hovering.names().starting(SourceText::from(prefix)) {
         if let Some(as_kind) = offered_as(category, kind)
             && seen.insert(name.as_str())
         {
-            let head = hovering
-                .signatures()
-                .declared(referent)
+            let signature = hovering.signatures().declared(referent);
+            let head = signature
                 .map(|signature| <&str>::from(signature.label()))
                 .filter(|head| *head != name.as_str())
                 .map(String::from);
-            offered.push((name.as_str(), as_kind, head, None));
+            let call = signature
+                .filter(|_| calls)
+                .and_then(|signature| signature.called(SourceText::from(name.as_str())));
+            offered.push((name.as_str(), as_kind, head, call));
         }
     }
     let before = SourceText::from(
         <&str>::from(text)
             .get(.. usize::from(start))
-            .unwrap_or_default(),
-    );
-    let after = SourceText::from(
-        <&str>::from(text)
-            .get(usize::from(at) ..)
             .unwrap_or_default(),
     );
     for keyword in forms.keywords(category) {
@@ -922,6 +933,101 @@ mod tests
                 .iter()
                 .all(|&(ref label, ref text, snippet)| label == text && !snippet),
             "a client that takes no snippet is given each keyword alone"
+        );
+    }
+
+    /// The call table over the identity subject's base source: every function
+    /// and constructor offered at the computation `up` returns, each with what
+    /// it inserts; a call already written keeps its parentheses.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn a_call_fills_its_parameters_as_tab_stops()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let table = |before: &str, after: &str, snippets: bool| {
+            listed(
+                SourceText::from(before),
+                SourceText::from(after),
+                (LabelsDetailed(false), TakesSnippets(snippets)),
+            )
+            .into_iter()
+            .filter(|item| {
+                matches!(
+                    item.kind,
+                    CompletionItemKind::FUNCTION | CompletionItemKind::CONSTRUCTOR
+                )
+            })
+            .map(|item| {
+                assert_eq!(
+                    item.filter_text.as_deref(),
+                    item.insert_text_format.map(|_| item.label.as_str()),
+                    "a call filters on its name alone"
+                );
+                (
+                    item.label,
+                    item.text_edit.new_text,
+                    item.insert_text_format == Some(InsertTextFormat::SNIPPET),
+                )
+            })
+            .collect::<Vec<_>>()
+        };
+        let body = written.find("  S(n)\n").expect("`up` returns a successor") + 2;
+        let call = |label: &str, text: &str| (String::from(label), String::from(text), true);
+        let name = |label: &str| (String::from(label), String::from(label), false);
+        assert_eq!(
+            table(
+                written.get(.. body).unwrap_or_default(),
+                written.get(body + 4 ..).unwrap_or_default(),
+                true
+            ),
+            [
+                name("Base"),
+                call("P", "P(${1:x})$0"),
+                call("S", "S(${1:x})$0"),
+                call("Succ", "Succ(${1:n})$0"),
+                name("Z"),
+                name("Zero"),
+                call("down", "down(${1:n})$0"),
+                call("invLooper", "invLooper(${1:x})$0"),
+                name("loop"),
+                call("loopOn", "loopOn(${1:p})$0"),
+                call("mul", "mul(${1:a}, ${2:b})$0"),
+                call("retr", "retr(${1:n})$0"),
+                call("sect", "sect(${1:p})$0"),
+                call("selfloop", "selfloop(${1:x})$0"),
+                call("selfrefl", "selfrefl(${1:x})$0"),
+                call("spin", "spin(${1:n})$0"),
+                call("unloopOn", "unloopOn(${1:p})$0"),
+                call("up", "up(${1:n})$0"),
+                call("wind", "wind(${1:p})$0"),
+            ],
+            "where `up` returns: each name with parameters inserts its call, each \
+             parameter's name a tab stop; a name with none inserts itself"
+        );
+        assert!(
+            table(
+                written.get(.. body + 1).unwrap_or_default(),
+                written.get(body + 1 ..).unwrap_or_default(),
+                true
+            )
+            .iter()
+            .all(|&(ref label, ref text, snippet)| label == text && !snippet),
+            "at `S` in `S(n)` the call is written, so each name inserts itself"
+        );
+        assert!(
+            table(
+                written.get(.. body).unwrap_or_default(),
+                written.get(body + 4 ..).unwrap_or_default(),
+                false
+            )
+            .iter()
+            .all(|&(ref label, ref text, snippet)| label == text && !snippet),
+            "a client that takes no snippet is given each name alone"
         );
     }
 
