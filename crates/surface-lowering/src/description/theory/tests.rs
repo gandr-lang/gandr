@@ -8,6 +8,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_theory_levitation::PortFace;
 
 use super::*;
+use crate::circuit::JoinFault;
 use crate::description::DescriptionReport;
 use crate::description::elaborate_descriptions;
 use crate::fixture::grammar;
@@ -1793,6 +1794,42 @@ fn an_include_is_refused_at_its_member()
         1,
         "a block included before its declaration is unknown, and the rest reads"
     );
+}
+
+/// #1225: a second theory including a pair another already joins leaves the
+/// pair two incomparable joins, refused at the second naming the pair and
+/// both; a block above both joins, and a diamond over one base, are not.
+#[test]
+fn two_joins_of_one_pair_are_refused_by_name()
+{
+    let source = "theory Pointed {\n  sort M : Type;\n  oper point : () --> M;\n}\ntheory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory UnitalMagma {\n  include Pointed;\n  include Magma;\n}\ntheory MagmaWithUnit {\n  include Pointed;\n  include Magma;\n}\ntheory Above {\n  include UnitalMagma;\n}\n";
+    let report = described(source);
+    let faults = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default()
+                    .lines()
+                    .next()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(faults, [(
+        DescriptionFault::Signature(SignatureFault::AmbiguousJoin(JoinFault {
+            pair: [Name::from("Pointed"), Name::from("Magma")],
+            joins: Vec::from([Name::from("UnitalMagma"), Name::from("MagmaWithUnit")]),
+        })),
+        "theory MagmaWithUnit {"
+    )]);
+    let diamond = described(
+        "theory Base {\n  sort M : Type;\n}\ntheory Left {\n  include Base;\n  oper l : () --> M;\n}\ntheory Right {\n  include Base;\n  oper r : () --> M;\n}\ntheory Both {\n  include Left;\n  include Right;\n}\n",
+    );
+    assert_eq!(diamond.diagnostics, [], "one join over one base reads");
 }
 
 #[test]

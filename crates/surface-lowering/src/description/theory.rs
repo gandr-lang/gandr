@@ -477,6 +477,14 @@ impl Reader<'_, '_>
                 block: declaration.at,
             });
         }
+        let direct: Vec<&NominalId> = inclusions.iter().map(|included| &included.theory).collect();
+        if let Some(fault) = super::joins::ambiguous_join(
+            &NominalId::new(serial, self.text(named).0),
+            &direct,
+            visible,
+        ) {
+            diagnostics.push(run.signature_fault(SignatureFault::AmbiguousJoin(fault)));
+        }
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
