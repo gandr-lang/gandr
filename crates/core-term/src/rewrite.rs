@@ -4515,6 +4515,52 @@ pub fn strengthen_value_type(
     })
 }
 
+/// Lower a value out from under its `past` innermost binders, as an update of
+/// the relocation at its root.
+///
+/// # Specification
+/// - requires: `subject` names a value of `arena` formed in some context `Γ`
+///   extended by `past` binders.
+/// - ensures: as [`strengthen_value_type`], for a value.
+/// - provides: a solution found under binders a metavariable's context does not
+///   hold, read in that context.
+/// - fails: never; a mention is a named absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value naming the inner of two binders, one naming only
+///   past both and a closed one separate the answers, the second read back
+///   lowered.
+/// - witness: `rewrite::tests::a_value_strengthens_unless_it_names_a_binder`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(lowered) => lowered.node() == subject || arena.value(lowered.node()).is_some(),
+    | Maybe::Absent(strengthening::Absent::MentionsBinder) => past != Binders::NONE,
+})]
+#[inline]
+pub fn strengthen_value(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    past: Binders,
+) -> Maybe<Relocated<ValueId>, strengthening::Absent>
+{
+    if let Maybe::Absent(reason) = mentions_none_below(arena, Node::Value(subject), past) {
+        return Maybe::Absent(reason);
+    }
+    let lowered = updated(
+        arena,
+        (Node::Value(subject), Relocation::IDENTITY),
+        Relocation::lowering(past),
+        past,
+        Offset::lower(past),
+    );
+    Maybe::Present(match lowered {
+        (Node::Value(id), at) => Relocated::pending(id, at),
+        (Node::Computation(_) | Node::ValueType(_) | Node::CompType(_), _) => {
+            Relocated::from(subject)
+        },
+    })
+}
+
 /// The classifier of a constructor of `family` over the field telescope
 /// `fields`.
 ///
