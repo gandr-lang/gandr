@@ -345,6 +345,37 @@ fn children(
     }
 }
 
+/// The values `object` owns, which its release drops.
+///
+/// A constructor owns its fields and a closure its producer captures, as
+/// [`children`] reads them. A cell, a stack and a closure no site records
+/// own none here: what their words own is the insertion's to state, and
+/// until it does their release frees the block alone.
+///
+/// # Specification
+/// trivial.
+pub fn owned(
+    object: Word,
+    sites: &Sites<'_>,
+) -> Vec<Word>
+{
+    match Header::from_word(field(object, Field(0))).kind() {
+        Ok(Kind::Cell | Kind::Stack) | Err(_) => Vec::new(),
+        Ok(
+            Kind::Integer
+            | Kind::Tuple
+            | Kind::Injection
+            | Kind::Data
+            | Kind::Closure
+            | Kind::Head
+            | Kind::Literal
+            | Kind::Opaque
+            | Kind::Capability
+            | Kind::Code,
+        ) => children(object, sites).unwrap_or_default(),
+    }
+}
+
 /// The frames of the stack at `object` holding `count` of them, bottom
 /// first: each frame's code word and its word.
 ///

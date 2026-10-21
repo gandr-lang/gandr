@@ -64,13 +64,18 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::Summand;
 use gandr_runtime_stencils::Arity;
+use gandr_runtime_stencils::COUNT_IMMORTAL;
+use gandr_runtime_stencils::COUNT_ONE;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
+use gandr_runtime_stencils::RELEASE;
 use gandr_runtime_stencils::Refusal;
 use gandr_runtime_stencils::Runtime;
 use gandr_runtime_stencils::Tag;
 use gandr_runtime_stencils::Word;
+use gandr_runtime_stencils::Words;
+use gandr_runtime_stencils::count_word;
 
 use crate::executor::Program;
 use crate::function::Function;
@@ -93,6 +98,7 @@ use crate::transfer::Moved;
 use crate::transfer::Sites;
 use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
+use crate::transfer::owned;
 use crate::transfer::transfer;
 
 /// A view's state: no eliminator has run.
@@ -1023,7 +1029,7 @@ impl<'run, 'host> Calls<'run, 'host>
                                 held
                             });
                         }
-                        let fresh = allocate(runtime, &words)?;
+                        let fresh = allocate_window(runtime, &words)?;
                         let _first = copies.insert(word, fresh);
                         fresh
                     }
@@ -1349,7 +1355,6 @@ fn stack(
     frames: &[Frame],
 ) -> Result<Word, Refusal>
 {
-    let object = runtime.heap_top();
     let mut copies: Vec<(Word, Slots)> = Vec::new();
     let mut offsets: BTreeMap<Word, usize> = BTreeMap::new();
     let mut length = STACK_PREFIX.saturating_add(frames.len().saturating_mul(2));
@@ -1363,6 +1368,7 @@ fn stack(
         }
     }
     let arity = Arity::try_from(frames.len()).map_err(|_overflow| Refusal::Operands)?;
+    let object = runtime.reserve(Words(length))?;
     let mut words = Vec::with_capacity(length);
     words.push(object_header(Kind::Stack, arity)?);
     words.push(base);
@@ -1384,7 +1390,8 @@ fn stack(
             words.push(unsafe { *window.wrapping_add(slot) });
         }
     }
-    allocate(runtime, &words)
+    fill(object, &words);
+    Ok(Word::from_pointer(object))
 }
 
 /// The kind of the object `word` addresses.
@@ -1630,7 +1637,8 @@ fn slot_in(
     Ok(window.wrapping_add(offset))
 }
 
-/// Allocate `words` at `runtime`'s heap top, and answer their address.
+/// Allocate the object `words`, header first, through `runtime`'s free lists
+/// or at its heap's top, and answer its address.
 ///
 /// # Specification
 /// trivial.
@@ -1642,20 +1650,45 @@ fn allocate(
     words: &[Word],
 ) -> Result<Word, Refusal>
 {
-    let top = runtime.heap_top();
-    let next = top.wrapping_add(words.len());
-    if next > runtime.heap_limit() {
-        return Err(Refusal::Heap);
-    }
+    let object = runtime.reserve(Words(words.len()))?;
+    fill(object, words);
+    Ok(Word::from_pointer(object))
+}
+
+/// Allocate the window `words` at `runtime`'s heap's top, with no count, and
+/// answer its address.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Heap`] when the words would pass the heap's limit.
+fn allocate_window(
+    runtime: &mut Runtime,
+    words: &[Word],
+) -> Result<Word, Refusal>
+{
+    let window = runtime.bump(Words(words.len()))?;
+    fill(window, words);
+    Ok(Word::from_pointer(window))
+}
+
+/// Write `words` from `at` on.
+///
+/// # Specification
+/// trivial.
+fn fill(
+    at: *mut Word,
+    words: &[Word],
+)
+{
     for (offset, &word) in words.iter().enumerate() {
-        // SAFETY: the words fit below the heap's limit, in the region the run
-        // owns.
+        // SAFETY: the caller allocated the words at `at`, in the region the
+        // run owns.
         unsafe {
-            *top.wrapping_add(offset) = word;
+            *at.wrapping_add(offset) = word;
         }
     }
-    runtime.set_heap_top(next);
-    Ok(Word::from_pointer(top))
 }
 
 /// The integer literal whose two's-complement bits `bits` holds.
@@ -1677,8 +1710,64 @@ pub fn integer_literal(bits: Word) -> IntegerLiteral
     IntegerLiteral::new(sign, magnitude)
 }
 
+/// Release `object`, whose last owner a drop gave up.
+///
+/// Its block is freed and each value `owned` names it holding loses an
+/// owner; each whose last owner that was is released in turn, through a
+/// worklist. Immortal values are left alone.
+///
+/// # Specification
+/// - requires: `object` addresses a heap object whose count is one, and `owned`
+///   names values the object holds, each one owner's worth.
+/// - ensures: every object whose count reaches zero has its block on the free
+///   list of its size; every other value `owned` names counts one owner fewer.
+/// - executable: none — the counts are words of the run's heap.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pair released frees itself and the field whose last
+///   owner it held, and leaves a field another owner holds counted one less.
+/// - witness: `tests::count::a_released_object_drops_what_it_holds`
+///
+/// # Safety
+/// - unsafe invariants: `object` and every value `owned` names, transitively,
+///   address objects of `runtime`'s heap or immortal constants, each preceded
+///   by its count word, and no live value reaches an object whose count reaches
+///   zero.
+#[inline]
+pub unsafe fn release<Owned>(
+    runtime: &mut Runtime,
+    object: Word,
+    mut owned: Owned,
+) where
+    Owned: FnMut(Word) -> Vec<Word>,
+{
+    let mut pending = Vec::from([object]);
+    while let Some(dead) = pending.pop() {
+        for held in owned(dead) {
+            let count = count_word(held);
+            // SAFETY: a value the object owns is an object, preceded by its
+            // count word.
+            let word = unsafe { *count };
+            if word == COUNT_ONE {
+                pending.push(held);
+            }
+            else if word != COUNT_IMMORTAL {
+                // SAFETY: as above.
+                unsafe {
+                    *count = Word::from(usize::from(word).wrapping_sub(1));
+                }
+            }
+        }
+        // SAFETY: the object's last owner is gone and its fields were read.
+        unsafe {
+            runtime.reclaim(dead);
+        }
+    }
+}
+
 /// The host entry every call stencil of a run enters: [`Calls::call`] on the
-/// state the record's context addresses.
+/// state the record's context addresses, or [`release`] for a drop's
+/// [`RELEASE`] entry, over the values [`owned`] reads.
 ///
 /// # Specification
 /// - requires: the record's context addresses the run's live [`Calls`].
@@ -1703,6 +1792,15 @@ pub extern "C" fn enter(
     let calls = record.context().to_pointer::<Calls<'_, '_>>();
     // SAFETY: the run made the record with its live state as the context.
     let state = unsafe { &mut *calls };
+    if entry == RELEASE {
+        let sites = state.sites;
+        // SAFETY: a drop passes an object of the run's heap at its last
+        // owner, and what `owned` reads are values the object holds.
+        unsafe {
+            release(record, first, |object| owned(object, sites));
+        }
+        return Word::ZERO;
+    }
     match state.call(record, entry, first, second) {
         Ok(answer) => answer,
         Err(refusal) => {

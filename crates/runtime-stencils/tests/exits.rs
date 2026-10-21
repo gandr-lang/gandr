@@ -187,9 +187,9 @@ fn single() -> Word
     header.matched()
 }
 
-/// A one-field tuple needs two heap words: with one, the constructor exits
-/// by the heap's name before it writes, and allocates nothing; with two, the
-/// same program halts with the tuple.
+/// A one-field tuple needs three heap words, its count, header and field:
+/// with two, the constructor exits by the heap's name before it writes, and
+/// allocates nothing; with three, the same program halts with the tuple.
 #[test]
 fn a_full_heap_exits_by_name()
 {
@@ -198,16 +198,16 @@ fn a_full_heap_exits_by_name()
         instruction(StencilId::Ctor1, single()),
         instruction(StencilId::Halt, Word::ZERO),
     ];
-    let short = run(&program, Words(1), Words(4), Fuel::from(4_usize), refusing);
+    let short = run(&program, Words(2), Words(4), Fuel::from(4_usize), refusing);
     assert_eq!(
         Status::HeapExhausted,
         short.status,
-        "one word holds no tuple"
+        "two words hold no tuple"
     );
     assert_eq!(0, short.allocated, "the exit allocates nothing");
-    let room = run(&program, Words(2), Words(4), Fuel::from(4_usize), refusing);
-    assert_eq!(Status::Halted, room.status, "two words hold the tuple");
-    assert_eq!(2, room.allocated, "the header and its field");
+    let room = run(&program, Words(3), Words(4), Fuel::from(4_usize), refusing);
+    assert_eq!(Status::Halted, room.status, "three words hold the tuple");
+    assert_eq!(3, room.allocated, "the count, the header and its field");
 }
 
 /// A push at the frame region's limit exits by the frames' name; one word of
