@@ -17,6 +17,7 @@ use core::mem::discriminant;
 use anodized::spec;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_comp_type_syntax;
@@ -49,6 +50,51 @@ pub enum Agreement
     Declarations(Vec<Differing>),
     /// The two do not declare the same names in the same order.
     Unpaired,
+}
+
+/// The checker's half of the meaning check: the body it elaborates for each
+/// declaration of a lowered module.
+///
+/// Two spellings of one program can lower to different cores and still be
+/// one program once the checker elaborates them: a nested call and the `run`
+/// statement that binds it lower to a nested node and a bind, and the checker
+/// runs the nested node there, as the bind. A rewrite that moves between such
+/// spellings is checked by the bodies the checker elaborates, so the
+/// formatter asks a checker for them; the crate depends on none, and a caller
+/// that judges modules supplies one. Without one, no such rewrite runs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an implementation answers, for each declaration of `module`
+///   lowered into `arena`, in the module's order, the body the checker
+///   elaborates for it, minting into `arena`, or none where it defines none.
+/// - provides: the elaborated half of [`crate::format_beside`]'s meaning check.
+/// - fails: not applicable to the trait itself.
+/// - panics: not applicable to the trait itself.
+pub trait Elaborate
+{
+    /// The body the checker elaborates for each declaration of `module`,
+    /// lowered into `arena`, in the module's order; none for a declaration it
+    /// defines nothing for. The trait's clauses are this method's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definitions(
+        &self,
+        arena: &mut CoreArena,
+        module: &LoweredModule<'_>,
+    ) -> Vec<Option<ValueId>>;
+}
+
+/// The bodies a checker elaborated for two lowerings of one source, each in
+/// its module's declaration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Elaborated<'source>
+{
+    /// The source's.
+    pub before: &'source [Option<ValueId>],
+    /// The rewritten text's.
+    pub after: Vec<Option<ValueId>>,
 }
 
 /// `tree`, the text `unit` lays out, lowered into `arena`, or nothing when
@@ -200,21 +246,43 @@ fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
     })
 }
 
+/// The keys of the forms holding each declaration of `module` that
+/// `elaborations` — a checker's, in the module's order — holds no body for.
+///
+/// # Specification
+/// trivial.
+pub fn unelaborated(
+    module: &LoweredModule<'_>,
+    elaborations: &[Option<ValueId>],
+) -> Vec<NodeKey>
+{
+    module
+        .declarations()
+        .iter()
+        .zip(elaborations)
+        .filter(|&(_, body)| body.is_none())
+        .flat_map(|(declaration, _)| halves(declaration))
+        .collect()
+}
+
 /// Whether `before` and `after`, lowered into `arena`, declare the same names
 /// in the same order, each to the same core, and which of `before`'s
 /// declarations lowered otherwise.
 ///
 /// # Specification
-/// - requires: both modules were lowered into `arena`.
+/// - requires: both modules were lowered into `arena`, and `elaborated`, when
+///   given, holds a checker's elaborations of the two.
 /// - ensures: [`Agreement::Unpaired`] unless the two hold as many declarations;
 ///   else [`Agreement::Same`] exactly when each pair, in order, has one name,
 ///   role and container and outcomes of one kind whose types, bodies and data
-///   signatures are syntactically equal — evidence erased, no reduction — whose
-///   seals agree but for their types' positions, and whose refusals are of one
-///   kind; else [`Agreement::Declarations`] with each of `before`'s
-///   declarations whose pair is not so, in order: the keys of the forms holding
-///   it, its name, its span in the source starting at `base`, and why — the
-///   refusal the rewritten declaration met, or that it lowered otherwise.
+///   signatures are syntactically equal — evidence erased, no reduction —
+///   bodies that are not counting as equal where `elaborated` holds equal
+///   elaborations of both, whose seals agree but for their types' positions,
+///   and whose refusals are of one kind; else [`Agreement::Declarations`] with
+///   each of `before`'s declarations whose pair is not so, in order: the keys
+///   of the forms holding it, its name, its span in the source starting at
+///   `base`, and why — the refusal the rewritten declaration met, or that it
+///   lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -230,6 +298,7 @@ pub fn agree(
     arena: &CoreArena,
     (before, after): (&LoweredModule<'_>, &LoweredModule<'_>),
     base: ByteOffset,
+    elaborated: Option<&Elaborated<'_>>,
 ) -> Agreement
 {
     let types = |left: ValueTypeId, right: ValueTypeId| {
@@ -244,6 +313,20 @@ pub fn agree(
     };
     let values =
         |left, right| equal_certificate_syntax(arena, left, right) == CertificateEquality::Equal;
+    // Bodies that lower otherwise agree where the checker elaborates them
+    // alike, when it was asked.
+    let elaborates = |position: usize| {
+        let pair = elaborated.and_then(|elaborated| {
+            Some((
+                *elaborated.before.get(position)?,
+                *elaborated.after.get(position)?,
+            ))
+        });
+        match pair {
+            Some((Some(left), Some(right))) => values(left, right),
+            Some((Some(_) | None, _)) | None => false,
+        }
+    };
     let declared = before.declarations();
     let written = after.declarations();
     if declared.len() != written.len() {
@@ -252,7 +335,8 @@ pub fn agree(
     let differing: Vec<Differing> = declared
         .iter()
         .zip(written)
-        .filter(|&(left, right)| {
+        .enumerate()
+        .filter(|&(position, (left, right))| {
             left.name() != right.name()
                 || left.role() != right.role()
                 || left.container() != right.container()
@@ -266,7 +350,10 @@ pub fn agree(
                             declared_type: right_type,
                             body: right_body,
                         },
-                    ) => types(left_type, right_type) && values(left_body, right_body),
+                    ) => {
+                        types(left_type, right_type)
+                            && (values(left_body, right_body) || elaborates(position))
+                    },
                     (
                         DeclarationOutcome::Uncompleted {
                             declared_type: left_type,
@@ -278,7 +365,7 @@ pub fn agree(
                     (
                         DeclarationOutcome::Bodied { body: left_body },
                         DeclarationOutcome::Bodied { body: right_body },
-                    ) => values(left_body, right_body),
+                    ) => values(left_body, right_body) || elaborates(position),
                     (
                         DeclarationOutcome::Data(left_index),
                         DeclarationOutcome::Data(right_index),
@@ -343,7 +430,7 @@ pub fn agree(
                     _ => false,
                 }
         })
-        .map(|(left, right)| Differing {
+        .map(|(_, (left, right))| Differing {
             keys: halves(left).collect(),
             withdrawal: Withdrawal {
                 declaration: format!("{}", left.name()),

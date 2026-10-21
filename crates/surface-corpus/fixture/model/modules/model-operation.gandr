@@ -36,8 +36,7 @@ module Counted : Model(Counting) {
 def counted_two : () => Integer ;
 def counted_two = thunk {
   run one <- Counted.next(Counted.zero) ;
-  run two <- Counted.next(one) ;
-  become Counted.read(two)
+  become Counted.read(Counted.next(one))
 } ;
 
 /// A sum, the theory of `nat-add.gandr`'s signature

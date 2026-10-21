@@ -303,6 +303,7 @@ use crate::lower::ElidableExit;
 use crate::lower::Fuel;
 use crate::lower::InferredExit;
 use crate::lower::InferredRun;
+use crate::lower::LinearRun;
 use crate::lower::NestedSite;
 use crate::lower::decode_escapes;
 use crate::namespace::Recognition;
@@ -8375,6 +8376,9 @@ pub struct LoweredModule<'source>
     /// Every written `return` the lowering would infer were it left out, in
     /// source order.
     elidable_exits: Vec<ElidableExit>,
+    /// Every `run` statement whose binder the next step reads once, first, in
+    /// source order.
+    linear_runs: Vec<LinearRun>,
     /// What the lowering recorded of each syntax node it held a computation
     /// nested at.
     nested: BTreeMap<NodeIndex, NestedSite>,
@@ -8431,6 +8435,7 @@ impl<'source> LoweredModule<'source>
             documentation: BTreeMap::new(),
             inferred_exits: Vec::new(),
             elidable_exits: Vec::new(),
+            linear_runs: Vec::new(),
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
             resolutions: Vec::new(),
@@ -8554,6 +8559,21 @@ impl<'source> LoweredModule<'source>
         self
     }
 
+    /// This module, carrying `linear_runs`, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_linear_runs(
+        mut self,
+        linear_runs: Vec<LinearRun>,
+    ) -> Self
+    {
+        self.linear_runs = linear_runs;
+        self
+    }
+
     /// This module, carrying the names of each data declaration's
     /// constructors in tag order, by [`DataIndex`].
     ///
@@ -8610,6 +8630,19 @@ impl<'source> LoweredModule<'source>
     pub fn elidable_exits(&self) -> &[ElidableExit]
     {
         &self.elidable_exits
+    }
+
+    /// Every `run x <- c ;` statement whose binder the next step reads once,
+    /// first, in source order: `c` and the read, which the sugared form
+    /// writes as `c` at the read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear_runs(&self) -> &[LinearRun]
+    {
+        &self.linear_runs
     }
 
     /// This module, carrying what the lowering recorded of each syntax node

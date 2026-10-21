@@ -187,6 +187,7 @@ pub use crate::compose::Admission;
 pub use crate::compose::Checking;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
+pub use crate::compose::Elaborating;
 pub use crate::compose::Judged;
 pub use crate::compose::JudgedClosure;
 pub use crate::compose::Lowered;

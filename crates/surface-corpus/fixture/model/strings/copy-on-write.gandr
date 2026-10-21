@@ -90,12 +90,12 @@ def written(w : Written) -> -F Repr {
 /// A long string, twenty-four bytes and the zero, held once.
 @[ checks ]
 def long : () => Repr ;
-def long = thunk { run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ; become own(cs) } ;
+def long = thunk { become own(repeatOnto(97, 24, (Nil : List(Integer)))) } ;
 
 /// `!` appended to a long string held once: written in place, nothing copied.
 @[ runs("0") ]
 def alone : () => Integer ;
-def alone = thunk { run s <- force long ; run w <- push(s, 33) ; become copies(w) } ;
+def alone = thunk { run s <- force long ; become copies(push(s, 33)) } ;
 
 /// The same write to a copy: the buffer has two holders, so the copy's write
 /// fills a buffer of its own.
@@ -104,8 +104,7 @@ def shared : () => Integer ;
 def shared = thunk {
   run s <- force long ;
   run c <- copy(s) ;
-  run w <- push(c, 33) ;
-  become copies(w)
+  become copies(push(c, 33))
 } ;
 
 /// The copy's write leaves the original's bytes as they were.
@@ -115,8 +114,7 @@ def untouched = thunk {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- push(c, 33) ;
-  run bs <- bytes(s) ;
-  become count(bs)
+  become count(bytes(s))
 } ;
 
 /// And the copy reads one byte more.
@@ -127,8 +125,7 @@ def grown = thunk {
   run c <- copy(s) ;
   run w <- push(c, 33) ;
   run t <- written(w) ;
-  run bs <- bytes(t) ;
-  become count(bs)
+  become count(bytes(t))
 } ;
 
 /// A short string written where its bytes are: `hi!` stays inline.
@@ -137,8 +134,7 @@ def shout : () => Place ;
 def shout = thunk {
   run s <- own((Cons(104, Cons(105, Nil)) : List(Integer))) ;
   run w <- push(s, 33) ;
-  run t <- written(w) ;
-  become place(t)
+  become place(written(w))
 } ;
 
 /// A full inline string outgrows it: the write moves its bytes to the heap.
@@ -147,6 +143,5 @@ def spill : () => Integer ;
 def spill = thunk {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   run s <- own(cs) ;
-  run w <- push(s, 33) ;
-  become copies(w)
+  become copies(push(s, 33))
 } ;

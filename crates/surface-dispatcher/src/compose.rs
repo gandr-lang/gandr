@@ -2769,6 +2769,60 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
         .collect()
 }
 
+/// The checker the formatter's meaning check asks for elaborated bodies: a
+/// lowered module judged whole, as [`judge`] judges one under the unbounded
+/// grant, entering at the worlds it declares.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`gandr_surface_format::Elaborate`]: for each declaration of
+///   the module, in its order, the body the checker defines for it — a nested
+///   computation elaborated to the bind it runs as — and none for one it
+///   refuses, defines nothing for, or the lowering refused.
+/// - provides: the checker half of `gandr fmt`'s meaning check.
+/// - fails: never; a refusal is a declaration with no body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `run` statement read once first and the call written at
+///   its read elaborate to one body, so the sugared form writes it away; a
+///   source formatted without the checker keeps it.
+/// - witness: `format::tests::a_linear_run_is_written_away_beside_a_checker`
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Elaborating;
+
+impl gandr_surface_format::Elaborate for Elaborating
+{
+    /// Check `module` beside the host's built-ins and answer each
+    /// declaration's elaborated body, as [`Elaborating`] states.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn definitions(
+        &self,
+        arena: &mut CoreArena,
+        module: &LoweredModule<'_>,
+    ) -> Vec<Option<ValueId>>
+    {
+        let grant = HostGrant::UNBOUNDED;
+        let declarations = adapt(module);
+        let entry = grant.entry(&declared_worlds(module));
+        let grants = grant.grants(arena);
+        let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+        context.grant(grants);
+        context.enter_at(entry);
+        context.keep_pattern_holes(&pattern_holes(module));
+        let report = check_module(&mut context, &declarations);
+        let definitions = report.definitions();
+        module
+            .declarations()
+            .iter()
+            .map(|declaration| definitions.get(&declaration.constant()).copied())
+            .collect()
+    }
+}
+
 /// The checker's input for `module`: every declaration the lowering did not
 /// refuse, in admission order.
 ///

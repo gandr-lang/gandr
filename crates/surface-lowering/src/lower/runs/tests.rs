@@ -11,6 +11,7 @@ use gandr_surface_syntax::SourceText;
 
 use super::AskedRuns;
 use super::InferredRun;
+use super::LinearRun;
 use super::NestedSite;
 use super::RunOperand;
 use super::RunSpelling;
@@ -155,6 +156,52 @@ fn a_nested_run_is_spelled_as_its_written_run_reads_back()
         [],
         "each run written as its site spells it reads back as the written run of the whole \
          computation, so the checker infers none"
+    );
+}
+
+#[test]
+fn a_run_read_once_first_is_linear()
+{
+    let source = format!(
+        "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
+         def field(n : Nat) -> -F Nat {{ run m <- twice(n) ; Succ(m) }}\n\
+         def chained(n : Nat) -> -F Nat {{ run a <- twice(n) ; run b <- twice(a) ; become twice(b) }}\n\
+         def later(n : Nat) -> -F Nat {{ run c <- twice(n) ; second(c, twice(n)) }}\n\
+         def doubled(n : Nat) -> -F Nat {{ run d <- twice(n) ; second(d, d) }}\n\
+         def after(n : Nat) -> -F Nat {{ run e <- twice(n) ; second(twice(n), e) }}\n\
+         def whole(n : Nat) -> -F Nat {{ run f <- twice(n) ; f }}\n\
+         def reread(n : Nat) -> -F Nat {{ run g <- twice(n) ; run h <- twice(g) ; second(g, h) }}\n\
+         def paired(n : Nat) -> -F Nat {{ run p <- twice(n) ; run q <- twice(Zero) ; second(p, q) }}\n\
+         def swapped(n : Nat) -> -F Nat {{ run r <- twice(n) ; run s <- twice(Zero) ; second(s, r) }}\n\
+         @[ explicit_runs ]\n\
+         def asked(n : Nat) -> -F Nat {{ run k <- twice(n) ; Succ(k) }}\n"
+    );
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let linear = |bound: (&str, &str), read: (&str, &str)| LinearRun {
+        bound: at(bound.0, bound.1),
+        read: at(read.0, read.1),
+    };
+    assert_eq!(
+        module.linear_runs(),
+        [
+            linear(("run m <- twice(n)", "twice(n)"), ("Succ(m) }", "m")),
+            linear(("run b <- twice(a)", "twice(a)"), ("twice(b) }", "b")),
+            linear(("run c <- twice(n)", "twice(n)"), ("(c,", "c")),
+            linear(("run h <- twice(g)", "twice(g)"), ("g, h) }", "h")),
+            linear(("run p <- twice(n)", "twice(n)"), ("(p,", "p")),
+            linear(("run q <- twice(Zero)", "twice(Zero)"), ("p, q) }", "q")),
+            linear(("run s <- twice(Zero)", "twice(Zero)"), ("(s,", "s")),
+        ],
+        "the runs ending a block whose binders its tail reads once each, first and in their \
+         order, are linear, a chain's last link, one before a later run and a pair among them; \
+         one read in a later statement, out of order, twice, after another run, as the tail's \
+         whole value or under `explicit_runs` is not"
     );
 }
 

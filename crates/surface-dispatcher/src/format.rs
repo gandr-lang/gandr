@@ -543,8 +543,13 @@ fn lay_out<'formatting>(
         },
         Maybe::Absent(_) => Beside::Alone,
     };
-    let formatted =
-        format_beside(grammar, &parsed, options, beside).map_err(FormatFault::Refused)?;
+    let formatted = format_beside(
+        grammar,
+        &parsed,
+        options,
+        (beside, Some(&crate::compose::Elaborating)),
+    )
+    .map_err(FormatFault::Refused)?;
     let withdrawn = formatted
         .withdrawn()
         .iter()
@@ -774,5 +779,90 @@ mod tests
         assert_eq!(read(&root.join("a.gandr")), "def a = 1 ;\n");
         assert_eq!(read(&root.join("b.gandr")), "def b = 2 ;\n");
         assert_eq!(read(&root.join("c.gandr")), "def c = 3 ;\n");
+    }
+
+    #[test]
+    fn a_linear_run_is_written_away_beside_a_checker()
+    {
+        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+        let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                      \n\
+                      def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                      \n\
+                      def second(a : Nat, b : Nat) -> -F Nat { b }\n\
+                      \n\
+                      def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                      \n\
+                      def apply(t : () => Nat) -> -F Nat { force t }\n\
+                      \n\
+                      def field(n : Nat) -> -F Nat {\n  run m <- twice(n) ;\n  Succ(m)\n}\n\
+                      \n\
+                      def paired(n : Nat) -> -F Nat {\n  run p <- twice(n) ;\n  run q <- twice(Zero) ;\n  second(p, q)\n}\n\
+                      \n\
+                      def chained(n : Nat) -> -F Nat {\n  run a <- twice(n) ;\n  run b <- twice(a) ;\n  become twice(b)\n}\n\
+                      \n\
+                      def suspended(n : Nat) -> -F Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+        let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                       \n\
+                       def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                       \n\
+                       def second(a : Nat, b : Nat) -> -F Nat { b }\n\
+                       \n\
+                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                       \n\
+                       def apply(t : () => Nat) -> -F Nat { force t }\n\
+                       \n\
+                       def field(n : Nat) -> -F Nat {\n  Succ(twice(n))\n}\n\
+                       \n\
+                       def paired(n : Nat) -> -F Nat {\n  second(twice(n), twice(Zero))\n}\n\
+                       \n\
+                       def chained(n : Nat) -> -F Nat {\n  run a <- twice(n) ;\n  become twice(twice(a))\n}\n\
+                       \n\
+                       def suspended(n : Nat) -> -F Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+        let options = FormatOptions {
+            form: gandr_surface_format::Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let format = |text: &str, checker: Option<&dyn gandr_surface_format::Elaborate>| {
+            let parsed = gandr_surface_parser::parse(&grammar, SourceText::from(text))
+                .expect("the source parses");
+            let formatted = gandr_surface_format::format_beside(
+                &grammar,
+                &parsed,
+                options,
+                (gandr_surface_format::Beside::Alone, checker),
+            )
+            .expect("the source formats");
+            let withdrawn: Vec<(String, gandr_surface_format::Withdrawn)> = formatted
+                .withdrawn()
+                .iter()
+                .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
+                .collect();
+            (formatted.into_text(), withdrawn)
+        };
+        let suspended = || {
+            vec![(
+                String::from("suspended"),
+                gandr_surface_format::Withdrawn::Lowered,
+            )]
+        };
+        assert_eq!(
+            format(source, Some(&crate::compose::Elaborating)),
+            (String::from(sugared), suspended()),
+            "beside the checker the runs ending a block whose binders its tail reads once each, \
+             first and in order, are written at their reads, a pair at once and a chain shedding \
+             its last link; one whose call the checker would suspend at a thunk-typed parameter \
+             rather than run elaborates otherwise, and keeps its spelling"
+        );
+        assert_eq!(
+            format(sugared, Some(&crate::compose::Elaborating)),
+            (String::from(sugared), suspended()),
+            "a second pass writes away nothing more"
+        );
+        assert_eq!(
+            format(source, None),
+            (String::from(source), Vec::new()),
+            "without a checker no run statement is written away"
+        );
     }
 }

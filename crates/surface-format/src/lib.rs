@@ -74,12 +74,15 @@
 //! `become` keep their keyword, and the explicit form writes none it was not
 //! given. A value-function alias written longer than the printer writes it,
 //! `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared to its
-//! shortest, `A => B`. Each moves its form on the concrete syntax tree: its
-//! operands and their comments are kept, its own tiles are the other
-//! spelling's, each comment it owns goes before the operand it preceded, and
-//! an operand is parenthesised or unwrapped as its new position's binding
-//! needs, as the printer writes it. [`Selection`] narrows the rewrites by
-//! [`RewriteName`]; there is no other knob.
+//! shortest, `A => B`. The `run x <- c ;` statements ending a block whose
+//! binders its tail reads once each, first and in order, are written away,
+//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`). Each
+//! moves its form on the concrete syntax tree: its operands and their
+//! comments are kept, its own tiles are the other spelling's, each comment it
+//! owns goes before the operand it preceded, and an operand is parenthesised
+//! or unwrapped as its new position's binding needs, as the printer writes
+//! it. [`Selection`] narrows the rewrites by [`RewriteName`]; there is no
+//! other knob.
 //!
 //! | rewrite          | explicit                | sugared         |
 //! | ---------------- | ----------------------- | --------------- |
@@ -94,6 +97,7 @@
 //! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
+//! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
@@ -132,6 +136,24 @@
 //!   declaration unformattable in either form.
 //! - Reversal: a printer that carries the source's comments and names, at which
 //!   point one printing serves both and this table retires.
+//!
+//! A linear run is the one rewrite whose two spellings lower to different
+//! cores: a bind, and a nested call the checker elaborates to that bind. Its
+//! meaning check is the checker's, through [`Elaborate`], which a caller that
+//! judges modules supplies to [`format_beside`] (the crate depends on no
+//! checker): where the lowerings differ, a declaration agrees when the
+//! checker elaborates both to equal bodies. The source is elaborated once,
+//! and only when the lowering lists a run; without a checker, and in a
+//! declaration the checker refuses as written, no statement is written away.
+//! A nested call the checker would suspend rather than run, at a thunk-typed
+//! parameter, elaborates otherwise and is withdrawn as any rewrite is.
+//!
+//! - Choice: the checker's elaboration as the oracle, so the sugar is written
+//!   exactly where the checker reads the nested call as the run it replaces.
+//! - Alternative: a syntactic rule in the lowering alone, which cannot see the
+//!   expected type that decides whether a nested call runs or is suspended.
+//! - Reversal: a lowering that writes the bind for a nested call itself, so the
+//!   two spellings lower alike and the core comparison suffices.
 //!
 //! A source that imports a sibling is lowered beside it: alone, every
 //! declaration that reads an imported name is refused and none could be
@@ -204,6 +226,8 @@ mod layout;
 
 mod leaf;
 
+mod linear;
+
 mod meaning;
 
 mod rewrite;
@@ -217,6 +241,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
@@ -250,6 +275,7 @@ use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Owner;
 use crate::meaning::Agreement;
+pub use crate::meaning::Elaborate;
 use crate::rewrite::Chosen;
 pub use crate::rewrite::Direction;
 pub use crate::rewrite::Enabled;
@@ -643,7 +669,7 @@ pub fn format(
     options: FormatOptions,
 ) -> Result<Formatted, FormatError>
 {
-    format_beside(grammar, parsed, options, Beside::Alone)
+    format_beside(grammar, parsed, options, (Beside::Alone, None))
 }
 
 /// The form the source `parsed` was parsed from declares at its head, which
@@ -674,7 +700,8 @@ pub fn declared_form(
 }
 
 /// Format the source `parsed` was parsed from, its rewrites checked by a
-/// lowering `beside` the sources it imports.
+/// lowering `beside` the sources it imports and, where two spellings lower
+/// otherwise, by the bodies `checker` elaborates.
 ///
 /// # Errors
 /// As [`format`].
@@ -686,21 +713,28 @@ pub fn declared_form(
 /// - ensures: as [`format`], each lowering the meaning check reads lowered in
 ///   `beside`'s unit, so a declaration that reads an imported name is rewritten
 ///   as one that does not; a withdrawal's span is in the source's own text.
+///   With `checker`, the sugared form also writes away each `run` statement the
+///   lowering lists as linear, and a declaration whose two lowerings differ
+///   agrees when `checker` elaborates both to one body; without it, no
+///   statement is written away.
 /// - provides: the formatting `gandr fmt` runs, beside a source's imports.
 /// - fails: as [`format`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source importing the declaration its signature names is
-///   sugared beside the import and kept alone.
+///   sugared beside the import and kept alone; a linear run is written away
+///   where the checker elaborates both spellings alike, withdrawn where it
+///   elaborates them otherwise, and kept where it refuses the source.
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
+/// - witness: `tests::rewrite::a_linear_run_follows_the_checker_s_elaborations`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format_beside(
     grammar: &Pbg,
     parsed: &ParseResult<'_>,
     options: FormatOptions,
-    beside: Beside<'_>,
+    (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
 ) -> Result<Formatted, FormatError>
 {
     let tree = parsed.tree();
@@ -751,6 +785,24 @@ pub fn format_beside(
         (Some(_), Some(module)) => tail::Tails::of(module, base),
         (Some(_) | None, _) => tail::Tails::default(),
     };
+    // A linear run lowers otherwise than the call written at its read, so it
+    // is written away only where a checker can compare the two: in a
+    // declaration the checker elaborates as written. The source is elaborated
+    // once, here, and only when the lowering lists a run.
+    let checked = match (chosen, lowered.as_ref(), checker) {
+        (Some(_), Some(module), Some(checker)) if !module.linear_runs().is_empty() => {
+            let elaborations = checker.definitions(&mut arena, module);
+            Some((checker, elaborations))
+        },
+        (Some(_) | None, ..) => None,
+    };
+    let runs = match (lowered.as_ref(), checked.as_ref()) {
+        (Some(module), Some(&(_, ref elaborations))) => {
+            let unchecked = forms_of(tree, &meaning::unelaborated(module, elaborations));
+            linear::Runs::of(module, base, unchecked)
+        },
+        (Some(_) | None, _) => linear::Runs::default(),
+    };
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
         options.page,
@@ -761,6 +813,9 @@ pub fn format_beside(
     if let (Some(chosen), false) = (chosen, refused.is_empty()) {
         let any = composite::Motives::any();
         let every = tail::Tails::any();
+        // A refused declaration has no lowering to list its linear runs from,
+        // so none is reported for one.
+        let unlisted = linear::Runs::default();
         let unchecked = write(
             grammar,
             tree,
@@ -770,6 +825,7 @@ pub fn format_beside(
                 withdrawn: &[],
                 motives: &any,
                 tails: &every,
+                runs: &unlisted,
             }),
             &layout,
             ending,
@@ -794,6 +850,7 @@ pub fn format_beside(
                 withdrawn: spans.as_slice(),
                 motives: &motives,
                 tails: &tails,
+                runs: &runs,
             }),
             (Some(_) | None, _) => None,
         };
@@ -814,6 +871,9 @@ pub fn format_beside(
             (parsed, &laid.leaves, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
+            checked
+                .as_ref()
+                .map(|&(checker, ref source)| (checker, source.as_slice())),
         )?;
         match agreement {
             Agreement::Same => {
@@ -1324,7 +1384,8 @@ fn verify(
 /// `written`, the leaves it was laid out from, in order, and keeps each
 /// comment in its role; then lower it after `before` in `unit` into `arena`
 /// beside `lowered`, the source's lowering, and say which declarations
-/// lowered otherwise.
+/// lowered otherwise — where some did and `checked` gives a checker beside
+/// its elaborations of the source, those it does not elaborate alike.
 ///
 /// # Specification
 /// trivial.
@@ -1333,6 +1394,7 @@ fn verify_rewritten(
     (parsed, written, text): (&ParseResult<'_>, &[Leaf<'_>], SourceText<'_>),
     (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
+    checked: Option<(&dyn Elaborate, &[Option<ValueId>])>,
 ) -> Result<Agreement, FormatError>
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
@@ -1362,10 +1424,23 @@ fn verify_rewritten(
     else {
         return Err(FormatError::Changed(Change::Meaning));
     };
+    let base = ByteOffset::from(before.len());
+    let agreement = meaning::agree(arena, (lowered, &respelled), base, None);
+    // Only a declaration that lowered otherwise asks the checker: a source no
+    // rewrite moved between such spellings is never checked here.
+    let (&Agreement::Declarations(_), Some((checker, source))) = (&agreement, checked)
+    else {
+        return Ok(agreement);
+    };
+    let elaborated = meaning::Elaborated {
+        before: source,
+        after: checker.definitions(arena, &respelled),
+    };
     Ok(meaning::agree(
         arena,
         (lowered, &respelled),
-        ByteOffset::from(before.len()),
+        base,
+        Some(&elaborated),
     ))
 }
 

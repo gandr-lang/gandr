@@ -33,11 +33,63 @@
 //! was a parser that reads `run` at a statement's start inline unless a
 //! binder and `<-` follow, which moves the statement grammar for one
 //! spelling. Reversal: that parser.
+//!
+//! # Which `run` statements only sequence a call
+//!
+//! The `run x <- c ;` statements ending a block whose binders the tail reads
+//! once each, in the statements' order, before it runs anything, only
+//! linearise the code: written nested, each `c` stands where its `x` is read
+//! and the checker runs them there, in that order, at the same point. The
+//! lowering lists each such statement as a [`LinearRun`], for the sugared form
+//! to write away. It reads that off the core it minted:
+//!
+//! - the statement binds a plain name, with no type written, and its rest is
+//!   bound, not distributed to an exit's local ends;
+//! - `c` is a call, which the operand position takes bare;
+//! - no `explicit_runs` attribute reaching its declaration asks for runs, so
+//!   the rewrite never writes a run the lint would report;
+//! - every statement after it in the block is listed too, and none of their
+//!   calls reads its binder;
+//! - in the tail its binder's one read stands as an argument of a call or a
+//!   field of a value, reached through applications, forces, returns, tuples,
+//!   injections, list cells and constructors alone — the part of the tail the
+//!   checker runs before anything under a binder — after the reads of the
+//!   statements before it and before those after it, with no nested run and no
+//!   other computation before the last of them.
+//!
+//! The suffix is listed whole, so one pass writes away all a block allows and
+//! a second finds none. A read as the tail's whole value (`run m <- c ; m`)
+//! stays: written as `c` alone it is a computation rather than a run of one,
+//! a different core. A read under a thunk, a function or an arm stays, since
+//! there `c` would run later or more than once. A read out of the statements'
+//! order stays, since nested the calls would run in the reads' order. A read
+//! in a later statement's computation stays too, a chain of statements among
+//! them: the checker runs a nested run inside the computation that holds it,
+//! so `run y <- g(c) ;` binds `c` inside `g`'s computation where
+//! `run x <- c ; run y <- g(x) ;` binds it before — one program by the bind's
+//! associativity, two cores. Such a chain sheds its last link and then stays,
+//! its next read standing after the nested run.
+//! Whether the two spellings mean one program is still the checker's to say:
+//! the formatter compares the bodies it elaborates
+//! (`gandr_surface_format::Elaborate`). The alternative was a syntactic list
+//! the formatter's lowering comparison would refuse, since a nested run and
+//! its bind lower to different cores. Reversal: a lowering that writes the
+//! bind for a nested call itself, or a comparison up to the bind's
+//! associativity, which would also admit a chain whole.
 
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
+use gandr_core_term::support::ThinningRef;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::Node;
@@ -193,6 +245,32 @@ pub struct InferredRun
     pub site: NestedSite,
 }
 
+/// A `run x <- c ;` statement the sugared form writes away: `c` written at
+/// the binder's one read, the statement left out.
+///
+/// # Specification
+/// - requires: nothing to construct this data; the lowering produces it.
+/// - ensures: `bound` is the bytes of the call `c`, and `read` the bytes of the
+///   binder's one read in the step after the statement.
+/// - provides: the lowering's half of the formatter's linear-run rewrite.
+/// - fails: not applicable to the record itself.
+/// - panics: not applicable to the record itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block's final runs read once each, first and in order,
+///   in its tail, a chain's last link and a pair among them, beside runs read
+///   in a later statement, out of order, twice, after another run, as the
+///   tail's value and asked by an attribute.
+/// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LinearRun
+{
+    /// The bytes of the computation the statement runs.
+    pub bound: ByteSpan,
+    /// The bytes of the binder's one read.
+    pub read: ByteSpan,
+}
+
 impl Lowerer<'_, '_>
 {
     /// The site of every nested node the values of `origins` record: those
@@ -293,6 +371,368 @@ impl Lowerer<'_, '_>
             *held = (*held).max(asked);
         }
     }
+
+    /// The `run` statements a block's tail reads once each, first and in
+    /// order, each as a [`LinearRun`] in source order, read off the core
+    /// minted into `arena` with its origins `origins`.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run, so each statement's bind is recorded
+    ///   in `origins` at its `run` tile; the attribute pass has run, so every
+    ///   asking slot is marked.
+    /// - ensures: one entry per statement binding a plain name with its rest
+    ///   bound, whose computation is a call and whose declaration no
+    ///   `explicit_runs` attribute reaches, when every statement after it in
+    ///   its block is one too, no later one's call reads its binder, and the
+    ///   tail reads the binders as [`linear_read`] finds; sorted, without
+    ///   duplicates.
+    /// - provides: the lowering's half of the formatter's linear-run rewrite.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LinearRun`].
+    /// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
+    #[spec(ensures: |ret| ret.len() <= self.statements.len() && ret.is_sorted())]
+    pub(super) fn linear_runs(
+        &self,
+        arena: &CoreArena,
+        origins: &OriginTable,
+    ) -> Vec<LinearRun>
+    {
+        let mut binds: BTreeMap<NodeIndex, Option<ComputationId>> = BTreeMap::new();
+        for &(id, origin) in origins.computations() {
+            if origin.provenance() == Provenance::Written
+                && matches!(arena.computation(id), Some(&Computation::Bind(..)))
+            {
+                // A bind copied, as an exit's commuting copies one, has no one
+                // rest to read.
+                let _held = binds
+                    .entry(origin.node())
+                    .and_modify(|held| *held = None)
+                    .or_insert(Some(id));
+            }
+        }
+        // Each statement's bind, beside the call it runs when the statement
+        // could be written away, as far as the statement alone says.
+        let mut statements: BTreeMap<ComputationId, Option<ByteSpan>> = BTreeMap::new();
+        for statement in &self.statements {
+            let Some(&Some(bind)) = binds.get(&statement.origin)
+            else {
+                continue;
+            };
+            let _held = statements.insert(bind, self.linear_call(statement));
+        }
+        let mut found: Vec<LinearRun> = statements
+            .iter()
+            .filter_map(|(&bind, &call)| {
+                let call = call?;
+                let Some(&Computation::Bind(_, mut rest)) = arena.computation(bind)
+                else {
+                    return None;
+                };
+                // The statements after this one, each written away too: none
+                // of their calls may read a binder before it.
+                let mut depth = DeBruijnIndex::from(0_u32);
+                while let Some(&Computation::Bind(next, after)) = arena.computation(rest) {
+                    match statements.get(&rest) {
+                        Some(&Some(_))
+                            if reading(arena.computation_support(next), depth)
+                                == Reading::Unread =>
+                        {
+                            depth = DeBruijnIndex::from(u32::from(depth).checked_add(1)?);
+                            rest = after;
+                        },
+                        Some(&(Some(_) | None)) => return None,
+                        // A bind no statement wrote is the tail's own.
+                        None => break,
+                    }
+                }
+                let Maybe::Present(read) = origins.value(linear_read(arena, rest, depth)?)
+                else {
+                    return None;
+                };
+                Some(LinearRun {
+                    bound: call,
+                    read: read.span(),
+                })
+            })
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+
+    /// The span of the call `statement` runs, when the statement alone allows
+    /// writing it at its binder's read: it binds a plain name with its rest
+    /// bound, its computation is a call, and no `explicit_runs` attribute
+    /// reaching its declaration asks for runs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn linear_call(
+        &self,
+        statement: &super::Statement,
+    ) -> Option<ByteSpan>
+    {
+        if !matches!(statement.binding, super::StatementBinding::Named(_))
+            || statement.rest != super::exits::Rest::Bound
+        {
+            return None;
+        }
+        let bound = self.tree.node(statement.bound)?;
+        if !matches!(
+            shape_of(self.pbg, bound),
+            Ok(Shape::Form {
+                former: Former::Call,
+                ..
+            })
+        ) {
+            return None;
+        }
+        let asked = match self.collected.owner_of(statement.origin) {
+            Maybe::Present(slot) => self.asked_runs.get(&slot).copied().unwrap_or_default(),
+            Maybe::Absent(_) => AskedRuns::Unasked,
+        };
+        (asked == AskedRuns::Unasked).then(|| bound.span())
+    }
+}
+
+/// The read, in `rest`, a block's tail, of the binder `depth` statements out
+/// from it, when the tail reads that binder and each statement's after it
+/// once, in the statements' order, before it runs or reads anything else.
+///
+/// # Specification
+/// - requires: `rest` is a computation of `arena`.
+/// - ensures: the read is the value [`Region`] finds in `rest` for the
+///   intuitionistic index `depth`, the indices below it read after it in
+///   descending order, and nothing else in `rest` reads any of them; the
+///   predicate checks the read is a variable at `depth`.
+/// - fails: never; absent when no such reads stand.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`LinearRun`].
+/// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
+#[spec(ensures: |ret| ret.is_none_or(|read| matches!(
+    arena.value(read),
+    Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if index == depth
+)))]
+fn linear_read(
+    arena: &CoreArena,
+    rest: ComputationId,
+    depth: DeBruijnIndex,
+) -> Option<ValueId>
+{
+    let mut region = Region {
+        arena,
+        depth,
+        expected: Some(depth),
+        read: None,
+        refused: false,
+    };
+    region.walk(rest);
+    region
+        .read
+        .filter(|_| !region.refused && region.expected.is_none())
+}
+
+/// Whether a node reads one of the binders a walk tracks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// It reads one, or carries no support to say it does not.
+    Reads,
+    /// It reads none.
+    Unread,
+}
+
+/// Whether `support` selects an intuitionistic index at most `depth`; a node
+/// with no support recorded is taken to.
+///
+/// # Specification
+/// trivial.
+fn reading(
+    support: Option<ThinningRef<'_>>,
+    depth: DeBruijnIndex,
+) -> Reading
+{
+    let reads = support.is_none_or(|support| {
+        support
+            .indices(Zone::Intuitionistic)
+            .any(|selected| u32::from(selected) <= u32::from(depth))
+    });
+    if reads {
+        Reading::Reads
+    }
+    else {
+        Reading::Unread
+    }
+}
+
+/// One node the region walk has still to visit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Step
+{
+    /// A computation.
+    Computation(ComputationId),
+    /// A value, standing as given.
+    Value(ValueId, Standing),
+}
+
+/// The walk over what a block's tail runs before anything under a binder,
+/// finding the reads of the binders of the statements written away.
+struct Region<'arena>
+{
+    /// The arena the tail is minted in.
+    arena: &'arena CoreArena,
+    /// The index of the outermost statement's binder; every index at most it
+    /// is a statement's.
+    depth: DeBruijnIndex,
+    /// The index whose read comes next, none once every one is read.
+    expected: Option<DeBruijnIndex>,
+    /// The read of the outermost statement's binder.
+    read: Option<ValueId>,
+    /// Whether something refuses the tail: a read out of order or under a
+    /// binder, or a run before the last read.
+    refused: bool,
+}
+
+impl Region<'_>
+{
+    /// Walk the computation `tail` in the order the checker runs it, until
+    /// something refuses it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk(
+        &mut self,
+        tail: ComputationId,
+    )
+    {
+        let mut pending = Vec::from([Step::Computation(tail)]);
+        while let Some(step) = pending.pop() {
+            if self.refused {
+                return;
+            }
+            match step {
+                Step::Computation(id) => self.computation(id, &mut pending),
+                Step::Value(id, standing) => self.value(id, standing, &mut pending),
+            }
+        }
+    }
+
+    /// Visit the computation `id`: an application's function, then its
+    /// argument, a force's or a return's value, pushed onto `pending` to be
+    /// visited in that order; anything else refuses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn computation(
+        &mut self,
+        id: ComputationId,
+        pending: &mut Vec<Step>,
+    )
+    {
+        match self.arena.computation(id) {
+            Some(&Computation::Application(function, argument)) => {
+                pending.push(Step::Value(argument, Standing::Field));
+                pending.push(Step::Computation(function));
+            },
+            Some(&(Computation::Force(value) | Computation::Return(value))) => {
+                pending.push(Step::Value(value, Standing::Whole));
+            },
+            // Any other computation runs before what follows it, or holds the
+            // reads under its own binders.
+            Some(_) | None => self.refused = true,
+        }
+    }
+
+    /// Visit the value `id`, standing as `standing`: a statement's binder is
+    /// read in its turn, a nested run refuses unless every read came before
+    /// it, and a tuple's, an injection's, a list cell's and a constructor's
+    /// fields are pushed onto `pending` to be visited in order; anything else
+    /// must not read a binder.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value(
+        &mut self,
+        id: ValueId,
+        standing: Standing,
+        pending: &mut Vec<Step>,
+    )
+    {
+        let arena = self.arena;
+        let unread = |support| reading(support, self.depth) == Reading::Unread;
+        match arena.value(id) {
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) if u32::from(index) <= u32::from(self.depth) => {
+                if self.expected != Some(index) || standing == Standing::Whole {
+                    self.refused = true;
+                }
+                else {
+                    if index == self.depth {
+                        self.read = Some(id);
+                    }
+                    self.expected = u32::from(index).checked_sub(1).map(DeBruijnIndex::from);
+                }
+            },
+            Some(&(Value::Nested(run) | Value::Run(run) | Value::Returned(run))) => {
+                if self.expected.is_some() || !unread(arena.computation_support(run)) {
+                    self.refused = true;
+                }
+            },
+            Some(&Value::Tuple(ref components)) => {
+                pending.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&component| Step::Value(component, Standing::Field)),
+                );
+            },
+            Some(&Value::Injection(_, injected)) => {
+                pending.push(Step::Value(injected, Standing::Field));
+            },
+            Some(&Value::ListCons(head, tail)) => {
+                pending.push(Step::Value(tail, Standing::Field));
+                pending.push(Step::Value(head, Standing::Field));
+            },
+            Some(&Value::Constructor {
+                datatype,
+                ref fields,
+                ..
+            }) => {
+                if !unread(arena.value_type_support(datatype)) {
+                    self.refused = true;
+                }
+                pending.extend(
+                    fields
+                        .iter()
+                        .rev()
+                        .map(|&field| Step::Value(field, Standing::Field)),
+                );
+            },
+            Some(_) | None => {
+                if !unread(arena.value_support(id)) {
+                    self.refused = true;
+                }
+            },
+        }
+    }
+}
+
+/// Where a value the region walk meets stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// As the whole of a force or a return: a call written there would not be
+    /// a run of it.
+    Whole,
+    /// As an argument or a field.
+    Field,
 }
 
 /// How the computation at `node` is written after `run`.

@@ -971,7 +971,7 @@ mod tests
             hovered(
                 corolla,
                 include_str!("../../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"),
-                (50, 4),
+                (49, 4),
             ),
             Some(serde_json::json!(format!(
                 "<pre><code>{} : {}({} {} {}, {}, {})</code></pre>\n\nThe swap and the swap three \

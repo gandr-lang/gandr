@@ -46,4 +46,4 @@ def a_once = thunk { become A.step(A.seed) } ;
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
 def b_twice : () => Integer ;
-def b_twice = thunk { run one <- B.step(B.seed) ; run two <- B.step(one) ; become B.read(two) } ;
+def b_twice = thunk { run one <- B.step(B.seed) ; become B.read(B.step(one)) } ;

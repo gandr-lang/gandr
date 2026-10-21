@@ -682,6 +682,7 @@ mod runs;
 
 pub use runs::AskedRuns;
 pub use runs::InferredRun;
+pub use runs::LinearRun;
 pub use runs::NestedSite;
 pub use runs::RunOperand;
 pub use runs::RunSpelling;
@@ -4037,6 +4038,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let inferred = self.inferred_exits();
         let elidable = self.elidable_exits();
         let nested = self.nested_sites(&origins, resumed);
+        let linear = self.linear_runs(arena, &origins);
         let declarations = self.assemble(&mut origins);
         let structures = self.structures();
         let in_scope = self.in_scope(resumed);
@@ -4115,6 +4117,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_codata(codata)
         .with_inferred_exits(inferred)
         .with_elidable_exits(elidable)
+        .with_linear_runs(linear)
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)

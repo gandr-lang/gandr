@@ -52,8 +52,7 @@ module Endo : Model(Monoid) {
     g : Integer => Integer,
     x : Integer
   ) -> -F Integer {
-    run y <- f(x);
-    become g(y)
+    become g(f(x))
   }
 
   /// The identity function.

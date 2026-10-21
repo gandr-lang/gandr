@@ -212,7 +212,7 @@ pathological/data/sigma-pair.gandr:unpaired:299fe56149a307b7
 pathological/data/sigma-pair.gandr:unpaired:c06eaab41701dce7
 pathological/dependent-instantiation-capture-accepts.gandr:<file>
 pathological/dependent-instantiation-capture-accepts.gandr:captured:29fae5d783d9c9fa
-pathological/dependent-instantiation-capture-accepts.gandr:comp:7ad9c7521546d4bf
+pathological/dependent-instantiation-capture-accepts.gandr:comp:5d4ea5557a85e17b
 pathological/desc/eta-needs-one-constructor.gandr:<file>
 pathological/desc/eta-needs-one-constructor.gandr:NatPred:87013214ada72603
 pathological/desc/fillerless-rule-not-carried.gandr:<file>

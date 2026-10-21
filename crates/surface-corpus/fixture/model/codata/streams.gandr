@@ -47,9 +47,7 @@ def rec zipWith(
 ) -> Stream(Integer) {
   &{
     .head => {
-      run x <- first(s);
-      run y <- first(t);
-      f(x, y)
+      f(first(s), first(t))
     },
     .tail => zipWith[>](f, thunk { s.tail }, thunk { t.tail })
   }

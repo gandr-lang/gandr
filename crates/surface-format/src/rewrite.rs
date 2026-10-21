@@ -37,6 +37,7 @@ use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Owner;
 use crate::leaf::copied;
+use crate::linear::Runs;
 use crate::tail::Exit;
 use crate::tail::Tails;
 
@@ -86,6 +87,10 @@ pub enum RewriteName
     /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
     /// binder nothing later reads left out; only the sugared form moves it.
     ShortAlias,
+    /// A `run` statement that only sequences a call: `run x <- c ; f(x)` and
+    /// `f(c)`, where the lowering finds the binder read once, first; only the
+    /// sugared form moves it, and only beside a checker that elaborates both.
+    LinearRun,
 }
 
 impl fmt::Display for RewriteName
@@ -112,6 +117,7 @@ impl fmt::Display for RewriteName
             Self::PathAction => "path-action",
             Self::TailReturn => "tail-return",
             Self::ShortAlias => "short-alias",
+            Self::LinearRun => "linear-run",
         })
     }
 }
@@ -155,7 +161,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 20] = [
+pub const REWRITES: [Rewrite; 21] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -314,6 +320,14 @@ pub const REWRITES: [Rewrite; 20] = [
         mold: MoldName("value_function_type"),
         from: Spelling("(x : A) => B"),
         to: Spelling("A => B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::LinearRun,
+        direction: Direction::Sugar,
+        mold: MoldName("block"),
+        from: Spelling("run x <- c ; f(x)"),
+        to: Spelling("f(c)"),
         enabled: Enabled::On,
     },
 ];
@@ -514,6 +528,27 @@ enum Commented
     Yes,
 }
 
+/// Whether a form is open to rewrites: outside every declaration the meaning
+/// check withdrew them from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Open
+{
+    /// Rewrites may move it.
+    Yes,
+    /// It keeps its spelling.
+    No,
+}
+
+/// Where a part of a form begins among the leaves written for it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Start
+{
+    /// The index of the first leaf of the layout before the part.
+    layout: usize,
+    /// The index of the part's own first leaf.
+    own: usize,
+}
+
 /// What a respelled form is, as a form around it reads it.
 #[derive(Clone, Debug)]
 enum Shape<'source>
@@ -616,6 +651,8 @@ struct Respelling<'run, 'source>
     motives: &'source Motives,
     /// The `return` forms written as their value.
     tails: &'source Tails,
+    /// The `run` statements written away, each call at its binder's read.
+    runs: &'source Runs,
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -686,8 +723,9 @@ enum Visit
 }
 
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
-/// do not enter, the motives of the path composites the lowering derived and
-/// the tails whose `return` it would infer.
+/// do not enter, the motives of the path composites the lowering derived, the
+/// tails whose `return` it would infer and the `run` statements that only
+/// sequence a call.
 #[derive(Clone, Copy, Debug)]
 pub struct Rewrites<'run, 'source>
 {
@@ -700,6 +738,8 @@ pub struct Rewrites<'run, 'source>
     pub motives: &'source Motives,
     /// The `return` forms written as their value.
     pub tails: &'source Tails,
+    /// The `run` statements written away, each call at its binder's read.
+    pub runs: &'source Runs,
 }
 
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
@@ -747,6 +787,7 @@ pub fn respell<'source>(
         refused: rewrites.withdrawn,
         motives: rewrites.motives,
         tails: rewrites.tails,
+        runs: rewrites.runs,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
@@ -928,7 +969,13 @@ impl<'source> Respelling<'_, 'source>
                     else {
                         Commented::No
                     };
-                    let spelled = self.kept(MoldName("call_expression"), &parts, extent, commented);
+                    // A derived call opens no block: no statement to write away.
+                    let spelled = self.kept(
+                        MoldName("call_expression"),
+                        &parts,
+                        extent,
+                        (commented, Open::No),
+                    );
                     let _previous = self.spelled.insert(at, spelled);
                 },
             }
@@ -1098,12 +1145,18 @@ impl<'source> Respelling<'_, 'source>
         else {
             Commented::No
         };
-        let open = !self
+        let open = if self
             .refused
             .iter()
-            .any(|span| span.start() <= extent.start() && extent.end() <= span.end());
+            .any(|span| span.start() <= extent.start() && extent.end() <= span.end())
+        {
+            Open::No
+        }
+        else {
+            Open::Yes
+        };
         let chosen = self.chosen;
-        let rewritten = if open {
+        let rewritten = if open == Open::Yes {
             chosen.rewrites(rule).find_map(|name| {
                 self.rewrite(name, at, &parts, extent)
                     .map(|spelled| (name, spelled))
@@ -1128,7 +1181,7 @@ impl<'source> Respelling<'_, 'source>
                 Changed::Yes => self.parts(at).0,
                 Changed::No => parts,
             };
-            self.kept(rule, &parts, extent, commented)
+            self.kept(rule, &parts, extent, (commented, open))
         };
         let _previous = self.spelled.insert(at, spelled);
     }
@@ -1136,7 +1189,9 @@ impl<'source> Respelling<'_, 'source>
     /// A form no rewrite reads, its parts as written but for an operand a
     /// rewrite respelled: that one placed at the band its position admits,
     /// and a parenthesis around one alone dropped once the operand binds
-    /// tightest.
+    /// tightest. Where the form is `open` to rewrites and opens a block, each
+    /// `run` statement the lowering lists as linear is written away
+    /// ([`Self::linear`]).
     ///
     /// # Specification
     /// trivial.
@@ -1145,7 +1200,7 @@ impl<'source> Respelling<'_, 'source>
         rule: MoldName,
         parts: &[Part<'source>],
         extent: ByteSpan,
-        commented: Commented,
+        (commented, open): (Commented, Open),
     ) -> Spelled<'source>
     {
         let shape = shape(rule, parts);
@@ -1169,8 +1224,14 @@ impl<'source> Respelling<'_, 'source>
             owner: Owner::Form(self.form),
         };
         let mut index = Position::First;
+        let mut starts = Vec::with_capacity(parts.len());
         for part in parts {
+            let before = out.leaves.len();
             out.leaves.extend(part.before.iter().copied());
+            starts.push(Start {
+                layout: before,
+                own: out.leaves.len(),
+            });
             match part.role {
                 Role::Operand(child @ Child::Node(at))
                     if self
@@ -1192,6 +1253,16 @@ impl<'source> Respelling<'_, 'source>
                 index = Position::Later;
             }
         }
+        if open == Open::Yes
+            && !self.runs.calls().is_empty()
+            && self
+                .chosen
+                .rewrites(MoldName("block"))
+                .any(|name| name == RewriteName::LinearRun)
+            && self.linear(parts, &starts, &mut out.leaves) == Changed::Yes
+        {
+            self.changed = Changed::Yes;
+        }
         Spelled {
             leaves: out.leaves,
             band: Band::of(rule),
@@ -1199,6 +1270,106 @@ impl<'source> Respelling<'_, 'source>
             commented,
             rewritten: Changed::No,
         }
+    }
+
+    /// Write away, in `leaves`, the leaves of a form whose parts are `parts`,
+    /// each `run x <- c ;` statement among the parts whose call the lowering
+    /// lists as a linear run: the call's leaves written in place of the
+    /// binder's read, which stands in a later part, and the statement left
+    /// out. `starts` holds, for each part, where its layout and its own leaves
+    /// begin in `leaves`.
+    ///
+    /// The lowering lists the statements ending a block whose binders the
+    /// tail reads in their order; they are taken last first, so each
+    /// statement's range is read before a later one moves. A statement with a
+    /// comment among its parts, or whose read stands in no later part, stays,
+    /// and so does every statement before it: written at its read past one
+    /// that stays, its call would run after that one's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn linear(
+        &self,
+        parts: &[Part<'source>],
+        starts: &[Start],
+        leaves: &mut Vec<Leaf<'source>>,
+    ) -> Changed
+    {
+        let total = leaves.len();
+        let end = |part: usize| {
+            starts
+                .get(part.saturating_add(1))
+                .map_or(total, |next| next.layout)
+        };
+        let own = |part: usize, spelled: &str| {
+            parts.get(part).is_some_and(
+                |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled),
+            )
+        };
+        let statements: Vec<(usize, ByteSpan)> = (0 .. parts.len())
+            .filter_map(|first| {
+                let Role::Operand(call) = parts.get(first.checked_add(3)?)?.role
+                else {
+                    return None;
+                };
+                let called = match call {
+                    Child::Node(at) => self.extents.get(&at).copied()?,
+                    Child::Leaf(leaf) => leaf.span,
+                };
+                (own(first, "run")
+                    // The binder is a tile of a rule the table reads no
+                    // rewrite of, so it may read as one of the form's own.
+                    && !matches!(parts.get(first.checked_add(1)?)?.role, Role::Comment)
+                    && own(first.checked_add(2)?, "<-")
+                    && own(first.checked_add(4)?, ";")
+                    && self.runs.calls().binary_search(&called).is_ok())
+                .then_some((first, called))
+            })
+            .collect();
+        let mut changed = Changed::No;
+        // The first part of the statement last written away; none yet.
+        let mut following: Option<usize> = None;
+        for &(first, called) in statements.iter().rev() {
+            let after = first.saturating_add(5);
+            let adjacent = following.map_or_else(
+                || !(after .. parts.len()).any(|part| own(part, "run")),
+                |next| {
+                    parts.get(after .. next).is_some_and(|between| {
+                        between
+                            .iter()
+                            .all(|part| matches!(part.role, Role::Comment))
+                    })
+                },
+            );
+            if !adjacent {
+                break;
+            }
+            let (Some(&Start { layout: from, .. }), Some(&Start { own: call, .. })) =
+                (starts.get(first), starts.get(first.saturating_add(3)))
+            else {
+                break;
+            };
+            let (call_end, through) = (end(first.saturating_add(3)), end(first.saturating_add(4)));
+            let Some(read) = leaves
+                .get(through ..)
+                .and_then(|after| {
+                    after.iter().position(|leaf| {
+                        leaf.material == Material::Token
+                            && self.runs.read(leaf.span) == Some(called)
+                    })
+                })
+                .map(|offset| through.saturating_add(offset))
+            else {
+                break;
+            };
+            let written: Vec<Leaf<'source>> =
+                leaves.get(call .. call_end).unwrap_or_default().to_vec();
+            drop(leaves.splice(read ..= read, written));
+            drop(leaves.drain(from .. through));
+            changed = Changed::Yes;
+            following = Some(first);
+        }
+        changed
     }
 
     /// The operand `child` as a new position reads it.
@@ -1498,7 +1669,10 @@ impl<'source> Respelling<'_, 'source>
                 self.shortened(&mut out, parts, self.context(at))?;
                 Band::Loose
             },
-            (RewriteName::TailReturn | RewriteName::ShortAlias, Direction::Desugar) => return None,
+            // The linear run moves a form opening a block in `kept`, whatever
+            // its rule.
+            (RewriteName::TailReturn | RewriteName::ShortAlias, Direction::Desugar)
+            | (RewriteName::LinearRun, Direction::Sugar | Direction::Desugar) => return None,
         };
         self.changed = Changed::Yes;
         Some(Spelled {

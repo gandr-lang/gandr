@@ -38,8 +38,7 @@ module SetoidCat : Model(CatShape) {
     g : u => v,
     x : t
   ) -> -F v {
-    run y <- f(x);
-    become g(y)
+    become g(f(x))
   }
 
   /// The interface's identity runs to a function that applies `ident`, which

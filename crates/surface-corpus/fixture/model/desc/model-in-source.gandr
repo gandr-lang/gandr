@@ -43,6 +43,5 @@ def countingModel = (Integer, (thunk { 0 }, thunk { fn (n) { return n + 1 } })) 
 @[ runs("S(Z)") ]
 def one : () => N ;
 def one = thunk {
-  run z <- SyntaxNat.zero();
-  become SyntaxNat.succ(z)
+  become SyntaxNat.succ(SyntaxNat.zero())
 } ;

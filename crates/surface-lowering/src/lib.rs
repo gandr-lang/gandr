@@ -419,6 +419,7 @@ pub use crate::lower::Explicitness;
 pub use crate::lower::Fuel;
 pub use crate::lower::InferredExit;
 pub use crate::lower::InferredRun;
+pub use crate::lower::LinearRun;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::NestedSite;
 pub use crate::lower::Onto;
