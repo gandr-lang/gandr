@@ -557,6 +557,7 @@ use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
+use crate::doc::DocLink;
 use crate::doc::Documentation;
 use crate::doc::read_doc;
 use crate::error::CrossedExit;
@@ -611,6 +612,7 @@ use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::module::ValueComponent;
 use crate::module::WrittenAttribute;
+use crate::module::WrittenDoc;
 use crate::module::begin_collection;
 use crate::module::collect_source;
 use crate::module::declaration_half;
@@ -14323,17 +14325,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Read every declaration's documentation and check its links.
+    /// Read every declaration's and every module's documentation and check its
+    /// links.
     ///
     /// # Specification
     /// - requires: the mint sweep has run, so every declaration form's key is
     ///   final.
     /// - ensures: every piece of documentation of every declaration, refused or
-    ///   not, is read and filed under the content identity of the form it
-    ///   documents, pieces in source order; each link to a name the module
-    ///   neither declares nor recognises refuses its declaration at the link,
-    ///   as a misspelt attribute does. Every slot's documentation list is
-    ///   drained.
+    ///   not, and of every module form, is read and filed under the content
+    ///   identity of the form it documents, pieces in source order; each link
+    ///   to a name the module neither declares nor recognises refuses its
+    ///   declaration at the link, as a misspelt attribute does, and a module's
+    ///   as [`Self::document_modules`] states. Every slot's documentation list
+    ///   and the module documentation are drained.
     /// - provides: the documentation table of the lowered module.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
     ///   [`LoweringRefusal::UnknownMold`] abort the pass; every other refusal
@@ -14346,10 +14350,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both spellings file one text under one key, a link to
-    ///   a later declaration resolves, and a link to a missing name refuses its
-    ///   declaration at the link's span.
+    ///   a later declaration resolves, a link to a missing name refuses its
+    ///   declaration at the link's span, and a module's documentation is filed
+    ///   under its own form.
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -14374,10 +14380,131 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let mut filed: BTreeMap<UnitKey, Documentation<'source>> = BTreeMap::new();
         let mut slots = core::mem::take(&mut self.collected.slots);
-        let outcome = self.document_slots(&mut slots, &mut filed);
+        let modules = core::mem::take(&mut self.collected.module_docs);
+        let outcome = self
+            .document_slots(&mut slots, &mut filed)
+            .and_then(|()| self.document_modules(&modules, &mut slots, &mut filed));
         self.collected.slots = slots;
 
         outcome.map(|()| filed)
+    }
+
+    /// Read and file the documentation of every module form, `docs`, into
+    /// `filed`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::document`], over the module documentation and the
+    ///   slots taken out of the collection.
+    /// - ensures: each piece is filed under the content identity of the module
+    ///   form it documents, pieces in source order, and spends one step; a
+    ///   piece that does not read, or a link to a name the module neither
+    ///   declares nor recognises, refuses the module's first slot, a nested
+    ///   module's included, as a module's refused attribute does. A module with
+    ///   no slot files its documentation and has none to refuse.
+    /// - provides: the module walk of [`Self::document`].
+    /// - fails: as [`Self::document`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::document`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's, a decorated module's and a nested
+    ///   module's documentation each filed under its own module, a member's
+    ///   under its member, and a module's link to a missing name refusing its
+    ///   first member at the link.
+    /// - witness: `lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: self.fuel.remaining <= before,
+    )]
+    fn document_modules(
+        &mut self,
+        docs: &[WrittenDoc],
+        slots: &mut [DeclarationSlot<'source>],
+        filed: &mut BTreeMap<UnitKey, Documentation<'source>>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        for written in docs {
+            self.fuel.spend()?;
+            let first = self.first_slot(written.documents);
+            let documentation = filed.entry(self.key_at(written.documents)).or_default();
+            let before = documentation.links().len();
+            if let Err(refusal) = read_doc(self.pbg, self.tree, written.at.node, documentation) {
+                if refusal.classify() == FailureClass::EngineFault {
+                    return Err(refusal);
+                }
+                if let Some(slot) = first.and_then(|first| slots.get_mut(usize::from(first))) {
+                    slot.refuse(written.at.node, refusal);
+                }
+                continue;
+            }
+            for &link in documentation.links().get(before ..).unwrap_or_default() {
+                if let Some(refusal) = self.unresolved(link)
+                    && let Some(slot) = first.and_then(|first| slots.get_mut(usize::from(first)))
+                {
+                    slot.refuse(written.at.node, refusal);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// The first slot the module form `module` admitted, its nested modules'
+    /// included, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn first_slot(
+        &self,
+        module: NodeIndex,
+    ) -> Option<SlotIndex>
+    {
+        let mut structure = self
+            .collected
+            .structures
+            .iter()
+            .find(|structure| structure.declared_by.node == module)?;
+        loop {
+            match *structure.members.first()? {
+                Member::Slot(slot) => return Some(slot),
+                Member::Module(nested) => {
+                    structure = self.collected.structures.get(usize::from(nested))?;
+                },
+            }
+        }
+    }
+
+    /// The refusal of the documentation link `link` when its name names
+    /// nothing the module declares or recognises — a resolved path, a
+    /// declaration, a module or a constructor — at the link's span.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unresolved(
+        &self,
+        link: DocLink<'source>,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        let name = link.name();
+        let spelled: &str = name.as_ref();
+        let path = NamePath::from(spelled.split('.').map(Segment::from).collect::<Vec<_>>());
+        let declared = matches!(
+            self.recognition.resolve_path(&path),
+            PathResolution::Complete(_)
+        ) || self.collected.by_name.keys().any(|&(_, held)| held == name)
+            || self.collected.modules.keys().any(|&(_, held)| held == name)
+            || self
+                .collected
+                .constructors
+                .keys()
+                .any(|&(_, held)| held == name);
+
+        (!declared).then_some(LoweringRefusal::UnresolvedDocLink {
+            span: link.span(),
+            name,
+        })
     }
 
     /// Read and file the documentation of every slot in `slots` into `filed`.
@@ -14385,7 +14512,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: as [`Self::document`], over the slots taken out of the
     ///   collection.
-    /// - ensures: as [`Self::document`]; each piece spends one step.
+    /// - ensures: as [`Self::document`], for the slots' documentation; each
+    ///   piece spends one step.
     /// - provides: the slot walk of [`Self::document`].
     /// - fails: as [`Self::document`].
     /// - panics: none.
@@ -14430,27 +14558,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     slot.refuse(written.at.node, refusal);
                     continue;
                 }
-                for link in documentation.links().get(before ..).unwrap_or_default() {
-                    let name = link.name();
-                    let spelled: &str = name.as_ref();
-                    let path =
-                        NamePath::from(spelled.split('.').map(Segment::from).collect::<Vec<_>>());
-                    let declared =
-                        matches!(
-                            self.recognition.resolve_path(&path),
-                            PathResolution::Complete(_)
-                        ) || self.collected.by_name.keys().any(|&(_, held)| held == name)
-                            || self.collected.modules.keys().any(|&(_, held)| held == name)
-                            || self
-                                .collected
-                                .constructors
-                                .keys()
-                                .any(|&(_, held)| held == name);
-                    if !declared {
-                        slot.refuse(written.at.node, LoweringRefusal::UnresolvedDocLink {
-                            span: link.span(),
-                            name,
-                        });
+                for &link in documentation.links().get(before ..).unwrap_or_default() {
+                    if let Some(refusal) = self.unresolved(link) {
+                        slot.refuse(written.at.node, refusal);
                     }
                 }
             }
@@ -21349,6 +21459,84 @@ mod tests
             filed, 1_usize,
             "the module's form carries the law it names, and no other form does"
         );
+    }
+
+    #[test]
+    fn a_module_s_documentation_is_filed_under_its_key_1135()
+    {
+        let pbg = grammar();
+        let text = "/// A module.\nmodule A {\n  /// A def.\n  def x = 1 ;\n  /// Nested.\n  \
+                    module B { def y = 2 ; }\n}\n/// Decorated, see [gone].\n@[ explicit_exits \
+                    ]\nmodule C { def z = 3 ; }\n";
+        let source = SourceText::from(text);
+        let tree = parsed(&pbg, source);
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
+        let mut filed: Vec<(ByteOffset, String, &str)> = (0_usize ..)
+            .map(gandr_surface_syntax::NodeIndex::from)
+            .map_while(|at| tree.node(at).map(|node| (at, node)))
+            .filter_map(|(at, node)| {
+                let key =
+                    crate::unit::UnitKey::new(crate::unit::SourceIndex::default(), tree.key(at)?);
+                let Maybe::Present(found) = module.documentation(key)
+                else {
+                    return None;
+                };
+                let written =
+                    text.get(usize::from(node.span().start()) .. usize::from(node.span().end()))?;
+                Some((
+                    node.span().start(),
+                    String::from(found.text().as_ref()),
+                    written,
+                ))
+            })
+            .collect();
+        filed.sort_unstable_by_key(|&(start, ..)| start);
+        let documented: Vec<(&str, bool)> = filed
+            .iter()
+            .map(|&(_, ref doc, written)| {
+                (doc.as_str(), match doc.as_str() {
+                    "A module." => written.contains("module A {"),
+                    "A def." => written.contains("def x") && !written.contains("module"),
+                    "Nested." => written.contains("module B {") && !written.contains("module A"),
+                    _ => written.contains("module C {") && !written.contains("module A"),
+                })
+            })
+            .collect();
+        assert_eq!(
+            documented,
+            [
+                ("A module.", true),
+                ("A def.", true),
+                ("Nested.", true),
+                ("Decorated, see [gone].", true)
+            ],
+            "a module's, a member's, a nested module's and a decorated module's documentation \
+             each stand under their own form, in source order"
+        );
+        let gone = text.find("gone").expect("the link is written");
+        assert_eq!(
+            outcome_named(&module, "z"),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedDocLink {
+                span: span(ByteOffset::from(gone), ByteOffset::from(gone + 4)),
+                name: SurfaceName::from("gone"),
+            }),
+            "a module's link to a missing name refuses its first member at the link"
+        );
+        for name in ["x", "y"] {
+            assert!(
+                !matches!(outcome_named(&module, name), DeclarationOutcome::Refused(_)),
+                "`{name}` is refused by nothing: {:?}",
+                outcome_named(&module, name)
+            );
+        }
     }
 
     #[test]

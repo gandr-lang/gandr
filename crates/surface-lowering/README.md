@@ -34,7 +34,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweringRefusal`, `FragmentSort`, `FragmentBoundary` and `FormFault`: every refusal, located.
 - `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier.
 - `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too.
-- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's documentation read from both spellings into one text, filed under its declaration's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
+- `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's or a module's documentation read from both spellings into one text, filed under its form's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
 - Source `?` and `?name` lower to core value or computation holes according to their term position. Occurrences have distinct `HoleId`s derived from their syntax nodes, and retain the usual written origins.
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
