@@ -1107,7 +1107,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3
         ],
         "each constructor's names, then its recursions"
     );
@@ -1475,10 +1475,37 @@ fn a_rendered_signature_reparses_to_itself()
         ShapeFace::new("right", points(&[3, 1])),
         ShapeFace::new("none", []),
     ]));
+    // Names and terms over them: an atom sort, taken by two operations.
+    let renaming = signature(
+        "Renaming",
+        vec![
+            SortDesc {
+                representability: Representability::Atom,
+                ..SortDesc::new("Name", DeclPolarity::Data)
+            },
+            SortDesc::new("Tm", DeclPolarity::Data),
+        ],
+        vec![
+            operation(
+                "var",
+                vec![SortRef::new("a", "Name")],
+                SortRef::new("", "Tm"),
+            ),
+            operation(
+                "rename",
+                vec![
+                    SortRef::new("a", "Name"),
+                    SortRef::new("b", "Name"),
+                    SortRef::new("t", "Tm"),
+                ],
+                SortRef::new("", "Tm"),
+            ),
+        ],
+    );
     // An unnamed port under a binder renders as `_ : pi+ (x : S) . T`, which
     // an input port does not read yet (#718); every port here is named or
     // binds nothing.
-    for original in [lambda, identity_return, naturals, square] {
+    for original in [lambda, identity_return, naturals, square, renaming] {
         let rendered = gandr_theory_levitation::serialize_desc(&original);
         let report = described(rendered.as_ref());
         assert_eq!(report.diagnostics, [], "{rendered:?} lowers whole");
@@ -1649,6 +1676,21 @@ fn a_binder_over_an_ordinary_sort_is_refused_by_name()
                 if reason.kind == gandr_theory_levitation::WfKind::NonRepresentableBinder
         ),
         "a variable of an ordinary sort is not bound: {diagnostic:?}"
+    );
+    let report = described(
+        "theory Minting { sort Name : Atom; sort Tm : Type; oper fresh : (t : Tm) --> Name; }",
+    );
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(
+            diagnostic.fault,
+            DescriptionFault::IllFormed(ref reason)
+                if reason.kind == gandr_theory_levitation::WfKind::AtomResult
+        ),
+        "an atom is taken, never returned: {diagnostic:?}"
     );
     // A binder belongs to an operation's input port: a domain, a result, a
     // sort's index and a circuit's wire bind nothing.

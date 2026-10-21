@@ -257,6 +257,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Const", vec!["String", "Theory", "Theory", "Theory"]),
         ("Nested", vec!["String", "Theory", "Theory", "Theory"]),
         ("Inst", vec!["String", "Theory"]),
+        ("Atom", vec!["String", "Theory", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1116,5 +1117,49 @@ fn a_rule_no_span_places_is_refused()
             ConstructorTag::from(1_usize)
         ))),
         "a value outside the grammar is refused with its fault"
+    );
+}
+
+#[test]
+fn an_atom_sort_takes_its_own_tag()
+{
+    let renaming = |names: Representability| TheoryParts {
+        sorts: vec![sort("Name", names), sort("Tm", Representability::Ordinary)],
+        operations: vec![TheoryOperation {
+            name: Name::from("rename"),
+            kind: OperationKind::Operation,
+            inputs: vec![port("a", "Name", []), port("t", "Tm", [])],
+            outputs: vec![port("", "Tm", [])],
+        }],
+        ..TheoryParts::default()
+    };
+    let parts = renaming(Representability::Atom);
+    let value = TheoryValue::encode(&parts);
+    assert_eq!(value.decode(), Ok(parts), "an atom sort reads back");
+    assert_eq!(
+        Tag::Atom.constructor(),
+        ConstructorTag::from(22_usize),
+        "appended, so a presentation declaring no atom sort keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&renaming(Representability::Ordinary)),
+        value,
+        "an atom sort is not an ordinary one"
+    );
+    let description = value
+        .description::<Grade>(named("Renaming"), &[])
+        .expect("a presentation with an atom sort reads as its table");
+    assert_eq!(
+        description
+            .sorts
+            .iter()
+            .map(|sort| sort.representability)
+            .collect::<Vec<_>>(),
+        [Representability::Atom, Representability::Ordinary],
+        "the table keeps the atom sort"
+    );
+    assert!(
+        check_desc(&description).is_empty(),
+        "an operation taking an atom is well formed"
     );
 }

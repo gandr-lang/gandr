@@ -74,6 +74,16 @@
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `model::tests::an_underivable_component_keeps_its_fault`.
 //!
+//! # Atom sorts
+//!
+//! A sort member classified `Atom` is an atom sort: orbit-infinite, with
+//! equality and swapping its only structure (Pitts, _Nominal Sets_, CUP 2013).
+//! The reader codes it at `Atom` in the value. An operation's port may sit at
+//! it; an output at it is the description check's `AtomResult`, and a `pi+`
+//! binder over it its `NonRepresentableBinder`. Witnesses:
+//! `description::theory::tests::a_rendered_signature_reparses_to_itself`,
+//! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`.
+//!
 //! # The shape parameter
 //!
 //! A `shape` member states the finite shape the signature's cells are stated
@@ -801,11 +811,12 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: the sort as `Theory` codes it — its index ports in written
     ///   order, each port's sort read as a sort over index terms, and its
-    ///   representability, `Type+` representable and `Type` ordinary — beside
-    ///   its name tile and where its name, its classifier and each index are
-    ///   written.
+    ///   representability, `Type+` representable, `Atom` an atom sort and
+    ///   `Type` ordinary — beside its name tile and where its name, its
+    ///   classifier and each index are written.
     /// - fails: an incomplete judgment earns a member-local refusal; a
-    ///   classifier other than the two universes is a type-shape refusal.
+    ///   classifier other than the two universes and `Atom` is a type-shape
+    ///   refusal.
     /// - panics: none.
     /// - executable: none — the written telescope is source syntax the result
     ///   does not retain beside the sort.
@@ -861,6 +872,7 @@ impl Reader<'_, '_>
         let representability = match self.text(classifier).0 {
             "Type" => Representability::Ordinary,
             "Type+" => Representability::Representable,
+            "Atom" => Representability::Atom,
             _ => return Err(run.fault(DescriptionFault::TypeShape)),
         };
         run.end()?;
