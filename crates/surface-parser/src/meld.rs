@@ -4417,8 +4417,21 @@ impl<'pbg> MeldState<'pbg>
         // what it has always been. That asymmetry is deliberate: an unclassed
         // ghost pairs with nothing, so the failure mode is a suppression not
         // applied rather than one applied to the wrong declaration.
-        let ghost_span = SourceSpan::point(SourceOffset::from(frontier_cell.end));
-        let label = self.pbg.closing_class(frontier_mold).map_or_else(
+        //
+        // A paired closer's ghost follows every operand above the frontier, so
+        // it stands where the last of them ends: past the body a `{` opened,
+        // not at the `{`. An unclassed ghost keeps the frontier's end, where
+        // the form's own last written tile stops.
+        let class = self.pbg.closing_class(frontier_mold);
+        let ghost_end = match class {
+            Some(_) => self
+                .stack
+                .last()
+                .map_or(frontier_cell.end, |top| top.end.max(frontier_cell.end)),
+            None => frontier_cell.end,
+        };
+        let ghost_span = SourceSpan::point(SourceOffset::from(ghost_end));
+        let label = class.map_or_else(
             || NodeLabel::Grout {
                 sort: sort.grout_sort(),
                 shape: GroutShape::Postfix,
@@ -4431,8 +4444,8 @@ impl<'pbg> MeldState<'pbg>
         let ghost = self.emit_token(label, ghost_span);
         self.push_cell(Cell {
             emit: ghost,
-            start: frontier_cell.end,
-            end: frontier_cell.end,
+            start: ghost_end,
+            end: ghost_end,
             sort,
             role: Role::FormTile {
                 mold: frontier_mold,
