@@ -28,6 +28,7 @@
 //!
 //! [`Code`]: crate::Code
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
@@ -138,13 +139,16 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One well-formedness diagnostic: an inspectable failure with a message and,
-/// when recorded, a surface span.
+/// One well-formedness diagnostic: an inspectable failure with a message,
+/// the declared names it concerns and, when recorded, a surface span.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct WfDiagnostic
 {
     /// The failure classification.
     pub kind: WfKind,
+    /// The declared names the failure concerns — the sort, port, rule, face,
+    /// symbol or variable at fault — in the order its message names them.
+    pub subjects: Box<[Name]>,
     /// A human-readable description of the failure.
     pub message: DiagnosticMessage,
     /// The surface span the failure was located at, when recorded.
@@ -153,7 +157,7 @@ pub struct WfDiagnostic
 
 impl WfDiagnostic
 {
-    /// A diagnostic of the given kind, message and span.
+    /// A diagnostic of the given kind, subjects, message and span.
     ///
     /// # Specification
     /// trivial.
@@ -161,46 +165,70 @@ impl WfDiagnostic
     #[must_use]
     pub const fn new(
         kind: WfKind,
+        subjects: Box<[Name]>,
         message: DiagnosticMessage,
         span: Maybe<SurfaceSpan, diagnostic_span::Absent>,
     ) -> Self
     {
         Self {
             kind,
+            subjects,
             message,
             span,
         }
     }
 }
 
-/// The diagnostic of `kind` with the rendered `message`, at an unrecorded
-/// span.
+/// The names `names` display as, in order: the subjects of a diagnostic, as
+/// its message names them.
+///
+/// # Specification
+/// trivial.
+fn named(names: &[&dyn fmt::Display]) -> Box<[Name]>
+{
+    names
+        .iter()
+        .map(|name| Name::from(name.to_string()))
+        .collect()
+}
+
+/// The diagnostic of `kind` about `subjects` with the rendered `message`, at
+/// an unrecorded span.
 ///
 /// # Specification
 /// trivial.
 fn unlocated(
     kind: WfKind,
+    subjects: Box<[Name]>,
     message: String,
 ) -> WfDiagnostic
 {
     WfDiagnostic::new(
         kind,
+        subjects,
         DiagnosticMessage::from(message),
         Maybe::Absent(diagnostic_span::Absent::Unrecorded),
     )
 }
 
-/// The diagnostic of `kind` with the rendered `message`, at `span`.
+/// The diagnostic of `kind` about `subjects` with the rendered `message`, at
+/// `span`.
 ///
 /// # Specification
 /// trivial.
 fn located(
     kind: WfKind,
+    subjects: Box<[Name]>,
     message: String,
     span: SurfaceSpan,
 ) -> WfDiagnostic
 {
-    WfDiagnostic::new(kind, DiagnosticMessage::from(message), Maybe::Present(span))
+    WfDiagnostic::new(
+        kind,
+        subjects,
+        DiagnosticMessage::from(message),
+        Maybe::Present(span),
+    )
 }
 
 /// Check a description, returning one diagnostic per well-formedness failure;
@@ -289,6 +317,7 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
             }) {
                 diagnostics.push(unlocated(
                     WfKind::NonRepresentableBinder,
+                    named(&[&binder.sort, &port.name]),
                     format!(
                         "π⁺ domain '{}' of port '{}' is not representable",
                         binder.sort, port.name
@@ -304,6 +333,7 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
             }) {
                 diagnostics.push(unlocated(
                     WfKind::AtomResult,
+                    named(&[&op.name, &port.sort, &port.name]),
                     format!(
                         "operation '{}' returns atom sort '{}' at port '{}'",
                         op.name, port.sort, port.name
@@ -409,12 +439,14 @@ fn check_shape(
         {
             diagnostics.push(unlocated(
                 WfKind::DuplicateFaceName,
+                named(&[&shape.name, &face.name()]),
                 format!("shape '{}' names face '{}' twice", shape.name, face.name()),
             ));
         }
         if let Maybe::Present(point) = shape.escape(face) {
             diagnostics.push(unlocated(
                 WfKind::FaceOutsideShape,
+                named(&[&face.name(), &shape.name]),
                 format!(
                     "face '{}' of shape '{}' holds point {point}, past its {} points",
                     face.name(),
@@ -468,12 +500,14 @@ fn check_sorts<G>(
         {
             diagnostics.push(unlocated(
                 WfKind::DuplicateSortName,
+                named(&[&sort.name]),
                 format!("the sort `{}` is declared more than once", sort.name),
             ));
         }
         if sort.polarity != desc.polarity {
             diagnostics.push(unlocated(
                 WfKind::SortPolarityDisagreement,
+                named(&[&sort.name]),
                 format!(
                     "the sort `{}` declares a polarity disagreeing with its declaration's",
                     sort.name
@@ -486,6 +520,7 @@ fn check_sorts<G>(
         if !declares(&ctor.result) {
             diagnostics.push(unlocated(
                 WfKind::UnknownResultSort,
+                named(&[&ctor.name, &ctor.result]),
                 format!(
                     "the constructor `{}` targets the undeclared sort `{}`",
                     ctor.name, ctor.result
@@ -496,6 +531,7 @@ fn check_sorts<G>(
             if !declares(sort) {
                 diagnostics.push(unlocated(
                     WfKind::UnknownVarSort,
+                    named(&[&ctor.name, &sort]),
                     format!(
                         "the constructor `{}` recurses at the undeclared sort `{sort}`",
                         ctor.name
@@ -573,6 +609,7 @@ fn check_circuit_rule(
                 }
                 diagnostics.push(located(
                     WfKind::OutOfSignatureRule,
+                    named(&[&rule.name, &frame.head.name()]),
                     format!(
                         "circuit rule `{}`'s frame applies symbol `{}` not in the datatype's \
                          signature",
@@ -591,6 +628,7 @@ fn check_circuit_rule(
                 }
                 diagnostics.push(located(
                     WfKind::UnknownRewritePort,
+                    named(&[&rule.name, &redex.rewrite]),
                     format!(
                         "circuit rule `{}`'s redex applies rewrite `{}`, which its parameter \
                          telescope does not declare",
@@ -607,6 +645,7 @@ fn check_circuit_rule(
         Err(CircuitDerivationError::CyclicWiring(port)) => {
             diagnostics.push(located(
                 WfKind::CyclicCircuitWiring,
+                named(&[&rule.name, &port]),
                 format!(
                     "circuit rule `{}`'s wiring reaches port `{port}` from itself, so no boundary \
                      term unfolds from it",
@@ -619,6 +658,7 @@ fn check_circuit_rule(
         Err(CircuitDerivationError::NodeBudget { budget }) => {
             diagnostics.push(located(
                 WfKind::CircuitDerivationBudget,
+                named(&[&rule.name]),
                 format!(
                     "circuit rule `{}`'s wiring unfolds past the derivation's node budget of \
                      {budget}: a wire consumed twice is unfolded twice, so reconvergence is a \
@@ -633,6 +673,7 @@ fn check_circuit_rule(
         Err(CircuitDerivationError::SplitOutputs(port)) => {
             diagnostics.push(located(
                 WfKind::SplitCircuitOutputs,
+                named(&[&rule.name, &port]),
                 format!(
                     "circuit rule `{}`'s wiring reads port `{port}`, one output of a many-out \
                      node, on its own: a term holds a many-out application only whole, as the \
@@ -667,6 +708,7 @@ fn check_circuit_rule(
         };
         diagnostics.push(located(
             WfKind::DerivedBoundaryMismatch,
+            named(&[&rule.name]),
             format!(
                 "circuit rule `{}`'s wiring derives the {side} boundary `{derived}`, but its \
                  declared sphere fixes `{declared}`{alphabets}",
@@ -744,6 +786,7 @@ fn check_attrs(
         if bool::from(attrs.contains(NameRef::from(marker))) {
             diagnostics.push(unlocated(
                 WfKind::DeclaresDerivedMetadata,
+                named(&[&owner, &marker]),
                 format!(
                     "{role} `{owner}` declares reserved derived metadata `{marker}`: rule \
                      variable variance and linearity are derived from the faces, never declared"
@@ -810,6 +853,7 @@ fn check_rule_face(
         if !lhs_vars.contains(&var) {
             diagnostics.push(located(
                 WfKind::UnboundRhsVariable,
+                named(&[&var]),
                 format!(
                     "cell rule's right-hand side introduces variable `{var}` not bound by its \
                      left-hand side"
@@ -827,6 +871,7 @@ fn check_rule_face(
     for width in misplaced {
         diagnostics.push(located(
             WfKind::MisplacedResults,
+            named(&[]),
             format!(
                 "cell rule writes a results tuple of {} components away from its right-hand \
                  root: a tuple is how a many-out operation's rule returns its results, so it \
@@ -930,6 +975,7 @@ fn check_rule_binders(
                 if !matches!(site, Site::Port(port) if same_binders(port, binding)) {
                     diagnostics.push(located(
                         WfKind::UnsortedBinding,
+                        named(&[&variable]),
                         format!(
                             "rule uses `{variable}`, which a binding port of its left side binds, \
                              where no port binds the same variables over the same sort: write it \
@@ -944,6 +990,7 @@ fn check_rule_binders(
                     Some(binding) if binding.bindings.len() == args.len() => {},
                     Some(binding) => diagnostics.push(located(
                         WfKind::UnsortedBinding,
+                        named(&[&name]),
                         format!(
                             "rule applies `{name}` to {} arguments, but its binding port binds {} \
                              variables: an instantiation takes one argument per variable",
@@ -954,6 +1001,7 @@ fn check_rule_binders(
                     )),
                     None => diagnostics.push(located(
                         WfKind::UnsortedBinding,
+                        named(&[&name]),
                         format!(
                             "rule applies `{name}`, which no binding port of its left side binds: \
                              only a variable a port binds variables over takes arguments"
@@ -1007,6 +1055,7 @@ fn check_free_term_symbols(
         if !signature.contains(name) {
             diagnostics.push(located(
                 WfKind::OutOfSignatureRule,
+                named(&[&name]),
                 format!("cell rule mentions symbol `{name}` not in the datatype's signature"),
                 span,
             ));
@@ -1047,6 +1096,7 @@ fn check_arity(
     let mut fail = |reason: String| {
         diagnostics.push(unlocated(
             WfKind::ArityDoesNotCompose,
+            named(&[&owner]),
             format!("operation `{owner}`'s bridge arity does not compose: {reason}"),
         ));
     };

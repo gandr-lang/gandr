@@ -314,6 +314,11 @@ fn lowered(
             "this port is fed back from the rule's own output and read under no observation of \
              its sort, so the loop the feed closes is not guarded",
         ),
+        // The lowering states the description check's reason itself, naming
+        // the sort, port or rule as the declaration spells it.
+        ill_formed @ LoweringRefusal::IllFormedDescription { .. } => {
+            fmt::Display::fmt(&ill_formed, f)
+        },
         LoweringRefusal::GradedBridge { grade, .. } => write!(
             f,
             "the grade `{grade}` is not supported; only the default grade `ω` is"
@@ -1237,6 +1242,16 @@ mod tests
                 boundary: FragmentBoundary::WrongSort,
             },
             LoweringRefusal::BareFeedback { span, rule: span },
+            LoweringRefusal::IllFormedDescription {
+                span,
+                kind: gandr_surface_lowering::WfKind::DuplicateSortName,
+                subjects: [
+                    quenchant_shape::shape::Maybe::Present(name),
+                    quenchant_shape::shape::Maybe::Absent(
+                        gandr_surface_lowering::description_subject::Absent::Unnamed,
+                    ),
+                ],
+            },
             LoweringRefusal::GradedBridge { span, grade: name },
             LoweringRefusal::MalformedLiteral { span, form },
             LoweringRefusal::MalformedForm {

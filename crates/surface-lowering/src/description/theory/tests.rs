@@ -582,7 +582,10 @@ fn a_top_level_operation_declines_its_filler_by_name()
 fn theory_declines_and_malformed_wiring_are_refused_apart()
 {
     let span = ByteSpan::new(0_usize.into(), 1_usize.into()).unwrap();
-    let refusal = |fault| DescriptionDiagnostic { span, fault }.lowering_refusal();
+    let refusal = |fault| {
+        DescriptionDiagnostic { span, fault }
+            .lowering_refusal(gandr_surface_syntax::SourceFragment::from(""))
+    };
     for (fault, member) in [
         (
             SignatureFault::OperationFiller,
@@ -685,6 +688,58 @@ theory Wheel {
         module.attributes().entries(key).len(),
         1_usize,
         "the decoration states the block's refusal"
+    );
+}
+
+#[test]
+fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
+{
+    let source = "theory Unbindable {
+  sort Tm : Type;
+  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+}
+";
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let [ref unbindable] = *module.declarations()
+    else {
+        panic!("the block is one declaration: {:?}", module.declarations())
+    };
+    let crate::DeclarationOutcome::Refused(
+        refusal @ crate::LoweringRefusal::IllFormedDescription {
+            kind,
+            subjects: [Maybe::Present(sort), Maybe::Present(port)],
+            ..
+        },
+    ) = unbindable.outcome()
+    else {
+        panic!(
+            "an unrepresentable binder is the description check's refusal, not a misplaced \
+             tile: {:?}",
+            unbindable.outcome()
+        )
+    };
+    assert_eq!(kind, crate::WfKind::NonRepresentableBinder);
+    assert_eq!(
+        (sort.as_ref(), port.as_ref()),
+        ("Tm", "t"),
+        "the refusal names the sort and the port as the block spells them"
+    );
+    assert_eq!(
+        alloc::string::ToString::to_string(&refusal),
+        "the port `t` binds a variable of the sort `Tm`, which is not representable",
+        "the refusal states the check's reason"
     );
 }
 

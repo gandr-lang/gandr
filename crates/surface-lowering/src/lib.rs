@@ -368,6 +368,8 @@ mod origin;
 mod resolve;
 mod unit;
 
+pub use gandr_theory_levitation::WfKind;
+
 pub use crate::attribute::AttributeEntry;
 pub use crate::attribute::AttributeRegistry;
 pub use crate::attribute::AttributeSchema;
@@ -394,6 +396,7 @@ pub use crate::error::FragmentSort;
 pub use crate::error::LoopExit;
 pub use crate::error::LoweringRefusal;
 pub use crate::error::TelescopeFault;
+pub use crate::error::description_subject;
 pub use crate::form::Ending;
 pub use crate::form::FormName;
 pub use crate::form::Former;

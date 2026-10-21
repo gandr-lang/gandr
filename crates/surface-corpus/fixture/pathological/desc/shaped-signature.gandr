@@ -3,7 +3,7 @@
 
 /// `far` holds point 4 of a shape of four points: the description check
 /// refuses the face by name (`FaceOutsideShape`).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory Past {
   shape Square : 4 { far = {1, 4}; };
   sort Cell : Type;
@@ -11,7 +11,7 @@ theory Past {
 
 /// `left` is named twice: the description check refuses the second by name
 /// (`DuplicateFaceName`).
-@[ refuses("MalformedForm") ]
+@[ refuses("IllFormedDescription") ]
 theory Twice {
   shape Square : 4 { left = {0, 2}; left = {1, 3}; };
   sort Cell : Type;
