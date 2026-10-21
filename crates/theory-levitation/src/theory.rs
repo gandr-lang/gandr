@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-one constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-two constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -90,6 +90,7 @@
 //! | 18 | `Rank` | an operation's name, its rank, the rest |
 //! | 19 | `Const` | as `Oper`, for a constant |
 //! | 20 | `Nested` | as `Oper`, for a model of another theory |
+//! | 21 | `Inst` | a metavariable's name, its arguments |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -115,7 +116,11 @@
 //! T` is a `Bound` member of its operation's port chain, its binders a chain of
 //! plain `Port`s, outermost first. A binder binds nothing of its own, a sort's
 //! index port binds nothing, and a `Bound` port binds at least one variable, so
-//! the value of a port has one spelling.
+//! the value of a port has one spelling. A rule's right term instantiates a
+//! variable its left term passes at a `Bound` port as an `Inst`: the
+//! variable's name and an argument chain, one term per binder. `Inst` is
+//! appended to the table, so a presentation that instantiates nothing keeps
+//! the bytes it had.
 //!
 //! - **Choice.** Representability and binding are constructors of their own,
 //!   appended to the table, rather than a field of every `Sort` and `Port`.
@@ -275,7 +280,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 21] = [
+pub const THEORY_CONSTRUCTORS: [&str; 22] = [
     "Presents",
     "End",
     "Sort",
@@ -297,11 +302,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 21] = [
     "Rank",
     "Const",
     "Nested",
+    "Inst",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 21] = [
+const CONSTRUCTORS: [(&str, usize, usize); 22] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -323,6 +329,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 21] = [
     (THEORY_CONSTRUCTORS[18], 2, 1),
     (THEORY_CONSTRUCTORS[19], 1, 3),
     (THEORY_CONSTRUCTORS[20], 1, 3),
+    (THEORY_CONSTRUCTORS[21], 1, 1),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -371,6 +378,8 @@ enum Tag
     Const,
     /// A nested model and the rest of the operations.
     Nested,
+    /// A metavariable's instantiation.
+    Inst,
 }
 
 impl Tag
@@ -404,11 +413,12 @@ impl Tag
             Self::Rank => 18,
             Self::Const => 19,
             Self::Nested => 20,
+            Self::Inst => 21,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-one constructors.
+/// The description of `Theory`, one data sort of twenty-two constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -417,10 +427,10 @@ impl Tag
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
-///   `Turned`, `Derived`, `Rank`, `Const` and `Nested` in that order, each at
-///   the result sort `Theory`; a constructor's `String` fields carry `grade`
-///   and come first, three for `Derived`, two for `Port`, `Bound`, `Shape`,
-///   `Face` and `Rank` and one for every other constructor that names
+///   `Turned`, `Derived`, `Rank`, `Const`, `Nested` and `Inst` in that order,
+///   each at the result sort `Theory`; a constructor's `String` fields carry
+///   `grade` and come first, three for `Derived`, two for `Port`, `Bound`,
+///   `Shape`, `Face` and `Rank` and one for every other constructor that names
 ///   something, and its remaining fields are `Theory`.
 /// - panics: none.
 ///
@@ -1520,8 +1530,9 @@ quenchant_shape::reason_enum! {
 ///
 /// # Specification
 /// - ensures: a variable is `Var`, an operation application `App`, a
-///   constructor application `Con` and a results tuple `Tuple`, each
-///   application over the argument chain of its arguments in order.
+///   constructor application `Con`, a results tuple `Tuple` and a
+///   metavariable's instantiation `Inst`, each application over the argument
+///   chain of its arguments in order.
 /// - panics: none.
 /// - executable: none — the coding is observed by reading it back, which the
 ///   round trip of [`TheoryValue::decode`] does.
@@ -1547,6 +1558,7 @@ fn term(root: TermNode<'_>) -> DescValue
                     TermView::Results { args } => {
                         (Tag::Tuple, Maybe::Absent(applied::Absent::Tuple), args)
                     },
+                    TermView::Inst { name, args } => (Tag::Inst, Maybe::Present(name), args),
                 };
                 pending.push(Build::Apply(tag, head, args.len()));
                 let first = pending.len();
@@ -2100,6 +2112,8 @@ enum Applied
     Constructor(Name),
     /// A results tuple.
     Tuple,
+    /// A metavariable's instantiation, by the metavariable's name.
+    Instantiation(Name),
 }
 
 /// One pending step of [`read_term`].
@@ -2114,9 +2128,9 @@ enum Read<'value>
 /// The free term the value at `root` codes.
 ///
 /// # Specification
-/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con` and `Tuple` read
-///   back to a variable, an operation application, a constructor application
-///   and a results tuple.
+/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple` and `Inst`
+///   read back to a variable, an operation application, a constructor
+///   application, a results tuple and a metavariable's instantiation.
 /// - fails: [`TheoryFault::Misplaced`] for any other constructor; as
 ///   [`expect`], [`text`] and [`argument_nodes`] beneath.
 /// - panics: none.
@@ -2158,6 +2172,11 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     let [chain] = expect::<1>(node, Tag::Tuple)?;
                     (Applied::Tuple, chain)
                 }
+                else if node.ctor == Tag::Inst.constructor() {
+                    let [head, chain] = expect::<2>(node, Tag::Inst)?;
+                    let head = text(head)?;
+                    (Applied::Instantiation(head), chain)
+                }
                 else {
                     return Err(TheoryFault::Misplaced(node.ctor));
                 };
@@ -2173,6 +2192,7 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     Applied::Operation(head) => FreeTerm::op(head, arguments),
                     Applied::Constructor(head) => FreeTerm::ctor(head, arguments),
                     Applied::Tuple => FreeTerm::results(arguments),
+                    Applied::Instantiation(head) => FreeTerm::inst(head, arguments),
                 });
             },
         }

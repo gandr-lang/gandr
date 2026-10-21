@@ -10,17 +10,23 @@
 //! rank (`Rank`). [`TheoryRules::read`] reads the chain and
 //! [`TheoryRules::decide`] decides it in four steps:
 //!
-//! 1. every side is one term, every left side is headed by an operation, its
-//!    variables numbered by first occurrence, and every right side names only
-//!    variables its left side binds;
+//! 1. every side is one term, every left side is headed by an operation and
+//!    instantiates no variable, its variables numbered by first occurrence, and
+//!    every right side names and instantiates only variables its left side
+//!    binds;
 //! 2. the lexicographic path order over the stated ranks puts every left side
 //!    above its right: an operation stands above every operation of a lower
 //!    rank and above every constructor and results tuple, and the order is a
-//!    simplification order whatever the ranks, so the rules terminate;
+//!    simplification order whatever the ranks, so the rules terminate. A
+//!    variable a right side instantiates is read at a function type, the order
+//!    then the higher-order recursive path order: a left side is above an
+//!    instantiation when the variable is one of its arguments and it covers
+//!    every argument of the instantiation;
 //! 3. each derived rule is, up to its variables' names, the two normal forms
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
-//! 4. every critical pair of the rules joins.
+//! 4. no rule that instantiates a variable overlaps or is overlapped by a rule,
+//!    and every other critical pair of the rules joins.
 //!
 //! By the critical pair lemma and Newman's lemma the rules are then confluent
 //! and terminating, and by step 3 they decide exactly the equations the
@@ -28,12 +34,16 @@
 //! does not carry, or one whose peak does not replay, leaves its pair to part
 //! in step 4 or is refused by name in step 3.
 //!
-//! The terms are first order. A symbol is an operation application, a
-//! constructor application or a results tuple, interned by its kind, its name
-//! and its argument count; two symbols are one exactly when all three agree.
-//! A left side may repeat a variable, so matching compares the subterms a
-//! repeated variable binds and the critical pairs come from unification with
-//! an occurs check.
+//! The terms are first order but for instantiations. A symbol is an
+//! operation application, a constructor application or a results tuple,
+//! interned by its kind, its name and its argument count; two symbols are one
+//! exactly when all three agree. A left side may repeat a variable, so
+//! matching compares the subterms a repeated variable binds and the critical
+//! pairs come from unification with an occurs check. A rule that instantiates
+//! a variable — a second-order rule, `let(u, t) ==> t(u)` — substitutes under
+//! a binder no first-order term marks, so it rewrites no term the decision
+//! normalizes; the orthogonality step 4 asks of it is what keeps the critical
+//! pair lemma in reach for patterns (Mayr and Nipkow).
 //!
 //! # References
 //!
@@ -43,6 +53,11 @@
 //! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
 //!   University Press, 1998, §§ 4.6, 5.4 and 6.2 — unification, the
 //!   lexicographic path order and critical pairs.
+//! - Jean-Pierre Jouannaud and Albert Rubio. "The Higher-Order Recursive Path
+//!   Ordering." LICS 1999 — the order on instantiations.
+//! - Richard Mayr and Tobias Nipkow. "Higher-Order Rewrite Systems and their
+//!   Confluence." _Theoretical Computer Science_ 192(1), 1998 — critical pairs
+//!   of pattern rewrite systems.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -74,7 +89,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 21] = [
+pub const PRESENTATION_CODE: [(usize, usize); 22] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -96,6 +111,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 21] = [
     (2, 1),
     (1, 3),
     (1, 3),
+    (1, 1),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -123,6 +139,8 @@ mod tag
     pub(super) const DERIVED: usize = 17;
     /// An operation's rank.
     pub(super) const RANK: usize = 18;
+    /// A variable's instantiation.
+    pub(super) const INST: usize = 21;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -291,7 +309,8 @@ pub enum SymbolKind
 }
 
 /// One node of a rule side, in pre-order: a symbol applied to the next
-/// subterms its arity counts, or a variable.
+/// subterms its arity counts, a variable, or a variable instantiated at the
+/// next subterms its count names.
 ///
 /// # Specification
 /// trivial.
@@ -302,6 +321,9 @@ pub enum TheoryNode
     Symbol(TheorySymbol),
     /// A variable, numbered by first occurrence on the rule's left side.
     Variable(RuleVariable),
+    /// A right side's instantiation of a variable its left side binds at the
+    /// next `FieldCount` subterms, one per variable the binding binds.
+    Instance(RuleVariable, FieldCount),
 }
 
 /// One oriented rule: its left side rewrites to its right.
@@ -315,6 +337,9 @@ pub struct TheoryRule
     left: Box<[TheoryNode]>,
     /// The right side, in pre-order.
     right: Box<[TheoryNode]>,
+    /// Whether the right side instantiates a variable: a second-order rule,
+    /// which rewrites no term the decision normalizes and overlaps no rule.
+    instantiates: bool,
 }
 
 impl TheoryRule
@@ -330,7 +355,14 @@ impl TheoryRule
         right: Box<[TheoryNode]>,
     ) -> Self
     {
-        Self { left, right }
+        let instantiates = right
+            .iter()
+            .any(|node| matches!(*node, TheoryNode::Instance(..)));
+        Self {
+            left,
+            right,
+            instantiates,
+        }
     }
 
     /// The left side.
@@ -417,8 +449,8 @@ pub enum TheoryRuleFault
     /// member out of place, a term position holding no term, or a peak or a
     /// rank not in its one numeral spelling.
     Unreadable,
-    /// A side is not one term, or the left side is not headed by an operation
-    /// or numbers its variables out of order.
+    /// A side is not one term, the left side is not headed by an operation,
+    /// numbers its variables out of order or instantiates a variable.
     Malformed,
     /// The right side names a variable the left side does not bind.
     Unbound,
@@ -431,6 +463,10 @@ pub enum TheoryRuleFault
     /// The rule, overlapped by the one named, rewrites one term to two normal
     /// forms.
     Diverges(RuleIndex),
+    /// The rule, overlapped by the one named, is one of two overlapping rules
+    /// at least one of which instantiates a variable: a second-order rule takes
+    /// part in no critical pair.
+    Overlaps(RuleIndex),
     /// The decision's fuel ran out at the rule.
     Exhausted,
 }
@@ -583,15 +619,17 @@ impl TheoryRules
     /// - requires: nothing — the rules may be arbitrary producer bytes.
     /// - ensures: `Ok(())` exactly when, in order: every rule is well formed
     ///   (both sides one term over known symbols, the left side headed by an
-    ///   operation and its variables numbered by first occurrence, every right
-    ///   variable bound on the left); the path order puts every left side above
-    ///   its right; each derived rule's peak names two rules before it and an
-    ///   operation position of the outer one's left side, other than the root
-    ///   of one rule overlapping itself, whose critical pair's two normal forms
-    ///   under the rules before it are the rule's two sides, up to renaming its
-    ///   variables; and every critical pair of all the rules normalizes to one
-    ///   term. Otherwise the first failing rule in that order and its fault; a
-    ///   divergent pair is named at its outer rule.
+    ///   operation, instantiating nothing, and its variables numbered by first
+    ///   occurrence, every right variable bound on the left); the path order
+    ///   puts every left side above its right; each derived rule's peak names
+    ///   two rules before it and an operation position of the outer one's left
+    ///   side, other than the root of one rule overlapping itself, whose
+    ///   critical pair's two normal forms under the rules before it are the
+    ///   rule's two sides, up to renaming its variables; no rule instantiating
+    ///   a variable overlaps or is overlapped by a rule; and every other
+    ///   critical pair normalizes to one term under the rules that instantiate
+    ///   nothing. Otherwise the first failing rule in that order and its fault;
+    ///   a divergent or second-order overlap is named at its outer rule.
     /// - provides: the kernel's own decision that a presentation's rules are a
     ///   convergent rewriting system deciding the equations its written rules
     ///   generate, re-derived at every admission and replay.
@@ -610,11 +648,14 @@ impl TheoryRules
     ///   replaying its peak, while a derived rule naming the wrong peak, or
     ///   stating a side its peak does not reach, is refused at itself; a rule
     ///   the ranks do not decrease is unoriented and the same rule under a
-    ///   higher rank for its head orients; each malformation is named.
+    ///   higher rank for its head orients; each malformation is named; a `let`
+    ///   instantiating its own argument converges, β is unoriented, and a
+    ///   second-order rule overlapping another is refused at the overlap.
     /// - witness: `theory_rules::tests::a_unit_law_converges_and_a_second_unit_parts_from_it`
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
     /// - witness: `theory_rules::tests::a_malformed_rule_is_refused_by_its_fault`
+    /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules.len()))]
     #[inline]
     pub fn decide(
@@ -664,6 +705,25 @@ impl TheoryRules
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
+                    let second_order = rule.instantiates
+                        || self
+                            .rules
+                            .get(inner)
+                            .is_some_and(|other| other.instantiates);
+                    if second_order {
+                        match self.overlap(&self.rules, peak, &mut work, fuel) {
+                            Ok(Verdict::Fails) => continue,
+                            Ok(Verdict::Holds) => {
+                                return Err(refuse(
+                                    outer,
+                                    TheoryRuleFault::Overlaps(RuleIndex::from(inner)),
+                                ));
+                            },
+                            Err(Exhausted) => {
+                                return Err(refuse(outer, TheoryRuleFault::Exhausted));
+                            },
+                        }
+                    }
                     let joined = self
                         .pair(&self.rules, peak, &mut work, fuel)
                         .and_then(|pair| {
@@ -781,9 +841,10 @@ impl TheoryRules
     ///
     /// # Specification
     /// - ensures: `Ok(())` exactly when both sides are one term over known
-    ///   symbols, the left side is headed by an operation, its variables read
-    ///   in pre-order as first occurrences `0, 1, 2, …` with repeats of earlier
-    ///   ones, and every right-side variable is one of them.
+    ///   symbols, the left side is headed by an operation and instantiates no
+    ///   variable, its variables read in pre-order as first occurrences `0, 1,
+    ///   2, …` with repeats of earlier ones, and every right-side variable and
+    ///   instantiated variable is one of them.
     /// - panics: none.
     /// - executable: none — restating the shape is this walk over the sides.
     ///
@@ -803,9 +864,13 @@ impl TheoryRules
                 self.symbols.get(symbol.0),
                 Some(&(SymbolKind::Operation(_), _))
             ),
-            Some(&TheoryNode::Variable(_)) | None => false,
+            Some(&(TheoryNode::Variable(_) | TheoryNode::Instance(..))) | None => false,
         };
         if !headed
+            || rule
+                .left()
+                .iter()
+                .any(|node| matches!(*node, TheoryNode::Instance(..)))
             || self.side_end(rule.left(), Position(0)) != Some(Position(rule.left().len()))
             || self.side_end(rule.right(), Position(0)) != Some(Position(rule.right().len()))
         {
@@ -823,9 +888,9 @@ impl TheoryRules
                 }
             }
         }
-        if rule.right().iter().any(
-            |&node| matches!(node, TheoryNode::Variable(variable) if ordinal(variable).0 >= bound),
-        ) {
+        if rule.right().iter().any(|&node| {
+            matches!(node, TheoryNode::Variable(variable) | TheoryNode::Instance(variable, _) if ordinal(variable).0 >= bound)
+        }) {
             return Err(TheoryRuleFault::Unbound);
         }
         Ok(())
@@ -846,6 +911,7 @@ impl TheoryRules
         while let Some(next) = owed.checked_sub(1) {
             owed = match *side.get(at)? {
                 TheoryNode::Symbol(symbol) => next.checked_add(usize::from(self.arity(symbol)?))?,
+                TheoryNode::Instance(_, count) => next.checked_add(usize::from(count))?,
                 TheoryNode::Variable(_) => next,
             };
             at = at.checked_add(1)?;
@@ -853,18 +919,23 @@ impl TheoryRules
         Some(Position(at))
     }
 
-    /// Whether the lexicographic path order over the stated ranks puts `left`
-    /// above `right`.
+    /// Whether the higher-order recursive path order over the stated ranks
+    /// puts `left` above `right`: the lexicographic path order, with every
+    /// variable `right` instantiates read at a function type.
     ///
     /// # Specification
     /// - requires: both sides are well formed.
-    /// - ensures: positive exactly when `left` is an application some argument
-    ///   of which is equal to or above `right`; or `right` is an application
-    ///   every argument of which `left` is above, and either `left`'s symbol
-    ///   precedes `right`'s — an operation above an operation of a lower rank,
-    ///   and above every constructor and results tuple — or the two are one
-    ///   symbol and the first argument pair that differs, left to right, is in
-    ///   the order. A variable is above nothing and no term above itself.
+    /// - ensures: negative when `right` is a variable `right` instantiates
+    ///   somewhere. Otherwise positive exactly when `left` is an application
+    ///   some argument of which is equal to or above `right`; or `right` is an
+    ///   application every argument of which `left` covers, and either `left`'s
+    ///   symbol precedes `right`'s — an operation above an operation of a lower
+    ///   rank, and above every constructor and results tuple — or the two are
+    ///   one symbol and the first argument pair that differs, left to right, is
+    ///   in the order; or `right` instantiates a variable that is an argument
+    ///   of `left`, and `left` covers every argument of the instantiation.
+    ///   `left` covers a term it is above, or one of its own arguments is equal
+    ///   to or above. A variable is above nothing and no term above itself.
     /// - panics: none.
     /// - executable: none — the order is the table this fills; a predicate
     ///   restating it would be the function again.
@@ -874,8 +945,10 @@ impl TheoryRules
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]: associativity, a unit law and an
     ///   inverse law orient, and a rule calling an operation of its head's rank
-    ///   does not until the head ranks higher.
+    ///   does not until the head ranks higher; a `let` instantiating its own
+    ///   argument orients and β does not.
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
+    /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
     fn path_greater(
         &self,
         left: &[TheoryNode],
@@ -886,6 +959,20 @@ impl TheoryRules
         let columns = right.len();
         self.ends(left, &mut buffers.left_ends);
         self.ends(right, &mut buffers.right_ends);
+        buffers.higher.clear();
+        for &node in right {
+            if let TheoryNode::Instance(variable, _) = node {
+                let Ordinal(place) = ordinal(variable);
+                if buffers.higher.len() <= place {
+                    buffers.higher.resize(place.saturating_add(1), false);
+                }
+                if let Some(slot) = buffers.higher.get_mut(place) {
+                    *slot = true;
+                }
+            }
+        }
+        let higher = &buffers.higher;
+        let functional = |node: TheoryNode| matches!(node, TheoryNode::Variable(variable) if higher.get(ordinal(variable).0).copied().unwrap_or(false));
         buffers.table.clear();
         buffers
             .table
@@ -903,7 +990,9 @@ impl TheoryRules
                     _ => false,
                 }
             },
-            (TheoryNode::Symbol(_) | TheoryNode::Variable(_), _) => false,
+            (TheoryNode::Symbol(_) | TheoryNode::Variable(_) | TheoryNode::Instance(..), _) => {
+                false
+            },
         };
         for row in (0 .. left.len()).rev() {
             for column in (0 .. columns).rev() {
@@ -927,23 +1016,42 @@ impl TheoryRules
                         .clone()
                         .zip(cols.clone())
                         .all(|(one, two)| at(table, one, two).equal);
+                // `node` covers a right argument it is above, or one of its
+                // own arguments is equal to or above: the comparison a
+                // variable read at a function type takes.
+                let covers = |argument: Position| {
+                    at(table, Position(row), argument).greater
+                        || rows.clone().any(|own| {
+                            let pair = at(table, own, argument);
+                            pair.equal || pair.greater
+                        })
+                };
                 let greater = matches!(node, TheoryNode::Symbol(_))
+                    && !functional(other)
                     && (rows.clone().any(|argument| {
                         let pair = at(table, argument, Position(column));
                         pair.equal || pair.greater
-                    }) || (matches!(other, TheoryNode::Symbol(_))
-                        && cols
-                            .clone()
-                            .all(|argument| at(table, Position(row), argument).greater)
-                        && if same {
-                            rows.zip(cols)
-                                .map(|(one, two)| at(table, one, two))
-                                .find(|pair| !pair.equal)
-                                .is_some_and(|pair| pair.greater)
-                        }
-                        else {
-                            precedes(node, other)
-                        }));
+                    }) || match other {
+                        TheoryNode::Variable(_) => false,
+                        TheoryNode::Instance(variable, _) => {
+                            rows.clone()
+                                .any(|own| left.get(own.0) == Some(&TheoryNode::Variable(variable)))
+                                && cols.clone().all(covers)
+                        },
+                        TheoryNode::Symbol(_) => {
+                            cols.clone().all(covers)
+                                && if same {
+                                    rows.clone()
+                                        .zip(cols.clone())
+                                        .map(|(one, two)| at(table, one, two))
+                                        .find(|pair| !pair.equal)
+                                        .is_some_and(|pair| pair.greater)
+                                }
+                                else {
+                                    precedes(node, other)
+                                }
+                        },
+                    });
                 if let Some(cell) = row
                     .checked_mul(columns)
                     .and_then(|start| start.checked_add(column))
@@ -970,10 +1078,13 @@ impl TheoryRules
         ends.resize(side.len(), Position(0));
         for (position, &node) in side.iter().enumerate().rev() {
             let mut end = position.saturating_add(1);
-            if let TheoryNode::Symbol(symbol) = node {
-                for _ in 0 .. self.width(symbol).0 {
-                    end = ends.get(end).map_or(end, |next| next.0);
-                }
+            let width = match node {
+                TheoryNode::Symbol(symbol) => self.width(symbol).0,
+                TheoryNode::Instance(_, count) => usize::from(count),
+                TheoryNode::Variable(_) => 0,
+            };
+            for _ in 0 .. width {
+                end = ends.get(end).map_or(end, |next| next.0);
             }
             if let Some(slot) = ends.get_mut(position) {
                 *slot = Position(end);
@@ -995,6 +1106,7 @@ impl TheoryRules
     {
         let arity = match side.get(position.0) {
             Some(&TheoryNode::Symbol(symbol)) => self.width(symbol).0,
+            Some(&TheoryNode::Instance(_, count)) => usize::from(count),
             Some(&TheoryNode::Variable(_)) | None => 0,
         };
         let first = Position(position.0.saturating_add(1));
@@ -1054,17 +1166,15 @@ impl TheoryRules
         ))
     }
 
-    /// The critical pair `peak` names over `rules`, into `work`'s two terms.
+    /// Whether the overlap `peak` names over `rules` exists, the unifier left
+    /// in `work`'s graph.
     ///
     /// # Specification
     /// - requires: the rules `peak` names are well formed.
     /// - ensures: positive exactly when the position holds an operation of the
     ///   outer rule's left side and the inner rule's left side unifies with the
     ///   subterm there, the two rules' variables kept apart and the unifier
-    ///   passing the occurs check; `work.by_outer` then holds the outer rule's
-    ///   right side under the unifier and `work.by_inner` its left side with
-    ///   the inner rule's right side in place at the position, under the
-    ///   unifier, each variable named by its node in the unifier.
+    ///   passing the occurs check.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — the unifier this builds is the only witness of the
@@ -1075,10 +1185,12 @@ impl TheoryRules
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]: the inverse law overlapping the
-    ///   unit law and itself unify through a repeated variable, and an overlap
-    ///   whose unifier would be cyclic is no pair.
+    ///   unit law and itself unify through a repeated variable, an overlap
+    ///   whose unifier would be cyclic is none, and a `let` beside a rule that
+    ///   rewrites under it overlaps it.
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
-    fn pair(
+    /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
+    fn overlap(
         &self,
         rules: &[TheoryRule],
         peak: CriticalPeak,
@@ -1094,13 +1206,9 @@ impl TheoryRules
             return Ok(Verdict::Fails);
         };
         let position = Position(peak.position.0);
-        let (Some(&TheoryNode::Symbol(_)), Some(end)) = (
-            outer.left().get(position.0),
-            self.side_end(outer.left(), position),
-        )
-        else {
+        if !matches!(outer.left().get(position.0), Some(&TheoryNode::Symbol(_))) {
             return Ok(Verdict::Fails);
-        };
+        }
         work.graph.clear();
         work.outer_variables.clear();
         work.inner_variables.clear();
@@ -1130,6 +1238,55 @@ impl TheoryRules
         };
         if work.graph.unify(at, inner_root, &mut work.pairs, fuel)? == Verdict::Fails
             || work.graph.acyclic(root, &mut work.marks, &mut work.walk) == Verdict::Fails
+        {
+            return Ok(Verdict::Fails);
+        }
+        Ok(Verdict::Holds)
+    }
+
+    /// The critical pair `peak` names over `rules`, into `work`'s two terms.
+    ///
+    /// # Specification
+    /// - requires: the rules `peak` names are well formed.
+    /// - ensures: positive exactly when neither rule instantiates a variable
+    ///   and [`Self::overlap`] is; `work.by_outer` then holds the outer rule's
+    ///   right side under the unifier and `work.by_inner` its left side with
+    ///   the inner rule's right side in place at the position, under the
+    ///   unifier, each variable named by its node in the unifier.
+    /// - fails: [`Exhausted`] when `fuel` runs out first.
+    /// - panics: none.
+    /// - executable: none — the unifier this builds is the only witness of the
+    ///   overlap.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::overlap`].
+    /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+    fn pair(
+        &self,
+        rules: &[TheoryRule],
+        peak: CriticalPeak,
+        work: &mut PairBuffers,
+        fuel: &mut RewriteFuel,
+    ) -> Result<Verdict, Exhausted>
+    {
+        let (Some(outer), Some(inner)) = (
+            rules.get(usize::from(peak.outer)),
+            rules.get(usize::from(peak.inner)),
+        )
+        else {
+            return Ok(Verdict::Fails);
+        };
+        let position = Position(peak.position.0);
+        let Some(end) = self.side_end(outer.left(), position)
+        else {
+            return Ok(Verdict::Fails);
+        };
+        if outer.instantiates
+            || inner.instantiates
+            || self.overlap(rules, peak, work, fuel)? == Verdict::Fails
         {
             return Ok(Verdict::Fails);
         }
@@ -1176,15 +1333,19 @@ impl TheoryRules
         Ok(Verdict::Holds)
     }
 
-    /// Rewrite `term` to its normal form under `rules`.
+    /// Rewrite `term` to its normal form under the rules of `rules` that
+    /// instantiate no variable.
     ///
     /// # Specification
     /// - requires: `rules` are well formed and oriented; `term` is one term.
-    /// - ensures: `term` rewritten until no rule matches at any position: the
-    ///   redex rewritten next is the one starting last in pre-order, and at one
-    ///   position the first rule in order fires. A left side's repeated
-    ///   variable matches only equal subterms. Each node compared or copied
-    ///   costs one unit of `fuel`.
+    /// - ensures: `term` rewritten until no rule instantiating nothing matches
+    ///   at any position: the redex rewritten next is the one starting last in
+    ///   pre-order, and at one position the first such rule in order fires. A
+    ///   left side's repeated variable matches only equal subterms. Each node
+    ///   compared or copied costs one unit of `fuel`. A second-order rule fires
+    ///   nowhere: its instantiation substitutes under a binder the first-order
+    ///   term does not mark, and [`Self::decide`] has refused every overlap it
+    ///   takes part in, so no critical pair needs it to join.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — a normal form is what this computes; checking one
@@ -1214,7 +1375,7 @@ impl TheoryRules
                 if !matches!(term.get(start), Some(&Flat::Symbol(..))) {
                     continue;
                 }
-                for rule in rules {
+                for rule in rules.iter().filter(|rule| !rule.instantiates) {
                     let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
                     else {
                         continue;
@@ -1235,6 +1396,9 @@ impl TheoryRules
                                     }
                                 }
                             },
+                            // The filter above keeps every rule that
+                            // instantiates a variable from firing.
+                            TheoryNode::Instance(..) => {},
                         }
                     }
                     cursor = start.saturating_add(built.len());
@@ -1413,6 +1577,9 @@ fn matched(
                 Some(&Flat::Symbol(found, _)) if found == symbol => at = at.saturating_add(1),
                 Some(&(Flat::Symbol(..) | Flat::Variable(_))) | None => return Ok(None),
             },
+            // A pattern instantiating a variable matches nothing: a
+            // well-formed left side instantiates none.
+            TheoryNode::Instance(..) => return Ok(None),
             TheoryNode::Variable(variable) => {
                 let Some(end) = flat_end(term, Position(at))
                 else {
@@ -1464,6 +1631,9 @@ enum Canonical
     Symbol(TheorySymbol),
     /// A variable, by its first occurrence across both terms.
     Variable(Ordinal),
+    /// An instantiation of a variable, by its first occurrence across both
+    /// terms, over its argument count: no flat term holds one.
+    Instance(Ordinal, FieldCount),
 }
 
 /// `first` then `second`, each variable renumbered by its first occurrence
@@ -1505,6 +1675,9 @@ fn canonical_sides(
             TheoryNode::Symbol(symbol) => Canonical::Symbol(symbol),
             TheoryNode::Variable(variable) => {
                 Canonical::Variable(first_seen(&mut seen, ordinal(variable)))
+            },
+            TheoryNode::Instance(variable, count) => {
+                Canonical::Instance(first_seen(&mut seen, ordinal(variable)), count)
             },
         });
     }
@@ -1555,6 +1728,8 @@ struct OrderBuffers
     right_ends: Vec<Position>,
     /// The comparison of every pair of positions, by row.
     table: Vec<Comparison>,
+    /// Whether the right side instantiates each variable, by ordinal.
+    higher: Vec<bool>,
 }
 
 /// The buffers a critical pair is built and normalized in, reused across
@@ -1663,7 +1838,8 @@ impl Graph
     /// - requires: `side` is well formed under `rules`' table.
     /// - ensures: [`Some`] with the root's node; a variable's node is the one
     ///   `variables` holds for its ordinal, made free and recorded when it
-    ///   holds none. [`None`] when `side` is not one term.
+    ///   holds none. [`None`] when `side` is not one term or instantiates a
+    ///   variable, which no node of the graph stands for.
     /// - panics: none.
     /// - executable: none — the nodes made are the graph's own state.
     ///
@@ -1725,6 +1901,7 @@ impl Graph
                     });
                     Node(self.nodes.len().saturating_sub(1))
                 },
+                TheoryNode::Instance(..) => return None,
             };
             if let Some(slot) = positions.get_mut(index) {
                 *slot = made;
@@ -1965,6 +2142,19 @@ enum Class
     Constructor,
     /// A results tuple.
     Tuple,
+}
+
+/// What a term node over an argument chain applies.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Applied<'arena>
+{
+    /// A symbol, by its interning class and name.
+    Symbol(Class, Option<&'arena StringLiteral>),
+    /// An instantiation of a variable.
+    Instance(RuleVariable),
 }
 
 /// Which members of the rule chain may come next.
@@ -2239,8 +2429,9 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] when every node reached is a `Var`, or an `App`,
-    ///   `Con` or `Tuple` whose arguments are an `Arg` chain ended by `End`; a
-    ///   variable takes its place among `buffers.variables`, appended when new.
+    ///   `Con`, `Tuple` or `Inst` whose arguments are an `Arg` chain ended by
+    ///   `End`; a variable, instantiated or not, takes its place among
+    ///   `buffers.variables`, appended when new.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     /// - intension: a worklist of the nodes still to read, so no step recurses.
@@ -2261,19 +2452,25 @@ impl<'arena> Reader<'arena>
         buffers.stack.clear();
         buffers.stack.push(root);
         while let Some(node) = buffers.stack.pop() {
-            let (class, name, chain) = match tagged(self.constructor(node))? {
+            let (applied, chain) = match tagged(self.constructor(node))? {
                 (tag::VAR, &[name]) => {
-                    let name = self.text(name)?;
-                    let count = Ordinal(buffers.variables.len());
-                    let Ordinal(place) = *buffers.variables.entry(name).or_insert(count);
-                    out.push(TheoryNode::Variable(RuleVariable::from(
-                        u32::try_from(place).ok()?,
-                    )));
+                    let variable = variable(self.text(name)?, buffers)?;
+                    out.push(TheoryNode::Variable(variable));
                     continue;
                 },
-                (tag::APP, &[name, chain]) => (Class::Operation, Some(self.text(name)?), chain),
-                (tag::CON, &[name, chain]) => (Class::Constructor, Some(self.text(name)?), chain),
-                (tag::TUPLE, &[chain]) => (Class::Tuple, None, chain),
+                (tag::APP, &[name, chain]) => (
+                    Applied::Symbol(Class::Operation, Some(self.text(name)?)),
+                    chain,
+                ),
+                (tag::CON, &[name, chain]) => (
+                    Applied::Symbol(Class::Constructor, Some(self.text(name)?)),
+                    chain,
+                ),
+                (tag::TUPLE, &[chain]) => (Applied::Symbol(Class::Tuple, None), chain),
+                (tag::INST, &[name, chain]) => (
+                    Applied::Instance(variable(self.text(name)?, buffers)?),
+                    chain,
+                ),
                 _ => return None,
             };
             buffers.arguments.clear();
@@ -2288,17 +2485,39 @@ impl<'arena> Reader<'arena>
                     _ => return None,
                 }
             }
-            let key = (class, name, buffers.arguments.len());
-            let fresh = TheorySymbol(self.keys.len());
-            let symbol = *self.interned.entry(key).or_insert_with(|| {
-                self.keys.push(key);
-                fresh
-            });
-            out.push(TheoryNode::Symbol(symbol));
+            match applied {
+                Applied::Symbol(class, name) => {
+                    let key = (class, name, buffers.arguments.len());
+                    let fresh = TheorySymbol(self.keys.len());
+                    let symbol = *self.interned.entry(key).or_insert_with(|| {
+                        self.keys.push(key);
+                        fresh
+                    });
+                    out.push(TheoryNode::Symbol(symbol));
+                },
+                Applied::Instance(variable) => out.push(TheoryNode::Instance(
+                    variable,
+                    FieldCount::from(buffers.arguments.len()),
+                )),
+            }
             buffers.stack.extend(buffers.arguments.iter().rev());
         }
         Some(())
     }
+}
+
+/// The variable `name` names among `buffers.variables`, appended when new.
+///
+/// # Specification
+/// trivial.
+fn variable<'arena>(
+    name: &'arena StringLiteral,
+    buffers: &mut ReadBuffers<'arena>,
+) -> Option<RuleVariable>
+{
+    let count = Ordinal(buffers.variables.len());
+    let Ordinal(place) = *buffers.variables.entry(name).or_insert(count);
+    u32::try_from(place).ok().map(RuleVariable::from)
 }
 
 #[cfg(test)]

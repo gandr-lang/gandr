@@ -136,7 +136,9 @@ pub fn circuit_wiring(body: &CircuitBody) -> Result<Wiring, CircuitWiringError>
         for argument in arguments {
             let port = match argument.view() {
                 TermView::Var(name) => name,
-                TermView::Ctor { name, .. } | TermView::Op { name, .. } => {
+                TermView::Ctor { name, .. }
+                | TermView::Op { name, .. }
+                | TermView::Inst { name, .. } => {
                     return Err(CircuitWiringError::ArgumentIsNotAPort(name.clone()));
                 },
                 TermView::Results { .. } => return Err(CircuitWiringError::ResultsAreNotAPort),

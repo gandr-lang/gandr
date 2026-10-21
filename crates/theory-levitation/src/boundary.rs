@@ -347,6 +347,12 @@ verdict_wrapper! {
 }
 
 verdict_wrapper! {
+    /// Whether a term instantiates a metavariable: a rule whose right-hand
+    /// side does is a second-order rule.
+    pub struct InstantiationStatus;
+}
+
+verdict_wrapper! {
     /// Whether the lexicographic path order puts one term above another.
     pub struct PathOrderStatus;
 }

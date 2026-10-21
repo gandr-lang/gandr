@@ -159,6 +159,7 @@ impl LoweringRefusal<'_>
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
+            | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
             | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
@@ -204,6 +205,7 @@ impl LoweringRefusal<'_>
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
             | Self::RulesDiverge { .. }
+            | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
             | Self::AcrossHandler { .. }
             | Self::WithoutK { .. }

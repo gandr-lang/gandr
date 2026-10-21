@@ -503,6 +503,11 @@ fn lowered(
             "this rule and an earlier one rewrite one term to two different constructor terms, \
              so the block's rules are refused",
         ),
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => f.write_str(
+            "this rule and an earlier one rewrite overlapping terms, and one of them applies a \
+             variable a binding port binds: such a rule may overlap no rule, so the block's \
+             rules are refused",
+        ),
         LoweringRefusal::RulesUncompleted { .. } => f.write_str(
             "this rule and an earlier one rewrite one term to two normal forms, and no rule the \
              order can orient joins them, so the block's rules are refused",
@@ -1289,6 +1294,7 @@ mod tests
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUncompleted { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },
+            LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },

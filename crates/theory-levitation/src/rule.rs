@@ -19,6 +19,7 @@ use core::fmt;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::InstantiationStatus;
 use crate::boundary::RuleVariableLinearity;
 use crate::code::Name;
 use crate::desc::SurfaceSpan;
@@ -41,6 +42,8 @@ enum TermHead
     Op(Name, ArgumentCount),
     /// A results tuple over its component count.
     Results(ArgumentCount),
+    /// A metavariable instantiated at its argument count of terms.
+    Inst(Name, ArgumentCount),
 }
 
 impl Head for TermHead
@@ -54,14 +57,17 @@ impl Head for TermHead
     {
         match *self {
             Self::Var(_) => ArgumentCount::from(0_usize),
-            Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
+            Self::Ctor(_, arity)
+            | Self::Op(_, arity)
+            | Self::Results(arity)
+            | Self::Inst(_, arity) => arity,
         }
     }
 }
 
 /// A term in the free monad `D⋆(V)` over the description functor with
-/// variables `V`: a variable, a constructor application, or an operation
-/// application.
+/// variables `V`: a variable, a constructor application, an operation
+/// application, or a metavariable's instantiation.
 ///
 /// At the root of a rule's right-hand side, a term may also be the results
 /// tuple a many-out operation's rule returns ([`FreeTerm::results`]).
@@ -149,6 +155,32 @@ impl FreeTerm
         Self(Tree::node(TermHead::Results(arity), components))
     }
 
+    /// The instantiation `t(u₀, …, uₙ)` of the metavariable `t` a binding
+    /// port binds on a rule's left-hand side: one argument per variable the
+    /// port binds, each standing for that variable in the term `t` names.
+    ///
+    /// The instantiation is the application of a metavariable, a hole that
+    /// takes terms, never an operation of the signature: the first-order
+    /// translation reads it as a substitution of the arguments for the bound
+    /// variables.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn inst<N, A>(
+        name: N,
+        args: A,
+    ) -> Self
+    where
+        N: Into<Name>,
+        A: IntoIterator<Item = Self>,
+    {
+        let args: Vec<Tree<TermHead>> = args.into_iter().map(|arg| arg.0).collect();
+        let arity = ArgumentCount::from(args.len());
+        Self(Tree::node(TermHead::Inst(name.into(), arity), args))
+    }
+
     /// The term as a borrowed node.
     ///
     /// # Specification
@@ -203,8 +235,8 @@ impl FreeTerm
     ///
     /// # Specification
     /// - ensures: each applied constructor or operation is yielded once, root
-    ///   first and children left to right; variables and results tuples
-    ///   contribute no name.
+    ///   first and children left to right; variables, instantiations and
+    ///   results tuples contribute no name.
     /// - panics: none.
     /// - executable: none — the backend cannot instrument this opaque iterator
     ///   return type, and its full sequence has only a consuming observer.
@@ -218,9 +250,26 @@ impl FreeTerm
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            TermHead::Var(_) | TermHead::Results(_) => None,
+            TermHead::Var(_) | TermHead::Results(_) | TermHead::Inst(..) => None,
             TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
         })
+    }
+
+    /// Whether the term instantiates a metavariable anywhere: a rule whose
+    /// right-hand side does is a second-order rule.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn instantiates(&self) -> InstantiationStatus
+    {
+        InstantiationStatus::from(
+            self.0
+                .to_ref()
+                .preorder()
+                .any(|head| matches!(*head, TermHead::Inst(..))),
+        )
     }
 
     /// The width of each results tuple in the term, in pre-order: the root's
@@ -244,7 +293,7 @@ impl FreeTerm
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
             TermHead::Results(width) => Some(width),
-            TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) => None,
+            TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Inst(..) => None,
         })
     }
 
@@ -276,7 +325,7 @@ impl FreeTerm
     {
         Self(self.0.to_ref().replace_leaves(|head| match *head {
             TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
-            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => {
+            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) | TermHead::Inst(..) => {
                 Maybe::Absent(leaf_image::Absent::Kept)
             },
         }))
@@ -322,9 +371,9 @@ impl fmt::Display for FreeTerm
         for head in self.0.heads() {
             let (name, arity) = match *head {
                 TermHead::Var(ref name) => (Some(name), 0_usize),
-                TermHead::Ctor(ref name, arity) | TermHead::Op(ref name, arity) => {
-                    (Some(name), usize::from(arity))
-                },
+                TermHead::Ctor(ref name, arity)
+                | TermHead::Op(ref name, arity)
+                | TermHead::Inst(ref name, arity) => (Some(name), usize::from(arity)),
                 TermHead::Results(arity) => (None, usize::from(arity)),
             };
             if let (Some(name), 0) = (name, arity) {
@@ -370,6 +419,10 @@ impl<'term> TermNode<'term>
             TermHead::Results(_) => TermView::Results {
                 args: TermArgs(self.0.children()),
             },
+            TermHead::Inst(ref name, _) => TermView::Inst {
+                name,
+                args: TermArgs(self.0.children()),
+            },
         }
     }
 
@@ -392,7 +445,9 @@ impl<'term> TermNode<'term>
     {
         self.0.preorder().filter_map(|head| match *head {
             TermHead::Var(ref name) => Some(name),
-            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) => None,
+            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) | TermHead::Inst(..) => {
+                None
+            },
         })
     }
 
@@ -435,6 +490,16 @@ pub enum TermView<'term>
     Results
     {
         /// The components, in output-port order.
+        args: TermArgs<'term>,
+    },
+    /// A metavariable's instantiation `t(u₀, …, uₙ)`: the variable a binding
+    /// port binds on the left-hand side, applied to one term per variable the
+    /// port binds.
+    Inst
+    {
+        /// The metavariable's name.
+        name: &'term Name,
+        /// The terms standing for the variables it binds, in binder order.
         args: TermArgs<'term>,
     },
 }

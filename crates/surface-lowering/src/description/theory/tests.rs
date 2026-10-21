@@ -1122,7 +1122,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2
         ],
         "each constructor's names, then its recursions"
     );
@@ -2053,4 +2053,37 @@ fn an_extension_is_refused_by_name()
             .collect::<Vec<_>>();
         assert_eq!(faults, [(fault, member)], "{source}");
     }
+}
+
+#[test]
+fn an_applied_left_variable_reads_as_its_instantiation()
+{
+    let faces = |source: &str| {
+        let report = described(source);
+        assert_eq!(report.diagnostics, [], "{source}");
+        report
+            .declarations
+            .iter()
+            .flat_map(|declaration| declaration.description.rules.iter())
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<Vec<_>>()
+    };
+    let var = FreeTerm::var;
+    assert_eq!(
+        faces(
+            "theory Let { sort Tm : Type+; oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm; rule zeta : let(u, t) <=> t(u); }"
+        ),
+        [(
+            FreeTerm::op("let", [var("u"), var("t")]),
+            FreeTerm::inst("t", [var("u")]),
+        )],
+        "`t` is a variable of the left side, so `t(u)` instantiates it"
+    );
+    assert_eq!(
+        faces(
+            "theory Call { sort Tm : Type; oper t : (Tm) --> Tm; oper g : (Tm) --> Tm; rule r : g(u) <=> t(u); }"
+        ),
+        [(FreeTerm::op("g", [var("u")]), FreeTerm::op("t", [var("u")]),)],
+        "a name the left side does not hold still calls its operation"
+    );
 }

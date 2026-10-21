@@ -41,6 +41,16 @@ macro_rules! v {
     };
 }
 
+/// The instantiation of a variable's ordinal at an argument count.
+macro_rules! i {
+    ($ordinal:literal, $count:literal) => {
+        TheoryNode::Instance(
+            <RuleVariable as From<u32>>::from($ordinal),
+            <FieldCount as From<usize>>::from($count),
+        )
+    };
+}
+
 /// An operation of an arity at a rank.
 macro_rules! operation {
     ($rank:literal, $arity:literal) => {
@@ -238,6 +248,54 @@ fn a_malformed_rule_is_refused_by_its_fault()
     assert_eq!(
         decided(&[s!(0), v!(0)], &[v!(1)]),
         refused!(0, TheoryRuleFault::Unbound)
+    );
+}
+
+#[test]
+fn a_let_rule_converges_and_beta_is_unoriented()
+{
+    // let = 0, app = 1, lam = 2, zero = 3.
+    let symbols = vec![
+        operation!(1, 2),
+        operation!(1, 2),
+        operation!(1, 1),
+        operation!(0, 0),
+    ];
+    let decided =
+        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    // let(u, t) ==> t(u)
+    let zeta = rule(&[s!(0), v!(0), v!(1)], &[i!(1, 1), v!(0)]);
+    assert_eq!(decided(vec![zeta.clone()]), Ok(()));
+    // app(zero, u) ==> u
+    let apart = rule(&[s!(1), s!(3), v!(0)], &[v!(0)]);
+    assert_eq!(
+        decided(vec![zeta.clone(), apart]),
+        Ok(()),
+        "a first-order rule overlapping no left side of `let` converges beside it"
+    );
+    // app(lam(t), u) ==> t(u)
+    let beta = rule(&[s!(1), s!(2), v!(0), v!(1)], &[i!(0, 1), v!(1)]);
+    assert_eq!(
+        decided(vec![beta]),
+        refused!(0, TheoryRuleFault::Unoriented),
+        "β's variable stands under `lam`, not as an argument of `app`"
+    );
+    // let(zero, t) ==> t(zero)
+    let at_zero = rule(&[s!(0), s!(3), v!(0)], &[i!(0, 1), s!(3)]);
+    assert_eq!(
+        decided(vec![zeta, at_zero]),
+        refused!(0, TheoryRuleFault::Overlaps(RuleIndex::from(1_usize))),
+        "a second-order rule takes part in no critical pair, even one that would join"
+    );
+    assert_eq!(
+        decided(vec![rule(&[s!(0), v!(0), i!(0, 0)], &[v!(0)])]),
+        refused!(0, TheoryRuleFault::Malformed),
+        "an instantiation on a left side"
+    );
+    assert_eq!(
+        decided(vec![rule(&[s!(0), v!(0), v!(1)], &[i!(2, 1), v!(0)])]),
+        refused!(0, TheoryRuleFault::Unbound),
+        "an instantiation of a variable the left side does not bind"
     );
 }
 

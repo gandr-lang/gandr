@@ -256,6 +256,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Rank", vec!["String", "String", "Theory"]),
         ("Const", vec!["String", "Theory", "Theory", "Theory"]),
         ("Nested", vec!["String", "Theory", "Theory", "Theory"]),
+        ("Inst", vec!["String", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
