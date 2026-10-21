@@ -1,0 +1,19 @@
+// A resumed stack's frames are laid out where the resumption stands, each
+// window copied with them: the captured locals move, and every read follows
+// them. The move a polled Rust future may not make is the ordinary case.
+
+/// The stack resumed under a frame of the clause's own, so its frames lie
+/// higher than where they were captured; the view still reads its cell, and
+/// the clause adds its hundred to the handled answer (#1183).
+@[ runs("112") ]
+def relocated() -> -F Integer {
+  hold x = 5;
+  run r : Integer <- handle c : Proc {
+    access x as v { c.exit(1); resume(v, v + 7) };
+    pure 0
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { run m <- k(unit); pure m + 100 }
+  };
+  pure x + r
+}

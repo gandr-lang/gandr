@@ -1,0 +1,33 @@
+// A structure that refers to itself names its parts by ids into an arena,
+// never by address, so it moves and copies as any value and every link
+// reads. A heap whose locations are never observed hides its symmetries
+// (Sterling, Gratzer and Birkedal, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19).
+
+// The lists.
+import "../data/data-base.gandr" ;
+
+/// The node an arena holds at `i`.
+@[ checks ]
+def rec node(nodes : List(Integer), i : Integer) -> -F Integer {
+  case nodes {
+    Nil => pure 0,
+    Cons(n, rest) => {
+      run here <- i == 0;
+      case here { true => pure n, false => become node[<](rest, i - 1) }
+    }
+  }
+}
+
+/// A ring of three nodes, each naming the next by its index: four links from
+/// the first land on the second (#1183).
+@[ runs("1") ]
+def ring() -> -F Integer {
+  hold i = 0;
+  hold steps = 4;
+  while steps > 0 {
+    run j <- node((Cons(1, Cons(2, Cons(0, Nil))) : List(Integer)), i);
+    access i as v { resume(v, j) };
+    access steps as s { resume(s, s - 1) }
+  };
+  pure i
+}

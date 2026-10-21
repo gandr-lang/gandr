@@ -1,0 +1,21 @@
+// A view lives as long as its access. A thunk over it, kept past the resume
+// that ends the access, would read a cell nothing lends any more: the
+// dangling self-reference a moved Rust future risks without `Pin`.
+
+/// A thunk over the view handed out of the access after its resume (#1183).
+@[ refuses("ViewEscaped") ]
+def dangling() -> -F Integer {
+  hold x = 5;
+  run r : Integer <- handle c : Proc {
+    run k <- access x as v {
+      c.exit(1);
+      resume(v, v + 7);
+      pure thunk { pure v }
+    };
+    force k
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => k(unit)
+  };
+  pure x
+}

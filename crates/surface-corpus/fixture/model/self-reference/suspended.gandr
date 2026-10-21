@@ -1,0 +1,20 @@
+// Self-reference dissolves into the reified stack: a suspended computation
+// reaches its locals in the window its frame holds, never by an address into
+// itself, so a view lent before a suspension reads its cell after the stack
+// resumes. Rust pins a future whose state borrows from itself (`Pin`, RFC
+// 2349); C++ keeps such an object immobile by convention.
+
+/// A view read after a suspension: the stack holding the access is resumed,
+/// and the view reads the cell it was lent (#1183).
+@[ runs("12") ]
+def suspended() -> -F Integer {
+  hold x = 5;
+  run r : Integer <- handle c : Proc {
+    access x as v { c.exit(1); resume(v, v + 7) };
+    pure 0
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => k(unit)
+  };
+  pure x
+}
