@@ -44,12 +44,17 @@
 //!   introduces it, the colon of its signature, a module's ascription, the
 //!   layout before its body. A member's keyword answers the member. An
 //!   attribute before the head answers the same, about the attributes. Inside a
-//!   body, a member answers by its own entries, and a position no entry holds
-//!   answers nothing, rather than the declaration around it.
+//!   body, a member answers by its own entries, never the declaration around
+//!   it.
+//! - **Any other tile** answers a stub, about the tile: the tile as written —
+//!   or, inside a refused declaration, that declaration's hover — then the gap
+//!   named and its tracking issue's line, by the families [`crate::tracking`]
+//!   lists. The corpus sweep refuses a tile that hovers nothing and a stub that
+//!   names no issue.
 //!
-//! A position in no declaration's head hovers nothing, and so does a document
-//! whose grammar did not build. Every type is spelled through the shared
-//! printer at 80 columns.
+//! Layout and comments hover nothing, and so does a document whose grammar
+//! did not build. Every type is spelled through the shared printer at 80
+//! columns.
 //!
 //! The alternative was to look the name under the cursor up among the
 //! session's items by its occurrence among the document's declarations: it
@@ -169,10 +174,12 @@ use crate::protocol::MarkupContent;
 use crate::protocol::SymbolKind;
 use crate::reading::Declaration;
 use crate::reading::Reading;
+use crate::reading::Tile;
 use crate::reading::Written;
 use crate::recheck::roles;
 use crate::search::Found;
 use crate::signature::Signatures;
+use crate::tracking::Gap;
 
 /// The page width a hover lays a type out at.
 const HOVER_WIDTH: u32 = 80;
@@ -440,8 +447,9 @@ impl Style
 ///   spelled otherwise, that type in a second block, about the node's range.
 ///   Else, in the head of a declaration — from its form's start to the brace
 ///   opening its own body, a member's keyword to its name — as on its name,
-///   about the head, and in the attributes before the head, about them. Absent
-///   elsewhere. Every type is spelled in `style`'s form, and every block is
+///   about the head, and in the attributes before the head, about them. Else,
+///   on a tile, [`stubbed`]'s stub about the tile. Absent in layout and
+///   comments. Every type is spelled in `style`'s form, and every block is
 ///   written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
@@ -473,6 +481,7 @@ impl Style
 /// - witness: `hover::tests::an_include_and_a_model_hover_the_theory_they_name_1123`
 /// - witness: `hover::tests::the_parentheses_around_an_inverted_letter_answer_the_cons_pattern_408`
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
+/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -686,7 +695,7 @@ pub fn hover<Store, Blocks>(
     let enclosing = found
         .iter()
         .rfind(|found| found.symbol.range.start <= position && position < found.head.end);
-    enclosing.map_or(Maybe::Absent(hovered::Absent::Untyped), |enclosing| {
+    if let Some(enclosing) = enclosing {
         let about = if enclosing.head.start <= position {
             enclosing.head
         }
@@ -696,10 +705,156 @@ pub fn hover<Store, Blocks>(
                 end: enclosing.head.start,
             }
         };
-        Maybe::Present(match enclosing.written {
+        return Maybe::Present(match enclosing.written {
             Written::Form => declared(session, table, enclosing, about, &quoted, style),
             Written::Member => member(enclosing, about, &quoted, style),
-        })
+        });
+    }
+    stubbed(session, table, reading, found, &quoted, offset, style)
+        .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present)
+}
+
+/// Where a hover has nothing to show: the gap at a position, the tile holding
+/// it, and the refused declaration holding it, when one does.
+#[derive(Clone, Copy, Debug)]
+struct Stub<'found>
+{
+    /// The gap.
+    gap: Gap,
+    /// The tile holding the position.
+    tile: Tile,
+    /// The innermost refused declaration holding the position.
+    refused: Option<&'found Declaration>,
+}
+
+/// The stub at `offset`, by the first family that holds it: inside a refused
+/// declaration, in a source never judged, inside an import, a tile a
+/// declaration writes itself, in a root form that declares nothing, else
+/// inside a declaration where the engine typed nothing.
+///
+/// # Specification
+/// - requires: `found` and `quoted` are of the text `reading` read, and `table`
+///   was typed over it.
+/// - ensures: none when no tile holds `offset` — in layout or a comment;
+///   otherwise the tile holding it with the first family of
+///   [`crate::tracking`]'s order that holds it.
+/// - provides: what [`hover`] answers where the engine holds nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every tile of every corpus source hovers.
+/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+#[must_use]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|found| found.tile.span.start() <= offset && offset < found.tile.span.end()))]
+fn stub<'found>(
+    table: &TypeTable,
+    reading: &Reading,
+    found: &'found [Declaration],
+    quoted: &Quoted<'_>,
+    offset: ByteOffset,
+    style: Style,
+) -> Option<Stub<'found>>
+{
+    let tile = reading.tile_at(offset)?;
+    let page = PageWidth::from(HOVER_WIDTH);
+    let printed = style.printed();
+    let holds = |declaration: &&Declaration| {
+        ByteOffset::from(usize::from(
+            declaration.symbol.range.start.byte(quoted.index),
+        )) <= offset
+            && offset
+                < ByteOffset::from(usize::from(declaration.symbol.range.end.byte(quoted.index)))
+    };
+    let refused = found
+        .iter()
+        .filter(|declaration| declaration.written == Written::Form && holds(declaration))
+        .rfind(|declaration| {
+            declaration
+                .key
+                .is_some_and(|key| matches!(table.refusal(key), Maybe::Present(_)))
+        });
+    let gap = if refused.is_some() {
+        Gap::Refused
+    }
+    else if table.entries(page, printed).next().is_none()
+        && table.declarations(page, printed).next().is_none()
+    {
+        Gap::Unjudged
+    }
+    else if reading.import_at(offset).is_some() {
+        Gap::Imported
+    }
+    else if tile.declares {
+        Gap::Owned(tile.rule)
+    }
+    else if found.iter().any(|declaration| holds(&declaration)) {
+        Gap::Untyped
+    }
+    else {
+        Gap::Undeclared
+    };
+    Some(Stub { gap, tile, refused })
+}
+
+/// The hover of the stub at `offset`, about the tile holding it.
+///
+/// # Specification
+/// - requires: as [`stub`].
+/// - ensures: none where [`stub`] finds none; otherwise, about the tile's
+///   range, the refused declaration's hover as [`declared`] writes it when one
+///   holds the tile, else the tile as written in a block; then the gap named
+///   and its tracking issue's line, as [`Gap::closing`] writes them.
+/// - provides: the stub half of [`hover`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`stub`].
+/// - witness: `hover::tests::every_corpus_tile_hovers_or_names_its_issue_1206`
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
+fn stubbed<Store, Blocks>(
+    session: &Session<Store, Blocks>,
+    table: &TypeTable,
+    reading: &Reading,
+    found: &[Declaration],
+    quoted: &Quoted<'_>,
+    offset: ByteOffset,
+    style: Style,
+) -> Option<Hover>
+{
+    let Stub { gap, tile, refused } = stub(table, reading, found, quoted, offset, style)?;
+    let start = RenderOffset::from(usize::from(tile.span.start()));
+    let range = Range::of_bytes(
+        quoted.index,
+        start,
+        RenderOffset::from(usize::from(tile.span.end())),
+    )
+    .ok()?;
+    let mut value = refused.map_or_else(
+        || {
+            let mut code = Code::new(style.markup);
+            let text = <&str>::from(quoted.text)
+                .get(usize::from(start) .. usize::from(tile.span.end()))
+                .unwrap_or_default();
+            quoted.quote(&mut code, SourceText::from(text), start);
+            code.block()
+        },
+        |refused| {
+            declared(session, table, refused, range, quoted, style)
+                .contents
+                .value
+        },
+    );
+    value.push_str("\n\n");
+    value.push_str(&gap.closing());
+    Some(Hover {
+        contents: MarkupContent {
+            kind: "markdown",
+            value,
+        },
+        range,
     })
 }
 
@@ -1122,10 +1277,12 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Quoted;
     use super::Style;
     use super::hover;
     use super::hovered;
     use super::hovering;
+    use super::stub;
     use crate::markup::Markup;
     use crate::position::Character;
     use crate::position::Line;
@@ -1712,7 +1869,11 @@ mod tests
                 "a field's parenthesis",
                 data,
                 (2, 9),
-                Err(hovered::Absent::Untyped),
+                Ok(format!(
+                    "{}\n\nA tile a `data_declaration` writes itself has no hover yet. The tracking issue \
+                     for this is: [#1202]\n\n[#1202]: https://github.com/gandr-lang/gandr/issues/1202",
+                    fenced(SourceText::from("("))
+                )),
             ),
             (
                 "an indexed sort",
@@ -1831,5 +1992,116 @@ mod tests
                 "{position}"
             );
         }
+    }
+
+    /// Every `.gandr` source under the corpus's `fixture` and `strict`
+    /// roots, sorted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn corpus() -> Vec<std::path::PathBuf>
+    {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
+        let mut pending = vec![root.join("fixture"), root.join("strict")];
+        let mut sources = Vec::new();
+        while let Some(directory) = pending.pop() {
+            for entry in std::fs::read_dir(&directory).expect("a corpus directory is read") {
+                let path = entry.expect("a corpus entry is read").path();
+                if path.is_dir() {
+                    pending.push(path);
+                }
+                else if path
+                    .extension()
+                    .is_some_and(|extension| extension == "gandr")
+                {
+                    sources.push(path);
+                }
+            }
+        }
+        sources.sort();
+        sources
+    }
+
+    /// No tile of the corpus hovers nothing: each answers what the engine
+    /// holds or a stub ending with its gap's tracking issue. A hover finds its
+    /// entry by a scan of the table, so each source hovers every fourth tile,
+    /// from a phase that turns with the source's position.
+    #[test]
+    fn every_corpus_tile_hovers_or_names_its_issue_1206()
+    {
+        let mut silent = Vec::new();
+        let mut misnamed = Vec::new();
+        let mut sources = 0_usize;
+        for path in corpus() {
+            let written = std::fs::read_to_string(&path).expect("a corpus source is read");
+            let text = SourceText::from(written.as_str());
+            let session = checked(text);
+            let reading = Reading::of(text);
+            let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
+            let index = LineIndex::new(written.as_str().into());
+            let quoted = Quoted {
+                text,
+                index: &index,
+                spans: reading.spans(),
+            };
+            let Maybe::Present(found) = reading.declarations()
+            else {
+                silent.push(format!("{}: unread", path.display()));
+                continue;
+            };
+            let phase = sources % 4_usize;
+            sources = sources.saturating_add(1_usize);
+            for tile in reading.tiles().iter().skip(phase).step_by(4_usize) {
+                let start = usize::from(tile.span.start());
+                let position = Position::of_byte(&index, RenderOffset::from(start))
+                    .expect("a tile starts on a boundary");
+                let spelled = written
+                    .get(start .. usize::from(tile.span.end()))
+                    .unwrap_or_default();
+                let line = written
+                    .get(.. start)
+                    .unwrap_or_default()
+                    .matches('\n')
+                    .count();
+                let at = format!("{}:{} `{spelled}`", path.display(), line.saturating_add(1));
+                match hover(text, &session, &reading, &hovering, position, PLAIN) {
+                    Maybe::Absent(reason) => silent.push(format!("{at}: {reason:?}")),
+                    Maybe::Present(shown)
+                        if shown
+                            .contents
+                            .value
+                            .contains("The tracking issue for this is:") =>
+                    {
+                        let named = stub(
+                            &hovering.table,
+                            &reading,
+                            found,
+                            &quoted,
+                            tile.span.start(),
+                            PLAIN,
+                        )
+                        .is_some_and(|stubbed| {
+                            shown.contents.value.ends_with(&stubbed.gap.closing())
+                        });
+                        if !named {
+                            misnamed.push(at);
+                        }
+                    },
+                    Maybe::Present(_) => {},
+                }
+            }
+        }
+        assert!(
+            silent.is_empty(),
+            "{} tiles hover nothing:\n{}",
+            silent.len(),
+            silent.join("\n")
+        );
+        assert!(
+            misnamed.is_empty(),
+            "{} stubs do not end with their gap's issue:\n{}",
+            misnamed.len(),
+            misnamed.join("\n")
+        );
     }
 }
