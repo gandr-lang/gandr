@@ -340,11 +340,12 @@ fn position(
 ///
 /// # Specification
 /// - requires: index describes the diagnostic's source; located spans project.
-/// - ensures: the primary range, optional code, message (the message, then the
-///   primary label, each unlocated context and the note on lines of their own
-///   when present) and related ranges and labels — every context annotation,
-///   then every located context — are represented in the comparison object, in
-///   order; a ledger line is its line at the origin.
+/// - ensures: the primary range, else the innermost located context's, else the
+///   origin; the optional code; the message (the message, then the primary
+///   label, each unlocated context and the note on lines of their own when
+///   present); and the related ranges and labels in the document — every
+///   context annotation, then every located context — represented in the
+///   comparison object, in order; a ledger line is its line at the origin.
 /// - provides: an independent model-stage observation of editor diagnostics.
 /// - fails: never for valid spans.
 /// - panics: a located span lies inside a character.
@@ -387,13 +388,21 @@ fn rendered(
             .map(|annotation| json!({"range": range(annotation.locus.span), "message": annotation.label}))
             .collect();
     let mut message = diagnostic.message.text.clone();
+    let innermost = diagnostic
+        .contexts
+        .iter()
+        .rev()
+        .find_map(|context| match context.locus {
+            Maybe::Present(locus) => Some(range(locus.span)),
+            Maybe::Absent(_) => None,
+        });
     let lead = match diagnostic.primary() {
         Maybe::Present(primary) => {
             message.push('\n');
             message.push_str(&primary.label);
             range(primary.locus.span)
         },
-        Maybe::Absent(_) => at_origin,
+        Maybe::Absent(_) => innermost.unwrap_or(at_origin),
     };
     for context in &diagnostic.contexts {
         match context.locus {
@@ -413,13 +422,16 @@ fn rendered(
     json!({"range": lead, "code": code, "message": message, "related": related})
 }
 
-/// The range, code and message of each diagnostic a publication carries.
+/// The range, code and message of each diagnostic a publication carries, with
+/// its related locations in the published document.
 ///
 /// # Specification
 /// - requires: publication carries a diagnostic array.
-/// - ensures: each diagnostic preserves its range, code, message and related
-///   ranges/labels; an absent code is observed as null and absent context as an
-///   empty array, without changing diagnostic or context order.
+/// - ensures: each diagnostic preserves its range, code, message and the ranges
+///   and labels of its related locations at the publication's own URI; an
+///   absent code is observed as null and absent context as an empty array,
+///   without changing diagnostic or context order. A location in an import is
+///   left out: its range is the import's, which the walk does not lay apart.
 /// - provides: the wire projection compared with renderer-stage reports.
 /// - fails: never in the valid domain.
 /// - panics: the diagnostic array is missing.
@@ -436,7 +448,7 @@ fn rendered(
                     && projected.get("message") == original.get("message")
                     && projected.get("code") == Some(original.get("code").unwrap_or(&Value::Null))
                     && projected.get("related").and_then(Value::as_array).is_some_and(|related|
-                        related.len() == original.get("relatedInformation").and_then(Value::as_array).map_or(0, Vec::len))))) ]
+                        related.len() <= original.get("relatedInformation").and_then(Value::as_array).map_or(0, Vec::len))))) ]
 fn published(publication: &Value) -> Vec<Value>
 {
     publication
@@ -453,7 +465,9 @@ fn published(publication: &Value) -> Vec<Value>
                 if let Some(fields) = projected.as_object_mut() {
                     let _absent = fields.insert(String::from("related"), Value::Array(
                         diagnostic.get("relatedInformation").and_then(Value::as_array)
-                            .into_iter().flatten().map(|annotation| json!({
+                            .into_iter().flatten()
+                            .filter(|annotation| annotation.pointer("/location/uri") == publication.pointer("/params/uri"))
+                            .map(|annotation| json!({
                                 "range": annotation.pointer("/location/range"), "message": annotation.get("message"),
                             })).collect(),
                     ));

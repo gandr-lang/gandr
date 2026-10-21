@@ -561,6 +561,7 @@ impl Report<'_>
             span,
             annotations: marked,
             contexts,
+            elsewhere: Vec::new(),
             hypotheses,
             note: match self.subject {
                 Subject::Refused {

@@ -135,6 +135,7 @@ pub use crate::model::Diagnostic;
 pub use crate::model::DiagnosticAnnotation;
 pub use crate::model::DiagnosticContext;
 pub use crate::model::DiagnosticDetail;
+pub use crate::model::Elsewhere;
 pub use crate::model::Excerpt;
 pub use crate::model::Fix;
 pub use crate::model::Identifier;
