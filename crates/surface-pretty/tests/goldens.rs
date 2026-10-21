@@ -4435,3 +4435,64 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
         "a pass naming the loop's unwritten binder keeps the notation"
     );
 }
+
+/// An applied fixpoint over a lambda casing on the list it binds prints as
+/// the `for` loop it lowered from: the element named, the loop's own binder
+/// applied to the remaining tail `continue`, and a returner `return v` where
+/// a rest follows the loop. A pass naming the tail elsewhere keeps the
+/// printer's notation (#941).
+#[test]
+fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
+{
+    let mut core = CoreArena::new();
+    let partial = gandr_kernel_term::FixpointEvidence::Partial;
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // `fn (a) { for d in a { … } [; r] }`: the body under the lambda's
+    // binder, the loop's own, the remaining list's, the element's and the
+    // tail's; a rest under the lambda's, the loop's and the list's.
+    let walking = |core: &mut CoreArena, nil, cons| {
+        let remaining = variable(core, 0_u32);
+        let walked = core.computation_list_case(remaining, nil, cons);
+        let abstraction = core.computation_lambda(walked);
+        let fixpoint = core.computation_fixpoint(abstraction, partial);
+        let list = variable(core, 0_u32);
+        let applied = core.computation_application(fixpoint, list);
+        core.computation_lambda(applied)
+    };
+    let nothing = core.value_unit();
+    let ends = core.computation_return(nothing);
+    let own = variable(&mut core, 3_u32);
+    let again = core.computation_force(own);
+    let tail = variable(&mut core, 0_u32);
+    let continued = core.computation_application(again, tail);
+    let continuing = walking(&mut core, ends, continued);
+    let before = variable(&mut core, 2_u32);
+    let rest = core.computation_return(before);
+    let broken = core.computation_split(nothing, ComponentCount::from(0_usize), rest);
+    let element = variable(&mut core, 1_u32);
+    let exits = core.computation_return(element);
+    let exiting = walking(&mut core, broken, exits);
+    let ends = core.computation_return(nothing);
+    let tail = variable(&mut core, 0_u32);
+    let leaked = core.computation_return(tail);
+    let leaking = walking(&mut core, ends, leaked);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(continuing)),
+        faithful(Written("fn (a) { for d in a { continue } }")),
+        "the loop's own binder applied to the tail ends a pass as `continue`"
+    );
+    assert_eq!(
+        spelled(&source, body(exiting)),
+        faithful(Written("fn (a) { for d in a { return d } ; a }")),
+        "a `for` a rest follows writes its returner as an exit"
+    );
+    assert_eq!(
+        spelled(&source, body(leaking)),
+        approximate(Written("fn (a) { for d in a { break(e) } }")),
+        "a pass naming the unwritten tail keeps the notation"
+    );
+}
