@@ -263,6 +263,7 @@ use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::unused::unused;
 use crate::uses::Written;
 use crate::uses::declared;
 use crate::uses::highlights;
@@ -6083,11 +6084,12 @@ fn caret_range(
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
 ///   text, each import read as `shadows` holds it, rendered at `verbosity` with
-///   their types in `spelling`, less those [`publishable`] holds for the form
-///   under the document's caret while `quiet` is not zero; the copy records
-///   every judged diagnostic as checked. One log line names the same URI and
-///   version, its admission pending when the judgement left one, and whether
-///   the publication held any.
+///   their types in `spelling`, followed by the hints [`unused`] answers off
+///   the recheck's unused binders, less those [`publishable`] holds for the
+///   form under the document's caret while `quiet` is not zero; the copy
+///   records every judged diagnostic and hint as checked. One log line names
+///   the same URI and version, its admission pending when the judgement left
+///   one, and whether the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -6122,7 +6124,7 @@ fn synchronised(
         Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
         Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
     };
-    let rechecked = recheck(
+    let mut rechecked = recheck(
         uri,
         &mut document.session,
         document.text.source(),
@@ -6131,6 +6133,10 @@ fn synchronised(
         spelling,
         caret,
     );
+    let index = LineIndex::new(<&str>::from(document.text.source()).into());
+    rechecked
+        .diagnostics
+        .extend(unused(&rechecked.unused, document.text.source(), &index));
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
@@ -9428,6 +9434,73 @@ mod tests
             ),
             canonical,
             "options asking for what the layout writes: the same edit"
+        );
+    }
+
+    #[test]
+    fn a_binder_no_use_refers_to_is_published_unnecessary()
+    {
+        let mut server = initialized();
+        let open = |server: &mut Connected, uri: &str, text: &str| {
+            let notification = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}});
+            send(server, Json(&notification.to_string()))
+        };
+        assert_eq!(
+            open(
+                &mut server,
+                "file:///tmp/unused.gandr",
+                "def f(n : Integer, m : Integer, _k : Integer) -> -F Integer { return n }\n"
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{
+                    "uri":"file:///tmp/unused.gandr","version":1,"diagnostics":[{
+                    "range":{"start":{"line":0,"character":19},"end":{"line":0,"character":20}},
+                    "severity":4,"code":"UnusedBinder","source":"gandr",
+                    "message":"`m` is never used","tags":[1]}]}}]"#
+            )),
+            "the unused parameter is a faded hint; the used one and the one written with `_` are \
+             not"
+        );
+        let corpus = |file: &str| {
+            let path = std::fs::canonicalize(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../surface-corpus/fixture")
+                    .join(file),
+            )
+            .expect("the corpus source is checked out");
+            let text = std::fs::read_to_string(&path).expect("the corpus source reads");
+            (format!("file://{}", path.display()), text)
+        };
+        let hinted = |published: &Value| {
+            published[0]["params"]["diagnostics"]
+                .as_array()
+                .map(|diagnostics| {
+                    diagnostics
+                        .iter()
+                        .filter(|diagnostic| diagnostic["code"] == "UnusedBinder")
+                        .map(|diagnostic| {
+                            format!(
+                                "{}:{}",
+                                diagnostic["range"]["start"]["line"],
+                                diagnostic["message"].as_str().unwrap_or_default()
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let (uri, text) = corpus("pathological/control/capability-drop.gandr");
+        assert_eq!(
+            hinted(&open(&mut server, &uri, &text)),
+            [""; 0],
+            "an unused consumable capability is the checker's refusal, never a hint"
+        );
+        let (uri, text) = corpus("surface/control-flow.gandr");
+        assert_eq!(
+            hinted(&open(&mut server, &uri, &text)),
+            ["7:`n` is never used"],
+            "`tick` leaves its parameter unused, and control flow's every other binder is used"
         );
     }
 

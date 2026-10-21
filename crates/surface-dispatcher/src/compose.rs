@@ -155,6 +155,7 @@
 //! because a second composition is exactly what this section rules out.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
@@ -176,6 +177,7 @@ use gandr_core_checker::OriginToken;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::Verdict;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
@@ -185,6 +187,7 @@ use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
 use gandr_core_term::Carried;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
@@ -195,6 +198,7 @@ use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StructuredName;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
@@ -213,6 +217,8 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Mark;
 use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
@@ -395,6 +401,11 @@ pub enum Composed<'source>
         /// position that reads a value, in source order: each a finding of
         /// the `explicit-runs` lint where an attribute or the run asks for it.
         runs: Vec<InferredRun>,
+        /// Every binder a lambda or a bind opens, written in a declaration
+        /// the checker accepted, that no variable reads, ascending: each a
+        /// hint the editor fades. An unused consumable capability is the
+        /// checker's refusal, so every such binder may be dropped.
+        unused: Vec<ByteSpan>,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -463,6 +474,7 @@ impl Composed<'_>
                 shadowed,
                 inferred,
                 runs,
+                unused,
                 program,
                 ..
             } => Self::Settled {
@@ -475,6 +487,7 @@ impl Composed<'_>
                 shadowed,
                 inferred,
                 runs,
+                unused,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -1993,6 +2006,8 @@ struct Share<'source>
     inferred: Vec<InferredExit>,
     /// The runs the checker inferred in it.
     runs: Vec<InferredRun>,
+    /// The binders its accepted declarations write and never read.
+    unused: Vec<ByteSpan>,
 }
 
 /// Judge and settle one lowered unit once, and project the composition onto
@@ -2238,7 +2253,8 @@ fn owned<'source>(
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 #[spec(ensures: |ref ret| ret.shadowed.iter().all(|shadow| member.start <= shadow.span.start() && shadow.span.start() <= member.end)
-    && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end))]
+    && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end)
+    && ret.unused.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
 fn share<'source>(
     member: Member,
     (report, spellings): (SettleReport<'source>, TypeSpellings),
@@ -2259,6 +2275,7 @@ fn share<'source>(
     inferred.retain(|exit| own(exit.span));
     let mut runs = unit.runs.clone();
     runs.retain(|run| own(run.span));
+    let unused = unused_binders(arena, module, &report, own);
     Share {
         report,
         exercised,
@@ -2267,7 +2284,119 @@ fn share<'source>(
         shadowed,
         inferred,
         runs,
+        unused,
     }
+}
+
+/// The binders a lambda or a bind of `arena` opens in the declarations
+/// `report` accepted, written where `own` holds, that no use of `module`
+/// reads, ascending and once each.
+///
+/// Every other opener — a capability scope, a placement, a split — binds into
+/// the linear zone, and a name one of those records is not answered for a
+/// lambda or a bind recording it too. A declaration is accepted when the
+/// checker formed or checked it; leaving a consumable capability unused is the
+/// checker's refusal, so an accepted declaration's lambda and bind binders may
+/// all be dropped. An owed, suspended or refused declaration answers nothing.
+/// Both halves of an accepted declaration are read. A use is a written
+/// variable, or a name the lowering resolved to the binder: a type naming it
+/// among them.
+///
+/// # Specification
+/// - ensures: every span returned is a written binder of `module`'s origins
+///   whose every opener is a lambda or a bind, `own` holds of it, no written
+///   variable and no binder resolution reads it, and it lies within a half of a
+///   declaration `report` reports as judged `Data`, `Checked` or `Synthesised`;
+///   the spans ascend without repeats.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — parameters, `run` binders, pattern variables and lambda
+///   binders used and unused, a binder read only in a type, a constructor's
+///   telescope, a handled capability, a refused declaration's binders and a
+///   placement's.
+/// - witness: `compose::tests::each_binder_no_variable_reads_is_unused`
+#[spec(ensures: |ref ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first < second)))]
+fn unused_binders(
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    report: &SettleReport<'_>,
+    own: impl Fn(ByteSpan) -> bool,
+) -> Vec<ByteSpan>
+{
+    let accepted: BTreeSet<ConstantIndex> = report
+        .declarations()
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.produced(),
+                Produced::Judged(
+                    Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
+                )
+            )
+        })
+        .map(DeclarationReport::constant)
+        .collect();
+    let extents: Vec<ByteSpan> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| accepted.contains(&declaration.constant()))
+        .flat_map(|declaration| {
+            let halves = declaration.halves();
+            [halves.signature, halves.definition]
+        })
+        .filter_map(|half| match half {
+            Maybe::Present(at) => Some(at.span),
+            Maybe::Absent(_) => None,
+        })
+        .collect();
+    let origins = module.origins();
+    let opens = |opener: ComputationId| {
+        matches!(
+            arena.computation(opener),
+            Some(&(Computation::Lambda(_) | Computation::Bind(..)))
+        )
+    };
+    let held: BTreeSet<ByteSpan> = origins
+        .binders()
+        .iter()
+        .filter(|binder| !opens(binder.0))
+        .map(|binder| binder.1.span())
+        .collect();
+    let written = |variable: ValueId| matches!(origins.value(variable), Maybe::Present(origin) if origin.provenance() == Provenance::Written);
+    let read: BTreeSet<ByteSpan> = origins
+        .bindings()
+        .iter()
+        .filter(|binding| written(binding.0))
+        .map(|binding| binding.1)
+        .chain(
+            module
+                .resolutions()
+                .iter()
+                .filter_map(|resolution| match resolution.1 {
+                    Resolution::Binder(binder) => Some(binder),
+                    Resolution::Declaration(_) | Resolution::Constructor { .. } => None,
+                }),
+        )
+        .collect();
+    let mut unused: Vec<ByteSpan> = origins
+        .binders()
+        .iter()
+        .filter(|binder| opens(binder.0) && binder.1.provenance() == Provenance::Written)
+        .map(|binder| binder.1.span())
+        .filter(|&span| {
+            own(span)
+                && !read.contains(&span)
+                && !held.contains(&span)
+                && extents
+                    .iter()
+                    .any(|extent| extent.start() <= span.start() && span.end() <= extent.end())
+        })
+        .collect();
+    unused.sort_unstable();
+    unused.dedup();
+    unused
 }
 
 /// The settled composition of one source's `share`, joined by the unit-wide
@@ -2289,6 +2418,7 @@ fn settled<'source>(
         failures,
         shadowed: share.shadowed,
         inferred: share.inferred,
+        unused: share.unused,
         runs: share.runs,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         program,
@@ -4135,6 +4265,7 @@ def h = 1 ;"#,
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
             let runs = super::inferred_runs(&module, &verdicts);
+            let unused = super::unused_binders(&arena, &module, &report, |_| true);
             let readmitted_first = Composed::Settled {
                 report,
                 exercised,
@@ -4145,6 +4276,7 @@ def h = 1 ;"#,
                 shadowed,
                 inferred,
                 runs,
+                unused,
                 kernel: Maybe::Present(kernel),
                 program,
             };
@@ -4862,5 +4994,93 @@ def h = 1 ;"#,
                 "restored, the bind prints as the nested call written; unrestored, as the bind"
             );
         }
+    }
+
+    #[test]
+    fn each_binder_no_variable_reads_is_unused()
+    {
+        let grammar = grammar();
+        let unused = |written: &str| {
+            let mut lowerings = LoweringCount::default();
+            let Ok(Composed::Settled { unused, .. }) = compose(
+                &grammar,
+                CorpusRoot::Fixture,
+                SourceText::from(written),
+                &mut lowerings,
+            )
+            else {
+                panic!("the source composes");
+            };
+            unused
+                .iter()
+                .map(|span| {
+                    let start = usize::from(span.start());
+                    let line = written
+                        .get(.. start)
+                        .unwrap_or_default()
+                        .matches('\n')
+                        .count();
+                    std::format!(
+                        "{}:{}",
+                        line.saturating_add(1),
+                        written
+                            .get(start .. usize::from(span.end()))
+                            .unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let corpus = |file: &str| {
+            std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../surface-corpus/fixture")
+                    .join(file),
+            )
+            .expect("the corpus source reads")
+        };
+        assert_eq!(
+            unused(
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef pick(n : Nat, \
+                 m : Nat) -> -F Nat {\n  run k <- pure Succ(n) ;\n  case n {\n    Zero => n,\n    \
+                 Succ(p) => n\n  }\n}\ndef id : Nat => Nat ;\ndef id = thunk { fn (y) { Zero } } ;\n"
+            ),
+            ["5:m", "6:k", "9:p", "13:y"],
+            "the unused parameter, `run` binder, pattern variable and lambda binder, the last in \
+             the second half of a name declared in two; not the used parameter nor the \
+             constructor's telescope binder"
+        );
+        assert_eq!(
+            unused(
+                "def chosen @[x : t] (t : Type) -> -F t { x }\ndef apply : (Type -> Type) -> Type \
+                 -> Type ;\ndef apply = \\F. \\X. F(X) ;\n"
+            ),
+            [""; 0],
+            "a binder read only in a type, or only by a static application, is used"
+        );
+        assert_eq!(
+            unused(
+                "def seat_left_open(n : Integer) -> -F Unit {\n  fork (seat : end) { pure unit } as \
+                 desk;\n  close(desk)\n}\n"
+            ),
+            [""; 0],
+            "a fork's unused end is the checker's refusal, and a refused declaration answers \
+             nothing: not the end, nor the unused parameter beside it"
+        );
+        assert_eq!(
+            unused(&corpus("pathological/control/capability-drop.gandr")),
+            [""; 0],
+            "an unused consumable capability is the checker's refusal too"
+        );
+        assert_eq!(
+            unused(&corpus("pathological/completion/buffer-misused.gandr")),
+            [""; 0],
+            "each misused buffer is refused, so neither declaration's binders are answered"
+        );
+        assert_eq!(
+            unused(&corpus("surface/control-flow.gandr")),
+            ["8:n"],
+            "`tick` leaves its parameter unused; the capability `handled` handles is no lambda's \
+             or bind's, and every other binder is used"
+        );
     }
 }

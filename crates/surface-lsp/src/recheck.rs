@@ -509,13 +509,18 @@ impl fmt::Display for Timing
     }
 }
 
-/// What one recheck produced: the diagnostics to publish, the form under the
-/// caret it was asked about, the paths its closure named, and its timing.
+/// What one recheck produced: the diagnostics to publish, the binders left
+/// unused, the form under the caret it was asked about, the paths its closure
+/// named, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
     /// The diagnostics, in the order `gandr check --goals` prints them.
     pub diagnostics: Vec<Diagnostic>,
+    /// Each binder the judgement's accepted declarations write in the
+    /// document and never read, as the document's own text measures it,
+    /// ascending.
+    pub unused: Vec<ByteSpan>,
     /// The innermost form of the judged revision holding the caret, read
     /// off the tree the judgement parsed.
     pub form: Maybe<ByteSpan, formless::Absent>,
@@ -548,14 +553,15 @@ pub struct Rechecked
 ///   diagnostic locating nothing in the document, and a ledger line, at the
 ///   document's origin. A fault that keeps the document from composing, and a
 ///   grammar that did not build, is one error at the origin naming it. The
-///   timing carries the judgement's form census, the incremental checker's
-///   census, and the wall of the whole recheck; its admission is pending when
-///   the judgement left one. The form is [`caret_form`] of the judged tree at
-///   `caret`, `caret`'s own reason when it is absent, and
-///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
-///   did not build. A text the session last judged, submitted again, molds no
-///   form and judges no item, and its diagnostics are the ones its previous
-///   recheck produced.
+///   unused binders are the composition's, moved back by the document's base;
+///   none when the judgement faulted or refused the document whole. The timing
+///   carries the judgement's form census, the incremental checker's census, and
+///   the wall of the whole recheck; its admission is pending when the judgement
+///   left one. The form is [`caret_form`] of the judged tree at `caret`,
+///   `caret`'s own reason when it is absent, and [`formless::Absent::Unparsed`]
+///   when the judgement faulted or the grammar did not build. A text the
+///   session last judged, submitted again, molds no form and judges no item,
+///   and its diagnostics are the ones its previous recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -599,6 +605,7 @@ pub fn recheck(
     let started = Instant::now();
     let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>| Rechecked {
         diagnostics: vec![diagnostic],
+        unused: Vec::new(),
         form: Maybe::Absent(formless::Absent::Unparsed),
         named,
         timing: Timing {
@@ -666,9 +673,20 @@ pub fn recheck(
         Maybe::Present(ref laid) => Some(laid),
         Maybe::Absent(_) => None,
     };
+    let unused = match *submission.composed() {
+        Composed::Settled { ref unused, .. } => unused
+            .iter()
+            .filter_map(|&span| match own(span, base) {
+                Maybe::Present(span) => Some(span),
+                Maybe::Absent(_) => None,
+            })
+            .collect(),
+        Composed::Refused(_) => Vec::new(),
+    };
     let diagnostics = diagnostics_of(submission, (uri, laid), text, verbosity, spelling);
     Rechecked {
         diagnostics,
+        unused,
         form,
         named,
         timing: Timing {

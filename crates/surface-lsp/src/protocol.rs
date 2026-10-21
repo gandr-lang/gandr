@@ -3453,6 +3453,10 @@ pub struct Diagnostic
     /// The loci that explain it, each with what it explains.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub related_information: Vec<RelatedInformation>,
+    /// How the editor marks the range besides its severity: faded, for
+    /// what is unnecessary.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<DiagnosticTag>,
 }
 
 impl Diagnostic
@@ -3474,7 +3478,7 @@ impl Diagnostic
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
         && ret.code_description.is_none()
-        && ret.source == SOURCE && ret.related_information.is_empty())]
+        && ret.source == SOURCE && ret.related_information.is_empty() && ret.tags.is_empty())]
     #[inline]
     #[must_use]
     pub fn at_origin(message: String) -> Self
@@ -3487,6 +3491,7 @@ impl Diagnostic
             source: SOURCE,
             message,
             related_information: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -3510,6 +3515,7 @@ impl Diagnostic
             source: SOURCE,
             message,
             related_information: Vec::new(),
+            tags: Vec::new(),
         }
     }
 }
@@ -3531,6 +3537,19 @@ impl Severity
     /// A hint: a declaration a refusal elsewhere in the document leaves
     /// unsettled, reported beside that refusal rather than as an error.
     pub const HINT: Self = Self(4);
+}
+
+/// How a diagnostic's range is marked besides its severity, as the protocol
+/// numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct DiagnosticTag(u8);
+
+impl DiagnosticTag
+{
+    /// Unnecessary: a binder no use refers to, which the editor fades.
+    pub const UNNECESSARY: Self = Self(1);
 }
 
 /// Where a diagnostic's code is described.

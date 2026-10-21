@@ -1073,6 +1073,7 @@ def broken = missing ;"#,
             shadowed: Vec::new(),
             inferred: Vec::new(),
             runs: Vec::new(),
+            unused: Vec::new(),
             program,
         };
         let mut engine = RunReport::default();

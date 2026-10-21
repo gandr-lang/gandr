@@ -797,6 +797,7 @@ mod tests
             source: "gandr",
             message: message.into(),
             related_information: Vec::new(),
+            tags: Vec::new(),
         }
     }
 

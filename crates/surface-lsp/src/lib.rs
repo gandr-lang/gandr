@@ -132,7 +132,7 @@
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served: an editor's copy shadows the file at its path for every import on every connection, and an open, change or close of it rechecks and republishes every open copy whose closure names it, on each connection holding one, as the `server` module's `Workspace` states |
 //! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | `willSave` and `willSaveWaitUntil` served, not advertised: every change is judged as it arrives, so a save owes no check; `willSave` is read and left, `willSaveWaitUntil` answered with the edits formatting the whole document answers; `didSave` declined for the same reason |
 //! | notebook synchronisation | `notebookDocument/*` | declined: gandr has no notebook format |
-//! | published diagnostics | `textDocument/publishDiagnostics` | served |
+//! | published diagnostics | `textDocument/publishDiagnostics` | served: the session's judgement, then a hint tagged `Unnecessary`, code `UnusedBinder`, at each lambda or bind binder no use refers to in a declaration the checker accepted, kept by the judgement beside its verdicts, as the `unused` module states — never a linear binder or a consumable capability, whose drop is the checker's refusal, nor a name starting with `_`; a refused declaration's binders wait on #1504. An unused import is not yet marked: it is #1116's row |
 //! | pulled diagnostics | `textDocument/diagnostic`, `workspace/diagnostic` | declined: every synchronisation publishes; reverses for a client that reads only pulled diagnostics |
 //! | semantic tokens | `textDocument/semanticTokens/full`, `full/delta`, `range`, `workspace/semanticTokens/refresh` | served: once a copy is judged, each written use classified by what the judgement resolved it to and a name nothing declares or binds as the custom `unresolvedReference`, as the `tokens` module states; a full answer carries its stream's digest as its id, a delta naming the stream the connection last sent answers one edit over the tokens between the ends the two streams share, and any other id the full stream; the refresh is asked of a client that declares it once a copy is rechecked because a file its closure names changed |
 //! | inline completion | `textDocument/inlineCompletion` | served |
@@ -393,6 +393,7 @@ mod syntax;
 mod tokens;
 mod tracking;
 mod transport;
+mod unused;
 mod uses;
 mod view;
 
