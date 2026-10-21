@@ -240,7 +240,7 @@ fn head(
 }
 
 /// What one parse of a text answers: its highlighter spans, declarations,
-/// folds, selection skeleton, calls, imports and tiles.
+/// folds, selection skeleton, calls, imports, tiles and own documentation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Readout
 {
@@ -264,6 +264,9 @@ struct Readout
     written: Vec<WrittenImport>,
     /// Every tile, ascending by start.
     tiles: Vec<Tile>,
+    /// The bytes of each `//!` run standing at the root, the text's own
+    /// documentation, in source order.
+    own: Vec<ByteSpan>,
 }
 
 /// The reading of one text, or why it has none.
@@ -285,8 +288,9 @@ impl Reading
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
     ///   tree, the address of each path import as [`written_imports`] reads it,
     ///   the bytes of every import and where the last one ends, none when the
-    ///   imports do not read, and every tile with its rule and whether a
-    ///   declaration holds it, ascending.
+    ///   imports do not read, every tile with its rule and whether a
+    ///   declaration holds it, ascending, and the bytes of every `//!` run the
+    ///   parser left at the root, in source order.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
@@ -369,6 +373,18 @@ impl Reading
             imports: Vec::new(),
             written: Vec::new(),
             tiles: tiles(grammar, &tree),
+            own: tree
+                .roots()
+                .iter()
+                .flat_map(|&root| tree.children(root))
+                .filter_map(|child| {
+                    let node = tree.node(child)?;
+                    let inner = tree
+                        .fragment(child)
+                        .is_some_and(|written| <&str>::from(written).starts_with("//!"));
+                    (node.label() == NodeLabel::Doc && inner).then(|| node.span())
+                })
+                .collect(),
         };
         if let Ok(written) = written_imports(grammar, &tree) {
             readout.imports_end = written.last().map(|import| import.span.end());
@@ -427,6 +443,29 @@ impl Reading
         tiles
             .get(after.checked_sub(1_usize)?)
             .filter(|tile| offset < tile.span.end())
+            .copied()
+    }
+
+    /// The `//!` run of the text's own documentation holding `offset`, from its
+    /// first byte to its last; none outside every run or when the text was not
+    /// read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn own_documentation_at(
+        &self,
+        offset: ByteOffset,
+    ) -> Option<ByteSpan>
+    {
+        let Maybe::Present(ref readout) = self.0
+        else {
+            return None;
+        };
+        readout
+            .own
+            .iter()
+            .find(|run| run.start() <= offset && offset < run.end())
             .copied()
     }
 

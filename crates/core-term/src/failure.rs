@@ -120,9 +120,6 @@ impl TrackingIssue
     pub const MODEL_CIRCUIT: Self = Self(1323);
     /// A model signature's binding operation.
     pub const MODEL_BINDING: Self = Self(1324);
-    /// A source file's own leading `//!` documentation, which the grammar
-    /// does not read.
-    pub const SOURCE_DOCUMENTATION: Self = Self(1365);
 
     /// The issue's page.
     ///

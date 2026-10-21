@@ -169,6 +169,7 @@ use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::named_path;
+use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
@@ -470,12 +471,14 @@ impl Style
 ///   last checked `text`, as the server's synchronisation leaves them; a stale
 ///   session answers the documentation it last accepted.
 /// - ensures: in an import, its alias included, [`imported`]'s answer about the
-///   import. Else, on a declaration's name — from its first character to just
-///   past its last — [`declared`]'s block about the name's range: the name and
-///   its type when the table types it, then the checker's refusal when it
-///   refused the declaration; the name and the refusal — the lowering's, or the
-///   checker's where the lowering typed nothing — when the table holds one;
-///   else the declaration as written, a theory and a module always so; then the
+///   import. Else, in a `//!` run of the document's own documentation the table
+///   keeps, [`own_documentation`]'s answer about the run. Else, on a
+///   declaration's name — from its first character to just past its last —
+///   [`declared`]'s block about the name's range: the name and its type when
+///   the table types it, then the checker's refusal when it refused the
+///   declaration; the name and the refusal — the lowering's, or the checker's
+///   where the lowering typed nothing — when the table holds one; else the
+///   declaration as written, a theory and a module always so; then the
 ///   documentation the session filed for the form after a blank line. On a
 ///   member's name with no entry inside the member, the member as written,
 ///   about the name. Else, on a use of a declaration the text writes with no
@@ -531,6 +534,7 @@ impl Style
 /// - witness: `hover::tests::a_sum_pattern_s_positional_label_answers_as_a_label_408`
 /// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
+/// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -559,6 +563,12 @@ pub fn hover<Store, Blocks>(
     let offset = ByteOffset::from(usize::from(position.byte(&index)));
     if let Some(import) = reading.import_at(offset) {
         return imported(hovering, import, &quoted, style)
+            .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present);
+    }
+    if let Some(run) = reading.own_documentation_at(offset)
+        && let Maybe::Present(written) = table.source_documentation(table.own_source())
+    {
+        return own_documentation(hovering, run, written, &quoted, style)
             .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present);
     }
     let entry = table.at(offset, PageWidth::from(HOVER_WIDTH), style.printed());
@@ -778,18 +788,18 @@ pub fn hover<Store, Blocks>(
 /// # Specification
 /// - requires: `quoted` is the document `import` was read from.
 /// - ensures: the import as written in a block; then, for a path the document's
-///   closure read, the file it reads and the file documentation's tracking
-///   line; for a path it did not, why: no file at the path, a file under
-///   another root, a file whose imports lead back to the document, or a file
-///   that does not parse; for an address with a scheme, its tracking line. None
-///   when the import's bytes split a character.
+///   closure read, the file it reads and, after a blank line, the documentation
+///   that file writes of itself when it writes any; for a path it did not, why:
+///   no file at the path, a file under another root, a file whose imports lead
+///   back to the document, or a file that does not parse; for an address with a
+///   scheme, its tracking line. None when the import's bytes split a character.
 /// - provides: the import half of [`hover`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a resolved import, a missing path and an address with a
-///   scheme are asserted at their exact answers.
+/// - hypothesis: L3 — a resolved import of a documented file, a missing path
+///   and an address with a scheme are asserted at their exact answers.
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
 fn imported(
@@ -818,15 +828,20 @@ fn imported(
             let directory = hovering.document.parent().unwrap_or(&hovering.document);
             let file = named_path(&directory.join(import.written.uri.as_ref()));
             match hovering.targets.get(ordinal) {
-                Some(&ImportTarget::Source(source)) => format!(
-                    "Reads `{}`.\n\n{}",
-                    hovering
-                        .paths
-                        .get(usize::from(source))
-                        .unwrap_or(&file)
-                        .display(),
-                    Gap::Undocumented.closing()
-                ),
+                Some(&ImportTarget::Source(source)) => {
+                    let read = format!(
+                        "Reads `{}`.",
+                        hovering
+                            .paths
+                            .get(usize::from(source))
+                            .unwrap_or(&file)
+                            .display()
+                    );
+                    match hovering.table.source_documentation(source) {
+                        Maybe::Present(written) => format!("{read}\n\n{}", written.as_ref()),
+                        Maybe::Absent(_) => read,
+                    }
+                },
                 Some(&ImportTarget::Cycle) => format!(
                     "`{}` imports this document back, so neither is read.",
                     file.display()
@@ -855,6 +870,52 @@ fn imported(
         contents: MarkupContent {
             kind: "markdown",
             value: format!("{}\n\n{resolution}", code.block()),
+        },
+        range,
+    })
+}
+
+/// The hover of `run`, a `//!` run of the document `hovering` was built for,
+/// whose source wrote `written` of itself.
+///
+/// # Specification
+/// - requires: `quoted` is the document `run` was read from.
+/// - ensures: the document's file name in a block, then `written` after a blank
+///   line, about the run's bytes. None when the run's bytes split a character.
+/// - provides: the head-of-file half of [`hover`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a position in a source's own run answers the file and the
+///   text the table keeps, and a word in an ordinary comment beside it answers
+///   nothing.
+/// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
+fn own_documentation(
+    hovering: &Hovering,
+    run: ByteSpan,
+    written: &DocumentationText,
+    quoted: &Quoted<'_>,
+    style: Style,
+) -> Option<Hover>
+{
+    let range = Range::of_bytes(
+        quoted.index,
+        RenderOffset::from(usize::from(run.start())),
+        RenderOffset::from(usize::from(run.end())),
+    )
+    .ok()?;
+    let mut code = Code::new(style.markup);
+    let name = hovering.document.file_name().map_or_else(
+        || format!("{}", hovering.document.display()),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    code.plain(SourceText::from(name.as_str()));
+    Some(Hover {
+        contents: MarkupContent {
+            kind: "markdown",
+            value: format!("{}\n\n{}", code.block(), written.as_ref()),
         },
         range,
     })
@@ -2557,7 +2618,8 @@ mod tests
     }
 
     /// An import answers the file it reads, or why it reads none: a path the
-    /// closure reads, a path naming no file, and an address with a scheme.
+    /// closure reads, with what the file writes of itself, a path naming no
+    /// file, and an address with a scheme.
     #[test]
     fn an_import_hovers_the_file_it_reads_1203()
     {
@@ -2594,12 +2656,11 @@ mod tests
         assert_eq!(
             at(&importer, &written, "circle-base"),
             format!(
-                "{}\n\nReads `{}`.\n\nIts file's own documentation is not read yet. The tracking \
-                 issue for this is: [#1365]\n\n[#1365]: https://github.com/gandr-lang/gandr/issues/1365",
+                "{}\n\nReads `{}`.\n\n{CIRCLE_BASE}",
                 fenced(SourceText::from(line)),
                 base.display()
             ),
-            "a path the closure reads answers its file"
+            "a path the closure reads answers its file and the file's own documentation"
         );
         let missing = written.replacen("circle-base", "circle-nowhere", 1);
         let nowhere = gandr_surface_dispatcher::named_path(
@@ -2619,6 +2680,68 @@ mod tests
                  [#1233]\n\n[#1233]: https://github.com/gandr-lang/gandr/issues/1233"
             ),
             "an address with a scheme names its tracking issue: {shown}"
+        );
+    }
+
+    /// What `circle-base.gandr` writes of itself, as its `//!` lines read.
+    const CIRCLE_BASE: &str = "The identity subject's shared declarations, written once and \
+                               imported by\nevery source that reads them (`import \
+                               \"./circle-base.gandr\" ;`): the empty\ntype, the circle, the \
+                               presented integers and the free naturals, the\nwinding number \
+                               and spinning with their round trips (the book's § 8.1), and\nthe \
+                               maps out of the circle the circle sources state their laws over, \
+                               after\ncubical Agda's `Cubical/HITs/S1/Base.agda`. \
+                               `circle.gandr` states the\nequivalence `winding` the round trips \
+                               make and what it computes; this\nsource states only what the \
+                               others read.";
+
+    /// #1365: a position in a source's own `//!` run answers the file and what
+    /// it writes of itself, about the run; a word in an ordinary comment still
+    /// answers nothing.
+    #[test]
+    fn a_source_s_own_documentation_hovers_at_its_head_1365()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+        let written = std::fs::read_to_string(&path).expect("the source is read");
+        let text = SourceText::from(written.as_str());
+        let session = checked(text);
+        let shown = |line: u32, character: u32| match hover(
+            text,
+            &session,
+            &Reading::of(text),
+            &hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed),
+            Position {
+                line: Line::from(line),
+                character: Character::from(character),
+            },
+            PLAIN,
+        ) {
+            Maybe::Present(shown) => Ok((shown.contents.value, shown.range)),
+            Maybe::Absent(reason) => Err(reason),
+        };
+        let (value, range) = shown(3_u32, 10_u32).expect("the run hovers");
+        assert_eq!(
+            value,
+            format!(
+                "{}\n\n{CIRCLE_BASE}",
+                fenced(SourceText::from("circle-base.gandr"))
+            ),
+            "the run answers the file and its own documentation"
+        );
+        assert_eq!(
+            (range.start.line, range.end.line),
+            (Line::from(0_u32), Line::from(7_u32)),
+            "about the whole run"
+        );
+        let commented = "// A plain comment.\ndef x = 1 ;\n";
+        assert_eq!(
+            shown_at(SourceText::from(commented), Position {
+                line: Line::from(0_u32),
+                character: Character::from(5_u32),
+            }),
+            Err(hovered::Absent::Untyped),
+            "an ordinary comment answers nothing"
         );
     }
 
