@@ -3070,7 +3070,7 @@ fn sum_patterns_case_on_the_stated_arity()
     let mut arena = CoreArena::new();
     let module = lowered(
         SourceText::from(
-            "def unstated(n : Integer) -> -F Integer { case (+{.0 = n} : +{Integer, String}) { +{.0 = m} => return m, +{.1 = s} => return 0 } }\n",
+            "def unstated(n : Integer) -> -F Integer { case (+{.ok = n} : +{ok : Integer, err : String}) { +{.ok = m} => return m, +{.err = s} => return 0 } }\n",
         ),
         &mut arena,
     );
@@ -3179,6 +3179,58 @@ fn a_sum_pattern_reads_bool_as_its_sum_815()
         ),
         "an index past `Bool`'s two summands names none"
     );
+}
+
+/// #1169: the printer writes a case on a boolean as indexed sum patterns, and
+/// a scrutinee bound by `run` states no type; before the fix such arms were
+/// refused as unannotated, so the printed body did not read back. Indexed arms
+/// covering every summand between them settle the sum they inject into.
+#[test]
+fn indexed_arms_settle_their_sum_1169()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def written(c : Integer) -> -F Integer { run b <- c < 128 ; case b { true => return 1, false => return 2 } }\n",
+            "def printed(c : Integer) -> -F Integer { run b <- c < 128 ; case b { +{.0 = u} => return 1, +{.1 = u} => return 2 } }\n",
+            "def pick(n : Integer) -> -F +{Unit, Unit, Unit} { return +{.2 = unit} }\n",
+            "def three(c : Integer) -> -F Integer { run s <- pick(c) ; case s { +{.1 = u} => return 1, +{.0 = u} => return 0, +{.2 = u} => return 2 } }\n",
+        )),
+        &mut arena,
+    );
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("written")),
+            body_named(&module, SurfaceName::from("printed")),
+        ),
+        gandr_core_term::CertificateEquality::Equal,
+        "the printed arms read back as the case the boolean arms are"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let refused = lowered(
+        SourceText::from(concat!(
+            "def wild(c : Integer) -> -F Integer { run b <- c < 128 ; case b { +{.0 = u} => return 1, _ => return 2 } }\n",
+            "def gap(c : Integer) -> -F Integer { run b <- c < 128 ; case b { +{.1 = u} => return 1 } }\n",
+            "def nested(c : Integer) -> -F Integer { run b <- c < 128 ; case (b, c) { (+{.0 = u}, x) => return 1, (+{.1 = u}, x) => return 2 } }\n",
+        )),
+        &mut arena,
+    );
+    for name in ["wild", "gap", "nested"] {
+        assert!(
+            matches!(
+                refusal_of(&refused, SurfaceName::from(name)),
+                LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Unannotated,
+                    ..
+                }
+            ),
+            "`{name}`: arms that do not settle the sum stay unannotated: {:?}",
+            refusal_of(&refused, SurfaceName::from(name))
+        );
+    }
 }
 
 #[test]

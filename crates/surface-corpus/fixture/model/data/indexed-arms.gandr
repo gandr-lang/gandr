@@ -1,0 +1,36 @@
+// A case whose scrutinee no name types, a comparison bound by `run`, cased
+// on by indexed sum patterns: arms covering `.0` to `.n-1` between them
+// settle the sum they inject into, so a case on a boolean as the printer
+// writes it reads back (#1169).
+
+/// One for a value below 128 and two otherwise, cased on as the boolean.
+@[ checks ]
+def written(c : Integer) -> -F Integer {
+  run small <- c < 128;
+  case small {
+    true => return 1,
+    false => return 2
+  }
+}
+
+/// The same case as the printer writes it, each arm an index of the sum the
+/// boolean stands for.
+@[ checks ]
+def printed(c : Integer) -> -F Integer {
+  run small <- c < 128;
+  case small {
+    +{.0 = u} => return 1,
+    +{.1 = u} => return 2
+  }
+}
+
+/// An arm that matches anything leaves the sum's width open, so the arms
+/// settle no sum and the scrutinee still needs its type (#1169).
+@[ refuses("OutOfFragment") ]
+def open(c : Integer) -> -F Integer {
+  run small <- c < 128;
+  case small {
+    +{.0 = u} => return 1,
+    _ => return 2
+  }
+}
