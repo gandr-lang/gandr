@@ -8469,10 +8469,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if self.positional(site, pieces)? == arity::Planned(true) {
+        // An observation by position of a thunked lazy product or codata
+        // family comes before the positional selection of a pair.
+        if self.observation(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
-        if self.observation(site, pieces)? == arity::Planned(true) {
+        if self.positional(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         if self.selection(site, pieces)? == arity::Planned(true) {

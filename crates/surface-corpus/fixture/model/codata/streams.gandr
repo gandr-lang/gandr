@@ -75,3 +75,15 @@ def four = thunk { second(thunk { upward(3) }) } ;
 @[ runs("9") ]
 def nine : () => Integer ;
 def nine = thunk { second(thunk { zipWith(add, thunk { upward(1) }, thunk { always(7) }) }) } ;
+
+/// An observation by its position, counted from zero in declaration order:
+/// `s.1` is `s.tail`, so this is `second`.
+@[ checks ]
+def onward(s : +U Stream(Integer)) -> -F Integer {
+  first(thunk { s.1 })
+}
+
+/// The integers from three, observed one further by position.
+@[ runs("4") ]
+def fourth : () => Integer ;
+def fourth = thunk { onward(thunk { upward(3) }) } ;

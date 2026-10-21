@@ -1593,15 +1593,16 @@ impl<'source> Lowerer<'_, 'source>
     /// The type over labels `former` the type at `node` states, read through
     /// parentheses and, when `thunked`, one `+U`: its own node and its
     /// entries. A sum chain `A + B + …` states the labelled sum `+{A, B, …}`,
-    /// and a product chain `A * B * …` the telescope `#{A, B, …}`.
+    /// a product chain `A * B * …` the telescope `#{A, B, …}`, and a lazy
+    /// product chain `C & D & …` the lazy record `&{C, D, …}`.
     ///
     /// # Specification
     /// - requires: `node` is a type's syntax node.
     /// - ensures: the stated form's node and its entries in written order, a
-    ///   sum chain read for a labelled sum and a product chain read for a
-    ///   telescope answering their components as positional entries, as
-    ///   [`Self::links`] reads them; nothing when the type, so read, is another
-    ///   former.
+    ///   sum chain read for a labelled sum, a product chain read for a
+    ///   telescope and a lazy product chain read for a lazy record answering
+    ///   their components as positional entries, as [`Self::links`] reads them;
+    ///   nothing when the type, so read, is another former.
     /// - fails: [`LoweringRefusal::BudgetExceeded`]; the stated form's own
     ///   malformation, at the stated form.
     /// - panics: none.
@@ -1619,14 +1620,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an injection under an annotation, a match over a
     ///   parameter, a match over a parameter stated as a sum chain, a copattern
     ///   block under its function's result, an observation of a thunked
-    ///   parameter and a selection off a dependent record each read their
-    ///   labels here.
+    ///   parameter, by label and by position under a lazy product chain, and a
+    ///   selection off a dependent record each read their labels here.
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `lower::native::tests::a_sum_pattern_reads_a_sum_stated_as_a_chain_791`
     /// - witness: `lower::arity::tests::an_observation_reads_through_one_thunk_only`
+    /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn stated_form(
         &mut self,
@@ -1689,6 +1691,7 @@ impl<'source> Lowerer<'_, 'source>
             let chain = match (held, former) {
                 (Former::SumType, Former::LabelledSumType) => Some(Former::SumType),
                 (Former::ProductType, Former::TelescopeType) => Some(Former::ProductType),
+                (Former::LazyProductType, Former::LazyRecordType) => Some(Former::LazyProductType),
                 _ => None,
             };
             if let Some(link) = chain {
@@ -1859,13 +1862,14 @@ impl<'source> Lowerer<'_, 'source>
             })
     }
 
-    /// The components of the chain of `link` at `chain`, `A + B + …` or `A *
-    /// B * …`, as the positional entries of the labelled sum `+{A, B, …}` or
-    /// the telescope `#{A, B, …}` it is.
+    /// The components of the chain of `link` at `chain`, `A + B + …`, `A * B *
+    /// …` or `C & D & …`, as the positional entries of the labelled sum `+{A,
+    /// B, …}`, the telescope `#{A, B, …}` or the lazy record `&{C, D, …}` it
+    /// is.
     ///
     /// # Specification
-    /// - requires: `chain` is a syntax node of `link`, a sum or a product
-    ///   chain, read at `site`.
+    /// - requires: `chain` is a syntax node of `link`, a sum, a product or a
+    ///   lazy product chain, read at `site`.
     /// - ensures: one positional entry per component in written order, each
     ///   unparenthesized link of the chain followed as the chain's own
     ///   classification follows it, so a parenthesized chain is one component.
@@ -2204,20 +2208,22 @@ impl<'source> Lowerer<'_, 'source>
         Ok(ordered)
     }
 
-    /// Classify a selection `m.l` as an observation when `m` is a name whose
-    /// written type is a thunked lazy record over labels or a thunked codata
-    /// family.
+    /// Classify a selection `m.l` or `m.i` as an observation when `m` is a name
+    /// whose written type is a thunked lazy record, a thunked lazy product
+    /// chain or a thunked codata family.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: planned when the position reads a computation and the
     ///   selection is one link off a name whose binder or declaration was
-    ///   written with the type `+U &{…}` or `+U F(…)` for a codata family `F`:
-    ///   the entry or the observation the label names, of the thunk the name
-    ///   holds, read as a value under the form's frame; nothing is planned
-    ///   otherwise.
+    ///   written with the type `+U &{…}`, `+U (C & D & …)` or `+U F(…)` for a
+    ///   codata family `F`: the entry or the observation the label names, or
+    ///   the number `i` places, counted from zero as a copattern block's and an
+    ///   injection's positions are, of the thunk the name holds, read as a
+    ///   value under the form's frame; nothing is planned otherwise.
     /// - fails: the unresolved-name refusal for a label the lazy record or the
-    ///   family lacks; the name's own resolution refusals.
+    ///   family lacks, a label of a lazy product chain, and a position past the
+    ///   last entry or observation; the name's own resolution refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -2225,9 +2231,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each entry of a lazy record of three, a label it
-    ///   lacks, and each observation of a stream.
+    ///   lacks, and each observation of a stream, by label and by position;
+    ///   each entry of a lazy product chain by position, and a position past
+    ///   its last.
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
+    /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
         &mut self,
@@ -2238,10 +2247,23 @@ impl<'source> Lowerer<'_, 'source>
         if !matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
             return Ok(Planned(false));
         }
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
-        else {
-            return Ok(Planned(false));
-        };
+        let (target, selected, numbered) =
+            if let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span) {
+                (target, selected, false)
+            }
+            else {
+                let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+                let Maybe::Present(Piece::Operand(target)) = cursor.read()
+                else {
+                    return Ok(Planned(false));
+                };
+                let (Maybe::Present(_dot), Maybe::Present(selected)) =
+                    (cursor.tile(TileName::DOT), cursor.tile(TileName::NUMBER))
+                else {
+                    return Ok(Planned(false));
+                };
+                (target, selected, true)
+            };
         if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
             return Ok(Planned(false));
         }
@@ -2263,24 +2285,35 @@ impl<'source> Lowerer<'_, 'source>
         let label = self.name_at(selected);
         let (index, count) =
             match self.stated_entries(site, declared, Former::LazyRecordType, Thunked(true))? {
-                Maybe::Present(stated) => (
-                    Self::labelled_in(&stated, label, selected)?.0.0,
-                    stated.len(),
-                ),
+                Maybe::Present(stated) => {
+                    let Place(index) = if numbered {
+                        Self::positioned(label, selected, &stated)?
+                    }
+                    else {
+                        Self::labelled_in(&stated, label, selected)?.0
+                    };
+                    (index, stated.len())
+                },
                 Maybe::Absent(_) => {
                     let Maybe::Present(observed) =
                         self.stated_observations(site, (declared, frame), Thunked(true))?
                     else {
                         return Ok(Planned(false));
                     };
-                    let Some(index) = observed
-                        .iter()
-                        .position(|held| held.as_ref() == label.as_ref())
+                    let index = if numbered {
+                        Self::positioned(label, selected, &observed)?.0
+                    }
                     else {
-                        return Err(LoweringRefusal::UnresolvedName {
-                            span: selected.span,
-                            name: label,
-                        });
+                        let Some(index) = observed
+                            .iter()
+                            .position(|held| held.as_ref() == label.as_ref())
+                        else {
+                            return Err(LoweringRefusal::UnresolvedName {
+                                span: selected.span,
+                                name: label,
+                            });
+                        };
+                        index
                     };
                     (index, observed.len())
                 },
@@ -2290,6 +2323,41 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Observe(target.node, Observed { index, count }));
 
         Ok(Planned(true))
+    }
+
+    /// The entry the position `name`, written at `written`, places among
+    /// `among`.
+    ///
+    /// # Specification
+    /// - requires: `name` is a number's text.
+    /// - ensures: the place the number counts from zero, below the length of
+    ///   `among`.
+    /// - fails: the unresolved-name refusal at `written` for a number at or
+    ///   past that length.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnresolvedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::observation`].
+    /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| place.0 < among.len()))]
+    fn positioned<Entered>(
+        name: SurfaceName<'source>,
+        written: Placed,
+        among: &[Entered],
+    ) -> Result<Place, LoweringRefusal<'source>>
+    {
+        name.as_ref()
+            .parse::<usize>()
+            .ok()
+            .filter(|&place| place < among.len())
+            .map(Place)
+            .ok_or(LoweringRefusal::UnresolvedName {
+                span: written.span,
+                name,
+            })
     }
 
     /// Classify a selection `p.l` as a projection when `p` is a name whose

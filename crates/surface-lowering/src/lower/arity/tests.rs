@@ -1175,6 +1175,60 @@ fn an_observation_projects_its_entry()
 }
 
 #[test]
+fn an_observation_by_position_projects_its_entry_941()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef labelled(m : +U \
+         &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.b }\ndef placed(m : +U &{a \
+         : -F Integer, b : -F Integer}) -> -F Integer { become m.1 }\ndef chained(m : +U (-F \
+         Integer & -F String & -F Integer)) -> -F Integer { become m.2 }\ndef named(t : +U \
+         Trio) -> -F Integer { become t.b }\ndef counted(t : +U Trio) -> -F Integer { become \
+         t.1 }\n",
+        &mut arena,
+    );
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter(|token| token.starts_with("project") || token == "force")
+            .collect()
+    };
+
+    assert_eq!(
+        observed("placed"),
+        observed("labelled"),
+        "a lazy record's entry by position is the entry its label names"
+    );
+    assert_eq!(
+        observed("placed"),
+        ["project1", "force"],
+        "the position counts from zero"
+    );
+    assert_eq!(
+        observed("chained"),
+        ["project2", "force"],
+        "a lazy product chain's component is observed by its position"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("named"),
+        "a codata family's observation by position is the one its label names"
+    );
+    let source = "def past(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.2 }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("2")),
+        "a position past the last component is unresolved: {:?}",
+        refused(source)
+    );
+    let source = "def lacked(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.a }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("a")),
+        "a lazy product chain has no labels: {:?}",
+        refused(source)
+    );
+}
+
+#[test]
 fn a_telescope_binds_each_entry_in_the_ones_after_it()
 {
     let mut arena = CoreArena::new();
