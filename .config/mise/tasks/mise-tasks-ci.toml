@@ -751,7 +751,10 @@ done <<< "$landings"
 # (#1556), and a top carrying it is refused: stacked on, it would stop being
 # the top under the landing, which then refuses and starts again from the
 # new top, a whole checks cycle later. Once the chain is queued, the label is
-# gone and the new pull request opens on the trunk.
+# gone and the new pull request opens on the trunk. The top is read at the
+# start and again just before the push (#1601): the obligations step between
+# takes about a minute, and a `pr:land` started on the top inside it holds
+# the top a few seconds in. A top held or changed by then is refused.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -837,6 +840,17 @@ fi
 if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
+fi
+if [[ -z "$unblocks" ]]; then
+  now=$(stack_top "$own")
+  if [[ $(jq -r '.held // false' <<< "$now") == true ]]; then
+    echo "the stack top #$(jq -r .number <<< "$now") began landing while the obligations were measured; wait for the queue (the coordinator pages it), then pr:open opens on $trunk" >&2
+    exit 2
+  fi
+  if [[ $(jq -r '.number // empty' <<< "$now") != $(jq -r '.number // empty' <<< "$top") ]]; then
+    echo "the stack top moved from #$(jq -r '.number // "none"' <<< "$top") to #$(jq -r '.number // "none"' <<< "$now") while the obligations were measured; run \`pr:open\` again" >&2
+    exit 2
+  fi
 fi
 git push --quiet --force-with-lease -u origin HEAD
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body")
