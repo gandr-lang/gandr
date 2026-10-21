@@ -771,7 +771,7 @@ pub enum RefusalName
     /// A capability scope's answer naming a value kept in the scope's region.
     KeptEscaped,
     /// A held slot read, accessed or consumed after a consumed receiver ended
-    /// its hold, or consumed on one branch and not on another.
+    /// its hold, or consumed on one arm of an offer and not on another.
     HeldConsumed,
     /// A codata application whose head names no admitted codata declaration.
     CodataUndeclared,

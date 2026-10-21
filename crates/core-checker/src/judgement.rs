@@ -2022,6 +2022,12 @@ enum Frame
     },
     /// Await the cell branch's check, then close its two binders.
     ListCaseCons,
+    /// An arm of a case whose arms join a held value has checked, with another
+    /// to come: give the next arm the held slots as the case found them.
+    ArmEnded(session::ZoneMark),
+    /// The last arm of a case whose arms join a held value has checked: leave
+    /// each held slot consumed when any arm consumed it.
+    ArmsJoined(session::ZoneMark),
     /// A force waits on the type its value synthesises, which must be a thunk
     /// type; the force has the thunk's body.
     Force
@@ -2452,7 +2458,9 @@ impl Frame
             Self::CaseScrutinee { .. } => FrameRole::CaseScrutinee,
             Self::SplitScrutinee { .. } => FrameRole::SplitScrutinee,
             Self::SplitBody { .. } => FrameRole::SplitBody,
-            Self::CaseBranch { .. } => FrameRole::CaseBranch,
+            Self::CaseBranch { .. } | Self::ArmEnded(_) | Self::ArmsJoined(_) => {
+                FrameRole::CaseBranch
+            },
             Self::ListCaseScrutinee { .. } => FrameRole::ListCaseScrutinee,
             Self::ListCaseNil { .. } => FrameRole::ListCaseNil,
             Self::ListCaseCons => FrameRole::ListCaseCons,
@@ -2604,6 +2612,8 @@ impl Frame
             | Self::CaseScrutinee { .. }
             | Self::SplitScrutinee { .. }
             | Self::CaseBranch { .. }
+            | Self::ArmEnded(_)
+            | Self::ArmsJoined(_)
             | Self::ListCaseScrutinee { .. }
             | Self::ListCaseNil { .. }
             | Self::Force { .. }
@@ -3065,6 +3075,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::SplitScrutinee { .. }
                 | Frame::SplitBody { .. }
                 | Frame::CaseBranch { .. }
+                | Frame::ArmEnded(_)
+                | Frame::ArmsJoined(_)
                 | Frame::ListCaseScrutinee { .. }
                 | Frame::ListCaseNil { .. }
                 | Frame::ListCaseCons
@@ -8291,6 +8303,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let expected =
                     shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32))
                         .settle(self.context.arena_mut());
+                let joining = self.arms_opened();
                 let Some(case) = self.context.arena().computation(at)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
@@ -8308,6 +8321,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     });
                 }
                 let owner = self.owner;
+                if let session::Joining::Joined(zones) = joining {
+                    self.frames.push(Waiting {
+                        frame: Frame::ArmsJoined(zones),
+                        owner,
+                    });
+                }
                 for (index, &branch) in branches.iter().enumerate().rev() {
                     let summand = match summands {
                         Components::Known(ref parts) => {
@@ -8323,6 +8342,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         },
                         owner,
                     });
+                    if let session::Joining::Joined(zones) = joining
+                        && index > 0
+                    {
+                        self.frames.push(Waiting {
+                            frame: Frame::ArmEnded(zones),
+                            owner,
+                        });
+                    }
                 }
                 Ok(Step::Ascend(Produced::Checked))
             },
@@ -8398,12 +8425,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
+                let joining = self.arms_opened();
+                if let session::Joining::Joined(zones) = joining {
+                    self.wait(Frame::ArmsJoined(zones));
+                }
                 self.wait(Frame::ListCaseNil {
                     at,
                     element,
                     tail,
                     expected,
                 });
+                if let session::Joining::Joined(zones) = joining {
+                    self.wait(Frame::ArmEnded(zones));
+                }
                 Ok(Step::Descend(Goal::Computation {
                     term: on_nil,
                     direction: Direction::Check(expected),
@@ -8438,6 +8472,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
             (Frame::ListCaseCons, Produced::Checked) => {
                 self.close()?;
                 self.close()?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            (Frame::ArmEnded(zones), Produced::Checked) => {
+                self.arm_ended(zones)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            (Frame::ArmsJoined(zones), Produced::Checked) => {
+                self.arms_joined(zones)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::Force { value }, Produced::ValueType(synthesised)) => {
@@ -8913,6 +8955,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::TelescopeMotive { .. }
                 | Frame::TelescopeStart { .. }
                 | Frame::CaseBranch { .. }
+                | Frame::ArmEnded(_)
+                | Frame::ArmsJoined(_)
                 | Frame::ListCaseNil { .. }
                 | Frame::ListCaseCons
                 | Frame::ApplicationArgument { .. }

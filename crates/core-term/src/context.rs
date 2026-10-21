@@ -169,6 +169,56 @@ impl LinearZone
     {
         self.0.iter().map(|slot| (slot.declared, slot.use_state))
     }
+
+    /// This snapshot with each slot `take` accepts carrying `other`'s use
+    /// there: `take` reads the slot's position, the slots outside it counted,
+    /// and `other`'s use at it. Every other slot, and every slot past `other`'s
+    /// depth, keeps its own use; no declared type or world changes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as many slots as `self`, each `self`'s but for its use, which
+    ///   is `other`'s at a position `other` holds and `take` accepts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot taken, a slot passed over and a slot past the
+    ///   other snapshot's depth, each read by its use.
+    /// - witness: `context::tests::a_snapshot_takes_the_uses_it_names_from_another_1488`
+    #[spec(ensures: |ret| ret.0.len() == self.0.len()
+        && ret.0.iter().zip(&self.0).enumerate().all(|(position, (taken, own))| {
+            let theirs = other.0.get(position).map(|slot| slot.use_state);
+            taken.declared == own.declared
+                && taken.world == own.world
+                && taken.use_state == match theirs {
+                    | Some(theirs) if take(BinderDepth(position), theirs) => theirs,
+                    | Some(_) | None => own.use_state,
+                }
+        }))]
+    #[inline]
+    #[must_use]
+    pub fn taking<Take>(
+        &self,
+        other: &Self,
+        take: Take,
+    ) -> Self
+    where
+        Take: Fn(BinderDepth, LinearUse) -> bool,
+    {
+        Self(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(position, &own)| match other.0.get(position) {
+                    Some(theirs) if take(BinderDepth(position), theirs.use_state) => LinearSlot {
+                        use_state: theirs.use_state,
+                        ..own
+                    },
+                    Some(_) | None => own,
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Why a context operation was refused.

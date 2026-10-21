@@ -274,6 +274,45 @@ fn a_restored_snapshot_undoes_uses_and_advances()
     );
 }
 
+/// #1488: a snapshot takes another's use at the slots it names and keeps its
+/// own elsewhere, the slot past the other's depth included.
+#[test]
+fn a_snapshot_takes_the_uses_it_names_from_another_1488()
+{
+    let (_arena, declared, _other) = two_types();
+    let mut context = Context::new();
+    context.open(Zone::Linear, declared);
+    context.open(Zone::Linear, declared);
+    let found = context.linear_zone();
+    assert_eq!(Ok(declared), context.move_out(DeBruijnIndex::from(1_u32)));
+    assert_eq!(
+        Ok(declared),
+        context.occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+    );
+    context.open(Zone::Linear, declared);
+    let left = context.linear_zone();
+    let outermost = BinderDepth::from(0_usize);
+    let restored = left.taking(&found, |position, _| position == outermost);
+    assert_eq!(
+        [
+            (declared, LinearUse::Available),
+            (declared, LinearUse::Consumed),
+            (declared, LinearUse::Available),
+        ],
+        *restored.slots().collect::<alloc::vec::Vec<_>>(),
+        "the outermost slot takes the found use; the others keep their own"
+    );
+    let joined = found.taking(&left, |_, theirs| theirs == LinearUse::Moved);
+    assert_eq!(
+        [
+            (declared, LinearUse::Moved),
+            (declared, LinearUse::Available)
+        ],
+        *joined.slots().collect::<alloc::vec::Vec<_>>(),
+        "only the moved slot is taken, and the snapshot keeps its own depth"
+    );
+}
+
 #[test]
 fn truncating_drops_unspent_slots_without_refusal()
 {
