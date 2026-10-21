@@ -2354,6 +2354,38 @@ fn a_quoted_record_type_is_quoted_1459()
     }
 }
 
+/// #1514: a telescope type quoted where an expression stands is written
+/// `type(#{…})` in both forms, alone and as an argument: `#{a : A, b : B}`
+/// where an expression is read is a pack, not the telescope's code.
+#[test]
+fn a_quoted_telescope_type_is_quoted_1514()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let second = core.value_type_path(integer, first, first);
+    let telescope = core.value_type_sigma(integer, second);
+    let telescope = core.value_quote(telescope);
+    let argument = core.value_stay(telescope);
+    let source = CoreSource::new(&core, &[]);
+    for (root, spelling) in [
+        (telescope, "type(#{a : Integer, b : Path(Integer, a, a)})"),
+        (
+            argument,
+            "stay(type(#{a : Integer, b : Path(Integer, a, a)}))",
+        ),
+    ] {
+        for form in [Form::Sugared, Form::Explicit] {
+            let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #1127: an expression reads a sugared chain's `*`, `+` and `&` as
 /// operators over the components, so a quoted product, sum or lazy product
 /// of two or more components is written `type(T)` where an expression

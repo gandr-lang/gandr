@@ -5289,16 +5289,17 @@ impl Walk<'_, '_>
     /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
     /// the sugared form, as a chain an expression reads as arithmetic; a
-    /// labelled record type `#{a : A}`, whose entries an expression does not
-    /// read; or a product written as such a chain, `A * B`.
+    /// labelled record type `#{a : A}` or a telescope type `#{a : A, b : B}`,
+    /// whose entries an expression does not read; or a product written as such
+    /// a chain, `A * B`.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
     /// - ensures: true exactly when `node` reads as a session type whose
     ///   state's own node is a receive, a selection or an offer; as a sum of
     ///   one or more components that is not `Bool`; as a lazy product or a
-    ///   labelled record type of one or more components; or, in the sugared
-    ///   form, as a product of two or more components.
+    ///   labelled record type of one or more components; as a telescope type;
+    ///   or, in the sugared form, as a product of two or more components.
     /// - provides: the heads [`Self::unread_as_expression`] looks for.
     /// - fails: never.
     /// - panics: none.
@@ -5312,6 +5313,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
     /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
     /// - witness: `tests::goldens::a_quoted_record_type_is_quoted_1459`
+    /// - witness: `tests::goldens::a_quoted_telescope_type_is_quoted_1514`
     #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
         | Former::Session { protocol, state, .. } => matches!(
             protocol.node(state),
@@ -5319,6 +5321,7 @@ impl Walk<'_, '_>
         ),
         | Former::Sum(arity) => usize::from(arity) >= 1_usize && named_sum(source, node).is_none(),
         | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
+        | Former::Sigma { .. } => true,
         | Former::Product(arity) => self.form == Form::Sugared && usize::from(arity) >= 2_usize,
         | _ => false,
     })]
@@ -5349,6 +5352,11 @@ impl Walk<'_, '_>
         }
         else if let Former::With(arity) | Former::RecordType(arity) = former {
             usize::from(arity) >= 1_usize
+        }
+        // A telescope type is written between a record type's braces, which an
+        // expression reads as a pack.
+        else if let Former::Sigma { .. } = former {
+            true
         }
         // `#{A, B}` reads as the product's code, `A * B` as the product of two
         // codes.
