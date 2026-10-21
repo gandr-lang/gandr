@@ -226,6 +226,7 @@ pub use crate::session::Resumed;
 pub use crate::session::Session;
 pub use crate::session::SessionFault;
 pub use crate::session::Submission;
+pub use crate::session::Tables;
 pub use crate::session::Trial;
 pub use crate::session::admission;
 pub use crate::session::admitted;

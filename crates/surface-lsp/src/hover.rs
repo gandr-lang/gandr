@@ -182,10 +182,12 @@ use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::ClosureKey;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::complete::Names;
@@ -379,22 +381,30 @@ pub fn hovering<Store, Blocks>(
         text,
         path,
         session,
-        &lay_out_shadowed(session.grammar(), path, classify(path), text, shadows),
+        (
+            &lay_out_shadowed(session.grammar(), path, classify(path), text, shadows),
+            None,
+        ),
     )
 }
 
 /// What the hovers of `text`, the document at `path` that `session` judges,
-/// laid out as `laid`, read: one typed run per text, rather than one per hover.
+/// laid out as `laid`, read: one typed run per text, rather than one per hover,
+/// and none when the judgement of `text` kept its table (`judged`).
 ///
 /// # Specification
 /// - requires: `laid` is the lay-out of `text` at `path` over its import
-///   closure, or why it has none.
-/// - ensures: the type table [`Session::type_held_unit`] answers over `laid`
-///   when `text` imports a sibling by path — typed after the closure's
-///   judgement when the process holds it — beside the closure's paths, else
-///   [`TypeTable::of_parsed`] over `text` parsed through `session`'s form store
-///   ([`Session::parse_held`]), beside no path; the store is left as it was,
-///   and the table is empty when the text did not parse.
+///   closure, or why it has none; `judged` is the table the judgement of that
+///   lay-out kept
+///   ([`Submission::take_table`](gandr_surface_session::Submission::take_table)),
+///   or nothing.
+/// - ensures: `judged` when it is held, else the type table
+///   [`Session::type_held_unit`] answers over `laid` when `text` imports a
+///   sibling by path — typed after the closure's judgement when the process
+///   holds it — beside the closure's paths, else [`TypeTable::of_parsed`] over
+///   `text` parsed through `session`'s form store ([`Session::parse_held`]),
+///   beside no path; the store is left as it was, and the table is empty when
+///   the text did not parse.
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
@@ -415,37 +425,42 @@ pub fn hovering<Store, Blocks>(
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
 /// - witness: `server::tests::a_hover_reads_the_lay_out_its_recheck_made_1403`
+/// - witness: `recheck::tests::sweeps::a_recheck_keeps_the_table_its_hover_types_1521`
 #[must_use]
 pub fn hovering_laid<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
     session: &Session<Store, Blocks>,
-    laid: &Maybe<Laid, laid::Absent>,
+    (laid, judged): (&Maybe<Laid, laid::Absent>, Option<TypeTable>),
 ) -> Hovering
 {
     let grammar = session.grammar();
     let (typed, paths, targets) = match *laid {
         Maybe::Present(ref laid) => {
             let mut signatures = Signatures::default();
-            let table = session.type_held_unit(
-                SourceText::from(laid.text.as_str()),
-                (&laid.unit, laid.base),
-                |tree, closure| {
-                    if let Ok(roles) = roles() {
-                        signatures = closure.as_ref().map_or_else(
-                            || Signatures::of(grammar, roles, tree, &laid.unit),
-                            |closure| {
-                                Signatures::after(
-                                    grammar,
-                                    roles,
-                                    (tree, &laid.unit, laid.base),
-                                    closure,
-                                )
-                            },
-                        );
-                    }
+            let read = |tree: &SyntaxTree<'_>, closure: Option<ClosureKey>| {
+                if let Ok(roles) = roles() {
+                    signatures = closure.as_ref().map_or_else(
+                        || Signatures::of(grammar, roles, tree, &laid.unit),
+                        |closure| {
+                            Signatures::after(
+                                grammar,
+                                roles,
+                                (tree, &laid.unit, laid.base),
+                                closure,
+                            )
+                        },
+                    );
+                }
+            };
+            let revision = SourceText::from(laid.text.as_str());
+            let table = match judged {
+                Some(table) => {
+                    let _parsed = session.read_held_unit(revision, (&laid.unit, laid.base), read);
+                    Some(table)
                 },
-            );
+                None => session.type_held_unit(revision, (&laid.unit, laid.base), read),
+            };
             let targets = laid
                 .unit
                 .sources()
@@ -458,19 +473,21 @@ pub fn hovering_laid<Store, Blocks>(
                 targets,
             )
         },
-        Maybe::Absent(_) => (
-            session.parse_held(text).ok().and_then(|parsed| {
-                let signatures = roles().map_or_else(
-                    |_| Signatures::default(),
-                    |roles| Signatures::of(grammar, roles, parsed.tree(), &Unit::single()),
-                );
-                TypeTable::of_parsed(grammar, parsed)
-                    .ok()
-                    .map(|table| (table, signatures))
-            }),
-            Vec::new(),
-            Vec::new(),
-        ),
+        Maybe::Absent(_) => {
+            let parsed = session.parse_held(text).ok();
+            let signatures = parsed
+                .as_ref()
+                .zip(roles().ok())
+                .map_or_else(Signatures::default, |(parsed, roles)| {
+                    Signatures::of(grammar, roles, parsed.tree(), &Unit::single())
+                });
+            let table = judged.or_else(|| TypeTable::of_parsed(grammar, parsed?).ok());
+            (
+                table.map(|table| (table, signatures)),
+                Vec::new(),
+                Vec::new(),
+            )
+        },
     };
     let (table, signatures) = typed.unwrap_or_default();
     Hovering {

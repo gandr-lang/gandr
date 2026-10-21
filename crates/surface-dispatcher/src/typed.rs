@@ -99,6 +99,7 @@ use gandr_core_checker::Formed;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypedModule;
 use gandr_core_checker::Typings;
 use gandr_core_checker::level_of;
 use gandr_core_checker::type_module;
@@ -129,6 +130,7 @@ use gandr_core_term::session::Step;
 use gandr_core_term::shift_value;
 use gandr_core_term::shift_value_type_under;
 use gandr_core_term::strengthen_value_type;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
@@ -786,6 +788,156 @@ fn own(
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
 }
 
+/// Each type `module` writes from `base` on, with its origin and the sort of
+/// the universe it lies in: the types a table answers at their universe.
+///
+/// A transport's written motive is a written type: the family it denotes. So
+/// is a decode, the type a code written where a type is read denotes.
+///
+/// # Specification
+/// - requires: `arena` holds `module`'s nodes.
+/// - ensures: every value type and stand-in, then every computation type, then
+///   every transport's motive the lowering wrote at or after `base`, written or
+///   inserted as a decode, in the origin table's order.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a projection of the origin table, read back by the
+///   table's universe entries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source writing a value type, a computation type and a
+///   transport answers each at its universe.
+/// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+pub fn written_types(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    base: ByteOffset,
+) -> Vec<(TypeNode, Origin, GroundSort)>
+{
+    let origins = module.origins();
+    let value_types = origins
+        .value_types()
+        .iter()
+        .chain(origins.stand_ins())
+        .map(|&(id, origin)| (TypeNode::Value(id), origin, GroundSort::Value));
+    let comp_types = origins
+        .comp_types()
+        .iter()
+        .map(|&(id, origin)| (TypeNode::Computation(id), origin, GroundSort::Computation));
+    let motives = origins.motives().iter().filter_map(|&(transport, origin)| {
+        match arena.computation(transport) {
+            Some(
+                &(Computation::PathTransport { motive, .. } | Computation::Ride { motive, .. }),
+            ) => Some((TypeNode::Value(motive), origin, GroundSort::Value)),
+            _ => None,
+        }
+    });
+    value_types
+        .chain(comp_types)
+        .chain(motives)
+        .filter(|&(_, origin, _)| {
+            origin.span().start() >= base
+                && matches!(
+                    origin.provenance(),
+                    Provenance::Written | Provenance::Inserted(Insertion::Decode)
+                )
+        })
+        .collect()
+}
+
+/// The types of `written` whose first formation a typed run keeps, each
+/// once, ascending.
+///
+/// # Specification
+/// trivial.
+pub fn wanted_types(written: &[(TypeNode, Origin, GroundSort)]) -> Vec<TypeNode>
+{
+    let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
+    wanted.sort_unstable();
+    wanted.dedup();
+    wanted
+}
+
+/// What a table reads off a typed run of a module's declarations while the
+/// run's context is live.
+///
+/// # Specification
+/// - executable: none — a data type; [`TypeTable::assemble`] reads it.
+pub struct TypedRun
+{
+    /// The types each declaration's run formed and judged, and its refusal.
+    typed: TypedModule,
+    /// The data signatures the run formed, by admission position.
+    signatures: BTreeMap<ConstantIndex, Arc<DataSignature>>,
+    /// The bodies a code constant unfolds to.
+    definitions: CodeDefinitions,
+    /// Each written type whose level was read, with its origin, the sort of
+    /// its universe and that level.
+    levels: Vec<(Origin, GroundSort, Level)>,
+}
+
+impl TypedRun
+{
+    /// What a table reads off the run `context` holds, which kept `typed`
+    /// and the first formation of each type [`wanted_types`] names of
+    /// `written`.
+    ///
+    /// Each written type answers at its universe: the level the typed run
+    /// formed it at under the binders it was formed under, the first
+    /// formation kept; a written type no kept formation reached — formed by a
+    /// rule that forms it outside a formation goal — at the level it reads
+    /// closed; a type at neither is not answered.
+    ///
+    /// # Specification
+    /// - requires: `context` judged the declarations `typed` keeps, keeping the
+    ///   formations [`wanted_types`] names of `written`.
+    /// - ensures: the run's data signatures and definitions, and the level of
+    ///   each written type whose level was read, in `written`'s order.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — a read of the context, compared whole by the
+    ///   witness of [`TypeTable::assemble`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TypeTable::assemble`].
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    pub fn read(
+        context: &CheckingContext<'_>,
+        typed: TypedModule,
+        written: Vec<(TypeNode, Origin, GroundSort)>,
+    ) -> Self
+    {
+        let signatures = context.data_signatures().clone();
+        let definitions = context.definitions().clone();
+        // Each wanted type is formed at most once, so the formations sorted by
+        // type find a written type's own by search; the stable sort keeps the
+        // first should a type appear twice.
+        let mut formed: Vec<&Formed> = typed.typings().values().flat_map(Typings::formed).collect();
+        formed.sort_by_key(|formation| formation.ty);
+        formed.dedup_by_key(|formation| formation.ty);
+        let mut levels = Vec::new();
+        for (node, origin, sort) in written {
+            let level = match formed.binary_search_by_key(&node, |formation| formation.ty) {
+                Ok(at) => match formed.get(at) {
+                    Some(formation) => formation.level.clone(),
+                    None => continue,
+                },
+                Err(_) => match level_of(context, node) {
+                    Ok(level) => level,
+                    Err(_) => continue,
+                },
+            };
+            levels.push((origin, sort, level));
+        }
+        Self {
+            typed,
+            signatures,
+            definitions,
+            levels,
+        }
+    }
+}
+
 impl TypeTable
 {
     /// Type every node of `source` a face can point at.
@@ -1042,85 +1194,65 @@ impl TypeTable
             };
         };
         let declarations = adapt(&module);
-        let origins = module.origins();
-        // Each written type at its universe: the level the typed run formed it
-        // at under the binders it was formed under, the first formation kept;
-        // a written type no kept formation reached — formed by a rule that
-        // forms it outside a formation goal — at the level it reads closed. A
-        // transport's written motive is a written type: the family it denotes.
-        // So is a decode, the type a code written where a type is read
-        // denotes. The run keeps the formations of these types alone, and
-        // only a type written in the last source answers.
-        let value_types = origins
-            .value_types()
-            .iter()
-            .chain(origins.stand_ins())
-            .map(|&(id, origin)| (TypeNode::Value(id), origin, GroundSort::Value));
-        let comp_types = origins
-            .comp_types()
-            .iter()
-            .map(|&(id, origin)| (TypeNode::Computation(id), origin, GroundSort::Computation));
-        let motives = origins.motives().iter().filter_map(|&(transport, origin)| {
-            match arena.computation(transport) {
-                Some(
-                    &(Computation::PathTransport { motive, .. } | Computation::Ride { motive, .. }),
-                ) => Some((TypeNode::Value(motive), origin, GroundSort::Value)),
-                _ => None,
-            }
-        });
-        let written: Vec<(TypeNode, Origin, GroundSort)> = value_types
-            .chain(comp_types)
-            .chain(motives)
-            .filter(|&(_, origin, _)| {
-                origin.span().start() >= base
-                    && matches!(
-                        origin.provenance(),
-                        Provenance::Written | Provenance::Inserted(Insertion::Decode)
-                    )
-            })
-            .collect();
-        let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
-        wanted.sort_unstable();
-        wanted.dedup();
+        let written = written_types(&module, &arena, base);
+        let wanted = wanted_types(&written);
         let after = match checking {
             Checking::After(closure) => closure.led(&declarations),
             Checking::Whole => None,
         };
-        let (mut context, own_declarations) = match after {
-            Some((checkpoint, closure)) => (
-                CheckingContext::resume(&mut arena, checkpoint.clone()),
-                declarations.get(closure.len() ..).unwrap_or_default(),
-            ),
-            None => (
-                CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-                declarations.as_slice(),
-            ),
-        };
-        context.keep_formations(Formations::Firsts(wanted));
-        let typed = type_module(&mut context, own_declarations);
-        let signatures = context.data_signatures().clone();
-        let definitions = context.definitions().clone();
-        // Each wanted type is formed at most once, so the formations sorted by
-        // type find a written type's own by search; the stable sort keeps the
-        // first should a type appear twice.
-        let mut formed: Vec<&Formed> = typed.typings().values().flat_map(Typings::formed).collect();
-        formed.sort_by_key(|formation| formation.ty);
-        formed.dedup_by_key(|formation| formation.ty);
-        let mut universes = Vec::new();
-        for (node, origin, sort) in written {
-            let level = match formed.binary_search_by_key(&node, |formation| formation.ty) {
-                Ok(at) => match formed.get(at) {
-                    Some(formation) => formation.level.clone(),
-                    None => continue,
-                },
-                Err(_) => match level_of(&context, node) {
-                    Ok(level) => level,
-                    Err(_) => continue,
-                },
+        let run = {
+            let (mut context, own_declarations) = match after {
+                Some((checkpoint, closure)) => (
+                    CheckingContext::resume(&mut arena, checkpoint.clone()),
+                    declarations.get(closure.len() ..).unwrap_or_default(),
+                ),
+                None => (
+                    CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+                    declarations.as_slice(),
+                ),
             };
-            universes.push((origin, sort, level));
-        }
-        let universes: Vec<(Origin, TypeNode)> = universes
+            context.keep_formations(Formations::Firsts(wanted));
+            let typed = type_module(&mut context, own_declarations);
+            TypedRun::read(&context, typed, written)
+        };
+        Self::assemble(source, (module, arena), run, (unit, base))
+    }
+
+    /// The table of `module`, the source `unit` lays out with its last source
+    /// starting at `base`, lowered into `arena`, from what `run` read off the
+    /// typed run of its declarations.
+    ///
+    /// # Specification
+    /// - requires: `module` lowers `source` over `unit` into `arena`; `run` was
+    ///   read by [`TypedRun::read`] off a typed run of `module`'s declarations
+    ///   over `arena`, every declaration after a closure leading them, keeping
+    ///   the formations [`wanted_types`] names.
+    /// - ensures: the table [`typed`](Self::typed) builds of a run of `module`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`of_unit`](Self::of_unit), which types through
+    ///   this.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a table assembled from a judgement's typed run is the
+    ///   table [`of_unit`](Self::of_unit) builds of the same source.
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `tests::corpus::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
+    pub(crate) fn assemble(
+        source: SourceText<'_>,
+        (module, mut arena): (LoweredModule<'_>, CoreArena),
+        run: TypedRun,
+        (unit, base): (&Unit, ByteOffset),
+    ) -> Self
+    {
+        let TypedRun {
+            typed,
+            signatures,
+            definitions,
+            levels,
+        } = run;
+        let origins = module.origins();
+        let universes: Vec<(Origin, TypeNode)> = levels
             .into_iter()
             .map(|(origin, sort, level)| {
                 let universe = arena.value_type_universe(Sort::Ground(sort), level);

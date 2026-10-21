@@ -168,6 +168,7 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::Formations;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
@@ -236,6 +237,10 @@ use crate::component::Member;
 use crate::evaluate::Focused;
 use crate::evaluate::Program;
 use crate::exercised::Exercised;
+use crate::typed::TypeTable;
+use crate::typed::TypedRun;
+use crate::typed::wanted_types;
+use crate::typed::written_types;
 
 /// How many sources a run has lowered.
 #[repr(transparent)]
@@ -1970,17 +1975,97 @@ pub fn judge_member_after<'source>(
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
     };
-    let (projected, admission) = judge_members(
+    let (projected, admission, _untabled) = judge_members(
         root,
         (module, text),
         arena,
         (grant, checking),
         (&[], last),
-        &mut SpellingCount::default(),
+        (&mut SpellingCount::default(), Tabling::Untabled),
     );
     Judged {
         settled: projected.last,
         admission,
+    }
+}
+
+/// [`judge_member_after`], keeping the type table of the module's own
+/// source — the source of `unit` starting at `base` — from the judgement's
+/// own run.
+///
+/// # Specification
+/// - requires: as [`judge_member_after`]; `module` lowers `text` over `unit`.
+/// - ensures: the judgement [`judge_member_after`] makes, each declaration
+///   judged decided as [`type_module`](gandr_core_checker::type_module) decides
+///   it; and the table of the source at `base`, answering each position as
+///   [`TypeTable::of_parsed_after`] or [`TypeTable::of_parsed_unit`] answers it
+///   over the same lowering.
+/// - provides: a document's type table at the cost of typing its bodies as
+///   written, beside the judgement that checks them.
+/// - fails: never; a settle fault is carried, and the table still made.
+/// - panics: none.
+/// - executable: none — the table's agreement with one typed alone is a claim
+///   about a second typing the call never makes; the witness makes it over the
+///   corpus.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source judged with its table answers each
+///   position as its table typed alone does, and settles as it settles without
+///   one.
+/// - witness: `tests::corpus::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
+#[inline]
+pub fn judge_member_tabled<'source>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    (unit, base): (&Unit, ByteOffset),
+) -> (Judged<'source>, Maybe<TypeTable, tabled::Absent>)
+{
+    let last = Member {
+        start: base,
+        end: ByteOffset::from(text.as_ref().len()),
+    };
+    let (projected, admission, table) = judge_members(
+        root,
+        (module, text),
+        arena,
+        (grant, checking),
+        (&[], last),
+        (&mut SpellingCount::default(), Tabling::Tabled(unit)),
+    );
+    (
+        Judged {
+            settled: projected.last,
+            admission,
+        },
+        table,
+    )
+}
+
+/// Whether a judgement keeps the type table of the source it judges last.
+#[derive(Clone, Copy, Debug)]
+enum Tabling<'unit>
+{
+    /// The judgement keeps no table.
+    Untabled,
+    /// The judgement keeps the table of the last source of the unit.
+    Tabled(&'unit Unit),
+}
+
+/// Why a judgement holds no type table.
+pub mod tabled
+{
+    /// The reason a judgement holds no type table.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Absent
+    {
+        /// The judgement was not asked to keep one.
+        Untabled,
+        /// The lowering refused the source whole, so nothing was typed.
+        RefusedWhole,
+        /// The holder handed its table on.
+        Taken,
     }
 }
 
@@ -2034,7 +2119,12 @@ struct Share<'source>
 ///   source's. The admission holds the arena, the verdicts and the unit's
 ///   structured names. `spelled` advances once when the unit settles: its one
 ///   spelling pass. The checker holds every hole the unit's patterns were
-///   written with, so a match whose tree leaves an arm to one is refused.
+///   written with, so a match whose tree leaves an arm to one is refused. Under
+///   [`Tabling::Tabled`], each declaration judged is decided as
+///   [`type_module`](gandr_core_checker::type_module) decides it, keeping the
+///   first formation of every type the last source writes, and the table of the
+///   last source is assembled from that run over copies of the module and the
+///   arena as the run left them; otherwise no table is.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 /// - intension: one check, one program, one settle comparison and one spelling
@@ -2063,8 +2153,12 @@ fn judge_members<'source>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    spelled: &mut SpellingCount,
-) -> (Projected<'source>, Admission)
+    (spelled, tabling): (&mut SpellingCount, Tabling<'_>),
+) -> (
+    Projected<'source>,
+    Admission,
+    Maybe<TypeTable, tabled::Absent>,
+)
 {
     let declarations = adapt(&module);
     let entry = grant.entry(&declared_worlds(&module));
@@ -2079,26 +2173,47 @@ fn judge_members<'source>(
         }),
         Checking::Whole => None,
     };
-    let verdicts = if let Some(closure) = after {
-        let mut context = CheckingContext::resume(&mut arena, closure.checkpoint.clone());
-        context.keep_pattern_holes(&holes);
-        let mut run = closure.run.clone();
-        run.judge(
-            &mut context,
-            declarations
+    let written = match tabling {
+        Tabling::Tabled(_) => Some(written_types(&module, &arena, last.start)),
+        Tabling::Untabled => None,
+    };
+    let (verdicts, read) = {
+        let (mut context, mut run, judged) = if let Some(closure) = after {
+            let context = CheckingContext::resume(&mut arena, closure.checkpoint.clone());
+            let judged = declarations
                 .get(closure.declarations.len() ..)
-                .unwrap_or_default(),
-            |_, _, _| {},
-        );
-        run.finish(&mut context)
-    }
-    else {
-        let grants = grant.grants(&mut arena);
-        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        context.grant(grants);
-        context.enter_at(entry);
+                .unwrap_or_default();
+            (context, closure.run.clone(), judged)
+        }
+        else {
+            let grants = grant.grants(&mut arena);
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            context.grant(grants);
+            context.enter_at(entry);
+            (context, ModuleRun::new(), declarations.as_slice())
+        };
         context.keep_pattern_holes(&holes);
-        check_module(&mut context, &declarations)
+        if let Some(ref written) = written {
+            run.keep_typings();
+            context.keep_formations(Formations::Firsts(wanted_types(written)));
+        }
+        run.judge(&mut context, judged, |_, _, _| {});
+        let read = run
+            .take_typings()
+            .zip(written)
+            .map(|(typed, written)| TypedRun::read(&context, typed, written));
+        (run.finish(&mut context), read)
+    };
+    let table = match (tabling, read) {
+        (Tabling::Tabled(unit), Some(read)) => Maybe::Present(TypeTable::assemble(
+            text,
+            (module.clone(), arena.clone()),
+            read,
+            (unit, last.start),
+        )),
+        (Tabling::Tabled(_), None) | (Tabling::Untabled, _) => {
+            Maybe::Absent(tabled::Absent::Untabled)
+        },
     };
     let names = module.structured_names();
     let mut program = after.map_or_else(
@@ -2180,11 +2295,15 @@ fn judge_members<'source>(
             last: Err(fault),
         },
     };
-    (projected, Admission {
-        arena,
-        verdicts,
-        names,
-    })
+    (
+        projected,
+        Admission {
+            arena,
+            verdicts,
+            names,
+        },
+        table,
+    )
 }
 
 /// What a judged unit holds once for all of its sources, read by [`share`].
@@ -2485,13 +2604,13 @@ pub fn judge_component<'source>(
     };
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
-            let (projected, admission) = judge_members(
+            let (projected, admission, _untabled) = judge_members(
                 root,
                 (module, text),
                 arena,
                 (grant, Checking::Whole),
                 (earlier, last),
-                spelled,
+                (spelled, Tabling::Untabled),
             );
             match admission.admit() {
                 Ok(kernel) => {

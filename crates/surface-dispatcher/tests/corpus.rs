@@ -400,6 +400,68 @@ fn every_corpus_source_is_registered()
     );
 }
 
+/// #1521: every corpus source, judged keeping its type table, answers every
+/// entry, every declaration and every declared name as its table typed alone
+/// does, so a document's table can come from the judgement that checks it.
+#[test]
+fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
+{
+    use gandr_surface_dispatcher::Checking;
+    use gandr_surface_dispatcher::HostGrant;
+    use gandr_surface_dispatcher::TypeTable;
+    use gandr_surface_dispatcher::judge_member_tabled;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_pretty::Form;
+    use gandr_surface_pretty::PageWidth;
+    use gandr_surface_syntax::ByteOffset;
+
+    let grammar = built_in().expect("the built-in grammar builds");
+    let page = PageWidth::from(80_u32);
+    let style = Form::Explicit.into();
+    let answers = |table: &TypeTable| {
+        (
+            table.entries(page, style).collect::<Vec<_>>(),
+            table.declarations(page, style).collect::<Vec<_>>(),
+            table.declared_names().to_vec(),
+        )
+    };
+    let mut tabled = 0_usize;
+    let mut differing = Vec::new();
+    for path in sources_under(&root(Path::new(""))) {
+        let own = std::fs::read_to_string(&path).expect("a corpus source reads");
+        let text = SourceText::from(own.as_str());
+        let Ok(alone) = TypeTable::of(&grammar, text)
+        else {
+            continue;
+        };
+        let Ok(Lowered::Module { module, arena }) =
+            lower_source(&grammar, text, &mut LoweringCount::default())
+                .map(gandr_surface_dispatcher::Lowering::into_lowered)
+        else {
+            continue;
+        };
+        let (_judged, table) = judge_member_tabled(
+            gandr_surface_corpus::CorpusRoot::Fixture,
+            (module, text),
+            arena,
+            (&HostGrant::UNBOUNDED, Checking::Whole),
+            (&Unit::single(), ByteOffset::from(0_usize)),
+        );
+        let Maybe::Present(table) = table
+        else {
+            panic!("{} is judged keeping its table", path.display());
+        };
+        tabled = tabled.saturating_add(1);
+        if answers(&table) != answers(&alone) {
+            differing.push(path);
+        }
+    }
+    assert!(
+        tabled > 100 && differing.is_empty(),
+        "over {tabled} sources, a judgement's table answers as the table typed alone; differing: {differing:?}"
+    );
+}
+
 #[test]
 fn a_planted_orphan_is_not_registered()
 {
