@@ -606,6 +606,13 @@ pub enum RefusalName
     UnwindEffect,
     /// An access at a place naming a held value whose type is no list.
     PlaceUnindexed,
+    /// A hold at grade one entering a value not made in place.
+    HeldShared,
+    /// A value held at grade one copied: its held slot or a shared view of
+    /// it read, or its exclusive view read twice.
+    HeldCopied,
+    /// An abort of a view whose value held at grade one a read moved out.
+    ViewMoved,
     /// A codata application whose head names no admitted codata declaration.
     CodataUndeclared,
     /// A codata declaration whose kind is not a computation universe.
@@ -663,7 +670,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 175_usize] = [
+    pub const VOCABULARY: [Self; 178_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -821,6 +828,9 @@ impl RefusalName
         Self::ViewReadOnly,
         Self::UnwindEffect,
         Self::PlaceUnindexed,
+        Self::HeldShared,
+        Self::HeldCopied,
+        Self::ViewMoved,
         Self::CodataUndeclared,
         Self::CodataKindNotUniverse,
         Self::CodataWithoutObservations,
@@ -986,6 +996,9 @@ impl RefusalName
         | (Self::ViewReadOnly, b"ViewReadOnly")
         | (Self::UnwindEffect, b"UnwindEffect")
         | (Self::PlaceUnindexed, b"PlaceUnindexed")
+        | (Self::HeldShared, b"HeldShared")
+        | (Self::HeldCopied, b"HeldCopied")
+        | (Self::ViewMoved, b"ViewMoved")
         | (Self::CodataUndeclared, b"CodataUndeclared")
         | (Self::CodataKindNotUniverse, b"CodataKindNotUniverse")
         | (Self::CodataWithoutObservations, b"CodataWithoutObservations")
@@ -1110,6 +1123,9 @@ impl RefusalName
             Self::ViewReadOnly => "ViewReadOnly",
             Self::UnwindEffect => "UnwindEffect",
             Self::PlaceUnindexed => "PlaceUnindexed",
+            Self::HeldShared => "HeldShared",
+            Self::HeldCopied => "HeldCopied",
+            Self::ViewMoved => "ViewMoved",
             Self::CodataUndeclared => "CodataUndeclared",
             Self::CodataKindNotUniverse => "CodataKindNotUniverse",
             Self::CodataWithoutObservations => "CodataWithoutObservations",
@@ -1483,7 +1499,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
-        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed)
+        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
@@ -1795,6 +1811,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Access { defect: AccessDefect::ReadOnly, .. }, RefusalName::ViewReadOnly)
         | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
         | (CheckRefusal::Access { defect: AccessDefect::Unindexed, .. }, RefusalName::PlaceUnindexed)
+        | (CheckRefusal::Access { defect: AccessDefect::HeldShared, .. }, RefusalName::HeldShared)
+        | (CheckRefusal::Access { defect: AccessDefect::HeldCopied, .. }, RefusalName::HeldCopied)
+        | (CheckRefusal::Access { defect: AccessDefect::Moved, .. }, RefusalName::ViewMoved)
         | (CheckRefusal::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
         | (CheckRefusal::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
         | (CheckRefusal::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
@@ -1913,6 +1932,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::ReadOnly => RefusalName::ViewReadOnly,
             AccessDefect::UnwindEffect => RefusalName::UnwindEffect,
             AccessDefect::Unindexed => RefusalName::PlaceUnindexed,
+            AccessDefect::HeldShared => RefusalName::HeldShared,
+            AccessDefect::HeldCopied => RefusalName::HeldCopied,
+            AccessDefect::Moved => RefusalName::ViewMoved,
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => RefusalName::CodataUndeclared,

@@ -341,6 +341,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::ReadOnly => "a shared view, which is read-only",
             AccessDefect::UnwindEffect => "an effect in an unwind",
             AccessDefect::Unindexed => "a held value with no elements to index",
+            AccessDefect::HeldShared => "a value that may have another holder",
+            AccessDefect::HeldCopied => "a copy of a value held at grade one",
+            AccessDefect::Moved => "an abort after the value was moved out",
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",

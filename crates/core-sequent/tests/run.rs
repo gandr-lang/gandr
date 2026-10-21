@@ -903,7 +903,11 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
     let ret_triple = core.computation_return(triple);
     let rest = core.computation_bind(second, ret_triple);
     let body = core.computation_bind(first, rest);
-    let counter = core.computation_memory(MemoryForm::Hold { value: zero, body });
+    let counter = core.computation_memory(MemoryForm::Hold {
+        value: zero,
+        body,
+        grade: gandr_core_term::memory::HoldGrade::Many,
+    });
     let observed = core.value_tuple(&[one, one, two]);
     assert_control(&mut core, counter, ControlExpectation::Value(observed));
 
@@ -918,6 +922,7 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
         let held = core.computation_memory(MemoryForm::Hold {
             value: zero,
             body: then,
+            grade: gandr_core_term::memory::HoldGrade::Many,
         });
         assert_control(&mut core, held, expected);
     }
@@ -931,6 +936,7 @@ fn a_counter_observes_write_back_on_resume_and_none_on_abort()
     let held = core.computation_memory(MemoryForm::Hold {
         value: zero,
         body: then,
+        grade: gandr_core_term::memory::HoldGrade::Many,
     });
     let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
     let raised = core.computation_primitive(
@@ -980,6 +986,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
     let held = core.computation_memory(MemoryForm::Hold {
         value: listed,
         body: read,
+        grade: gandr_core_term::memory::HoldGrade::Many,
     });
     assert_control(&mut core, held, ControlExpectation::Value(two));
 
@@ -1014,6 +1021,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
         let held = core.computation_memory(MemoryForm::Hold {
             value: list,
             body: then,
+            grade: gandr_core_term::memory::HoldGrade::Many,
         });
         assert_control(&mut core, held, ControlExpectation::Value(expected));
     }
@@ -1026,6 +1034,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
     let kept = core.computation_memory(MemoryForm::Hold {
         value: listed,
         body: then,
+        grade: gandr_core_term::memory::HoldGrade::Many,
     });
     assert_control(&mut core, kept, ControlExpectation::Value(listed));
 
@@ -1034,6 +1043,7 @@ fn an_access_at_a_place_views_the_element_at_its_index()
     let short = core.computation_memory(MemoryForm::Hold {
         value: tail,
         body: past,
+        grade: gandr_core_term::memory::HoldGrade::Many,
     });
     assert_control(&mut core, short, ControlExpectation::Outside);
 }

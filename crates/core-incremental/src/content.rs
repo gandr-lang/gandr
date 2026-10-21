@@ -1635,7 +1635,7 @@ impl ContentNode
                 | SessionAction::Close { .. } => Children::default(),
             },
             Self::Memory(ref form) => match *form {
-                MemoryForm::Hold { value, body } => {
+                MemoryForm::Hold { value, body, .. } => {
                     Children::of(&[(value, V), (body, M)]).binding(ChildSlot(1), linear)
                 },
                 MemoryForm::Access {

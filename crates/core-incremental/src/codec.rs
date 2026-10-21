@@ -67,6 +67,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place as AccessPlace;
 use gandr_core_term::session::ActionKind;
@@ -1398,8 +1399,11 @@ where
                 writer.word(Word(u64::from(u32::from(index))));
             };
             match *form {
-                MemoryForm::Hold { value, body } => {
-                    writer.tag(Tag(0));
+                MemoryForm::Hold { value, body, grade } => {
+                    writer.tag(Tag(match grade {
+                        HoldGrade::Many => 0,
+                        HoldGrade::One => 7,
+                    }));
                     write_index(writer, value)?;
                     write_index(writer, body)?;
                 },
@@ -3581,6 +3585,12 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 0 => MemoryForm::Hold {
                     value: read_index(reader)?,
                     body: read_index(reader)?,
+                    grade: HoldGrade::Many,
+                },
+                7 => MemoryForm::Hold {
+                    value: read_index(reader)?,
+                    body: read_index(reader)?,
+                    grade: HoldGrade::One,
                 },
                 1 | 4 | 5 | 6 => {
                     let held = slot(reader)?;
@@ -6463,6 +6473,9 @@ where
                 AccessDefect::UnwindEffect => (7, None),
                 AccessDefect::ReadOnly => (8, None),
                 AccessDefect::Unindexed => (9, None),
+                AccessDefect::HeldShared => (10, None),
+                AccessDefect::HeldCopied => (11, None),
+                AccessDefect::Moved => (12, None),
             };
             writer.tag(Tag(kind));
             if let Some(by) = by {
@@ -6977,6 +6990,9 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 7 => AccessDefect::UnwindEffect,
                 8 => AccessDefect::ReadOnly,
                 9 => AccessDefect::Unindexed,
+                10 => AccessDefect::HeldShared,
+                11 => AccessDefect::HeldCopied,
+                12 => AccessDefect::Moved,
                 _ => return Err(CodecError::NonCanonical),
             };
             Refusal::Access { at, defect }

@@ -1547,7 +1547,7 @@ impl Lowering<'_>
     ) -> Result<(), Form>
     {
         match *form {
-            MemoryForm::Hold { value, body } => {
+            MemoryForm::Hold { value, body, .. } => {
                 let call = self.call(&Callee::Hold, Immediate::from(1_u32))?;
                 let (held, cell) = self.bind(scope, Binding::Linear);
                 let (inner, _) = self.bind(held, Binding::FallThrough);

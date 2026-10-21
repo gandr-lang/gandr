@@ -102,6 +102,9 @@ pub enum LinearUse
     /// The slot has not been consumed; exactly one occurrence may still read
     /// it.
     Available,
+    /// The slot's value has been moved out: only the occurrence that writes
+    /// a value back may still end it.
+    Moved,
     /// The slot has been consumed; a further occurrence is refused.
     Consumed,
 }
@@ -500,11 +503,11 @@ impl Context
     ///   binder.
     /// - fails: [`ContextError::NoBinderToClose`] when the zone is empty;
     ///   [`ContextError::LinearSlotUnconsumed`] when the linear zone's
-    ///   innermost slot still carries its use, which is the refusal of
-    ///   weakening in `Σ`. Both leave the context exactly as it was — the
-    ///   unconsumed slot is taken and put back — so the failure state is the
-    ///   state the caller inspects, and the depth the refusal reports is the
-    ///   depth it left behind.
+    ///   innermost slot still carries its use or holds a moved value nothing
+    ///   wrote back, which is the refusal of weakening in `Σ`. Both leave the
+    ///   context exactly as it was — the unconsumed slot is taken and put back
+    ///   — so the failure state is the state the caller inspects, and the depth
+    ///   the refusal reports is the depth it left behind.
     /// - panics: none.
     ///
     /// # Errors
@@ -557,7 +560,7 @@ impl Context
                 else {
                     return Err(ContextError::NoBinderToClose { zone });
                 };
-                if slot.use_state == LinearUse::Available {
+                if slot.use_state != LinearUse::Consumed {
                     self.linear.push(slot);
                     return Err(ContextError::LinearSlotUnconsumed {
                         depth: BinderDepth(self.linear.len()),
@@ -690,7 +693,7 @@ impl Context
                 | Ok(declared) => match zone {
                     | Zone::Intuitionistic => ret == Ok(declared) && self.linear_use(index) == use_state,
                     | Zone::Linear => match use_state {
-                        | Ok(LinearUse::Available) => ret == Ok(declared)
+                        | Ok(LinearUse::Available | LinearUse::Moved) => ret == Ok(declared)
                             && self.linear_use(index) == Ok(LinearUse::Consumed),
                         | Ok(LinearUse::Consumed) => ret == Err(ContextError::LinearSlotConsumed { index })
                             && self.linear_use(index) == use_state,
@@ -726,6 +729,60 @@ impl Context
                 Ok(slot.declared)
             },
         }
+    }
+
+    /// Move the value out of an available linear slot, leaving its use to the
+    /// occurrence that writes a value back.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound, moved or consumed index is admissible
+    ///   input.
+    /// - ensures: on success the slot's declared type, the slot left
+    ///   [`LinearUse::Moved`]; every other slot and both depths unchanged.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotConsumed`] when its value was moved
+    ///   already or its use is spent. A refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot moved, moved again, closed while moved,
+    ///   written back and moved after its use, each asserted by variant.
+    /// - witness: `context::tests::a_moved_slot_ends_only_by_its_write_back`
+    #[spec(
+        captures: [declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match (declared, use_state) {
+                | (Ok(declared), Ok(LinearUse::Available)) => ret == Ok(declared)
+                    && self.linear_use(index) == Ok(LinearUse::Moved),
+                | (Ok(_), Ok(LinearUse::Moved | LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
+                    && self.linear_use(index) == use_state,
+                | (Err(error), _) | (_, Err(error)) => ret == Err(error),
+            },
+    )]
+    #[inline]
+    pub fn move_out(
+        &mut self,
+        index: DeBruijnIndex,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state != LinearUse::Available {
+            return Err(ContextError::LinearSlotConsumed { index });
+        }
+        slot.use_state = LinearUse::Moved;
+        Ok(slot.declared)
     }
 
     /// Whether a linear slot still carries its single use.
@@ -812,7 +869,7 @@ impl Context
                 | (Ok(previous), Ok(LinearUse::Available)) => ret == Ok(previous)
                     && self.declared(Zone::Linear, index) == Ok(continuation)
                     && self.linear_use(index) == Ok(LinearUse::Available),
-                | (Ok(_), Ok(LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
+                | (Ok(_), Ok(LinearUse::Moved | LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
                     && self.declared(Zone::Linear, index) == declared && self.linear_use(index) == use_state,
                 | (Err(error), _) | (_, Err(error)) => ret == Err(error),
             },
@@ -833,7 +890,7 @@ impl Context
         let slot = slot_offset(depth, index)
             .and_then(|offset| self.linear.get_mut(offset.0))
             .ok_or(unbound)?;
-        if slot.use_state == LinearUse::Consumed {
+        if slot.use_state != LinearUse::Available {
             return Err(ContextError::LinearSlotConsumed { index });
         }
         Ok(core::mem::replace(&mut slot.declared, continuation))

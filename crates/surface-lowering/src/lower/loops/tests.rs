@@ -377,12 +377,14 @@ fn a_loop_threads_the_slots_it_names_through_its_passes()
                 _ => None,
             });
     let held = |hold: ComputationId| match arena.computation(hold) {
-        Some(&Computation::Memory(MemoryForm::Hold { value, body })) => match arena.value(value) {
-            Some(&Value::Variable {
-                zone: Zone::Intuitionistic,
-                index,
-            }) => Some((u32::from(index), body)),
-            _ => None,
+        Some(&Computation::Memory(MemoryForm::Hold { value, body, .. })) => {
+            match arena.value(value) {
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index,
+                }) => Some((u32::from(index), body)),
+                _ => None,
+            }
         },
         _ => None,
     };

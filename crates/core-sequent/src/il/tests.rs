@@ -697,7 +697,11 @@ fn an_unused_binder_thins_to_zero()
     for (body, selected) in [(ignoring, false), (naming, true)] {
         let hold = arena
             .mint_command(CommandNode::Memory {
-                form: gandr_core_term::memory::MemoryForm::Hold { value, body },
+                form: gandr_core_term::memory::MemoryForm::Hold {
+                    value,
+                    body,
+                    grade: gandr_core_term::memory::HoldGrade::Many,
+                },
                 continuation: terminal,
             })
             .expect("children resolve");

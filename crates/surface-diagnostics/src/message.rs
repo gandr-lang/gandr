@@ -907,6 +907,18 @@ fn checked(
             AccessDefect::Unindexed => f.write_str(
                 "an access at a place reads an element at an index; the held value is no list",
             ),
+            AccessDefect::HeldShared => f.write_str(
+                "`hold[1]` enters a value made in place — a constructor, a literal, a tuple, a \
+                 record or a list; this one may have another holder",
+            ),
+            AccessDefect::HeldCopied => f.write_str(
+                "a value held with `hold[1]` is never copied: read it once through an exclusive \
+                 `access` and write it back with `resume`",
+            ),
+            AccessDefect::Moved => f.write_str(
+                "the view's value was read out, so the view ends with `resume`, which writes a \
+                 value back; `abort` would leave the held slot empty",
+            ),
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => f.write_str("this names no codata declaration"),
@@ -1606,6 +1618,18 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::Unindexed,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldShared,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::HeldCopied,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Moved,
             },
             CheckRefusal::Codata {
                 at: node,

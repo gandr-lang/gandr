@@ -2260,12 +2260,13 @@ fn statement_alt() -> Regex
     ])
 }
 
-/// Build the statement that holds a value: `hold x = E ;`.
+/// Build the statement that holds a value: `hold x = E ;`, or `hold[1] x = E
+/// ;` at a grade.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the `hold` keyword and the held name, then an equals-delimited
-///   expression and a semicolon.
+/// - ensures: the `hold` keyword, an optional bracketed numeral grade, the held
+///   name, then an equals-delimited expression and a semicolon.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2275,11 +2276,16 @@ fn statement_alt() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "hold")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "hold")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn hold_statement() -> Regex
 {
     seq([
         t(TileLabel("hold")),
+        opt(seq([
+            t(TileLabel("[")),
+            t(TileLabel("number")),
+            t(TileLabel("]")),
+        ])),
         t(TileLabel("identifier")),
         t(TileLabel("=")),
         h(Sort::Expression),

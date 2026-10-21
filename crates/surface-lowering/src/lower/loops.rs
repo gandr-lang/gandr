@@ -1255,6 +1255,7 @@ impl<'source> Lowerer<'_, 'source>
             held = sink.arena.computation_memory(MemoryForm::Hold {
                 value: content,
                 body: held,
+                grade: gandr_core_term::memory::HoldGrade::Many,
             });
             sink.origins.record_computation(held, inserted);
         }

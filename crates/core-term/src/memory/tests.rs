@@ -4,6 +4,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::AccessMode;
+use super::HoldGrade;
 use super::MemoryForm;
 use super::MemoryKind;
 use super::Place;
@@ -21,7 +22,11 @@ fn forms_name_their_resident_and_children()
     let body = arena.computation_return(unit);
     let unwind = arena.computation_return(unit);
     let held = DeBruijnIndex::from(1_u32);
-    let hold: MemoryForm = MemoryForm::Hold { value: unit, body };
+    let hold: MemoryForm = MemoryForm::Hold {
+        value: unit,
+        body,
+        grade: HoldGrade::One,
+    };
     assert_eq!(hold.kind(), MemoryKind::Hold, "a hold is a hold");
     assert!(
         matches!(hold.resident(), Maybe::Absent(_)),

@@ -7,6 +7,7 @@ use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_kernel_term::BaseType;
@@ -69,7 +70,28 @@ fn hold(
 ) -> ComputationId
 {
     let value = arena.value_literal(integer_literal());
-    arena.computation_memory(MemoryForm::Hold { value, body })
+    arena.computation_memory(MemoryForm::Hold {
+        value,
+        body,
+        grade: HoldGrade::Many,
+    })
+}
+
+/// `hold[1] x = 0; body`.
+///
+/// # Specification
+/// trivial.
+fn hold_one(
+    arena: &mut CoreArena,
+    body: ComputationId,
+) -> ComputationId
+{
+    let value = arena.value_literal(integer_literal());
+    arena.computation_memory(MemoryForm::Hold {
+        value,
+        body,
+        grade: HoldGrade::One,
+    })
 }
 
 /// `access lN as v { body } unwind { unwind }`.
@@ -128,7 +150,11 @@ fn listed(
     let lists = arena.comp_type_returner(list);
     let ascribed = arena.computation_ascribe(returned, lists);
     let value = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let held = arena.computation_memory(MemoryForm::Hold { value, body });
+    let held = arena.computation_memory(MemoryForm::Hold {
+        value,
+        body,
+        grade: HoldGrade::Many,
+    });
     arena.computation_bind(ascribed, held)
 }
 
@@ -281,6 +307,20 @@ fn in_view(
     let unwind = done(arena);
     let accessed = access(arena, l0(), body, unwind);
     hold(arena, accessed)
+}
+
+/// `hold[1] c = 0; access c as v { body } unwind {}`.
+///
+/// # Specification
+/// trivial.
+fn in_unique_view(
+    arena: &mut CoreArena,
+    body: ComputationId,
+) -> ComputationId
+{
+    let unwind = done(arena);
+    let accessed = access(arena, l0(), body, unwind);
+    hold_one(arena, accessed)
 }
 
 /// A refusal of `defect` at the computation `at`.
@@ -614,6 +654,111 @@ fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
             "a shared view is read-only and ends with its body"
         );
     }
+}
+
+#[test]
+fn a_value_held_at_grade_one_is_never_copied()
+{
+    let mut arena = CoreArena::new();
+    let units = units(&mut arena);
+    let integers = integers(&mut arena);
+    let zero = arena.value_literal(integer_literal());
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    // hold[1] c = 0; access c as v { let x = (v,).0; resume(v, x) } unwind {}
+    let (_moved, read) = copied(&mut arena, l0());
+    let written = resume(&mut arena, l0(), x);
+    let body = arena.computation_bind(read, written);
+    let moved = in_unique_view(&mut arena, body);
+    assert_eq!(
+        both(&mut arena, moved, units),
+        [Ok(()), Ok(())],
+        "the exclusive view reads the value out once and writes it back"
+    );
+    // hold[1] c = 0; access c as v { abort(v) } unwind {}
+    let aborted = abort(&mut arena, l0());
+    let untouched = in_unique_view(&mut arena, aborted);
+    assert_eq!(
+        both(&mut arena, untouched, units),
+        [Ok(()), Ok(())],
+        "an abort before any read leaves the held value where it was"
+    );
+    // access c as v { let x = (v,).0; let y = (v,).0; resume(v, x) }
+    let (_first, first) = copied(&mut arena, l0());
+    let (second, again) = copied(&mut arena, l0());
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let written = resume(&mut arena, l0(), outer);
+    let rest = arena.computation_bind(again, written);
+    let body = arena.computation_bind(first, rest);
+    let twice = in_unique_view(&mut arena, body);
+    assert_eq!(
+        both(&mut arena, twice, units),
+        [Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(second)),
+            defect: AccessDefect::HeldCopied,
+        }); 2],
+        "a second read of the view copies the value"
+    );
+    // hold[1] c = 0; (c,).0
+    let (held, read) = copied(&mut arena, l0());
+    let direct = hold_one(&mut arena, read);
+    assert_eq!(
+        both(&mut arena, direct, integers),
+        [Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(held)),
+            defect: AccessDefect::HeldCopied,
+        }); 2],
+        "a read of the held slot copies the value"
+    );
+    // hold[1] c = 0; access shared c as v { (v,).0 }
+    let (viewed, read) = copied(&mut arena, l0());
+    let lent = shared(&mut arena, l0(), read);
+    let frozen = hold_one(&mut arena, lent);
+    assert_eq!(
+        both(&mut arena, frozen, integers),
+        [Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(viewed)),
+            defect: AccessDefect::HeldCopied,
+        }); 2],
+        "a read of a shared view copies the value"
+    );
+    // access c as v { let x = (v,).0; abort(v) }
+    let (_moved, read) = copied(&mut arena, l0());
+    let late = abort(&mut arena, l0());
+    let body = arena.computation_bind(read, late);
+    let lost = in_unique_view(&mut arena, body);
+    assert_eq!(
+        both(&mut arena, lost, units),
+        [Err(at(late, AccessDefect::Moved)); 2],
+        "an abort after the read would keep a value the read took"
+    );
+    // access c as v { (v,).0 } unwind {}
+    let (_moved, read) = copied(&mut arena, l0());
+    let unwind = done(&mut arena);
+    let kept = access(&mut arena, l0(), read, unwind);
+    let unended = hold_one(&mut arena, kept);
+    assert_eq!(
+        both(&mut arena, unended, integers),
+        [Err(at(kept, AccessDefect::Unended)); 2],
+        "a body that moves the value out writes one back"
+    );
+    // x <- (return 0 : F Integer); hold[1] c = x; return ()
+    let returned = arena.computation_return(zero);
+    let returned = arena.computation_ascribe(returned, integers);
+    let empty = done(&mut arena);
+    let entered = arena.computation_memory(MemoryForm::Hold {
+        value: x,
+        body: empty,
+        grade: HoldGrade::One,
+    });
+    let bound = arena.computation_bind(returned, entered);
+    assert_eq!(
+        both(&mut arena, bound, units),
+        [Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(x)),
+            defect: AccessDefect::HeldShared,
+        }); 2],
+        "a value a computation returned may have another holder"
+    );
 }
 
 #[test]

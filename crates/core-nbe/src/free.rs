@@ -1273,9 +1273,9 @@ Err(_) => false,
                         | SessionAction::Close { .. } => [None, None, None, None, None],
                     },
                     Computation::Memory(ref form) => match *form {
-                        MemoryForm::Hold { value: held, body } => {
-                            two(value(held), computation(body), Lowering::NONE)
-                        },
+                        MemoryForm::Hold {
+                            value: held, body, ..
+                        } => two(value(held), computation(body), Lowering::NONE),
                         MemoryForm::Access {
                             mode, place, body, ..
                         } => {

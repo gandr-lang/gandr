@@ -1373,8 +1373,8 @@ impl<'arena> CoreSource<'arena>
             | _ => false,
         },
         | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
-            | (&MemoryForm::Hold { value, body }, Former::Hold { value: held, body: scope }) =>
-                held == CoreNode::Value(value) && scope == CoreNode::Computation(body),
+            | (&MemoryForm::Hold { value, body, grade }, Former::Hold { value: held, body: scope, grade: printed }) =>
+                held == CoreNode::Value(value) && scope == CoreNode::Computation(body) && grade == printed,
             | (&MemoryForm::Access { held, place, body, mode }, Former::Access { held: actual, place: printed_place, body: lent, mode: printed }) =>
                 held == actual && lent == CoreNode::Computation(body) && match (mode, printed) {
                     | (AccessMode::Exclusive { unwind }, AccessMode::Exclusive { unwind: unwound }) =>
@@ -1622,9 +1622,14 @@ impl<'arena> CoreSource<'arena>
                 },
             },
             Computation::Memory(ref form) => match *form {
-                MemoryForm::Hold { value: held, body } => Former::Hold {
+                MemoryForm::Hold {
+                    value: held,
+                    body,
+                    grade,
+                } => Former::Hold {
                     value: value(held),
                     body: computation(body),
+                    grade,
                 },
                 MemoryForm::Access {
                     held,

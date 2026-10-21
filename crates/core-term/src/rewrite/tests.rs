@@ -3525,6 +3525,7 @@ fn formers() -> Vec<Witnessed>
             let body = a.computation_memory(MemoryForm::Hold {
                 value: c,
                 body: rest,
+                grade: crate::memory::HoldGrade::Many,
             });
             a.value_thunk(body)
         }),

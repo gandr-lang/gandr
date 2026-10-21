@@ -1,0 +1,42 @@
+/// The successor, a call whose type synthesises where a statement binds it.
+@[ checks ]
+def succ(n : Integer) -> -F Integer {
+  pure n + 1
+}
+
+/// A parameter held at grade one: the caller may hold the same value.
+@[ refuses("HeldShared") ]
+def entered(n : Integer) -> -F Unit {
+  hold[1] c = n;
+  pure unit
+}
+
+/// A read of a slot held at grade one copies its value.
+@[ refuses("HeldCopied") ]
+def read_held() -> -F Integer {
+  hold[1] c = 0;
+  pure c
+}
+
+/// Two reads of the exclusive view: the first moves the value out, and the
+/// second would copy it.
+@[ refuses("HeldCopied") ]
+def read_twice() -> -F Unit {
+  hold[1] c = 3;
+  access c as v { resume(v, v + v) }
+}
+
+/// A read through a shared view copies the value.
+@[ refuses("HeldCopied") ]
+def read_shared() -> -F Integer {
+  hold[1] c = 0;
+  access shared c as w { pure w }
+}
+
+/// An abort after the view was read: the held slot would keep the value the
+/// read took.
+@[ refuses("ViewMoved") ]
+def moved_then_aborted() -> -F Integer {
+  hold[1] c = 0;
+  access c as v { run n <- succ(v) ; abort(v) ; pure n } unwind { pure unit }
+}
