@@ -1102,6 +1102,16 @@ pub enum ValueType
         /// How long it lives.
         region: crate::effect::capability::Region,
     },
+    /// A value kept in a region: `A at c`, a value of `A` that may capture a
+    /// shared view lent while the capability scope at `region` lives, and so
+    /// lives as long as that scope rather than the access.
+    Kept
+    {
+        /// The kept value's type.
+        value: ValueTypeId,
+        /// The capability scope it lives in.
+        region: crate::effect::capability::RegionDepth,
+    },
     /// A type that names a world: `A at w`, a handle to a value meaningful
     /// at `w`, or `cap_w`, the one-shot authority to migrate to `w`.
     World(crate::world::WorldType),
@@ -3247,6 +3257,18 @@ fn equal_syntax(
                             stage: ref second,
                         } = *matched_right_value
                         && (first == second)
+                    {
+                        pending.push(VT(a, b));
+                    }
+                    else if let ValueType::Kept {
+                        value: a,
+                        region: first,
+                    } = *matched_left_value
+                        && let ValueType::Kept {
+                            value: b,
+                            region: second,
+                        } = *matched_right_value
+                        && first == second
                     {
                         pending.push(VT(a, b));
                     }

@@ -241,6 +241,16 @@ pub enum ValueTypeView<'arena>
         /// The stage.
         stage: gandr_kernel_term::Stage,
     },
+    /// A value kept in the region of the capability scope at `region`: only
+    /// a force and the capture rule read through it; every other rule meets it
+    /// as a former of its own.
+    Kept
+    {
+        /// The kept value's type.
+        value: ValueTypeId,
+        /// The capability scope it lives in.
+        region: gandr_core_term::effect::capability::RegionDepth,
+    },
     /// A type that names a world: `A at w`, a handle to a value meaningful at
     /// `w`, or `cap_w`, the one-shot authority to migrate to `w`.
     World(gandr_core_term::world::WorldType),
@@ -362,6 +372,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Session(session)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Session(ref found) if found == session)),
     | Ok(ValueTypeView::Capability { authority, grade, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Capability { authority: ref found, grade: found_grade, region: found_region }) if found == authority && found_grade == grade && found_region == region),
     | Ok(ValueTypeView::Staged { base, stage }) => matches!(arena.value_type(value_type), Some(&ValueType::Staged { base: found, stage: found_stage }) if found == base && found_stage == stage),
+    | Ok(ValueTypeView::Kept { value, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Kept { value: found, region: found_region }) if found == value && found_region == region),
     | Ok(ValueTypeView::World(ty)) => matches!(arena.value_type(value_type), Some(&ValueType::World(found)) if found == ty),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
@@ -450,6 +461,7 @@ pub fn value_type_view(
             region,
         }),
         ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),
+        ValueType::Kept { value, region } => Ok(ValueTypeView::Kept { value, region }),
         ValueType::World(ty) => Ok(ValueTypeView::World(ty)),
         ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }

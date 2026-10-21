@@ -2406,6 +2406,9 @@ enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
+    /// A value type kept in a capability scope's region: the type and the
+    /// region's depth.
+    Kept(NodeIndex, gandr_core_term::effect::capability::RegionDepth),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
@@ -11646,7 +11649,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Capability(..)
                 | Plan::Session(..)
                 | Plan::World(world::Worlded::At { .. })
-                | Plan::Staged(..) => Some(Produced::ValueType),
+                | Plan::Staged(..)
+                | Plan::Kept(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
@@ -11886,6 +11890,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Access(accessed) => self.mint_access(accessed, sink, origin),
             Plan::World(worlded) => self.mint_world(worlded, sink, origin),
             Plan::Staged(base, stage) => self.mint_staged(base, stage, sink, origin),
+            Plan::Kept(inner, region) => self.value_type_at(inner).map(|inner| {
+                let id = sink.arena.value_type_kept(inner, region);
+                sink.origins.record_value_type(id, origin);
+                Lowered::ValueType(id)
+            }),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
@@ -12884,6 +12893,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Access(_)
             | Plan::World(_)
             | Plan::Staged(..)
+            | Plan::Kept(..)
             | Plan::TelescopeTransport(_)
             | Plan::Capability(..)
             | Plan::Effectful(..)

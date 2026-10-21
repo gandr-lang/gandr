@@ -1188,6 +1188,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Staged { .. }
+                    | ValueType::Kept { .. }
                     | ValueType::World(_) => return Ok(node),
                 },
                 Node::CompType(at, place) => match *self
@@ -1288,6 +1289,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | (&ValueType::Sigma { .. }, &ValueType::Sigma { .. }) => Ok((Alike::Same, 2, 0)),
                         (&ValueType::List(_), &ValueType::List(_)) | (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
                         (&ValueType::Staged { stage, .. }, &ValueType::Staged { stage: other_stage, .. }) => Ok(if stage == other_stage { (Alike::Same, 1, 0) } else { (Alike::Different, 0, 0) }),
+                        (&ValueType::Kept { region, .. }, &ValueType::Kept { region: other_region, .. }) => Ok(if region == other_region { (Alike::Same, 1, 0) } else { (Alike::Different, 0, 0) }),
                         (&ValueType::Lift { inner, ref target }, &ValueType::Lift { inner: other_inner, target: ref other_target }) => {
                             if target == other_target {
                                 children_correct = pending.last().is_some_and(|&(left, right)| matches!((left, right),
@@ -1681,6 +1683,23 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ));
                         Ok(Alike::Same)
                     }
+                    else if let ValueType::Kept { value, region } = *matched_left_value
+                        && let ValueType::Kept {
+                            value: other_value,
+                            region: other_region,
+                        } = *matched_right_value
+                    {
+                        // A value kept in one region is no value kept in
+                        // another: the region is how long it may be used.
+                        if region != other_region {
+                            return Ok(Alike::Different);
+                        }
+                        pending.push((
+                            Node::ValueType(value, here),
+                            Node::ValueType(other_value, there),
+                        ));
+                        Ok(Alike::Same)
+                    }
                     else if let ValueType::World(ref a) = *matched_left_value
                         && let ValueType::World(ref b) = *matched_right_value
                     {
@@ -1721,6 +1740,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
                                 | ValueType::Staged { .. }
+                                | ValueType::Kept { .. }
                                 | ValueType::World(_) => Ok(Alike::Different),
                             }
                         }
@@ -2381,7 +2401,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             .extend(fields.values().map(|field| Node::ValueType(*field, place))),
                         ValueType::Stack { input, output } => types
                             .extend([Node::CompType(input, place), Node::CompType(output, place)]),
-                        ValueType::List(element) | ValueType::Staged { base: element, .. } => {
+                        ValueType::List(element)
+                        | ValueType::Staged { base: element, .. }
+                        | ValueType::Kept { value: element, .. } => {
                             types.push(Node::ValueType(element, place));
                         },
                         ValueType::PathUniverse(source, target) => {

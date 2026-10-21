@@ -22,7 +22,10 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
@@ -86,6 +89,8 @@ pub(super) enum Resident
         at: ComputationId,
         /// The grade the lent value is held at.
         grade: gandr_core_term::memory::HoldGrade,
+        /// The held slot's position above the run's base.
+        held: usize,
     },
     /// A capability the run's entry holds, to migrate once to `world`.
     Capability
@@ -116,6 +121,17 @@ pub(super) struct Lent
     pub mode: AccessMode<()>,
 }
 
+/// A held slot a region keeps a shared view of: frozen against an exclusive
+/// access until the region's scope ends.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Keep
+{
+    /// The held slot's position above the run's base.
+    pub position: usize,
+    /// The region the view is kept in.
+    pub region: RegionDepth,
+}
+
 /// The linear state of one run: who bound each linear slot it opened, the
 /// held slots its accesses lend, the zones its offers restore and compare,
 /// and the free linear indices of the terms it read.
@@ -129,6 +145,12 @@ pub(super) struct Sessions
     /// Each held slot an access lends, with its mode, the innermost access
     /// last.
     pub lent: Vec<Lent>,
+    /// Each held slot a region keeps a shared view of, in the order kept.
+    pub kept: Vec<Keep>,
+    /// How many linear slots above `base` stood open as each capability
+    /// scope's subject began, outermost first: a slot below a scope's mark
+    /// outlives the scope's region.
+    pub regions: Vec<usize>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
     zones: Vec<LinearZone>,
@@ -148,14 +170,16 @@ impl Sessions
             base,
             opened: Vec::new(),
             lent: Vec::new(),
+            kept: Vec::new(),
+            regions: Vec::new(),
             zones: Vec::new(),
             free: FreeIndices::default(),
         }
     }
 }
 
-/// How far a run's linear zone, its lendings and its offers' zones stood:
-/// what a recovered or refused run falls back to.
+/// How far a run's linear zone, its lendings, its keeps, its regions and its
+/// offers' zones stood: what a recovered or refused run falls back to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) struct Scope
 {
@@ -163,6 +187,10 @@ pub(super) struct Scope
     linear: BinderDepth,
     /// The lendings held.
     lent: usize,
+    /// The keeps held.
+    kept: usize,
+    /// The regions open.
+    regions: usize,
     /// The offers' zones held.
     zones: usize,
 }
@@ -207,7 +235,8 @@ struct Slot
 
 impl Machine<'_, '_>
 {
-    /// Where the linear zone, the lendings and the offers' zones stand.
+    /// Where the linear zone, the lendings, the keeps, the regions and the
+    /// offers' zones stand.
     ///
     /// # Specification
     /// trivial.
@@ -216,13 +245,15 @@ impl Machine<'_, '_>
         Scope {
             linear: self.context.depth(Zone::Linear),
             lent: self.sessions.lent.len(),
+            kept: self.sessions.kept.len(),
+            regions: self.sessions.regions.len(),
             zones: self.sessions.zones.len(),
         }
     }
 
-    /// Drop every linear slot bound, every lending made and every offer zone
-    /// kept since `scope`, spent or not: the linear half of unwinding a
-    /// refused or recovered judgement.
+    /// Drop every linear slot bound, every lending, keep and region made and
+    /// every offer zone kept since `scope`, spent or not: the linear half of
+    /// unwinding a refused or recovered judgement.
     ///
     /// # Specification
     /// - requires: the zones stand at or above `scope`.
@@ -235,6 +266,8 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::a_leftover_endpoint_is_reported_by_name`
     #[spec(ensures: self.context.depth(Zone::Linear) <= scope.linear
         && self.sessions.lent.len() <= scope.lent
+        && self.sessions.kept.len() <= scope.kept
+        && self.sessions.regions.len() <= scope.regions
         && self.sessions.zones.len() <= scope.zones)]
     pub(super) fn close_sessions(
         &mut self,
@@ -245,6 +278,8 @@ impl Machine<'_, '_>
         let kept = usize::from(scope.linear).saturating_sub(usize::from(self.sessions.base));
         self.sessions.opened.truncate(kept);
         self.sessions.lent.truncate(scope.lent);
+        self.sessions.kept.truncate(scope.kept);
+        self.sessions.regions.truncate(scope.regions);
         self.sessions.zones.truncate(scope.zones);
     }
 
@@ -541,19 +576,26 @@ impl Machine<'_, '_>
     /// a thunk, a fixpoint, a branching former, a first-class stack, a
     /// handler or a shift, while the run holds one. A branch may read a held
     /// value: a read copies, and each branch lends it at most for its own
-    /// extent.
+    /// extent. A thunk or a stack checked at a type kept in a region may name
+    /// a shared view whose held slot outlives that region: the slot is kept,
+    /// frozen until the region's scope ends. Inside a capability scope, a
+    /// thunk or a stack names no variable kept in a region deeper than the one
+    /// its own type is kept in.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: nothing changes; a goal of another former, or any goal while
-    ///   the run holds no endpoint, passes without its free indices read.
+    /// - ensures: a goal of another former, or any goal while the run holds no
+    ///   linear slot and no scope is open, passes without its free indices
+    ///   read; a kept thunk or stack keeps each shared view it names, and
+    ///   nothing else changes.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
     ///   endpoint it names and what may run it; [`CheckRefusal::Access`] naming
-    ///   [`AccessDefect::Escaped`] for a view and
-    ///   [`AccessDefect::HeldCaptured`] for a held value; a shift names the
-    ///   innermost resident the run holds, which its captured continuation may
-    ///   resume twice.
+    ///   [`AccessDefect::Escaped`] for a view no region keeps,
+    ///   [`AccessDefect::HeldCaptured`] for a held value and
+    ///   [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
+    ///   goal; a shift names the innermost resident the run holds, which its
+    ///   captured continuation may resume twice.
     /// - panics: none.
     ///
     /// # Errors
@@ -561,18 +603,24 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a thunk naming an endpoint is refused while the same
-    ///   action outside one checks.
+    ///   action outside one checks; a thunk kept in a scope's region keeps a
+    ///   shared view and the same thunk kept in none is refused.
     /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(
-        captures: holding = self.context.depth(Zone::Linear) > self.sessions.base,
-        ensures: |ret| holding || ret.is_ok(),
+        captures: [
+            holding = self.context.depth(Zone::Linear) > self.sessions.base,
+            scoped = !self.sessions.regions.is_empty(),
+        ],
+        ensures: |ret| holding || scoped || ret.is_ok(),
     )]
     pub(super) fn fence(
         &mut self,
         goal: Goal,
     ) -> Result<(), CheckRefusal>
     {
-        if self.context.depth(Zone::Linear) <= self.sessions.base {
+        let holding = self.context.depth(Zone::Linear) > self.sessions.base;
+        if !holding && self.sessions.regions.is_empty() {
             return Ok(());
         }
         let (term, node, by) = match goal {
@@ -622,6 +670,7 @@ impl Machine<'_, '_>
                     by,
                 )
             },
+            Goal::Computation { .. } if !holding => return Ok(()),
             Goal::Computation { term, .. } => {
                 let by = match *self.computation(term)? {
                     Computation::Fixpoint { .. } => Capture::Recursion,
@@ -670,10 +719,168 @@ impl Machine<'_, '_>
             },
             Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
         };
+        let kept = match goal {
+            Goal::Value {
+                direction: Direction::Check(expected),
+                ..
+            } if matches!(by, Capture::Thunk | Capture::Stack) => self.kept_in(expected)?,
+            Goal::Value { .. } | Goal::Computation { .. } | Goal::Form(_) | Goal::Stack { .. } => {
+                Region::Held
+            },
+        };
+        if matches!(by, Capture::Thunk | Capture::Stack) && !self.sessions.regions.is_empty() {
+            self.contained(term, node, kept)?;
+        }
+        if !holding {
+            return Ok(());
+        }
         for index in self.free_linear(term)? {
             let named = self.resided(node, index)?;
+            if let (Region::Scoped(region), Resident::View { at, held, .. }) =
+                (kept, named.resident)
+                && matches!(
+                    *self.computation(at)?,
+                    Computation::Memory(MemoryForm::Access {
+                        mode: AccessMode::Shared,
+                        ..
+                    })
+                )
+                && usize::try_from(u32::from(region))
+                    .ok()
+                    .and_then(|depth| depth.checked_sub(1))
+                    .and_then(|scope| self.sessions.regions.get(scope))
+                    .is_some_and(|&mark| held < mark)
+            {
+                self.sessions.kept.push(Keep {
+                    position: held,
+                    region,
+                });
+                continue;
+            }
             captured(node, named.resident, by)?;
         }
+        Ok(())
+    }
+
+    /// The region a value checked at `expected` is kept in: the one
+    /// `expected` names at its weak head, or [`Region::Held`] for a type kept
+    /// in none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept_in(
+        &mut self,
+        expected: ValueTypeId,
+    ) -> Result<Region, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        if let ValueTypeView::Kept { region, .. } = value_type_view(self.context.arena(), head)? {
+            return Ok(Region::Scoped(region));
+        }
+        Ok(Region::Held)
+    }
+
+    /// Refuse the thunk or stack `term` at `node` naming a variable kept in a
+    /// region deeper than `kept`, the region its own type is kept in: forced
+    /// past that region's scope, the variable would outlive it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::KeptEscaped`]
+    ///   at `node` for the first free intuitionistic variable whose type
+    ///   reaches a type kept in a region deeper than `kept`, or in any region
+    ///   when `kept` is [`Region::Held`]; [`CheckRefusal::DanglingNode`] and
+    ///   [`CheckRefusal::MachineInvariant`] as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk forcing a kept thunk is refused at a type
+    ///   kept in no region and checks at one kept in the same region.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::Access { at, defect }) => at == node && defect == AccessDefect::KeptEscaped,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn contained(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        kept: Region,
+    ) -> Result<(), CheckRefusal>
+    {
+        let floor = match kept {
+            Region::Held => RegionDepth::from(1_u32),
+            Region::Scoped(depth) => u32::from(depth)
+                .checked_add(1)
+                .map(RegionDepth::from)
+                .ok_or(CheckRefusal::MachineInvariant)?,
+        };
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            let declared = self
+                .context
+                .binders()
+                .declared(Zone::Intuitionistic, index)
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+            let reach = crate::capability::reaches(
+                self.context.arena(),
+                TypeNode::Value(declared),
+                Region::Scoped(floor),
+            )?;
+            if matches!(reach, crate::capability::Reach::Keeps) {
+                return Err(CheckRefusal::Access {
+                    at: node,
+                    defect: AccessDefect::KeptEscaped,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// End the innermost capability scope's region: its mark dropped and every
+    /// slot kept in it released to an exclusive access.
+    ///
+    /// # Specification
+    /// - requires: a scope's subject was judged under the innermost mark.
+    /// - ensures: one region fewer; every keep in the region that ended or a
+    ///   deeper one released.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when no region is open.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an exclusive access of a kept slot is refused inside
+    ///   the region and checks after its scope ends.
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    #[spec(
+        captures: open = self.sessions.regions.len(),
+        ensures: |ret| ret.is_err() || self.sessions.regions.len().checked_add(1) == Some(open),
+    )]
+    pub(super) fn close_region(&mut self) -> Result<(), CheckRefusal>
+    {
+        let ended = u32::try_from(self.sessions.regions.len())
+            .map(RegionDepth::from)
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        let _mark = self
+            .sessions
+            .regions
+            .pop()
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.kept.retain(|keep| keep.region < ended);
         Ok(())
     }
 

@@ -397,6 +397,29 @@ impl crate::CoreArena
             region,
         })
     }
+
+    /// Mint the type of a value of `value` kept in the region of the
+    /// capability scope at `region`.
+    ///
+    /// # Specification
+    /// - requires: `value` resolves in this arena.
+    /// - ensures: keeps the value type and the region as given.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kept type over a value that mentions a binder and
+    ///   one over a closed value, each substituted into: the first rewrites its
+    ///   value and keeps its region, the second stays the same node.
+    /// - witness: `effect::capability::tests::a_kept_type_keeps_its_region_across_substitution`
+    #[spec(requires: self.value_type(value).is_some(), ensures: |ret| matches!(self.value_type(ret), Some(&crate::ValueType::Kept { value: kept, region: lives }) if kept == value && lives == region))]
+    #[inline]
+    pub fn value_type_kept(
+        &mut self,
+        value: crate::ValueTypeId,
+        region: RegionDepth,
+    ) -> crate::ValueTypeId
+    {
+        self.alloc_value_type(crate::ValueType::Kept { value, region })
+    }
 }
 
 #[cfg(test)]

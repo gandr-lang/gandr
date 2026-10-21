@@ -312,10 +312,11 @@ impl Machine<'_, '_>
     /// - requires: nothing.
     /// - ensures: the slot's residence, unchanged.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::NotHeld`] for a
-    ///   slot that holds no value, and [`AccessDefect::Lent`] for a slot lent
-    ///   exclusively, or lent shared to an exclusive access;
-    ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::Unbound`] for an
-    ///   index past the zone.
+    ///   slot that holds no value, [`AccessDefect::Lent`] for a slot lent
+    ///   exclusively, or lent shared to an exclusive access, and
+    ///   [`AccessDefect::Kept`] for a slot a region keeps a shared view of, to
+    ///   an exclusive access; [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::Unbound`] for an index past the zone.
     /// - panics: none.
     ///
     /// # Errors
@@ -324,10 +325,12 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — an access inside another of the same slot and one of
     ///   a view are refused; two shared accesses nest, and an exclusive one
-    ///   inside a shared one is refused, of the whole value and at a place.
+    ///   inside a shared one is refused, of the whole value and at a place; an
+    ///   exclusive access of a slot a live region keeps is refused.
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     /// - witness: `judgement::access::tests::a_place_of_a_held_list_is_lent_at_its_index`
+    /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(
         captures: lent = self.sessions.lent.len(),
         ensures: |ret| self.sessions.lent.len() == lent && (ret.is_err() || ret.as_ref().is_ok_and(|found| matches!(found.resident, Resident::Held { .. }))),
@@ -360,6 +363,18 @@ impl Machine<'_, '_>
             return Err(CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::Lent,
+            });
+        }
+        if matches!(mode, AccessMode::Exclusive { .. })
+            && self
+                .sessions
+                .kept
+                .iter()
+                .any(|keep| keep.position == found.position)
+        {
+            return Err(CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Kept,
             });
         }
         Ok(found)
@@ -475,6 +490,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Element { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::StaticPi { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
@@ -548,7 +564,11 @@ impl Machine<'_, '_>
         let depth = self.context.depth(Zone::Intuitionistic);
         self.context.binders().open(Zone::Linear, view);
         self.sessions.opened.push(Opened {
-            resident: Resident::View { at, grade },
+            resident: Resident::View {
+                at,
+                grade,
+                held: found.position,
+            },
             depth,
         });
         self.wait(Frame::AccessBody { at, direction });
@@ -855,6 +875,7 @@ impl Machine<'_, '_>
             Resident::View {
                 at,
                 grade: HoldGrade::One,
+                ..
             } => {
                 let Computation::Memory(MemoryForm::Access { mode, .. }) = *self.computation(at)?
                 else {

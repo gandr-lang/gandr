@@ -709,6 +709,7 @@ pub fn decode_bridge(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::World(_)
         | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
@@ -1142,6 +1143,31 @@ fn convert(
                             bound: stage,
                         });
                     },
+                    // A value kept in a region that outlives the one wanted
+                    // lives long enough; invariantly a region equals only
+                    // itself. Any value enters a region, and none leaves one.
+                    (
+                        ValueTypeView::Kept {
+                            value: found_value,
+                            region: found,
+                        },
+                        ValueTypeView::Kept {
+                            value: wanted_value,
+                            region: wanted,
+                        },
+                    ) => {
+                        pending.push(values(found_value, wanted_value));
+                        if subtyping {
+                            found <= wanted
+                        }
+                        else {
+                            found == wanted
+                        }
+                    },
+                    (_, ValueTypeView::Kept { value, .. }) if subtyping => {
+                        pending.push(values(left, value));
+                        true
+                    },
                     (ValueTypeView::Abstract(left), ValueTypeView::Abstract(right)) => {
                         left == right
                     },
@@ -1317,6 +1343,7 @@ fn convert(
                         | ValueTypeView::StaticPi { .. }
                         | ValueTypeView::Capability { .. }
                         | ValueTypeView::Staged { .. }
+                        | ValueTypeView::Kept { .. }
                         | ValueTypeView::World(_),
                         _,
                     ) => false,
@@ -1792,6 +1819,7 @@ fn value_head(
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Ok(side),
     }
@@ -2041,6 +2069,7 @@ fn relocated_values(
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::World(_),
             _,
         ) => return Ok(Maybe::Absent(through::Absent::Unread)),

@@ -1392,7 +1392,6 @@
 2106 Keyword access_expression val L[{] R[<pattern>]
 2107 Other access_expression = L[<pattern>] R[<expression>]
 2108 Other access_expression ; L[<expression>] R[<expression> }]
-2110 Other access_expression : L[<pattern>] R[<type>]
 2113 Keyword access_expression unpack L[{] R[identifier]
 2114 VariableDef access_expression identifier L[unpack] R[:]
 2115 Other access_expression : L[identifier] R[<type>]

@@ -1848,7 +1848,7 @@ impl Kernel
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
-              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::World(_) => false,
+              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false,
               ValueType::Path { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
@@ -2053,6 +2053,7 @@ impl Kernel
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                    ValueType::Kept { .. } => panic!("the kernel has no kept type"),
                     ValueType::Path {
                         carrier,
                         left,
@@ -2453,6 +2454,7 @@ impl Kernel
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                    ValueType::Kept { .. } => panic!("the kernel has no kept type"),
                     ValueType::Path {
                         carrier,
                         left,

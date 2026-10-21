@@ -4071,3 +4071,43 @@ fn a_scoped_capability_names_its_scope_400()
         );
     }
 }
+
+/// A value kept in the region of a capability scope the term opens names
+/// that scope by the name its binder takes, `A at a`, as a capability does
+/// in the scopes the source names.
+#[test]
+fn a_kept_value_names_the_scope_it_is_kept_in()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::RegionDepth;
+
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "exit".into(),
+        payload: integer,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let kept = core.value_type_kept(integer, RegionDepth::from(1_u32));
+    let returns = core.comp_type_returner(kept);
+    let three = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let pure = core.computation_return(three);
+    let ascribed = core.computation_ascribe(pure, returns);
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let subject = core.computation_bind(ascribed, returned);
+    let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = core.computation_return(answer);
+    let scoped = core.computation_scope(signature, subject, on_return, Arc::from([]));
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
+        faithful(Written(
+            "handle a : Proc { run b : Integer at a <- pure a ; b } with { pure(a) => a }"
+        ))
+    );
+}

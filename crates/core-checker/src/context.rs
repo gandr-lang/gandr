@@ -3098,6 +3098,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::StaticPi { .. }
                 | ValueTypeView::Session(_)
                 | ValueTypeView::Staged { .. }
+                | ValueTypeView::Kept { .. }
                 | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Ok(head),
             };
@@ -3402,6 +3403,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Abstract(_)
                     | ValueTypeView::Session(_)
                     | ValueTypeView::Staged { .. }
+                    | ValueTypeView::Kept { .. }
                     | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },

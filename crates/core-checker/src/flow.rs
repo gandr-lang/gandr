@@ -383,6 +383,7 @@ pub fn session_code(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
@@ -685,6 +686,7 @@ pub fn endpoints(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
@@ -867,7 +869,8 @@ pub fn covariant(
                 ),
                 ValueType::List(inner)
                 | ValueType::Lift { inner, .. }
-                | ValueType::Staged { base: inner, .. } => {
+                | ValueType::Staged { base: inner, .. }
+                | ValueType::Kept { value: inner, .. } => {
                     work.push((Position::ValueType(inner), polarity, depth));
                 },
                 ValueType::Thunk(body) => work.push((Position::CompType(body), polarity, depth)),
@@ -1117,6 +1120,7 @@ fn computed(
             | ValueType::Session(_)
             | ValueType::Capability { .. }
             | ValueType::Staged { .. }
+            | ValueType::Kept { .. }
             | ValueType::World(_) => return Err(unsupported),
         }
     }
@@ -1258,6 +1262,7 @@ pub fn run_premises(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_) => {

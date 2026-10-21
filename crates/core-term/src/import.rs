@@ -334,6 +334,9 @@ impl Image
                 }
                 | ValueType::Staged {
                     base: ref mut ty, ..
+                }
+                | ValueType::Kept {
+                    value: ref mut ty, ..
                 },
             )
             | Self::CompType(CompType::Returner {
@@ -886,6 +889,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Element { .. }
                                 | ValueType::Abstract(_)
                                 | ValueType::Staged { .. }
+                                | ValueType::Kept { .. }
                                 | ValueType::StaticPi { .. }
                                 | ValueType::Unknown
                                 | ValueType::Stack { .. } => {},

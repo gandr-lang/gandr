@@ -163,7 +163,7 @@ pub struct Unfolded(pub u64);
                     ValueType::World(ref ty) => 1_u64.saturating_add(u64::try_from(ty.types().count()).unwrap_or(u64::MAX)),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
-                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } => 2,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 2,
                 }
             },
             CoreNode::CompType(id) => {
@@ -539,7 +539,8 @@ pub fn unfolded(
                     ValueType::Thunk(body) => pending.push(CoreNode::CompType(body)),
                     ValueType::List(inner)
                     | ValueType::Lift { inner, .. }
-                    | ValueType::Staged { base: inner, .. } => {
+                    | ValueType::Staged { base: inner, .. }
+                    | ValueType::Kept { value: inner, .. } => {
                         pending.push(CoreNode::ValueType(inner));
                     },
                     ValueType::Element { code, .. } => pending.push(CoreNode::Value(code)),

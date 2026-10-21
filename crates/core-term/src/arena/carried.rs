@@ -576,7 +576,8 @@ impl CoreArena
             },
             ValueType::List(inner)
             | ValueType::Lift { inner, .. }
-            | ValueType::Staged { base: inner, .. } => {
+            | ValueType::Staged { base: inner, .. }
+            | ValueType::Kept { value: inner, .. } => {
                 self.value_type_into(&mut union, inner, at);
             },
             ValueType::Thunk(body) => self.comp_type_into(&mut union, body, at),

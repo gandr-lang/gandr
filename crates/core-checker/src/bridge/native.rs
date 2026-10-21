@@ -210,6 +210,7 @@ impl Erasure<'_, '_>
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
                     | ValueType::Staged { .. }
+                    | ValueType::Kept { .. }
                     | ValueType::World(_) => return Err(Refusal::MachineInvariant),
                 }
             },
@@ -503,6 +504,7 @@ impl Erasure<'_, '_>
                     | ValueType::Stack { .. }
                     | ValueType::Capability { .. }
                     | ValueType::Staged { .. }
+                    | ValueType::Kept { .. }
                     | ValueType::World(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))

@@ -875,6 +875,7 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Stack { .. }
         | ValueType::Session(_)
         | ValueType::Capability { .. }
+        | ValueType::Kept { .. }
         | ValueType::World(_) => TypeHead::Outside,
     }
 }

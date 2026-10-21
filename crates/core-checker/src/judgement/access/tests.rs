@@ -1,11 +1,16 @@
+use alloc::sync::Arc;
+
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::EffectClause;
 use gandr_core_term::effect::EffectOp;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::capability::RegionDepth;
+use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
@@ -822,5 +827,164 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
         both(&mut arena, frozen, units),
         [Err(at(inner, AccessDefect::Lent)); 2],
         "an index is lent shared with its place, so it is frozen for the access"
+    );
+}
+
+/// `term` checked against `expected` from an empty context that it leaves
+/// empty.
+///
+/// # Specification
+/// trivial.
+fn checked(
+    arena: &mut CoreArena,
+    term: ComputationId,
+    expected: CompTypeId,
+) -> Result<(), CheckRefusal>
+{
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    let checked = form_comp_type(&mut context, expected)
+        .and_then(|expected| check_comp(&mut context, term, expected).map(|_| ()));
+    assert_eq!(
+        context.depth(Zone::Linear),
+        gandr_core_term::BinderDepth::default(),
+        "a check leaves the linear zone as it found it"
+    );
+    checked
+}
+
+#[test]
+fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let units = units(&mut arena);
+    let integers = integers(&mut arena);
+    let suspended = arena.value_type_thunk(integers);
+    let kept = arena.value_type_kept(suspended, RegionDepth::from(1_u32));
+    let keeps = arena.comp_type_returner(kept);
+    let suspends = arena.comp_type_returner(suspended);
+    let zero = arena.value_literal(integer_literal());
+    let returned = done(&mut arena);
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let passes = arena.computation_return(answered);
+    let unwind = done(&mut arena);
+    let scope = |arena: &mut CoreArena, subject| {
+        let clauses: Arc<[EffectClause]> = [EffectClause {
+            operation: "exit".into(),
+            body: returned,
+        }]
+        .into();
+        arena.computation_scope(host.proc.clone(), subject, passes, clauses)
+    };
+    // x <- (return thunk { (w,).0 } : F (U F Integer at ρ)), with `w` the view.
+    let (_viewed, read) = copied(&mut arena, l0());
+    let thunk = arena.value_thunk(read);
+    let suspend = arena.computation_return(thunk);
+    let kept_bind = arena.computation_ascribe(suspend, keeps);
+    let plain_bind = arena.computation_ascribe(suspend, suspends);
+    // hold s = 0; scope Proc (c) { access shared s as w { x <- …; force x };
+    // body } with { return(r) => r; exit(_, _) => () }
+    let forced = arena.computation_force(answered);
+    let kept_body = arena.computation_bind(kept_bind, forced);
+    let kept_access = shared(&mut arena, l0(), kept_body);
+    let in_region = |arena: &mut CoreArena, access, after| {
+        let subject = arena.computation_bind(access, after);
+        let scoped = scope(arena, subject);
+        (scoped, hold(arena, scoped))
+    };
+    let resumed = resume(&mut arena, l0(), zero);
+    let exclusive = access(&mut arena, l0(), resumed, unwind);
+    let (released_scope, _) = in_region(&mut arena, kept_access, returned);
+    let ascribed = arena.computation_ascribe(released_scope, units);
+    let released = arena.computation_bind(ascribed, exclusive);
+    let released = hold(&mut arena, released);
+    assert_eq!(
+        checked(&mut arena, released, units),
+        Ok(()),
+        "a thunk kept in the scope's region keeps the shared view, forces as \
+         the thunk it keeps, and the held value is lent exclusively once the \
+         scope ends"
+    );
+    let frozen_after = access(&mut arena, l0(), resumed, unwind);
+    let (_, frozen) = in_region(&mut arena, kept_access, frozen_after);
+    assert_eq!(
+        checked(&mut arena, frozen, units),
+        Err(at(frozen_after, AccessDefect::Kept)),
+        "a slot a live region keeps a view of is frozen against an exclusive access"
+    );
+    let plain_body = arena.computation_bind(plain_bind, forced);
+    let plain_access = shared(&mut arena, l0(), plain_body);
+    let (_, escaping) = in_region(&mut arena, plain_access, returned);
+    assert_eq!(
+        checked(&mut arena, escaping, units),
+        Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(thunk)),
+            defect: AccessDefect::Escaped { by: Capture::Thunk },
+        }),
+        "a thunk kept in no region captures no view"
+    );
+    let (answering_scope, answering) = in_region(&mut arena, kept_access, returned);
+    assert_eq!(
+        checked(&mut arena, answering, keeps),
+        Err(at(answering_scope, AccessDefect::KeptEscaped)),
+        "a scope answers nothing kept in its own region"
+    );
+    // x <- …; z <- (return thunk { force x } : F (U F Integer [at ρ])); force z
+    let outer_force = arena.computation_force(answered);
+    let wrapper = arena.value_thunk(outer_force);
+    let rewrapped = arena.computation_return(wrapper);
+    for (wrapped, outcome) in [
+        (
+            suspends,
+            Err(CheckRefusal::Access {
+                at: CoreNode::Term(TermNode::Value(wrapper)),
+                defect: AccessDefect::KeptEscaped,
+            }),
+        ),
+        (keeps, Ok(())),
+    ] {
+        let wrapping = arena.computation_ascribe(rewrapped, wrapped);
+        let rest = arena.computation_bind(wrapping, outer_force);
+        let body = arena.computation_bind(kept_bind, rest);
+        let accessed = shared(&mut arena, l0(), body);
+        let (_, program) = in_region(&mut arena, accessed, returned);
+        assert_eq!(
+            checked(&mut arena, program, units),
+            outcome,
+            "a thunk names a variable kept in a region only at a type kept there"
+        );
+    }
+    // x <- …; y <- (return x : F (U F Integer at ρ)); force y: a value kept in
+    // a region is bound again at the type that keeps it.
+    let again = arena.computation_return(answered);
+    let again = arena.computation_ascribe(again, keeps);
+    let rest = arena.computation_bind(again, forced);
+    let body = arena.computation_bind(kept_bind, rest);
+    let accessed = shared(&mut arena, l0(), body);
+    let (_, program) = in_region(&mut arena, accessed, returned);
+    assert_eq!(
+        checked(&mut arena, program, units),
+        Ok(()),
+        "a value kept in a region stays kept at the type that keeps it"
+    );
+    // scope Proc (c) { y <- (return thunk { hold s = 0; access shared s as w {
+    // x <- …; force x } } : F (U F Integer)); () }: a hold stands in a scope only
+    // where its type is pure, inside a thunk.
+    let inner_body = arena.computation_bind(kept_bind, forced);
+    let inner_access = shared(&mut arena, l0(), inner_body);
+    let inner_hold = hold(&mut arena, inner_access);
+    let holding = arena.value_thunk(inner_hold);
+    let suspended_hold = arena.computation_return(holding);
+    let ascribed_hold = arena.computation_ascribe(suspended_hold, suspends);
+    let inner_subject = arena.computation_bind(ascribed_hold, returned);
+    let held_inside = scope(&mut arena, inner_subject);
+    assert_eq!(
+        checked(&mut arena, held_inside, units),
+        Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(thunk)),
+            defect: AccessDefect::Escaped { by: Capture::Thunk },
+        }),
+        "a value held inside the scope does not outlive its region, so no view \
+         of it is kept there"
     );
 }

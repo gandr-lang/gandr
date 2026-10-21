@@ -296,6 +296,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Sigma { .. }
             | ValueTypeView::Abstract(_)
             | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Session(_) => {
                 return Err(located(

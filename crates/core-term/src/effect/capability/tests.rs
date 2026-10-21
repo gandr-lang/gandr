@@ -125,3 +125,39 @@ fn attenuation_is_inclusion_on_grant_atoms()
     assert_eq!(joined.signatures().len(), 2);
     assert_eq!(both.grants_within(&joined, &arena), RowInclusion::Included);
 }
+
+#[test]
+fn a_kept_type_keeps_its_region_across_substitution()
+{
+    let mut arena = CoreArena::default();
+    let region = RegionDepth::from(1_u32);
+    let code = arena.value_variable(
+        crate::Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let element = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+    let kept = arena.value_type_kept(element, region);
+    let argument = arena.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
+    let rewritten = crate::rewrite::instantiate_value_type(&mut arena, kept, argument);
+    assert_ne!(rewritten, kept, "the kept value mentions the binder");
+    let Some(&crate::ValueType::Kept {
+        value,
+        region: lives,
+    }) = arena.value_type(rewritten)
+    else {
+        panic!("a kept type rewrites to a kept type");
+    };
+    assert_eq!(lives, region, "the region is kept as written");
+    assert!(
+        matches!(arena.value_type(value), Some(crate::ValueType::Element { code: read, .. })
+            if arena.value(*read) == Some(&crate::Value::Constant(gandr_kernel_term::ConstantIndex::from(0_usize)))),
+        "the kept value reads the argument"
+    );
+    let unit = arena.value_type_unit();
+    let closed = arena.value_type_kept(unit, region);
+    assert_eq!(
+        crate::rewrite::instantiate_value_type(&mut arena, closed, argument),
+        closed,
+        "a kept type that mentions no binder is left as it is"
+    );
+}

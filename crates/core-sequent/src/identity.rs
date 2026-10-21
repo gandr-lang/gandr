@@ -294,6 +294,8 @@ pub enum MotiveHead
     Session,
     /// A capability type.
     Capability,
+    /// A value kept in a region.
+    Kept,
     /// A world type.
     World,
     /// A telescope: the motive of a telescope transport.
@@ -332,6 +334,7 @@ impl fmt::Display for MotiveHead
             Self::Stack => "a stack type",
             Self::Session => "a session type",
             Self::Capability => "a capability type",
+            Self::Kept => "a type kept in a region",
             Self::World => "a world type",
             Self::Telescope => "a telescope",
         })
@@ -478,6 +481,7 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::Stack { .. } => MotiveHead::Stack,
         ValueType::Session(_) => MotiveHead::Session,
         ValueType::Capability { .. } => MotiveHead::Capability,
+        ValueType::Kept { .. } => MotiveHead::Kept,
         ValueType::World(_) => MotiveHead::World,
     }
 }
@@ -563,6 +567,7 @@ fn row(
         | ValueType::Stack { .. }
         | ValueType::Session(_)
         | ValueType::Capability { .. }
+        | ValueType::Kept { .. }
         | ValueType::World(_) => match family {
             Family::Flow => Row::Unchanged,
             Family::Path => return Err(Unread::Head(head(read))),

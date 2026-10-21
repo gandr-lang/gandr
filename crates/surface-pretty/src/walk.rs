@@ -193,6 +193,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::session::ActionKind;
@@ -412,7 +413,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::Located { .. }),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -456,7 +457,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Relation { .. }
         | Former::Data { .. }
         | Former::RunType(_)
-        | Former::Located { .. } => Kind::ValueType,
+        | Former::Located { .. }
+        | Former::Kept { .. } => Kind::ValueType,
         Former::Returner(_)
         | Former::With(..)
         | Former::EffectfulReturner { .. }
@@ -1109,7 +1111,8 @@ where
         | Former::Returner(child)
         | Former::EffectfulReturner { result: child, .. }
         | Former::Quote(child)
-        | Former::Located { inner: child, .. } => Vec::from([value_type(child)]),
+        | Former::Located { inner: child, .. }
+        | Former::Kept { inner: child, .. } => Vec::from([value_type(child)]),
         Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
@@ -2593,6 +2596,9 @@ enum Task<Node>
     /// Open a binder in a zone, of the former whose child follows: the former
     /// itself when it opens that one binder, whose name the source may write.
     Bind(Zone, Option<Node>),
+    /// Open the binder a capability scope's subject stands under, as
+    /// [`Task::Bind`] does, its region the innermost the walk is inside.
+    BindScope(Zone, Option<Node>),
     /// Close the innermost binder.
     Unbind,
     /// Set the occurrences named so far aside, so the argument visited next
@@ -3166,6 +3172,10 @@ struct Walk<'walk, 'names>
     /// The zone of each open binder, outermost first; a binder's position
     /// among them names it.
     opened: Vec<Zone>,
+    /// The positions of the open binders that name a capability scope,
+    /// outermost first: the regions the walk is inside, after the ones the
+    /// source's roots stand in.
+    scopes: Vec<usize>,
     /// The positions whose binder an occurrence named since it last opened:
     /// a dependent arrow whose binder no occurrence names is spelled as the
     /// plain arrow.
@@ -4036,6 +4046,7 @@ impl Walk<'_, '_>
                 | Former::ResumeView { .. }
                 | Former::AbortView(_)
                 | Former::Located { .. }
+                | Former::Kept { .. }
                 | Former::WorldHold(_)
                 | Former::Leta { .. }
                 | Former::Migrate { .. }
@@ -4738,18 +4749,13 @@ impl Walk<'_, '_>
                     // lives in, `Cap {…} at c`; past the scopes the source
                     // names, its region goes unwritten.
                     gandr_core_term::effect::capability::Region::Scoped(depth) => {
-                        let named = usize::try_from(u32::from(depth))
-                            .ok()
-                            .and_then(|depth| depth.checked_sub(1_usize))
-                            .and_then(|at| source.regions().get(at).copied().flatten())
-                            .filter(|name| {
-                                let text: &str = name.as_ref();
-                                !text.is_empty() && !text.contains(char::is_whitespace)
-                            });
+                        let named = self.region(source, depth).filter(|name| {
+                            !name.0.is_empty() && !name.0.contains(char::is_whitespace)
+                        });
                         match named {
                             Some(name) => {
                                 spelled.push_str(" at ");
-                                spelled.push_str(name.as_ref());
+                                spelled.push_str(&name.0);
                                 writes(
                                     Production("at_type"),
                                     writes(
@@ -4858,6 +4864,7 @@ impl Walk<'_, '_>
             | Former::ResumeView { .. }
             | Former::AbortView(_)
             | Former::Located { .. }
+            | Former::Kept { .. }
             | Former::WorldHold(_)
             | Former::Leta { .. }
             | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
@@ -5346,7 +5353,7 @@ impl Walk<'_, '_>
             Some(slots) => slots,
             None => children(source, node, &former, admits, self.bodies),
         };
-        for slot in slots.into_iter().rev() {
+        for (index, slot) in slots.into_iter().enumerate().rev() {
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
             }
@@ -5363,8 +5370,16 @@ impl Walk<'_, '_>
                 tasks.push(Task::Surface(surface));
             }
             let opener = (slot.binds.count == 1_usize).then_some(node);
+            // A capability scope's subject, its first slot, stands in the
+            // region the scope opens.
+            let scoped = index == 0_usize && matches!(former, Former::Scope { .. });
             for _ in 0_usize .. slot.binds.count {
-                tasks.push(Task::Bind(slot.binds.zone, opener));
+                tasks.push(if scoped {
+                    Task::BindScope(slot.binds.zone, opener)
+                }
+                else {
+                    Task::Bind(slot.binds.zone, opener)
+                });
             }
             if let Some(label) = slot.label {
                 tasks.push(Task::Label(label));
@@ -5906,6 +5921,46 @@ impl Walk<'_, '_>
         self.names.push(name);
         let _named = self.occurring.remove(&OpenBinders(position));
         self.opened.push(zone);
+    }
+
+    /// The name of the capability scope whose region is `depth`, counted
+    /// from the outermost: the scopes the source's roots stand in first,
+    /// then the ones the walk is inside.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name the source writes for an ambient scope, or the name
+    ///   the walk gave the binder of a scope it is inside; none for depth zero,
+    ///   for a depth past every scope open around the node, and for a scope
+    ///   whose binder took no name.
+    /// - provides: the scope a capability type's and a kept type's `at` names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ambient scope and a scope the walk enters each
+    ///   name the region they open, counted on from the ambient ones; a region
+    ///   past both goes unnamed.
+    /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
+    /// - witness: `tests::goldens::a_kept_value_names_the_scope_it_is_kept_in`
+    #[spec(ensures: |ret| u32::from(depth) != 0_u32 || ret.is_none())]
+    fn region<S>(
+        &self,
+        source: &S,
+        depth: RegionDepth,
+    ) -> Option<BinderName>
+    where
+        S: Source + ?Sized,
+    {
+        let at = usize::try_from(u32::from(depth))
+            .ok()?
+            .checked_sub(1_usize)?;
+        let ambient = source.regions();
+        if let Some(named) = ambient.get(at) {
+            return named.map(|name| BinderName(String::from(name.as_ref())));
+        }
+        let position = *self.scopes.get(at.checked_sub(ambient.len())?)?;
+        self.names.get(position)?.clone()
     }
 
     /// `name` as a part's text, or `?` for a name a line or the walk's
@@ -6603,6 +6658,17 @@ impl Walk<'_, '_>
                 let _ = parts.piece(Binding::Atom).text(" at ").text(world);
                 writes(Production("at_type"), Binding::Cons)
             },
+            // `A at c` names the capability scope whose region the value is
+            // kept in, and binds as `A at w` does.
+            Former::Kept { region, .. } => {
+                let named = self.region(source, region);
+                let scope = self.spelled(
+                    named.as_ref().map(|name| Name::from(name.0.as_str())),
+                    Unspelled::Elided(Elided::Region),
+                );
+                let _ = parts.piece(Binding::Atom).text(" at ").text(scope);
+                writes(Production("at_type"), Binding::Cons)
+            },
             Former::WorldHold(_) => {
                 // Parenthesized, as the surface writes it: bare at a block's
                 // head, `hold` opens a hold statement, `hold x = v ; …`.
@@ -7243,6 +7309,7 @@ where
         binders: Binders::new(mentioned),
         names: Vec::new(),
         opened: Vec::new(),
+        scopes: Vec::new(),
         occurring: BTreeSet::new(),
         held: Vec::new(),
         substituted: BTreeMap::new(),
@@ -7298,8 +7365,19 @@ where
                 Walk::returned(source, node, depth, &mut tasks);
             },
             Task::Bind(zone, opener) => walk.bind(source, zone, opener),
+            Task::BindScope(zone, opener) => {
+                walk.bind(source, zone, opener);
+                walk.scopes.push(walk.opened.len().saturating_sub(1_usize));
+            },
             Task::Unbind => {
                 let _closed = walk.opened.pop();
+                if walk
+                    .scopes
+                    .last()
+                    .is_some_and(|&scope| scope >= walk.opened.len())
+                {
+                    let _left = walk.scopes.pop();
+                }
                 let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
             },
             Task::Hold => walk.held.push(core::mem::take(&mut walk.occurring)),
@@ -7558,6 +7636,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             names: super::Vec::new(),
             opened: super::Vec::new(),
+            scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
@@ -7644,6 +7723,7 @@ mod tests
             binders: super::Binders::new(super::BTreeSet::new()),
             names: super::Vec::new(),
             opened: super::Vec::new(),
+            scopes: super::Vec::new(),
             occurring: super::BTreeSet::new(),
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),

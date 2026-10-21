@@ -957,7 +957,8 @@ pub(crate) fn crosses(
             },
             ValueTypeView::List(inner)
             | ValueTypeView::Lift { inner, .. }
-            | ValueTypeView::Staged { base: inner, .. } => pending.push(below(inner)),
+            | ValueTypeView::Staged { base: inner, .. }
+            | ValueTypeView::Kept { value: inner, .. } => pending.push(below(inner)),
             ValueTypeView::Sigma { first, second } => {
                 pending.push(below(first));
                 pending.push(Pending {
