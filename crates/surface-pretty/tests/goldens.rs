@@ -3677,6 +3677,43 @@ fn a_function_definition_spells_whole_941()
     );
 }
 
+/// A projection out of a forced parameter of a definition written whole is
+/// the observation it lowered from, `a.i` by position, read against the
+/// lazy product or codata type the parameter's binder states; a projection
+/// out of a binder no header states keeps the printer's notation and makes
+/// the presentation approximate (#941).
+#[test]
+fn an_observation_of_a_parameter_prints_by_position_941()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let lazy = core.comp_type_with(&[returns_nat, returns_nat]);
+    let thunked = core.value_type_thunk(lazy);
+    let function = core.comp_type_arrow(thunked, returns_nat);
+    let ty = core.value_type_thunk(function);
+    let parameter = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(parameter);
+    let observed = core.computation_project(gandr_kernel_term::Component::from(1_usize), forced);
+    let lambda = core.computation_lambda(observed);
+    let body = core.value_thunk(lambda);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        declared_whole(&source, (ty, body), PageWidth::from(100_u32)),
+        Maybe::Present((
+            String::from("def down(a : +U &{-F Nat, -F Nat}) -> -F Nat {\n  a.1\n}"),
+            Fidelity::Faithful
+        )),
+        "the parameter's observation is written by its position"
+    );
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(lambda))),
+        approximate(Written("fn (a) { (force a).1 }")),
+        "a lambda's binder states no type, so its projection keeps the notation"
+    );
+}
+
 /// A data case writes its motive where nothing states its type — the
 /// computation a bind runs, a body in a thunk a constructor holds — and
 /// leaves it where the body's type is stated or the motive names the

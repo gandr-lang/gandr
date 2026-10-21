@@ -5545,7 +5545,9 @@ impl Walk<'_, '_>
     ///   returner ending a pass is `break(v)` or `return v` and a loop ending a
     ///   pass is written with its rest, as [`Self::pass_end`] reads them, and a
     ///   computation the end of a pass cannot write is noted as the fixpoint's
-    ///   notation; a returner anywhere else is `pure v` and a run `run c`.
+    ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
+    ///   projection out of a forced variable naming a context binder is the
+    ///   observation `a.i`, the binder's name its one piece.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -5570,6 +5572,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
+    /// - witness: `tests::goldens::an_observation_of_a_parameter_prints_by_position_941`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -5832,6 +5835,30 @@ impl Walk<'_, '_>
                     depth: below(depth, kind),
                 });
                 tasks.push(Task::BindLoop(Zone::Intuitionistic, LoopBinder::Hidden));
+                return Ok(());
+            },
+            // A projection out of a forced parameter of the definition the
+            // walk presents whole is the observation `a.i` it lowered from:
+            // the parameter's binder states its thunked lazy product or codata
+            // type, which reads the position.
+            Former::Project(side, observed)
+                if let Former::Force(thunk) = source.read(observed)
+                    && let Former::Variable { zone, index } = source.read(thunk)
+                    && let Some(position) = self.context_position(zone, index) =>
+            {
+                let mut parts = Parts::default();
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!(".{}", usize::from(side)));
+                self.forms.push(parts.parts);
+                tasks.push(Task::Join(writes(
+                    Production("projection_expression"),
+                    Join::Form {
+                        pieces: Arity(1_usize),
+                        binding: Binding::Atom,
+                    },
+                )));
+                tasks.push(Task::Context(position));
                 return Ok(());
             },
             Former::Path { .. }

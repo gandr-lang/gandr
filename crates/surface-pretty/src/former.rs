@@ -1018,7 +1018,9 @@ pub enum Notation
     /// `shift k { … }`: one outside every handler subject of a body a reset
     /// delimits, or one over anything but a returner.
     Shift,
-    /// A projection out of a computation pair, written `c.0` or `c.1`.
+    /// A projection out of a computation pair, written `c.0` or `c.1`, where
+    /// it observes no parameter a definition's header states; one that does
+    /// is the observation `a.i`.
     Projection,
     /// A transport along a type equality, written `transport(e, v)`.
     Transport,
