@@ -13,6 +13,25 @@ def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
   become m.size
 }
 
+/// A position past the last entry: a lazy record of two has `0` and `1`.
+@[ refuses("UnresolvedName") ]
+def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+  become m.2
+}
+
+/// A lazy product chain names no entry; its entries are observed by
+/// position only.
+@[ refuses("UnresolvedName") ]
+def chain_label(m : +U (-F Integer & -F String)) -> -F Integer {
+  become m.get
+}
+
+/// An entry by position is typed as the entry it places.
+@[ refuses("TypeMismatch") ]
+def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+  become m.1
+}
+
 @[ refuses("OutOfFragment") ]
 def not_a_record(m : +U (-F Integer)) -> -F Integer {
   become m.get

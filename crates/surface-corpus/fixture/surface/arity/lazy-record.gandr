@@ -64,6 +64,24 @@ def only(m : +U &{get : -F Integer}) -> -F Integer {
 def singled : () => Integer ;
 def singled = thunk { become only(single) } ;
 
+/// An entry observed by its position, counted from zero, is the entry its
+/// label names: `m.1` is `m.put`.
+@[ checks ]
+def placed(m : +U &{get : -F Integer, put : -F String}) -> -F String {
+  become m.1
+}
+
+/// A lazy product chain names no entry, so each is observed by its position.
+@[ checks ]
+def last(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer {
+  become m.2
+}
+
+/// The last component of `chained`, observed by its position.
+@[ runs("3") ]
+def lasted : () => Integer ;
+def lasted = thunk { become last(chained) } ;
+
 @[ refuses("OutOfFragment") ]
 def unthunked : -F Integer & -F Integer ;
 
