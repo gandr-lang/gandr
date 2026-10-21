@@ -1761,6 +1761,31 @@ pub struct RangeParams
     pub range: Range,
 }
 
+/// The parameters of `textDocument/codeAction`: the range asked about and the
+/// diagnostics the client shows over it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeActionParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The range asked about.
+    pub range: Range,
+    /// What the client shows over the range.
+    #[serde(default)]
+    pub context: ActionContext,
+}
+
+/// What a client shows over the range a code action is asked for.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct ActionContext
+{
+    /// The diagnostics over the range, each as the client sent it.
+    #[serde(default)]
+    pub diagnostics: Vec<Value>,
+}
+
 /// The parameters of `textDocument/rangesFormatting`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -3054,14 +3079,23 @@ pub struct CodeLens
     pub command: Command,
 }
 
-/// A code action: an edit the client offers to apply.
+/// A code action: an edit the client offers to apply, with the diagnostics it
+/// answers.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodeAction
 {
     /// The text shown.
     pub title: String,
     /// Its kind, `quickfix`.
     pub kind: &'static str,
+    /// The diagnostics it answers, each as the client sent it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Value>,
+    /// Whether it is the fix the client applies when its user asks for the
+    /// preferred one.
+    #[serde(skip_serializing_if = "core::ops::Not::not")]
+    pub is_preferred: bool,
     /// The edit it applies.
     pub edit: WorkspaceEdit,
 }

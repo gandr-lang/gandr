@@ -416,6 +416,7 @@ pub use crate::position::Position;
 pub use crate::position::Range;
 pub use crate::proposal::Proposal;
 pub use crate::proposal::ProposalRefusal;
+pub use crate::proposal::Settles;
 pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;

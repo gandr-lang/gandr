@@ -68,6 +68,7 @@ use gandr_surface_lsp::Proposal;
 use gandr_surface_lsp::ProposalRefusal;
 use gandr_surface_lsp::Range;
 use gandr_surface_lsp::Reached;
+use gandr_surface_lsp::Settles;
 use gandr_surface_lsp::Workspace;
 use serde_json::Value;
 use serde_json::json;
@@ -447,6 +448,7 @@ fn proposed(
         range,
         text,
         explanation,
+        settles: Settles::default(),
     };
     match workspace.propose(uri, version, proposal) {
         Ok(diagnostics) => Ok(json!({ "kept": true, "diagnostics": diagnostics })),
