@@ -181,6 +181,24 @@ wrapper! {
 }
 
 wrapper! {
+    /// A node of a modular decomposition tree: an index into its node list.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ModuleId(usize);
+}
+
+wrapper! {
+    /// A factor's position among its node's factors, earliest first.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct FactorIndex(usize);
+}
+
+wrapper! {
+    /// A number of modular decomposition nodes.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ModuleCount(usize);
+}
+
+wrapper! {
     /// Whether one web vertex precedes another.
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
     pub struct WebPrecedence(bool);
