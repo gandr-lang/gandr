@@ -2103,6 +2103,7 @@ impl InitializeResult
             && matches!(ret.capabilities.workspace.text_document_content.schemes,
                 [scheme] if matches!(scheme.as_bytes(), b"gandr-tree"))
             && ret.capabilities.linked_editing_range_provider.0
+            && ret.capabilities.call_hierarchy_provider.0
             && ret.capabilities.code_lens_provider.resolve_provider
             && ret.capabilities.completion_provider.resolve_provider
             && ret.capabilities.completion_provider.completion_item.label_details_support)]
@@ -2170,6 +2171,7 @@ impl InitializeResult
                     resolve_provider: true,
                 },
                 linked_editing_range_provider: Provider::ANSWERED,
+                call_hierarchy_provider: Provider::ANSWERED,
                 workspace: WorkspaceOptions {
                     workspace_folders: FoldersOptions {
                         supported: true,
@@ -2264,6 +2266,9 @@ pub struct ServerCapabilities
     /// Linked editing is answered: a binder local to a declaration and its
     /// uses, an edit of one applying to all.
     pub linked_editing_range_provider: Provider,
+    /// The call hierarchy is answered: the declared values a definition
+    /// uses, and those whose definitions use it.
+    pub call_hierarchy_provider: Provider,
     /// The workspace features answered.
     pub workspace: WorkspaceOptions,
 }
@@ -2721,6 +2726,15 @@ pub enum Answer
     /// What a linked-editing request answers: the ranges an edit of one
     /// applies to.
     Mirrored(LinkedEditingRanges),
+    /// What a call-hierarchy preparation answers: the declared value the
+    /// name at the position names.
+    Callables(Vec<CallHierarchyItem>),
+    /// What an incoming-calls request answers: each declared value whose
+    /// definition uses the item, with the uses.
+    Callers(Vec<IncomingCall>),
+    /// What an outgoing-calls request answers: each declared value the
+    /// item's definition uses, with the uses.
+    Callees(Vec<OutgoingCall>),
     /// What a text-document-content request answers for a virtual document
     /// that views an open one: its printed syntax tree.
     Content(ContentResult),
@@ -2743,6 +2757,56 @@ pub struct LocationLink
     pub target_range: Range,
     /// The target's name, inside the whole target.
     pub target_selection_range: Range,
+}
+
+/// A declared value a call hierarchy shows: a declaration the lowering
+/// admits as a value, which a use may call.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyItem
+{
+    /// The declared name.
+    pub name: String,
+    /// What it declares: a function.
+    pub kind: SymbolKind,
+    /// The document it is written in.
+    pub uri: DocumentUri,
+    /// Its definition's whole form.
+    pub range: Range,
+    /// Its name in its definition.
+    pub selection_range: Range,
+}
+
+/// The parameters of `callHierarchy/incomingCalls` and
+/// `callHierarchy/outgoingCalls`: the item a preparation answered.
+#[repr(transparent)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct CallsParams
+{
+    /// The item asked about.
+    pub item: CallHierarchyItem,
+}
+
+/// A declared value whose definition uses the item asked about.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomingCall
+{
+    /// The declared value calling.
+    pub from: CallHierarchyItem,
+    /// Each use of the item in its definition, in document order.
+    pub from_ranges: Vec<Range>,
+}
+
+/// A declared value the item asked about uses in its definition.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutgoingCall
+{
+    /// The declared value called.
+    pub to: CallHierarchyItem,
+    /// Each use of it in the item's definition, in document order.
+    pub from_ranges: Vec<Range>,
 }
 
 /// The ranges of a document that an edit of one applies to, each spelling
@@ -3095,7 +3159,7 @@ impl Serialize for DocumentSymbols
 
 /// What a symbol declares, as the protocol numbers it.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct SymbolKind(u8);
 

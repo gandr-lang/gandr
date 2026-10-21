@@ -149,7 +149,7 @@
 //! | references | `textDocument/references` | served: the declaring name when asked, then the uses of the name at a position in every open document and in every source under the folders the editor opened that imports its source, read from disk, matched by its source's path and its span, as the `uses` module states |
 //! | rename | `textDocument/prepareRename`, `rename` | served: the declaring name and each use the reference request finds, narrowed to the name's spelling; the declaring source is tried with its edits applied and a rename that adds an error is refused, as the `rename` module states |
 //! | linked editing | `textDocument/linkedEditingRange` | served: a binder local to a declaration and each of its uses, read off the type table's reverse use index, as the `uses` module states, with the parser's word pattern, so an edit that leaves a range no name ends the linked edit; a name the unit declares links nothing, since importers may write it, and rename serves it |
-//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/*` | blocked: the declaration enclosing each use |
+//! | call hierarchy | `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, `callHierarchy/outgoingCalls` | served: an item is a declared value at its definition, read off the type table as the `calls` module states; its outgoing calls are the declared values the uses in its definition's form refer to, and its incoming calls its uses in every document a reference request reads, each grouped by the innermost definition holding it. A constructor and a binder are no item |
 //! | type hierarchy | `textDocument/prepareTypeHierarchy`, `typeHierarchy/*` | served, not advertised: each answers `null`, as the core has no subtyping to arrange types by |
 //! | formatting | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` | served: one layout per request, each top-level form a range touches edited once. The layout is canonical, so the request's `FormattingOptions` are not read: it writes no trailing whitespace and ends the text with one newline whatever `trimTrailingWhitespace`, `insertFinalNewline` and `trimFinalNewlines` ask, and indents by the printer's two spaces a level whatever `tabSize` and `insertSpaces` ask |
 //! | on-type formatting | `textDocument/onTypeFormatting` | served: typing the `;` that closes a top-level form lays that form out, and any other character, or a `;` inside a form, edits nothing |
@@ -365,6 +365,7 @@ use core::fmt;
 
 #[cfg(unix)]
 mod bus;
+mod calls;
 mod complete;
 #[cfg(unix)]
 mod disk;

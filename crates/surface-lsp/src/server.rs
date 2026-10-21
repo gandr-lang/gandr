@@ -90,6 +90,10 @@ use quenchant_shape::shape::Maybe;
 use serde::Deserialize as _;
 use serde_json::Value;
 
+use crate::calls::Read;
+use crate::calls::callees;
+use crate::calls::callers;
+use crate::calls::items;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
@@ -125,6 +129,8 @@ use crate::protocol::Answer;
 use crate::protocol::AppliedEdit;
 use crate::protocol::AppliesEdits;
 use crate::protocol::ApplyEditParams;
+use crate::protocol::CallHierarchyItem;
+use crate::protocol::CallsParams;
 use crate::protocol::CancelProgressParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::CodeAction;
@@ -3300,6 +3306,19 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "textDocument/prepareCallHierarchy") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing, .. } => true,
+                    Outgoing::Success { result: Answer::Callables(ref items), .. } => items.len() == 1_usize,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "callHierarchy/incomingCalls" | "callHierarchy/outgoingCalls") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Callers(_) | Answer::Callees(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/documentSymbol" | "textDocument/foldingRange" | "textDocument/selectionRange" | "textDocument/documentLink") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_) | Answer::Imports(_), .. } => true,
@@ -3582,6 +3601,31 @@ impl Server
             // it answers none.
             (Phase::Running, "typeHierarchy/supertypes" | "typeHierarchy/subtypes") => {
                 success(id, Answer::Nothing)
+            },
+            (Phase::Running, "textDocument/prepareCallHierarchy") => {
+                match serde_json::from_value::<PositionParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.prepare_calls(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.position,
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "callHierarchy/incomingCalls") => {
+                match serde_json::from_value::<CallsParams>(params) {
+                    Ok(params) => success(id, workspace.incoming_calls(&params.item, self.peer)),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "callHierarchy/outgoingCalls") => {
+                match serde_json::from_value::<CallsParams>(params) {
+                    Ok(params) => success(id, workspace.outgoing_calls(&params.item, self.peer)),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
             },
             (Phase::Running, "textDocument/references") => {
                 match serde_json::from_value::<ReferenceParams>(params) {
@@ -4617,7 +4661,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Sources(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
     })]
     fn tokens(
         &self,
@@ -4687,7 +4731,8 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
+            | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
     })]
     fn inlay_hints(
         &self,
@@ -4801,7 +4846,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Sources(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
     })]
     fn inline(
         &self,
@@ -5508,6 +5553,219 @@ impl Workspace
             Ok(())
         });
         Some(found)
+    }
+
+    /// What a call-hierarchy preparation at `position` of the copy of the
+    /// document at `uri` that `peer` is answered from answers.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: Nothing for an unknown document, one whose session holds no
+    ///   grammar, and a position [`items`] answers no item for; otherwise the
+    ///   one item it answers.
+    /// - provides: the answer to `textDocument/prepareCallHierarchy`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`items`]; an unknown document answers `null`.
+    /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
+        || matches!(ret, Answer::Callables(ref items) if items.len() == 1_usize))]
+    fn prepare_calls(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+    ) -> Answer
+    {
+        let shadows = self.shadowing(peer);
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(session) = document.session.as_ref()
+        else {
+            return Answer::Nothing;
+        };
+        let items = items(
+            Read {
+                uri,
+                path: &named_path(&uri.path()),
+                text: document.text.source(),
+                hovering: document.text.hovering(&uri.path(), session, &shadows),
+            },
+            position,
+            &|path| self.locate(path),
+        );
+        if items.is_empty() {
+            Answer::Nothing
+        }
+        else {
+            Answer::Callables(items)
+        }
+    }
+
+    /// What an incoming-calls request about `item`, as `peer` is answered,
+    /// answers: the declared values whose definitions use it, in every
+    /// document a reference request reads.
+    ///
+    /// # Specification
+    /// - requires: nothing; any item is admitted.
+    /// - ensures: Nothing when [`Self::reading`] reads no document at the
+    ///   item's URI, or the name at its selection's start is no declared value;
+    ///   otherwise the calls [`callers`] answers in each document
+    ///   [`Self::writers`] visits for the name [`placed`] places there, in the
+    ///   order it visits them, the other half of a declaration written in two
+    ///   left out.
+    /// - provides: the answer to `callHierarchy/incomingCalls`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sibling's function is called from an open importer
+    ///   and by its own recursion; a document the server cannot read answers
+    ///   `null`.
+    /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Callers(_)))]
+    fn incoming_calls(
+        &self,
+        item: &CallHierarchyItem,
+        peer: Peer,
+    ) -> Answer
+    {
+        let shadows = self.shadowing(peer);
+        let locate = |path: &Path| self.locate(path);
+        let Some(Some(written)) = self.reading(&item.uri, peer, &shadows, &mut |read| {
+            items(read, item.selection_range.start, &locate)
+                .first()
+                .and_then(|_| {
+                    placed(
+                        read.text,
+                        read.path,
+                        read.hovering,
+                        item.selection_range.start,
+                    )
+                })
+        })
+        else {
+            return Answer::Nothing;
+        };
+        let mut found = Vec::new();
+        let Ok(()) = self.writers::<Infallible>(&written, peer, &shadows, &mut |writer| {
+            let declaring = writer.path == written.path.as_path();
+            found.extend(callers(
+                Read {
+                    uri: writer.uri,
+                    path: writer.path,
+                    text: writer.text,
+                    hovering: writer.hovering,
+                },
+                &written.path,
+                written.named,
+                written.second.filter(|_| declaring),
+                &locate,
+            ));
+            Ok(())
+        });
+        Answer::Callers(found)
+    }
+
+    /// What an outgoing-calls request about `item`, as `peer` is answered,
+    /// answers: the declared values its definition uses.
+    ///
+    /// # Specification
+    /// - requires: nothing; any item is admitted.
+    /// - ensures: Nothing when [`Self::reading`] reads no document at the
+    ///   item's URI; otherwise the calls [`callees`] answers there at its
+    ///   selection's start.
+    /// - provides: the answer to `callHierarchy/outgoingCalls`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer's definition calls a sibling's function,
+    ///   and that function, asked about where no editor holds it, calls itself.
+    /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Callees(_)))]
+    fn outgoing_calls(
+        &self,
+        item: &CallHierarchyItem,
+        peer: Peer,
+    ) -> Answer
+    {
+        let shadows = self.shadowing(peer);
+        self.reading(&item.uri, peer, &shadows, &mut |read| {
+            Answer::Callees(callees(read, item.selection_range.start, &|path| {
+                self.locate(path)
+            }))
+        })
+        .unwrap_or(Answer::Nothing)
+    }
+
+    /// Run `read` over the document at `uri` as `peer` is answered: its copy
+    /// when an editor holds it, else its file read from disk and laid out with
+    /// each import read as the editors hold it.
+    ///
+    /// # Specification
+    /// - requires: `shadows` reads the copies `peer` is answered from.
+    /// - ensures: what `read` answers over the held copy, else over the file;
+    ///   none when the held copy's session holds no grammar, or no copy is held
+    ///   and the file cannot be read or judged.
+    /// - provides: the document an item names, which a call request reads
+    ///   whether or not an editor holds it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — `read` is the caller's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open document and a sibling no editor holds are
+    ///   each read.
+    /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    fn reading<Out>(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        shadows: &Shadowing<'_>,
+        read: &mut dyn FnMut(Read<'_>) -> Out,
+    ) -> Option<Out>
+    {
+        let path = named_path(&uri.path());
+        if let Maybe::Present(document) = self.view(uri, peer) {
+            let session = document.session.as_ref().ok()?;
+            return Some(read(Read {
+                uri,
+                path: &path,
+                text: document.text.source(),
+                hovering: document.text.hovering(&uri.path(), session, shadows),
+            }));
+        }
+        let text = std::fs::read_to_string(&path).ok()?;
+        let session = open(uri);
+        let judging = session.as_ref().ok()?;
+        let source = SourceText::from(text.as_str());
+        Some(read(Read {
+            uri,
+            path: &path,
+            text: source,
+            hovering: &hovering(source, &path, judging, shadows),
+        }))
+    }
+
+    /// The URI the source at `path` is answered at: the open document's that
+    /// reads it, else the file's own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn locate(
+        &self,
+        path: &Path,
+    ) -> Option<DocumentUri>
+    {
+        self.paths
+            .get(path)
+            .cloned()
+            .or_else(|| DocumentUri::of_path(path))
     }
 
     /// What a code-lens request for the copy of the document at `uri` that
@@ -7001,6 +7259,7 @@ mod tests
                         "renameProvider":{"prepareProvider":true},
                         "documentLinkProvider":{"resolveProvider":true},
                         "linkedEditingRangeProvider":true,
+                        "callHierarchyProvider":true,
                         "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true},
                             "fileOperations":{"didCreate":{"filters":[
                                 {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
@@ -7565,6 +7824,204 @@ mod tests
             "a document the server does not hold answers null"
         );
         let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The data subject's `following.gandr` open, its base `data-base.gandr`
+    /// on disk only: a call hierarchy prepared at a call and at a signature,
+    /// the calls made of a recursive function and of a sibling's value, the
+    /// calls a definition and that sibling's value make, and a constructor
+    /// and an unknown document preparing nothing.
+    #[test]
+    fn the_call_hierarchy_follows_a_corpus_closure()
+    {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/data")
+            .canonicalize()
+            .expect("the data subject is checked out");
+        let uri = |file: &str| format!("file://{}", corpus.join(file).display());
+        let text =
+            std::fs::read_to_string(corpus.join("following.gandr")).expect("the source is read");
+        let mut server = initialized();
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("following.gandr"), "languageId": "gandr", "version": 1_i32, "text": text}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let mut ask = |method: &str, params: Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 10_i32, "method": method, "params": params});
+            send(&mut server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let prepare = |file: &str, line: u32, character: u32| {
+            serde_json::json!({"textDocument": {"uri": uri(file)},
+                "position": at(Line::from(line), Character::from(character))})
+        };
+        let span = |line: u32, start: u32, end: u32| Range {
+            start: at(Line::from(line), Character::from(start)),
+            end: at(Line::from(line), Character::from(end)),
+        };
+        let item = |file: &str, name: &str, whole: Range, selected: Range| {
+            serde_json::json!({"name": name, "kind": 12_i32, "uri": uri(file),
+                "range": whole, "selectionRange": selected})
+        };
+        let lines = |line: u32, end_line: u32, end: u32| Range {
+            start: at(Line::from(line), Character::from(0_u32)),
+            end: at(Line::from(end_line), Character::from(end)),
+        };
+        let minus = item(
+            "following.gandr",
+            "minus",
+            lines(15, 23, 1),
+            span(15, 8, 13),
+        );
+        let difference = item(
+            "following.gandr",
+            "difference",
+            lines(58, 58, 43),
+            span(58, 4, 14),
+        );
+        let three = item(
+            "data-base.gandr",
+            "three",
+            lines(36, 36, 23),
+            span(36, 4, 9),
+        );
+        let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
+        assert_eq!(
+            ask(
+                "textDocument/prepareCallHierarchy",
+                prepare("following.gandr", 31, 28)
+            ),
+            serde_json::json!([minus]),
+            "a call of `minus` in `divided` prepares `minus` at its definition"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/prepareCallHierarchy",
+                prepare("following.gandr", 57, 6)
+            ),
+            serde_json::json!([difference]),
+            "a value's signature prepares the value at its definition"
+        );
+        assert_eq!(
+            ask(
+                "callHierarchy/incomingCalls",
+                serde_json::json!({"item": minus})
+            ),
+            serde_json::json!([
+                call("from", &minus, &[span(20, 17, 22)]),
+                call(
+                    "from",
+                    &item(
+                        "following.gandr",
+                        "divided",
+                        lines(28, 33, 1),
+                        span(28, 8, 15)
+                    ),
+                    &[span(31, 26, 31)]
+                ),
+                call(
+                    "from",
+                    &item(
+                        "following.gandr",
+                        "halvedUp",
+                        lines(38, 43, 1),
+                        span(38, 8, 16)
+                    ),
+                    &[span(41, 26, 31)]
+                ),
+                call("from", &difference, &[span(58, 17, 22)]),
+            ]),
+            "`minus` is called by its own recursion and by three definitions, each at its call"
+        );
+        assert_eq!(
+            ask(
+                "callHierarchy/outgoingCalls",
+                serde_json::json!({"item": minus})
+            ),
+            serde_json::json!([call("to", &minus, &[span(20, 17, 22)])]),
+            "`minus` calls itself once, at the recursive call's name; `Succ` and `Zero` are no calls"
+        );
+        assert_eq!(
+            ask(
+                "callHierarchy/outgoingCalls",
+                serde_json::json!({"item": difference})
+            ),
+            serde_json::json!([
+                call("to", &three, &[span(58, 23, 28)]),
+                call("to", &minus, &[span(58, 17, 22)]),
+            ]),
+            "`difference` calls the base's `three` and `minus`, the base's source first"
+        );
+        assert_eq!(
+            ask(
+                "callHierarchy/incomingCalls",
+                serde_json::json!({"item": three})
+            ),
+            serde_json::json!([
+                call("from", &difference, &[span(58, 23, 28)]),
+                call(
+                    "from",
+                    &item(
+                        "following.gandr",
+                        "quotient",
+                        lines(63, 63, 49),
+                        span(63, 4, 12)
+                    ),
+                    &[span(63, 28, 33)]
+                ),
+                call(
+                    "from",
+                    &item(
+                        "following.gandr",
+                        "halvedThree",
+                        lines(68, 68, 35),
+                        span(68, 4, 15)
+                    ),
+                    &[span(68, 27, 32)]
+                ),
+                call(
+                    "from",
+                    &item(
+                        "following.gandr",
+                        "digitsOfFour",
+                        lines(73, 73, 40),
+                        span(73, 4, 16)
+                    ),
+                    &[span(73, 31, 36)]
+                ),
+            ]),
+            "the base's `three`, asked about where no editor holds the base, is called by the \
+             open importer's four values"
+        );
+        assert_eq!(
+            ask(
+                "callHierarchy/outgoingCalls",
+                serde_json::json!({"item": three})
+            ),
+            serde_json::json!([call(
+                "to",
+                &item("data-base.gandr", "two", lines(31, 31, 28), span(31, 4, 7)),
+                &[span(36, 17, 20)]
+            )]),
+            "`three`, read from disk, calls `two`"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/prepareCallHierarchy",
+                prepare("following.gandr", 31, 6)
+            ),
+            Value::Null,
+            "a constructor prepares nothing"
+        );
+        assert_eq!(
+            ask(
+                "textDocument/prepareCallHierarchy",
+                prepare("closed.gandr", 0, 0)
+            ),
+            Value::Null,
+            "a document the server does not hold prepares nothing"
+        );
     }
 
     /// The identity subject's base source, open beside an importer: a lens
