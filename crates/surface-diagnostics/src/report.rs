@@ -97,6 +97,7 @@ use std::path::Path;
 use anodized::spec;
 use gandr_core_checker::Failure;
 use gandr_core_term::FailureClass;
+use gandr_core_term::TrackingIssue;
 use gandr_core_term::effect::Purity;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
@@ -210,6 +211,22 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a diagnostic names no tracking issue.
+    pub mod tracking {
+        /// The reason a diagnostic links no issue.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A refusal of what the author owes or wrote wrongly, or the
+            /// engine's fault: nothing gandr has not built.
+            Untracked,
+            /// No refusal: an unsettlement, a goal, a warning, a lint or a
+            /// ledger line.
+            Unrefused,
+        }
+    }
+}
+
 /// What a diagnostic is about, and whose fact it records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Class
@@ -229,6 +246,47 @@ pub enum Class
     Lint(Lint),
     /// A ledger line: a source's standing.
     Ledger,
+}
+
+impl Class
+{
+    /// The issue tracking what an unimplemented refusal is missing, which
+    /// every face of the diagnostic names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the issue an unimplemented refusal's class carries; any other
+    ///   refusal is untracked, and every other class unrefused.
+    /// - provides: the tracking issue a face writes and links.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unimplemented refusal, a malformed one and a goal
+    ///   answer each of the three outcomes.
+    /// - witness: `report::tests::only_an_unimplemented_refusal_names_its_issue`
+    #[spec(ensures: |ret| match self {
+        | Self::Refusal(FailureClass::Unimplemented(issue)) => ret == Maybe::Present(issue),
+        | Self::Refusal(
+            FailureClass::UserAbsence | FailureClass::MalformedSource | FailureClass::EngineFault,
+        ) => ret == Maybe::Absent(tracking::Absent::Untracked),
+        | Self::Unsettled(_) | Self::Goal | Self::Warning | Self::Lint(_) | Self::Ledger => {
+            ret == Maybe::Absent(tracking::Absent::Unrefused)
+        },
+    })]
+    #[inline]
+    pub fn tracking(self) -> Maybe<TrackingIssue, tracking::Absent>
+    {
+        match self {
+            Self::Refusal(class) => match class.tracking() {
+                Maybe::Present(issue) => Maybe::Present(issue),
+                Maybe::Absent(_) => Maybe::Absent(tracking::Absent::Untracked),
+            },
+            Self::Unsettled(_) | Self::Goal | Self::Warning | Self::Lint(_) | Self::Ledger => {
+                Maybe::Absent(tracking::Absent::Unrefused)
+            },
+        }
+    }
 }
 
 impl fmt::Display for Class
@@ -1245,6 +1303,7 @@ mod tests
     use std::path::Path;
 
     use gandr_core_term::FailureClass;
+    use gandr_core_term::TrackingIssue;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -1279,6 +1338,26 @@ mod tests
                 assert_ne!(earlier, label, "different causes remain distinguishable");
             }
         }
+    }
+
+    #[test]
+    fn only_an_unimplemented_refusal_names_its_issue()
+    {
+        assert_eq!(
+            Class::Refusal(FailureClass::Unimplemented(TrackingIssue::PROJECTION)).tracking(),
+            Maybe::Present(TrackingIssue::PROJECTION),
+            "an unimplemented refusal names the issue its class carries"
+        );
+        assert_eq!(
+            Class::Refusal(FailureClass::MalformedSource).tracking(),
+            Maybe::Absent(super::tracking::Absent::Untracked),
+            "a malformed refusal names none"
+        );
+        assert_eq!(
+            Class::Goal.tracking(),
+            Maybe::Absent(super::tracking::Absent::Unrefused),
+            "a goal is no refusal"
+        );
     }
 
     #[test]

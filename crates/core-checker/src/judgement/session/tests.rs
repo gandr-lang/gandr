@@ -1131,8 +1131,10 @@ fn a_session_code_crosses_only_at_its_root()
             at: CoreNode::Type(TypeNode::Value(past)),
         }
         .classify(),
-        gandr_core_term::FailureClass::Unrepresentable,
-        "a session is unrepresentable, not a fault"
+        gandr_core_term::FailureClass::Unimplemented(
+            gandr_core_term::TrackingIssue::KERNEL_SESSION
+        ),
+        "a session the kernel does not replay is unimplemented, not a fault"
     );
 }
 

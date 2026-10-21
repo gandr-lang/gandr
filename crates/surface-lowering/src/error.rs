@@ -65,7 +65,7 @@
 //!
 //! `OutOfFragment` names the boundary a form crossed. `Reserved`: the form
 //! parses and is declined by name — a recursive call's claim other than `<` —
-//! so the classifier's unrepresentable class is inhabited by design.
+//! and classifies as unimplemented, naming its tracking issue.
 //! `Unadmitted`: the grammar reads the form and this fragment does not
 //! — a statement other than `run`, an annotated or patterned `run` binder, a
 //! recursive function with no parameter to recurse on, a claim on a name that
@@ -643,7 +643,7 @@ impl fmt::Display for TelescopeFault
 ///   that an arbitrary constructed report describes a real lowering failure.
 /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
-/// - witness: `classify::tests::the_classification_ignores_the_payload`
+/// - witness: `classify::tests::the_classification_ignores_position_and_name`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LoweringRefusal<'source>
 {

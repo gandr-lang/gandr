@@ -160,6 +160,7 @@ pub use crate::report::diagnose;
 pub use crate::report::report_identifier;
 pub use crate::report::report_note;
 pub use crate::report::report_span;
+pub use crate::report::tracking;
 pub use crate::report::upstream;
 pub use crate::spelled::Failures;
 pub use crate::spelled::Families;

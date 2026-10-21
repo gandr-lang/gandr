@@ -79,8 +79,8 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
     };
     assert_eq!(
         class,
-        FailureClass::Unrepresentable,
-        "the fragment cannot represent a top-level expression"
+        FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
+        "a top-level expression is a run target, which is not implemented yet"
     );
     let Maybe::Present(span) = span
     else {
@@ -101,7 +101,7 @@ fn revision_faults_retain_fields_and_sink_refusals()
     let span = ByteSpan::new(ByteOffset::from(17_usize), ByteOffset::from(31_usize))
         .expect("ordered span");
     let spanned = RevisionFault::Refused {
-        class: FailureClass::Unrepresentable,
+        class: FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
         span: Maybe::Present(span),
     };
     let unspanned = RevisionFault::Refused {
@@ -114,7 +114,7 @@ fn revision_faults_retain_fields_and_sink_refusals()
         previous: ConstantIndex::from(509_usize),
     });
     let rendered = spanned.to_string();
-    assert!(rendered.contains(&FailureClass::Unrepresentable.to_string()));
+    assert!(rendered.contains("unimplemented"));
     assert!(rendered.contains("17"));
     assert!(rendered.contains("31"));
     assert!(

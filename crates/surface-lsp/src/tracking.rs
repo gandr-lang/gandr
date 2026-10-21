@@ -12,48 +12,8 @@
 
 use alloc::format;
 use alloc::string::String;
-use core::fmt;
 
-/// The issue on gandr's tracker whose landing closes a gap.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct TrackingIssue(u16);
-
-impl TrackingIssue
-{
-    /// A module's documentation, which no face shows.
-    pub const DOCUMENTATION: Self = Self(1135);
-    /// An import whose address has a scheme, which nothing resolves.
-    pub const SCHEME: Self = Self(1233);
-    /// A tile of a root form that declares nothing, which the lowering reads
-    /// as no run target yet.
-    pub const RUN_TARGET: Self = Self(1105);
-
-    /// The issue's page.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    pub fn url(self) -> String
-    {
-        format!("https://github.com/gandr-lang/gandr/issues/{}", self.0)
-    }
-}
-
-impl fmt::Display for TrackingIssue
-{
-    /// `#` and the issue's number.
-    ///
-    /// # Specification
-    /// trivial.
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(f, "#{}", self.0)
-    }
-}
+use gandr_surface_lowering::TrackingIssue;
 
 /// What a hover cannot show yet: a tile with no hover of its own, in the
 /// order a position is tried, or a part of an answer still missing.

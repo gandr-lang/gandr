@@ -44,7 +44,8 @@
 //!   incremental content table keys and footprints its nodes by it; the kernel
 //!   term stays de Bruijn.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
-//!   pipeline answers to, whichever crate produced it.
+//!   pipeline answers to, whichever crate produced it; an unimplemented one
+//!   names its [`TrackingIssue`].
 //!
 //! The crate holds syntax and contexts; evaluation and readback live in
 //! `gandr-core-nbe`, which consumes this vocabulary. Each module's
@@ -245,6 +246,8 @@ pub use crate::definition::DefinitionalEnvironment;
 pub use crate::definition::ScopeId;
 pub use crate::definition::Transparency;
 pub use crate::failure::FailureClass;
+pub use crate::failure::TrackingIssue;
+pub use crate::failure::tracked;
 pub use crate::import::ImportFault;
 pub use crate::import::TypeImporter;
 pub use crate::relocation::Relocated;

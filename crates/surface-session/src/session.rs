@@ -306,7 +306,6 @@ use gandr_core_incremental::address_of;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
-use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EncodedArtifact;
@@ -3429,9 +3428,7 @@ fn trial_rank(trial: &Trial<'_>) -> TrialRank
                 let tally = report.tally();
                 (
                     Reached::Judged,
-                    FAILURE_CLASSES.into_iter().fold(0_usize, |sum, class| {
-                        sum.saturating_add(usize::from(tally.refusals().count(class)))
-                    }),
+                    usize::from(tally.refusals().total()),
                     tally.declarations().unsettled(),
                     tally.ledger(),
                     submission.obligations.len(),
@@ -3448,14 +3445,6 @@ fn trial_rank(trial: &Trial<'_>) -> TrialRank
         candidate: trial.candidate,
     }
 }
-
-/// Every failure class a refused declaration is counted under.
-const FAILURE_CLASSES: [FailureClass; 4] = [
-    FailureClass::UserAbsence,
-    FailureClass::Unrepresentable,
-    FailureClass::MalformedSource,
-    FailureClass::EngineFault,
-];
 
 /// The reason a restore's absence gives a reopened session.
 ///

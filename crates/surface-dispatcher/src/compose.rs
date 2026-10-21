@@ -3773,8 +3773,8 @@ def wrong = "text" ;"#,
         );
         assert_eq!(
             refusal.classify(),
-            FailureClass::Unrepresentable,
-            "the fragment cannot represent it"
+            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
+            "a root expression is a run target, which is not implemented yet"
         );
     }
 

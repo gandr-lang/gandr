@@ -904,7 +904,7 @@ impl Machine<'_, '_>
             (
                 Marking::Total,
                 FailureClass::MalformedSource
-                | FailureClass::Unrepresentable
+                | FailureClass::Unimplemented(_)
                 | FailureClass::UserAbsence,
             ) => true,
         };
