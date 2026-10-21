@@ -8,6 +8,21 @@
 
 pr_stack_dir="$(git rev-parse --show-toplevel)/.config/pr-stack"
 
+# Refuse while `origin/$trunk` holds a change to the stacking rule the
+# checked-out branch lacks (#1455). A task runs the rule from the branch it is
+# run on, and a branch forked before a fix runs the rule the fix replaced:
+# four pull requests opened from such branches stacked on a queued top and
+# were moved to the trunk, one stack become three. Prints the missing commits.
+stacking_current() {
+  local behind
+  git fetch --quiet origin "$trunk"
+  behind=$(git log --no-merges --format='  %h %s' "HEAD..origin/$trunk" -- "$pr_stack_dir")
+  if [[ -n "$behind" ]]; then
+    printf 'the stacking rule changed on %s since this branch forked; rebase it onto origin/%s and run the task again:\n%s\n' "$trunk" "$trunk" "$behind" >&2
+    return 1
+  fi
+}
+
 # The open pull requests that land, drafts left out, as a JSON array of
 # `{number, head, base, created, landing}`: `landing` when the pull request is
 # in the merge queue or set to enter it (auto-merge), so its branch is about

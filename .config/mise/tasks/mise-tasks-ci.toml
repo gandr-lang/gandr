@@ -681,6 +681,11 @@ cat "$scratch/rows"
 # the newest landing head its branch holds; `pr:land` waits for those to merge
 # (`carried_queued`).
 #
+# The rule runs from the branch the task is run on, so a branch that lacks a
+# change main made to `.config/pr-stack` is refused until it is rebased onto
+# main (`stacking_current`): a branch forked before a fix runs the rule the
+# fix replaced.
+#
 # A fix the open stack waits on cannot stack on it: it would land behind the
 # pull request it unblocks. `--unblocks <n>` names that pull request, and the
 # fix opens as a second bottom on main, measured against main, and is set to
@@ -707,6 +712,7 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
+stacking_current || exit 2
 unblocks=${usage_unblocks:-}
 if [[ -n "$unblocks" ]]; then
   [[ "$unblocks" =~ ^[0-9]+$ && $(gh pr view "$unblocks" -R "$repo" --json state --jq .state 2> /dev/null) == OPEN ]] \
