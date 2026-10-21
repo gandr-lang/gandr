@@ -29,13 +29,15 @@
 //! **A computation where a value is read runs or is suspended by the type
 //! expected there.** Beside the lowering's three sort-directed bridges, the
 //! fourth is the checker's, by three rules: against a thunk type a nested
-//! computation is suspended and against any other type it runs; runs bind
-//! in written order around the innermost enclosing computation, never out of
-//! a thunk or a case arm; and the checker elaborates the accepted body, each
+//! computation is suspended and against any other type it runs, as it does
+//! where no thunk can stand, a scrutinee or a transport's path; runs bind in
+//! written order around the innermost enclosing computation, never out of a
+//! thunk or a case arm; and the checker elaborates the accepted body, each
 //! run a bind at the nested call's span, and judges the result again. With no
-//! type expected it is refused by name, [`CheckRefusal::NotSynthesisable`]
-//! with [`CheckingForm::Nested`], and a run no computation encloses is
-//! [`CheckRefusal::UnenclosedRun`]. The recorded decision was that the
+//! type expected anywhere else it is refused by name,
+//! [`CheckRefusal::NotSynthesisable`] with [`CheckingForm::Nested`], and a run
+//! no computation encloses is [`CheckRefusal::UnenclosedRun`]. The recorded
+//! decision was that the
 //! lowering inserts every bridge, which held while the checker answered
 //! verdicts rather than terms; whether a nested computation runs is the
 //! expected type's, which only the checker holds, so a verdict now carries

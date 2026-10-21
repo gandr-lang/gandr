@@ -20,7 +20,7 @@ def held = down(Succ(Zero)) ;
 def ran : Nat ;
 def ran = down(Zero) ;
 
-@[ refuses("NotSynthesisable") ]
+@[ checks ]
 def scrutinised(n : Nat) -> -F Nat {
   case down(n) {
     Zero => n,

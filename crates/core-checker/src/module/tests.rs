@@ -1371,6 +1371,77 @@ fn a_nested_computation_is_decided_by_its_expected_type()
 }
 
 #[test]
+fn a_computation_written_as_a_scrutinee_runs_1141()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit, unit]);
+    let integer = arena.value_type_base(BaseType::Integer);
+    // `decide : unit -> F (1 + 1)`, answering the left summand.
+    let decides = arena.comp_type_returner(boolean);
+    let decide_arrow = arena.comp_type_arrow(unit, decides);
+    let decide_type = arena.value_type_thunk(decide_arrow);
+    let decide = {
+        let empty = arena.value_unit();
+        let left = arena.value_injection(0_usize.into(), empty);
+        let returned = arena.computation_return(left);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    // `cased : unit -> F Integer`, `λu. case decide(u) { _ => 1, _ => 2 }`.
+    let answers = arena.comp_type_returner(integer);
+    let cased_arrow = arena.comp_type_arrow(unit, answers);
+    let cased_type = arena.value_type_thunk(cased_arrow);
+    let argument = arena.value_variable(
+        gandr_core_term::Zone::Intuitionistic,
+        DeBruijnIndex::from(0_u32),
+    );
+    let decided = call(&mut arena, ConstantIndex::from(0_usize), argument);
+    let scrutinee = arena.value_nested(decided);
+    let branches = [(); 2].map(|()| {
+        let answer = arena.value_literal(integer_literal());
+        arena.computation_return(answer)
+    });
+    let case = arena.computation_case(scrutinee, &branches);
+    let lambda = arena.computation_lambda(case);
+    let cased = arena.value_thunk(lambda);
+    let module = [
+        declaration(At(0), Maybe::Present(decide_type), Maybe::Present(decide)),
+        declaration(At(1), Maybe::Present(cased_type), Maybe::Present(cased)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "a scrutinee is never a thunk, so the call written there runs and the case reads its \
+         answer: {:?}",
+        report.judged()[1].verdict()
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(1_usize)]
+            .decisions()
+            .get(&scrutinee),
+        Some(&Nesting::Ran(Purity::Pure)),
+        "the call runs, purely"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let run = type_module(&mut context, &module);
+    let kept: Vec<_> = run.typings()[&ConstantIndex::from(1_usize)]
+        .typings()
+        .iter()
+        .filter(|typing| typing.term == TermNode::Value(scrutinee))
+        .map(|typing| typing.ty)
+        .collect();
+    assert_eq!(
+        kept,
+        [TypeNode::Value(boolean)],
+        "the scrutinee is no goal of its own, so its run keeps its typing, once, at what it returns"
+    );
+}
+
+#[test]
 fn a_run_in_a_definition_s_own_value_is_unenclosed()
 {
     let mut arena = CoreArena::new();

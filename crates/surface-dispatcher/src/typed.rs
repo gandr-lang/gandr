@@ -3462,12 +3462,15 @@ quenchant_shape::reason_enum! {
 ///   settled and in one it refused, and a constructor pattern on a staged
 ///   scrutinee, are asserted at their types; and a record pattern inside a
 ///   dependent pair's second component, at its type under the first; a
-///   constructor pattern's name refers to the constructor it names.
+///   constructor pattern's name refers to the constructor it names; a match on
+///   a comparison written as its scrutinee types its patterns at what the
+///   comparison returns.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 /// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
 /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
+/// - witness: `typed::tests::a_pattern_on_a_computed_scrutinee_answers_1141`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
@@ -5286,6 +5289,27 @@ mod tests
             }),
             "the part names the pattern's own `a`, though the arm never uses it (#537)"
         );
+    }
+
+    #[test]
+    fn a_pattern_on_a_computed_scrutinee_answers_1141()
+    {
+        let source = SourceText::from(
+            "def compared(n : Integer) -> -F Integer {\n  case n >= 5 {\n    true => return \
+             2,\n    false => return 1\n  }\n}\n",
+        );
+        let table = table(source);
+        for arm in ["true =>", "false =>"] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(arm)),
+                Maybe::Present(Answer {
+                    subject: Subject::Binder,
+                    ty: String::from("Bool"),
+                    expected: Maybe::Absent(checked_against::Absent::Agreed),
+                }),
+                "`{arm}` answers at what the comparison it cases on returns, not as the case"
+            );
+        }
     }
 
     #[test]

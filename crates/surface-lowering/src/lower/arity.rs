@@ -893,13 +893,15 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The type the scrutinee `scrutinee` of a match under `frame` was
-    /// written with: its binder's or its declaration's, when it is a name.
+    /// written with: its binder's or its declaration's, when it is a name, or
+    /// the result its function states, when it is a call.
     ///
     /// # Specification
     /// - requires: `scrutinee` is a match's scrutinee.
     /// - ensures: the written type of the binder or the declaration a name
     ///   resolves to; for a `run` binder written with no type, the type its
-    ///   computation returns, as [`Self::ran_type`] reads it; nothing for any
+    ///   computation returns, as [`Self::ran_type`] reads it; for a call, the
+    ///   type it returns, as [`Self::called_type`] reads it; nothing for any
     ///   other scrutinee or an untyped name.
     /// - fails: the name's own resolution refusals.
     /// - panics: none.
@@ -913,9 +915,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a match over a typed parameter reads its sum's arity,
     ///   one over an untyped name refuses a sum pattern, and one over a `run`
-    ///   binder splits the record its callee returns.
+    ///   binder or a call splits the record its callee returns.
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
     #[spec(ensures: |ret| ret.is_ok() || !matches!(ret, Err(LoweringRefusal::MalformedForm { .. })))]
     pub(super) fn scrutinee_type(
         &mut self,
@@ -924,7 +927,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
         if !matches!(self.form_at(scrutinee)?, Some((_, Former::Name))) {
-            return Ok(Maybe::Absent(binder_type::Absent::Untyped));
+            return self.called_type(frame, scrutinee.node);
         }
         let named = Site {
             at: scrutinee,
@@ -946,15 +949,14 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The type the `run` binder `binder` holds, as the function its
-    /// computation calls wrote it: `A` of the function's result `-F A`.
+    /// computation calls wrote it: `A` of the function's result `-F A`, as
+    /// [`Self::called_type`] reads it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the node of `A` when `binder` is a `run` binder written with
-    ///   no type whose computation calls a name resolving, under the frame the
-    ///   computation reads in, to a function declared with as many parameters
-    ///   as the call passes and a written result `-F A`, read through
-    ///   parentheses; the untyped absence otherwise.
+    ///   no type whose computation [`Self::called_type`] reads, under the frame
+    ///   the computation reads in; the untyped absence otherwise.
     /// - provides: the record layout of a call's result to a match on it, so a
     ///   pattern splits the record a quasi-inverse or an equivalence
     ///   abbreviates as it does at a parameter written with one.
@@ -978,12 +980,49 @@ impl<'source> Lowerer<'_, 'source>
         binder: ScopeId,
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
-        let untyped = Maybe::Absent(binder_type::Absent::Untyped);
         let Some(&(frame, bound)) = self.ran.get(&binder)
         else {
-            return Ok(untyped);
+            return Ok(Maybe::Absent(binder_type::Absent::Untyped));
         };
-        let Maybe::Present(call) = self.unwrapped(bound.node)?
+        self.called_type(frame, bound.node)
+    }
+
+    /// The type the call `written` returns under `frame`, as the function it
+    /// calls wrote it: `A` of the function's result `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node of `A` when `written` calls a name resolving, under
+    ///   `frame`, to a function declared with as many parameters as the call
+    ///   passes and a written result `-F A`, read through parentheses; the
+    ///   untyped absence otherwise.
+    /// - provides: the record layout of a call's result to a match on it, so a
+    ///   pattern splits the record a quasi-inverse or an equivalence
+    ///   abbreviates as it does at a parameter written with one.
+    /// - fails: the callee's resolution refusals;
+    ///   [`LoweringRefusal::BudgetExceeded`] and
+    ///   [`LoweringRefusal::UnknownMold`] reading its forms.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::ran_type`] and [`Self::scrutinee_type`].
+    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
+        Maybe::Present(node) => node != written,
+        Maybe::Absent(absent) => absent == binder_type::Absent::Untyped,
+    }))]
+    fn called_type(
+        &mut self,
+        frame: Frame,
+        written: NodeIndex,
+    ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
+    {
+        let untyped = Maybe::Absent(binder_type::Absent::Untyped);
+        let Maybe::Present(call) = self.unwrapped(written)?
         else {
             return Ok(untyped);
         };
@@ -991,6 +1030,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(untyped);
         };
+        // The call may be read before the walk reaches it, as a scrutinee is,
+        // so its head takes its owner here: a name resolves only where a
+        // declaration owns it.
+        self.inherit_owner(call.node);
         let Some(tree) = self.tree.node(head)
         else {
             return Ok(untyped);
