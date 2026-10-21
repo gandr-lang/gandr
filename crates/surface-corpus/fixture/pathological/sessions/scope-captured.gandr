@@ -1,0 +1,18 @@
+// An endpoint named inside a capability scope's body: the scope's clause
+// receives the rest of the body as its continuation, and may drop it or
+// resume it twice, so an end the body acts on after an operation could be
+// left open or acted on twice.
+
+/// A seat's end closed inside a scope after an operation whose clause drops
+/// its continuation: the close never runs and the end is left open (#1336).
+@[ refuses("CapturedEndpoint") ]
+def closedInScope() -> -F Unit {
+  fork (seat : end) { close(seat) } as desk;
+  handle c : Proc {
+    c.exit(1);
+    close(desk)
+  } with {
+    pure(v) => pure v,
+    oper exit(code, k) => pure unit
+  }
+}

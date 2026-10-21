@@ -12,6 +12,8 @@ use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::EffectClause;
+use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::session::ActionKind;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
@@ -635,6 +637,52 @@ fn an_endpoint_captured_by_a_thunk_is_refused()
         check_unit(&mut arena, exchange),
         Ok(()),
         "the same close outside the thunk checks"
+    );
+}
+
+/// A capability scope's clause receives the rest of the scope's body as a
+/// continuation it may drop or resume twice, so the body closes no endpoint
+/// the run holds (#1336).
+#[test]
+fn a_scope_names_only_residents_that_owe_nothing_1336()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let passes = arena.computation_return(answered);
+    let clauses: Arc<[EffectClause]> = [EffectClause {
+        operation: "exit".into(),
+        body: returned,
+    }]
+    .into();
+    let closed_inside = Program::new(&mut arena).close();
+    let scoped = arena.computation_scope(host.proc, closed_inside, passes, clauses);
+    let child_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child_closed, scoped);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(scoped)),
+            defect: LinearityDefect::Captured {
+                endpoint: Endpoint {
+                    fork: exchange,
+                    side: ForkSide::Parent,
+                },
+                by: Capture::Continuation,
+            },
+        }),
+        "the scope's clause may drop the close"
+    );
+    let closed_outside = Program::new(&mut arena).close();
+    let child_closed = Program::new(&mut arena).close();
+    let exchange = fork(&mut arena, protocol, child_closed, closed_outside);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Ok(()),
+        "the same close outside the scope checks"
     );
 }
 
