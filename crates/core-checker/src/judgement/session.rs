@@ -583,13 +583,17 @@ impl Machine<'_, '_>
 
     /// Refuse a linear resident named where its use may run other than once:
     /// a thunk, a fixpoint, a branching former, a first-class stack, a
-    /// handler or a shift, while the run holds one. A branch may read a held
-    /// value: a read copies, and each branch lends it at most for its own
-    /// extent. A thunk or a stack checked at a type kept in a region may name
-    /// a shared view whose held slot outlives that region: the slot is kept,
-    /// frozen until the region's scope ends. Inside a capability scope, a
-    /// thunk or a stack names no variable kept in a region deeper than the one
-    /// its own type is kept in.
+    /// handler, a capability scope or a shift, while the run holds one. A
+    /// branch may read a held value: a read copies, and each branch lends it
+    /// at most for its own extent. A capability scope's clause receives the
+    /// rest of its body as a continuation it may resume twice or drop, so the
+    /// body names only residents that owe nothing: a held value, whose slot
+    /// stands outside the scope, a received value and a shared view, each of
+    /// which a read copies. A thunk or a stack checked at a type kept in a
+    /// region may name a shared view whose held slot outlives that region:
+    /// the slot is kept, frozen until the region's scope ends. Inside a
+    /// capability scope, a thunk or a stack names no variable kept in a
+    /// region deeper than the one its own type is kept in.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -613,9 +617,12 @@ impl Machine<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a thunk naming an endpoint is refused while the same
     ///   action outside one checks; a thunk kept in a scope's region keeps a
-    ///   shared view and the same thunk kept in none is refused.
+    ///   shared view and the same thunk kept in none is refused; a capability
+    ///   scope whose body closes an endpoint is refused while one whose body
+    ///   reads a held value checks.
     /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
+    /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
@@ -688,7 +695,7 @@ impl Machine<'_, '_>
                     | Computation::With(..)
                     | Computation::ListFold { .. }
                     | Computation::ListCase { .. } => Capture::Branch,
-                    Computation::Handle { .. } => Capture::Continuation,
+                    Computation::Handle { .. } | Computation::Scope { .. } => Capture::Continuation,
                     Computation::Shift(_) => {
                         let node = CoreNode::Term(TermNode::Computation(term));
                         let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
@@ -712,7 +719,6 @@ impl Machine<'_, '_>
                     | Computation::Mark { .. }
                     | Computation::Perform { .. }
                     | Computation::Exercise { .. }
-                    | Computation::Scope { .. }
                     | Computation::Resume(..)
                     | Computation::Reset(_)
                     | Computation::Project(..)
@@ -727,6 +733,12 @@ impl Machine<'_, '_>
                 )
             },
             Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
+        };
+        let scope = match goal {
+            Goal::Computation { term, .. } => {
+                matches!(*self.computation(term)?, Computation::Scope { .. })
+            },
+            Goal::Value { .. } | Goal::Form(_) | Goal::Stack { .. } => false,
         };
         let kept = match goal {
             Goal::Value {
@@ -766,9 +778,64 @@ impl Machine<'_, '_>
                 });
                 continue;
             }
+            if scope && self.owing(named.resident)? == Owing::Nothing {
+                continue;
+            }
             captured(node, named.resident, by)?;
         }
         Ok(())
+    }
+
+    /// What `resident` owes that a continuation run twice or never would
+    /// break: an endpoint's protocol, a buffer's return, an exclusive view's
+    /// resume or abort and a capability's one migration; a held value, a
+    /// received value and a shared view, which a read copies, owe nothing.
+    ///
+    /// # Specification
+    /// - requires: a view's access is in the arena.
+    /// - ensures: [`Owing::Something`] exactly for an endpoint, a buffer, a
+    ///   capability and a view of an exclusive access.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a view whose access is not
+    ///   in the arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope naming an endpoint is refused and one reading
+    ///   a held value checks.
+    /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
+    #[spec(ensures: |ret| match resident {
+        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } => matches!(ret, Ok(Owing::Something)),
+        | Resident::Held { .. } | Resident::Received { .. } => matches!(ret, Ok(Owing::Nothing)),
+        | Resident::View { .. } => true,
+    })]
+    fn owing(
+        &self,
+        resident: Resident,
+    ) -> Result<Owing, CheckRefusal>
+    {
+        Ok(match resident {
+            Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } => {
+                Owing::Something
+            },
+            Resident::Held { .. } | Resident::Received { .. } => Owing::Nothing,
+            Resident::View { at, .. } => {
+                if matches!(
+                    *self.computation(at)?,
+                    Computation::Memory(MemoryForm::Access {
+                        mode: AccessMode::Shared,
+                        ..
+                    })
+                ) {
+                    Owing::Nothing
+                }
+                else {
+                    Owing::Something
+                }
+            },
+        })
     }
 
     /// The region a value checked at `expected` is kept in: the one
@@ -2391,6 +2458,21 @@ pub(super) enum HandedOn
     Buffer,
     /// Anything else, which the hand-off checks as a value.
     Other,
+}
+
+/// Whether a resident owes something a continuation run twice or never would
+/// break.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Owing
+{
+    /// An obligation: a protocol to finish, a buffer to return, an exclusive
+    /// view to end or a capability to migrate once.
+    Something,
+    /// Nothing a read does not copy.
+    Nothing,
 }
 
 #[cfg(test)]
