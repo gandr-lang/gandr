@@ -100,10 +100,10 @@ fn stepped(
 fn a_loop_lowers_to_a_partial_fixpoint_over_its_body()
 {
     let source = format!(
-        "{PRELUDE}def first(n : Nat) -> -F Nat {{ loop {{ break(n) }} }}\n\
-         def spin(n : Nat) -> -F Nat {{ loop {{ continue }} }}\n\
-         def after(n : Nat) -> -F Nat {{ run m <- loop {{ break(Succ(n)) }} ; return Succ(m) }}\n\
-         def after_by_hand(n : Nat) -> -F Nat {{ loop {{ return Succ(Succ(n)) }} }}\n"
+        "{PRELUDE}def first(n : Nat) -> -F [Div] Nat {{ loop {{ break(n) }} }}\n\
+         def spin(n : Nat) -> -F [Div] Nat {{ loop {{ continue }} }}\n\
+         def after(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ break(Succ(n)) }} ; return Succ(m) }}\n\
+         def after_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ return Succ(Succ(n)) }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -145,15 +145,15 @@ fn a_loop_lowers_to_a_partial_fixpoint_over_its_body()
 fn a_loop_body_ends_by_its_exits_or_runs_again()
 {
     let source = format!(
-        "{PRELUDE}def ticking(n : Nat) -> -F Nat {{ loop {{ tick(n) }} }}\n\
-         def ticking_stated(n : Nat) -> -F Nat {{ loop {{ tick(n); }} }}\n\
-         def ticking_by_hand(n : Nat) -> -F Nat {{ loop {{ tick(n); continue }} }}\n\
-         def arms(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }} }} }}\n\
-         def arms_stated(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }}; }} }}\n\
-         def arms_by_hand(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => {{ tick(p); continue }} }} }} }}\n\
-         def inner(n : Nat) -> -F Nat {{ loop {{ loop {{ break }} }} }}\n\
-         def inner_by_hand(n : Nat) -> -F Nat {{ loop {{ loop {{ break }} ; continue }} }}\n\
-         def endless(n : Nat) -> -F Nat {{ loop {{ loop {{ continue }} }} }}\n"
+        "{PRELUDE}def ticking(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n) }} }}\n\
+         def ticking_stated(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n); }} }}\n\
+         def ticking_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ tick(n); continue }} }}\n\
+         def arms(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }} }} }}\n\
+         def arms_stated(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => tick(p) }}; }} }}\n\
+         def arms_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => break(n), Succ(p) => {{ tick(p); continue }} }} }} }}\n\
+         def inner(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ break }} }} }}\n\
+         def inner_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ break }} ; continue }} }}\n\
+         def endless(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ continue }} }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -181,7 +181,7 @@ fn a_loop_body_ends_by_its_exits_or_runs_again()
 #[test]
 fn a_hole_ending_a_loop_body_is_left_to_be_filled()
 {
-    let source = format!("{PRELUDE}def holed(n : Nat) -> -F Nat {{ loop {{ ?pending }} }}\n");
+    let source = format!("{PRELUDE}def holed(n : Nat) -> -F [Div] Nat {{ loop {{ ?pending }} }}\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let tail = tail_of(&arena, body_named(&module, SurfaceName::from("holed")));
@@ -200,12 +200,12 @@ fn a_hole_ending_a_loop_body_is_left_to_be_filled()
 fn a_break_continues_what_follows_its_loop()
 {
     let source = format!(
-        "{PRELUDE}def pick(n : Nat) -> -F Nat {{ run m <- loop {{ case n {{ Zero => break(n), Succ(p) => break(p) }} }} ; return Succ(m) }}\n\
-         def pick_by_hand(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => return Succ(n), Succ(p) => return Succ(p) }} }} }}\n\
-         def bare(n : Nat) -> -F Nat {{ run u <- loop {{ break }} ; return n }}\n\
-         def bare_by_hand(n : Nat) -> -F Nat {{ loop {{ return n }} }}\n\
-         def kept(n : Nat) -> -F Nat {{ run m <- loop {{ run k <- loop {{ break(n) }} ; break(Succ(k)) }} ; return Succ(m) }}\n\
-         def kept_by_hand(n : Nat) -> -F Nat {{ loop {{ loop {{ return Succ(Succ(n)) }} }} }}\n"
+        "{PRELUDE}def pick(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ case n {{ Zero => break(n), Succ(p) => break(p) }} }} ; return Succ(m) }}\n\
+         def pick_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => return Succ(n), Succ(p) => return Succ(p) }} }} }}\n\
+         def bare(n : Nat) -> -F [Div] Nat {{ run u <- loop {{ break }} ; return n }}\n\
+         def bare_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ return n }} }}\n\
+         def kept(n : Nat) -> -F [Div] Nat {{ run m <- loop {{ run k <- loop {{ break(n) }} ; break(Succ(k)) }} ; return Succ(m) }}\n\
+         def kept_by_hand(n : Nat) -> -F [Div] Nat {{ loop {{ loop {{ return Succ(Succ(n)) }} }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -227,9 +227,9 @@ fn a_break_continues_what_follows_its_loop()
 fn a_continue_runs_its_own_loop_again()
 {
     let source = format!(
-        "{PRELUDE}def bound(n : Nat) -> -F Nat {{ loop {{ run m <- tick(n) ; continue }} }}\n\
-         def armed(n : Nat) -> -F Nat {{ loop {{ case n {{ Zero => continue, Succ(p) => {{ run q <- tick(p) ; continue }} }} }} }}\n\
-         def nested(n : Nat) -> -F Nat {{ loop {{ run m <- loop {{ case n {{ Zero => continue, Succ(p) => break(p) }} }} ; continue }} }}\n"
+        "{PRELUDE}def bound(n : Nat) -> -F [Div] Nat {{ loop {{ run m <- tick(n) ; continue }} }}\n\
+         def armed(n : Nat) -> -F [Div] Nat {{ loop {{ case n {{ Zero => continue, Succ(p) => {{ run q <- tick(p) ; continue }} }} }} }}\n\
+         def nested(n : Nat) -> -F [Div] Nat {{ loop {{ run m <- loop {{ case n {{ Zero => continue, Succ(p) => break(p) }} }} ; continue }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -254,8 +254,8 @@ fn a_continue_runs_its_own_loop_again()
 fn a_while_tests_its_condition_on_every_pass()
 {
     let source = format!(
-        "{PRELUDE}def down(n : Integer) -> -F Integer {{ while n > 0 {{ return n }} ; return 0 }}\n\
-         def held(b : Bool, n : Nat) -> -F Nat {{ while b {{ tick(n) }} ; return n }}\n"
+        "{PRELUDE}def down(n : Integer) -> -F [Div] Integer {{ while n > 0 {{ return n }} ; return 0 }}\n\
+         def held(b : Bool, n : Nat) -> -F [Div] Nat {{ while b {{ tick(n) }} ; return n }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -311,10 +311,10 @@ fn linear(
 #[test]
 fn a_loop_threads_the_slots_it_names_through_its_passes()
 {
-    let source = "def one() -> -F Integer { hold n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
-                  def two() -> -F Integer { hold a = 10; hold b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
-                  def after() -> -F Integer { hold a = 4; hold b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
-                  def none() -> -F Integer { hold a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
+    let source = "def one() -> -F [Div] Integer { hold n = 3; while n > 0 { access n as v { resume(v, v - 1) } }; pure n }\n\
+                  def two() -> -F [Div] Integer { hold a = 10; hold b = 1; while b < 4 { access b as v { resume(v, v + 1) }; access a as w { resume(w, w - 1) } }; pure a * 100 + b }\n\
+                  def after() -> -F [Div] Integer { hold a = 4; hold b = 3; while b > 0 { access b as v { resume(v, v - 1) } }; pure a + 3 }\n\
+                  def none() -> -F [Div] Integer { hold a = 4; while 1 > 2 { return 1 }; pure 5 }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     // Each name: the slots the first pass takes, where the loop stands, and
@@ -408,7 +408,7 @@ fn a_for_steps_through_its_list()
     let source = format!(
         "{PRELUDE}def each(xs : List(Nat), n : Nat) -> -F Nat {{ for x in xs {{ tick(x) }} ; return n }}\n\
          def skipped(xs : List(Nat)) -> -F Nat {{ for x in xs {{ case x {{ Zero => continue, Succ(p) => return p }} }} ; return Zero }}\n\
-         def inner(xs : List(Nat)) -> -F Unit {{ for x in xs {{ loop {{ continue }} }} }}\n"
+         def inner(xs : List(Nat)) -> -F [Div] Unit {{ for x in xs {{ loop {{ continue }} }} }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -455,7 +455,7 @@ fn a_for_steps_through_its_list()
 fn a_loop_leaves_where_it_stands_only_through_its_breaks()
 {
     let source = format!(
-        "{PRELUDE}def f(b : Bool, n : Nat) -> -F Nat {{\n\
+        "{PRELUDE}def f(b : Bool, n : Nat) -> -F [Div] Nat {{\n\
          run a <- loop {{ break(n) }} ;\n\
          run c <- loop {{ loop {{ break(Zero) }} }} ;\n\
          run d <- while b {{ tick(n) }} ;\n\
@@ -484,7 +484,7 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
     let source = format!(
         "{PRELUDE}def stray(n : Nat) -> -F Nat {{ break(n) }}\n\
          def skip(n : Nat) -> -F Nat {{ continue }}\n\
-         def held(n : Nat) -> -F Nat {{ loop {{ run t <- pure thunk {{ break(Zero) }} ; continue }} }}\n"
+         def held(n : Nat) -> -F [Div] Nat {{ loop {{ run t <- pure thunk {{ break(Zero) }} ; continue }} }}\n"
     );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());
@@ -520,8 +520,9 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
 #[test]
 fn a_loop_off_every_path_is_refused()
 {
-    let source =
-        format!("{PRELUDE}def nested(n : Nat) -> -F Nat {{ return run loop {{ break(n) }} }}\n");
+    let source = format!(
+        "{PRELUDE}def nested(n : Nat) -> -F [Div] Nat {{ return run loop {{ break(n) }} }}\n"
+    );
     let text = SourceText::from(source.as_str());
     let module = lowered(text, &mut CoreArena::new());
     let refused = refusal_of(&module, SurfaceName::from("nested"));

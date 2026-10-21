@@ -5078,7 +5078,7 @@ def h = 1 ;"#,
         );
         assert_eq!(
             unused(&corpus("surface/control-flow.gandr")),
-            ["8:n"],
+            ["14:n"],
             "`tick` leaves its parameter unused; the capability `handled` handles is no lambda's \
              or bind's, and every other binder is used"
         );

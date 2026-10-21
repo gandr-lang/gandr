@@ -1,8 +1,9 @@
 /// A loop inside another loop's body carries no slot through its passes: the
 /// outer body's ends continue what follows the outer loop, so the inner loop
-/// reads the slot it names inside a fixpoint (#1143).
+/// reads the slot it names inside a fixpoint (#1143). The loops may run
+/// forever, so the row states `Div` (#1481).
 @[ refuses("HeldCaptured") ]
-def nested() -> -F Integer {
+def nested() -> -F [Div] Integer {
   hold n = 0;
   hold i = 3;
   while i > 0 {

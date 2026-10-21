@@ -9720,7 +9720,7 @@ mod tests
         let (uri, text) = corpus("surface/control-flow.gandr");
         assert_eq!(
             hinted(&open(&mut server, &uri, &text)),
-            ["7:`n` is never used"],
+            ["13:`n` is never used"],
             "`tick` leaves its parameter unused, and control flow's every other binder is used"
         );
     }

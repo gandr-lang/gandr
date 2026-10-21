@@ -1,50 +1,51 @@
 // The comparisons `!=`, `<=` and `>=`, each deciding a `while` loop's
 // condition: the loop runs its body while the comparison holds, and the body
 // returns at once (the relational and equality operators of Kernighan and
-// Ritchie, _The C Programming Language_, 2nd ed., § 2.6).
+// Ritchie, _The C Programming Language_, 2nd ed., § 2.6). A `while` may run
+// forever, so each function states `Div` in its row (#1481).
 
 /// Its argument when that is not zero, else zero.
 @[ checks ]
-def unlessZero(n : Integer) -> -F Integer {
+def unlessZero(n : Integer) -> -F [Div] Integer {
   while n != 0 { return n } ;
   0
 }
 
 /// Three is not zero, so the loop returns it.
 @[ runs("3") ]
-def unlessZeroThree : () => Integer ;
+def unlessZeroThree : +U (-F [Div] Integer) ;
 def unlessZeroThree = thunk { become unlessZero(3) } ;
 
 /// Zero is zero, so the loop never runs.
 @[ runs("0") ]
-def unlessZeroZero : () => Integer ;
+def unlessZeroZero : +U (-F [Div] Integer) ;
 def unlessZeroZero = thunk { become unlessZero(0) } ;
 
 /// Its argument when that is at most zero, else zero.
 @[ checks ]
-def atMostZero(n : Integer) -> -F Integer {
+def atMostZero(n : Integer) -> -F [Div] Integer {
   while n <= 0 { return n } ;
   0
 }
 
 /// Zero is at most zero, so the loop returns it.
 @[ runs("0") ]
-def atMostZeroZero : () => Integer ;
+def atMostZeroZero : +U (-F [Div] Integer) ;
 def atMostZeroZero = thunk { become atMostZero(0) } ;
 
 /// Its argument when that is at least one, else zero.
 @[ checks ]
-def atLeastOne(n : Integer) -> -F Integer {
+def atLeastOne(n : Integer) -> -F [Div] Integer {
   while n >= 1 { return n } ;
   0
 }
 
 /// One is at least one, so the loop returns it.
 @[ runs("1") ]
-def atLeastOneOne : () => Integer ;
+def atLeastOneOne : +U (-F [Div] Integer) ;
 def atLeastOneOne = thunk { become atLeastOne(1) } ;
 
 /// Zero is not at least one, so the loop never runs.
 @[ runs("0") ]
-def atLeastOneZero : () => Integer ;
+def atLeastOneZero : +U (-F [Div] Integer) ;
 def atLeastOneZero = thunk { become atLeastOne(0) } ;

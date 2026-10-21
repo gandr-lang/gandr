@@ -515,6 +515,7 @@ mod context;
 mod conversion;
 mod coverage;
 mod declaration;
+mod divergence;
 pub mod elaboration;
 pub mod eliminator;
 mod equiv;

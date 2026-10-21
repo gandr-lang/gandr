@@ -45,9 +45,10 @@ def place(s : Repr) -> -F Place {
 }
 
 /// `n` copies of the code point `c` before `onto`, built by a loop that
-/// carries the list and the count left.
+/// carries the list and the count left. The loop may run forever, so the row
+/// states `Div` (#1481).
 @[ checks ]
-def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F List(Integer) {
+def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F [Div] List(Integer) {
   hold acc = onto;
   hold left = n;
   while left > 0 {
@@ -66,7 +67,7 @@ def hiPlace = thunk {
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
-def fullPlace : () => Place ;
+def fullPlace : +U (-F [Div] Place) ;
 def fullPlace = thunk {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   become place(own(cs))
@@ -74,7 +75,7 @@ def fullPlace = thunk {
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
-def spilledPlace : () => Place ;
+def spilledPlace : +U (-F [Div] Place) ;
 def spilledPlace = thunk {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   become place(own(cs))
@@ -89,7 +90,7 @@ def hiBytes = thunk {
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
-def spilledCount : () => Integer ;
+def spilledCount : +U (-F [Div] Integer) ;
 def spilledCount = thunk {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   run s <- own(cs) ;

@@ -87,20 +87,21 @@ def written(w : Written) -> -F Repr {
   }
 }
 
-/// A long string, twenty-four bytes and the zero, held once.
+/// A long string, twenty-four bytes and the zero, held once. It is built by
+/// a loop, so it states `Div` (#1481), and so does each run that forces it.
 @[ checks ]
-def long : () => Repr ;
+def long : +U (-F [Div] Repr) ;
 def long = thunk { become own(repeatOnto(97, 24, (Nil : List(Integer)))) } ;
 
 /// `!` appended to a long string held once: written in place, nothing copied.
 @[ runs("0") ]
-def alone : () => Integer ;
+def alone : +U (-F [Div] Integer) ;
 def alone = thunk { run s <- force long ; become copies(push(s, 33)) } ;
 
 /// The same write to a copy: the buffer has two holders, so the copy's write
 /// fills a buffer of its own.
 @[ runs("1") ]
-def shared : () => Integer ;
+def shared : +U (-F [Div] Integer) ;
 def shared = thunk {
   run s <- force long ;
   run c <- copy(s) ;
@@ -109,7 +110,7 @@ def shared = thunk {
 
 /// The copy's write leaves the original's bytes as they were.
 @[ runs("25") ]
-def untouched : () => Integer ;
+def untouched : +U (-F [Div] Integer) ;
 def untouched = thunk {
   run s <- force long ;
   run c <- copy(s) ;
@@ -119,7 +120,7 @@ def untouched = thunk {
 
 /// And the copy reads one byte more.
 @[ runs("26") ]
-def grown : () => Integer ;
+def grown : +U (-F [Div] Integer) ;
 def grown = thunk {
   run s <- force long ;
   run c <- copy(s) ;
@@ -139,7 +140,7 @@ def shout = thunk {
 
 /// A full inline string outgrows it: the write moves its bytes to the heap.
 @[ runs("1") ]
-def spill : () => Integer ;
+def spill : +U (-F [Div] Integer) ;
 def spill = thunk {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   run s <- own(cs) ;
