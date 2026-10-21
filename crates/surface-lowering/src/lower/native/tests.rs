@@ -1764,6 +1764,60 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
     assert_accepted(&report);
 }
 
+/// #1171: a constructor written in a field typed by another family took no
+/// classifier from the field, so `Inline(Some(3))` was refused as
+/// unannotated where `Inline((Some(3) : Maybe(Integer)))` checked. The field's
+/// declared type, its family's parameters and the fields before it replaced,
+/// classifies it.
+#[test]
+fn a_field_classifies_the_constructor_written_in_it_1171()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data Repr : Type {{ Inline : (s : Maybe(Integer)) --> Repr; }}\n\
+         data Box(a : Type) : Type {{ Wrap : (m : Maybe(a)) --> Box(a); }}\n\
+         data Dep : Type[+, 1] {{ Dee : (a : Type, m : Maybe(a)) --> Dep; }}\n\
+         def closed : Repr ;\ndef closed = Inline(Some(3)) ;\n\
+         def annotated : Repr ;\ndef annotated = Inline((Some(3) : Maybe(Integer))) ;\n\
+         def opened : Box(Integer) ;\ndef opened = Wrap(Some(3)) ;\n\
+         def dependent : Dep ;\ndef dependent = Dee(Integer, Some(3)) ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["closed", "annotated", "opened", "dependent"].map(SurfaceName::from) {
+        let Some(&Value::Constructor { ref fields, .. }) = arena.value(body_named(&module, name))
+        else {
+            panic!(
+                "`{name}` is a constructor value: {:?}",
+                outcome_of(&module, name)
+            );
+        };
+        let Some(&Value::Constructor { datatype, .. }) =
+            fields.last().and_then(|&field| arena.value(field))
+        else {
+            panic!("`{name}`'s last field is a constructor value");
+        };
+        assert!(
+            matches!(
+                arena.value_type(datatype),
+                Some(&ValueType::Data { ref arguments, .. })
+                    if matches!(arguments.as_slice(), [argument] if matches!(arena.value(*argument), Some(&Value::Quote(quoted)) if arena.value_type(quoted) == Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer))))
+            ),
+            "`{name}`'s field is classified `Maybe(Integer)`: {:?}",
+            arena.value_type(datatype)
+        );
+    }
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(
+            &arena,
+            body_named(&module, SurfaceName::from("closed")),
+            body_named(&module, SurfaceName::from("annotated")),
+        ),
+        gandr_core_term::CertificateEquality::Equal,
+        "the field classifies its constructor as the annotation does"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_constructor_takes_its_slot_as_a_family_argument_421()
 {
