@@ -504,6 +504,11 @@ fn lowered(
             "this rule may rewrite forever: its right side is not smaller than its left in the \
              order the block's calls induce, so the block's rules are refused",
         ),
+        LoweringRefusal::RulesNonLinear { .. } => f.write_str(
+            "this rule's left side names one variable twice: a rule matches each variable once, \
+             since copying a matched value needs a comonoid its sort may not have, so the rule \
+             is refused",
+        ),
         LoweringRefusal::RulesDiverge { .. } => f.write_str(
             "this rule and an earlier one rewrite one term to two different constructor terms, \
              so the block's rules are refused",
@@ -1297,6 +1302,7 @@ mod tests
             LoweringRefusal::DirectedCell { span },
             LoweringRefusal::CellNotALoop { span },
             LoweringRefusal::RulesUnoriented { span },
+            LoweringRefusal::RulesNonLinear { span, copy: span },
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUncompleted { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },

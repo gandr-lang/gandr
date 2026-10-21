@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("RulesNonLinear") ]
 theory Copy {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (s : Nat);
