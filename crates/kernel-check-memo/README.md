@@ -77,7 +77,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-check-memo
 
 ## Where the detail lives
 
-What a hit claims, the digest and agreement contract, static dispatch, per-plane accounting, ordered storage, exhaustive matching and the specification attributes are stated in [`src/lib.rs`](src/lib.rs); each operation's obligation is on its item in [`src/memo.rs`](src/memo.rs), [`src/key.rs`](src/key.rs), [`src/digest.rs`](src/digest.rs) and [`src/accounting.rs`](src/accounting.rs).
+The seam's items, the hit and digest boundaries, the dependencies and the specification witnesses are stated in [`src/lib.rs`](src/lib.rs); each operation's obligation is on its item in [`src/memo.rs`](src/memo.rs), [`src/key.rs`](src/key.rs), [`src/digest.rs`](src/digest.rs) and [`src/accounting.rs`](src/accounting.rs).
 
 ## License
 
