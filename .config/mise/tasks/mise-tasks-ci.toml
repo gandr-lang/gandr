@@ -595,9 +595,9 @@ cat "$scratch/rows"
 # The body names the issues it works, one per line: `Closes #n` for an issue
 # the pull request finishes (GitHub closes it on merge), `Advances #n` for a
 # slice of a larger one. On merge, `.github/workflows/claims.yml` takes
-# `status:claimed` off every `Advances` target (#1270); a seat that goes on to
-# the next slice claims it again when it starts. The `## Ledger` section names
-# rows; these lines name issues.
+# `status:claimed` off every issue the body closes or advances (#1270); a seat
+# that goes on to the next slice claims it again when it starts. The
+# `## Ledger` section names rows; these lines name issues.
 #
 # Every pull request stacks on the server's top (#1264): when any pull request
 # is open, the branch is rebased onto the top's branch (`top.jq`: the open pull
