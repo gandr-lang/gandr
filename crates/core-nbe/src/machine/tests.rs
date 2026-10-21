@@ -58,6 +58,7 @@ use super::StepBudget;
 use super::TraceNode;
 use super::decide;
 use crate::arena::DomainArena;
+use crate::domain::BinderLevel;
 use crate::eval::Definitions;
 use crate::eval::Endpoints;
 use crate::eval::Fuel;
@@ -2610,6 +2611,7 @@ impl Kernel
          ConversionDecision::EtaExpand{side,variable} => ConversionDecision::EtaExpand{side,variable:node(variable)},
          ConversionDecision::ReturnEta{side} => ConversionDecision::ReturnEta{side},
          ConversionDecision::Reassociate{side} => ConversionDecision::Reassociate{side},
+         ConversionDecision::Discard{side} => ConversionDecision::Discard{side},
          ConversionDecision::Force{thunk} => ConversionDecision::Force{thunk:node(thunk)},
          ConversionDecision::ComparedShared{left,right} => ConversionDecision::ComparedShared{left:node(left),right:node(right)},
          ConversionDecision::NegativeSubgoal{position} => ConversionDecision::NegativeSubgoal{position},
@@ -3258,6 +3260,158 @@ fn the_laws_of_bind_convert_by_their_decisions()
 }
 
 #[test]
+fn an_unread_call_is_discarded_only_where_it_returns()
+{
+    // Under rigid `g` at level 0 and `f` at level 1: `force g () to v. force
+    // f ()` against `force f ()`, and `force g () to v. force f v`, whose
+    // continuation reads what the call returned.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let call = |core: &mut CoreArena, index: u32, argument: ValueId| {
+        let head = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let forced = core.computation_force(head);
+        core.computation_application(forced, argument)
+    };
+    let called = call(&mut core, 1, unit);
+    let followed = call(&mut core, 0, unit);
+    let under = call(&mut core, 1, unit);
+    let unread = core.computation_bind(called, under);
+    let bound = innermost(&mut core);
+    let reading = call(&mut core, 1, bound);
+    let read = core.computation_bind(called, reading);
+    let world = World::new(core, &[]);
+    let both = [BinderLevel::from(0_u32), BinderLevel::from(1_u32)];
+    let only_f = [BinderLevel::from(1_u32)];
+    let discard = |side| ConversionDecision::Discard { side };
+
+    // The last column is the kernel's verdict on the engine's trace, `None`
+    // for a refusal: every variable of the kernel's fragment returns, so a
+    // refutation that leaves a call it could drop standing does not replay.
+    for (sides, returning, expected, decided, kernel_owes) in [
+        (
+            (unread, followed),
+            &both[..],
+            MachineVerdict::Convertible,
+            Some(discard(ConversionSide::Left)),
+            Some(KernelVerdict::Convertible),
+        ),
+        (
+            (followed, unread),
+            &both[..],
+            MachineVerdict::Convertible,
+            Some(discard(ConversionSide::Right)),
+            Some(KernelVerdict::Convertible),
+        ),
+        (
+            (unread, followed),
+            &only_f[..],
+            MachineVerdict::NotConvertible,
+            None,
+            None,
+        ),
+        (
+            (read, followed),
+            &both[..],
+            MachineVerdict::NotConvertible,
+            None,
+            Some(KernelVerdict::NotConvertible),
+        ),
+    ] {
+        let definitions =
+            Definitions::new(&world.chain, &world.environment, world.environment.root())
+                .returning(returning);
+        let mut domain = DomainArena::new();
+        let mut environment = crate::closure::Environment::new();
+        for level in 0_u32 .. 2 {
+            let neutral = domain
+                .neutral_node(
+                    crate::domain::NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    crate::domain::Unfolding::Rigid,
+                )
+                .expect("a variable is a neutral");
+            let variable = domain
+                .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                .expect("a neutral is a value");
+            environment.extend(Zone::Intuitionistic, variable);
+        }
+        let fuel = Fuel::from(4_096_u32);
+        let (left, right) = sides;
+        let evaluate = |domain: &mut DomainArena, term| {
+            crate::eval::eval_comp_within(
+                &world.core,
+                domain,
+                definitions,
+                fuel,
+                term,
+                environment.clone(),
+            )
+            .map(|(evaluated, _remaining)| evaluated)
+            .expect("each side evaluates")
+        };
+        let one = evaluate(&mut domain, left);
+        let other = evaluate(&mut domain, right);
+        let problem = Problem::computations(one, other).under(BinderLevel::from(2_u32));
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            &world.core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut log,
+        )
+        .expect("the machine answers");
+        let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+        assert_eq!(
+            expected,
+            report.verdict(),
+            "an unread call of a variable that returns is the computation after it, and a \
+                 call of one not known to return, or one whose value is read, stays: \
+                 {decisions:?}"
+        );
+        assert_eq!(
+            decided,
+            decisions
+                .iter()
+                .copied()
+                .find(|decision| matches!(decision, ConversionDecision::Discard { .. })),
+            "the discard is a recorded decision on the side that held the call: {decisions:?}"
+        );
+        let mut kernel = Kernel::default();
+        let sides = ReplaySides::Computations(
+            kernel.computation(&world.core, left),
+            kernel.computation(&world.core, right),
+        );
+        let claim = match report.verdict() {
+            MachineVerdict::Convertible => EngineClaim::Convertible,
+            MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+            MachineVerdict::Declined(_) => EngineClaim::Declined,
+        };
+        let replayed = replay(
+            &mut kernel.arena,
+            &Unfoldings::new(Vec::new()),
+            sides,
+            claim,
+            decisions.iter().map(|&decision| kernel_decision(decision)),
+            ReplayBudget::DEFAULT,
+        );
+        let owed = kernel_owes.map_or_else(
+            || matches!(replayed, KernelVerdict::Declined(ReplayDecline::Refused(_))),
+            |owed| replayed == owed,
+        );
+        assert!(
+            owed,
+            "the kernel replays the discard by name, and refuses a refutation past one: \
+             {replayed:?} {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn stuck_fixpoints_compare_by_their_bodies()
 {
     // `(fix rec. λx. return x) R` for a rigid `R`, written twice, once
@@ -3476,6 +3630,7 @@ fn a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361()
             | ConversionDecision::EtaExpand { .. }
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
+            | ConversionDecision::Discard { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose

@@ -731,7 +731,7 @@ fn convertible(
     {
         return Ok(Agreement::Convertible);
     }
-    match context.definitions().relate_terms(arena, left, right) {
+    match context.definitions().relate_terms(arena, left, right, &[]) {
         Ok(Maybe::Present(_)) => Ok(Agreement::Convertible),
         Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => Ok(Agreement::Apart),
         Err(fault) => Err(fault),

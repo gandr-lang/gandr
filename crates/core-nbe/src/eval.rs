@@ -703,6 +703,24 @@ pub struct Definitions<'run>
     constants: Constants,
     /// How a readback names a definition's own recursion.
     recursion: Recursion,
+    /// The rigid variables whose calls are known to return, by level,
+    /// ascending.
+    returning: &'run [crate::domain::BinderLevel],
+}
+
+/// Whether the calls of a rigid variable are known to return.
+///
+/// A call returns when it ends in a returner at the empty row: no operation
+/// is performed and, a partial fixpoint stating `Div` in its row, no loop runs
+/// forever. Such a call computes nothing anyone can observe but its value, so
+/// a bind that never reads the value may drop it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Calls
+{
+    /// Every call of the variable returns.
+    Return,
+    /// Nothing is known of them.
+    Unknown,
 }
 
 /// Whether a run unfolds the definitions its scope reads as manifest.
@@ -773,7 +791,8 @@ impl<'run> Definitions<'run>
         ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(chain))
             && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(environment))
             && ret.scope == scope && ret.endpoints == Endpoints::Run
-            && ret.constants == Constants::Unfold && ret.recursion == Recursion::Unrolled,
+            && ret.constants == Constants::Unfold && ret.recursion == Recursion::Unrolled
+            && ret.returning.is_empty(),
     )]
     pub fn new(
         chain: &'run LoweredChain,
@@ -788,6 +807,73 @@ impl<'run> Definitions<'run>
             endpoints: Endpoints::Run,
             constants: Constants::Unfold,
             recursion: Recursion::Unrolled,
+            returning: &[],
+        }
+    }
+
+    /// The same definitions, reading the rigid variables at `levels` as
+    /// variables whose calls return.
+    ///
+    /// # Specification
+    /// - requires: `levels` is ascending, and each names a variable of the
+    ///   run's rigid environment whose type ends in returners at the empty row
+    ///   alone.
+    /// - ensures: every stance unchanged but the returning levels, which are
+    ///   `levels`.
+    /// - provides: what a conversion discards an unread call by: a bind over a
+    ///   call of such a variable that never reads its value is its
+    ///   continuation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unread call of a variable at a returning level
+    ///   converts with its continuation, and the same call of a variable at no
+    ///   returning level stays; a stance that does not reach the rule loses the
+    ///   distinction.
+    /// - witness: `machine::tests::an_unread_call_is_discarded_only_where_it_returns`
+    #[inline]
+    #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(self.chain))
+            && ret.scope == self.scope && ret.endpoints == self.endpoints
+            && ret.constants == self.constants && ret.recursion == self.recursion
+            && core::ptr::eq(core::ptr::from_ref(ret.returning), core::ptr::from_ref(levels)),
+    )]
+    pub fn returning(
+        self,
+        levels: &'run [crate::domain::BinderLevel],
+    ) -> Self
+    {
+        Self {
+            returning: levels,
+            ..self
+        }
+    }
+
+    /// Whether the calls of the rigid variable at `level` are known to return.
+    ///
+    /// # Specification
+    /// - requires: nothing — any level is admissible input.
+    /// - ensures: [`Calls::Return`] exactly when `level` is among the levels
+    ///   [`Self::returning`] supplied.
+    /// - panics: none.
+    /// - executable: none — the answer is a binary search of the receiver's
+    ///   levels, which a predicate could only repeat; the witness holds it to
+    ///   the levels each run supplies.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::returning`].
+    /// - witness: `machine::tests::an_unread_call_is_discarded_only_where_it_returns`
+    #[inline]
+    pub(crate) fn calls(
+        &self,
+        level: crate::domain::BinderLevel,
+    ) -> Calls
+    {
+        match self.returning.binary_search(&level) {
+            Ok(_) => Calls::Return,
+            Err(_) => Calls::Unknown,
         }
     }
 

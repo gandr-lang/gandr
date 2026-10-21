@@ -790,7 +790,7 @@ fn endpoints_agree(
     if let Ok(Maybe::Present(decisions)) =
         context
             .definitions()
-            .relate_terms(context.arena(), left, right)
+            .relate_terms(context.arena(), left, right, &[])
     {
         context.record_relation(left, right, decisions);
         return Ok(Agreement::Convertible);

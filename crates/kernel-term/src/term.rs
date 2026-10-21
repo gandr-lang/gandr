@@ -919,7 +919,7 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
     /// - witness: `term::tests::evidence_words_reject_unknown_and_oversized_premises`
     #[inline]
     #[spec(ensures: |ret| {
-        ret.is_ok() == (word.0 <= 0x0B_u64 || (0x0D_u64 ..= 0x10_u64).contains(&word.0) ||
+        ret.is_ok() == (word.0 <= 0x0B_u64 || (0x0D_u64 ..= 0x12_u64).contains(&word.0) ||
             (word.0 & 0xFF_u64 == 0x0C_u64 && u32::try_from(word.0 >> 8_u32).is_ok()))
     })]
     fn try_from(word: EvidenceWord) -> Result<Self, Self::Error>
@@ -970,6 +970,12 @@ impl TryFrom<EvidenceWord> for gandr_kernel_conversion_trace::ConversionDecision
                 side: ConversionSide::Left,
             },
             0x10 => Self::Reassociate {
+                side: ConversionSide::Right,
+            },
+            0x11 => Self::Discard {
+                side: ConversionSide::Left,
+            },
+            0x12 => Self::Discard {
                 side: ConversionSide::Right,
             },
             _ => return Err(invalid),
@@ -1074,6 +1080,12 @@ pub fn decision_word(
         ConversionDecision::Reassociate {
             side: ConversionSide::Right,
         } => 0x10,
+        ConversionDecision::Discard {
+            side: ConversionSide::Left,
+        } => 0x11,
+        ConversionDecision::Discard {
+            side: ConversionSide::Right,
+        } => 0x12,
     })
 }
 
@@ -1101,16 +1113,17 @@ mod tests
             for decision in [
                 ConversionDecision::ReturnEta { side },
                 ConversionDecision::Reassociate { side },
+                ConversionDecision::Discard { side },
             ] {
                 assert_eq!(
                     Ok(decision),
                     ConversionDecision::try_from(super::decision_word(decision)),
-                    "each bind law keeps its side across the wire"
+                    "each bind law and the discard keep their side across the wire"
                 );
             }
         }
         for word in [
-            0x11_u64,
+            0x13_u64,
             0xFF_u64,
             0x100_u64,
             0x0100_0000_000C_u64,

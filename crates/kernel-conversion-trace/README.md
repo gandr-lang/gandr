@@ -29,7 +29,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 
 ## Provided features
 
-- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `ReturnEta`, `Reassociate`, `Force`, `ComparedShared`, `Decompose`, `NegativeSubgoal`.
+- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `ReturnEta`, `Reassociate`, `Discard`, `Force`, `ComparedShared`, `Decompose`, `NegativeSubgoal`.
 - `ConversionDecision::map`: the same decision over another anchor, how a trace crosses from the engine's identifiers to a consumer's.
 - `SubgoalPosition`: which premise of a decomposition a refutation names, counted in an order both consumers derive from the terms.
 - `ConversionSide`: which leg of the comparison a one-sided decision acts on.

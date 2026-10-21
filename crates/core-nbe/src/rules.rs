@@ -25,8 +25,10 @@ use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 
 use crate::arena::CompClosureId;
 use crate::arena::DomainArena;
@@ -34,6 +36,7 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::closure::CompBody;
 use crate::code::CodeComparison;
 use crate::code::ConstantReading;
 use crate::code::compare_codes;
@@ -48,6 +51,7 @@ use crate::domain::Glued;
 use crate::domain::NeutralHead;
 use crate::domain::Projector;
 use crate::domain::Unfolding;
+use crate::eval::Calls;
 use crate::eval::Definitions;
 use crate::machine::DeclineReason;
 
@@ -264,6 +268,9 @@ pub enum Step
     /// Make the two binds in a row nearest the head on this side one: bind
     /// associativity.
     Reassociate(ConversionSide),
+    /// Run the continuation of the unread call on this side in its place: a
+    /// call that returns and whose value nothing reads is dropped.
+    Discard(ConversionSide),
     /// Read two held endpoints as the computations they hold: the kernel's
     /// replay reads a returned endpoint so before any rule, recording
     /// nothing.
@@ -1276,7 +1283,7 @@ pub fn plan(
             plan_values(core, domain, definitions, frozen, one, other)
         },
         (Glued::Computation(one), Glued::Computation(other)) => {
-            plan_comps(core, domain, frozen, one, other)
+            plan_comps(core, domain, definitions, frozen, one, other)
         },
         (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
             Err(ConversionFault::Polarity)
@@ -2619,6 +2626,104 @@ fn projected(
     ))
 }
 
+/// The continuation an unread call on one side runs in its place, when the
+/// computation is one.
+///
+/// # Specification
+/// - requires: nothing — dangling ids are admissible input and refused.
+/// - ensures: `Some(continuation)` exactly when `comp` is a neutral headed by
+///   an intuitionistic variable whose calls [`Definitions::calls`] answers
+///   [`Calls::Return`] for, whose spine forces, applies and projects it and
+///   then, last, binds it into `continuation`, and whose continuation never
+///   reads the value it binds: a source body whose support omits the binder, or
+///   two binds in a row whose inner one omits it. `None` otherwise.
+/// - provides: the planning half of [`Step::Discard`], and the continuation the
+///   machine runs when it takes the step.
+/// - fails: [`ConversionFault::Domain`] for a neutral or a closure that does
+///   not resolve, [`ConversionFault::MachineInvariant`] for a source body the
+///   core arena does not hold.
+/// - panics: none.
+/// - executable: none — the answer reads the domain's neutral and the core
+///   arena's support of its continuation, which a predicate could only read
+///   again; the witness holds it to stated terms.
+///
+/// # Errors
+/// - [`ConversionFault`] — as above.
+///
+/// # Termination
+/// - reason: the `loop` walks the inner continuations of binds in a row, not
+///   recursion.
+/// - measure: the closure's position in its arena: a native pair of binds is
+///   minted after both of its continuations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unread call of a variable at a returning level is
+///   discarded and the same call at no returning level, a call whose
+///   continuation reads its value and a call bound twice in a row are not;
+///   dropping any condition changes a verdict.
+/// - witness: `machine::tests::an_unread_call_is_discarded_only_where_it_returns`
+pub fn unread_call(
+    core: &CoreArena,
+    domain: &DomainArena,
+    definitions: Definitions<'_>,
+    comp: DomainComp,
+) -> Result<Option<CompClosureId>, ConversionFault>
+{
+    let DomainComp::Neutral { neutral, .. } = comp
+    else {
+        return Ok(None);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    let NeutralHead::Variable {
+        zone: Zone::Intuitionistic,
+        level,
+    } = held.head()
+    else {
+        return Ok(None);
+    };
+    if definitions.calls(level) == Calls::Unknown {
+        return Ok(None);
+    }
+    let Some((&Elimination::Bind(continuation), prefix)) = held.spine().split_last()
+    else {
+        return Ok(None);
+    };
+    let calls = prefix.iter().all(|elimination| {
+        matches!(
+            *elimination,
+            Elimination::Force | Elimination::Apply(_) | Elimination::Projection(_)
+        )
+    });
+    if !calls {
+        return Ok(None);
+    }
+    let mut focus = continuation;
+    loop {
+        let body = domain
+            .comp_closure(focus)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+            .body();
+        if let CompBody::Then { first, .. } = body {
+            focus = first;
+            continue;
+        }
+        let CompBody::Source(source) = body
+        else {
+            return Ok(None);
+        };
+        let support = core
+            .computation_support(source)
+            .ok_or(ConversionFault::MachineInvariant)?;
+        let bound = DeBruijnIndex::from(0_u32);
+        return Ok(support
+            .indices(Zone::Intuitionistic)
+            .all(|held| held != bound)
+            .then_some(continuation));
+    }
+}
+
 /// [`plan`] over two weak-head computations.
 ///
 /// # Specification
@@ -2647,6 +2752,7 @@ fn projected(
 fn plan_comps(
     core: &CoreArena,
     domain: &DomainArena,
+    definitions: Definitions<'_>,
     frozen: &Frozen,
     left: DomainCompId,
     right: DomainCompId,
@@ -2662,6 +2768,12 @@ fn plan_comps(
     else {
         return Err(ConversionFault::Domain(DomainFault::Dangling));
     };
+    if unread_call(core, domain, definitions, one)?.is_some() {
+        return Ok(Plan::Step(Step::Discard(ConversionSide::Left)));
+    }
+    if unread_call(core, domain, definitions, other)?.is_some() {
+        return Ok(Plan::Step(Step::Discard(ConversionSide::Right)));
+    }
     let left_head = comp_neutrality(domain, frozen, ConversionSide::Left, one)?;
     let right_head = comp_neutrality(domain, frozen, ConversionSide::Right, other)?;
     let lambda = match (one, other) {

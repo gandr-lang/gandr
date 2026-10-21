@@ -76,6 +76,7 @@ use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
 
+use crate::element_identity::BinderUse;
 use crate::encoding::ContentId;
 use crate::encoding::ContentTable;
 use crate::encoding::SupportGoal;
@@ -147,6 +148,20 @@ impl SupportContext
     ) -> LooseDepth
     {
         self.reads.comp_type_reach(arena, root).depth()
+    }
+
+    /// The binders a computation node reads, as cached for the session.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn comp_reads(
+        &mut self,
+        arena: &TermArena,
+        root: ComputationId,
+    ) -> Reads
+    {
+        self.reads.comp_reach(arena, root)
     }
 
     /// How many rewrites of `plane` this session has recorded.
@@ -470,6 +485,42 @@ impl Reads
                     .map_or(0, |&last| u32::from(last).saturating_add(1)),
             ),
             ReadSet::Widest => LooseDepth::WIDEST,
+        }
+    }
+
+    /// Whether the set reads the innermost binder, index zero.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`BinderUse::Ignored`] exactly when the set lists its indices
+    ///   and zero is not among them; a node the walk could not read reads it.
+    /// - provides: the condition a discarded call's continuation meets, and a
+    ///   fixpoint that never recurses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sets on both sides of the word's width, with and
+    ///   without zero, and the widest set, each asserted.
+    /// - witness: `support::tests::reads_are_exactly_the_free_indices`
+    #[inline]
+    #[spec(ensures: |ret| (ret == BinderUse::Ignored) == match self.0 {
+        ReadSet::Word(word) => word & 1 == 0,
+        ReadSet::Spilled(ref indices) => !indices.contains(&DeBruijnIndex::from(0_u32)),
+        ReadSet::Widest => false,
+    })]
+    pub(crate) fn innermost(&self) -> BinderUse
+    {
+        let ignored = match self.0 {
+            ReadSet::Word(word) => word & 1 == 0,
+            ReadSet::Spilled(ref indices) => indices.first() != Some(&DeBruijnIndex::from(0_u32)),
+            ReadSet::Widest => false,
+        };
+        if ignored {
+            BinderUse::Ignored
+        }
+        else {
+            BinderUse::Read
         }
     }
 }
@@ -2188,6 +2239,7 @@ mod tests
     use super::SupportContext;
     use super::SupportPlane;
     use super::read_telescope;
+    use crate::element_identity::BinderUse;
     use crate::encoding::SupportGoal;
 
     #[test]
@@ -2245,6 +2297,24 @@ mod tests
             assert_eq!(
                 depths.comp_reach(&arena, node),
                 reads.comp_reach(&arena, node).depth()
+            );
+        }
+        let spilled = |indices: &[u32]| {
+            indices.iter().fold(Reads::closed(), |reads, &index| {
+                reads.join(Reads::variable(DeBruijnIndex::from(index)))
+            })
+        };
+        for (reads, innermost) in [
+            (reads.value_reach(&arena, tuple), BinderUse::Read),
+            (reads.comp_reach(&arena, lambda), BinderUse::Ignored),
+            (spilled(&[1, 64]), BinderUse::Ignored),
+            (spilled(&[0, 64]), BinderUse::Read),
+            (Reads::widest(), BinderUse::Read),
+        ] {
+            assert_eq!(
+                innermost,
+                reads.innermost(),
+                "index zero decides the innermost binder in either form: {reads:?}"
             );
         }
         let floor = arena.watermark();

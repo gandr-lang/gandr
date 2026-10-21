@@ -1,8 +1,8 @@
 // What divergence as a row entry refuses (#1481): a loop at a row without
-// `Div`, a call of a diverging function from one, and a handler of `Div`. Each would let a
-// computation that never returns stand where one that returns is expected,
-// and an unread call of it be dropped. What checks is in
-// `../../model/control/divergence.gandr`.
+// `Div`, a call of a diverging function from one, a handler of `Div`, and an
+// unread call of a diverging function dropped. Each would let a computation
+// that never returns stand where one that returns is expected. What checks is
+// in `../../model/control/divergence.gandr`.
 
 /// A diverging loop's function, typed as if it returned: the loop's fixpoint
 /// is refused, its type named with `Div` in the row (#1481).
@@ -48,4 +48,15 @@ def tamed(x : Bool) -> -F Bool {
   } with {
     pure(v) => pure v
   }
+}
+
+/// An unread call whose row holds `Div` may run forever, so it is not the
+/// computation that follows it: the endpoints stay apart (#1481).
+@[ refuses("EndpointMismatch") ]
+def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> -F Path(
+  +U (a -> -F [Div] b),
+  thunk { fn (x) { run v <- g(x); f(x) } },
+  thunk { fn (x) { f(x) } }
+) {
+  here(thunk { fn (x) { f(x) } })
 }
