@@ -369,8 +369,6 @@ pending/model/sequent/sequent-focusing.gandr:<file>
 pending/model/sequent/sequent-focusing.gandr:pure_expression:6de0c2f5eee499e7
 pending/pathological/builtins/int-division-by-zero.gandr:<file>
 pending/pathological/builtins/int-division-by-zero.gandr:call_expression:cf10545043c7ccaa
-pending/pathological/data/constructor-block-retired.gandr:<file>
-pending/pathological/data/constructor-block-retired.gandr:Maybe:118c46ca4a533edb
 pending/pathological/data/head-uniformity-declined.gandr:<file>
 pending/pathological/data/head-uniformity-declined.gandr:Bad:41810f178392059e
 pending/pathological/desc/nonlinear-cell-refused.gandr:<file>
@@ -421,9 +419,6 @@ pending/surface/codata-declarations.gandr:Fun:8f9fd9b9d0bbac80
 pending/surface/codata-declarations.gandr:Iter:544949b5c10d933b
 pending/surface/codata-declarations.gandr:Session:94bd2f84bcc4126a
 pending/surface/codata-declarations.gandr:Stream:9102eba9d42e3c70
-pending/surface/data-field-decorations.gandr:<file>
-pending/surface/data-field-decorations.gandr:Expr:32662b6c31605c2f
-pending/surface/data-field-decorations.gandr:Vec:f56938920f12c850
 pending/surface/data-operation-members.gandr:<file>
 pending/surface/data-operation-members.gandr:NatOp:79df75efe0d40b2d
 pending/surface/data-operation-members.gandr:NatRetired:eb9fcc0d04e5711d

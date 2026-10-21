@@ -92,10 +92,10 @@
 41:31-41:31 ) ⇒ Path(Circle, Base, Base) @41:22-41:32
 41:32-41:32 ) ⇒ Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:17-41:33
 41:34-41:34 ; ⇒ cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) @41:1-41:35
-44:1-44:32 @[ refuses("EndpointMism… ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @44:1-45:1
-45:1-45:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
-45:5-45:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:5-45:16
-45:17-45:17 : ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
+44:1-44:32 @[ refuses("EndpointMism… ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @44:1-45:1
+45:1-45:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
+45:5-45:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @45:5-45:16
+45:17-45:17 : ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
 45:19-45:23 Path( ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @45:19-45:67
 45:24-45:28 Path( ⇒ Path(Circle, Base, Base) : Type @45:24-45:48
 45:29-45:34 Circle ⇒ Circle : Type @45:29-45:35
@@ -111,21 +111,21 @@
 45:61-45:64 Base ⇒ Base : Circle @45:61-45:65
 45:65-45:65 ) ⇒ Path(Circle, Base, Base) @45:56-45:66
 45:66-45:66 ) ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) : Type @45:19-45:67
-45:68-45:68 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
-46:1-46:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base)) @46:1-46:37
-46:5-46:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base)) @46:5-46:16
-46:17-46:17 = ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base)) @46:1-46:37
+45:68-45:68 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎No rule identifies the loop with the empty word. @45:1-45:69
+46:1-46:3 def ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type @46:1-46:37
+46:5-46:15 around_once ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type @46:5-46:16
+46:17-46:17 = ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type @46:1-46:37
 46:19-46:23 here( ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) @46:19-46:35
 46:24-46:28 here( ⇒ Path(Circle, Base, Base) @46:24-46:34
 46:29-46:32 Base ⇒ Base : Circle @46:29-46:33
 46:33-46:33 ) ⇒ Path(Circle, Base, Base) @46:24-46:34
 46:34-46:34 ) ⇒ Path(Path(Circle, Base, Base), loop, here(Base)) @46:19-46:35
-46:36-46:36 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base)) @46:1-46:37
-50:1-50:32 @[ refuses("RuleNotRespe… ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @50:1-51:1
-51:1-51:3 def ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
-51:5-51:9 tell( ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:5-51:9
+46:36-46:36 ; ⇒ around_once : Path(Path(Circle, Base, Base), loop, here(Base))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type @46:1-46:37
+50:1-50:32 @[ refuses("RuleNotRespe… ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @50:1-51:1
+51:1-51:3 def ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
+51:5-51:9 tell( ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:5-51:9
 51:10-51:10 p ⇒ p : Path(Circle, Base, Base) @51:10-51:11
-51:12-51:12 : ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
+51:12-51:12 : ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
 51:14-51:18 Path( ⇒ Path(Circle, Base, Base) : Type @51:14-51:38
 51:19-51:24 Circle ⇒ Circle : Type @51:19-51:25
 51:25-51:25 , ⇒ Path(Circle, Base, Base) : Type @51:14-51:38
@@ -133,10 +133,10 @@
 51:31-51:31 , ⇒ Path(Circle, Base, Base) : Type @51:14-51:38
 51:33-51:36 Base ⇒ Base : Circle @51:33-51:37
 51:37-51:37 ) ⇒ Path(Circle, Base, Base) : Type @51:14-51:38
-51:38-51:41 ) -> ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
+51:38-51:41 ) -> ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-51:54
 51:43-51:44 -F ⇒ -F Integer : Type[-] @51:43-51:53
 51:46-51:52 Integer ⇒ Integer : Type @51:46-51:53
-51:54-51:54 { ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-57:2
+51:54-51:54 { ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-57:2
 52:3-52:6 case ⇒ ?⏎⏎checked against⏎⏎-F Integer @52:3-56:4
 52:8-52:8 p ⇒ p : Path(Circle, Base, Base) @52:8-52:9
 52:10-52:10 { ⇒ ?⏎⏎checked against⏎⏎-F Integer @52:3-56:4
@@ -158,7 +158,7 @@
 55:20-55:21 => ⇒ ?⏎⏎checked against⏎⏎-F Integer @52:3-56:4
 55:23-55:23 2 ⇒ Integer @55:23-55:24
 56:3-56:3 } ⇒ ?⏎⏎checked against⏎⏎-F Integer @52:3-56:4
-57:1-57:1 } ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-57:2
+57:1-57:1 } ⇒ tell : Path(Circle, Base, Base) => Integer⏎⏎refused: the case is not shown to respect rule 0 of its datatype⏎⏎A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷⏎here(Base)` is the empty word, which it would read as 1. @51:1-57:2
 61:1-61:11 @[ checks ] ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @61:1-62:1
 62:1-62:3 def ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @62:1-62:99
 62:5-62:9 round ⇒ round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)),⏎  loop ∷ loop ∷ here(Base))⏎⏎Winding twice around and spinning the count back gives the word the⏎composite is, by conversion. @62:5-62:10

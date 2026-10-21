@@ -560,6 +560,20 @@ impl<'source> Collector<'_, 'source>
                 Err(refusal) => Tail::Refused(refusal),
             }
         };
+        // A refused declaration's own form carries its refusal and the
+        // expectation stating it, as a refused member's does, unless an
+        // earlier form already wrote a half of it.
+        if let Tail::Refused(_) = tail
+            && let Some(entry) = self.collected.slots.get_mut(slot.0)
+            && let (Maybe::Absent(_), Maybe::Absent(_)) = (entry.signature, entry.definition)
+        {
+            entry.signature = Maybe::Present(Half {
+                declaration,
+                named,
+                operand: Operand::Signature,
+            });
+            entry.attributes.append(&mut attributes);
+        }
         self.file(slot, declaration, named, tail, attributes);
         match (tail, cells) {
             (Tail::Data(_), Ok(())) => self.mint_words(declaration),

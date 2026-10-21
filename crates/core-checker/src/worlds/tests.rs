@@ -542,7 +542,10 @@ fn a_migration_consumes_its_capability_visibly()
     );
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let typed = type_module(&mut context, &module);
-    let moves = typed.get(&ConstantIndex::from(2_usize)).map(Typings::moves);
+    let moves = typed
+        .typings()
+        .get(&ConstantIndex::from(2_usize))
+        .map(Typings::moves);
     let Some(
         &[
             WorldMove::Migrated {

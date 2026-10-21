@@ -2089,21 +2089,63 @@ pub fn elaborated_report(
     report
 }
 
+/// What [`type_module`] keeps of a module's typed run: the types each
+/// declaration's run formed and judged, and the refusal of each declaration
+/// the run refused.
+#[derive(Clone, Debug, Default)]
+pub struct TypedModule
+{
+    /// What each declaration's run formed or judged, by its constant.
+    typings: BTreeMap<ConstantIndex, Typings>,
+    /// The refusal of each declaration the run refused, by its constant.
+    refused: BTreeMap<ConstantIndex, CheckRefusal>,
+}
+
+impl TypedModule
+{
+    /// What each declaration's run formed or judged, by its constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn typings(&self) -> &BTreeMap<ConstantIndex, Typings>
+    {
+        &self.typings
+    }
+
+    /// The refusal of each declaration the run refused, by its constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn refused(&self) -> &BTreeMap<ConstantIndex, CheckRefusal>
+    {
+        &self.refused
+    }
+}
+
 /// Judge `declarations` in order, as [`check_module`] does, keeping the type
-/// of every term each judged body judges.
+/// of every term each judged body judges and the refusal of every
+/// declaration refused.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `context` is left as [`check_module`] leaves it, every
 ///   declaration judged in order; each declaration whose run formed a type or
-///   judged a term, refused or not, is keyed by its constant with what
-///   [`type_value`] keeps for it, read before its own type entered the table: a
-///   judged body, a hole's formed signature, a data declaration's formed kind
-///   and the components a refused signature formed before its refusal; a
-///   declaration whose run formed nothing is not keyed.
-/// - provides: the type of every term a module's bodies judge, for a face
-///   answering a position inside a declaration.
-/// - fails: never; a refusal is kept as the typed run's mark.
+///   judged a term, refused or not, is keyed in the typings by its constant
+///   with what [`type_value`] keeps for it, read before its own type entered
+///   the table: a judged body, a hole's formed signature, a data declaration's
+///   formed kind and the components a refused signature formed before its
+///   refusal; a declaration whose run formed nothing is not keyed. Each
+///   declaration the run refused is keyed in the refusals by its constant with
+///   the refusal its verdict carries, and no other is.
+/// - provides: the type of every term a module's bodies judge, and the refusal
+///   of every declaration refused, for a face answering a position inside a
+///   declaration.
+/// - fails: never; a refusal is kept as the typed run's mark and its
+///   declaration's refusal.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2111,19 +2153,20 @@ pub fn elaborated_report(
 ///   keys all three, the hole by its signature alone, and separates the
 ///   accepted body's own type from its parts'; data declarations and a
 ///   signature refused at its second component keep what they formed, and a
-///   signature refused before forming anything is not keyed.
+///   signature refused before forming anything is not keyed; the refused body's
+///   refusal, and no other declaration's, is kept.
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
-#[spec(ensures: |ret| ret.keys().all(|constant|
+#[spec(ensures: |ref ret| ret.typings.keys().chain(ret.refused.keys()).all(|constant|
     declarations.iter().any(|declaration| declaration.constant() == *constant)))]
 #[inline]
 #[must_use]
 pub fn type_module(
     context: &mut CheckingContext<'_>,
     declarations: &[Declaration],
-) -> BTreeMap<ConstantIndex, Typings>
+) -> TypedModule
 {
-    let mut typed = BTreeMap::new();
+    let mut typed = TypedModule::default();
     let mut open = Maybe::Absent(open::Absent::Lone);
     for (index, declaration) in declarations.iter().enumerate() {
         schedule(
@@ -2131,8 +2174,12 @@ pub fn type_module(
             declarations.get(index ..).unwrap_or_default(),
             &mut open,
         );
-        if let Maybe::Present(typings) = decide(context, declaration, Run::Typed).typings {
-            typed.insert(declaration.constant(), typings);
+        let decision = decide(context, declaration, Run::Typed);
+        if let Verdict::Refused(refusal) = decision.verdict {
+            let _replaced = typed.refused.insert(declaration.constant(), refusal);
+        }
+        if let Maybe::Present(typings) = decision.typings {
+            let _replaced = typed.typings.insert(declaration.constant(), typings);
         }
     }
     if let Maybe::Present(_) = open {
