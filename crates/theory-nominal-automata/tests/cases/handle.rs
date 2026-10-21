@@ -1,7 +1,13 @@
 //! Partial-store floor.
+use alloc::string::String;
+use alloc::string::ToString;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use gandr_theory_nominal_automata::handle::Arity;
+use gandr_theory_nominal_automata::handle::AutomatonError;
+use gandr_theory_nominal_automata::handle::Control;
+use gandr_theory_nominal_automata::handle::Controls;
 use gandr_theory_nominal_automata::handle::EmptyRegister;
 use gandr_theory_nominal_automata::handle::Freshness;
 use gandr_theory_nominal_automata::handle::Register;
@@ -61,4 +67,58 @@ fn empty_store_has_only_empty_registers()
         Absent(RegisterAbsent::OutOfRange)
     );
     assert_eq!(store.freshness(Name::Admin), Freshness::Fresh);
+}
+/// Every structural error renders apart from the others and names the
+/// controls, registers and arities it carries; a duplicate assignment
+/// renders apart from them all without naming the caller's name.
+#[test]
+fn every_error_renders_apart_and_names_what_it_carries()
+{
+    let errors = [
+        AutomatonError::InvalidControl {
+            control: Control::from(3),
+            controls: Controls::from(2),
+        },
+        AutomatonError::ArityMismatch {
+            control: Control::from(4),
+            expected: Arity::from(5),
+            actual: Arity::from(6),
+        },
+        AutomatonError::UnknownRegister {
+            control: Control::from(7),
+            register: Register::from(8),
+        },
+        AutomatonError::RepeatedRegister {
+            control: Control::from(9),
+            register: Register::from(1),
+        },
+        AutomatonError::MisplacedAllocatedName {
+            control: Control::from(2),
+        },
+        AutomatonError::KeptDeallocatedName {
+            control: Control::from(3),
+            register: Register::from(4),
+        },
+    ];
+    let carried: [&[char]; 6] = [
+        &['3', '2'],
+        &['4', '5', '6'],
+        &['7', '8'],
+        &['9', '1'],
+        &['2'],
+        &['3', '4'],
+    ];
+    let mut rendered: Vec<String> = errors.iter().map(ToString::to_string).collect();
+    for (text, digits) in rendered.iter().zip(carried) {
+        for digit in digits {
+            assert!(text.contains(*digit), "{text} omits {digit}");
+        }
+    }
+    let duplicate = StoreError { atom: Name::Admin }.to_string();
+    assert!(!duplicate.contains("Admin"), "{duplicate}");
+    rendered.push(duplicate);
+    let count = rendered.len();
+    rendered.sort();
+    rendered.dedup();
+    assert_eq!(rendered.len(), count, "{rendered:?}");
 }
