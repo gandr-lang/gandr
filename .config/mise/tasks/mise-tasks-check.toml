@@ -19,18 +19,18 @@ depends = ["check:*"]
 ["check:fmt"]
 description = "rustfmt and the gandr formatter, unchanged"
 depends = ["check:corpus-format"]
-run = "cargo fmt --all --check"
+run = ".config/mise/scope cargo fmt --all --check"
 
 # The gandr formatter's check over the corpus. CI runs it in the plain lane,
 # whose state holds the driver, rather than in the format gate's treefmt pass,
 # which would build the driver from nothing on every run.
 ["check:corpus-format"]
 description = "Every corpus source in the gandr formatter's layout"
-run = "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus"
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
-run = "cargo clippy --workspace --all-targets --locked"
+run = ".config/mise/scope cargo clippy --workspace --all-targets --locked"
 
 # Runtime sentinels exist only with enforcement enabled. Lint them under the
 # same profile, flags and target directory as the cached enforcing test build.
@@ -38,7 +38,7 @@ run = "cargo clippy --workspace --all-targets --locked"
 description = "The clippy wall with specification enforcement"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo clippy --workspace --all-targets --locked --profile test -- --deny warnings"
+run = ".config/mise/scope cargo clippy --workspace --all-targets --locked --profile test -- --deny warnings"
 
 # The compiler-plugin half of the lint wall, from the pinned Git policy
 # source: specification presence, adequacy grammar, nominal signature
@@ -184,7 +184,7 @@ unproduced = [
   { rule = "world_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
 ]
 '''
-run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
+run = ".config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
 
 # External workflow consumers use one full revision in Dylint metadata for
 # both the compiler plugin and this executable. Cargo's installation record
@@ -194,7 +194,7 @@ run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targe
 ["workflow:install"]
 description = "Install the gate binary at the Dylint metadata revision"
 run = '''
-cargo install --git https://github.com/gandr-lang/quenchant --rev "$(mise run --quiet workflow:revision)" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
+.config/mise/scope cargo install --git https://github.com/gandr-lang/quenchant --rev "$(mise run --quiet workflow:revision)" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
 '''
 
 # The one quenchant revision the Dylint metadata pins, read without a
@@ -229,7 +229,7 @@ run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 # The plain build still covers every workspace target before test execution.
 ["build:tests"]
 description = "Compile every plain workspace target without running tests"
-run = "cargo build --locked --workspace --all-targets --profile test"
+run = ".config/mise/scope cargo build --locked --workspace --all-targets --profile test"
 
 # The enforcing run is CI's full test pass, so the plain lane compiles and
 # runs only what that run cannot: the tests gated `cfg(not(anodized_panic))`.
@@ -237,11 +237,11 @@ run = "cargo build --locked --workspace --all-targets --profile test"
 # the plain graph's compilation.
 ["build:tests-plain-only"]
 description = "Compile the plain-only test targets without running them"
-run = "cargo nextest run --locked --package gandr-surface-parser --test tests --no-run"
+run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --no-run"
 
 ["check:tests-plain-only"]
 description = "The tests that exist only without specification enforcement"
-run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'"
+run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'"
 
 # Flags and target directory match the enforcing test gate. A merge-group
 # shard names its packages in `CI_SHARD_ARGS`; workspace feature unification
@@ -256,7 +256,7 @@ description = "Compile enforcing test targets without running them"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = "cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
+run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --no-run"
 
 # The test twin under enforcement; the suite's runtime sentinels refuse a
 # target-only or stale macro build.
@@ -265,7 +265,7 @@ description = "Unit and integration tests over every target, specifications enfo
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = "cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory.
@@ -290,7 +290,7 @@ run = "quenchant-gates witnesses --manifest-path Cargo.toml"
 description = "Rustdoc JSON with every intra-doc link resolved, for the obligations report"
 env.RUSTDOCFLAGS = "-Z unstable-options --output-format json"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/evidence"
-run = "cargo doc --workspace --locked --no-deps --document-private-items"
+run = ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items"
 
 # Lists the changed items against the base, the obligations they raise and the
 # witnesses to rerun, and writes the pull-request comment (the witnesses) and
@@ -389,7 +389,7 @@ done
 batches+=("$batch")
 status=0
 for index in "${!batches[@]}"; do
-  cargo nextest run --locked --profile "$profile" "${packages[@]}" -E "${batches[index]}" || status=1
+  .config/mise/scope cargo nextest run --locked --profile "$profile" "${packages[@]}" -E "${batches[index]}" || status=1
   report=target/nextest/$profile/junit.xml
   if (( ${#batches[@]} > 1 )) && [[ -f $report ]]; then
     mv "$report" "target/nextest/$profile/junit-$((index + 1)).xml"
@@ -405,13 +405,13 @@ exit "$status"
 ["check:doc"]
 description = "Private-item rustdoc with every rustdoc lint denied"
 env.RUSTDOCFLAGS = "-D warnings"
-run = "cargo doc --workspace --all-features --locked --no-deps --document-private-items"
+run = ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items"
 
 # Nextest runs no documentation example, so a stale example compiled nowhere
 # until this gate (#707).
 ["check:doctests"]
 description = "Every documentation example compiles and runs"
-run = "cargo test --doc --workspace --locked"
+run = ".config/mise/scope cargo test --doc --workspace --locked"
 
 ["check:typos"]
 description = "Spelling"
@@ -461,7 +461,7 @@ run = '''
 set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
-cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" > /dev/null
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" > /dev/null
 stale=0
 for file in syntax.md syntax.json; do
   diff -u "ledger/$file" "$fresh/$file" || stale=1
@@ -483,7 +483,7 @@ echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
 # lowered here and never checked.
 ["check:syntax-exemplars"]
 description = "One verified exemplar per committed rule and attribute of the syntax ledger"
-run = "cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
 
 # The features exemplars (`ledger/exemplars/features/<feature id>.gandr`),
 # one focused program per row of the features ledger, settled as an author
@@ -493,11 +493,11 @@ run = "cargo run --locked --quiet --profile test --package gandr-lang -- ledger 
 # attribute exemplars stay under `check:syntax-exemplars`.
 ["check:exemplars"]
 description = "Every features exemplar settles under `gandr test`"
-run = "cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars/features"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars/features"
 
 ["check:tests"]
 description = "Unit and integration tests over every target"
-run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
+run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing;
@@ -508,9 +508,9 @@ run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE |
 ["check:corpus"]
 description = "The strict root under `gandr check`, the fixture root under `gandr test`, and both in the sugared form"
 run = [
-  "cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
-  "cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
-  "cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared crates/surface-corpus",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared crates/surface-corpus",
 ]
 
 # Merge residue never lands: a conflict marker, or the resolution trailer a
@@ -657,7 +657,7 @@ echo "merge driver check OK: \\`$name\\` merges the #1061 rebase as the line mer
 # rewrites the ledger and is not this gate.
 ["check:corpus-comments"]
 description = "A comment on every fixture item, ratcheted against the ledger"
-run = "cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
+run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
 # Workflow tools are build-time policy, never package dependencies. Check
 # Cargo's resolved metadata, including renamed and transitive dependencies,
