@@ -1,0 +1,142 @@
+// A module is a model: `pack M at Model(T)` packs a module ascribed
+// `Model(T)` as the bundled record its theory states, the code of each sort's
+// type and each member the module gives. Two counters modulo three, one
+// counting up and one counting down read negated, are modules of one theory;
+// packed, they are related along negation as models, and a consumer reads
+// both alike by construction.
+
+/// A counter: a carrier, a zero, a step and a reading.
+@[ checks ]
+theory Counter {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+
+/// Counting up modulo three, read as it is.
+module Up : Model(Counter) {
+  type C = Unit + (Unit + Unit);
+  /// Zero.
+  @[ checks ]
+  def zero = +{.0 = unit};
+  /// One count more.
+  @[ checks ]
+  def incr(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+    case c {
+      +{.0 = u} => +{.1 = +{.0 = u}},
+      +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
+      +{.1 = +{.1 = u}} => +{.0 = u}
+    }
+  }
+  /// The count as an integer.
+  @[ checks ]
+  def read(c : Unit + (Unit + Unit)) -> -F Integer {
+    case c {
+      +{.0 = u} => 0,
+      +{.1 = +{.0 = u}} => 1,
+      +{.1 = +{.1 = u}} => 2
+    }
+  }
+}
+
+/// Counting down modulo three, read negated.
+module Down : Model(Counter) {
+  type C = Unit + (Unit + Unit);
+  /// Zero.
+  @[ checks ]
+  def zero = +{.0 = unit};
+  /// One count less.
+  @[ checks ]
+  def incr(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+    case c {
+      +{.0 = u} => +{.1 = +{.1 = u}},
+      +{.1 = +{.0 = u}} => +{.0 = u},
+      +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
+    }
+  }
+  /// The count negated, as an integer.
+  @[ checks ]
+  def read(c : Unit + (Unit + Unit)) -> -F Integer {
+    case c {
+      +{.0 = u} => 0,
+      +{.1 = +{.0 = u}} => 2,
+      +{.1 = +{.1 = u}} => 1
+    }
+  }
+}
+
+/// Counting up, as a model.
+@[ checks ]
+def upModel : Model(Counter) ;
+def upModel = pack Up at Model(Counter) ;
+
+/// Counting down, as a model.
+@[ checks ]
+def downModel : Model(Counter) ;
+def downModel = pack Down at Model(Counter) ;
+
+/// The count negated: zero stays, one and two swap.
+@[ checks ]
+def negateCount(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  case c {
+    +{.0 = u} => +{.0 = u},
+    +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
+    +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
+  }
+}
+
+/// The counts to themselves by negation, its own inverse.
+@[ checks ]
+def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) ;
+def countsNegated = equiv(negateCount, negateCount) ;
+
+/// Counting up carried along negation is counting down.
+@[ checks ]
+def stepNegated : Path(
+  Unit + (Unit + Unit) => Unit + (Unit + Unit),
+  transport(\t. t => t, countsNegated, Up.incr),
+  Down.incr
+) ;
+def stepNegated = funext(transport(\t. t => t, countsNegated, Up.incr), Down.incr) ;
+
+/// The reading carried along negation reads negated.
+@[ checks ]
+def readNegated : Path(
+  Unit + (Unit + Unit) => Integer,
+  transport(\t. t => Integer, countsNegated, Up.read),
+  Down.read
+) ;
+def readNegated = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read) ;
+
+/// The two packed modules are one model along negation.
+@[ checks ]
+def oneCounter : Path(Model(Counter), upModel, downModel) ;
+def oneCounter = (countsNegated, (here(+{.0 = unit}), (stepNegated, readNegated))) ;
+
+/// A consumer of any counter: the reading after one step from zero.
+@[ checks ]
+def observe(m : Model(Counter)) -> -F Integer {
+  case m {
+    #{.zero = z, .incr = i, .read = r} => {
+      run once <- i(z);
+      become r(once)
+    }
+  }
+}
+
+/// The consumer reads counting up.
+@[ runs("1") ]
+def observedUp : () => Integer ;
+def observedUp = thunk { become observe(upModel) } ;
+
+/// The consumer reads counting down alike.
+@[ runs("1") ]
+def observedDown : () => Integer ;
+def observedDown = thunk { become observe(downModel) } ;
+
+/// The consumer reads both alike by construction, along the path between the
+/// models.
+@[ checks ]
+def observedAlike : () => Path(Integer, observe(upModel), observe(downModel)) ;
+def observedAlike = thunk { become cong(observe, oneCounter) } ;

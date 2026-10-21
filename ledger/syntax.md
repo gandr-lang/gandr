@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x952305d60bbc9e83`
-- Rules: 152 — 151 committed, 1 internal
-- Molds: 2930
+- Grammar fingerprint: `0xa1d7153c81797cb4`
+- Rules: 153 — 152 committed, 1 internal
+- Molds: 2932
 - Attributes: 11
 
 ## Reading a form
@@ -61,7 +61,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](exemplars/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
 | [`unit.pattern`](exemplars/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | Keyword |
 
-## `expression` — 79 rules
+## `expression` — 80 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
@@ -87,6 +87,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`run_expression`](exemplars/syntax/run_expression.gandr) | `run EXPRESSION` | `expression.unary` | `run_expression` * | Keyword |
 | [`hold_expression`](exemplars/syntax/hold_expression.gandr) | `hold EXPRESSION` | `expression.unary` | `hold_expression` | Keyword |
 | [`pack_expression`](exemplars/syntax/pack_expression.gandr) | `pack [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] EXPRESSION` | `expression.pure` | `pack_expression` * | Keyword, Other |
+| [`pack_model_expression`](exemplars/syntax/pack_model_expression.gandr) | `pack EXPRESSION at TYPE` | `expression.pure` | `pack_model_expression` * | Keyword |
 | [`call_expression`](exemplars/syntax/call_expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | Other |
 | [`instantiation_expression`](exemplars/syntax/instantiation_expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | Other |
 | [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Constructor, Number |

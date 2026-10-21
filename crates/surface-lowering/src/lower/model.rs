@@ -18,6 +18,18 @@
 //! type over the index terms for an indexed one. The derived type is therefore
 //! the written signature's, node for node, and the checker sees no
 //! difference between the two.
+//!
+//! # A module packs as the record its members give
+//!
+//! `pack M at Model(T)` reads the module `M`, declared before it, as a value
+//! of `Model(T)`: one value per component of `T`'s signature, in its order —
+//! the code of the type an unindexed sort's type member states, the member
+//! module of a nested component's name packed the same way, and the member
+//! of the name of every other component — nested as the bundled record nests
+//! its fields. The kernel checks the record at the stated type, so a member
+//! whose type is not its component's is refused there. A sort the module seals
+//! is out of the fragment: the record would name the representation the seal
+//! hides, and a package over the abstract type carries such a module.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -56,7 +68,9 @@ use super::Sink;
 use super::Site;
 use super::Stretch;
 use super::Universe;
+use super::arity;
 use super::exits;
+use super::identity::related;
 use super::lowered;
 use super::stretch;
 use crate::error::FragmentBoundary;
@@ -84,9 +98,11 @@ use crate::module::Container;
 use crate::module::FamilyForm;
 use crate::module::FamilyIndex;
 use crate::module::Half;
+use crate::module::Member;
 use crate::module::ModelPart;
 use crate::module::Operand;
 use crate::module::SlotIndex;
+use crate::module::Stratum;
 use crate::module::StructureIndex;
 use crate::module::TypeMeaning;
 use crate::module::spine_domains;
@@ -278,6 +294,21 @@ struct BundledTheory
     /// The place of each nested component's theory, in the order the
     /// components stand.
     nested: Vec<usize>,
+}
+
+/// A module packed at its model type: the theories of the bundle, as
+/// [`Bundled`] reads them, each beside the module giving its members.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Packed
+{
+    /// The bundle's theories, the outermost first.
+    theories: Vec<BundledTheory>,
+    /// The module giving each theory's members, place for place: the packed
+    /// module first, then the member module each nested component names.
+    modules: Vec<StructureIndex>,
 }
 
 /// A theory whose components [`Lowerer::bundled`] is reading.
@@ -1257,6 +1288,74 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
+    /// The fields a pattern splits at the type `stated`, when it is a
+    /// theory's models and their record nests pairs.
+    ///
+    /// # Specification
+    /// - requires: `stated` is a type's syntax node, already classified.
+    /// - ensures: through the transparent plans of parentheses, for a type
+    ///   planned as `Model(T)` whose outermost record has a field a later one
+    ///   names, one entry per component of `T`'s signature in signature order,
+    ///   labelled by the component's name and placed at `at`, beside whether
+    ///   each but the last binds the ones after it, as [`Self::bundle_type`]
+    ///   nests them; the other-former absence for a bundle keyed by names,
+    ///   which a pattern splits as the record it is, and for every other type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step follows a transparent plan to the child it stands for,
+    /// strictly deeper in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a positional and a labelled pattern at a toggle's
+    ///   models bind its carrier, its start, its step and its reading.
+    /// - witness: `tests::modules::models::a_pattern_at_a_model_type_splits_its_fields`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((ref entries, ref links)) => links.len().saturating_add(1) == entries.len(),
+        Maybe::Absent(_) => true,
+    })]
+    pub(super) fn stated_bundle(
+        &self,
+        stated: NodeIndex,
+        at: Placed,
+    ) -> Maybe<(Vec<arity::Entry<'source>>, Vec<arity::Dependent>), related::Absent>
+    {
+        let otherwise = Maybe::Absent(related::Absent::Otherwise);
+        let mut node = stated;
+        let bundled = loop {
+            match self.plans.get(node) {
+                Some(&Plan::Transparent(inner)) => node = inner,
+                Some(&Plan::Bundle(ref bundled)) => break bundled,
+                _ => return otherwise,
+            }
+        };
+        let Some(theory) = bundled.theories.first()
+        else {
+            return otherwise;
+        };
+        let binds = bundle_dependence(&theory.signature);
+        if !binds.iter().any(|binds| binds.0) {
+            return otherwise;
+        }
+        let entries: Vec<arity::Entry<'source>> = theory
+            .signature
+            .components
+            .iter()
+            .map(|component| arity::Entry {
+                key: arity::Key::Label(self.name_at(component.named), at),
+                held: arity::Held::Operand(at),
+            })
+            .collect();
+        let links = binds
+            .iter()
+            .take(entries.len().saturating_sub(1))
+            .map(|binds| arity::Dependent(binds.0))
+            .collect();
+
+        Maybe::Present((entries, links))
+    }
+
     /// The theories of the bundle the theory `name` names where a form
     /// starting at `at` stands, its refusals placed at `written`.
     ///
@@ -1449,6 +1548,407 @@ impl<'source> Lowerer<'_, 'source>
             .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
                 Maybe::Present(Lowered::ValueType(id))
             })
+    }
+
+    /// Classify a module packed at its model type, `pack M at Model(S)`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a pack-at form and `cursor` stands before its
+    ///   `pack` tile.
+    /// - ensures: the form stands as a value and is planned over the theories
+    ///   [`Self::bundled`] reads off the theory `S` names, the outermost beside
+    ///   the top-level module `M` names, declared before the form, and each
+    ///   nested one beside the member module its component names in the module
+    ///   nesting it.
+    /// - fails: the wrong-sort refusal where no value is read; a misplaced or
+    ///   missing piece; a module operand that is no capitalised name, or a
+    ///   stated type that is not `Model(S)`, out of the fragment; a name no
+    ///   module declared before answers, unresolved; a component no member of
+    ///   its module answers, an unknown member; an unindexed sort its module
+    ///   seals or states as a family, out of the fragment as a pack; the
+    ///   refusals [`Self::bundled`] yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Termination
+    /// The outer loop visits each theory of the finite bundle once, the inner
+    /// one each of its finite components once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's module packed at its models, the same
+    ///   module sealed, and a name no module answers.
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    /// - witness: `tests::modules::models::a_pack_of_a_sealed_sort_is_refused`
+    /// - witness: `tests::modules::models::a_pack_of_no_module_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Packed(_))))]
+    pub(super) fn pack_model(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.require(site, Produced::Value)?;
+        super::closed(site, &mut cursor, TileName::PACK)?;
+        let module = site.one(cursor.operands())?;
+        super::closed(site, &mut cursor, TileName::AT)?;
+        let stated = site.one(cursor.operands())?;
+        super::exhausted(site, &cursor)?;
+        let Ok(Some((_, Former::Constructor | Former::TypeHead))) = self.form_at(module)
+        else {
+            return Err(Site { at: module, ..site }.out(FragmentBoundary::Unadmitted));
+        };
+        let theory = self.stated_theory(Site { at: stated, ..site })?;
+        let name = self.name_at(module);
+        let Some(outermost) = self.collected.structures.iter().rposition(|structure| {
+            structure.name.as_ref() == name.as_ref()
+                && matches!(structure.container, Container::TopLevel(_))
+                && matches!(structure.stratum, Stratum::Module)
+                && structure.declared_by.span.end() <= site.at.span.start()
+        })
+        else {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: module.span,
+                name,
+            });
+        };
+        let written = Site { at: theory, ..site };
+        let theories = self.bundled(written, (site.at.span.start(), self.name_at(theory)))?;
+        let mut modules = vec![StructureIndex::from(outermost); theories.len()];
+        for (place, read) in theories.iter().enumerate() {
+            let Some(&holder) = modules.get(place)
+            else {
+                continue;
+            };
+            let mut nested = read.nested.iter();
+            for component in &read.signature.components {
+                let member = self.name_at(component.named);
+                let unknown = LoweringRefusal::UnknownMember {
+                    span: module.span,
+                    module: name,
+                    member,
+                };
+                match component.form {
+                    Ok(ModelForm::Nested(_)) => {
+                        let Maybe::Present(inner) = self.member_module(holder, member)
+                        else {
+                            return Err(unknown);
+                        };
+                        if let Some(&at) = nested.next()
+                            && let Some(given) = modules.get_mut(at)
+                        {
+                            *given = inner;
+                        }
+                    },
+                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                        match self.member_type(holder, member) {
+                            Maybe::Present(
+                                TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
+                            ) => {},
+                            Maybe::Present(TypeMeaning::Sealed | TypeMeaning::Family(_)) => {
+                                return Err(site.out(FragmentBoundary::Unadmitted));
+                            },
+                            Maybe::Absent(_) => return Err(unknown),
+                        }
+                    },
+                    Ok(
+                        ModelForm::Sort { .. }
+                        | ModelForm::Operation { .. }
+                        | ModelForm::Constant(_)
+                        | ModelForm::Law { .. },
+                    ) => {
+                        if !self
+                            .collected
+                            .by_name
+                            .contains_key(&(Container::Module(holder), member))
+                        {
+                            return Err(unknown);
+                        }
+                    },
+                    Err(fault) => {
+                        return Err(LoweringRefusal::UnstatedComponent {
+                            span: site.at.span,
+                            name: member,
+                            fault,
+                        });
+                    },
+                }
+            }
+        }
+        self.plan(site, Plan::Packed(Arc::new(Packed { theories, modules })));
+
+        Ok(())
+    }
+
+    /// The theory's name `S` the type `Model(S)` written at `site` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operand's tile, when the type is the application of the
+    ///   head `Model` to one capitalised name.
+    /// - fails: any other type, out of the fragment; an unknown mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |theory| theory.span.start() >= site.at.span.start() && theory.span.end() <= site.at.span.end()))]
+    fn stated_theory(
+        &self,
+        site: Site,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let refused = site.out(FragmentBoundary::Unadmitted);
+        let Some((_, Former::TypeApplication)) = self.form_at(site.at)?
+        else {
+            return Err(refused);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, site.at.node, &mut pieces)?;
+        let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(refused);
+        };
+        if self.name_at(head).as_ref() != super::MODEL {
+            return Err(refused);
+        }
+        let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            return Err(refused);
+        };
+        let crate::form::Run::One(theory) = cursor.operands()
+        else {
+            return Err(refused);
+        };
+        let Ok(Some((_, Former::Constructor | Former::TypeHead))) = self.form_at(theory)
+        else {
+            return Err(refused);
+        };
+
+        Ok(theory)
+    }
+
+    /// The member module of the module at `holder` that `name` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first module member so named; the unresolved absence when
+    ///   none is.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the result is the search itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    fn member_module(
+        &self,
+        holder: StructureIndex,
+        name: SurfaceName<'source>,
+    ) -> Maybe<StructureIndex, super::named::Absent>
+    {
+        self.collected
+            .structures
+            .get(usize::from(holder))
+            .and_then(|structure| {
+                structure.members.iter().find_map(|&member| match member {
+                    Member::Module(inner)
+                        if self
+                            .collected
+                            .structures
+                            .get(usize::from(inner))
+                            .is_some_and(|entry| entry.name.as_ref() == name.as_ref()) =>
+                    {
+                        Some(inner)
+                    },
+                    Member::Module(_) | Member::Slot(_) => None,
+                })
+            })
+            .map_or(
+                Maybe::Absent(super::named::Absent::Unresolved),
+                Maybe::Present,
+            )
+    }
+
+    /// What the type component of the module at `holder` that `name` names
+    /// reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the meaning of the component so named; the unresolved absence
+    ///   when none is.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the result is the search itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_pack_of_a_sealed_sort_is_refused`
+    fn member_type(
+        &self,
+        holder: StructureIndex,
+        name: SurfaceName<'source>,
+    ) -> Maybe<TypeMeaning, super::named::Absent>
+    {
+        self.collected
+            .structures
+            .get(usize::from(holder))
+            .and_then(|structure| {
+                structure
+                    .types
+                    .iter()
+                    .find(|component| component.name.as_ref() == name.as_ref())
+            })
+            .map_or(
+                Maybe::Absent(super::named::Absent::Unresolved),
+                |component| Maybe::Present(component.meaning),
+            )
+    }
+
+    /// Mint a module packed at its model type: the bundled record of the
+    /// members `packed` reads.
+    ///
+    /// # Specification
+    /// - requires: every theory of `packed` nests only theories after it, as
+    ///   [`Self::bundled`] reads them, each beside the module giving its
+    ///   members, as [`Self::pack_model`] plans them.
+    /// - ensures: for each theory, the innermost first, one value per component
+    ///   in signature order — an unindexed sort the code of the type its module
+    ///   states, a nested model the record of its member module, and every
+    ///   other component the module's member of its name — nested to the right
+    ///   as [`Self::bundle_type`] nests the fields: the pair of a value and the
+    ///   rest, and the record keyed by the components' names when no field
+    ///   names another; the record carrying `origin` and every node below it
+    ///   the same origin marked [`Insertion::Model`], since the source writes
+    ///   the module and not the record; nothing when a member did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per theory of the finite bundle, the inner one once
+    /// per component of its finite signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_packed(
+        &self,
+        packed: &Packed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let below = origin.inserted(Insertion::Model);
+        let mut minted: Vec<Option<ValueId>> = vec![None; packed.theories.len()];
+        let mut values = Vec::new();
+        for (place, theory) in packed.theories.iter().enumerate().rev() {
+            let Some(&module) = packed.modules.get(place)
+            else {
+                return unminted;
+            };
+            let mut nested = theory.nested.iter();
+            values.clear();
+            for component in &theory.signature.components {
+                let name = self.name_at(component.named);
+                let value = match component.form {
+                    Ok(ModelForm::Nested(_)) => nested
+                        .next()
+                        .and_then(|&inner| minted.get(inner).copied().flatten()),
+                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                        self.packed_sort(module, name, sink, below)
+                    },
+                    Ok(
+                        ModelForm::Sort { .. }
+                        | ModelForm::Operation { .. }
+                        | ModelForm::Constant(_)
+                        | ModelForm::Law { .. },
+                    ) => self
+                        .collected
+                        .by_name
+                        .get(&(Container::Module(module), name))
+                        .and_then(|&slot| self.collected.slots.get(usize::from(slot)))
+                        .filter(|declared| matches!(declared.refusal, Maybe::Absent(_)))
+                        .map(|declared| {
+                            let id = sink.arena.value_constant(declared.constant);
+                            sink.origins.record_value(id, below);
+                            id
+                        }),
+                    Err(_) => None,
+                };
+                let Some(value) = value
+                else {
+                    return unminted;
+                };
+                values.push(value);
+            }
+            let top = if place == 0 { origin } else { below };
+            let Some(id) = packed_record(&theory.signature, &values, sink, (top, below))
+            else {
+                return unminted;
+            };
+            if let Some(at) = minted.get_mut(place) {
+                *at = Some(id);
+            }
+        }
+        minted
+            .first()
+            .copied()
+            .flatten()
+            .map_or(unminted, |id| Maybe::Present(Lowered::Value(id)))
+    }
+
+    /// The code of the type the module at `module` states for its sort
+    /// `name`.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: the quote of the type a manifest component's definition
+    ///   lowered to, or an instance's renaming of it, carrying `origin`;
+    ///   nothing for a component the module seals, states as a family or does
+    ///   not hold, or whose type did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    #[spec(ensures: |ret| ret.is_none_or(|id| matches!(sink.arena.value(id), Some(&Value::Quote(_)))))]
+    fn packed_sort(
+        &self,
+        module: StructureIndex,
+        name: SurfaceName<'source>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<ValueId>
+    {
+        let component = self
+            .collected
+            .structures
+            .get(usize::from(module))?
+            .types
+            .iter()
+            .find(|component| component.name.as_ref() == name.as_ref())?;
+        let stated = match component.meaning {
+            TypeMeaning::Manifest(defined) => match self.value_type_at(defined.node) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(_) => return None,
+            },
+            TypeMeaning::Instantiated { defined, instance } => {
+                *self.instance_types.get(&(instance, defined.node))?
+            },
+            TypeMeaning::Sealed | TypeMeaning::Family(_) => return None,
+        };
+        let id = sink.arena.value_quote(stated);
+        sink.origins.record_value(id, origin);
+
+        Some(id)
     }
 
     /// The bundled record `signature` states, each nested component's field
@@ -1966,6 +2466,56 @@ impl<'source> Lowerer<'_, 'source>
 
         Maybe::Present((stated, thunk))
     }
+}
+
+/// The value of the bundled record `signature` states, one value of `values`
+/// per component in signature order.
+///
+/// # Specification
+/// - requires: `values` holds one value per component of `signature`.
+/// - ensures: the values nested to the right as the bundled record nests its
+///   fields: the record keyed by the components' names when no field names
+///   another, and otherwise the pair of each value and the rest, the last value
+///   alone; the outermost node carrying `top` and every pair below it `below`;
+///   nothing only for no values.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// The loop runs once per value but the last.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a counter's module packs as the pairs its record nests.
+/// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+#[spec(ensures: |ret| ret.is_some() || values.is_empty())]
+fn packed_record(
+    signature: &ModelSignature,
+    values: &[ValueId],
+    sink: &mut Sink<'_>,
+    (top, below): (Origin, Origin),
+) -> Option<ValueId>
+{
+    let binds = bundle_dependence(signature);
+    if !binds.iter().any(|binds| binds.0) {
+        let record = signature
+            .components
+            .iter()
+            .zip(values)
+            .map(|(component, &id)| (FieldLabel::from(String::from(component.name.as_ref())), id))
+            .collect();
+        let id = sink.arena.value_record(record);
+        sink.origins.record_value(id, top);
+        return Some(id);
+    }
+    let (&last, earlier) = values.split_last()?;
+    let mut chained = last;
+    for (link, &first) in earlier.iter().enumerate().rev() {
+        chained = sink.arena.value_tuple(&[first, chained]);
+        sink.origins
+            .record_value(chained, if link == 0 { top } else { below });
+    }
+
+    Some(chained)
 }
 
 /// Whether each component of `signature` is named by a later one, and so its

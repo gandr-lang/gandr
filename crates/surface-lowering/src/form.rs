@@ -140,7 +140,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 68_usize] = [
+    pub const ALL: [Self; 69_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -196,6 +196,7 @@ impl FormName
         Self::NUMBER,
         Self::STRING,
         Self::PACK,
+        Self::PACK_MODEL,
         Self::PACKAGE_TYPE,
         Self::PROJECTION,
         Self::SHELL_BLOCK,
@@ -246,6 +247,8 @@ impl FormName
     pub const MODULE: Self = Self("module_declaration");
     /// The pack `pack [T, …] e`, a module packed into a value.
     pub const PACK: Self = Self("pack_expression");
+    /// The pack `pack M at Model(T)`, a module packed at its model type.
+    pub const PACK_MODEL: Self = Self("pack_model_expression");
     /// The package type `package [T, …] P`, the type of a packed module.
     pub const PACKAGE_TYPE: Self = Self("package_type");
     /// One typed parameter `name : T`, folded into its parameter list.
@@ -493,6 +496,8 @@ impl TileName
     pub const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
     pub const PAREN_OPEN: Self = Self("(");
+    /// The keyword `pack`, opening a module packed at its model type.
+    pub const PACK: Self = Self("pack");
     /// The element path type's head `Path`.
     pub const PATH: Self = Self("Path");
     /// The capability type's head `Cap`.
@@ -752,6 +757,9 @@ pub enum Former
     /// The telescope value `#{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
+    /// A module packed at the model type its signature states, `pack M at
+    /// Model(T)`: the bundled record of the module's members.
+    PackModel,
     /// The injection `+{ .l = v }` into a sum over labels.
     Injection,
     /// The copattern block `&{ .l => c, … }`, the computation a lazy record
@@ -888,7 +896,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 64_usize] = [
+    pub const ALL: [Self; 65_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -912,6 +920,7 @@ impl Former
         Self::Call,
         Self::Case,
         Self::Telescope,
+        Self::PackModel,
         Self::Injection,
         Self::LazyRecord,
         Self::Binary,
@@ -975,7 +984,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 78_usize] = [
+pub const FORMERS: [(&str, Former); 79_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1002,6 +1011,7 @@ pub const FORMERS: [(&str, Former); 78_usize] = [
     ("case_expression", Former::Case),
     ("telescope_expression", Former::Telescope),
     ("labelled_sum_expression", Former::Injection),
+    ("pack_model_expression", Former::PackModel),
     ("lazy_record_expression", Former::LazyRecord),
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
