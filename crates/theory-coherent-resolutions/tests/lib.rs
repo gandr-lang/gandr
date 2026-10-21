@@ -17,3 +17,5 @@ mod fixture;
 mod overlap;
 #[cfg(test)]
 mod second_inhabitant;
+#[cfg(test)]
+mod spine;

@@ -351,6 +351,7 @@ path = "crates/kernel-check-memo"
 # - kernel-core
 # - kernel-term
 # - surface-corpus (dev)
+# - theory-coherent-resolutions (dev)
 [workspace.dependencies.gandr-kernel-conversion-trace]
 path = "crates/kernel-conversion-trace"
 
@@ -363,6 +364,7 @@ path = "crates/kernel-conversion-trace"
 # - core-session
 # - surface-corpus (dev)
 # - surface-lowering (dev)
+# - theory-coherent-resolutions (dev)
 # - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
@@ -406,6 +408,7 @@ path = "crates/kernel-strata"
 # - surface-repl (dev)
 # - surface-session
 # - surface-tui (dev)
+# - theory-coherent-resolutions (dev)
 # - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
