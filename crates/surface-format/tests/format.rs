@@ -145,6 +145,18 @@ fn top_level_forms_and_comments_keep_their_lines()
 }
 
 #[test]
+fn a_rule_s_freshness_conditions_stay_on_its_line()
+{
+    let grammar = grammar();
+    let source = "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where a # q, a # q;\n}\n";
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        source,
+        "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
+    );
+}
+
+#[test]
 fn a_form_written_against_the_one_before_starts_its_own_line()
 {
     let grammar = grammar();

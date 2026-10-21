@@ -359,10 +359,14 @@ fn rule_judgment_tail() -> Regex
 
 /// Build a rewrite rule signature from expression endpoints.
 ///
+/// A rule between two terms may close on a `where` clause of freshness
+/// conditions, `where a # q, …`: each names an atom the rule abstracts and a
+/// metavariable whose instance must not mention it.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the direct-telescope and expression-endpoint signature
-///   alternatives.
+///   alternatives, the second closing on an optional `where` clause.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -374,7 +378,7 @@ fn rule_judgment_tail() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(3).is_some_and(|clause| matches!(clause.shape(), RegexShape::Optional(_)))))))]
 fn rule_signature() -> Regex
 {
     alt([
@@ -387,6 +391,14 @@ fn rule_signature() -> Regex
             h(Sort::Expression),
             circuit_rule_face_arrow(),
             h(Sort::Expression),
+            opt(seq([
+                t(TileLabel("where")),
+                comma1(seq([
+                    t(TileLabel("identifier")),
+                    t(TileLabel("#")),
+                    t(TileLabel("identifier")),
+                ])),
+            ])),
         ]),
     ])
 }

@@ -1137,7 +1137,7 @@ impl Reader<'_, '_>
         // Every generator as written, coded or not, for a family the native
         // reading owns whole.
         let mut generators = Vec::new();
-        for member in split_members(run.remaining()) {
+        for member in split_members(run.remaining(), MemberEnd::SemicolonOrComma) {
             let Some(first) = member.first()
             else {
                 continue;
@@ -1681,19 +1681,37 @@ enum TypeFrame
     Apply(Name, ArgumentCount),
 }
 
-/// Borrow member runs, splitting only at outermost separators.
+/// What ends a member of a block, outside any bracket.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MemberEnd
+{
+    /// A `;` or a `,`: a data block's generators.
+    SemicolonOrComma,
+    /// A `;` alone: a theory's members, a rule among them listing its
+    /// freshness conditions with commas.
+    Semicolon,
+}
+
+/// Borrow member runs, splitting only at outermost separators `end` admits.
 ///
 /// # Specification
-/// - ensures: nested commas and semicolons stay within their member.
+/// - ensures: nested commas and semicolons stay within their member; a comma
+///   outside any bracket ends a member only under
+///   [`MemberEnd::SemicolonOrComma`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — multi-field constructors distinguish nested from member
-///   separators, and a member a repaired close ends is kept.
+///   separators, a member a repaired close ends is kept, and a rule's comma
+///   list of conditions stays one theory member.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
 /// - witness: `description::tests::a_block_left_open_keeps_the_member_before_its_missing_close`
+/// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
 #[spec(ensures: |result| result.iter().all(|member| !member.is_empty()))]
-fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
+fn split_members(
+    pieces: &[Piece],
+    end: MemberEnd,
+) -> Vec<&[Piece]>
 {
     let mut result = Vec::new();
     let mut rest = pieces;
@@ -1714,7 +1732,9 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
                 }
                 return result;
             },
-            ";" | "," if depth == 0 => {
+            separator @ (";" | ",")
+                if depth == 0 && (separator == ";" || end == MemberEnd::SemicolonOrComma) =>
+            {
                 let count = index.saturating_sub(start);
                 if let Some((member, suffix)) = rest.split_at_checked(count) {
                     if !member.is_empty() {

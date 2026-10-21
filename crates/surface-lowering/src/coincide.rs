@@ -302,7 +302,8 @@ where
     })
 }
 
-/// `face` with its sides ordered as `direction` says.
+/// `face` with its sides ordered as `direction` says, its freshness
+/// conditions kept: a condition constrains the two sides alike.
 ///
 /// # Specification
 /// trivial.
@@ -321,6 +322,7 @@ fn facing(
                 variables,
                 face.provenance,
             )
+            .with_fresh(face.fresh.clone())
         },
     }
 }

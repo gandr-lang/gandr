@@ -1,5 +1,6 @@
 //! Consumer-visible ruled-signature boundaries.
 
+use alloc::string::String;
 use alloc::vec;
 use core::fmt::Write as _;
 
@@ -10,6 +11,7 @@ use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::PortFace;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
+use gandr_theory_levitation::WfKind;
 
 use super::*;
 use crate::circuit::JoinFault;
@@ -1162,7 +1164,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3
         ],
         "each constructor's names, then its recursions"
     );
@@ -2277,7 +2279,7 @@ fn a_rule_term_abstracts_an_atom_and_names_none()
     let signature = "sort Name : Atom; sort Proc : Type; oper nil : () --> Proc; oper par : (p : Proc, q : Proc) --> Proc; oper out : (c : Name, p : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let report = described(
         format!(
-            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
+            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q; }}"
         )
         .as_str(),
     );
@@ -2326,5 +2328,67 @@ fn a_rule_term_abstracts_an_atom_and_names_none()
         report.diagnostics,
         [],
         "past its abstraction the name is a variable again"
+    );
+}
+
+#[test]
+fn a_where_clause_states_each_condition_on_its_rule()
+{
+    let signature = "sort Name : Atom; sort Proc : Type; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
+    let report = described(
+        format!(
+            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p; }}"
+        )
+        .as_str(),
+    );
+    assert_eq!(report.diagnostics, [], "both conditions read");
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("one theory: {:?}", report.declarations)
+    };
+    let stated = vec![Freshness::new("a", "q"), Freshness::new("a", "p")];
+    let Maybe::Present(ref presentation) = theory.presentation
+    else {
+        panic!("the theory presents its members")
+    };
+    let [ref rule] = *presentation.value.decode().unwrap().rules
+    else {
+        panic!("one rule")
+    };
+    assert_eq!(
+        rule.fresh, stated,
+        "the value keeps each condition in written order"
+    );
+    let [ref face] = *theory.description.rules
+    else {
+        panic!("one face")
+    };
+    assert_eq!(
+        *face.fresh, *stated,
+        "the face its description reads off the value"
+    );
+    let printed: Vec<String> = theory
+        .rules()
+        .map(|rule| rule.print_theory(&Name::from("scope")))
+        .collect();
+    assert_eq!(
+        printed,
+        ["rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q, a # p"],
+        "the theory spelling closes on the clause"
+    );
+    let report = described(
+        format!(
+            "theory Captured {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
+        )
+        .as_str(),
+    );
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(diagnostic.fault, DescriptionFault::IllFormed(ref ill) if ill.kind == WfKind::Capture
+            && AsRef::<str>::as_ref(&ill.message).contains("where a # q")),
+        "the rule capturing `a` is refused with the condition it lacks: {diagnostic:?}"
     );
 }

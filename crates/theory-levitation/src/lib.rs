@@ -361,6 +361,7 @@ pub use crate::generic::generic_eq;
 pub use crate::generic::serialize_desc;
 pub use crate::generic::serialize_value;
 pub use crate::rule::FreeTerm;
+pub use crate::rule::Freshness;
 pub use crate::rule::RuleFace;
 pub use crate::rule::RuleVarMeta;
 pub use crate::rule::TermArgs;

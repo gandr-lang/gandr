@@ -47,23 +47,24 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the abstraction in rule terms: `bind a . t` beside the other expressions.
-const BUILT_IN_FINGERPRINT: u64 = 0x008e_37bd_dc69_fb8d;
+/// the freshness condition: `where a # t, …` after a rule's sides.
+const BUILT_IN_FINGERPRINT: u64 = 0xddd0_f82c_000a_c197;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3095);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3104);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 87;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 88;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("!", 21),
     ("!=", 1),
     ("\"", 14),
+    ("#", 2),
     ("#!{", 1),
     ("#{", 9),
     ("$", 3),
@@ -77,7 +78,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+", 7),
     ("++", 1),
     ("+U", 1),
-    (",", 227),
+    (",", 229),
     ("-", 4),
     ("-->", 26),
     ("->", 14),
@@ -170,7 +171,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 426),
+    ("identifier", 430),
     ("if", 2),
     ("import", 1),
     ("in", 1),
@@ -233,6 +234,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("unwind", 1),
     ("val", 20),
     ("variable_name", 5),
+    ("where", 1),
     ("while", 1),
     ("with", 8),
     ("world", 1),

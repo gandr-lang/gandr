@@ -1101,7 +1101,7 @@ mod tests
         let pbg = built_in().unwrap();
         let mut distinct_severity = false;
         let mut distinct_span = false;
-        for source in ["", "def x = 1;", "def a = ( ; # def b = [ ;", "def = ; ? ?"] {
+        for source in ["", "def x = 1;", "def a = ( ; ¤ def b = [ ;", "def = ; ? ?"] {
             let parsed = parse(&pbg, SourceText::from(source)).unwrap();
             let obligations = parsed.obligations();
             for (left, right) in obligations.iter().zip(obligations.iter().skip(1)) {

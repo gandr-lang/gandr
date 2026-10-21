@@ -131,6 +131,14 @@ pub enum WfKind
     /// A port's atom abstraction, `bind (a : N) .`, ranges over a sort that is
     /// undeclared or not an atom sort.
     NonAtomAbstraction,
+    /// A rule's freshness condition, `where a # q`, names an atom no
+    /// abstraction of the rule abstracts, or a variable its left side does not
+    /// hold.
+    UnknownFreshness,
+    /// A rule's variable stands under an atom's abstraction on one side and
+    /// outside it on the other with no condition naming the atom fresh for it,
+    /// so an instance naming the atom would be captured or escape.
+    Capture,
 }
 
 quenchant_shape::reason_enum! {
@@ -293,7 +301,8 @@ fn located(
     WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
     | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding
-    | WfKind::MisplacedAbstraction => matches!(diagnostic.span, Maybe::Present(_)),
+    | WfKind::MisplacedAbstraction | WfKind::UnknownFreshness
+    | WfKind::Capture => matches!(diagnostic.span, Maybe::Present(_)),
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
     | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName | WfKind::FaceOutsideShape
@@ -412,7 +421,8 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
     }
 
     // Rule faces: in-signature symbols, no fresh right-hand-side variable,
-    // and every variable a binding port binds sorted at its binders.
+    // every variable a binding port binds sorted at its binders, and every
+    // variable crossing an abstraction stated fresh for its atom.
     let signature = signature_names(desc);
     let operations: BTreeMap<&Name, &OperDesc> = desc
         .opers
@@ -423,6 +433,7 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
         check_rule_face(rule, &signature, &mut diagnostics);
         check_rule_binders(rule, &operations, &mut diagnostics);
         check_abstractions(rule, &operations, &mut diagnostics);
+        check_freshness(rule, &mut diagnostics);
     }
 
     // Bridge arities: the three maps compose.
@@ -1133,6 +1144,141 @@ fn check_abstractions(
     }
 }
 
+/// Append the diagnostics of `cell`'s freshness conditions: an
+/// `UnknownFreshness` for each condition naming an atom no abstraction of the
+/// rule abstracts or a variable its left side does not hold, then a `Capture`
+/// for each variable and atom whose abstraction encloses some of the
+/// variable's occurrences and not others, with no condition naming that atom
+/// fresh for it: the variable's instance moves into the abstraction, or out of
+/// it, and an occurrence of the atom in it would be captured or escape
+/// (Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 3).
+///
+/// # Specification
+/// - ensures: one `UnknownFreshness` per such condition, in written order, then
+///   one `Capture` per such variable and atom, ordered by variable and then
+///   atom, each at the rule's provenance; atoms and variables are compared by
+///   their written names.
+/// - panics: none.
+/// - intension: one worklist pass over each side, the abstractions above the
+///   node read off a stack cut back to its depth, so each occurrence counts
+///   once against each distinct atom above it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — scope extrusion stating `a # q` passes and without it
+///   earns one `Capture` for `q`, as does the converse law, where `q` leaves
+///   the abstraction; a variable under the same abstractions on both sides
+///   passes unstated; a condition naming an atom the rule never abstracts and
+///   one naming no variable of the left side each earn one `UnknownFreshness`.
+/// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
+        && matches!(diagnostic.kind, WfKind::UnknownFreshness | WfKind::Capture))),
+)]
+fn check_freshness(
+    cell: &RuleFace,
+    diagnostics: &mut Vec<WfDiagnostic>,
+)
+{
+    let mut atoms: BTreeSet<&Name> = BTreeSet::new();
+    let mut held: BTreeSet<&Name> = BTreeSet::new();
+    // Each variable's occurrences, and how many of them each atom encloses.
+    let mut occurrences: BTreeMap<&Name, usize> = BTreeMap::new();
+    let mut enclosed: BTreeMap<(&Name, &Name), usize> = BTreeMap::new();
+    for (side, left) in [(&cell.lhs, true), (&cell.rhs, false)] {
+        let mut stack: Vec<&Name> = Vec::new();
+        let mut above: BTreeMap<&Name, usize> = BTreeMap::new();
+        let mut pending: Vec<(TermNode<'_>, usize)> = vec![(side.to_node(), 0)];
+        while let Some((node, depth)) = pending.pop() {
+            while stack.len() > depth {
+                if let Some(atom) = stack.pop()
+                    && let Some(count) = above.get_mut(atom)
+                {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        let _left = above.remove(atom);
+                    }
+                }
+            }
+            let (variable, args) = match node.view() {
+                TermView::Var(name) => (Some(name), None),
+                TermView::Inst { name, args } => (Some(name), Some(args)),
+                TermView::Abs { atom, args } => {
+                    let _new = atoms.insert(atom);
+                    stack.push(atom);
+                    let count = above.entry(atom).or_insert(0);
+                    *count = count.saturating_add(1);
+                    pending.extend(args.map(|arg| (arg, depth.saturating_add(1))));
+                    continue;
+                },
+                TermView::Op { args, .. }
+                | TermView::Ctor { args, .. }
+                | TermView::Results { args } => (None, Some(args)),
+            };
+            if let Some(variable) = variable {
+                if left {
+                    let _new = held.insert(variable);
+                }
+                let count = occurrences.entry(variable).or_insert(0);
+                *count = count.saturating_add(1);
+                for &atom in above.keys() {
+                    let count = enclosed.entry((variable, atom)).or_insert(0);
+                    *count = count.saturating_add(1);
+                }
+            }
+            if let Some(args) = args {
+                pending.extend(args.map(|arg| (arg, depth)));
+            }
+        }
+    }
+    let mut stated: BTreeSet<(&Name, &Name)> = BTreeSet::new();
+    for condition in &cell.fresh {
+        let _new = stated.insert((&condition.term, &condition.atom));
+        let unknown = if !atoms.contains(&condition.atom) {
+            Some(format!(
+                "names the atom `{}`, which no abstraction of the rule abstracts",
+                condition.atom
+            ))
+        }
+        else if !held.contains(&condition.term) {
+            Some(format!(
+                "names `{}`, which no variable of the rule's left side is",
+                condition.term
+            ))
+        }
+        else {
+            None
+        };
+        if let Some(unknown) = unknown {
+            diagnostics.push(located(
+                WfKind::UnknownFreshness,
+                named(&[&condition.atom, &condition.term]),
+                format!(
+                    "the condition `{} # {}` {unknown}",
+                    condition.atom, condition.term
+                ),
+                cell.provenance,
+            ));
+        }
+    }
+    for (&(variable, atom), &count) in &enclosed {
+        if occurrences.get(variable).is_some_and(|&all| count < all)
+            && !stated.contains(&(variable, atom))
+        {
+            diagnostics.push(located(
+                WfKind::Capture,
+                named(&[variable, atom]),
+                format!(
+                    "`{variable}` stands under `bind {atom}` on one side of the rule and outside \
+                     it on the other, so an instance naming `{atom}` would be captured or escape: \
+                     state `where {atom} # {variable}`"
+                ),
+                cell.provenance,
+            ));
+        }
+    }
+}
+
 /// Append an `OutOfSignatureRule` diagnostic for each applied symbol of
 /// `term` not present in `signature`.
 ///
@@ -1320,6 +1466,7 @@ mod tests
     use crate::desc::SortDesc;
     use crate::desc::SortIndex;
     use crate::elaborate::RewritePort;
+    use crate::rule::Freshness;
     use crate::test_support::Grade;
 
     /// The span every test face is read from.
@@ -1742,6 +1889,81 @@ mod tests
             1,
             misplaced(FreeTerm::op("nu2", [abs(var("p"))]), var("p")),
             "one abstraction where the port abstracts two"
+        );
+    }
+
+    #[test]
+    fn a_metavariable_crossing_an_abstraction_names_its_atom_fresh()
+    {
+        let op = |name: &str, inputs: Vec<SortRef>| {
+            OperDesc::new(
+                name,
+                BridgeArity::single_output(inputs, SortRef::new("r", "Nat")),
+                Attrs::empty(),
+            )
+        };
+        let ops = || {
+            vec![
+                op("nu", vec![
+                    SortRef::new("p", "Nat").abstracting([SortIndex::new("a", "Name")]),
+                ]),
+                op("par", vec![
+                    SortRef::new("p", "Nat"),
+                    SortRef::new("q", "Nat"),
+                ]),
+            ]
+        };
+        let found = |lhs: FreeTerm, rhs: FreeTerm, fresh: &[(&str, &str)]| {
+            let face = RuleFace::new(lhs, rhs, Vec::new(), span()).with_fresh(
+                fresh
+                    .iter()
+                    .map(|&(atom, term)| Freshness::new(atom, term))
+                    .collect::<Vec<_>>(),
+            );
+            let desc = nat_with(vec![face], ops(), Attrs::empty()).with_sorts([
+                SortDesc::new("Nat", DeclPolarity::Data),
+                SortDesc {
+                    representability: Representability::Atom,
+                    ..SortDesc::new("Name", DeclPolarity::Data)
+                },
+            ]);
+            check_desc(&desc)
+                .into_iter()
+                .filter(|diagnostic| {
+                    matches!(diagnostic.kind, WfKind::Capture | WfKind::UnknownFreshness)
+                })
+                .map(|diagnostic| (diagnostic.kind, diagnostic.span))
+                .collect::<Vec<_>>()
+        };
+        let var = FreeTerm::var;
+        let nu = |body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs("a", body)]);
+        let par = |left: FreeTerm, right: FreeTerm| FreeTerm::op("par", [left, right]);
+        let scope = || par(nu(var("p")), var("q"));
+        let extruded = || nu(par(var("p"), var("q")));
+        let at = |kind: WfKind| (kind, Maybe::Present(span()));
+        assert_eq!(
+            found(scope(), extruded(), &[("a", "q")]),
+            [],
+            "`q` enters the abstraction fresh for `a`, `p` stays under it"
+        );
+        assert_eq!(
+            found(scope(), extruded(), &[]),
+            [at(WfKind::Capture)],
+            "`q` enters the abstraction unstated"
+        );
+        assert_eq!(
+            found(extruded(), scope(), &[]),
+            [at(WfKind::Capture)],
+            "`q` leaves the abstraction unstated"
+        );
+        assert_eq!(
+            found(scope(), extruded(), &[("b", "q"), ("a", "r")]),
+            [
+                at(WfKind::UnknownFreshness),
+                at(WfKind::UnknownFreshness),
+                at(WfKind::Capture),
+            ],
+            "an atom no abstraction names, then a variable the left side lacks"
         );
     }
 

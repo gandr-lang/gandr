@@ -1,0 +1,48 @@
+// Freshness conditions on rules (Fernández and Gabbay, _Nominal rewriting_,
+// I&C 2007; Pitts, _Nominal Sets_, CUP 2013). A rule between terms closes on
+// a `where` clause, `where a # q`: the atom `a` stands outside the support of
+// the term `q` stands for. A rule whose variable moves into or out of an
+// abstraction states that atom fresh for it, or the description check refuses
+// the rule for capture (`pathological/desc/freshness.gandr`). The value of
+// `Theory` keeps each condition as a `Fresh` link after its rule. No term
+// names an atom yet (#1580), so the support of every instance is empty and
+// every condition holds.
+
+/// The π-calculus's structural congruence: the inert process, parallel
+/// composition and restriction, scope extrusion moving `q` under the
+/// restriction fresh for its atom. The checker orients the law and the kernel
+/// replays the verdict.
+@[ checks ]
+theory Pi {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+}
+
+/// Structural recursion over a rule chain: one per `Fresh` link, the
+/// conditions its written rules state.
+@[ checks ]
+def rec conditions(chain : Theory) -> -F Integer {
+  case chain {
+    Rule(name, lhs, rhs, rest) => become conditions[<](rest),
+    Turned(name, lhs, rhs, rest) => become conditions[<](rest),
+    Fresh(atom, term, rest) => {
+      run r <- conditions[<](rest);
+      return r + 1
+    },
+    _ => 0
+  }
+}
+
+/// `Pi` states one condition.
+@[ runs("1") ]
+def stated : () => Integer ;
+def stated = thunk {
+  case Pi {
+    Presents(sorts, opers, rules) => become conditions(rules),
+    _ => 0
+  }
+} ;

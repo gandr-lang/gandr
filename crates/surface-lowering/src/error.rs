@@ -1481,6 +1481,16 @@ fn ill_formed(
             "a rule abstracts atoms where no operation's port abstracts as many; an abstraction \
              stands only as an argument at a port that binds its atoms",
         ),
+        WfKind::UnknownFreshness => write!(
+            f,
+            "the freshness condition on the atom {one} and {other} names an atom no abstraction \
+             of the rule abstracts, or a variable its left side does not bind"
+        ),
+        WfKind::Capture => write!(
+            f,
+            "{one} stands under an abstraction of {other} on one side of the rule and outside it \
+             on the other, so an instance naming {other} would be captured or escape"
+        ),
     }
 }
 

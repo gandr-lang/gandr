@@ -743,12 +743,60 @@ impl RuleVarMeta
     }
 }
 
+/// A freshness condition `a # q` on a rule.
+///
+/// The atom `a`, which an abstraction of the rule names, stands outside the
+/// support of the instance of the metavariable `q` (Fernández and Gabbay,
+/// _Nominal rewriting_, I&C 2007, § 2).
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the atom and the metavariable as the rule writes them.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::check_desc`], which refuses a condition
+///   naming no abstraction's atom or no metavariable.
+/// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Freshness
+{
+    /// The atom.
+    pub atom: Name,
+    /// The metavariable the atom is fresh for.
+    pub term: Name,
+}
+
+impl Freshness
+{
+    /// The condition `atom # term`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new<A, T>(
+        atom: A,
+        term: T,
+    ) -> Self
+    where
+        A: Into<Name>,
+        T: Into<Name>,
+    {
+        Self {
+            atom: atom.into(),
+            term: term.into(),
+        }
+    }
+}
+
 /// A 2-cell face `lhs ==> rhs`: the surface-to-cell intermediary a cell store
 /// elaborates through.
 ///
 /// The two [`FreeTerm`]s are open terms in `D⋆(V)`; `vars` is the derived
-/// [`RuleVarMeta`] per left-hand-side pattern variable; `provenance` is the
-/// surface span the rule was read from.
+/// [`RuleVarMeta`] per left-hand-side pattern variable; `fresh` the rule's
+/// freshness conditions, in written order; `provenance` is the surface span
+/// the rule was read from.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RuleFace
 {
@@ -758,6 +806,8 @@ pub struct RuleFace
     pub rhs: FreeTerm,
     /// Derived per-variable metadata.
     pub vars: Box<[RuleVarMeta]>,
+    /// The freshness conditions the rule states.
+    pub fresh: Box<[Freshness]>,
     /// The surface span this face was read from.
     pub provenance: SurfaceSpan,
 }
@@ -765,7 +815,7 @@ pub struct RuleFace
 impl RuleFace
 {
     /// A face over two terms with derived variable metadata and a provenance
-    /// span.
+    /// span, stating no freshness condition.
     ///
     /// # Specification
     /// trivial.
@@ -784,7 +834,27 @@ impl RuleFace
             lhs,
             rhs,
             vars: vars.into(),
+            fresh: Box::default(),
             provenance,
+        }
+    }
+
+    /// The face stating `fresh` as its freshness conditions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_fresh<F>(
+        self,
+        fresh: F,
+    ) -> Self
+    where
+        F: Into<Box<[Freshness]>>,
+    {
+        Self {
+            fresh: fresh.into(),
+            ..self
         }
     }
 }

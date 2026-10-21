@@ -147,17 +147,21 @@ impl SurfaceRule<'_>
         )
     }
 
-    /// The theory spelling, `rule name : lhs <=> rhs`.
+    /// The theory spelling, `rule name : lhs <=> rhs`, closed on the `where`
+    /// clause of its freshness conditions when it states any.
     ///
     /// # Specification
     /// - ensures: `name`, then the written sides in written order, separated by
-    ///   the arrow the orientation states.
+    ///   the arrow the orientation states, then each condition `a # q` in
+    ///   written order after `where`, separated by commas.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an unpinned face prints `<=>` in the theory spelling.
+    /// - hypothesis: L3 — an unpinned face prints `<=>` in the theory spelling,
+    ///   and a face stating two conditions prints both in order.
     /// - witness: `description::tests::an_equation_states_no_direction`
-    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")))]
+    /// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
+    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")) && text.contains(" where ") != self.face.fresh.is_empty())]
     #[inline]
     #[must_use]
     pub fn print_theory(
@@ -165,14 +169,22 @@ impl SurfaceRule<'_>
         name: &Name,
     ) -> String
     {
+        let conditions: Vec<String> = self
+            .face
+            .fresh
+            .iter()
+            .map(|condition| format!("{} # {}", condition.atom, condition.term))
+            .collect();
         format!(
-            "rule {name} : {} {} {}",
+            "rule {name} : {} {} {}{}{}",
             self.face.lhs,
             match self.written.orientation {
                 RuleOrientation::Unpinned => "<=>",
                 RuleOrientation::Pinned(_) => "==>",
             },
-            self.face.rhs
+            self.face.rhs,
+            if conditions.is_empty() { "" } else { " where " },
+            conditions.join(", ")
         )
     }
 }

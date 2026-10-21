@@ -162,15 +162,15 @@ const KEYWORDS: &[&str] = &[
     "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+",
     "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run",
     "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit",
-    "unpack", "unwind", "val", "while", "with", "world",
+    "unpack", "unwind", "val", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
 /// shell's separator label included.
 const OPERATORS: &[&str] = &[
-    "!=", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", "/\\", ":>", "<", "<&", "<-", "<->",
-    "<=", "<=>", "<>", "==", "==>", "=>", ">", ">&", ">=", ">>", "\\", "newline", "|", "|&", "||",
-    "~>", "⇝", "∷", "≃", "≅",
+    "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", "/\\", ":>", "<", "<&", "<-",
+    "<->", "<=", "<=>", "<>", "==", "==>", "=>", ">", ">&", ">=", ">>", "\\", "newline", "|", "|&",
+    "||", "~>", "⇝", "∷", "≃", "≅",
 ];
 
 /// The primitive type spellings, and the universes.
