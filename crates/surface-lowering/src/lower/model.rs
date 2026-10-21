@@ -69,10 +69,14 @@ use super::Site;
 use super::Stretch;
 use super::Universe;
 use super::arity;
+use super::closed;
+use super::exhausted;
 use super::exits;
 use super::identity::related;
 use super::lowered;
 use super::stretch;
+use crate::error::AscriptionForm;
+use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
@@ -191,7 +195,8 @@ enum Members<'source, 'model>
 }
 
 /// The fields of a bundled model a later field reads: the components before
-/// it, each with whether its link binds.
+/// it, each with whether its link binds, and the manifest sorts the bundle
+/// fixes instead of holding.
 ///
 /// # Specification
 /// trivial.
@@ -202,6 +207,9 @@ struct Fields<'model>
     before: &'model [ModelComponent],
     /// Whether each one's link binds, in the same order.
     binds: &'model [Dependent],
+    /// Each manifest sort's name beside the type it is, read outside the
+    /// record.
+    manifests: &'model [(&'model Name, ValueTypeId)],
 }
 
 impl Fields<'_>
@@ -249,6 +257,41 @@ impl Fields<'_>
             .ok()
             .map(DeBruijnIndex::from)
     }
+
+    /// The type the manifest sort `name` is, beside the binders a reading
+    /// under `context` stands below the record's outside.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::index`].
+    /// - ensures: for a sort the bundle fixes, its type beside the count of the
+    ///   binding links before the field read plus the binding binders of
+    ///   `context`; nothing for any other name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a toggle whose carrier is fixed reads it in its start
+    ///   and under its step's telescope, and a fixed sort a later field binds
+    ///   past.
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_reads_past_the_links_before_it`
+    #[spec(ensures: |ret| ret.is_none() || !self.manifests.is_empty())]
+    fn manifest(
+        self,
+        name: &Name,
+        context: Context<'_>,
+    ) -> Option<(ValueTypeId, Binders)>
+    {
+        let &(_, id) = self
+            .manifests
+            .iter()
+            .find(|&&(manifest, _)| manifest == name)?;
+        let links = self.binds.iter().filter(|binds| binds.0).count();
+        let telescope = context.dependent.iter().filter(|binds| binds.0).count();
+        let lift = u32::try_from(links.saturating_add(telescope)).ok()?;
+
+        Some((id, Binders::from(lift)))
+    }
 }
 
 /// What a derived type is minted for: where it reads what it names, and the
@@ -275,11 +318,15 @@ struct Minting<'source, 'model>
 pub(super) struct Bundled
 {
     /// The theories, the outermost first; a nested theory stands after the
-    /// one nesting it.
+    /// one nesting it. The outermost holds no component its manifest sorts
+    /// fix.
     theories: Vec<BundledTheory>,
     /// The theory's name, `T` in `Model(T)`, where every node below the type
     /// is located.
     named: NodeIndex,
+    /// The outermost theory's manifest sorts, `with sort x = A`: each sort's
+    /// name beside the type it is.
+    manifests: Vec<(Name, NodeIndex)>,
 }
 
 /// One theory of a [`Bundled`] record.
@@ -809,13 +856,15 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the mint sweep has run.
-    /// - ensures: for a sort a bundle field before the minted one states, the
-    ///   decode at the fuss-free level of that field's variable, or for an
-    ///   indexed sort of the call [`Self::family_call`] mints; for an unindexed
-    ///   sort, the type its component reads — the member's type, or the atom a
-    ///   sealed component declares — or, where no type component bears its
-    ///   name, the builtin type it names; for an indexed one, its family
-    ///   expanded over the index terms' values.
+    /// - ensures: for a sort the bundle fixes, the type it is, raised past the
+    ///   binders between the record's outside and the reading; for a sort a
+    ///   bundle field before the minted one states, the decode at the fuss-free
+    ///   level of that field's variable, or for an indexed sort of the call
+    ///   [`Self::family_call`] mints; for an unindexed sort, the type its
+    ///   component reads — the member's type, or the atom a sealed component
+    ///   declares — or, where no type component bears its name, the builtin
+    ///   type it names; for an indexed one, its family expanded over the index
+    ///   terms' values.
     /// - fails: a sort no type component of the module or field answers and no
     ///   builtin type names, of another index count, or whose type did not
     ///   lower, as unlowered; one whose component is refused, with its refusal.
@@ -831,6 +880,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::an_operation_at_a_builtin_type_derives_it_1226`
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn sort_type(
         &self,
@@ -843,6 +893,13 @@ impl<'source> Lowerer<'_, 'source>
         let structure = match minting.members {
             Members::Module { structure, .. } => Some(structure),
             Members::Fields(fields) => {
+                if let (Some((stated, lift)), true) = (
+                    fields.manifest(&sort.sort, context),
+                    sort.indices.is_empty(),
+                ) {
+                    let lifted = gandr_core_term::shift_value_type(sink.arena, stated, lift);
+                    return Ok(lifted.settle(sink.arena));
+                }
                 if let Some(at) = fields.index(&sort.sort, context) {
                     let code = if sort.indices.is_empty() {
                         let head = sink.arena.value_variable(Zone::Intuitionistic, at);
@@ -1234,37 +1291,228 @@ impl<'source> Lowerer<'_, 'source>
         Ok((declared.constant, read))
     }
 
-    /// Classify a theory's models as a type, `Model(S)`, its operand read off
-    /// the application.
+    /// Classify a model type with manifest sorts, `Model(T) with sort x = A`:
+    /// the application on its left stands for the form, and reads the sorts
+    /// the bindings on its right fix when it classifies.
     ///
     /// # Specification
-    /// - requires: `site` is a type application headed `Model`, which nothing
-    ///   the scope binds answers, written over `theory`.
-    /// - ensures: the form stands as a value type and is planned over the
-    ///   bundle [`Self::bundled`] reads off the theory the operand names; the
-    ///   operand is read as that name alone.
-    /// - fails: yields the wrong-sort refusal where no value type is read; an
-    ///   operand that is no capitalised name is out of the fragment; the
-    ///   refusals [`Self::bundled`] yields.
+    /// - requires: `site` is a manifest type, `L with R`.
+    /// - ensures: the left operand is read at the form's own reading and
+    ///   adopted, and the sorts the bindings fix, down the chain of `with` the
+    ///   right operand nests, are filed against it, each sort's name beside the
+    ///   type it is, in written order, for [`Self::model_type`] to fix when the
+    ///   operand is `Model(T)`.
+    /// - fails: a misplaced tile at the `with` when the left operand is no type
+    ///   application, and the refusals [`Self::bindings`] yields.
     /// - panics: none.
     ///
     /// # Errors
     /// The form's refusal.
     ///
     /// # Adequacy
+    /// - hypothesis: L3 — `Model(T)` with one manifest sort, with a sort past
+    ///   the binders before it and with two, a chain after a head other than
+    ///   `Model`, after no application, and over an operand that is no binding.
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_reads_past_the_links_before_it`
+    /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    /// - witness: `tests::modules::models::a_manifest_sort_after_another_head_is_refused`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(site.at.node),
+                    Some(&Plan::Transparent(child))
+                        if self.reading(child) == site.reading && self.fixed_sorts.contains_key(&child)
+                )
+        },
+    )]
+    pub(super) fn manifest_model(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let applied = site.one(cursor.operands())?;
+        let Maybe::Present(with) = cursor.tile(TileName::WITH)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let bound = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        let Some(node) = self.tree.node(applied.node)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let Shape::Form {
+            former: Former::TypeApplication,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Err(site.fault(with.span, FormFault::MisplacedTile));
+        };
+        let mut sorts = Vec::new();
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = self.bindings(site, bound, &mut scratch, &mut sorts);
+        self.scratch = scratch;
+        read?;
+        let _earlier = self.fixed_sorts.insert(applied.node, sorts);
+        self.read(applied.node, site.reading);
+
+        self.plan(site, Plan::Transparent(applied.node));
+
+        Ok(())
+    }
+
+    /// Read into `sorts` the sorts the bindings `bound` writes fix, down the
+    /// chain of `with` their right operands nest: `sort x = A with sort y =
+    /// B` is one binding on the left of a `with` whose right is the rest.
+    ///
+    /// # Specification
+    /// - requires: `bound` is the right operand of the manifest type `site`;
+    ///   `scratch` is free to overwrite.
+    /// - ensures: one entry per binding, the sort's name beside the type it is,
+    ///   in written order.
+    /// - fails: the refusals [`Self::binding`] yields, and the form's refusal
+    ///   for a `with` out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Termination
+    /// Every pass descends to the right operand of a `with`, a node strictly
+    /// inside the one before it in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one binding and two, each sort beside its type in
+    ///   order, and an operand that is no binding.
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    #[spec(captures: before = sorts.len(), ensures: |ret| ret.is_err() || sorts.len() > before)]
+    fn bindings(
+        &self,
+        site: Site,
+        bound: Placed,
+        scratch: &mut Pieces,
+        sorts: &mut Vec<(Placed, Placed)>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut link = bound;
+        loop {
+            let Some(node) = self.tree.node(link.node)
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            };
+            let Shape::Form {
+                former: Former::ManifestType,
+                ..
+            } = shape_of(self.pbg, node)?
+            else {
+                sorts.push(self.binding(site, link, scratch)?);
+                return Ok(());
+            };
+            read_pieces(self.pbg, self.tree, link.node, scratch)?;
+            let mut cursor = Cursor::new(&scratch.pieces, link.span);
+            let first = site.one(cursor.operands())?;
+            closed(site, &mut cursor, TileName::WITH)?;
+            let rest = site.one(cursor.operands())?;
+            exhausted(site, &cursor)?;
+            sorts.push(self.binding(site, first, scratch)?);
+            link = rest;
+        }
+    }
+
+    /// The sort the binding `at` fixes, `sort x = A`: its name beside the
+    /// type it is.
+    ///
+    /// # Specification
+    /// - requires: `at` stands on the right of a `with` of the manifest type
+    ///   `site`; `scratch` is free to overwrite.
+    /// - ensures: the binding's sort name and its one type operand.
+    /// - fails: an extra operand at an operand that is no binding, a misplaced
+    ///   tile where the sort's name or `=` is missing, and the hole's own
+    ///   refusal for a binding with no type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binding read beside its type, and an operand that
+    ///   is no binding.
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(sort, defined)| at.span.start() <= sort.span.start() && defined.span.end() <= at.span.end()))]
+    fn binding(
+        &self,
+        site: Site,
+        at: Placed,
+        scratch: &mut Pieces,
+    ) -> Result<(Placed, Placed), LoweringRefusal<'source>>
+    {
+        read_pieces(self.pbg, self.tree, at.node, scratch)?;
+        let mut cursor = Cursor::new(&scratch.pieces, at.span);
+        if let Maybe::Absent(_) = cursor.tile(TileName::SORT) {
+            return Err(site.fault(at.span, FormFault::ExtraOperand));
+        }
+        let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        }
+        let defined = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+
+        Ok((sort, defined))
+    }
+
+    /// Classify a theory's models as a type, `Model(S)`, its operand read off
+    /// the application, closed by the manifest sorts `manifests`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application headed `Model`, which nothing
+    ///   the scope binds answers, written over `theory`; `manifests` is each
+    ///   manifest sort's name beside the type it is, in written order.
+    /// - ensures: the form stands as a value type and is planned over the
+    ///   bundle [`Self::bundled`] reads off the theory the operand names, the
+    ///   outermost theory without the sorts `manifests` fixes; each fixed
+    ///   sort's type is read as a value type, and the operand as the theory's
+    ///   name alone.
+    /// - fails: yields the wrong-sort refusal where no value type is read; an
+    ///   operand that is no capitalised name is out of the fragment; the
+    ///   refusals [`Self::bundled`] yields; a sort fixed twice is a duplicate
+    ///   definition, an indexed one an unread ascription, and a name that is no
+    ///   sort of the theory an unknown member.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Termination
+    /// The loop runs once per manifest sort of the finite form.
+    ///
+    /// # Adequacy
     /// - hypothesis: L3 — `Model(Toggle)` beside the record it abbreviates, a
-    ///   law-bearing theory's beside its own, and a name no theory answers.
+    ///   law-bearing theory's beside its own, a name no theory answers, a
+    ///   toggle whose carrier is fixed, and a sort fixed twice, an indexed one
+    ///   and a member that is no sort.
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
     /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Bundle(_))))]
     pub(super) fn model_type(
         &mut self,
         site: Site,
         theory: NodeIndex,
+        manifests: &[(Placed, Placed)],
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::ValueType)?;
+        let frame = self.require(site, Produced::ValueType)?;
         let Some(node) = self.tree.node(theory)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted));
@@ -1278,10 +1526,70 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(written.out(FragmentBoundary::Unadmitted));
         };
-        let theories = self.bundled(written, (site.at.span.start(), self.name_at(named)))?;
+        let module = self.name_at(named);
+        let mut theories = self.bundled(written, (site.at.span.start(), module))?;
+        let Some(outermost) = theories.first_mut()
+        else {
+            return Err(written.out(FragmentBoundary::Unadmitted));
+        };
+        let mut fixed = Vec::with_capacity(manifests.len());
+        for (place, &(sort, defined)) in manifests.iter().enumerate() {
+            let member = self.name_at(sort);
+            if let Some(&(first, _)) = manifests
+                .get(.. place)
+                .unwrap_or_default()
+                .iter()
+                .find(|&&(earlier, _)| self.name_at(earlier) == member)
+            {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: sort.span,
+                    name: member,
+                    first: first.span,
+                });
+            }
+            let components = &mut outermost.signature.components;
+            let at = components
+                .iter()
+                .position(|component| component.name.as_ref() == member.as_ref());
+            match at
+                .and_then(|at| components.get(at))
+                .map(|component| &component.form)
+            {
+                Some(&Ok(ModelForm::Sort { ref indices })) if indices.is_empty() => {},
+                Some(&Ok(ModelForm::Sort { .. })) => {
+                    return Err(LoweringRefusal::UnreadAscription {
+                        span: sort.span,
+                        name: member,
+                        form: AscriptionForm::Parameterized,
+                    });
+                },
+                Some(
+                    &(Ok(
+                        ModelForm::Operation { .. }
+                        | ModelForm::Constant(_)
+                        | ModelForm::Nested(_)
+                        | ModelForm::Law { .. },
+                    )
+                    | Err(_)),
+                )
+                | None => {
+                    return Err(LoweringRefusal::UnknownMember {
+                        span: sort.span,
+                        module,
+                        member,
+                    });
+                },
+            }
+            if let Some(at) = at {
+                let component = components.remove(at);
+                fixed.push((component.name, defined.node));
+            }
+            self.read(defined.node, Reading::ValueType(frame));
+        }
         let bundled = Bundled {
             theories,
             named: theory,
+            manifests: fixed,
         };
         self.plan(site, Plan::Bundle(Arc::new(bundled)));
 
@@ -1493,11 +1801,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every theory of `bundled` nests only theories after it, as
     ///   [`Self::bundled`] reads them.
     /// - ensures: the outermost theory's record as [`Self::bundle_type`] mints
-    ///   it, each nested component's field the record of its theory, minted
-    ///   before the theory nesting it; the record carrying `origin` and every
-    ///   node below it the theory's name marked [`Insertion::Model`], since the
-    ///   source writes the name and not the record; nothing when a field does
-    ///   not mint.
+    ///   it, reading each manifest sort as the type it is, each nested
+    ///   component's field the record of its theory, minted before the theory
+    ///   nesting it; the record carrying `origin` and every node below it the
+    ///   theory's name marked [`Insertion::Model`], since the source writes the
+    ///   name and not the record; nothing when a field or a manifest sort's
+    ///   type does not mint.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1509,6 +1818,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   another bundles the inner record as a field.
     /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
     /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_bundle(
         &self,
@@ -1520,6 +1830,18 @@ impl<'source> Lowerer<'_, 'source>
         let below = match self.origin_at(bundled.named) {
             Maybe::Present(named) => named.inserted(Insertion::Model),
             Maybe::Absent(_) => origin.inserted(Insertion::Model),
+        };
+        let fixed: Option<Vec<(&Name, ValueTypeId)>> = bundled
+            .manifests
+            .iter()
+            .map(|&(ref name, defined)| match self.value_type_at(defined) {
+                Maybe::Present(id) => Some((name, id)),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        let Some(fixed) = fixed
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
         };
         let mut minted: Vec<Option<ValueTypeId>> = vec![None; bundled.theories.len()];
         for (place, theory) in bundled.theories.iter().enumerate().rev() {
@@ -1533,7 +1855,9 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let top = if place == 0 { origin } else { below };
-            let Ok(id) = self.bundle_type(&theory.signature, &nested, sink, (top, below))
+            let manifests = if place == 0 { fixed.as_slice() } else { &[] };
+            let Ok(id) =
+                self.bundle_type(&theory.signature, &nested, manifests, sink, (top, below))
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
@@ -1952,20 +2276,23 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The bundled record `signature` states, each nested component's field
-    /// the matching type of `nested`.
+    /// the matching type of `nested` and each sort `manifests` fixes read as
+    /// the type it is.
     ///
     /// # Specification
-    /// - requires: every component of the signature states its form, and
-    ///   `nested` holds one type per nested component, in order.
+    /// - requires: every component of the signature states its form, `nested`
+    ///   holds one type per nested component, in order, and `manifests` names
+    ///   no component of the signature, each type read outside the record.
     /// - ensures: one field per component in signature order — a sort as
     ///   [`Self::sort_field`] states it, a constant its sort, an operation or a
     ///   law its telescope Π as [`Self::mint_form`] states it, a nested model
     ///   its type of `nested` — each sort and operation a field names read as
-    ///   the variable of the field stating it; the fields nested to the right
-    ///   as a written dependent record lowers: `Σ` over a field a later one
-    ///   names, the eager product of two otherwise, and the record keyed by the
-    ///   components' names when no field names another; the record carrying
-    ///   `top` and every node below it `below`.
+    ///   the variable of the field stating it, and each sort `manifests` fixes
+    ///   as its type raised past the binders before the reading; the fields
+    ///   nested to the right as a written dependent record lowers: `Σ` over a
+    ///   field a later one names, the eager product of two otherwise, and the
+    ///   record keyed by the components' names when no field names another; the
+    ///   record carrying `top` and every node below it `below`.
     /// - fails: a field that does not mint, as unlowered.
     /// - panics: none.
     ///
@@ -1982,11 +2309,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::a_law_bearing_model_type_reads_its_operations`
     /// - witness: `tests::modules::models::a_family_sort_is_a_function_into_the_universe`
     /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_sort_reads_past_the_links_before_it`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
     fn bundle_type(
         &self,
         signature: &ModelSignature,
         nested: &[ValueTypeId],
+        manifests: &[(&Name, ValueTypeId)],
         sink: &mut Sink<'_>,
         (top, below): (Origin, Origin),
     ) -> Result<ValueTypeId, Missing<'source>>
@@ -2000,6 +2330,7 @@ impl<'source> Lowerer<'_, 'source>
                 members: Members::Fields(Fields {
                     before: components.get(.. at).unwrap_or_default(),
                     binds: binds.get(.. at).unwrap_or_default(),
+                    manifests,
                 }),
                 origin: below,
             };

@@ -1,0 +1,97 @@
+// A manifest model type: `Model(T) with sort x = A` is the type of the models
+// of `T` whose sort `x` is `A`, the record of `T`'s other components with `x`
+// read as `A`, as `model-manifest.gandr`'s ascription states it of a module.
+// A chain, `with sort x = A with sort y = B`, fixes one sort per binding. The
+// type is a family in `A`, so two sharings whose types are equivalent are one
+// type along the equivalence, and a model of one is carried to a model of the
+// other: the structure identity principle at a fixed sort (the HoTT book's
+// § 2.14; cubical Agda's `Cubical/Foundations/SIP.agda`), after Leroy's
+// manifest types (_Manifest Types, Modules, and Separate Compilation_, POPL
+// 1994, doi:10.1145/174675.176926).
+
+// The counter: a carrier, a start and a step.
+import "./model-ascription.gandr" ;
+
+/// Three states nested to the right, renested to the left.
+@[ checks ]
+def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
+  case c {
+    +{.0 = u} => +{.0 = +{.0 = u}},
+    +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
+    +{.1 = +{.1 = u}} => +{.1 = u}
+  }
+}
+
+/// Three states nested to the left, renested to the right.
+@[ checks ]
+def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
+  case c {
+    +{.0 = +{.0 = u}} => +{.0 = u},
+    +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},
+    +{.1 = u} => +{.1 = +{.1 = u}}
+  }
+}
+
+/// The two nestings are one type, the two maps inverse by computation.
+@[ checks ]
+def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) ;
+def nestings = equiv(toLeft, toRight) ;
+
+/// The counters whose carrier is `x`.
+@[ checks ]
+def countersOn(x : Type) -> -F Type {
+  return type(Model(Counter) with sort C = x)
+}
+
+/// The counters over either nesting are one type: two sharings that differ
+/// by an equivalence are one.
+@[ checks ]
+def oneSharing : () => Path(
+  Type,
+  Model(Counter) with sort C = Unit + (Unit + Unit),
+  Model(Counter) with sort C = (Unit + Unit) + Unit
+) ;
+def oneSharing = thunk { become cong(countersOn, nestings) } ;
+
+/// One state on, modulo three, nested to the right.
+@[ checks ]
+def onward(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  case c {
+    +{.0 = u} => +{.1 = +{.0 = u}},
+    +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
+    +{.1 = +{.1 = u}} => +{.0 = u}
+  }
+}
+
+/// The first state, nested to the right.
+@[ checks ]
+def first() -> -F (Unit + (Unit + Unit)) {
+  +{.0 = unit}
+}
+
+/// Counting modulo three over the right nesting: the carrier is no field,
+/// so the record is the start and the step.
+@[ checks ]
+def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) ;
+def rightward = #{.start = first, .step = onward} ;
+
+/// The same counter carried to the left nesting.
+@[ checks ]
+def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit ;
+def leftward = transport(\x. Model(Counter) with sort C = x, nestings, rightward) ;
+
+/// A counter over the right nesting stepped once from its start.
+@[ checks ]
+def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  case m {
+    #{.start = s, .step = t} => {
+      run zero <- s();
+      become t(zero)
+    }
+  }
+}
+
+/// Counting modulo three stepped once: the second state.
+@[ runs("+{.1 = +{.0 = unit}}") ]
+def second : () => Unit + (Unit + Unit) ;
+def second = thunk { become stepOnce(rightward) } ;

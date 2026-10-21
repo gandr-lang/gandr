@@ -1243,6 +1243,7 @@ pub fn spine_domains<'source>(
             | Former::StaticAbstraction
             | Former::PathType
             | Former::RelationType
+            | Former::ManifestType
             | Former::CapabilityType
             | Former::AtType
             | Former::StagedType

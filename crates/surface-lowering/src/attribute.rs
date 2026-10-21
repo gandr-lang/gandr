@@ -884,6 +884,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ParenthesizedType
         | Former::PathType
         | Former::RelationType
+        | Former::ManifestType
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType

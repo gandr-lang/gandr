@@ -1275,7 +1275,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1327,6 +1327,7 @@ fn ending(former: Former) -> Ending
         | Former::ParenthesizedType
         | Former::PathType
         | Former::RelationType
+        | Former::ManifestType
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
@@ -1367,7 +1368,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1463,6 +1464,7 @@ fn iterating(former: Former) -> Ending
                     | Former::ParenthesizedType
                     | Former::PathType
                     | Former::RelationType
+                    | Former::ManifestType
                     | Former::CapabilityType
                     | Former::AtType
                     | Former::StagedType
@@ -1540,6 +1542,7 @@ const fn family_of(former: Former) -> Family
         | Former::ParenthesizedType
         | Former::PathType
         | Former::RelationType
+        | Former::ManifestType
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
@@ -2892,6 +2895,9 @@ struct Lowerer<'run, 'source>
     /// Each type head that stands for a type minted elsewhere: a manifest
     /// component's or a functor instance's, which the head adopts.
     stand_ins: BTreeSet<NodeIndex>,
+    /// Each `Model(T)` application a manifest type closes, with the sorts it
+    /// fixes: each sort's name beside the type it is, in written order.
+    fixed_sorts: BTreeMap<NodeIndex, Vec<(Placed, Placed)>>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -3939,6 +3945,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         && self.thunked.is_empty()
         && self.inherited.is_empty()
         && self.stand_ins.is_empty()
+        && self.fixed_sorts.is_empty()
         && self.answers.is_empty()
         && self.cocased.is_empty()
         && self.in_type.is_empty()
@@ -3982,6 +3989,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.thunked.clear();
         self.inherited.clear();
         self.stand_ins.clear();
+        self.fixed_sorts.clear();
         self.answers.clear();
         self.cocased.clear();
         self.in_type.clear();
@@ -4326,6 +4334,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             labels: Vec::new(),
             index_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
+            fixed_sorts: BTreeMap::new(),
             answers: BTreeMap::new(),
             cocased: BTreeSet::new(),
             synthesised: Vec::new(),
@@ -5804,6 +5813,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             Former::PathType => self.path_type(site, cursor),
             Former::RelationType => self.relation_type(site, cursor),
+            Former::ManifestType => self.manifest_model(site, cursor),
             Former::CapabilityType => self.capability_type(site, cursor),
             Former::AtType => self.at_type(site, cursor),
             Former::StagedType => self.staged_type(site, cursor),
@@ -8520,7 +8530,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 start,
                 end: self.operands.len(),
             };
-            return self.applied_head(site, head, name, written);
+            return self.applied_head(site, head, name, written, &[]);
         }
         if self.exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());
@@ -9887,9 +9897,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
+        // The sorts a manifest type closing the application fixes, read after
+        // `Model` alone: any other head that answers it is refused at the
+        // first sort.
+        let manifests = self
+            .fixed_sorts
+            .get(&site.at.node)
+            .cloned()
+            .unwrap_or_default();
+        let unmanifest = manifests
+            .first()
+            .map(|&(sort, _)| site.fault(sort.span, FormFault::MisplacedTile));
         if let (Ok(()), Reading::Value(_)) = (read, site.reading)
             && let Maybe::Present(constructor) = self.constructor_named(site, name)
         {
+            if let Some(refusal) = unmanifest {
+                self.operands.truncate(start);
+                return Err(refusal);
+            }
             let fields = Stretch {
                 start,
                 end: self.operands.len(),
@@ -9902,6 +9927,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 held,
                 ..
             })) => {
+                if let Some(refusal) = unmanifest {
+                    self.operands.truncate(start);
+                    return Err(refusal);
+                }
                 let applied = Stretch {
                     start,
                     end: self.operands.len(),
@@ -9920,6 +9949,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         });
         match resolved {
             Ok(Maybe::Present(resolved)) => {
+                if let Some(refusal) = unmanifest {
+                    self.operands.truncate(start);
+                    return Err(refusal);
+                }
                 self.resolved(head.span, resolved);
                 let applied = Stretch {
                     start,
@@ -9938,16 +9971,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
-        self.applied_head(site, head, name, written)
+        self.applied_head(site, head, name, written, &manifests)
     }
 
     /// Classify the type former `name`, written at `head` and applied to the
-    /// operands `written` holds in the operand store, which nothing the scope
-    /// binds answers.
+    /// operands `written` holds in the operand store and closed by the
+    /// manifest sorts `manifests`, which nothing the scope binds answers.
     ///
     /// # Specification
     /// - requires: `written` is the arguments the head was written with, left
-    ///   to right, and the last the store holds.
+    ///   to right, and the last the store holds; `manifests` is each manifest
+    ///   sort's name beside the type it is, in written order.
     /// - ensures: the arguments leave the store; a head named `Path` and
     ///   applied to three arguments is the path type [`Self::written_path`]
     ///   plans, one named `Flow` and applied to three the directed identity
@@ -9955,15 +9989,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the continuation type [`Self::stack_type`] plans, one named `Iso` and
     ///   applied to two the quasi-inverse `A ≅ B` [`Self::relation_of`] plans,
     ///   one named `Model` and applied to one the bundled record
-    ///   [`Self::model_type`] plans; any other head applied to one argument
-    ///   resolves against the unary table, stands at the sort its former
-    ///   produces, reads its argument at the sort the former takes, and is
-    ///   planned over it.
+    ///   [`Self::model_type`] plans with its manifest sorts; any other head
+    ///   applied to one argument resolves against the unary table, stands at
+    ///   the sort its former produces, reads its argument at the sort the
+    ///   former takes, and is planned over it.
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
-    ///   at the arity it was written with, and the wrong-sort refusal for a
-    ///   former whose sort does not suit the position.
+    ///   at the arity it was written with, the wrong-sort refusal for a former
+    ///   whose sort does not suit the position, and a misplaced tile at the
+    ///   first manifest sort after any head but `Model`.
     /// - panics: none.
     ///
     /// # Errors
@@ -9996,6 +10031,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         head: Placed,
         name: SurfaceName<'source>,
         written: Stretch,
+        manifests: &[(Placed, Placed)],
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let start = written.start;
@@ -10010,6 +10046,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(start .. written.end)
             .and_then(|operands| <[NodeIndex; 2]>::try_from(operands).ok());
         self.operands.truncate(start);
+        if let (Some(argument), 1_usize) = (first, count)
+            && name.as_ref() == MODEL
+        {
+            return self.model_type(site, argument, manifests);
+        }
+        if let Some(&(sort, _)) = manifests.first() {
+            return Err(site.fault(sort.span, FormFault::MisplacedTile));
+        }
         if let Some(written) = triple
             && name.as_ref() == TileName::PATH.as_ref()
         {
@@ -10029,11 +10073,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && name.as_ref() == identity::ISO
         {
             return self.relation_of(site, Relation::Isomorphism, written);
-        }
-        if let (Some(argument), 1_usize) = (first, count)
-            && name.as_ref() == MODEL
-        {
-            return self.model_type(site, argument);
         }
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
@@ -16985,6 +17024,7 @@ pub fn parse_literal(
         | Former::ParenthesizedType
         | Former::PathType
         | Former::RelationType
+        | Former::ManifestType
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType

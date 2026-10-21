@@ -47,15 +47,15 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the pack at a model type: `pack` and `at` around a module and the model
-/// type it is packed at.
-const BUILT_IN_FINGERPRINT: u64 = 0xa1d7_153c_8179_7cb4;
+/// the manifest model type: `Model(T) with sort x = A`, `with` infix in the
+/// band of the type relations over the binding `sort x = A`.
+const BUILT_IN_FINGERPRINT: u64 = 0xb283_9271_3261_ef9e;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2932);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(2936);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 84;
@@ -96,7 +96,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 28),
     ("<>", 1),
-    ("=", 115),
+    ("=", 116),
     ("==", 1),
     ("==>", 28),
     ("=>", 23),
@@ -211,7 +211,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("shared", 1),
     ("shell_word", 1),
     ("single_quoted_content", 1),
-    ("sort", 6),
+    ("sort", 7),
     ("string_fragment", 6),
     ("subshell_close", 1),
     ("subshell_open", 1),
@@ -222,7 +222,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 87),
+    ("type_identifier", 88),
     ("type_variable", 61),
     ("typed_number", 2),
     ("u32", 1),
@@ -233,7 +233,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("val", 19),
     ("variable_name", 5),
     ("while", 1),
-    ("with", 7),
+    ("with", 8),
     ("world", 1),
     ("{", 45),
     ("|", 10),

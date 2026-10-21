@@ -152,6 +152,8 @@ unproduced = [
   { rule = "list_operator", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "list_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
   { rule = "literal_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+  { rule = "manifest_sort", reason = "a binding read only as a `manifest_type`'s right operand: the lowering files its sort against the model type, so no core node carries it" },
+  { rule = "manifest_type", reason = "sugar the lowering elaborates away: a manifest model type lowers to the record of the theory's other components, which the printer writes as `telescope_type`" },
   { rule = "module_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "module_definition_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "module_type_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

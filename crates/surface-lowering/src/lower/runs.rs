@@ -831,6 +831,7 @@ fn operand_of(
         | Former::ParenthesizedType
         | Former::PathType
         | Former::RelationType
+        | Former::ManifestType
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
