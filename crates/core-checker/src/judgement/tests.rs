@@ -3493,6 +3493,44 @@ fn a_dependent_split_synthesises_its_motive_at_the_scrutinee()
 }
 
 #[test]
+fn a_tuple_of_paths_checks_at_the_identity_of_a_product()
+{
+    let mut arena = CoreArena::new();
+    let scene = sigma_scene(&mut arena);
+    let [a, b, ..] = scene.constants;
+    let [integer, ..] = scene.types;
+    let pairs = arena.value_type_product(&[integer, integer]);
+    let pair = arena.value_tuple(&[a, b]);
+    let identity = arena.value_type_path(pairs, pair, pair);
+    let [here_a, here_b] = [a, b].map(|point| arena.value_here(point));
+    let paths = arena.value_tuple(&[here_a, here_b]);
+    let strayed = arena.value_tuple(&[here_b, here_b]);
+    let short = arena.value_tuple(&[here_a]);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    seed(&mut context, &scene.types);
+    let identity = form_value_type(&mut context, identity).unwrap();
+    let checked = check_value(&mut context, paths, identity);
+    assert!(
+        checked.is_ok(),
+        "a path between each pair of components relates the pairs: {checked:?}"
+    );
+    assert!(
+        matches!(
+            check_value(&mut context, strayed, identity),
+            Err(CheckRefusal::EndpointMismatch { .. })
+        ),
+        "the first path must join the first components"
+    );
+    assert!(
+        matches!(
+            check_value(&mut context, short, identity),
+            Err(CheckRefusal::ShapeMismatch { .. })
+        ),
+        "a tuple of another width is no path between the pairs"
+    );
+}
+
+#[test]
 fn a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair()
 {
     let mut arena = CoreArena::new();
