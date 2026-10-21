@@ -2490,6 +2490,46 @@ impl TypeTable
             .map(move |entry| self.answer(entry, page, style))
     }
 
+    /// Every binder the source wrote whose name overlaps `within`, in table
+    /// order, each spelled in `style` on a page of `page` columns as
+    /// [`Self::entries`] spells it; the table's other entries are never
+    /// spelled.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one answer per entry whose subject is [`Subject::Binder`],
+    ///   whose provenance is [`Provenance::Written`] and whose span shares a
+    ///   byte with `within`, in table order, spelled as [`Self::entries`]
+    ///   spells it.
+    /// - provides: the binders a face annotates in a window of the source.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    /// - executable: none — the answers are a lazy iterator, spelled only as
+    ///   the caller draws them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda's binder and a parameter each answer in a
+    ///   window holding them and not in one beside them.
+    /// - witness: `typed::tests::the_binders_in_a_window_answer_alone`
+    #[inline]
+    pub fn binders(
+        &self,
+        within: ByteSpan,
+        page: PageWidth,
+        style: Style,
+    ) -> impl Iterator<Item = Maybe<TypedSpan, typing::Absent>> + '_
+    {
+        self.entries
+            .iter()
+            .filter(move |entry| {
+                entry.subject == Subject::Binder
+                    && entry.provenance == Provenance::Written
+                    && entry.span.start() < within.end()
+                    && within.start() < entry.span.end()
+            })
+            .map(move |entry| self.answer(entry, page, style))
+    }
+
     /// `entry` spelled in `style` on a page of `page` columns.
     ///
     /// # Specification
@@ -4158,6 +4198,7 @@ mod tests
     use gandr_surface_pretty::Form;
     use gandr_surface_pretty::PageWidth;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -5364,6 +5405,59 @@ mod tests
             at("\n\n"),
             Maybe::Absent(typing::Absent::Untyped),
             "layout between declarations is no node's"
+        );
+    }
+
+    #[test]
+    fn the_binders_in_a_window_answer_alone()
+    {
+        let source = SourceText::from(
+            "def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\ndef f(x: \
+             Integer) -> -F Integer { return x }\n",
+        );
+        let table = table(source);
+        let line = |number: usize| {
+            let start: usize = <&str>::from(source)
+                .split_inclusive('\n')
+                .take(number)
+                .map(str::len)
+                .sum();
+            let end = start
+                + <&str>::from(source)
+                    .split_inclusive('\n')
+                    .nth(number)
+                    .map_or(0, str::len);
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("an ordered span")
+        };
+        let named = |within: ByteSpan| {
+            table
+                .binders(within, PageWidth::from(80_u32), Form::Explicit.into())
+                .filter_map(|binder| match binder {
+                    Maybe::Present(binder) => Some((
+                        String::from(
+                            <&str>::from(source)
+                                .get(
+                                    usize::from(binder.span().start())
+                                        .. usize::from(binder.span().end()),
+                                )
+                                .unwrap_or_default(),
+                        ),
+                        String::from(binder.ty().as_ref()),
+                    )),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(named(line(0)), [], "a signature binds nothing");
+        assert_eq!(
+            named(line(1)),
+            [(String::from("y"), String::from("Integer"))],
+            "the lambda's binder, at its uses' type"
+        );
+        assert_eq!(
+            named(line(2)),
+            [(String::from("x"), String::from("Integer"))],
+            "the parameter, and not the lambda's binder beside it"
         );
     }
 

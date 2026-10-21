@@ -36,15 +36,15 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error; a decoded batch or other invalid message refused as an invalid request.
 - Published diagnostics: one per diagnostic the model builds for the document's step, at its lead range, under its code, with its message and related information; republished at every change, cleared at close.
 - The `gandr.diagnostics.verbosity` and `quiet` settings, pushed or pulled: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
-- Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks every open document whose imports name it.
+- Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks each open document importing it.
 - Semantic tokens for the whole document, as edits of the last answer, and for a range, each use typed by its referent; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)).
-- Progress and trace: an open and a recheck of changed files reported to a client that shows progress; each log line sent as `$/logTrace` at the level the client sets.
+- Progress and trace: an open and a recheck of changed files reported to a client showing progress; each log line sent as `$/logTrace` at the client's level.
 - Signature help: the head the called name was written with, its documentation, and the argument at the cursor.
 - Inline completion: ranked snippets closing the form at the cursor or filling its hole, each hole a named tab stop.
 - The outline: document symbols nesting each declaration inside its holder, folding ranges over multi-line forms, documentation and block comments, and selection ranges growing from the innermost node to the whole document.
-- Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal.
+- Hover: the type of the innermost node under the cursor, and a declaration's documentation or refusal; inlay hints: binders' unwritten types.
 - Definitions and declarations: what the name under the cursor refers to, at its definition or its signature, and the families its type names, here or in an imported sibling; links: path imports to their files.
 - Highlights, and linked editing of a local binder: where the name under the cursor is declared and used in the document; references and rename: in every open document and importer under the opened folders; a file renamed: its importers' addresses.
 - Workspace symbols: the names the open documents' import closures declare, each holding the query's characters in order.

@@ -140,7 +140,7 @@
 //! | folding ranges | `textDocument/foldingRange`, `workspace/foldingRange/refresh` | served, a multi-line member included, each form's range with what it writes before its body as its collapsed text for a client that shows one; the refresh is asked of a client that declares it once folds change from outside the document's text, which no fold this server answers does |
 //! | selection ranges | `textDocument/selectionRange` | served, through a member before the form holding it |
 //! | hover | `textDocument/hover` | served |
-//! | inlay hints | `textDocument/inlayHint` | blocked: a face that reads each binder's type off the hover's type table, which is built on demand rather than per revision |
+//! | inlay hints | `textDocument/inlayHint`, `workspace/inlayHint/refresh` | served: once a copy is judged, the type of each binder its form writes none for — a lambda's, a pattern's, a `run`'s, a `for`'s, a handler's — after its name, as the hover over the name spells it and as the `inlay` module states, over the range asked; the refresh is asked of a client that declares it once a copy is rechecked because a file its closure names changed. `inlayHint/resolve` is not offered: a hint's label linking to its type's declaration waits on the printer recording the declaration each name it writes stands for (#1441) |
 //! | signature help | `textDocument/signatureHelp` | served: the head the innermost call's name was written with — a declaration's, a constructor's, or a binder's function type — its documentation, and the argument the position writes |
 //! | completion | `textDocument/completion`, `completionItem/resolve` | served: the binders in scope, the closure's declared names and the keywords the slot at the word's start admits, each starting with the word; each name carries its type in the list — a binder's read off the table, a declared name's head — as its detail and, to a client that shows them, its label details; a declared name resolves to its documentation; to a client that takes snippets, a keyword inserts the form it opens, spelled as inline completion spells it, each hole a tab stop, filtered by the keyword |
 //! | definition, declaration, type definition | `textDocument/definition`, `declaration`, `typeDefinition` | served: what the use at the position refers to, at its definition half and its signature half respectively for a name declared in two, either form for a name written once, and the families the type there names, as links when the client takes them |
@@ -374,6 +374,7 @@ mod goto;
 mod hover;
 #[cfg(unix)]
 mod hub;
+mod inlay;
 mod inline;
 mod markup;
 mod outline;

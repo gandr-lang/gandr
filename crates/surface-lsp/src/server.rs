@@ -105,6 +105,7 @@ use crate::hover::Style;
 use crate::hover::hover;
 use crate::hover::hovering;
 use crate::hover::hovering_laid;
+use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::markup::Markup;
 use crate::position::Position;
@@ -1939,7 +1940,7 @@ impl Server
             return Vec::new();
         }
         let mut asked = Vec::new();
-        if self.refreshing.lenses {
+        if self.refreshing.lenses.0 {
             asked.push(self.asked(Refreshed::Lenses));
         }
         if self.showing.0 {
@@ -2012,7 +2013,7 @@ impl Server
     ///   not yet initialised, are asked exactly what they refresh.
     /// - witness: `server::tests::a_refreshing_client_is_asked_for_its_tokens_and_folds_once_invalidated`
     #[spec(ensures: |ret| ret.len() == if self.phase == Phase::Running {
-        usize::from(self.refreshing.tokens).saturating_add(usize::from(self.refreshing.folds))
+        usize::from(self.refreshing.tokens.0).saturating_add(usize::from(self.refreshing.folds.0))
     } else {
         0
     })]
@@ -2024,10 +2025,10 @@ impl Server
             return Vec::new();
         }
         let mut asked = Vec::new();
-        if self.refreshing.tokens {
+        if self.refreshing.tokens.0 {
             asked.push(self.asked(Refreshed::Tokens));
         }
-        if self.refreshing.folds {
+        if self.refreshing.folds.0 {
             asked.push(self.asked(Refreshed::Folds));
         }
         asked
@@ -3008,8 +3009,9 @@ impl Server
     /// Recheck the copies this connection holds that `picks` picks,
     /// republishing each to this connection alone, each import read as the
     /// editors hold it, and, when a copy was rechecked because its closure
-    /// changed, ask a client that refreshes its semantic tokens for them
-    /// again: each use is classified by what the new judgement resolved it to.
+    /// changed, ask a client that refreshes its semantic tokens or its inlay
+    /// hints for them again: each use is classified, and each binder typed, by
+    /// the new judgement.
     ///
     /// # Specification
     /// trivial.
@@ -3066,9 +3068,13 @@ impl Server
         for message in &outcome.messages {
             workspace.published_by(peer, message);
         }
-        if !matches!(picks, Picks::Every) && self.phase == Phase::Running && self.refreshing.tokens
-        {
-            outcome.messages.push(self.asked(Refreshed::Tokens));
+        if !matches!(picks, Picks::Every) && self.phase == Phase::Running {
+            if self.refreshing.tokens.0 {
+                outcome.messages.push(self.asked(Refreshed::Tokens));
+            }
+            if self.refreshing.hints.0 {
+                outcome.messages.push(self.asked(Refreshed::Hints));
+            }
         }
         outcome
     }
@@ -3141,6 +3147,12 @@ impl Server
             (Phase::Running, "textDocument/semanticTokens/full/delta") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_) | Answer::Deltas(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
+            (Phase::Running, "textDocument/inlayHint") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Hints(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
@@ -3375,6 +3387,20 @@ impl Server
                             &params.text_document.uri,
                             self.peer,
                             Window::Within(params.range),
+                        ),
+                    ),
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/inlayHint") => {
+                match serde_json::from_value::<RangeParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.inlay_hints(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.range,
+                            self.style.printed(),
                         ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -3934,7 +3960,8 @@ impl Server
                         "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
                         | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles"
                         | "workspace/didDeleteFiles" | "workspace/didRenameFiles" => {
-                            called == "workspace/semanticTokens/refresh" && self.refreshing.tokens
+                            (called == "workspace/semanticTokens/refresh" && self.refreshing.tokens.0)
+                                || (called == "workspace/inlayHint/refresh" && self.refreshing.hints.0)
                         },
                         _ => false,
                     },
@@ -4521,7 +4548,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_) => false,
     })]
     fn tokens(
         &self,
@@ -4566,6 +4593,66 @@ impl Workspace
         })
     }
 
+    /// The inlay hints over `range` of the copy of the document at `uri` that
+    /// `peer` is answered from, each type spelled in `style`.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any range are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document whose
+    ///   session did not build, and an empty or inverted range, yield no hint;
+    ///   otherwise the hints [`hints`] answers over the range, off the copy's
+    ///   tree and what it keeps for its hovers, made now when no request has
+    ///   asked since the text last changed.
+    /// - provides: the answer to `textDocument/inlayHint`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held document's binders over a range, an inverted
+    ///   range and an unknown document distinguish the hints, none and null.
+    /// - witness: `server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
+    #[spec(ensures: |ret| match ret {
+        Answer::Nothing => !self.documents.contains_key(uri),
+        Answer::Hints(ref hints) => self.documents.contains_key(uri)
+            && (range.start < range.end || hints.is_empty()),
+        Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
+            | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+    })]
+    fn inlay_hints(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        range: Range,
+        style: gandr_surface_pretty::Style,
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        let window = ByteSpan::new(
+            ByteOffset::from(usize::from(range.start.byte(&index))),
+            ByteOffset::from(usize::from(range.end.byte(&index))),
+        );
+        Answer::Hints(match (document.session.as_ref(), window) {
+            (Ok(session), Ok(window)) if window.start() < window.end() => hints(
+                (
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    document.text.reading().tiles(),
+                ),
+                &index,
+                window,
+                style,
+            ),
+            (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
+        })
+    }
+
     /// The inline completion of the copy of the document at `uri` that `peer`
     /// is answered from, at `position`.
     ///
@@ -4599,7 +4686,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_) => false,
     })]
     fn inline(
         &self,
@@ -6762,6 +6849,7 @@ mod tests
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
+                        "inlayHintProvider":true,
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
                         "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
@@ -9235,6 +9323,25 @@ mod tests
             Some(2),
             "`one` is now a function the base declares"
         );
+        let mut hinting = started(r#"{"inlayHint":{"refreshSupport":true}}"#);
+        let _importing = open(&mut hinting, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut hinting, "base.gandr", declares_one),
+            ["workspace/inlayHint/refresh"],
+            "a client that refreshes its inlay hints is asked for them again"
+        );
+        let mut both = started(
+            r#"{"semanticTokens":{"refreshSupport":true},"inlayHint":{"refreshSupport":true}}"#,
+        );
+        let _importing = open(&mut both, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut both, "base.gandr", declares_one),
+            [
+                "workspace/semanticTokens/refresh",
+                "workspace/inlayHint/refresh"
+            ],
+            "a client that refreshes both is asked for its tokens, then its hints"
+        );
         let mut quiet = started("{}");
         let _importing = open(&mut quiet, "importer.gandr", importer);
         assert_eq!(
@@ -9503,6 +9610,50 @@ mod tests
             answers(r#","initializationOptions":{"inlineCompletion":{"trigger":"automatic"}}"#),
             [Some(Value::from(")")), Some(Value::from(")"))],
             "set to automatic, both are answered"
+        );
+    }
+
+    #[test]
+    fn an_inlay_hint_request_answers_the_binders_in_its_range()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def id : Integer => Integer ;\ndef id = thunk { fn (y) { return y } } ;\n"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, uri: &str, (from, to): (u32, u32)| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":2,"method":"textDocument/inlayHint","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "range":{{"start":{{"line":{from},"character":0}},"end":{{"line":{to},"character":0}}}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (0, 2)),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":2,"result":[{"position":{"line":1,"character":22},"label":": Integer","kind":1}]}]"#
+            )),
+            "the lambda's binder, after its name, and not the signature"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (0, 1)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":[]}]"#)),
+            "a range short of the binder holds no hint"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", (2, 0)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":[]}]"#)),
+            "an inverted range holds no hint"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/unknown.gandr", (0, 2)),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":null}]"#)),
+            "an unknown document answers null"
         );
     }
 
