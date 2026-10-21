@@ -674,6 +674,13 @@ cat "$scratch/rows"
 # `decide.jq` reads which, as it does for `pr:land`. The task prints which path
 # it took. With nothing open it opens against main.
 #
+# A pull request that is landing, in the merge queue or set to auto-merge, is
+# never the top (#1455): its merge deletes its branch, and a queued stack
+# takes no link, so a pull request opened on it would close unmerged. With
+# every open pull request landing, the new one opens on main, measured past
+# the newest landing head its branch holds; `pr:land` waits for those to merge
+# (`carried_queued`).
+#
 # A fix the open stack waits on cannot stack on it: it would land behind the
 # pull request it unblocks. `--unblocks <n>` names that pull request, and the
 # fix opens as a second bottom on main, measured against main, and is set to
@@ -714,7 +721,17 @@ git fetch --quiet origin "$trunk"
 if [[ "$top" == null ]]; then
   base=$trunk
   measured=$(git merge-base HEAD "origin/$trunk")
-  if [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
+  # A branch stacked before its stack began to land holds that stack's
+  # commits: measured past the newest landing head it holds, its obligations
+  # are its own (#1455).
+  while IFS= read -r landing_head; do
+    [[ -n "$landing_head" ]] || continue
+    git fetch --quiet origin "$landing_head" || continue
+    if git merge-base --is-ancestor "$measured" "origin/$landing_head" && git merge-base --is-ancestor "origin/$landing_head" HEAD; then
+      measured=$(git rev-parse "origin/$landing_head")
+    fi
+  done < <(open_prs | jq -r --arg own "$own" '.[] | select(.landing and .head != $own) | .head')
+  if [[ -z "$unblocks" ]]; then echo "no pull request is open outside the merge queue: opening against $trunk"; fi
 else
   base=$(jq -r .head <<< "$top")
   top_number=$(jq -r .number <<< "$top")
@@ -734,8 +751,8 @@ if (( status == 2 )); then
 fi
 (( status == 0 )) || exit "$status"
 # A second bottom is refused unless it unblocks the open stack: with any other
-# pull request open, the base is a branch of the stack.
-if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own)] | length') != 0 ]]; then
+# pull request open and not landing, the base is a branch of the stack.
+if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
 fi

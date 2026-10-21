@@ -122,6 +122,64 @@
     "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1}"
   },
   {
+    "name": "a stack in the merge queue is never the top: with nothing else open a new pull request opens on main (#1455)",
+    "program": "top.jq",
+    "args": { "own": "witness-surface-driver", "trunk": "main" },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1446,
+        "head": "triage-1420-retarget",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T13:00:00Z",
+        "landing": true
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "beside a landing stack the top is the longest chain not landing (#1455)",
+    "program": "top.jq",
+    "args": { "own": "witness-surface-driver", "trunk": "main" },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1449,
+        "head": "triage-1175-stacks",
+        "base": "main",
+        "created": "2026-10-21T14:10:00Z",
+        "landing": false
+      }
+    ],
+    "output": "{\"number\":1449,\"head\":\"triage-1175-stacks\",\"depth\":1}"
+  },
+  {
     "name": "a pull request alone lands alone",
     "program": "decide.jq",
     "input": {
@@ -254,6 +312,42 @@
       { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
     ],
     "output": "[]"
+  },
+  {
+    "name": "a landing read off part of its stack retargets a pull request beside it, never a queued member above it (#1455)",
+    "program": "retarget.jq",
+    "args": { "landing": [1444, 1445] },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1446,
+        "head": "triage-1420-retarget",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T13:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1448,
+        "head": "witness-surface-driver",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T14:00:00Z",
+        "landing": false
+      }
+    ],
+    "output": "[{\"number\":1448,\"base\":\"surface-1365-file-doc\"}]"
   },
   {
     "name": "a restacked head re-runs the newer of its twins, cancelled by the older, and leaves an older cancelled one (#1381)",
