@@ -32,6 +32,7 @@ use gandr_theory_levitation::NominalSerial;
 
 use self::cells::Lowered;
 use self::cells::Parsed;
+use super::Finished;
 use super::Fuel;
 use super::Lowerer;
 use super::LoweringBudget;
@@ -105,6 +106,10 @@ struct Suspended<'closure>
     origins: OriginTable,
     /// The mint sweep's tables beside the arena.
     tables: SinkTables,
+    /// The tables the closure's own module finished with, which every
+    /// document resumed after it leads with; none when finishing it alone
+    /// refuses.
+    finished: Option<Finished>,
 }
 
 /// What lowering a closure came to.
@@ -485,7 +490,7 @@ impl ClosureLowering
         let arena = state.arena.clone();
         let lowerer = state.lowerer.clone();
         lowerer
-            .finish(&arena, state.origins.clone())
+            .finish(&arena, state.origins.clone(), None)
             .ok()
             .map(|module| (module, arena))
     }
@@ -728,6 +733,10 @@ fn continue_from<'held>(
 {
     let lowered = closure.sources().len();
     let mut lowerer: Lowerer<'_, 'held> = state.lowerer.clone();
+    let resumed = state
+        .finished
+        .as_ref()
+        .map(|finished| lowerer.resumed(finished, origins));
     let mut origins = origins.clone();
     lowerer.widen(tree, unit, described);
     let mut sink = Sink::new(arena, &mut origins, state.tables.clone());
@@ -739,7 +748,7 @@ fn continue_from<'held>(
         lowerer.lower_source(SourceIndex::from(source), own, &mut sink)?;
     }
 
-    lowerer.finish(arena, origins)
+    lowerer.finish(arena, origins, resumed)
 }
 
 impl fmt::Debug for ClosureLowering
@@ -822,6 +831,11 @@ fn suspend<'closure>(
     }
     let tables = sink.into_tables();
     lowerer.plans.share();
+    let finished = lowerer
+        .clone()
+        .finish(&arena, origins.clone(), None)
+        .ok()
+        .map(Finished::of);
 
     Prefix::Suspended {
         rooted,
@@ -830,6 +844,7 @@ fn suspend<'closure>(
             arena,
             origins,
             tables,
+            finished,
         }),
     }
 }

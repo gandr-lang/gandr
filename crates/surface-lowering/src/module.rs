@@ -8513,6 +8513,22 @@ impl<'source> LoweredModule<'source>
         self.in_scope
     }
 
+    /// The binders in scope, the resolutions and the nested sites, the module
+    /// given up for them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn into_scope_tables(
+        self
+    ) -> (
+        InScope,
+        Vec<(ByteSpan, Resolution)>,
+        BTreeMap<NodeIndex, NestedSite>,
+    )
+    {
+        (self.in_scope, self.resolutions, self.nested)
+    }
+
     /// This module, carrying each written name the lowering resolved, with
     /// what it names.
     ///

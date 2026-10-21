@@ -1700,6 +1700,55 @@ impl<'source> Scope<'source>
             widest,
         }
     }
+
+    /// [`Self::in_scope`] over `prior`'s read spans followed by `read`, when
+    /// `prior` is the table a lowering of a prefix of this scope's text built
+    /// and every span of `read` follows each of `prior`'s.
+    ///
+    /// # Specification
+    /// - requires: every frame of `read` is a position of this scope; every
+    ///   span of `read` starts at or after the end of each of `prior`'s.
+    /// - ensures: one frame per frame of this scope, in order, keeping its site
+    ///   and parent; `prior`'s read spans then `read`'s, ascending by start
+    ///   then end, duplicates dropped; the widest of both.
+    /// - provides: the table of a lowering resumed after a closure's, built in
+    ///   the size of the spans read after it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the frames, one sort of `read`, one copy of
+    ///   `prior`'s spans.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document resumed after its closure keeps the table
+    ///   the whole lowering builds.
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    #[spec(
+        requires: prior.read.last().is_none_or(|&(last, _)| read.iter().all(|&(span, _)| span.start() >= last.end())),
+        captures: added = read.len(),
+        ensures: |ret| ret.frames.len() == self.frames.len()
+            && ret.read.len() <= prior.read.len().saturating_add(added),
+    )]
+    #[must_use]
+    pub(crate) fn in_scope_after(
+        &self,
+        prior: &InScope,
+        read: Vec<(ByteSpan, ScopeId)>,
+    ) -> InScope
+    {
+        let InScope {
+            frames,
+            read: own,
+            widest,
+        } = self.in_scope(read);
+        let mut all = Vec::with_capacity(prior.read.len().saturating_add(own.len()));
+        all.extend_from_slice(&prior.read);
+        all.extend(own);
+        InScope {
+            frames,
+            read: all,
+            widest: prior.widest.max(widest),
+        }
+    }
 }
 
 /// The binders in scope at each offset of a lowered text.
