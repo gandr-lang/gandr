@@ -145,13 +145,30 @@ restack() {
   git fetch --quiet origin "${heads[@]}"
 }
 
+# Re-run the runs on pull request `$1`'s head that a twin on the same commit
+# cancelled (`twins.jq`); succeeds when it re-ran one.
+rerun_twins() {
+  local sha ids id
+  sha=$(gh pr view "$1" -R "$repo" --json headRefOid --jq .headRefOid)
+  mapfile -t ids < <(gh run list -R "$repo" --commit "$sha" --event pull_request --limit 100 \
+    --json databaseId,workflowName,startedAt,conclusion | jq -c -f "$pr_stack_dir/twins.jq" | jq -r '.[]')
+  for id in "${ids[@]}"; do
+    echo "#$1: re-running run $id, cancelled by its twin on ${sha::12}" >&2
+    gh run rerun "$id" -R "$repo"
+  done
+  (( ${#ids[@]} > 0 ))
+}
+
 # Link the stack `$1` on the server and queue it as one group; a stack of one
 # is a plain landing, queued by auto-merge once its checks pass. An atomic
 # stack merge refuses a pull request whose required checks are still
 # expected, so each one's required checks are waited on first, and a red one
-# stops the landing, naming it.
+# stops the landing, naming it. A restack gives each head above the bottom
+# two runs per workflow, one cancelled by the other; a cancelled one the
+# rollup reads is re-run (`rerun_twins`), at most three times for a pull
+# request, and its checks waited on again.
 queue_stack() {
-  local stack=$1 numbers number
+  local stack=$1 numbers number reruns watched
   mapfile -t numbers < <(jq -r '.[].number' <<< "$stack")
   if (( ${#numbers[@]} == 1 )); then
     gh pr merge "${numbers[0]}" -R "$repo" --merge --auto
@@ -159,10 +176,21 @@ queue_stack() {
   fi
   stack_link "$stack"
   for number in "${numbers[@]}"; do
-    if ! gh pr checks "$number" -R "$repo" --required --watch --fail-fast --interval 30 > /dev/null; then
-      echo "#$number's required checks failed; fix it, then land the stack again" >&2
-      return 1
-    fi
+    reruns=0
+    while :; do
+      watched=0
+      gh pr checks "$number" -R "$repo" --required --watch --fail-fast --interval 30 > /dev/null || watched=$?
+      if (( reruns < 3 )) && rerun_twins "$number"; then
+        reruns=$(( reruns + 1 ))
+        sleep 30
+        continue
+      fi
+      if (( watched != 0 )); then
+        echo "#$number's required checks failed; fix it, then land the stack again" >&2
+        return 1
+      fi
+      break
+    done
   done
   gh stack merge "${numbers[-1]}" --yes --merge
 }
