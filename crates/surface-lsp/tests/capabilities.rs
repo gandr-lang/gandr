@@ -57,6 +57,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "renameProvider": {"prepareProvider": true},
                 "documentLinkProvider": {"resolveProvider": true},
                 "linkedEditingRangeProvider": true,
+                "callHierarchyProvider": true,
                 "workspace": {
                     "workspaceFolders": {"supported": true, "changeNotifications": true},
                     "fileOperations": {
