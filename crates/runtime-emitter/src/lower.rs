@@ -3210,4 +3210,26 @@ mod tests
             "nothing is counted under a reset"
         );
     }
+
+    /// Every form the lowering refuses renders apart from the others.
+    #[test]
+    fn every_refused_form_renders_apart()
+    {
+        let mut rendered: alloc::vec::Vec<alloc::string::String> = [
+            Form::ConsumerFields,
+            Form::Destructor,
+            Form::HeaderWidth,
+            Form::Oversized,
+            Form::Dangling,
+            Form::Unbound,
+            Form::Unowned,
+        ]
+        .iter()
+        .map(alloc::string::ToString::to_string)
+        .collect();
+        let count = rendered.len();
+        rendered.sort();
+        rendered.dedup();
+        assert_eq!(rendered.len(), count, "{rendered:?}");
+    }
 }

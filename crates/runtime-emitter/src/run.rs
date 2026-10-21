@@ -876,7 +876,18 @@ fn run(
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
+    use alloc::string::ToString as _;
+    use alloc::vec::Vec;
+
+    use gandr_core_sequent::HeapValueId;
+    use gandr_runtime_stencils::Status;
+
+    use super::Declined;
     use super::Policy;
+    use crate::function::Function;
+    use crate::lower::Form;
+    use crate::transfer::TransferRefusal;
 
     /// Each spelling of the variable selects its policy, and anything else
     /// the default: a misspelt `never` emits rather than silently running
@@ -897,5 +908,63 @@ mod tests
             Policy::from("Never"),
             "spellings are case-sensitive"
         );
+    }
+
+    /// Every reason a run gives no outcome renders apart from the others, a
+    /// refusal carrying a form or a value names it, and the statuses no run
+    /// exits with read as one reason.
+    #[test]
+    fn every_declined_run_renders_its_own_reason()
+    {
+        let mut function = Function::default();
+        let label = function.label();
+        let unbound = function
+            .target(label)
+            .expect_err("a label never bound has no target");
+        let reply = HeapValueId::from(7_u32);
+        let reasons = [
+            Declined::from(Form::ConsumerFields),
+            Declined::NoPatcher,
+            Declined::from(unbound),
+            Declined::Uncached,
+            Declined::Stuck,
+            Declined::Exhausted(Status::FuelExhausted),
+            Declined::Exhausted(Status::HeapExhausted),
+            Declined::Exhausted(Status::FramesExhausted),
+            Declined::Exhausted(Status::Running),
+            Declined::from(TransferRefusal::Producer),
+            Declined::Reply(reply),
+        ];
+        assert_eq!(
+            Declined::Unbound,
+            reasons[2],
+            "an unbound label is its own reason"
+        );
+        assert_eq!(
+            Declined::Transfer(TransferRefusal::Producer),
+            reasons[9],
+            "a transfer refusal is carried"
+        );
+        let mut rendered: Vec<String> = reasons.iter().map(ToString::to_string).collect();
+        let count = rendered.len();
+        rendered.sort();
+        rendered.dedup();
+        assert_eq!(rendered.len(), count, "{rendered:?}");
+        assert!(
+            reasons[0]
+                .to_string()
+                .contains(Form::ConsumerFields.to_string().as_str()),
+            "names the refused form"
+        );
+        assert!(
+            reasons[10].to_string().contains(reply.to_string().as_str()),
+            "names the reply"
+        );
+        for status in [Status::Halted, Status::Unmatched, Status::Stuck] {
+            assert_eq!(
+                Declined::Exhausted(status).to_string(),
+                reasons[8].to_string()
+            );
+        }
     }
 }

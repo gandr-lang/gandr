@@ -522,3 +522,23 @@ pub struct Position(pub usize);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Unbound(pub Label);
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use super::Stub;
+
+    /// Every stub runs a stencil of its own: two stubs sharing one would
+    /// resume each other's frames.
+    #[test]
+    fn every_stub_runs_its_own_stencil()
+    {
+        let mut stencils: Vec<_> = Stub::ALL.iter().copied().map(Stub::stencil).collect();
+        let count = stencils.len();
+        stencils.sort();
+        stencils.dedup();
+        assert_eq!(stencils.len(), count, "{stencils:?}");
+    }
+}
