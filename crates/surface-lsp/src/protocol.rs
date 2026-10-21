@@ -616,6 +616,24 @@ impl InitializeParams
         )
     }
 
+    /// Whether this client asks for the declarations an inlay hint's label
+    /// names by a second request: when the properties it declares under
+    /// `textDocument.inlayHint.resolveSupport` name `label.location`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn resolves_hint_locations(&self) -> ResolvesHintLocations
+    {
+        self.capabilities
+            .as_ref()
+            .and_then(|capabilities| capabilities.text_document.as_ref())
+            .and_then(|text_document| text_document.inlay_hint)
+            .and_then(|hints| hints.resolve_support)
+            .unwrap_or_default()
+    }
+
     /// Whether this client watches files for the server once asked: when it
     /// declares `workspace.didChangeWatchedFiles.dynamicRegistration`.
     ///
@@ -983,6 +1001,41 @@ pub struct TakesSnippets(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FoldsCollapsed(pub bool);
+
+/// Whether a client asks for the declarations an inlay hint's label names by
+/// a second request: when the properties it resolves name `label.location`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(from = "HintResolveSupport")]
+pub struct ResolvesHintLocations(pub bool);
+
+/// `textDocument.inlayHint.resolveSupport`, as a client sends it.
+#[derive(Deserialize)]
+#[repr(transparent)]
+struct HintResolveSupport
+{
+    /// The properties of a hint the client resolves by a second request.
+    #[serde(default)]
+    properties: Vec<String>,
+}
+
+impl From<HintResolveSupport> for ResolvesHintLocations
+{
+    /// Whether the properties name `label.location`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(support: HintResolveSupport) -> Self
+    {
+        Self(
+            support
+                .properties
+                .iter()
+                .any(|property| property == "label.location"),
+        )
+    }
+}
 
 /// Whether a client watches files for the server once asked to.
 #[repr(transparent)]
@@ -1453,6 +1506,21 @@ pub struct TextDocumentCapabilities
     /// `textDocument.foldingRange`.
     #[serde(default)]
     pub folding_range: Option<FoldingCapabilities>,
+    /// `textDocument.inlayHint`.
+    #[serde(default)]
+    pub inlay_hint: Option<InlayHintCapabilities>,
+}
+
+/// What the client takes in answer to an inlay-hint request.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct InlayHintCapabilities
+{
+    /// `textDocument.inlayHint.resolveSupport`: whether the properties it
+    /// resolves by a second request include the label's locations.
+    #[serde(default)]
+    pub resolve_support: Option<ResolvesHintLocations>,
 }
 
 /// What the client takes in answer to a folding-range request.
@@ -2047,15 +2115,17 @@ impl InitializeResult
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, each item
     ///   resolved by a second request, and inline completion; document symbols,
-    ///   folding ranges and selection ranges; hover; signature help, asked for
-    ///   as a call's `(` or a `,` is typed and again at a `)`; definition and
-    ///   type definition; formatting over the whole document and over a range;
-    ///   code lenses, code actions, document links and workspace symbols, each
-    ///   whole in its answer and resolved by a second request as it came;
-    ///   linked editing; workspace folders, with a notification as they change;
-    ///   the creation, deletion and renaming of gandr sources and folders on
-    ///   disk, each heard of once done, and a rename asked about before it is
-    ///   done; the server named `gandr` at this crate's version.
+    ///   folding ranges and selection ranges; inlay hints, each label's
+    ///   locations resolved by a second request when the client asks; hover;
+    ///   signature help, asked for as a call's `(` or a `,` is typed and again
+    ///   at a `)`; definition and type definition; formatting over the whole
+    ///   document and over a range; code lenses, code actions, document links
+    ///   and workspace symbols, each whole in its answer and resolved by a
+    ///   second request as it came; linked editing; workspace folders, with a
+    ///   notification as they change; the creation, deletion and renaming of
+    ///   gandr sources and folders on disk, each heard of once done, and a
+    ///   rename asked about before it is done; the server named `gandr` at this
+    ///   crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -2076,7 +2146,7 @@ impl InitializeResult
             && ret.capabilities.inline_completion_provider.0
             && ret.capabilities.document_symbol_provider.0
             && ret.capabilities.folding_range_provider.0
-            && ret.capabilities.inlay_hint_provider.0
+            && ret.capabilities.inlay_hint_provider.resolve_provider
             && ret.capabilities.selection_range_provider.0
             && ret.capabilities.hover_provider.0
             && matches!(ret.capabilities.signature_help_provider.trigger_characters,
@@ -2135,7 +2205,9 @@ impl InitializeResult
                 inline_completion_provider: Provider::ANSWERED,
                 document_symbol_provider: Provider::ANSWERED,
                 folding_range_provider: Provider::ANSWERED,
-                inlay_hint_provider: Provider::ANSWERED,
+                inlay_hint_provider: ResolveOptions {
+                    resolve_provider: true,
+                },
                 selection_range_provider: Provider::ANSWERED,
                 hover_provider: Provider::ANSWERED,
                 signature_help_provider: SignatureHelpOptions {
@@ -2216,8 +2288,9 @@ pub struct ServerCapabilities
     pub document_symbol_provider: Provider,
     /// Folding ranges are answered.
     pub folding_range_provider: Provider,
-    /// Inlay hints are answered.
-    pub inlay_hint_provider: Provider,
+    /// Inlay hints are answered, the declarations a label names located now
+    /// or by a second request.
+    pub inlay_hint_provider: ResolveOptions,
     /// Selection ranges are answered.
     pub selection_range_provider: Provider,
     /// Hovers are answered.
@@ -2684,6 +2757,9 @@ pub enum Answer
     /// What an inlay-hint request answers for an open document: the hints
     /// over the range asked about, in document order.
     Hints(Vec<InlayHint>),
+    /// What `inlayHint/resolve` answers: the hint with every name its label
+    /// writes located.
+    Hint(InlayHint),
     /// What `gandr/copiedSources` answers for an open document: the sources
     /// declaring what the copied ranges name, ascending.
     Sources(Vec<DocumentUri>),
@@ -3242,10 +3318,77 @@ pub struct InlayHint
 {
     /// Where the label is drawn: before the character at this position.
     pub position: Position,
-    /// The text drawn.
-    pub label: String,
+    /// The text drawn, whole or in parts.
+    pub label: HintLabel,
     /// What the label says.
     pub kind: InlayHintKind,
+    /// The document a resolution reads the label's locations from; none for
+    /// a label naming no declaration, or one listed with its locations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<HintData>,
+}
+
+/// What an inlay hint draws: its text whole, or in parts each a declaration
+/// name may link from.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum HintLabel
+{
+    /// The text, naming no declaration.
+    Text(String),
+    /// The text in parts, in the order drawn.
+    Parts(Vec<HintLabelPart>),
+}
+
+/// One part of an inlay hint's label: text, and the declaration it names.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct HintLabelPart
+{
+    /// The text of the part.
+    pub value: String,
+    /// Where the name the part writes is declared; none for text between
+    /// names, and for a name until the hint is resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<Location>,
+}
+
+/// The document whose hint a resolution reads again.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct HintData
+{
+    /// The document the hint is drawn in.
+    pub uri: DocumentUri,
+}
+
+/// An inlay hint a client asks to resolve: where it is drawn, and the
+/// document when its label names a declaration.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct HintResolution
+{
+    /// Where the label is drawn.
+    pub position: Position,
+    /// The document; none for a hint listed whole.
+    #[serde(default)]
+    pub data: Option<HintData>,
+}
+
+impl fmt::Display for HintLabel
+{
+    /// The text drawn: the whole text, or the parts' values in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Text(ref text) => f.write_str(text),
+            Self::Parts(ref parts) => parts.iter().try_for_each(|part| f.write_str(&part.value)),
+        }
+    }
 }
 
 /// `InlayHintKind`, as the protocol numbers it.

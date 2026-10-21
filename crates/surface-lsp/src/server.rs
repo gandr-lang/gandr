@@ -109,6 +109,7 @@ use crate::hover::Style;
 use crate::hover::hover;
 use crate::hover::hovering;
 use crate::hover::hovering_laid;
+use crate::inlay::hint_at;
 use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::markup::Markup;
@@ -158,10 +159,12 @@ use crate::protocol::FileRename;
 use crate::protocol::FilesParams;
 use crate::protocol::FoldersChangedParams;
 use crate::protocol::FoldsCollapsed;
+use crate::protocol::HintResolution;
 use crate::protocol::Hover;
 use crate::protocol::ImportFilesParams;
 use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
+use crate::protocol::InlayHint;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
 use crate::protocol::InlineParams;
@@ -189,6 +192,7 @@ use crate::protocol::Refreshing;
 use crate::protocol::RegistrationParams;
 use crate::protocol::RenameFilesParams;
 use crate::protocol::RenameParams;
+use crate::protocol::ResolvesHintLocations;
 use crate::protocol::SHOW_REFERENCES;
 use crate::protocol::Sections;
 use crate::protocol::SelectionRangeParams;
@@ -1527,6 +1531,7 @@ impl Workspace
             snipping: TakesSnippets(true),
             inline_trigger: TriggerSetting::Automatic,
             collapsing: FoldsCollapsed(true),
+            deferring: ResolvesHintLocations(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -1767,6 +1772,9 @@ pub struct Server
     inline_trigger: TriggerSetting,
     /// Whether its client shows the text a fold names, read at `initialize`.
     collapsing: FoldsCollapsed,
+    /// Whether its client asks for an inlay hint label's locations by a
+    /// second request, read at `initialize`.
+    deferring: ResolvesHintLocations,
     /// Whether its client watches files for it once asked, read at
     /// `initialize`.
     watching: WatchesFiles,
@@ -1893,6 +1901,7 @@ impl Server
             snipping: TakesSnippets(false),
             inline_trigger: TriggerSetting::Invoked,
             collapsing: FoldsCollapsed(false),
+            deferring: ResolvesHintLocations(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
             reported: 0_u64,
@@ -3215,6 +3224,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "inlayHint/resolve") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Unchanged(_) | Answer::Hint(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/completion") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Completions(_), .. } => true,
@@ -3399,6 +3414,7 @@ impl Server
                 self.detailing = initial_detailing(&params);
                 self.snipping = initial_snipping(&params);
                 self.collapsing = initial_collapsing(&params);
+                self.deferring = initial_deferring(&params);
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
@@ -3478,11 +3494,24 @@ impl Server
                             &params.text_document.uri,
                             self.peer,
                             params.range,
-                            self.style.printed(),
+                            (self.style.printed(), self.deferring),
                         ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
+            },
+            (Phase::Running, "inlayHint/resolve") => match HintResolution::deserialize(&params) {
+                Ok(HintResolution {
+                    position,
+                    data: Some(data),
+                }) => success(
+                    id,
+                    workspace
+                        .resolve_hint(&data.uri, self.peer, position, self.style.printed())
+                        .map_or(Answer::Unchanged(params), Answer::Hint),
+                ),
+                Ok(HintResolution { data: None, .. }) => success(id, Answer::Unchanged(params)),
+                Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
             },
             (Phase::Running, "textDocument/completion") => {
                 match serde_json::from_value::<PositionParams>(params) {
@@ -4661,7 +4690,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn tokens(
         &self,
@@ -4708,7 +4737,8 @@ impl Workspace
     }
 
     /// The inlay hints over `range` of the copy of the document at `uri` that
-    /// `peer` is answered from, each type spelled in `style`.
+    /// `peer` is answered from, each type spelled in `style`, each label's
+    /// locations left to a resolution when `deferring` holds.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any range are admitted.
@@ -4725,6 +4755,7 @@ impl Workspace
     /// - hypothesis: L3 — a held document's binders over a range, an inverted
     ///   range and an unknown document distinguish the hints, none and null.
     /// - witness: `server::tests::an_inlay_hint_request_answers_the_binders_in_its_range`
+    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Hints(ref hints) => self.documents.contains_key(uri)
@@ -4733,14 +4764,14 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
-            | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
+            | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inlay_hints(
         &self,
         uri: &DocumentUri,
         peer: Peer,
         range: Range,
-        style: gandr_surface_pretty::Style,
+        (style, deferring): (gandr_surface_pretty::Style, ResolvesHintLocations),
     ) -> Answer
     {
         let Maybe::Present(document) = self.view(uri, peer)
@@ -4760,12 +4791,60 @@ impl Workspace
                         .hovering(&uri.path(), session, &self.shadowing(peer)),
                     document.text.reading().tiles(),
                 ),
-                &index,
+                (uri, &index),
                 window,
-                style,
+                (style, deferring),
             ),
             (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
         })
+    }
+
+    /// The inlay hint drawn at `position` of the copy of the document at
+    /// `uri` that `peer` is answered from, its type spelled in `style` and
+    /// every name its label writes located.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: none for an unknown document or one whose session did not
+    ///   build; otherwise what [`hint_at`] answers at `position`, off the
+    ///   copy's tree and what it keeps for its hovers.
+    /// - provides: the answer to `inlayHint/resolve`; none answers the hint as
+    ///   it came.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a deferred hint resolves to its label with each
+    ///   family located, in the document and in a sibling, and a hint whose
+    ///   document closed resolves to none.
+    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|hint| hint.position == position
+        && self.documents.contains_key(uri)))]
+    fn resolve_hint(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        position: Position,
+        style: gandr_surface_pretty::Style,
+    ) -> Option<InlayHint>
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return None;
+        };
+        let session = document.session.as_ref().ok()?;
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        hint_at(
+            (
+                document
+                    .text
+                    .hovering(&uri.path(), session, &self.shadowing(peer)),
+                document.text.reading().tiles(),
+            ),
+            (uri, &index),
+            position,
+            style,
+        )
     }
 
     /// The sources declaring what `ranges` of the copy of the document at
@@ -4847,7 +4926,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) => false,
+            | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inline(
         &self,
@@ -6474,6 +6553,19 @@ fn initial_collapsing(params: &Value) -> FoldsCollapsed
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` asks for an inlay hint
+/// label's locations by a second request; not when the parameters do not
+/// read.
+///
+/// # Specification
+/// trivial.
+fn initial_deferring(params: &Value) -> ResolvesHintLocations
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.resolves_hint_locations())
+        .unwrap_or_default()
+}
+
 /// Whether the client `initialize` names in `params` watches files for the
 /// server once asked; not when the parameters do not read.
 ///
@@ -7241,7 +7333,7 @@ mod tests
                         "inlineCompletionProvider":true,
                         "documentSymbolProvider":true,
                         "foldingRangeProvider":true,
-                        "inlayHintProvider":true,
+                        "inlayHintProvider":{"resolveProvider":true},
                         "selectionRangeProvider":true,
                         "hoverProvider":true,
                         "signatureHelpProvider":{"triggerCharacters":["(",","],"retriggerCharacters":[")"]},
@@ -10392,6 +10484,89 @@ mod tests
             ask(&mut server, "file:///tmp/unknown.gandr", (0, 2)),
             wire(Json(r#"[{"jsonrpc":"2.0","id":2,"result":null}]"#)),
             "an unknown document answers null"
+        );
+    }
+
+    /// #764: the hint of `r`, bound by `run r <- minus(p, d)` in a corpus
+    /// importer, names `Nat`, which the importer's base declares. A client
+    /// that resolves no hint gets the name located at once; one that resolves
+    /// a label's locations gets it unlocated with the document to resolve it
+    /// from, and its resolution is the located hint.
+    #[test]
+    fn an_inlay_hint_links_the_families_its_type_names_764()
+    {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/data")
+            .canonicalize()
+            .expect("the data subject is checked out");
+        let uri = |file: &str| format!("file://{}", corpus.join(file).display());
+        let text =
+            std::fs::read_to_string(corpus.join("following.gandr")).expect("the source is read");
+        let position = at(Line::from(31_u32), Character::from(22_u32));
+        let opened = |capabilities: Value| {
+            let mut server = Connected::default();
+            let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                "params": {"capabilities": capabilities}});
+            let _answered = send(&mut server, Json(&initialize.to_string()));
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri("following.gandr"), "languageId": "gandr", "version": 1_i32,
+                    "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+            server
+        };
+        let ask = |server: &mut Connected, method: &str, params: Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 2_i32, "method": method, "params": params});
+            send(server, Json(&request.to_string()))
+                .pointer("/0/result")
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let hint_of_r = |server: &mut Connected| {
+            let all = ask(
+                server,
+                "textDocument/inlayHint",
+                serde_json::json!({"textDocument": {"uri": uri("following.gandr")},
+                    "range": {"start": {"line": 0_u32, "character": 0_u32},
+                        "end": {"line": 100_u32, "character": 0_u32}}}),
+            );
+            all.as_array()
+                .and_then(|hints| {
+                    hints
+                        .iter()
+                        .find(|hint| hint["position"] == serde_json::json!(position))
+                })
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        let nat = serde_json::json!({"uri": uri("data-base.gandr"), "range": {
+            "start": {"line": 13_u32, "character": 5_u32}, "end": {"line": 13_u32, "character": 8_u32}}});
+        let located = serde_json::json!({"position": position, "kind": 1_i32,
+            "label": [{"value": ": "}, {"value": "Nat", "location": nat}]});
+        assert_eq!(
+            hint_of_r(&mut opened(serde_json::json!({}))),
+            located,
+            "a client resolving nothing gets `Nat` located at its declaration in the base"
+        );
+        let mut deferring = opened(serde_json::json!({"textDocument": {"inlayHint": {
+            "resolveSupport": {"properties": ["tooltip", "label.location"]}}}}));
+        let deferred = hint_of_r(&mut deferring);
+        assert_eq!(
+            deferred,
+            serde_json::json!({"position": position, "kind": 1_i32,
+                "label": [{"value": ": "}, {"value": "Nat"}],
+                "data": {"uri": uri("following.gandr")}}),
+            "a client resolving locations gets the parts unlocated, with the document"
+        );
+        assert_eq!(
+            ask(&mut deferring, "inlayHint/resolve", deferred),
+            located,
+            "the resolution locates `Nat`"
+        );
+        let whole = serde_json::json!({"position": position, "kind": 1_i32, "label": ": Nat"});
+        assert_eq!(
+            ask(&mut deferring, "inlayHint/resolve", whole.clone()),
+            whole,
+            "a hint without data resolves as it came"
         );
     }
 
