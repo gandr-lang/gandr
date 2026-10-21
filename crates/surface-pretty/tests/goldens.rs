@@ -2323,6 +2323,37 @@ fn a_type_no_expression_reads_is_quoted_839()
     }
 }
 
+/// #1459: a labelled record type quoted where an expression stands is written
+/// `type(#{…})` in both forms, alone and as an argument: `#{a : T}` where an
+/// expression is read is not the record type's code.
+#[test]
+fn a_quoted_record_type_is_quoted_1459()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let record = core.value_type_record(BTreeMap::from([
+        (FieldLabel::from(String::from("start")), unit),
+        (FieldLabel::from(String::from("step")), integer),
+    ]));
+    let record = core.value_quote(record);
+    let argument = core.value_stay(record);
+    let source = CoreSource::new(&core, &[]);
+    for (root, spelling) in [
+        (record, "type(#{start : Unit, step : Integer})"),
+        (argument, "stay(type(#{start : Unit, step : Integer}))"),
+    ] {
+        for form in [Form::Sugared, Form::Explicit] {
+            let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #1127: an expression reads a sugared chain's `*`, `+` and `&` as
 /// operators over the components, so a quoted product, sum or lazy product
 /// of two or more components is written `type(T)` where an expression
