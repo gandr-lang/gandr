@@ -318,7 +318,8 @@ pub fn ghosts(
 /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
 #[spec(ensures: |ret| ret.len() <= proposals.len()
     && ret.is_sorted_by(|earlier, later| earlier.range < later.range)
-    && ret.iter().all(|lens| lens.command.name.is_empty() || (applies.0 && lens.command.arguments.len() == 3)))]
+    && ret.iter().all(|lens| lens.data.is_none() && lens.command.as_ref().is_some_and(|command|
+        command.name.is_empty() || (applies.0 && command.arguments.len() == 3))))]
 #[must_use]
 pub fn lenses(
     uri: &DocumentUri,
@@ -345,7 +346,7 @@ pub fn lenses(
             };
             CodeLens {
                 range,
-                command: Command {
+                command: Some(Command {
                     title: if fills.len() == 1 {
                         String::from("1 checked fill")
                     }
@@ -354,7 +355,8 @@ pub fn lenses(
                     },
                     name: command,
                     arguments,
-                },
+                }),
+                data: None,
             }
         })
         .collect()

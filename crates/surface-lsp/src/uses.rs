@@ -20,7 +20,9 @@
 //! under the workspace's roots that imports the name's source and no editor
 //! holds, read from disk: a name is the same across documents when its
 //! source's canonical path and its span agree, so an importer finds a
-//! sibling's name at the index its own closure gave that sibling.
+//! sibling's name at the index its own closure gave that sibling. A references
+//! lens stands over each name the document declares and counts what a
+//! reference request at it answers, once a client resolves it.
 //!
 //! [`TypeTable::referent`]: gandr_surface_dispatcher::TypeTable::referent
 //! [`TypeTable::named_at`]: gandr_surface_dispatcher::TypeTable::named_at
@@ -163,6 +165,40 @@ pub fn highlights(
             )
             .collect(),
     )
+}
+
+/// The ranges of the names the document whose copy of `text` keeps
+/// `hovering` declares: each declaration's and each constructor's name it
+/// writes, ascending.
+///
+/// # Specification
+/// - requires: `hovering` holds the type table of `text`.
+/// - ensures: one range per name the table offers whose source is the
+///   document's own, in the order the table offers them, which is ascending;
+///   none for a name an import writes or one whose span has no range.
+/// - provides: where a references lens stands.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration and a constructor the document writes stand
+///   a lens each, and a sibling's names it imports stand none.
+/// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+#[spec(ensures: |ret| ret.is_sorted() && ret.len() <= hovering.table().declared_names().len())]
+#[must_use]
+pub fn declared(
+    text: SourceText<'_>,
+    hovering: &Hovering,
+) -> Vec<Range>
+{
+    let table = hovering.table();
+    let index = LineIndex::new(<&str>::from(text).into());
+    table
+        .declared_names()
+        .iter()
+        .filter(|&&(referent, _)| referent.source() == table.own_source())
+        .filter_map(|&(referent, _)| ranged(&index, referent.named()))
+        .collect()
 }
 
 /// What a linked-editing request at `position` of `text`, whose copy keeps
