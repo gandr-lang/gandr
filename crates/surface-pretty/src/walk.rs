@@ -1268,7 +1268,10 @@ where
             payload,
             ..
         } => Vec::from([value(capability), value(payload)]),
-        Former::Resume(stack, computation) => Vec::from([value(stack), continues(computation)]),
+        Former::Resume(stack, computation) => Vec::from([
+            value(stack),
+            resumed_reply(source, stack, computation).map_or_else(|| continues(computation), value),
+        ]),
         Former::Reset(body) | Former::Migrate { body, .. } => Vec::from([ends(body, Binds::NONE)]),
         Former::Leta {
             value: opened,
@@ -2124,6 +2127,43 @@ where
         head = inner;
     }
     matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
+}
+
+/// The reply a resumption `resume(k, c)` passes, when it is the call of a
+/// clause's continuation the surface writes, `k(v)`: the lowering reads such
+/// a call as the resumption of `pure v`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `v` exactly when `stack` reads as a variable and `computation` as
+///   `return v`; absent otherwise.
+/// - provides: the resumptions [`children`] and [`Walk::form`] spell as a call
+///   of the continuation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a continuation resumed with a returned value, and one
+///   resumed with a computation that is no return.
+/// - witness: `tests::goldens::a_continuation_is_resumed_by_its_call_941`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(computation), Former::Return(_)))]
+fn resumed_reply<S>(
+    source: &S,
+    stack: S::Node,
+    computation: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(source.read(stack), Former::Variable { .. }) {
+        return None;
+    }
+    if let Former::Return(reply) = source.read(computation) {
+        Some(reply)
+    }
+    else {
+        None
+    }
 }
 
 /// A derived path operation a transport is the derivation of
@@ -6183,10 +6223,12 @@ impl Walk<'_, '_>
     ///   c } with { pure(x) => r, oper op(p, k) => b }`, the scope's head
     ///   `handle c : I`; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
     ///   `offer(e) { l => c }`, `close(e)` and `fork (a : S) { t } as a ; u`,
-    ///   each endpoint named by its binder. The forms the grammar does not
-    ///   write — native transport, a fixpoint `rec f { c }`, a fold, `resume(k,
-    ///   c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
-    ///   observation `c.0` — make the presentation approximate.
+    ///   each endpoint named by its binder; a resumption of a continuation
+    ///   binder with a returned value as the continuation's call, `k(v)`. The
+    ///   forms the grammar does not write — native transport, a fixpoint `rec f
+    ///   { c }`, a fold, any other resumption `resume(k, c)`, `reset { c }`,
+    ///   `shift k { c }`, a lazy product `&{c, …}` and its observation `c.0` —
+    ///   make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -6440,10 +6482,16 @@ impl Walk<'_, '_>
                 let _ = parts.text("transport").arguments(Arity(2_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
-            Former::Resume(..) => {
-                self.note(Unspelled::Notation(Notation::Resume));
-                let _ = parts.text("resume").arguments(Arity(2_usize));
-                writes(Production("resume_expression"), Binding::Atom)
+            Former::Resume(stack, computation) => {
+                if resumed_reply(source, stack, computation).is_some() {
+                    let _ = parts.piece(Binding::Atom).arguments(Arity(1_usize));
+                    writes(Production("call_expression"), Binding::Atom)
+                }
+                else {
+                    self.note(Unspelled::Notation(Notation::Resume));
+                    let _ = parts.text("resume").arguments(Arity(2_usize));
+                    writes(Production("resume_expression"), Binding::Atom)
+                }
             },
             Former::PathTransport { .. } | Former::Ride { .. } => {
                 let lead = if matches!(*former, Former::Ride { .. }) {

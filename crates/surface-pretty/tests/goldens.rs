@@ -4293,3 +4293,64 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
         faithful(Written("hold a = unit ; run b : Unit at a <- pure a ; b"))
     );
 }
+
+/// An operation clause resuming its continuation with a value writes the
+/// continuation's call, `k(v)`, which the lowering reads as the resumption
+/// of `pure v`; a resumption with a computation that is no return keeps the
+/// printer's notation and makes the presentation approximate (#941).
+#[test]
+fn a_continuation_is_resumed_by_its_call_941()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "exit".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let scoped = |core: &mut CoreArena, resumed: gandr_core_term::ComputationId| {
+        let nothing = core.value_unit();
+        let subject = core.computation_return(nothing);
+        let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let on_return = core.computation_return(answer);
+        // Under the clause: the continuation, then the payload.
+        let continuation = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let body = core.computation_resume(continuation, resumed);
+        core.computation_scope(
+            signature.clone(),
+            subject,
+            on_return,
+            Arc::from([EffectClause {
+                operation: "exit".into(),
+                body,
+            }]),
+        )
+    };
+    let nothing = core.value_unit();
+    let replied = core.computation_return(nothing);
+    let called = scoped(&mut core, replied);
+    let payload = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let forced = core.computation_force(payload);
+    let noted = scoped(&mut core, forced);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(called))),
+        faithful(Written(
+            "handle a : Proc { unit } with { pure(a) => a, oper exit(a, b) => b(unit) }"
+        )),
+        "a resumption with a returned value is the continuation's call"
+    );
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(noted))),
+        approximate(Written(
+            "handle a : Proc { unit } with { pure(a) => a, oper exit(a, b) => resume(b, force a) }"
+        )),
+        "a resumption with any other computation keeps the notation"
+    );
+}
