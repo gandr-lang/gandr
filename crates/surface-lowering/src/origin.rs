@@ -228,6 +228,10 @@ pub enum Insertion
     /// writes `A ≃ B`, never the record's fields, the terms its round trips
     /// read or the binders it opens.
     Relation,
+    /// A node of the words a data declaration's loops present, every one
+    /// located at the declaration: the source writes the loops and their
+    /// sides, never the words type, its point, the path type or a letter.
+    Words,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
