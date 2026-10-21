@@ -4,8 +4,8 @@
 // transport alike are not one path. `idtoequiv` after `ua` is the record once
 // its inverses are determined by its map, which needs function extensionality
 // from a homotopy at any two functions; `funext` decides closed first-order
-// functions only, and `ua` gives the rest up to reading a call's returned
-// result as the call (`funext-from-ua.gandr`, #1481). The same refusal at a
+// functions only, and `ua` gives the rest
+// (`../../model/identity/funext-from-ua.gandr`). The same refusal at a
 // stratum code waits on its type printing back (#1102).
 
 // Univalence over the user universe: `idtoequiv`.

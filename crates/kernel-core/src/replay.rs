@@ -1687,6 +1687,20 @@ struct Attempt
     progress: Progress,
 }
 
+/// A plain reading [`Replay::whnf`] suspends while the computation of a
+/// returned endpoint it met is read as an endpoint.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Suspended
+{
+    /// What met the endpoint: an elimination over it, or a fixpoint applied to
+    /// it.
+    elimination: ComputationId,
+    /// The endpoint's computation.
+    returned: ComputationId,
+    /// The frames outside `elimination`, innermost last.
+    frames: Vec<Frame>,
+}
+
 impl Goal
 {
     /// A fresh goal over `premise`, with nothing frozen.
@@ -5582,16 +5596,18 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   structural-descent evidence applied to a constructor, an elimination
     ///   met by a returned endpoint — a fixpoint applied to one among them —
     ///   which binds the endpoint's computation and eliminates what it returns,
-    ///   and the element-identity transport and related application steps of
-    ///   [`crate::element_identity`], and under [`Reduction::Endpoint`] a bind
-    ///   over a call stuck at a variable or an opaque head read through: the
-    ///   innermost such bind whose continuation, run with the call as a
-    ///   returned endpoint for its value, returns or stops at a call a
-    ///   definition heads, which then stands as the reading — a continuation
-    ///   stuck at such a bind of its own read the same way first, a bind whose
-    ///   continuation eliminates its own variable at its head passed over, and
-    ///   the next bind out tried over both when it does neither — until none
-    ///   fires at its head, and the original id when none fired at all.
+    ///   that computation read first under [`Reduction::Endpoint`] when the
+    ///   reading is plain, and the element-identity transport and related
+    ///   application steps of [`crate::element_identity`], and under
+    ///   [`Reduction::Endpoint`] a bind over a call stuck at a variable or an
+    ///   opaque head read through: the innermost such bind whose continuation,
+    ///   run with the call as a returned endpoint for its value, returns or
+    ///   stops at a call a definition heads, which then stands as the reading —
+    ///   a continuation stuck at such a bind of its own read the same way
+    ///   first, a bind whose continuation eliminates its own variable at its
+    ///   head passed over, and the next bind out tried over both when it does
+    ///   neither — until none fires at its head, and the original id when none
+    ///   fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -5609,11 +5625,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   the `'reading` loop, which re-enters it to run a bind's continuation
     ///   and after each reading; the `loop` choosing the next bind, which pops
     ///   one attempt per failed turn, passes one bind frame per bind passed
-    ///   over, and ends at a push or at the last pop; and the `while let` loop
-    ///   rebuilding the head path.
+    ///   over, and ends at a push or at the last pop; the `'endpoints` loop,
+    ///   which resumes a plain reading once its met endpoint is read, and an
+    ///   endpoint reading suspends none; and the `while let` loops rebuilding
+    ///   the head path.
     /// - measure: the budget left, which every inner iteration charges and
     ///   every `'reading` iteration enters; then the attempts held, finite
-    ///   because each was pushed by a charged iteration; then the frames left.
+    ///   because each was pushed by a charged iteration; then the frames left;
+    ///   then the one suspended reading.
     ///
     /// # Adequacy
     /// - hypothesis: L3: beta, force, bind, and injection reductions settle
@@ -5634,6 +5653,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
     /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
     /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
+    /// - witness: `replay::tests::an_eliminated_endpoint_reads_a_bind_through_its_stuck_call`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -5664,588 +5684,644 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         // continuation stuck at a bind of its own is read the same way, one
         // attempt deeper.
         let mut attempts: Vec<Attempt> = Vec::new();
-        'reading: loop {
-            loop {
-                self.charge()?;
-                // An elimination meeting a returned endpoint runs the endpoint's
-                // computation and eliminates what it returns: `E[c] ⇝ c to x. E[x]`.
-                if let Some(
-                    &(Computation::DataCase {
-                        scrutinee: inspected,
-                        ..
+        // A plain reading waiting while the computation of a returned endpoint
+        // it met is read as an endpoint: that computation is pure, so a bind
+        // over a stuck call in it reads through, as the producer's evaluator
+        // reads the value the endpoint stands for. An endpoint reading never
+        // suspends, so one is held at most.
+        let mut reduction = reduction;
+        let mut suspended: Option<Suspended> = None;
+        'endpoints: loop {
+            'reading: loop {
+                loop {
+                    self.charge()?;
+                    // An elimination meeting a returned endpoint runs the endpoint's
+                    // computation and eliminates what it returns: `E[c] ⇝ c to x. E[x]`.
+                    if let Some(
+                        &(Computation::DataCase {
+                            scrutinee: inspected,
+                            ..
+                        }
+                        | Computation::Case {
+                            scrutinee: inspected,
+                            ..
+                        }
+                        | Computation::SigmaSplit {
+                            scrutinee: inspected,
+                            ..
+                        }
+                        | Computation::ListFold {
+                            list: inspected, ..
+                        }
+                        | Computation::ListCase {
+                            list: inspected, ..
+                        }
+                        | Computation::RecordProjection(inspected, _)
+                        | Computation::TupleProjection(inspected, _)
+                        | Computation::Force(inspected)),
+                    ) = self.arena.computation(focus)
+                        && let Some(&Value::Returned(returned)) = self.arena.value(inspected)
+                    {
+                        if reduction == Reduction::Plain {
+                            suspended = Some(Suspended {
+                                elimination: focus,
+                                returned,
+                                frames: core::mem::take(&mut frames),
+                            });
+                            reduction = Reduction::Endpoint;
+                            focus = returned;
+                            progress = Progress::Unchanged;
+                            continue;
+                        }
+                        focus = self.bind_returned(focus, returned)?;
+                        progress = Progress::Reduced;
+                        continue;
                     }
-                    | Computation::Case {
-                        scrutinee: inspected,
-                        ..
-                    }
-                    | Computation::SigmaSplit {
-                        scrutinee: inspected,
-                        ..
-                    }
-                    | Computation::ListFold {
-                        list: inspected, ..
-                    }
-                    | Computation::ListCase {
-                        list: inspected, ..
-                    }
-                    | Computation::RecordProjection(inspected, _)
-                    | Computation::TupleProjection(inspected, _)
-                    | Computation::Force(inspected)),
-                ) = self.arena.computation(focus)
-                    && let Some(&Value::Returned(returned)) = self.arena.value(inspected)
-                {
-                    focus = self.bind_returned(focus, returned)?;
-                    progress = Progress::Reduced;
-                    continue;
-                }
-                match self.arena.computation(focus) {
-                    Some(&Computation::DataCase {
-                        scrutinee,
-                        ref branches,
-                        ..
-                    }) => match self.arena.value(scrutinee) {
-                        Some(&Value::Constructor {
-                            tag, ref fields, ..
-                        }) => {
-                            let branch = *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
-                            let field_count = fields.len();
-                            focus = branch;
-                            for position in 0 .. field_count {
-                                self.charge()?;
-                                let Some(matched_native_node) = self.arena.value(scrutinee)
-                                else {
-                                    return Err(unreadable());
-                                };
-                                let Value::Constructor { ref fields, .. } = *matched_native_node
-                                else {
-                                    return Err(unreadable());
-                                };
-                                let field = *fields.get(position).ok_or_else(unreadable)?;
-                                focus = self.arena.computation_application(focus, field);
-                            }
-                            progress = Progress::Reduced;
-                        },
-                        Some(_) => break,
-                        None => return Err(unreadable()),
-                    },
-                    // A dependent split of a pair enters its body with the two
-                    // components for its two binders, the outer binder first.
-                    Some(&Computation::SigmaSplit {
-                        scrutinee, body, ..
-                    }) => match self.arena.value(scrutinee).map(Value::components) {
-                        Some(Some(&[first, second])) => {
-                            let opened = crate::rewrite::substitute_fold_head(
-                                self.arena,
-                                &mut self.table,
-                                &mut self.memo,
-                                body,
-                                first,
-                            );
-                            focus = self.instantiate(opened, second);
-                            progress = Progress::Reduced;
-                        },
-                        Some(None) => break,
-                        Some(Some(_)) | None => return Err(unreadable()),
-                    },
-                    Some(&Computation::RecordProjection(record, ref label)) => {
-                        match self.arena.value(record) {
-                            Some(&Value::Record(ref fields)) => {
-                                let value = *fields.get(label).ok_or_else(unreadable)?;
-                                focus = self.arena.computation_return(value);
+                    match self.arena.computation(focus) {
+                        Some(&Computation::DataCase {
+                            scrutinee,
+                            ref branches,
+                            ..
+                        }) => match self.arena.value(scrutinee) {
+                            Some(&Value::Constructor {
+                                tag, ref fields, ..
+                            }) => {
+                                let branch =
+                                    *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
+                                let field_count = fields.len();
+                                focus = branch;
+                                for position in 0 .. field_count {
+                                    self.charge()?;
+                                    let Some(matched_native_node) = self.arena.value(scrutinee)
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    let Value::Constructor { ref fields, .. } =
+                                        *matched_native_node
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    let field = *fields.get(position).ok_or_else(unreadable)?;
+                                    focus = self.arena.computation_application(focus, field);
+                                }
                                 progress = Progress::Reduced;
                             },
                             Some(_) => break,
                             None => return Err(unreadable()),
-                        }
-                    },
-                    Some(&Computation::TupleProjection(tuple, component)) => {
-                        match self.arena.value(tuple).map(Value::components) {
-                            Some(Some(components)) => {
-                                let value = *components
-                                    .get(usize::from(component))
-                                    .ok_or_else(unreadable)?;
-                                focus = self.arena.computation_return(value);
+                        },
+                        // A dependent split of a pair enters its body with the two
+                        // components for its two binders, the outer binder first.
+                        Some(&Computation::SigmaSplit {
+                            scrutinee, body, ..
+                        }) => match self.arena.value(scrutinee).map(Value::components) {
+                            Some(Some(&[first, second])) => {
+                                let opened = crate::rewrite::substitute_fold_head(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    body,
+                                    first,
+                                );
+                                focus = self.instantiate(opened, second);
                                 progress = Progress::Reduced;
                             },
                             Some(None) => break,
+                            Some(Some(_)) | None => return Err(unreadable()),
+                        },
+                        Some(&Computation::RecordProjection(record, ref label)) => {
+                            match self.arena.value(record) {
+                                Some(&Value::Record(ref fields)) => {
+                                    let value = *fields.get(label).ok_or_else(unreadable)?;
+                                    focus = self.arena.computation_return(value);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(_) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::TupleProjection(tuple, component)) => {
+                            match self.arena.value(tuple).map(Value::components) {
+                                Some(Some(components)) => {
+                                    let value = *components
+                                        .get(usize::from(component))
+                                        .ok_or_else(unreadable)?;
+                                    focus = self.arena.computation_return(value);
+                                    progress = Progress::Reduced;
+                                },
+                                Some(None) => break,
+                                None => return Err(unreadable()),
+                            }
+                        },
+                        Some(&Computation::ListFold {
+                            element,
+                            result,
+                            list,
+                            on_nil,
+                            on_cons,
+                        }) => match self.arena.value(list) {
+                            Some(&Value::ListNil) => {
+                                focus = on_nil;
+                                progress = Progress::Reduced;
+                            },
+                            Some(&Value::ListCons(head, tail)) => {
+                                let branch = crate::rewrite::substitute_fold_head(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    on_cons,
+                                    head,
+                                );
+                                frames.push(Frame::Bind(branch));
+                                focus = self
+                                    .arena
+                                    .computation_list_fold(element, result, tail, on_nil, on_cons);
+                                progress = Progress::Reduced;
+                            },
+                            Some(_) => break,
                             None => return Err(unreadable()),
-                        }
-                    },
-                    Some(&Computation::ListFold {
-                        element,
-                        result,
-                        list,
-                        on_nil,
-                        on_cons,
-                    }) => match self.arena.value(list) {
-                        Some(&Value::ListNil) => {
-                            focus = on_nil;
-                            progress = Progress::Reduced;
                         },
-                        Some(&Value::ListCons(head, tail)) => {
-                            let branch = crate::rewrite::substitute_fold_head(
+                        // A list case on a cell enters its cell branch with the head
+                        // and the tail for its two binders, the head outermost.
+                        Some(&Computation::ListCase {
+                            list,
+                            on_nil,
+                            on_cons,
+                            ..
+                        }) => match self.arena.value(list) {
+                            Some(&Value::ListNil) => {
+                                focus = on_nil;
+                                progress = Progress::Reduced;
+                            },
+                            Some(&Value::ListCons(head, tail)) => {
+                                let opened = crate::rewrite::substitute_fold_head(
+                                    self.arena,
+                                    &mut self.table,
+                                    &mut self.memo,
+                                    on_cons,
+                                    head,
+                                );
+                                focus = self.instantiate(opened, tail);
+                                progress = Progress::Reduced;
+                            },
+                            Some(_) => break,
+                            None => return Err(unreadable()),
+                        },
+                        Some(&Computation::Transport(path, value)) => {
+                            match crate::path_universe::beta(
                                 self.arena,
-                                &mut self.table,
-                                &mut self.memo,
-                                on_cons,
-                                head,
-                            );
-                            frames.push(Frame::Bind(branch));
-                            focus = self
-                                .arena
-                                .computation_list_fold(element, result, tail, on_nil, on_cons);
-                            progress = Progress::Reduced;
+                                crate::path_universe::Transport { path, value },
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
                         },
-                        Some(_) => break,
-                        None => return Err(unreadable()),
-                    },
-                    // A list case on a cell enters its cell branch with the head
-                    // and the tail for its two binders, the head outermost.
-                    Some(&Computation::ListCase {
-                        list,
-                        on_nil,
-                        on_cons,
-                        ..
-                    }) => match self.arena.value(list) {
-                        Some(&Value::ListNil) => {
-                            focus = on_nil;
-                            progress = Progress::Reduced;
-                        },
-                        Some(&Value::ListCons(head, tail)) => {
-                            let opened = crate::rewrite::substitute_fold_head(
-                                self.arena,
-                                &mut self.table,
-                                &mut self.memo,
-                                on_cons,
-                                head,
-                            );
-                            focus = self.instantiate(opened, tail);
-                            progress = Progress::Reduced;
-                        },
-                        Some(_) => break,
-                        None => return Err(unreadable()),
-                    },
-                    Some(&Computation::Transport(path, value)) => match crate::path_universe::beta(
-                        self.arena,
-                        crate::path_universe::Transport { path, value },
-                    )
-                    .map_err(|_unreadable_term| unreadable())?
-                    {
-                        crate::path_universe::Reduction::Reduced(reduct) => {
-                            focus = reduct;
-                            progress = Progress::Reduced;
-                        },
-                        crate::path_universe::Reduction::Stuck => break,
-                    },
-                    Some(&Computation::PathTransport {
-                        motive,
-                        path,
-                        value,
-                    }) => {
-                        let term = crate::element_identity::ElementTransport {
+                        Some(&Computation::PathTransport {
                             motive,
                             path,
                             value,
-                        };
-                        match crate::element_identity::transport_beta(
-                            self.arena,
-                            &mut self.table,
-                            &mut self.memo,
-                            term,
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            crate::path_universe::Reduction::Stuck => {
-                                match self.transport_along_word(term)? {
-                                    crate::path_universe::Reduction::Reduced(reduct) => {
-                                        focus = reduct;
-                                        progress = Progress::Reduced;
-                                    },
-                                    crate::path_universe::Reduction::Stuck => break,
-                                }
-                            },
-                        }
-                    },
-                    Some(&Computation::TelescopeTransport {
-                        motive,
-                        path,
-                        start,
-                        over,
-                        value,
-                    }) => {
-                        let term = crate::element_identity::TelescopeStep {
+                        }) => {
+                            let term = crate::element_identity::ElementTransport {
+                                motive,
+                                path,
+                                value,
+                            };
+                            match crate::element_identity::transport_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => {
+                                    match self.transport_along_word(term)? {
+                                        crate::path_universe::Reduction::Reduced(reduct) => {
+                                            focus = reduct;
+                                            progress = Progress::Reduced;
+                                        },
+                                        crate::path_universe::Reduction::Stuck => break,
+                                    }
+                                },
+                            }
+                        },
+                        Some(&Computation::TelescopeTransport {
                             motive,
                             path,
                             start,
                             over,
                             value,
-                        };
-                        match crate::element_identity::telescope_beta(
-                            self.arena,
-                            &mut self.table,
-                            &mut self.memo,
-                            term,
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            crate::path_universe::Reduction::Stuck => break,
-                        }
-                    },
-                    Some(&Computation::Ride {
-                        motive,
-                        flow,
-                        value,
-                    }) => {
-                        let term = crate::flow_universe::reduce::RideStep {
+                        }) => {
+                            let term = crate::element_identity::TelescopeStep {
+                                motive,
+                                path,
+                                start,
+                                over,
+                                value,
+                            };
+                            match crate::element_identity::telescope_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::Ride {
                             motive,
                             flow,
                             value,
-                        };
-                        match crate::flow_universe::reduce::ride_beta(
-                            self.arena,
-                            &mut self.table,
-                            &mut self.memo,
-                            term,
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            crate::path_universe::Reduction::Stuck => break,
-                        }
-                    },
-                    Some(&Computation::TelescopeRide {
-                        motive,
-                        flow,
-                        over,
-                        value,
-                        ..
-                    }) => {
-                        let term = crate::flow_universe::reduce::TelescopeRideStep {
+                        }) => {
+                            let term = crate::flow_universe::reduce::RideStep {
+                                motive,
+                                flow,
+                                value,
+                            };
+                            match crate::flow_universe::reduce::ride_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::TelescopeRide {
                             motive,
                             flow,
                             over,
                             value,
-                        };
-                        match crate::flow_universe::reduce::telescope_ride_beta(
-                            self.arena,
-                            &mut self.table,
-                            &mut self.memo,
-                            term,
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            crate::path_universe::Reduction::Stuck => break,
-                        }
-                    },
-                    Some(&Computation::RelatedApplication {
-                        path,
-                        left,
-                        right,
-                        body,
-                        ..
-                    }) => {
-                        let term = crate::element_identity::RelatedStep {
+                            ..
+                        }) => {
+                            let term = crate::flow_universe::reduce::TelescopeRideStep {
+                                motive,
+                                flow,
+                                over,
+                                value,
+                            };
+                            match crate::flow_universe::reduce::telescope_ride_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
+                                },
+                                crate::path_universe::Reduction::Stuck => break,
+                            }
+                        },
+                        Some(&Computation::RelatedApplication {
                             path,
                             left,
                             right,
                             body,
-                        };
-                        match crate::element_identity::related_beta(
-                            self.arena,
-                            &mut self.table,
-                            &mut self.memo,
-                            term,
-                        )
-                        .map_err(|_unreadable_term| unreadable())?
-                        {
-                            crate::path_universe::Reduction::Reduced(reduct) => {
-                                focus = reduct;
-                                progress = Progress::Reduced;
-                            },
-                            crate::path_universe::Reduction::Stuck => break,
-                        }
-                    },
-                    Some(&Computation::Application(head, argument)) => {
-                        frames.push(Frame::Apply(argument));
-                        focus = head;
-                    },
-                    Some(&Computation::Bind(bound, body)) => {
-                        frames.push(Frame::Bind(body));
-                        focus = bound;
-                    },
-                    Some(&Computation::Project(component, pair)) => {
-                        frames.push(Frame::Project(component));
-                        focus = pair;
-                    },
-                    // A projection of a lazy pairing runs the component it
-                    // names; a pairing under no projection is in weak head
-                    // form.
-                    Some(&Computation::With(ref components)) => match frames.last() {
-                        Some(&Frame::Project(component)) => {
-                            let Some(&selected) = components.get(usize::from(component))
-                            else {
-                                return Err(unreadable());
+                            ..
+                        }) => {
+                            let term = crate::element_identity::RelatedStep {
+                                path,
+                                left,
+                                right,
+                                body,
                             };
-                            frames.pop();
-                            focus = selected;
-                            progress = Progress::Reduced;
-                        },
-                        Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
-                    },
-                    Some(&Computation::Force(value)) => match self.arena.value(value) {
-                        Some(&Value::Thunk(body)) => {
-                            focus = body;
-                            progress = Progress::Reduced;
-                        },
-                        Some(_) => break,
-                        None => return Err(unreadable()),
-                    },
-                    // A case over an injection selects the branch its summand
-                    // names; the empty sum's elimination has none and stays stuck.
-                    Some(&Computation::Case {
-                        scrutinee,
-                        ref branches,
-                    }) => match self.arena.value(scrutinee) {
-                        Some(&Value::Injection(summand, payload)) => {
-                            let Some(&branch) = branches.get(usize::from(summand))
-                            else {
-                                break;
-                            };
-                            focus = self.instantiate(branch, payload);
-                            progress = Progress::Reduced;
-                        },
-                        Some(_) => break,
-                        None => return Err(unreadable()),
-                    },
-                    Some(&Computation::Lambda(body)) => match frames.last() {
-                        Some(&Frame::Apply(argument)) => {
-                            frames.pop();
-                            focus = self.instantiate(body, argument);
-                            progress = Progress::Reduced;
-                        },
-                        Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
-                    },
-                    // A fixpoint unfolds at its gate: applied to a canonical
-                    // argument at its staged position, the `<` direction, or
-                    // under a bind or a projection observing its result, the
-                    // `>` direction. Conversion unfolds only a structural
-                    // fixpoint, and only at a constructor; at a partial
-                    // fixpoint's gate it declines rather than refutes.
-                    Some(&Computation::Fixpoint { body, evidence }) => {
-                        let position = match evidence {
-                            FixpointEvidence::Staged { position } => usize::from(position),
-                            FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => 0,
-                        };
-                        // The argument at the staged position: that many
-                        // applications down the stack, every frame above it an
-                        // application too.
-                        let mut reached = None;
-                        let mut observed = false;
-                        for (offset, frame) in frames.iter().rev().enumerate() {
-                            match *frame {
-                                Frame::Apply(argument) => {
-                                    if offset == position {
-                                        reached = Some((offset, argument));
-                                        break;
-                                    }
+                            match crate::element_identity::related_beta(
+                                self.arena,
+                                &mut self.table,
+                                &mut self.memo,
+                                term,
+                            )
+                            .map_err(|_unreadable_term| unreadable())?
+                            {
+                                crate::path_universe::Reduction::Reduced(reduct) => {
+                                    focus = reduct;
+                                    progress = Progress::Reduced;
                                 },
-                                Frame::Bind(_) | Frame::Project(_) => {
-                                    observed = true;
-                                    break;
-                                },
+                                crate::path_universe::Reduction::Stuck => break,
                             }
-                        }
-                        // A fixpoint's gate inspects its argument, so a returned
-                        // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
-                        if let Some((offset, argument)) = reached
-                            && let Some(&Value::Returned(returned)) = self.arena.value(argument)
-                        {
-                            let mut applied = focus;
-                            for _argument in 0 ..= offset {
-                                let Some(Frame::Apply(argument)) = frames.pop()
+                        },
+                        Some(&Computation::Application(head, argument)) => {
+                            frames.push(Frame::Apply(argument));
+                            focus = head;
+                        },
+                        Some(&Computation::Bind(bound, body)) => {
+                            frames.push(Frame::Bind(body));
+                            focus = bound;
+                        },
+                        Some(&Computation::Project(component, pair)) => {
+                            frames.push(Frame::Project(component));
+                            focus = pair;
+                        },
+                        // A projection of a lazy pairing runs the component it
+                        // names; a pairing under no projection is in weak head
+                        // form.
+                        Some(&Computation::With(ref components)) => match frames.last() {
+                            Some(&Frame::Project(component)) => {
+                                let Some(&selected) = components.get(usize::from(component))
                                 else {
                                     return Err(unreadable());
                                 };
-                                applied = self.arena.computation_application(applied, argument);
-                            }
-                            focus = self.bind_returned(applied, returned)?;
-                            progress = Progress::Reduced;
-                            continue;
-                        }
-                        let gate = match reached {
-                            Some((_, argument)) => match self.arena.value(argument) {
-                                Some(&Value::Constructor { .. }) => Gate::Constructor,
-                                Some(
-                                    &(Value::Variable(_)
-                                    | Value::Constant(_)
-                                    | Value::StaticApplication(..)),
-                                ) => Gate::Shut,
-                                Some(_) => Gate::Canonical,
-                                None => return Err(unreadable()),
-                            },
-                            None if observed => Gate::Observed,
-                            None => Gate::Shut,
-                        };
-                        match (evidence, gate) {
-                            (
-                                FixpointEvidence::StructuralDescent
-                                | FixpointEvidence::Staged { .. },
-                                Gate::Constructor,
-                            ) => {
-                                let recursive = self.arena.value_thunk(focus);
-                                focus = self.instantiate(body, recursive);
+                                frames.pop();
+                                focus = selected;
                                 progress = Progress::Reduced;
                             },
-                            (
-                                FixpointEvidence::Partial,
-                                Gate::Constructor | Gate::Canonical | Gate::Observed,
-                            ) => return Err(Stop::PartialFixpoint),
-                            (
-                                FixpointEvidence::StructuralDescent
-                                | FixpointEvidence::Staged { .. },
-                                Gate::Canonical | Gate::Observed | Gate::Shut,
-                            )
-                            | (FixpointEvidence::Partial, Gate::Shut) => break,
-                        }
-                    },
-                    Some(&Computation::Return(value)) => match frames.last() {
-                        Some(&Frame::Bind(body)) => {
-                            frames.pop();
-                            focus = self.instantiate(body, value);
-                            progress = Progress::Reduced;
+                            Some(&(Frame::Apply(_) | Frame::Bind(_))) | None => break,
                         },
-                        Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
-                    },
-                    None => return Err(unreadable()),
-                }
-            }
-            let mut next = match attempts.last() {
-                Some(_)
-                    if frames.is_empty()
-                        && matches!(
-                            self.arena.computation(focus),
-                            Some(&Computation::Return(_))
-                        ) =>
-                {
-                    // The continuation returned: its bind is spent.
-                    if let Some(tried) = attempts.pop() {
-                        frames = tried.outer;
+                        Some(&Computation::Force(value)) => match self.arena.value(value) {
+                            Some(&Value::Thunk(body)) => {
+                                focus = body;
+                                progress = Progress::Reduced;
+                            },
+                            Some(_) => break,
+                            None => return Err(unreadable()),
+                        },
+                        // A case over an injection selects the branch its summand
+                        // names; the empty sum's elimination has none and stays stuck.
+                        Some(&Computation::Case {
+                            scrutinee,
+                            ref branches,
+                        }) => match self.arena.value(scrutinee) {
+                            Some(&Value::Injection(summand, payload)) => {
+                                let Some(&branch) = branches.get(usize::from(summand))
+                                else {
+                                    break;
+                                };
+                                focus = self.instantiate(branch, payload);
+                                progress = Progress::Reduced;
+                            },
+                            Some(_) => break,
+                            None => return Err(unreadable()),
+                        },
+                        Some(&Computation::Lambda(body)) => match frames.last() {
+                            Some(&Frame::Apply(argument)) => {
+                                frames.pop();
+                                focus = self.instantiate(body, argument);
+                                progress = Progress::Reduced;
+                            },
+                            Some(&(Frame::Bind(_) | Frame::Project(_))) | None => break,
+                        },
+                        // A fixpoint unfolds at its gate: applied to a canonical
+                        // argument at its staged position, the `<` direction, or
+                        // under a bind or a projection observing its result, the
+                        // `>` direction. Conversion unfolds only a structural
+                        // fixpoint, and only at a constructor; at a partial
+                        // fixpoint's gate it declines rather than refutes.
+                        Some(&Computation::Fixpoint { body, evidence }) => {
+                            let position = match evidence {
+                                FixpointEvidence::Staged { position } => usize::from(position),
+                                FixpointEvidence::Partial | FixpointEvidence::StructuralDescent => {
+                                    0
+                                },
+                            };
+                            // The argument at the staged position: that many
+                            // applications down the stack, every frame above it an
+                            // application too.
+                            let mut reached = None;
+                            let mut observed = false;
+                            for (offset, frame) in frames.iter().rev().enumerate() {
+                                match *frame {
+                                    Frame::Apply(argument) => {
+                                        if offset == position {
+                                            reached = Some((offset, argument));
+                                            break;
+                                        }
+                                    },
+                                    Frame::Bind(_) | Frame::Project(_) => {
+                                        observed = true;
+                                        break;
+                                    },
+                                }
+                            }
+                            // A fixpoint's gate inspects its argument, so a returned
+                            // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
+                            if let Some((offset, argument)) = reached
+                                && let Some(&Value::Returned(returned)) = self.arena.value(argument)
+                            {
+                                let mut applied = focus;
+                                for _argument in 0 ..= offset {
+                                    let Some(Frame::Apply(argument)) = frames.pop()
+                                    else {
+                                        return Err(unreadable());
+                                    };
+                                    applied = self.arena.computation_application(applied, argument);
+                                }
+                                if reduction == Reduction::Plain {
+                                    suspended = Some(Suspended {
+                                        elimination: applied,
+                                        returned,
+                                        frames: core::mem::take(&mut frames),
+                                    });
+                                    reduction = Reduction::Endpoint;
+                                    focus = returned;
+                                    progress = Progress::Unchanged;
+                                    continue;
+                                }
+                                focus = self.bind_returned(applied, returned)?;
+                                progress = Progress::Reduced;
+                                continue;
+                            }
+                            let gate = match reached {
+                                Some((_, argument)) => match self.arena.value(argument) {
+                                    Some(&Value::Constructor { .. }) => Gate::Constructor,
+                                    Some(
+                                        &(Value::Variable(_)
+                                        | Value::Constant(_)
+                                        | Value::StaticApplication(..)),
+                                    ) => Gate::Shut,
+                                    Some(_) => Gate::Canonical,
+                                    None => return Err(unreadable()),
+                                },
+                                None if observed => Gate::Observed,
+                                None => Gate::Shut,
+                            };
+                            match (evidence, gate) {
+                                (
+                                    FixpointEvidence::StructuralDescent
+                                    | FixpointEvidence::Staged { .. },
+                                    Gate::Constructor,
+                                ) => {
+                                    let recursive = self.arena.value_thunk(focus);
+                                    focus = self.instantiate(body, recursive);
+                                    progress = Progress::Reduced;
+                                },
+                                (
+                                    FixpointEvidence::Partial,
+                                    Gate::Constructor | Gate::Canonical | Gate::Observed,
+                                ) => return Err(Stop::PartialFixpoint),
+                                (
+                                    FixpointEvidence::StructuralDescent
+                                    | FixpointEvidence::Staged { .. },
+                                    Gate::Canonical | Gate::Observed | Gate::Shut,
+                                )
+                                | (FixpointEvidence::Partial, Gate::Shut) => break,
+                            }
+                        },
+                        Some(&Computation::Return(value)) => match frames.last() {
+                            Some(&Frame::Bind(body)) => {
+                                frames.pop();
+                                focus = self.instantiate(body, value);
+                                progress = Progress::Reduced;
+                            },
+                            Some(&(Frame::Apply(_) | Frame::Project(_))) | None => break,
+                        },
+                        None => return Err(unreadable()),
                     }
-                    progress = Progress::Reduced;
-                    continue;
-                },
-                Some(_) | None if reduction == Reduction::Endpoint => {
-                    (focus, core::mem::take(&mut frames), progress, true)
-                },
-                Some(_) | None => break,
-            };
-            loop {
-                let (call, mut outer, before, first) = next;
-                let (call, bind) = self.next_bind(call, &mut outer);
-                match bind {
-                    // A stuck transport chained into another transport is a
-                    // `cong` chain, left whole for `fuse` to compose: reading
-                    // through it rebuilds the chain over its own returned leaf
-                    // without end.
-                    Some(body)
-                        if !first
-                            || matches!(
+                }
+                let mut next = match attempts.last() {
+                    Some(_)
+                        if frames.is_empty()
+                            && matches!(
+                                self.arena.computation(focus),
+                                Some(&Computation::Return(_))
+                            ) =>
+                    {
+                        // The continuation returned: its bind is spent.
+                        if let Some(tried) = attempts.pop() {
+                            frames = tried.outer;
+                        }
+                        progress = Progress::Reduced;
+                        continue;
+                    },
+                    Some(_) | None if reduction == Reduction::Endpoint => {
+                        (focus, core::mem::take(&mut frames), progress, true)
+                    },
+                    Some(_) | None => break,
+                };
+                loop {
+                    let (call, mut outer, before, first) = next;
+                    let (call, bind) = self.next_bind(call, &mut outer);
+                    match bind {
+                        // A stuck transport chained into another transport is a
+                        // `cong` chain, left whole for `fuse` to compose: reading
+                        // through it rebuilds the chain over its own returned leaf
+                        // without end.
+                        Some(body)
+                            if !first
+                                || matches!(
+                                    self.shape(
+                                        Term::Computation(call),
+                                        &Frozen::default(),
+                                        ConversionSide::Left
+                                    ),
+                                    Ok(Shape::Neutral(
+                                        Head::Variable(_) | Head::Constant(_, Status::Opaque),
+                                        ref spine
+                                    )) if !(matches!(spine.as_slice(), [.., Elimination::PathTransport(_)])
+                                        && matches!(
+                                            self.arena.computation(body),
+                                            Some(&Computation::PathTransport { .. })
+                                        ))
+                                )
+                                || self.reading == Reading::Forced
+                                    && self.shut_recursion(call).is_some() =>
+                        {
+                            if matches!(
+                                self.continuation_of(body),
+                                Continuation::Eliminates | Continuation::Returns
+                            ) {
+                                // Read through, this bind restores the elimination
+                                // of a returned endpoint it came from, which binds
+                                // the same call again: it never returns; or it is
+                                // the call's own η-expansion, which the goal reads
+                                // back as the call and expands again. It stays
+                                // over its call, and the next bind out is tried
+                                // over both.
+                                let call = self.arena.computation_bind(call, body);
+                                next = (call, outer, before, false);
+                                continue;
+                            }
+                            let leaf = self.arena.value_returned(call);
+                            focus = self.instantiate(body, leaf);
+                            attempts.push(Attempt {
+                                outer,
+                                call,
+                                body,
+                                progress: before,
+                            });
+                            continue 'reading;
+                        },
+                        unread => {
+                            // No bind is left, or a definition heads the call:
+                            // this reading stands as it is.
+                            if let Some(body) = unread {
+                                outer.push(Frame::Bind(body));
+                            }
+                            let Some(tried) = attempts.pop()
+                            else {
+                                frames = outer;
+                                focus = call;
+                                progress = before;
+                                break 'reading;
+                            };
+                            // The enclosing continuation stopped at a call a
+                            // definition heads: the reading is that call, under
+                            // the eliminations outside the bind, and the
+                            // conversion unfolds it by a recorded step.
+                            if matches!(
                                 self.shape(
                                     Term::Computation(call),
                                     &Frozen::default(),
                                     ConversionSide::Left
                                 ),
-                                Ok(Shape::Neutral(
-                                    Head::Variable(_) | Head::Constant(_, Status::Opaque),
-                                    ref spine
-                                )) if !(matches!(spine.as_slice(), [.., Elimination::PathTransport(_)])
-                                    && matches!(
-                                        self.arena.computation(body),
-                                        Some(&Computation::PathTransport { .. })
-                                    ))
-                            )
-                            || self.reading == Reading::Forced
-                                && self.shut_recursion(call).is_some() =>
-                    {
-                        if matches!(
-                            self.continuation_of(body),
-                            Continuation::Eliminates | Continuation::Returns
-                        ) {
-                            // Read through, this bind restores the elimination
-                            // of a returned endpoint it came from, which binds
-                            // the same call again: it never returns; or it is
-                            // the call's own η-expansion, which the goal reads
-                            // back as the call and expands again. It stays
-                            // over its call, and the next bind out is tried
+                                Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
+                            ) {
+                                frames = tried.outer;
+                                frames.append(&mut outer);
+                                focus = call;
+                                progress = Progress::Reduced;
+                                continue 'reading;
+                            }
+                            // The enclosing continuation did not return: its bind
+                            // stays over its call, and the next bind out is tried
                             // over both.
-                            let call = self.arena.computation_bind(call, body);
-                            next = (call, outer, before, false);
-                            continue;
-                        }
-                        let leaf = self.arena.value_returned(call);
-                        focus = self.instantiate(body, leaf);
-                        attempts.push(Attempt {
-                            outer,
-                            call,
-                            body,
-                            progress: before,
-                        });
-                        continue 'reading;
-                    },
-                    unread => {
-                        // No bind is left, or a definition heads the call:
-                        // this reading stands as it is.
-                        if let Some(body) = unread {
-                            outer.push(Frame::Bind(body));
-                        }
-                        let Some(tried) = attempts.pop()
-                        else {
-                            frames = outer;
-                            focus = call;
-                            progress = before;
-                            break 'reading;
-                        };
-                        // The enclosing continuation stopped at a call a
-                        // definition heads: the reading is that call, under
-                        // the eliminations outside the bind, and the
-                        // conversion unfolds it by a recorded step.
-                        if matches!(
-                            self.shape(
-                                Term::Computation(call),
-                                &Frozen::default(),
-                                ConversionSide::Left
-                            ),
-                            Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
-                        ) {
-                            frames = tried.outer;
-                            frames.append(&mut outer);
-                            focus = call;
-                            progress = Progress::Reduced;
-                            continue 'reading;
-                        }
-                        // The enclosing continuation did not return: its bind
-                        // stays over its call, and the next bind out is tried
-                        // over both.
-                        let call = self.arena.computation_bind(tried.call, tried.body);
-                        next = (call, tried.outer, tried.progress, false);
-                    },
+                            let call = self.arena.computation_bind(tried.call, tried.body);
+                            next = (call, tried.outer, tried.progress, false);
+                        },
+                    }
                 }
             }
+            // The endpoint's computation is read: the suspended plain reading binds
+            // what it came to and goes on.
+            let Some(held) = suspended.take()
+            else {
+                break 'endpoints;
+            };
+            let read = if progress == Progress::Unchanged {
+                held.returned
+            }
+            else {
+                while let Some(frame) = frames.pop() {
+                    focus = self.wrap(focus, frame);
+                }
+                focus
+            };
+            focus = self.bind_returned(held.elimination, read)?;
+            frames = held.frames;
+            reduction = Reduction::Plain;
+            progress = Progress::Reduced;
         }
         if progress == Progress::Unchanged {
             return Ok(term);

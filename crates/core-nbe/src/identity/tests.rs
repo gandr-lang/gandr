@@ -837,8 +837,7 @@ fn a_function_with_a_constant_result_leaves_its_call_unmoved()
     // In `y. U(El(y) → F Bool)` along `ua(e)` with negation as left inverse,
     // a function `f` no definition reaches moves to `b. f(⟨not(b)⟩)`: the
     // argument's stuck move is bound as the value it returns, and the
-    // result's type reads no binder, so the call stays as it is rather than
-    // returning the value it stands for.
+    // result's type reads no binder, so the call stays as it is.
     let mut core = CoreArena::new();
     let path = boolean_univalence(&mut core, [Map::Same, Map::Not, Map::Same]);
     let (_, _, decode) = universe_parts(&mut core);
@@ -857,10 +856,8 @@ fn a_function_with_a_constant_result_leaves_its_call_unmoved()
     let argument = core.value_returned(negated);
     let forced = core.computation_force(function);
     let call = core.computation_application(forced, argument);
-    let result = core.value_returned(call);
-    let returned = core.computation_return(result);
     let unmoved = core.computation_application(forced, bound);
-    let [call, returned, unmoved] = [call, returned, unmoved].map(|body| {
+    let [call, unmoved] = [call, unmoved].map(|body| {
         let lambda = core.computation_lambda(body);
         core.value_thunk(lambda)
     });
@@ -869,7 +866,7 @@ fn a_function_with_a_constant_result_leaves_its_call_unmoved()
     let definitions = Definitions::new(&chain, &environment, environment.root())
         .reading_endpoints(crate::eval::Endpoints::Hold);
     let mut domain = DomainArena::new();
-    let [endpoint, call, returned, unmoved] = [endpoint, call, returned, unmoved].map(|value| {
+    let [endpoint, call, unmoved] = [endpoint, call, unmoved].map(|value| {
         eval_value(&core, &mut domain, definitions, ample(), value).expect("closed values evaluate")
     });
     let mut decided = |point| {
@@ -889,7 +886,6 @@ fn a_function_with_a_constant_result_leaves_its_call_unmoved()
         MachineVerdict::Convertible,
         "the argument moves back and the call stays as it is"
     );
-    assert_ne!(decided(returned), MachineVerdict::Convertible);
     assert_ne!(decided(unmoved), MachineVerdict::Convertible);
 }
 

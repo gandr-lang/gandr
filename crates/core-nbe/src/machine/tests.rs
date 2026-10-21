@@ -3412,6 +3412,108 @@ fn an_unread_call_is_discarded_only_where_it_returns()
 }
 
 #[test]
+fn a_returned_call_is_read_as_the_call_it_holds()
+{
+    // Under rigid `g` at level 0 and `f` at level 1: `return (returned (force
+    // f ()))` against `force f ()` and against `force g ()`.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let call = |core: &mut CoreArena, index: u32| {
+        let head = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        let forced = core.computation_force(head);
+        core.computation_application(forced, unit)
+    };
+    let own = call(&mut core, 0);
+    let other = call(&mut core, 1);
+    let held = core.value_returned(own);
+    let returned = core.computation_return(held);
+    let world = World::new(core, &[]);
+
+    for (sides, expected) in [
+        ((returned, own), MachineVerdict::Convertible),
+        ((own, returned), MachineVerdict::Convertible),
+        ((returned, other), MachineVerdict::NotConvertible),
+    ] {
+        let definitions =
+            Definitions::new(&world.chain, &world.environment, world.environment.root());
+        let mut domain = DomainArena::new();
+        let mut environment = crate::closure::Environment::new();
+        for level in 0_u32 .. 2 {
+            let neutral = domain
+                .neutral_node(
+                    crate::domain::NeutralHead::Variable {
+                        zone: Zone::Intuitionistic,
+                        level: BinderLevel::from(level),
+                    },
+                    Vec::new(),
+                    crate::domain::Unfolding::Rigid,
+                )
+                .expect("a variable is a neutral");
+            let variable = domain
+                .value_neutral(neutral, crate::domain::TermFace::Reduced)
+                .expect("a neutral is a value");
+            environment.extend(Zone::Intuitionistic, variable);
+        }
+        let fuel = Fuel::from(4_096_u32);
+        let (left, right) = sides;
+        let evaluate = |domain: &mut DomainArena, term| {
+            crate::eval::eval_comp_within(
+                &world.core,
+                domain,
+                definitions,
+                fuel,
+                term,
+                environment.clone(),
+            )
+            .map(|(evaluated, _remaining)| evaluated)
+            .expect("each side evaluates")
+        };
+        let one = evaluate(&mut domain, left);
+        let two = evaluate(&mut domain, right);
+        let problem = Problem::computations(one, two).under(BinderLevel::from(2_u32));
+        let mut log = TraceLog::new();
+        let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
+            &world.core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut log,
+        )
+        .expect("the machine answers");
+        let decisions: Vec<ConversionDecision<TraceNode>> = log.decisions().copied().collect();
+        assert_eq!(
+            expected,
+            report.verdict(),
+            "the return of a call's result is the call, and no other: {decisions:?}"
+        );
+        let mut kernel = Kernel::default();
+        let sides = ReplaySides::Computations(
+            kernel.computation(&world.core, left),
+            kernel.computation(&world.core, right),
+        );
+        let replayed = replay(
+            &mut kernel.arena,
+            &Unfoldings::new(Vec::new()),
+            sides,
+            match report.verdict() {
+                MachineVerdict::Convertible => EngineClaim::Convertible,
+                MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+                MachineVerdict::Declined(_) => EngineClaim::Declined,
+            },
+            decisions.iter().map(|&decision| kernel_decision(decision)),
+            ReplayBudget::DEFAULT,
+        );
+        assert_eq!(
+            certified(report.verdict()),
+            replayed,
+            "the kernel reads the same return as its call, with no decision for it: \
+             {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn stuck_fixpoints_compare_by_their_bodies()
 {
     // `(fix rec. λx. return x) R` for a rigid `R`, written twice, once
