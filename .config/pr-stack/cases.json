@@ -170,5 +170,19 @@
       "queued": [1262]
     },
     "output": "wait\t1262"
+  },
+  {
+    "name": "a pull request two above one that lands on its own waits for it, not the one between (#1353)",
+    "program": "decide.jq",
+    "input": {
+      "server": [
+        { "number": 1349, "head": "surface-1327-tail" },
+        { "number": 1351, "head": "core-1334-host" },
+        { "number": 1352, "head": "triage-fmt-pool" }
+      ],
+      "own": "triage-fmt-pool",
+      "queued": [1349]
+    },
+    "output": "wait\t1349"
   }
 ]

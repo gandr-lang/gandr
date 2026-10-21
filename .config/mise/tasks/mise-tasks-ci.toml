@@ -603,15 +603,26 @@ cat "$scratch/rows"
 # is open, the branch is rebased onto the top's branch (`top.jq`: the open pull
 # request no other targets, on the longest chain from main), its obligations
 # are measured against the top's head, and it opens with the top's branch as
-# its base, linked into the top's stack (`gh stack link`). A top already in
-# the merge queue cannot take a link; the pull request then waits as the next
-# stack's bottom, and GitHub retargets it to main when the top merges. The
-# task prints which path it took. With nothing open it opens against main.
+# its base, linked into the top's stack (`gh stack link`). A chain with a pull
+# request below that lands on its own, in the merge queue or set to auto-merge,
+# cannot take a link (#1353); the pull request then opens unlinked on the top,
+# GitHub retargets each base as the one below it merges, and `pr:land` from the
+# top links and queues the chain once that pull request has merged.
+# `decide.jq` reads which, as it does for `pr:land`. The task prints which path
+# it took. With nothing open it opens against main.
+#
+# A fix the open stack waits on cannot stack on it: it would land behind the
+# pull request it unblocks. `--unblocks <n>` names that pull request, and the
+# fix opens as a second bottom on main, measured against main, and is set to
+# auto-merge so it queues on its own (#1353). The body must name #n. Once it
+# merges, `pr:land` from the stack's top rebases the chain onto it. Every
+# other second bottom is refused.
 ["pr:open"]
 description = "Open the pull request on the server's top once its body acknowledges every prose obligation"
 usage = '''
 arg "<title>" help="the pull request title: a conventional header"
 arg "<body>" help="the body file; its re-verification section is written in place"
+flag "--unblocks <number>" help="the open pull request this fix unblocks: open on main and queue on its own"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -626,12 +637,21 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
-top=$(stack_top "$own")
+unblocks=${usage_unblocks:-}
+if [[ -n "$unblocks" ]]; then
+  [[ "$unblocks" =~ ^[0-9]+$ && $(gh pr view "$unblocks" -R "$repo" --json state --jq .state 2> /dev/null) == OPEN ]] \
+    || { echo "--unblocks names #$unblocks, which is not an open pull request" >&2; exit 2; }
+  grep -qE -- "#$unblocks([^0-9]|\$)" "$body" \
+    || { echo "the body must name #$unblocks, the pull request this fix unblocks" >&2; exit 2; }
+  top=null
+else
+  top=$(stack_top "$own")
+fi
 git fetch --quiet origin "$trunk"
 if [[ "$top" == null ]]; then
   base=$trunk
   measured=$(git merge-base HEAD "origin/$trunk")
-  echo "no pull request is open: opening against $trunk"
+  if [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
 else
   base=$(jq -r .head <<< "$top")
   top_number=$(jq -r .number <<< "$top")
@@ -650,24 +670,33 @@ if (( status == 2 )); then
   exit 2
 fi
 (( status == 0 )) || exit "$status"
-# A second bottom is refused: with any other pull request open, the base is a
-# branch of the stack.
-if [[ "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own)] | length') != 0 ]]; then
+# A second bottom is refused unless it unblocks the open stack: with any other
+# pull request open, the base is a branch of the stack.
+if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own)] | length') != 0 ]]; then
   echo "$own would open a second bottom on $trunk while another pull request is open; run \`pr:open\` again to stack it on the top" >&2
   exit 2
 fi
 git push --quiet --force-with-lease -u origin HEAD
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body")
 echo "$url"
+if [[ -n "$unblocks" ]]; then
+  gh pr merge "${url##*/}" -R "$repo" --merge --auto
+  echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the stack's top rebases the chain onto it"
+fi
 if [[ "$base" != "$trunk" ]]; then
   number=${url##*/}
-  if [[ $(in_queue "$top_number") == true ]]; then
-    echo "#$top_number is queued to land on its own, so #$number waits on $base as the next stack's bottom; GitHub retargets it to $trunk when #$top_number merges"
-  else
-    stack=$(server_stack "$number")
-    stack_link "$stack"
-    echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
-  fi
+  stack=$(server_stack "$number")
+  decision=$(jq -rn --argjson server "$stack" --arg own "$own" --argjson queued "$(queued_of "$stack")" \
+    '{server: $server, own: $own, queued: $queued}' | jq -r -f "$pr_stack_dir/decide.jq")
+  case "$decision" in
+    wait$'\t'*)
+      echo "#${decision#*$'\t'} below lands on its own, so #$number waits unlinked on $base; GitHub retargets each base as the one below merges, and \`pr:land\` from the top links and queues the chain once #${decision#*$'\t'} has merged"
+      ;;
+    *)
+      stack_link "$stack"
+      echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
+      ;;
+  esac
 fi
 {% endraw %}'''
 
