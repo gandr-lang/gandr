@@ -8,6 +8,7 @@ use core::error::Error;
 use anodized::spec;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Bound;
+use gandr_theory_graphs::GraphValidationError;
 use gandr_theory_graphs::NodeCount;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecCycle;
@@ -756,4 +757,59 @@ fn cycle_observers_refuse_invalid_evidence()
         );
     }
     assert!(std::panic::catch_unwind(|| expect_cycle(&PrecSpec::new())).is_err());
+}
+
+#[test]
+fn every_precedence_refusal_renders_what_it_names() -> Result<(), Box<dyn Error>>
+{
+    let mut spec = PrecSpec::new();
+    let only = spec.insert("only", Assoc::Non)?;
+    let name = spec.name(only).expect("the group is declared");
+    assert_eq!("only", name.as_ref());
+    assert!("only" == name && "other" != name);
+
+    let duplicate = spec
+        .insert("only", Assoc::Left)
+        .expect_err("the name is taken");
+    assert!(duplicate.to_string().contains("only"), "{duplicate}");
+    let undeclared = spec
+        .add_edge(Prec::new(PrecIndex::from(7)), only)
+        .expect_err("group 7 is not declared")
+        .to_string();
+    assert!(
+        undeclared.contains('7') && undeclared.contains('1'),
+        "{undeclared}"
+    );
+    assert_ne!(
+        PrecSpecError::CapacityExceeded.to_string(),
+        duplicate.to_string()
+    );
+
+    spec.add_edge(only, only)?;
+    let cycle = expect_cycle(&spec);
+    let cyclic = PrecDagError::Cycle(cycle.clone());
+    assert_eq!(cycle.to_string(), cyclic.to_string());
+    assert_eq!(
+        Some(cycle.to_string()),
+        cyclic.source().map(ToString::to_string)
+    );
+    let graph = GraphValidationError::EdgeCountTooLarge;
+    let refused = PrecDagError::Graph(graph.clone());
+    assert_eq!(graph.to_string(), refused.to_string());
+    assert_eq!(
+        Some(graph.to_string()),
+        refused.source().map(ToString::to_string)
+    );
+    assert!(PrecDagError::Inconsistent.source().is_none());
+    assert!(!PrecDagError::Inconsistent.to_string().is_empty());
+
+    let (dag, [loose, left_mid, right_mid, tight]) = diamond()?;
+    assert!(bool::from(
+        dag.bound_comparable(Bound::Value(loose), Bound::Value(tight))
+    ));
+    assert!(!bool::from(dag.bound_comparable(
+        Bound::Value(left_mid),
+        Bound::Value(right_mid)
+    )));
+    Ok(())
 }

@@ -1605,3 +1605,53 @@ fn ordered_observer_refuses_reversed_evidence()
         .is_err()
     );
 }
+
+#[test]
+fn swings_order_by_their_nonterminals_lexicographically() -> Result<(), Box<dyn Error>>
+{
+    let short = Swing::new(vec![1_u8, 2])?;
+    let longer = Swing::new(vec![1_u8, 2, 0])?;
+    let later = Swing::new(vec![1_u8, 3])?;
+    let first_differs = Swing::new(vec![2_u8])?;
+    assert_eq!(Some(core::cmp::Ordering::Less), short.partial_cmp(&longer));
+    assert_eq!(Some(core::cmp::Ordering::Less), longer.partial_cmp(&later));
+    assert_eq!(
+        Some(core::cmp::Ordering::Less),
+        later.partial_cmp(&first_differs)
+    );
+    assert_eq!(
+        Some(core::cmp::Ordering::Equal),
+        short.partial_cmp(&short.clone())
+    );
+    assert!(first_differs > short);
+    Ok(())
+}
+
+#[test]
+fn every_walk_refusal_renders_distinctly_and_names_the_cap()
+{
+    let exceeded = WalkBuildError::ChainLengthExceeded {
+        max: WalkChainLength::from(4),
+        actual: WalkChainLength::from(7),
+    }
+    .to_string();
+    assert!(
+        exceeded.contains('4') && exceeded.contains('7'),
+        "{exceeded}"
+    );
+    let rendered = [
+        WalkBuildError::EmptySwing.to_string(),
+        WalkBuildError::InvalidWalkShape.to_string(),
+        WalkBuildError::ZeroMaxChainLen.to_string(),
+        WalkBuildError::UselessArc.to_string(),
+        WalkBuildError::ArithmeticOverflow.to_string(),
+        exceeded,
+    ];
+    assert_eq!(
+        rendered
+            .iter()
+            .collect::<alloc::collections::BTreeSet<_>>()
+            .len(),
+        6
+    );
+}
