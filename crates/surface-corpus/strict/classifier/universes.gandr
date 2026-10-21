@@ -18,7 +18,7 @@ def five : small ;
 def five = 5 ;
 
 @[ runs("fn (a) { fn (b) { b } }") ]
-def id(a : Type, x : a) -> -F a { return x }
+def id(a : Type, x : a) -> -F a { x }
 
 def at_integer : () => Integer ;
 def at_integer = thunk { become id(Integer, five) } ;
@@ -33,7 +33,7 @@ def at_small = thunk { become id(small, five) } ;
 def perform(c : Type[-], t : +U c) -> c { become force t }
 
 def performed : () => Integer ;
-def performed = thunk { become perform(effect, thunk { return 42 }) } ;
+def performed = thunk { become perform(effect, thunk { 42 }) } ;
 
 def quoted : () => Integer ;
-def quoted = thunk { become perform(-F Integer, thunk { return 7 }) } ;
+def quoted = thunk { become perform(-F Integer, thunk { 7 }) } ;
