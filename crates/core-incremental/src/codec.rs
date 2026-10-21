@@ -1960,6 +1960,7 @@ where
             write_index(writer, second)?;
         },
         ContentNode::UnknownType => writer.tag(Tag(0x2C)),
+        ContentNode::BufferType => writer.tag(Tag(0x80)),
         ContentNode::Returner {
             result,
             ref effects,
@@ -2356,6 +2357,11 @@ where
             write_index(writer, child)?;
             write_index(writer, parent)?;
         },
+        SessionAction::Place { payload, body } => {
+            writer.tag(Tag(6));
+            write_index(writer, payload)?;
+            write_index(writer, body)?;
+        },
     }
     Ok(())
 }
@@ -2408,6 +2414,10 @@ fn read_session_action(
             protocol: read_index(reader)?,
             child: read_index(reader)?,
             parent: read_index(reader)?,
+        },
+        6 => SessionAction::Place {
+            payload: read_index(reader)?,
+            body: read_index(reader)?,
         },
         _ => return Err(CodecError::Corrupt),
     })
@@ -2746,6 +2756,18 @@ where
             writer.tag(Tag(8));
             writer.word(Word(u64::from(u32::from(index))));
         },
+        Linearity::BufferUnreturned { site } => {
+            writer.tag(Tag(9));
+            write_site(writer, site)?;
+        },
+        Linearity::BufferReturnedTwice { site } => {
+            writer.tag(Tag(10));
+            write_site(writer, site)?;
+        },
+        Linearity::BufferRead { site } => {
+            writer.tag(Tag(11));
+            write_site(writer, site)?;
+        },
     }
     Ok(())
 }
@@ -2795,6 +2817,15 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
                     .map(DeBruijnIndex::from)
                     .map_err(|_overflow| CodecError::Corrupt)?,
             }
+        },
+        9 => Linearity::BufferUnreturned {
+            site: read_site(reader)?,
+        },
+        10 => Linearity::BufferReturnedTwice {
+            site: read_site(reader)?,
+        },
+        11 => Linearity::BufferRead {
+            site: read_site(reader)?,
         },
         _ => return Err(CodecError::Corrupt),
     })
@@ -3500,6 +3531,7 @@ fn read_effect_row(
                     | ContentNode::StaticPi { .. } => tag == 0x2B,
                     | ContentNode::Sigma { .. } => tag == 0x2D,
                     | ContentNode::UnknownType => tag == 0x2C,
+                    | ContentNode::BufferType => tag == 0x80,
                     | ContentNode::List(_) => tag == 0x56,
                     | ContentNode::ListNil => tag == 0x57,
                     | ContentNode::ListCons(..) => tag == 0x58,
@@ -3970,6 +4002,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             ContentNode::Sigma { first, second }
         },
         0x2C => ContentNode::UnknownType,
+        0x80 => ContentNode::BufferType,
         0x56 => ContentNode::List(read_index(reader)?),
         0x57 => ContentNode::ListNil,
         0x58 => ContentNode::ListCons(read_index(reader)?, read_index(reader)?),
@@ -5406,7 +5439,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 23] = [
+const FORMERS: [UnadmittedFormer; 24] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -5430,6 +5463,7 @@ const FORMERS: [UnadmittedFormer; 23] = [
     UnadmittedFormer::HigherFlow,
     UnadmittedFormer::Memory,
     UnadmittedFormer::Stage,
+    UnadmittedFormer::Buffer,
 ];
 
 /// The shapes a rule can require, in stable wire order.
@@ -7331,7 +7365,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Univalence(..) | ContentNode::ListCase { .. } |
-ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
+ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
         _ => false,

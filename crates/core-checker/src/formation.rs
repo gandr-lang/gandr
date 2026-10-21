@@ -438,6 +438,7 @@ pub fn level_of(
                 | ValueTypeView::String
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Buffer
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },

@@ -852,6 +852,7 @@ pub fn constructor_owes(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Kept { .. }

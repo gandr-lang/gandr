@@ -873,6 +873,15 @@ fn checked(
             LinearityDefect::Unbound { .. } => {
                 f.write_str("internal error: a session action names an endpoint no `fork` or `recv` opened")
             },
+            LinearityDefect::BufferUnreturned { .. } => f.write_str(
+                "the buffer placed live here is not handed back before its body ends",
+            ),
+            LinearityDefect::BufferReturnedTwice { .. } => {
+                f.write_str("the buffer is handed back a second time")
+            },
+            LinearityDefect::BufferRead { .. } => f.write_str(
+                "a buffer can be used only by the `send`, the operation or the resumption that hands it back",
+            ),
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => {
@@ -1587,6 +1596,18 @@ mod tests
                 defect: LinearityDefect::Unbound {
                     index: DeBruijnIndex::from(0_u32),
                 },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferUnreturned { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferReturnedTwice { site: computation },
+            },
+            CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferRead { site: computation },
             },
             CheckRefusal::Access {
                 at: node,

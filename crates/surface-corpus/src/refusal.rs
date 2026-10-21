@@ -585,6 +585,14 @@ pub enum RefusalName
     UnrestrictedEndpoint,
     /// An action naming a linear index no fork or receive bound.
     UnboundEndpoint,
+    /// A receive or an allocation ending with the buffer it placed live never
+    /// handed back.
+    BufferUnreturned,
+    /// A placed buffer handed back a second time.
+    BufferReturnedTwice,
+    /// A placed buffer read other than by the send, the operation or the
+    /// resumption that returns it.
+    BufferRead,
     /// An access naming a linear slot that holds no value.
     NotHeld,
     /// A held value read while an access lends it exclusively, or accessed
@@ -676,7 +684,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 180_usize] = [
+    pub const VOCABULARY: [Self; 183_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -824,6 +832,9 @@ impl RefusalName
         Self::ArmsDisagree,
         Self::UnrestrictedEndpoint,
         Self::UnboundEndpoint,
+        Self::BufferUnreturned,
+        Self::BufferReturnedTwice,
+        Self::BufferRead,
         Self::NotHeld,
         Self::HeldLent,
         Self::HeldCaptured,
@@ -994,6 +1005,9 @@ impl RefusalName
         | (Self::ArmsDisagree, b"ArmsDisagree")
         | (Self::UnrestrictedEndpoint, b"UnrestrictedEndpoint")
         | (Self::UnboundEndpoint, b"UnboundEndpoint")
+        | (Self::BufferUnreturned, b"BufferUnreturned")
+        | (Self::BufferReturnedTwice, b"BufferReturnedTwice")
+        | (Self::BufferRead, b"BufferRead")
         | (Self::NotHeld, b"NotHeld")
         | (Self::HeldLent, b"HeldLent")
         | (Self::HeldCaptured, b"HeldCaptured")
@@ -1123,6 +1137,9 @@ impl RefusalName
             Self::ArmsDisagree => "ArmsDisagree",
             Self::UnrestrictedEndpoint => "UnrestrictedEndpoint",
             Self::UnboundEndpoint => "UnboundEndpoint",
+            Self::BufferUnreturned => "BufferUnreturned",
+            Self::BufferReturnedTwice => "BufferReturnedTwice",
+            Self::BufferRead => "BufferRead",
             Self::NotHeld => "NotHeld",
             Self::HeldLent => "HeldLent",
             Self::HeldCaptured => "HeldCaptured",
@@ -1511,7 +1528,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
-        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
+        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
@@ -1814,6 +1831,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferUnreturned { .. }, .. }, RefusalName::BufferUnreturned)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferReturnedTwice { .. }, .. }, RefusalName::BufferReturnedTwice)
+        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferRead { .. }, .. }, RefusalName::BufferRead)
         | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
         | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
         | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
@@ -1934,6 +1954,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
             LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,
             LinearityDefect::Unbound { .. } => RefusalName::UnboundEndpoint,
+            LinearityDefect::BufferUnreturned { .. } => RefusalName::BufferUnreturned,
+            LinearityDefect::BufferReturnedTwice { .. } => RefusalName::BufferReturnedTwice,
+            LinearityDefect::BufferRead { .. } => RefusalName::BufferRead,
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => RefusalName::NotHeld,

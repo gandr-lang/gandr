@@ -248,6 +248,7 @@ fn actions(
                     SessionAction::Offer { .. } => String::from("offer"),
                     SessionAction::Close { .. } => String::from("close"),
                     SessionAction::Fork { .. } => String::from("fork"),
+                    SessionAction::Place { .. } => String::from("place"),
                 };
                 seen.push(match action.endpoint() {
                     Maybe::Present(endpoint) => format!("{kind} @{}", u32::from(endpoint)),

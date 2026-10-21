@@ -668,7 +668,7 @@ impl FreeIndices
                 if let Computation::Session(ref action) = *held {
                     forked = Lowering(u32::from(action.child_binders()));
                     match *action {
-                        SessionAction::Fork { .. } => {},
+                        SessionAction::Fork { .. } | SessionAction::Place { .. } => {},
                         SessionAction::Send { endpoint, .. }
                         | SessionAction::Receive { endpoint, .. }
                         | SessionAction::Select { endpoint, .. }
@@ -1302,6 +1302,9 @@ Err(_) => false,
                         SessionAction::Receive { body, .. } => {
                             one(computation(body), Lowering::NONE)
                         },
+                        SessionAction::Place { payload, body } => {
+                            two(value(payload), computation(body), Lowering::NONE)
+                        },
                         SessionAction::Select { .. } | SessionAction::Close { .. } => {
                             [None, None, None, None, None]
                         },
@@ -1412,7 +1415,8 @@ Err(_) => false,
                     ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::Unknown => [None, None, None, None, None],
+                    | ValueType::Unknown
+                    | ValueType::Buffer => [None, None, None, None, None],
                     ValueType::Capability { ref authority, .. } => {
                         effects = Some(authority);
                         [None, None, None, None, None]

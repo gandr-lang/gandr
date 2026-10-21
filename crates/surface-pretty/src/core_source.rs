@@ -671,6 +671,7 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Flow { .. }
             | ValueType::Run(_)
             | ValueType::Base(_)
+            | ValueType::Buffer
             | ValueType::Product(_)
             | ValueType::Sum(_)
             | ValueType::List(_)
@@ -1050,7 +1051,8 @@ impl<'arena> CoreSource<'arena>
             actual_carrier == CoreNode::ValueType(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
             | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
-            | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+            | (None, Former::Unreadable(Unreadable::Dangling))
+            | (Some(&ValueType::Buffer), Former::BufferType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
@@ -1149,6 +1151,7 @@ impl<'arena> CoreSource<'arena>
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
             ValueType::Base(base) => Former::BaseType(base),
+            ValueType::Buffer => Former::BufferType,
             ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
             ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
@@ -1380,6 +1383,8 @@ impl<'arena> CoreSource<'arena>
             | (&SessionAction::Offer { endpoint, ref arms }, Former::Offer { endpoint: actual, arms: count }) =>
                 endpoint == actual && usize::from(count) == arms.len(),
             | (&SessionAction::Fork { .. }, Former::Fork { .. }) => true,
+            | (&SessionAction::Place { payload, body }, Former::Place { payload: actual, body: actual_body }) =>
+                actual == CoreNode::Value(payload) && actual_body == CoreNode::Computation(body),
             | _ => false,
         },
         | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
@@ -1633,6 +1638,10 @@ impl<'arena> CoreSource<'arena>
                     child: computation(child),
                     parent: computation(parent),
                 },
+                SessionAction::Place { payload, body } => Former::Place {
+                    payload: value(payload),
+                    body: computation(body),
+                },
             },
             Computation::Memory(ref form) => match *form {
                 MemoryForm::Hold {
@@ -1829,6 +1838,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Base(_)
+                | ValueType::Buffer
                 | ValueType::List(_)
                 | ValueType::Thunk(_)
                 | ValueType::Universe { .. }
@@ -1920,7 +1930,8 @@ impl Source for CoreSource<'_>
                     | SessionAction::Receive { .. }
                     | SessionAction::Select { .. }
                     | SessionAction::Close { .. }
-                    | SessionAction::Fork { .. },
+                    | SessionAction::Fork { .. }
+                    | SessionAction::Place { .. },
                 )
                 | Computation::Memory(_)
                 | Computation::World(_)
@@ -2018,6 +2029,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Base(_)
+                | ValueType::Buffer
                 | ValueType::Product(_)
                 | ValueType::Sum(_)
                 | ValueType::List(_)
@@ -2088,7 +2100,8 @@ impl Source for CoreSource<'_>
                     | SessionAction::Receive { .. }
                     | SessionAction::Select { .. }
                     | SessionAction::Close { .. }
-                    | SessionAction::Fork { .. },
+                    | SessionAction::Fork { .. }
+                    | SessionAction::Place { .. },
                 )
                 | Computation::Memory(_)
                 | Computation::World(_)

@@ -6,6 +6,13 @@
 //! and `Fs.stat` returns `(kind, size)`. List fields use the native List
 //! former.
 //!
+//! `Ring` is the completion ring's buffer pool: `alloc` takes a byte length
+//! and replies a buffer, which its performer holds live, and `free` takes one
+//! back. The native handler is where a host registers the area the buffers
+//! live in; a source handler shadowing it mints each buffer its `alloc`
+//! clause resumes with and reclaims each one its `free` clause receives, so a
+//! closed program serves its own buffers.
+//!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
@@ -34,8 +41,10 @@ pub const FS: &str = "Fs";
 pub const PROC: &str = "Proc";
 /// The read-only process environment interface.
 pub const ENV: &str = "Env";
+/// The completion ring's buffer interface.
+pub const RING: &str = "Ring";
 
-/// The four interfaces, sharing their arena-owned payload and reply types.
+/// The five interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -47,6 +56,8 @@ pub struct HostSignatures
     pub proc: EffectSig,
     /// Read environment variables and the executable search path.
     pub env: EffectSig,
+    /// Allocate a buffer the ring fills, and free one back.
+    pub ring: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -95,7 +106,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))) || ret.is_err())]
@@ -105,6 +116,7 @@ impl HostSignatures
         let string = arena.value_type_base(BaseType::String);
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
+        let buffer = arena.value_type_buffer();
         let strings = arena.value_type_list(string);
         let args_mode = arena.value_type_product(&[strings, string]);
         let command = arena.value_type_product(&[string, args_mode]);
@@ -176,23 +188,36 @@ impl HostSignatures
                 reply: strings,
             },
         ])?;
+        let ring = EffectSig::new(RING.into(), [
+            EffectOp {
+                name: "alloc".into(),
+                payload: integer,
+                reply: buffer,
+            },
+            EffectOp {
+                name: "free".into(),
+                payload: buffer,
+                reply: unit,
+            },
+        ])?;
         Ok(Self {
             exec,
             fs,
             proc,
             env,
+            ring,
         })
     }
 
-    /// The four interfaces, in the order the host declares them.
+    /// The five interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 4]
+    pub const fn interfaces(&self) -> [&EffectSig; 5]
     {
-        [&self.exec, &self.fs, &self.proc, &self.env]
+        [&self.exec, &self.fs, &self.proc, &self.env, &self.ring]
     }
 
     /// The interface named `name`.

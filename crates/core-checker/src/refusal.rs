@@ -264,6 +264,9 @@ pub enum UnadmittedFormer
     /// binder of its declaration's signature; or one refining no data type,
     /// which a signature's mark cannot place.
     Stage,
+    /// The buffer type: a receive's binder lives on the checker's side, and the
+    /// kernel has no buffer.
+    Buffer,
 }
 
 /// A count of static arguments: how many a static application passes, or how

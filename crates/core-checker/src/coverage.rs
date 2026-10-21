@@ -689,6 +689,7 @@ impl Walker<'_, '_, '_>
                 | ValueType::List(_)
                 | ValueType::Stack { .. }
                 | ValueType::Capability { .. }
+                | ValueType::Buffer
                 | ValueType::PathUniverse(..)
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }

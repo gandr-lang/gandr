@@ -409,7 +409,8 @@ pub fn authorise(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Staged { .. }
-        | ValueTypeView::Kept { .. } => Err(CheckRefusal::ShapeMismatch {
+        | ValueTypeView::Kept { .. }
+        | ValueTypeView::Buffer => Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(capability),
             wanted: ExpectedShape::Capability,
             found: TypeNode::Value(classifier),
@@ -515,7 +516,8 @@ pub fn reaches(
                 | ValueType::Universe { .. }
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
-                | ValueType::Unknown => {},
+                | ValueType::Unknown
+                | ValueType::Buffer => {},
             },
             TypeNode::Computation(at) => match *arena.comp_type(at).ok_or(dangling)? {
                 CompType::Returner {

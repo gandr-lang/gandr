@@ -245,6 +245,27 @@ pub enum LinearityDefect
         /// The index.
         index: gandr_kernel_term::DeBruijnIndex,
     },
+    /// A buffer placed live — by a receive, a placement or an operation
+    /// clause's mint — reached the end of its scope never returned.
+    BufferUnreturned
+    {
+        /// The computation that placed the buffer live.
+        site: ComputationId,
+    },
+    /// A buffer was returned a second time.
+    BufferReturnedTwice
+    {
+        /// The computation that placed the buffer live.
+        site: ComputationId,
+    },
+    /// A buffer was read other than by the send, the resumption or the
+    /// operation that returns it, or a buffer never placed live was returned.
+    BufferRead
+    {
+        /// The computation that placed the buffer live, or the action that
+        /// returned a buffer no slot holds.
+        site: ComputationId,
+    },
 }
 
 /// An endpoint the linear zone held when a run refused.
@@ -315,6 +336,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
@@ -376,12 +398,14 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => declared,
     };
     match value_type_view(context.arena(), head)? {
-        ValueTypeView::Session(_) => Err(CheckRefusal::Linearity {
+        // A buffer, like an endpoint, exists only where a receive places it.
+        ValueTypeView::Session(_) | ValueTypeView::Buffer => Err(CheckRefusal::Linearity {
             at: crate::refusal::CoreNode::Type(crate::refusal::TypeNode::Value(declared)),
             defect: LinearityDefect::Unrestricted,
         }),

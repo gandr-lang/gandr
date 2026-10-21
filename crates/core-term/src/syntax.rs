@@ -1102,6 +1102,13 @@ pub enum ValueType
         /// How long it lives.
         region: crate::effect::capability::Region,
     },
+    /// The buffer token `Buf`: an id into a registered area that a completion
+    /// delivers and the program must return, exactly once. No term
+    /// introduces it: a receive's binder holds one, and so does the reply of
+    /// an operation the scope handling it mints the buffer for, each placed
+    /// live in the linear zone; it leaves that zone only by being handed on
+    /// whole, through a send, an operation's payload or a resumption.
+    Buffer,
     /// A value kept in a region: `A at c`, a value of `A` that may capture a
     /// shared view lent while the capability scope at `region` lives, and so
     /// lives as long as that scope rather than the access.
@@ -3326,6 +3333,7 @@ fn equal_syntax(
                             | ValueType::Universe { .. }
                             | ValueType::Abstract(_)
                             | ValueType::Unknown
+                            | ValueType::Buffer
                     ) && (a == b))
                     {
                         {}

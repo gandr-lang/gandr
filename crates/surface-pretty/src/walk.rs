@@ -416,7 +416,7 @@ enum Kind
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
@@ -436,7 +436,7 @@ enum Kind
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
         | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
         | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
-        | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Select { .. } | Former::Offer { .. }
+        | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Place { .. } | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
         | Former::AbortView(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
     | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
@@ -447,6 +447,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         Former::Stack(..)
         | Former::PathUniverse(..)
         | Former::BaseType(_)
+        | Former::BufferType
         | Former::Product(_)
         | Former::RecordType(_)
         | Former::Sum(_)
@@ -539,6 +540,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Project(..)
         | Former::Send { .. }
         | Former::Receive { .. }
+        | Former::Place { .. }
         | Former::Select { .. }
         | Former::Offer { .. }
         | Former::Close(_)
@@ -897,6 +899,49 @@ where
     slots(source, node, former, (admits, bodies), written)
 }
 
+/// The placement a clause minting a buffer opens with, when `node` is that
+/// clause's opening: it splits the clause's payload binder, past the
+/// continuation's, into two and places the second live, as the lowering
+/// writes `oper alloc(n, b, k)`. No other source spells a placement straight
+/// under a split.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the split's body exactly for a split of the intuitionistic
+///   variable at index one into two components whose body places the variable
+///   at index zero; none otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a minting clause writes its three names, and a split of
+///   any other shape is written as the case it is.
+/// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Split { .. }))]
+fn minted<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let variable = |node, at: u32| matches!(source.read(node), Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == at);
+    if let Former::Split {
+        scrutinee,
+        arity,
+        body,
+    } = source.read(node)
+        && usize::from(arity) == 2_usize
+        && variable(scrutinee, 1_u32)
+        && matches!(source.read(body), Former::Place { payload, .. } if variable(payload, 0_u32))
+    {
+        Some(body)
+    }
+    else {
+        None
+    }
+}
+
 /// The children `former` reads at `node`, each with what its position
 /// admits and the binders it stands under, in reading order, in a position
 /// admitting `admits` of a presentation writing its thunks as `bodies` says,
@@ -977,12 +1022,14 @@ where
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::Receive { .. } => ret.len() == 1_usize
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Place { .. } => ret.len() == 2_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::Access { mode, place, .. } => {
         let indexed = usize::from(matches!(place, gandr_core_term::memory::Place::At { .. }));
         ret.len() == indexed.saturating_add(match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize })
             && ret.get(indexed).is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
     },
-    | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
+    | Former::BaseType(_) | Former::BufferType | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
@@ -1365,6 +1412,13 @@ where
                 count: 1_usize,
             }),
         ]),
+        Former::Place { payload, body } => Vec::from([
+            value(payload),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }),
+        ]),
         Former::Receive { body, .. } => Vec::from([Slot::of(body, admits, Binds {
             zone: Zone::Linear,
             count: 1_usize,
@@ -1386,6 +1440,7 @@ where
             slots
         },
         Former::BaseType(_)
+        | Former::BufferType
         | Former::Universe { .. }
         | Former::Abstract(_)
         | Former::Capability { .. }
@@ -1466,7 +1521,7 @@ enum Surface
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
 #[spec(ensures: |ret| ret == if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
-    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. })
+    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
     && matches!(kind(former), Kind::Value | Kind::Computation)
     && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
 {
@@ -1487,6 +1542,7 @@ fn surface_below<Node>(
             | Former::Nested(_)
             | Former::Returned(_)
             | Former::Ascription { .. }
+            | Former::Place { .. }
     );
     // A static abstraction `\A. T` is a type form: its body is read as a type.
     let typed_body = matches!(*former, Former::StaticLambda(_));
@@ -3246,6 +3302,10 @@ enum Task<Node>
     /// Open a binder in a zone, of the former whose child follows: the former
     /// itself when it opens that one binder, whose name the source may write.
     Bind(Zone, Option<Node>),
+    /// Open a binder in a zone named as the innermost open binder is: a
+    /// placement's linear binder, which takes the name of the binder holding
+    /// the buffer it places.
+    Rebind(Zone),
     /// Open the binder that names a region — a capability scope's capability
     /// or a hold's held name — as [`Task::Bind`] does, its region the
     /// innermost the walk is inside.
@@ -4892,6 +4952,7 @@ impl Walk<'_, '_>
                 | Former::PathEquiv(..)
                 | Former::PathProduct(..)
                 | Former::BaseType(_)
+                | Former::BufferType
                 | Former::Product(_)
                 | Former::Sum(_)
                 | Former::RecordType(_)
@@ -4969,6 +5030,7 @@ impl Walk<'_, '_>
                 | Former::Project(..)
                 | Former::Send { .. }
                 | Former::Receive { .. }
+                | Former::Place { .. }
                 | Former::Select { .. }
                 | Former::Offer { .. }
                 | Former::Close(_)
@@ -5655,6 +5717,9 @@ impl Walk<'_, '_>
             Former::BaseType(BaseType::String) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("String")));
             },
+            Former::BufferType => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
+            },
             Former::Product(arity) if usize::from(arity) == 0 => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
             },
@@ -5860,6 +5925,18 @@ impl Walk<'_, '_>
                 )));
                 tasks.push(Task::Context(position));
                 return Ok(());
+            },
+            // A clause minting a buffer opens by splitting its payload binder
+            // into the payload and the mint and placing the mint: the clause
+            // writes both names, `oper alloc(n, b, k)`, so the split has no
+            // spelling of its own.
+            Former::Split { body, .. } if minted(source, node).is_some() => {
+                shaped = Some(Vec::from([Slot::of(
+                    body,
+                    admits,
+                    Binds::intuitionistic(OpenBinders(2_usize)),
+                )]));
+                None
             },
             Former::Path { .. }
             | Former::Flow { .. }
@@ -6343,6 +6420,17 @@ impl Walk<'_, '_>
                 },
                 None => Some(writes(Production("block"), Join::Sequence)),
             },
+            // A placement has no spelling of its own: the bind before it
+            // writes `run b <- c.alloc(n) ;`, and the placement stands as the
+            // rest of the block, under the buffer's linear binder, which takes
+            // the bind's name.
+            Former::Place { body, .. } => {
+                shaped = Some(Vec::from([Slot::of(body, admits, Binds {
+                    zone: Zone::Linear,
+                    count: 1_usize,
+                })]));
+                None
+            },
             // An ascription outside a typed bind has no spelling of its own:
             // it stands as its body, its type unwritten.
             #[cfg_attr(
@@ -6537,6 +6625,9 @@ impl Walk<'_, '_>
                 }
                 else if let Some(unwritten) = unwritten {
                     Task::BindLoop(slot.binds.zone, unwritten)
+                }
+                else if matches!(former, Former::Place { .. }) {
+                    Task::Rebind(slot.binds.zone)
                 }
                 else {
                     Task::Bind(slot.binds.zone, opener)
@@ -7178,6 +7269,45 @@ impl Walk<'_, '_>
         }
     }
 
+    /// Open a binder in `zone` named as the innermost open binder is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one binder more is open, in `zone`, holding the name of the
+    ///   binder open just inside it, or none when no binder is open or that one
+    ///   took none.
+    /// - provides: a placement's linear binder, named as the bind or the split
+    ///   holding the buffer it places is, which no occurrence reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a placed buffer is written by its bind's name, and a
+    ///   minting clause's mint by its own, so each reads back to itself.
+    /// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn rebind(
+        &mut self,
+        zone: Zone,
+    )
+    {
+        let position = self.opened.len();
+        self.names.truncate(position);
+        let name = position
+            .checked_sub(1_usize)
+            .and_then(|inner| self.names.get(inner))
+            .cloned()
+            .flatten();
+        self.names.resize(position, None);
+        self.names.push(name);
+        let _named = self.occurring.remove(&OpenBinders(position));
+        self.opened.push(zone);
+    }
+
     /// The name of the capability scope or hold whose region is `depth`,
     /// counted from the outermost: the regions the source's roots stand in
     /// first, then the ones the walk is inside.
@@ -7346,12 +7476,27 @@ impl Walk<'_, '_>
                     .part(Part::Line)
                     .text("oper ")
                     .text(name)
-                    .text("(")
-                    .part(Part::Binder(0_usize))
-                    .text(", ")
-                    .part(Part::Binder(1_usize))
-                    .text(") => ")
-                    .piece(Binding::Arrow);
+                    .text("(");
+                // A minting clause's split opens the payload and the mint
+                // past the pair and the continuation.
+                let _ = if source
+                    .component(node, Component::from(index))
+                    .is_some_and(|body| minted(source, body).is_some())
+                {
+                    parts
+                        .part(Part::Binder(2_usize))
+                        .text(", ")
+                        .part(Part::Binder(3_usize))
+                        .text(", ")
+                        .part(Part::Binder(1_usize))
+                }
+                else {
+                    parts
+                        .part(Part::Binder(0_usize))
+                        .text(", ")
+                        .part(Part::Binder(1_usize))
+                };
+                let _ = parts.text(") => ").piece(Binding::Arrow);
             }
             let _ = parts.part(Part::Close);
         };
@@ -8015,6 +8160,7 @@ impl Walk<'_, '_>
             | Former::Stack(..)
             | Former::With(..)
             | Former::Ascription { .. }
+            | Former::Place { .. }
             | Former::ListNil
             | Former::ListCons(..)
             | Former::PathUniverse(..)
@@ -8022,6 +8168,7 @@ impl Walk<'_, '_>
             | Former::PathEquiv(..)
             | Former::PathProduct(..)
             | Former::BaseType(_)
+            | Former::BufferType
             | Former::Product(_)
             | Former::Sum(_)
             | Former::RecordType(_)
@@ -8730,6 +8877,7 @@ where
                     walk.unwinds.saturating_sub(1_usize)
                 };
             },
+            Task::Rebind(zone) => walk.rebind(zone),
             Task::BindScope(zone, opener) => {
                 walk.bind(source, zone, opener);
                 walk.scopes.push(walk.opened.len().saturating_sub(1_usize));

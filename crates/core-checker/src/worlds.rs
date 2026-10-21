@@ -1025,6 +1025,7 @@ pub(crate) fn crosses(
             | ValueTypeView::Stack { .. }
             | ValueTypeView::Session(_)
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::World(WorldType::Capability(_))
             | ValueTypeView::Universe { .. }
             | ValueTypeView::StaticPi { .. }

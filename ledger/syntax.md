@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x4b523a2ae1ddf3e2`
+- Grammar fingerprint: `0x952305d60bbc9e83`
 - Rules: 152 — 151 committed, 1 internal
-- Molds: 2925
+- Molds: 2930
 - Attributes: 11
 
 ## Reading a form
@@ -98,7 +98,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`lambda_expression`](exemplars/syntax/lambda_expression.gandr) | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⟨block⟩ ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] ⟨block⟩ ⦆` | `expression.atom` | `lambda_expression` | Keyword, Other, VariableParam, TypeVariable, Type, Operator, VariableDef, Number |
 | [`thunk_expression`](exemplars/syntax/thunk_expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? ⟨block⟩` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? ⟨block⟩` | `expression.atom` | `thunk_expression` | Keyword, Other, Number, Operator, VariableDef, VariableParam |
 | [`case_expression`](exemplars/syntax/case_expression.gandr) | `case EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `case_expression` | Keyword, Operator, Other |
-| [`handle_expression`](exemplars/syntax/handle_expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | Keyword, VariableDef, Other, Type, Operator, Number, VariableParam, FunctionDef |
+| [`handle_expression`](exemplars/syntax/handle_expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ⦅ , ‹identifier› ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ⦅ , ‹identifier› ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | Keyword, VariableDef, Other, Type, Operator, Number, VariableParam, FunctionDef |
 | [`if_expression`](exemplars/syntax/if_expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ ⟨block⟩ ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⟨block⟩ ⦆` | `expression.atom` | `if_expression` | Keyword, Operator, Other, VariableDef, Number, VariableParam |
 | [`for_expression`](exemplars/syntax/for_expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | Keyword, VariableDef, Other, Operator, Number, VariableParam |
 | [`while_expression`](exemplars/syntax/while_expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | Keyword, Other, Operator, VariableDef, Number, VariableParam |
@@ -180,7 +180,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`labelled_sum_type`](exemplars/syntax/labelled_sum_type.gandr) | `+ { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | Operator, Other |
 | [`lazy_record_type`](exemplars/syntax/lazy_record_type.gandr) | `& { ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | Operator, Other |
 | [`mu_session_type`](exemplars/syntax/mu_session_type.gandr) | `mu ‹type_variable› . TYPE` | `type.arrow` | `mu_session_type` | Keyword, TypeVariable, Other |
-| [`primitive_type`](exemplars/syntax/primitive_type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void` | `type.atom` | `primitive_type` | TypeBuiltin |
+| [`primitive_type`](exemplars/syntax/primitive_type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | TypeBuiltin |
 | [`unknown_type`](exemplars/syntax/unknown_type.gandr) | `?` | `type.atom` | `unknown_type` * | TypeBuiltin |
 | [`type_identifier`](exemplars/syntax/type_identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | Type |
 | [`type_variable`](exemplars/syntax/type_variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | TypeVariable |

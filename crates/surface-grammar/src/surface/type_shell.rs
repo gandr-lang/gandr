@@ -634,6 +634,8 @@ fn add_type_rules(
             tile(TileLabel("Symbol")),
             tile(TileLabel("Unit")),
             tile(TileLabel("Void")),
+            // The opaque buffer a receive places live and a send returns.
+            tile(TileLabel("Buf")),
         ]),
     ));
     // The gradual top `?` as a type atom: one spelling for the unknown type

@@ -3091,6 +3091,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
+                | ValueTypeView::Buffer
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
@@ -3401,6 +3402,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::List(_)
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::Capability { .. }
+                    | ValueTypeView::Buffer
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Unit

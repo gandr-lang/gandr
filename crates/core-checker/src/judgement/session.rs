@@ -82,6 +82,13 @@ pub(super) enum Resident
         /// The receive.
         at: ComputationId,
     },
+    /// The buffer the receive `at` placed live, opened available: a send
+    /// returns it once, and the receive's end refuses it unreturned.
+    Buffer
+    {
+        /// The receive.
+        at: ComputationId,
+    },
     /// The view the access `at` lends, of a value held at `grade`.
     View
     {
@@ -313,6 +320,7 @@ impl Machine<'_, '_>
                     use_state,
                 }),
                 Resident::Received { .. }
+                | Resident::Buffer { .. }
                 | Resident::Held { .. }
                 | Resident::View { .. }
                 | Resident::Capability { .. } => None,
@@ -434,6 +442,7 @@ impl Machine<'_, '_>
                 depth: resided.depth,
             }),
             Resident::Received { .. }
+            | Resident::Buffer { .. }
             | Resident::Held { .. }
             | Resident::View { .. }
             | Resident::Capability { .. } => match at {
@@ -1089,6 +1098,9 @@ impl Machine<'_, '_>
                 });
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(protocol))))
             },
+            (&SessionAction::Place { payload, body }, _) => {
+                self.place(term, payload, body, direction)
+            },
         }
     }
 
@@ -1201,6 +1213,9 @@ impl Machine<'_, '_>
         }
         let next = self.context.arena_mut().value_type_session(next);
         let expected = self.here(ty, slot.depth)?;
+        if self.returned_buffer(at, payload, expected)? == HandedOn::Buffer {
+            return self.sent(endpoint, next);
+        }
         if let Value::Variable {
             zone: Zone::Linear,
             index,
@@ -1246,6 +1261,94 @@ impl Machine<'_, '_>
             term: payload,
             direction: Direction::Check(expected),
         }))
+    }
+
+    /// Return the buffer `payload` names, where `action` — a send, a
+    /// resumption or an exercised operation — hands on a value of `expected`.
+    ///
+    /// # Specification
+    /// - requires: `expected` is read where `action` stands.
+    /// - ensures: [`HandedOn::Buffer`] when the payload is a linear variable
+    ///   holding a buffer, whose slot, converted to `expected`, is then
+    ///   consumed and its typing kept; [`HandedOn::Other`], the slot untouched,
+    ///   for any other payload where `expected` is not the buffer at its weak
+    ///   head.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::BufferReturnedTwice`] for a buffer already
+    ///   returned, and [`LinearityDefect::BufferRead`] at `action` for a buffer
+    ///   no slot holds handed where a buffer is expected, which would otherwise
+    ///   mint one; the value bridge's refusal when `expected` is not the
+    ///   buffer.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an allocated buffer freed once checks and freed twice
+    ///   is refused at the second free, and an allocation's reply no placement
+    ///   holds is refused where it is freed.
+    /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
+    /// - witness: `judgement::session::tests::a_buffer_no_slot_holds_is_never_returned`
+    #[spec(
+        captures: depth = self.context.depth(Zone::Linear),
+        ensures: |ret| self.context.depth(Zone::Linear) == depth,
+    )]
+    pub(super) fn returned_buffer(
+        &mut self,
+        action: ComputationId,
+        payload: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<HandedOn, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(payload));
+        if let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        {
+            let sent = self.resided(node, index)?;
+            if let Resident::Buffer { at: site } = sent.resident {
+                if sent.use_state == LinearUse::Consumed {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::BufferReturnedTwice { site },
+                    });
+                }
+                let found = self.here(sent.state, sent.depth)?;
+                crate::conversion::value_bridge(
+                    self.context,
+                    payload,
+                    found,
+                    expected,
+                    &mut self.conversions,
+                )?;
+                if self.context.recording() == Recording::On {
+                    self.context.keep_typing(Typing {
+                        term: TermNode::Value(payload),
+                        ty: TypeNode::Value(expected),
+                        depth: self.context.depth(Zone::Intuitionistic),
+                    });
+                }
+                let _returned = self
+                    .context
+                    .binders()
+                    .occurrence(Zone::Linear, index)
+                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                return Ok(HandedOn::Buffer);
+            }
+        }
+        let head = self.context.whnf_value_type(expected)?;
+        if matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Buffer
+        ) {
+            return Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::BufferRead { site: action },
+            });
+        }
+        Ok(HandedOn::Other)
     }
 
     /// Finish a send whose payload checked: advance the endpoint.
@@ -1329,18 +1432,24 @@ impl Machine<'_, '_>
             .map_err(|_fault| CheckRefusal::MachineInvariant)?;
         let payload = self.here(payload, slot.depth)?;
         let head = self.context.whnf_value_type(payload)?;
-        let delegated = matches!(
-            value_type_view(self.context.arena(), head)?,
-            ValueTypeView::Session(_)
-        );
+        let view = value_type_view(self.context.arena(), head)?;
         let depth = self.context.depth(Zone::Intuitionistic);
-        if delegated {
+        if matches!(view, ValueTypeView::Session(_)) {
             self.context.binders().open(Zone::Linear, head);
             self.sessions.opened.push(Opened {
                 resident: Resident::Endpoint(Endpoint {
                     fork: at,
                     side: ForkSide::Received,
                 }),
+                depth,
+            });
+        }
+        else if matches!(view, ValueTypeView::Buffer) {
+            // A buffer is live: its slot opens available, and only the send
+            // that returns it spends it.
+            self.context.binders().open(Zone::Linear, head);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Buffer { at },
                 depth,
             });
         }
@@ -1358,6 +1467,75 @@ impl Machine<'_, '_>
                 .occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
                 .map_err(|_fault| CheckRefusal::MachineInvariant)?;
         }
+        self.wait(Frame::ReceiveBody { at, direction });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
+    }
+
+    /// Place the buffer `payload` names live in the placement's linear binder
+    /// and judge its body.
+    ///
+    /// # Specification
+    /// - requires: `at` is a placement of `payload` over `body`, the payload
+    ///   the intuitionistic binder of the bind the placement stands under.
+    /// - ensures: one linear slot more, a buffer opened available at the
+    ///   placement; one `ReceiveBody` frame waits on the body's judgement in
+    ///   the placement's direction, so the body's end refuses the buffer
+    ///   unreturned as a receive's does.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a payload other than an
+    ///   intuitionistic variable whose type is the buffer at its weak head,
+    ///   which the lowering never builds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an allocated buffer freed checks, and one the body
+    ///   never returns is refused at the placement.
+    /// - witness: `judgement::session::tests::an_allocated_buffer_is_returned_once`
+    #[spec(
+        captures: before = self.context.depth(Zone::Linear),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.context.depth(Zone::Linear) > before),
+    )]
+    fn place(
+        &mut self,
+        at: ComputationId,
+        payload: ValueId,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = *self.value(payload)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let declared = self
+            .context
+            .binders()
+            .occurrence(Zone::Intuitionistic, index)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let arena = self.context.arena_mut();
+        let read = shift_value_type(arena, declared, Binders::past(index)).settle(arena);
+        let head = self.context.whnf_value_type(read)?;
+        if !matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Buffer
+        ) {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, head);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Buffer { at },
+            depth,
+        });
         self.wait(Frame::ReceiveBody { at, direction });
         Ok(Step::Descend(Goal::Computation {
             term: body,
@@ -1408,8 +1586,17 @@ impl Machine<'_, '_>
                 }
             },
             Resident::Received { at: receive } if receive == at => {},
+            Resident::Buffer { at: site } if site == at => {
+                if innermost.use_state == LinearUse::Available {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::BufferUnreturned { site },
+                    });
+                }
+            },
             Resident::Endpoint(_)
             | Resident::Received { .. }
+            | Resident::Buffer { .. }
             | Resident::Held { .. }
             | Resident::View { .. }
             | Resident::Capability { .. } => return Err(CheckRefusal::MachineInvariant),
@@ -1775,6 +1962,11 @@ impl Machine<'_, '_>
                 // A received value opens spent, so two arms never leave it
                 // otherwise.
                 Resident::Received { .. } => CheckRefusal::MachineInvariant,
+                // One arm returned the buffer and the other kept it.
+                Resident::Buffer { at: site } => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::BufferUnreturned { site },
+                },
                 Resident::Held { .. } | Resident::View { .. } => CheckRefusal::Access {
                     at,
                     defect: AccessDefect::Unended,
@@ -2146,7 +2338,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
 /// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
 #[spec(ensures: |ret| match (resident, ret) {
-    | (Resident::Held { .. } | Resident::Received { .. }, Ok(())) => by == Capture::Branch,
+    | (Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }, Ok(())) => by == Capture::Branch,
     | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. }, Ok(())) => false,
     | (_, Err(_)) => true,
 })]
@@ -2161,7 +2353,17 @@ fn captured(
             at: node,
             defect: LinearityDefect::Captured { endpoint, by },
         }),
-        Resident::Held { .. } | Resident::Received { .. } if by == Capture::Branch => Ok(()),
+        // A branch reads a held value by copy, and returns the buffer in each
+        // arm, which the arms' agreement checks.
+        Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }
+            if by == Capture::Branch =>
+        {
+            Ok(())
+        },
+        Resident::Buffer { at: site } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::BufferRead { site },
+        }),
         Resident::Held { .. } | Resident::Received { .. } => Err(CheckRefusal::Access {
             at: node,
             defect: AccessDefect::HeldCaptured { by },
@@ -2175,6 +2377,20 @@ fn captured(
             defect: crate::worlds::LocatedDefect::CapabilityCaptured { world, by },
         }),
     }
+}
+
+/// What a value handed on whole — by a send, an operation's payload or a
+/// resumption — was.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HandedOn
+{
+    /// A live buffer, whose slot the hand-off spent.
+    Buffer,
+    /// Anything else, which the hand-off checks as a value.
+    Other,
 }
 
 #[cfg(test)]

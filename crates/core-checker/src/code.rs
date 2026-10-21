@@ -2538,7 +2538,8 @@ pub fn loose_reach(
                     ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::Unknown => {},
+                    | ValueType::Unknown
+                    | ValueType::Buffer => {},
                     ValueType::Capability { ref authority, .. } => work.extend(
                         authority
                             .types()

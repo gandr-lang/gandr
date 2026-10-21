@@ -167,6 +167,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type .", Standing::Owed(0)),
     ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
+    ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
     // The signature field of a refused member, `total: Integer` in `Facts`'s
     // signature where `total` is refused (#1115).

@@ -373,6 +373,8 @@ pub enum Former<'source, Node>
     PathProduct(Node, Node),
     /// A rigid base type: `Integer`, `String`, or the numeric atom.
     BaseType(BaseType),
+    /// The opaque buffer type `Buf` a receive places live.
+    BufferType,
     /// The product of a value type's components, which the source answers by
     /// [`Source::component`]: `Unit` at arity zero, `#{A, …}` from one.
     Product(Arity),
@@ -847,6 +849,16 @@ pub enum Former<'source, Node>
     {
         /// The endpoint, a linear index.
         endpoint: DeBruijnIndex,
+        /// The rest of the block.
+        body: Node,
+    },
+    /// A placement, the rest of `run b <- c.alloc(n) ;` after its bind: the
+    /// rest under the buffer's linear binder. It has no spelling of its own:
+    /// the bind before it writes the statement, and it stands as its body.
+    Place
+    {
+        /// The buffer, the bind's binder.
+        payload: Node,
         /// The rest of the block.
         body: Node,
     },

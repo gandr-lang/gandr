@@ -900,3 +900,134 @@ fn a_capability_at_a_scope_lives_in_its_region()
         );
     }
 }
+
+#[test]
+fn an_allocated_buffer_is_placed_live_and_freed()
+{
+    use gandr_core_term::session::SessionAction;
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def ring() -> -F Unit { handle r : Ring { run b <- r.alloc(4096) ; r.free(b) } with { pure(x) => pure x, oper alloc(n, b, k) => k(b), oper free(b, k) => k(unit) } }\n\
+             def named() -> -F Unit { handle c : Proc { run code <- c.exit(1) ; pure code } with { pure(x) => pure x, oper exit(code, k) => k(unit) } }\n",
+        ),
+        &mut arena,
+    );
+    let ring = tail_of(&module, &arena, "ring".into());
+    let Some(&Computation::Scope {
+        subject,
+        ref clauses,
+        ..
+    }) = arena.computation(ring)
+    else {
+        panic!("`handle` is a capability scope");
+    };
+    let linear = Value::Variable {
+        zone: Zone::Linear,
+        index: DeBruijnIndex::from(0_u32),
+    };
+    let Some(&Computation::Bind(alloc, placed)) = arena.computation(subject)
+    else {
+        panic!("the allocation binds its reply");
+    };
+    assert!(
+        matches!(arena.computation(alloc), Some(Computation::Exercise { operation, .. }) if operation.as_ref() == "alloc")
+    );
+    let Some(&Computation::Session(SessionAction::Place { payload, body })) =
+        arena.computation(placed)
+    else {
+        panic!("the reply is placed live: {:?}", arena.computation(placed));
+    };
+    assert_eq!(
+        arena.value(payload),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "the placement holds the reply's binder"
+    );
+    let Some(&Computation::Exercise {
+        payload: freed,
+        ref operation,
+        ..
+    }) = arena.computation(body)
+    else {
+        panic!("the rest of the block frees the buffer");
+    };
+    assert_eq!(operation.as_ref(), "free");
+    assert_eq!(
+        arena.value(freed),
+        Some(&linear),
+        "`b` names the placement's linear binder"
+    );
+    let Some(clause) = clauses
+        .iter()
+        .find(|clause| clause.operation.as_ref() == "alloc")
+    else {
+        panic!("an `alloc` clause");
+    };
+    let Some(&Computation::Split {
+        scrutinee: tuple,
+        arity,
+        body: split,
+        ..
+    }) = arena.computation(clause.body)
+    else {
+        panic!(
+            "the clause splits its payload: {:?}",
+            arena.computation(clause.body)
+        );
+    };
+    assert_eq!(
+        (arena.value(tuple), usize::from(arity)),
+        (Some(&variable(DeBruijnIndex::from(1_u32))), 2_usize),
+        "the pair under the continuation splits into the payload and the mint"
+    );
+    let Some(&Computation::Session(SessionAction::Place {
+        payload: mint,
+        body: resumed,
+    })) = arena.computation(split)
+    else {
+        panic!("the mint is placed live");
+    };
+    assert_eq!(
+        arena.value(mint),
+        Some(&variable(DeBruijnIndex::from(0_u32)))
+    );
+    let Some(&Computation::Resume(continuation, reply)) = arena.computation(resumed)
+    else {
+        panic!("`k(b)` resumes");
+    };
+    assert_eq!(
+        arena.value(continuation),
+        Some(&variable(DeBruijnIndex::from(2_u32))),
+        "`k` past the payload and the mint"
+    );
+    let Some(&Computation::Return(returned)) = arena.computation(reply)
+    else {
+        panic!("the resumption returns its reply");
+    };
+    assert_eq!(
+        arena.value(returned),
+        Some(&linear),
+        "`b` names the mint's linear binder"
+    );
+    let named = tail_of(&module, &arena, "named".into());
+    let Some(&Computation::Scope { subject, .. }) = arena.computation(named)
+    else {
+        panic!("`handle` is a capability scope");
+    };
+    assert!(
+        matches!(arena.computation(subject), Some(&Computation::Bind(_, rest)) if matches!(arena.computation(rest), Some(Computation::Return(_)))),
+        "a run of an operation replying no buffer names its reply"
+    );
+    let report = judged(&module, &mut arena);
+    for name in ["ring", "named"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}

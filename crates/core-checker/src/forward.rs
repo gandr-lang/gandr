@@ -381,6 +381,7 @@ fn first_order(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
@@ -467,6 +468,7 @@ fn leaves(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
@@ -575,6 +577,7 @@ fn natural(
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Err(unsupported),
