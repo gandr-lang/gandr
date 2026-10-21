@@ -26,11 +26,13 @@ stack_top() {
   open_prs | jq -c --arg own "$1" --arg trunk "$trunk" -f "$pr_stack_dir/top.jq"
 }
 
-# Whether pull request `$1` is in the merge queue.
+# Whether pull request `$1` is in the merge queue or set to enter it on its
+# own (auto-merge). Either way it lands alone, and GitHub refuses to link it
+# into a stack.
 in_queue() {
   gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
-    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue } } }' \
-    --jq .data.repository.pullRequest.isInMergeQueue
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { isInMergeQueue autoMergeRequest { enabledAt } } } }' \
+    --jq '.data.repository.pullRequest | .isInMergeQueue or .autoMergeRequest != null'
 }
 
 # The numbers of the stack `$1`'s pull requests in the merge queue, as a JSON
@@ -41,6 +43,22 @@ queued_of() {
     if [[ $(in_queue "$number") == true ]]; then members+=("$number"); fi
   done
   jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
+}
+
+# Link the open chain `$1` on the server (`link.jq`): into the stack a member
+# already belongs to, by that stack's number, so the stack's merged members
+# stay below the open ones (#1275); otherwise as a new stack.
+stack_link() {
+  local number stacks=() args
+  for number in $(jq -r '.[].number' <<< "$1"); do
+    stacks+=("$(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$number" \
+      -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { number } } } }' \
+      --jq '.data.repository.pullRequest.stack.number // "null"')")
+  done
+  mapfile -t args < <(jq -cn --argjson chain "$(jq -c 'map(.number)' <<< "$1")" \
+    '{chain: $chain, stacks: ($ARGS.positional | map(fromjson))}' --args "${stacks[@]}" | jq -r -f "$pr_stack_dir/link.jq")
+  # No prompt is answered here: a question fails the link instead of waiting.
+  gh stack link "${args[@]}" < /dev/null > /dev/null
 }
 
 # Rebase the stack `$1` (bottom to top) onto `origin/$trunk` and push every
@@ -112,7 +130,7 @@ queue_stack() {
     gh pr merge "${numbers[0]}" -R "$repo" --merge --auto
     return
   fi
-  gh stack link "${numbers[@]}" > /dev/null
+  stack_link "$stack"
   for number in "${numbers[@]}"; do
     if ! gh pr checks "$number" -R "$repo" --required --watch --fail-fast --interval 30 > /dev/null; then
       echo "#$number's required checks failed; fix it, then land the stack again" >&2
