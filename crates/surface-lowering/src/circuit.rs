@@ -1,5 +1,7 @@
 //! Ruled circuit bodies, their literal wiring diagrams and matcher boundary.
 
+use alloc::vec::Vec;
+
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::CircuitDerivationError;
 use gandr_theory_levitation::IncludeClash;
@@ -76,10 +78,25 @@ pub enum SignatureFault
     /// An `include` names a `theory` block of two sources its source imports
     /// unqualified, and none of its own.
     AmbiguousInclude(Name),
+    /// Two theories the block reaches through `include` have more than one
+    /// join among the theories it sees.
+    AmbiguousJoin(JoinFault),
     /// The included theory's members do not extend the block's.
     IncludeClash(IncludeClash),
     /// An `ext` member states no extension type the block can generate.
     Extension(ExtensionFault),
+}
+
+/// A pair of theories a block reaches with more than one join among the
+/// theories it sees: two minimal common extensions, neither reaching the
+/// other.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JoinFault
+{
+    /// The two theories, in the order the block reaches them.
+    pub pair: [Name; 2],
+    /// Every minimal common extension, in reading order, the block last.
+    pub joins: Vec<Name>,
 }
 
 /// Why an `ext Cell = Val on left is zero` member generates nothing.

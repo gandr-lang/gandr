@@ -611,6 +611,9 @@ pub(crate) struct Visible<'held>
     /// Those of the sources it imports unqualified, in reading order, each
     /// with its source.
     imported: Vec<(SourceIndex, &'held DescribedDeclaration)>,
+    /// Every declaration read before it, whatever its source, in reading
+    /// order: an include reaches through blocks it cannot name.
+    read: Vec<&'held DescribedDeclaration>,
 }
 
 impl<'held> Visible<'held>
@@ -622,7 +625,7 @@ impl<'held> Visible<'held>
     /// - requires: `read` is in reading order.
     /// - ensures: `own` holds the declarations of `read` in `source`, and
     ///   `imported` those in a source of `imports`, both in the order of
-    ///   `read`; every other declaration is passed over.
+    ///   `read`; every declaration of `read` is kept as read.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -641,6 +644,7 @@ impl<'held> Visible<'held>
     {
         let mut visible = Self::default();
         for declaration in read {
+            visible.read.push(declaration);
             let from = unit.source_at(declaration.at.span.start());
             if from == source {
                 visible.own.push(declaration);
@@ -650,6 +654,28 @@ impl<'held> Visible<'held>
             }
         }
         visible
+    }
+
+    /// Every declaration read before the one this was read for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn read(&self) -> impl Iterator<Item = &'held DescribedDeclaration> + '_
+    {
+        self.read.iter().copied()
+    }
+
+    /// The declarations the one this was read for sees: its own source's,
+    /// then its unqualified imports'.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn seen(&self) -> impl Iterator<Item = &'held DescribedDeclaration> + '_
+    {
+        self.own
+            .iter()
+            .copied()
+            .chain(self.imported.iter().map(|&(_, declaration)| declaration))
     }
 }
 
@@ -1517,6 +1543,8 @@ fn split_members(pieces: &[Piece]) -> Vec<&[Piece]>
 }
 
 mod family;
+
+mod joins;
 
 mod members;
 
