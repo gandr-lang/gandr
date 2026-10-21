@@ -125,7 +125,14 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # Outcomes land in `mutants.out/<crate>/witnessed` (or `MUTANTS_OUTPUT`):
 # cargo-mutants' `caught`, `missed`, `timeout` and `unviable` lists, merged,
 # `unwitnessed.txt`, each group's log under `logs/`, and a summary line with
-# the wall time. The whole-suite `mutants` stays the way to map a crate first.
+# the wall time. Each group's own outcomes stay under `groups/<key>` as it
+# finishes. The key hashes the group's mutants, the timeout and the tree the
+# lanes test: `HEAD`'s tree, the working tree's changes and its untracked
+# files. A run restarted over the same tree therefore skips every group
+# already resolved and runs only the rest; any change to the tree reruns them
+# all. `--in-diff` keeps only the mutants a diff's added lines hold
+# (cargo-mutants' own `--in-diff`), as `mutants:changed` runs it over a
+# change. The whole-suite `mutants` stays the way to map a crate first.
 ["mutants:witnessed"]
 description = "Mutation-test one crate, each mutant under the witnesses of its function"
 depends = ["evidence:rustdoc"]
@@ -137,6 +144,7 @@ usage = '''
 flag "-p --package <crate>" required=#true help="the crate to mutate"
 flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
 flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+flag "--in-diff <file>" help="mutate only the lines a unified diff adds"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -144,6 +152,11 @@ set -euo pipefail
 crate=${usage_package:?}
 lanes=${usage_lanes:-4}
 timeout=${usage_timeout:-300}
+in_diff=()
+if [[ -n "${usage_in_diff:-}" ]]; then
+  [[ -f "$usage_in_diff" ]] || { printf 'no diff at %s\n' "$usage_in_diff" >&2; exit 2; }
+  in_diff=(--in-diff "$(realpath "$usage_in_diff")")
+fi
 [[ "$lanes" =~ ^[1-9][0-9]*$ ]] || { echo '--lanes takes a positive count' >&2; exit 2; }
 [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || { echo '--timeout takes a positive count of seconds' >&2; exit 2; }
 package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
@@ -162,26 +175,44 @@ output=${MUTANTS_OUTPUT:-mutants.out/$crate/witnessed}
 source .config/mise/mutants.bash
 hold_mutants_lock "mise run mutants:witnessed -- -p $crate"
 scope=${mutants_scope[0]}
-rm -rf "$output"
+mkdir -p "$output/groups"
+output=$(cd "$output" && pwd)
+find "$output" -mindepth 1 -maxdepth 1 ! -name groups -exec rm -rf {} +
 mkdir -p "$output/logs"
 started=$SECONDS
-"$scope" cargo mutants --list --json --package "$crate" > "$output/list.json"
+"$scope" cargo mutants --list --json --package "$crate" "${in_diff[@]}" > "$output/list.json"
 jq -f .config/mutants/items.jq "$doc" > "$output/items.json"
 jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
   --arg package "$crate" --argjson targets "$targets" \
   '{mutants: $mutants[0], items: $items[0], package: $package, targets: $targets}' \
   | jq -f .config/mutants/groups.jq > "$output/groups.json"
 jq -r '.[] | select(.filter == null) | .names[]' "$output/groups.json" > "$output/unwitnessed.txt"
-witnessed=$(jq -c '[.[] | select(.filter != null)]' "$output/groups.json")
-if [[ $(jq length <<< "$witnessed") != 0 ]]; then
+revision=$({
+  git rev-parse 'HEAD^{tree}'
+  git diff --binary HEAD
+  git ls-files --others --exclude-standard | git hash-object --stdin-paths
+} | git hash-object --stdin)
+witnessed=$(jq -c '.[] | select(.filter != null)' "$output/groups.json" | while IFS= read -r group; do
+  key=$({ printf '%s\n%s\n' "$revision" "$timeout"; jq -r '.names[]' <<< "$group"; } | git hash-object --stdin)
+  jq -c --arg key "$key" '. + {key: $key}' <<< "$group"
+done | jq -sc .)
+pending=0
+while IFS= read -r key; do
+  [[ -f "$output/groups/$key/resolved" ]] || pending=$((pending + 1))
+done < <(jq -r '.[].key' <<< "$witnessed")
+if (( pending > 0 )); then
   # Each lane is a detached worktree of this repository at HEAD with the
   # working tree's files laid over it: some witnesses read the history
-  # (`git merge-base origin/main HEAD`), which a bare copy has not got.
+  # (`git merge-base origin/main HEAD`), which a bare copy has not got. A
+  # tracked file the working tree deleted is left out of the overlay here,
+  # since macOS's tar cannot skip an unreadable name.
   scratch=$(mktemp -d)
   trap 'for lane in "$scratch"/[0-9]*; do git worktree remove --force "$lane" 2> /dev/null || true; done; rm -rf "$scratch"; git worktree prune' EXIT
   for (( lane = 0; lane < lanes; lane++ )); do
     git worktree add --quiet --detach "$scratch/$lane" HEAD
-    git ls-files -z --cached --others --exclude-standard | tar --null --ignore-failed-read -T - -cf - | tar -xf - -C "$scratch/$lane"
+    git ls-files -z --cached --others --exclude-standard \
+      | while IFS= read -r -d '' path; do [[ ! -e "$path" && ! -L "$path" ]] || printf '%s\0' "$path"; done \
+      | tar --null -T - -cf - | tar -xf - -C "$scratch/$lane"
   done
   # One unmutated run of every witness, in a lane as the mutants will run:
   # a witness that fails there, or names no test, would read each of its
@@ -190,19 +221,25 @@ if [[ $(jq length <<< "$witnessed") != 0 ]]; then
   (cd "$scratch/0" && "$scope" cargo nextest run --locked --package "$crate" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
     || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
   run_lane() {
-    local lane=$1 index=0 group file re filter out
+    local lane=$1 index=0 group file re filter key out status
     while IFS= read -r group; do
-      if (( index % lanes == lane )); then
+      key=$(jq -r .key <<< "$group")
+      out=$output/groups/$key
+      if (( index % lanes == lane )) && [[ ! -f "$out/resolved" ]]; then
         file=$(jq -r .file <<< "$group")
         re=$(jq -r .re <<< "$group")
         filter=$(jq -r .filter <<< "$group")
-        out=$scratch/out/$index
         mkdir -p "$out"
         jq -r '.names[]' <<< "$group" > "$out/names.txt"
+        # cargo-mutants exits 0 with every mutant caught, 2 with one missed
+        # and 3 with one timed out; any other exit leaves the group to rerun.
+        status=0
         (cd "$scratch/$lane" && "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
           --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" \
-          --output "$out" -- -E "$filter") > "$output/logs/$index.log" 2>&1 || true
-        if [[ ! -f "$out/mutants.out/outcomes.json" ]]; then
+          --output "$out" -- -E "$filter") > "$output/logs/$index.log" 2>&1 || status=$?
+        if [[ -f "$out/mutants.out/outcomes.json" ]] && (( status == 0 || status == 2 || status == 3 )); then
+          touch "$out/resolved"
+        else
           printf 'group %s (%s) left no outcomes; see %s\n' "$index" "$(jq -r .item <<< "$group")" "$output/logs/$index.log" >&2
           touch "$scratch/failed"
         fi
@@ -213,22 +250,104 @@ if [[ $(jq length <<< "$witnessed") != 0 ]]; then
   for (( lane = 0; lane < lanes; lane++ )); do run_lane "$lane" & done
   wait
   [[ ! -e "$scratch/failed" ]] || exit 1
-  # cargo-mutants 27.1.0 skips `--re` for a struct literal's field deletions,
-  # so every group in their file runs them too: each group keeps only the
-  # outcomes of its own mutants.
-  for outcome in caught missed timeout unviable; do
-    for out in "$scratch"/out/*; do
-      [[ ! -f "$out/mutants.out/$outcome.txt" ]] || grep -Fx -f "$out/names.txt" "$out/mutants.out/$outcome.txt" || true
-    done | sort > "$output/$outcome.txt"
-  done
-else
-  for outcome in caught missed timeout unviable; do : > "$output/$outcome.txt"; done
 fi
+# cargo-mutants 27.1.0 skips `--re` for a struct literal's field deletions, so
+# every group in their file runs them too: each group keeps only the outcomes
+# of its own mutants.
+for outcome in caught missed timeout unviable; do
+  while IFS= read -r key; do
+    out=$output/groups/$key
+    [[ ! -f "$out/mutants.out/$outcome.txt" ]] || grep -Fx -f "$out/names.txt" "$out/mutants.out/$outcome.txt" || true
+  done < <(jq -r '.[].key' <<< "$witnessed") | sort > "$output/$outcome.txt"
+done
+# Groups of another tree or another listing are never resumed; they go.
+for out in "$output"/groups/*; do
+  [[ -e "$out" ]] || continue
+  jq -e --arg key "${out##*/}" 'any(.[]; .key == $key)' <<< "$witnessed" > /dev/null || rm -rf "$out"
+done
 sort -o "$output/missed.txt" "$output/missed.txt" "$output/unwitnessed.txt"
 count() { wc -l < "$output/$1.txt" | tr -d ' '; }
 printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, missed %s (%s unwitnessed), timeout %s, unviable %s; %ss\n' \
   "$crate" "$(jq length "$output/list.json")" "$(jq length "$output/groups.json")" "$(jq length <<< "$witnessed")" \
   "$(count caught)" "$(count missed)" "$(count unwitnessed)" "$(count timeout)" "$(count unviable)" "$((SECONDS - started))" \
   | tee "$output/summary.txt"
+{% endraw %}
+'''
+
+# The mutants of one change (#1456, lever 2). The diff runs from where HEAD
+# left the base, so work landed on the base since is not read as this change.
+# Each crate whose Rust sources the diff touches, and which holds a mutant on
+# an added line, runs under `mutants:witnessed --in-diff`. A function the
+# change leaves alone contributes no mutant. Outcomes land in
+# `mutants.out/changed/<crate>` (or under `MUTANTS_OUTPUT`), and one report
+# covers them all, `report.md`. It gives each crate's count line and every
+# survivor by name with its verdict: `missed`, `unwitnessed` (no witness names
+# its function) or `timeout`. `survivors.txt` lists the same names, one per
+# line. The task exits 0 whatever survives; the report is the verdict. A
+# crate's directory stays from one run to the next, so a run restarted over
+# the same change resumes each crate's groups (`mutants:witnessed`).
+["mutants:changed"]
+description = "Mutation-test the lines a change adds, each mutant under the witnesses of its function"
+tools."cargo:cargo-mutants" = "27.1.0"
+tools.jq = "1.8.1"
+usage = '''
+flag "--base <ref>" default="origin/main" help="the branch the change is read against"
+flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
+flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+base=${usage_base:-origin/main}
+output=${MUTANTS_OUTPUT:-mutants.out/changed}
+fork=$(git merge-base "$base" HEAD) || { printf 'HEAD shares no history with %s\n' "$base" >&2; exit 2; }
+mkdir -p "$output"
+find "$output" -mindepth 1 -maxdepth 1 -type f -delete
+git diff --no-ext-diff --no-color "$fork" HEAD -- '*.rs' > "$output/change.diff"
+git diff --name-only "$fork" HEAD -- '*.rs' > "$output/files.txt"
+mapfile -t crates < <(cargo metadata --locked --no-deps --format-version 1 | jq -r --rawfile files "$output/files.txt" '
+  .workspace_root as $root
+  | [.packages[] | {name, dir: (.manifest_path | rtrimstr("Cargo.toml") | ltrimstr($root + "/"))}] as $packages
+  | [$files | split("\n")[] | select(. != "") as $file
+      | [$packages[] | select(.dir as $dir | $file | startswith($dir))] | max_by(.dir | length) | .name // empty]
+  | unique[]')
+for dir in "$output"/*/; do
+  [[ -d "$dir" ]] || continue
+  name=${dir%/}
+  name=${name##*/}
+  printf '%s\n' "${crates[@]}" | grep -Fxq -- "$name" || rm -rf "$dir"
+done
+: > "$output/survivors.txt"
+{
+  printf '## Mutants of the change\n\n'
+  printf 'Against `%s` · the lines the change adds in %s crate(s) with Rust sources changed.\n' "$(git rev-parse --short "$fork")" "${#crates[@]}"
+} > "$output/report.md"
+for crate in "${crates[@]}"; do
+  listed=$(cargo mutants --list --json --package "$crate" --in-diff "$output/change.diff" | jq length)
+  if (( listed == 0 )); then
+    printf '\n### %s\n\nNo mutant on an added line.\n' "$crate" >> "$output/report.md"
+    continue
+  fi
+  MUTANTS_OUTPUT="$output/$crate" mise run mutants:witnessed -- --package "$crate" \
+    --lanes "${usage_lanes:-4}" --timeout "${usage_timeout:-300}" --in-diff "$output/change.diff"
+  out=$output/$crate
+  {
+    printf '\n### %s\n\n%s\n' "$crate" "$(< "$out/summary.txt")"
+    if [[ -s "$out/missed.txt" || -s "$out/timeout.txt" ]]; then
+      printf '\n| mutant | verdict |\n| --- | --- |\n'
+      while IFS= read -r name; do
+        verdict=missed
+        ! grep -Fxq -- "$name" "$out/unwitnessed.txt" || verdict=unwitnessed
+        printf '| `%s` | %s |\n' "$name" "$verdict"
+      done < "$out/missed.txt"
+      while IFS= read -r name; do printf '| `%s` | timeout |\n' "$name"; done < "$out/timeout.txt"
+    else
+      printf '\nEvery mutant on an added line is caught or unviable.\n'
+    fi
+  } >> "$output/report.md"
+  cat "$out/missed.txt" "$out/timeout.txt" >> "$output/survivors.txt"
+done
+printf '\n%s survivor(s).\n' "$(wc -l < "$output/survivors.txt" | tr -d ' ')" >> "$output/report.md"
+cat "$output/report.md"
 {% endraw %}
 '''
