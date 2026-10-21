@@ -443,7 +443,7 @@ impl Source for ContentSource<'_>
             },
             ContentNode::Session(ref action) => match *action {
                 SessionAction::Send { endpoint, payload } => Former::Send { endpoint, payload },
-                SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                SessionAction::Receive { endpoint, body } => Former::Receive { endpoint, body },
                 SessionAction::Select {
                     endpoint,
                     ref label,

@@ -9,9 +9,9 @@
 import "./ring-base.gandr" ;
 
 /// A buffer moved into the mock kernel's submission and finished there before
-/// the completion is posted. Refused while an endpoint received over a session
-/// cannot be acted on (#1167).
-@[ refuses("OutOfFragment") ]
+/// the completion is posted: the send consumes the submitter's end, and the
+/// kernel's receive binds it until the kernel closes it.
+@[ checks ]
 def bufferMoved() -> -F Unit {
   fork (owner : Ring.Buffer) { close(owner) } as buffer;
   fork (kernel : Ring.Moving) {

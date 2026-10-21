@@ -1363,7 +1363,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Session(ref action)), _) => match (action, ret) {
             | (&SessionAction::Send { endpoint, payload }, Former::Send { endpoint: actual, payload: actual_payload }) =>
                 endpoint == actual && actual_payload == CoreNode::Value(payload),
-            | (&SessionAction::Receive { endpoint }, Former::Receive(actual))
+            | (&SessionAction::Receive { endpoint, body }, Former::Receive { endpoint: actual, body: actual_body }) =>
+                endpoint == actual && actual_body == CoreNode::Computation(body),
             | (&SessionAction::Close { endpoint }, Former::Close(actual)) => endpoint == actual,
             | (&SessionAction::Select { endpoint, ref label }, Former::Select { endpoint: actual, label: actual_label }) =>
                 endpoint == actual && actual_label.as_ref() == label.as_ref(),
@@ -1598,7 +1599,10 @@ impl<'arena> CoreSource<'arena>
                     endpoint,
                     payload: value(payload),
                 },
-                SessionAction::Receive { endpoint } => Former::Receive(endpoint),
+                SessionAction::Receive { endpoint, body } => Former::Receive {
+                    endpoint,
+                    body: computation(body),
+                },
                 SessionAction::Select {
                     endpoint,
                     ref label,

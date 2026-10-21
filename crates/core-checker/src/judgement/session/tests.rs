@@ -149,24 +149,34 @@ fn end(arena: &mut CoreArena) -> ValueTypeId
     session(arena, alloc::vec![ProtocolSyntax::End], &[])
 }
 
-/// The terms one endpoint's program is built of, the endpoint the
-/// innermost linear binder.
-#[repr(transparent)]
+/// The terms one endpoint's program is built of, the endpoint the linear
+/// binder under the received values the program is inside.
 struct Program<'arena>
 {
     /// The arena.
     arena: &'arena mut CoreArena,
+    /// How many receives' binders stand inside the endpoint's.
+    received: u32,
 }
 
-impl Program<'_>
+impl<'arena> Program<'arena>
 {
-    /// The endpoint, the innermost linear binder.
+    /// A program on the innermost linear binder.
     ///
     /// # Specification
     /// trivial.
-    fn endpoint() -> DeBruijnIndex
+    const fn new(arena: &'arena mut CoreArena) -> Self
     {
-        DeBruijnIndex::from(0_u32)
+        Self { arena, received: 0 }
+    }
+
+    /// The endpoint, under the receives the program is inside.
+    ///
+    /// # Specification
+    /// trivial.
+    fn endpoint(&self) -> DeBruijnIndex
+    {
+        DeBruijnIndex::from(self.received)
     }
 
     /// `x <- action ; rest`.
@@ -215,7 +225,7 @@ impl Program<'_>
     fn close(&mut self) -> ComputationId
     {
         self.act(SessionAction::Close {
-            endpoint: Self::endpoint(),
+            endpoint: self.endpoint(),
         })
     }
 
@@ -231,7 +241,7 @@ impl Program<'_>
     {
         self.then(
             SessionAction::Select {
-                endpoint: Self::endpoint(),
+                endpoint: self.endpoint(),
                 label: label(choice),
             },
             rest,
@@ -251,28 +261,27 @@ impl Program<'_>
         let payload = self.text(text);
         self.then(
             SessionAction::Send {
-                endpoint: Self::endpoint(),
+                endpoint: self.endpoint(),
                 payload,
             },
             rest,
         )
     }
 
-    /// `recv(c) as x ; rest`.
+    /// `recv(c) as x ; rest`, `rest` built under the receive's binder.
     ///
     /// # Specification
     /// trivial.
     fn receive(
         &mut self,
-        rest: ComputationId,
+        rest: impl FnOnce(&mut Self) -> ComputationId,
     ) -> ComputationId
     {
-        self.then(
-            SessionAction::Receive {
-                endpoint: Self::endpoint(),
-            },
-            rest,
-        )
+        let endpoint = self.endpoint();
+        self.received = self.received.saturating_add(1);
+        let body = rest(self);
+        self.received = self.received.saturating_sub(1);
+        self.act(SessionAction::Receive { endpoint, body })
     }
 
     /// `offer(c) { l => arm, … }`.
@@ -285,7 +294,7 @@ impl Program<'_>
     ) -> ComputationId
     {
         self.act(SessionAction::Offer {
-            endpoint: Self::endpoint(),
+            endpoint: self.endpoint(),
             arms: arms
                 .iter()
                 .map(|&(choice, arm)| (label(choice), arm))
@@ -301,15 +310,16 @@ impl Program<'_>
 /// trivial.
 fn seat(arena: &mut CoreArena) -> ComputationId
 {
-    let mut program = Program { arena };
-    let closed = program.close();
-    let notes = program.send(Spelled("notes"), closed);
-    let handed = program.select(Spelled("handoff"), notes);
-    let retired = program.close();
-    let answered = program.offer(&[(Spelled("next"), handed), (Spelled("retire"), retired)]);
-    let reported = program.send(Spelled("progress"), answered);
-    let chose = program.select(Spelled("report"), reported);
-    program.receive(chose)
+    let mut program = Program::new(arena);
+    program.receive(|program| {
+        let closed = program.close();
+        let notes = program.send(Spelled("notes"), closed);
+        let handed = program.select(Spelled("handoff"), notes);
+        let retired = program.close();
+        let answered = program.offer(&[(Spelled("next"), handed), (Spelled("retire"), retired)]);
+        let reported = program.send(Spelled("progress"), answered);
+        program.select(Spelled("report"), reported)
+    })
 }
 
 /// The operator's half: dispatch, then take each choice the seat makes,
@@ -320,20 +330,20 @@ fn seat(arena: &mut CoreArena) -> ComputationId
 /// trivial.
 fn operator(arena: &mut CoreArena) -> ComputationId
 {
-    let mut program = Program { arena };
-    let closed = program.close();
-    let second_notes = program.receive(closed);
-    let closed = program.close();
-    let retired = program.select(Spelled("retire"), closed);
-    let second_report = program.receive(retired);
-    let second = program.offer(&[
-        (Spelled("handoff"), second_notes),
-        (Spelled("report"), second_report),
-    ]);
-    let again = program.select(Spelled("next"), second);
-    let first_report = program.receive(again);
-    let closed = program.close();
-    let first_notes = program.receive(closed);
+    let mut program = Program::new(arena);
+    let first_report = program.receive(|program| {
+        let second_notes = program.receive(Program::close);
+        let second_report = program.receive(|program| {
+            let closed = program.close();
+            program.select(Spelled("retire"), closed)
+        });
+        let second = program.offer(&[
+            (Spelled("handoff"), second_notes),
+            (Spelled("report"), second_report),
+        ]);
+        program.select(Spelled("next"), second)
+    });
+    let first_notes = program.receive(Program::close);
     let first = program.offer(&[
         (Spelled("handoff"), first_notes),
         (Spelled("report"), first_report),
@@ -469,9 +479,7 @@ fn an_operator_holding_the_seat_view_is_refused()
     let mut arena = CoreArena::new();
     let protocol = seat_end(&mut arena);
     let seat = seat(&mut arena);
-    let wrong = Program { arena: &mut arena }.act(SessionAction::Receive {
-        endpoint: DeBruijnIndex::from(0_u32),
-    });
+    let wrong = Program::new(&mut arena).receive(Program::close);
     let exchange = fork(&mut arena, protocol, seat, wrong);
     let refused = check_unit(&mut arena, exchange);
     assert!(
@@ -495,7 +503,7 @@ fn a_leftover_endpoint_is_reported_by_name()
     let protocol = end(&mut arena);
     let unit = arena.value_unit();
     let idle = arena.computation_return(unit);
-    let closed = Program { arena: &mut arena }.close();
+    let closed = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, protocol, idle, closed);
     let thunk = arena.value_thunk(exchange);
     let unit_type = arena.value_type_unit();
@@ -536,7 +544,7 @@ fn an_endpoint_used_after_close_is_refused()
 {
     let mut arena = CoreArena::new();
     let protocol = end(&mut arena);
-    let mut program = Program { arena: &mut arena };
+    let mut program = Program::new(&mut arena);
     let again = program.close();
     let twice = program.then(
         SessionAction::Close {
@@ -576,7 +584,7 @@ fn an_endpoint_used_twice_in_one_action_is_refused()
         &[string],
     );
     let itself = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
-    let mut program = Program { arena: &mut arena };
+    let mut program = Program::new(&mut arena);
     let closed = program.close();
     let send = program.then(
         SessionAction::Send {
@@ -585,8 +593,7 @@ fn an_endpoint_used_twice_in_one_action_is_refused()
         },
         closed,
     );
-    let received = program.close();
-    let parent = program.receive(received);
+    let parent = program.receive(Program::close);
     let exchange = fork(&mut arena, protocol, send, parent);
     assert_eq!(
         check_unit(&mut arena, exchange),
@@ -605,10 +612,10 @@ fn an_endpoint_captured_by_a_thunk_is_refused()
 {
     let mut arena = CoreArena::new();
     let protocol = end(&mut arena);
-    let closed = Program { arena: &mut arena }.close();
+    let closed = Program::new(&mut arena).close();
     let suspended = arena.value_thunk(closed);
     let forced = arena.computation_force(suspended);
-    let parent = Program { arena: &mut arena }.close();
+    let parent = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, protocol, forced, parent);
     assert_eq!(
         check_unit(&mut arena, exchange),
@@ -621,8 +628,8 @@ fn an_endpoint_captured_by_a_thunk_is_refused()
         }),
         "a thunk may be forced any number of times"
     );
-    let direct = Program { arena: &mut arena }.close();
-    let parent = Program { arena: &mut arena }.close();
+    let direct = Program::new(&mut arena).close();
+    let parent = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, protocol, direct, parent);
     assert_eq!(
         check_unit(&mut arena, exchange),
@@ -650,7 +657,7 @@ fn offer_arms_leaving_different_endpoints_are_refused()
     );
     let unit = arena.value_unit();
     let left_open = arena.computation_return(unit);
-    let mut program = Program { arena: &mut arena };
+    let mut program = Program::new(&mut arena);
     let closed = program.close();
     let offer = program.offer(&[(Spelled("a"), closed), (Spelled("b"), left_open)]);
     let parent_closed = program.close();
@@ -681,7 +688,7 @@ fn offer_arms_leaving_an_endpoint_open_agree_on_its_state()
         let unit = arena.value_unit();
         let first = arena.computation_return(unit);
         let other = arena.computation_return(unit);
-        let mut program = Program { arena };
+        let mut program = Program::new(arena);
         let offer = program.offer(&[(Spelled("a"), first), (Spelled("b"), other)]);
         let parent_closed = program.close();
         let parent = program.select(Spelled("a"), parent_closed);
@@ -776,14 +783,15 @@ fn an_endpoint_at_a_top_level_declaration_is_refused()
     );
 }
 
-#[test]
-fn delegation_and_sharing_are_refused_by_name()
+/// `!end. end`: one endpoint at `end` sent, then the end.
+///
+/// # Specification
+/// trivial.
+fn delegating(arena: &mut CoreArena) -> ValueTypeId
 {
-    let mut arena = CoreArena::new();
-    let ended = end(&mut arena);
-    // !end. end
-    let delegating = session(
-        &mut arena,
+    let ended = end(arena);
+    session(
+        arena,
         alloc::vec![
             ProtocolSyntax::Send {
                 payload: PayloadSlot::from(0_usize),
@@ -792,64 +800,130 @@ fn delegation_and_sharing_are_refused_by_name()
             ProtocolSyntax::End,
         ],
         &[ended],
-    );
-    let child_closed = Program { arena: &mut arena }.close();
-    let parent_closed = Program { arena: &mut arena }.close();
-    let exchange = fork(&mut arena, delegating, child_closed, parent_closed);
-    assert_eq!(
-        check_unit(&mut arena, exchange),
-        Err(CheckRefusal::Linearity {
-            at: CoreNode::Type(TypeNode::Value(ended)),
-            defect: LinearityDefect::Delegated,
-        }),
-        "a protocol that sends a session type delegates"
-    );
+    )
+}
 
-    let string = arena.value_type_base(BaseType::String);
-    // !String. end, whose child sends the parent's end of an inner fork
-    let sending = session(
-        &mut arena,
-        alloc::vec![
-            ProtocolSyntax::Send {
-                payload: PayloadSlot::from(0_usize),
-                next: ProtocolState::from(1_usize),
-            },
-            ProtocolSyntax::End,
-        ],
-        &[string],
-    );
-    // The payload is the inner fork's parent end, index 0; the send acts
-    // on the outer child's end, index 1.
-    let outer = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
-    let inner_closed = Program { arena: &mut arena }.close();
-    let mut program = Program { arena: &mut arena };
-    let after_send = program.act(SessionAction::Close {
+/// What the sender does with an end it has sent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AfterSend
+{
+    /// Leaves it to the receiver.
+    Leaves,
+    /// Closes it again.
+    Closes,
+}
+
+/// The sending half of an exchange over [`delegating`]: `fork (e : end) {
+/// close(e) } as d ; send(c, d) ; close(c)`, with `close(d)` after the send
+/// when `after` closes it. Answers the inner fork and the `close(d)`.
+///
+/// # Specification
+/// trivial.
+fn delegator(
+    arena: &mut CoreArena,
+    after: AfterSend,
+) -> (ComputationId, ComputationId)
+{
+    let ended = end(arena);
+    let inner_child = Program::new(arena).close();
+    // Under the inner fork, `d` is index 0 and the outer `c` index 1.
+    let sent = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let mut program = Program::new(arena);
+    let close_outer = program.act(SessionAction::Close {
         endpoint: DeBruijnIndex::from(1_u32),
     });
+    let reused = program.act(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let after_send = if after == AfterSend::Closes {
+        program.arena.computation_bind(reused, close_outer)
+    }
+    else {
+        close_outer
+    };
     let inner_parent = program.then(
         SessionAction::Send {
             endpoint: DeBruijnIndex::from(1_u32),
-            payload: outer,
+            payload: sent,
         },
         after_send,
     );
-    let inner = fork(&mut arena, ended, inner_closed, inner_parent);
-    let received = Program { arena: &mut arena }.close();
-    let parent = Program { arena: &mut arena }.receive(received);
-    let exchange = fork(&mut arena, sending, inner, parent);
+    (fork(arena, ended, inner_child, inner_parent), reused)
+}
+
+#[test]
+fn a_delegated_endpoint_leaves_its_sender()
+{
+    let mut arena = CoreArena::new();
+    let protocol = delegating(&mut arena);
+    let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
+    // `recv(c) as x ; close(x) ; close(c)`
+    let parent = Program::new(&mut arena).receive(|program| {
+        let outer = program.close();
+        program.then(
+            SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            },
+            outer,
+        )
+    });
+    let exchange = fork(&mut arena, protocol, inner, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Ok(()),
+        "the sent end is consumed at the send and closed by the receiver"
+    );
+
+    let (inner, reused) = delegator(&mut arena, AfterSend::Closes);
+    let exchange = fork(&mut arena, protocol, inner, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(reused)),
+            defect: LinearityDefect::Closed {
+                endpoint: Endpoint {
+                    fork: inner,
+                    side: ForkSide::Parent,
+                },
+            },
+        }),
+        "an end sent away is no longer the sender's to close"
+    );
+}
+
+#[test]
+fn a_received_endpoint_is_acted_on_and_must_be_closed()
+{
+    let mut arena = CoreArena::new();
+    let protocol = delegating(&mut arena);
+    let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
+    // `recv(c) as x ; close(c)`, `x` left open
+    let parent = Program::new(&mut arena).receive(Program::close);
+    let exchange = fork(&mut arena, protocol, inner, parent);
     let refused = check_unit(&mut arena, exchange);
     assert!(
         matches!(
             refused,
-            Err(CheckRefusal::Linearity { at: CoreNode::Term(TermNode::Value(at)), defect: LinearityDefect::Delegated })
-                if at == outer
+            Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(at)),
+                defect: LinearityDefect::Residue {
+                    endpoint: Endpoint { fork, side: ForkSide::Received },
+                    ..
+                },
+            }) if at == parent && fork == parent
         ),
-        "a send whose payload is another endpoint delegates: {refused:?}"
+        "a received end is the receiver's to close: {refused:?}"
     );
+}
 
+#[test]
+fn an_endpoint_read_as_a_value_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
     let itself = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
     let escaped = arena.computation_return(itself);
-    let parent = Program { arena: &mut arena }.close();
+    let parent = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, ended, escaped, parent);
     assert_eq!(
         check_unit(&mut arena, exchange),
@@ -871,7 +945,7 @@ fn an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it()
     let exchange = |arena: &mut CoreArena, parent_closes_outer| {
         let ended = end(arena);
         let closes = |arena: &mut CoreArena, outer| {
-            let mut program = Program { arena };
+            let mut program = Program::new(arena);
             let own = program.close();
             if outer {
                 program.then(
@@ -888,7 +962,7 @@ fn an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it()
         let inner_child = closes(arena, true);
         let inner_parent = closes(arena, parent_closes_outer);
         let inner = fork(arena, ended, inner_child, inner_parent);
-        let outer_parent = Program { arena }.close();
+        let outer_parent = Program::new(arena).close();
         let outer = fork(arena, ended, inner, outer_parent);
         (check_unit(arena, outer), outer, inner)
     };
@@ -927,7 +1001,7 @@ fn an_outer_endpoint_an_inner_child_leaves_open_is_its_residue()
         ],
         &[],
     );
-    let mut program = Program { arena: &mut arena };
+    let mut program = Program::new(&mut arena);
     let own = program.close();
     let inner_child = program.then(
         SessionAction::Select {
@@ -938,8 +1012,8 @@ fn an_outer_endpoint_an_inner_child_leaves_open_is_its_residue()
     );
     let inner_parent = program.close();
     let inner = fork(&mut arena, ended, inner_child, inner_parent);
-    let closed = Program { arena: &mut arena }.close();
-    let outer_parent = Program { arena: &mut arena }.offer(&[(Spelled("a"), closed)]);
+    let closed = Program::new(&mut arena).close();
+    let outer_parent = Program::new(&mut arena).offer(&[(Spelled("a"), closed)]);
     let outer = fork(&mut arena, choosing, inner, outer_parent);
     let refused = check_unit(&mut arena, outer);
     assert!(

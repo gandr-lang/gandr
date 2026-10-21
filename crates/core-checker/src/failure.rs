@@ -271,11 +271,10 @@ pub enum FrameRole
     ReturnValue,
     /// An injection's payload is being checked.
     InjectionPayload,
-    /// A session type waits on its payloads' formation, none of which may be
-    /// a session type.
-    FormSession,
     /// A send waits on its payload's check, then advances its endpoint.
     SessionSend,
+    /// A receive's body is being judged with its payload bound.
+    ReceiveBody,
     /// An offer's arm is being checked from the zone the offer found.
     OfferArm,
     /// A fork waits on its protocol annotation's formation.
@@ -446,8 +445,8 @@ impl fmt::Display for FrameRole
             Self::ThunkBody => "ThunkBody",
             Self::ReturnValue => "ReturnValue",
             Self::InjectionPayload => "InjectionPayload",
-            Self::FormSession => "FormSession",
             Self::SessionSend => "SessionSend",
+            Self::ReceiveBody => "ReceiveBody",
             Self::OfferArm => "OfferArm",
             Self::ForkProtocol => "ForkProtocol",
             Self::ForkChild => "ForkChild",

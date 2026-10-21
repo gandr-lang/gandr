@@ -2002,9 +2002,6 @@ enum Frame
     ReturnValue,
     /// An injection waits on its payload's check against its summand.
     InjectionPayload,
-    /// A session type waits on its payloads' formation; none may then be a
-    /// session type.
-    FormSession(ValueTypeId),
     /// A send waits on its payload's check; its endpoint then advances.
     SessionSend
     {
@@ -2027,6 +2024,14 @@ enum Frame
         expected: CompTypeId,
         /// Where the offer's kept zones begin.
         zones: session::ZoneMark,
+    },
+    /// A receive's body is being judged with its payload bound.
+    ReceiveBody
+    {
+        /// The receive.
+        at: ComputationId,
+        /// The receive's own direction, which its body takes.
+        direction: Direction<CompTypeId>,
     },
     /// A fork waits on its protocol annotation's formation.
     ForkProtocol
@@ -2290,10 +2295,10 @@ impl Frame
             Self::ThunkBody => FrameRole::ThunkBody,
             Self::ReturnValue => FrameRole::ReturnValue,
             Self::InjectionPayload => FrameRole::InjectionPayload,
-            Self::FormSession(_) => FrameRole::FormSession,
             Self::SessionSend { .. } => FrameRole::SessionSend,
             Self::OfferArm { .. } => FrameRole::OfferArm,
             Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
+            Self::ReceiveBody { .. } => FrameRole::ReceiveBody,
             Self::ForkChild { .. } => FrameRole::ForkChild,
             Self::ForkParent { .. } => FrameRole::ForkParent,
             Self::SessionStatement { .. } => FrameRole::SessionStatement,
@@ -2429,11 +2434,11 @@ impl Frame
             | Self::ThunkBody
             | Self::ReturnValue
             | Self::InjectionPayload
-            | Self::FormSession(_)
             | Self::SessionSend { .. }
             | Self::OfferArm { .. }
             | Self::ForkProtocol { .. }
             | Self::ForkChild { .. }
+            | Self::ReceiveBody { .. }
             | Self::ForkParent { .. }
             | Self::SessionStatement { .. }
             | Self::StaySynthesised { .. }
@@ -2893,11 +2898,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ThunkBody
                 | Frame::ReturnValue
                 | Frame::InjectionPayload
-                | Frame::FormSession(_)
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
                 | Frame::ForkProtocol { .. }
                 | Frame::ForkChild { .. }
+                | Frame::ReceiveBody { .. }
                 | Frame::ForkParent { .. }
                 | Frame::HoldValue { .. }
                 | Frame::HoldBody { .. }
@@ -5344,7 +5349,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
             }
             | Computation::Session(
                 SessionAction::Send { .. }
-                | SessionAction::Receive { .. }
                 | SessionAction::Select { .. }
                 | SessionAction::Close { .. },
             )
@@ -5394,9 +5398,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            Computation::Session(SessionAction::Offer { .. } | SessionAction::Fork { .. }) => {
-                self.session(term, Direction::Check(expected))
-            },
+            Computation::Session(
+                SessionAction::Receive { .. }
+                | SessionAction::Offer { .. }
+                | SessionAction::Fork { .. },
+            ) => self.session(term, Direction::Check(expected)),
             Computation::Memory(
                 gandr_core_term::memory::MemoryForm::Hold { .. }
                 | gandr_core_term::memory::MemoryForm::Access { .. },
@@ -6023,13 +6029,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             ValueTypeView::Session(session) => {
                 let owner = self.owner;
-                let payloads = session.payloads();
-                self.frames.push(Waiting {
-                    frame: Frame::FormSession(at),
-                    owner,
-                });
                 self.frames
-                    .extend(payloads.iter().rev().map(|&payload| Waiting {
+                    .extend(session.payloads().iter().rev().map(|&payload| Waiting {
                         frame: Frame::FormNext(TypeNode::Value(payload)),
                         owner,
                     }));
@@ -8121,7 +8122,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let unknown = self.context.arena_mut().comp_type_unknown();
                 Ok(Step::Ascend(Produced::CompType(unknown)))
             },
-            (Frame::FormSession(at), Produced::Checked) => self.session_formed(at),
             (Frame::SessionSend { endpoint, next, .. }, Produced::Checked) => {
                 self.sent(endpoint, next)
             },
@@ -8145,6 +8145,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => self.forked(at, direction, session),
+            (Frame::ReceiveBody { at, direction }, produced) => {
+                self.received(at, direction, produced)
+            },
             (Frame::ForkParent { at, direction }, produced) => self.joined(at, direction, produced),
             (Frame::HoldValue { at, direction }, Produced::ValueType(held)) => {
                 let held = held.settle(self.context.arena_mut());
@@ -8263,7 +8266,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ThunkBody
                 | Frame::ReturnValue
                 | Frame::InjectionPayload
-                | Frame::FormSession(_)
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
                 | Frame::ForkProtocol { .. }

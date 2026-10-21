@@ -1054,10 +1054,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `cursor` stands just past the statement's tile `recv`;
     ///   `frame` is the frame the statement reads under.
-    /// - ensures: the receive on the endpoint `c` names is planned at the
-    ///   `recv` tile and recorded as a statement binding `x`; the frame binding
-    ///   `x` over `frame`, which the rest of the block reads under, is
-    ///   returned.
+    /// - ensures: the statement is recorded as the receive on the endpoint `c`
+    ///   names over the rest of the block, and the frame binding `x` linearly
+    ///   over `frame`, which the rest of the block reads under, is returned.
     /// - fails: the endpoint's refusal and a fault naming the receive statement
     ///   for a tile out of shape.
     /// - panics: none.
@@ -1072,8 +1071,7 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| ret.is_err() || (self.statements.len() == before.saturating_add(1)
-            && self.statements.last().is_some_and(|last| last.origin == recv.node && last.bound == recv.node)
-            && matches!(self.plans.get(usize::from(recv.node)), Some(&Plan::Action(SessionAction::Receive { .. }, _, _)))),
+            && self.statements.last().is_some_and(|last| last.origin == recv.node && matches!(last.binding, StatementBinding::Received { .. }))),
     )]
     pub(super) fn receive(
         &mut self,
@@ -1099,22 +1097,18 @@ impl<'source> Lowerer<'_, 'source>
         let endpoint = self.endpoint(frame, subject)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
-        self.plan(
-            statement,
-            Plan::Action(
-                SessionAction::Receive { endpoint },
-                subject.span,
-                Vec::new(),
-            ),
-        );
         self.statements.push(Statement {
             origin: recv.node,
             bound: recv.node,
-            binding: StatementBinding::Named(binder.node),
+            binding: StatementBinding::Received {
+                endpoint,
+                subject: subject.span,
+                name: binder.node,
+            },
             rest: exits::Rest::Bound,
         });
 
-        Ok(Frame::Inner(self.scope.extend(
+        Ok(Frame::Inner(self.scope.extend_linear(
             frame,
             name,
             Maybe::Present(binder.span),

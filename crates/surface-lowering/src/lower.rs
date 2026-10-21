@@ -1658,12 +1658,12 @@ struct Stretch
 }
 
 /// What a block statement does with the value its computation returns, or
-/// the fork or the hold it is.
+/// the fork, the receive or the hold it is.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum StatementBinding
 {
-    /// `run x <- c ;` names the value for the rest of the block, and so does
-    /// `recv(c) as x ;`; the node is the name's own.
+    /// `run x <- c ;` names the value for the rest of the block; the node is
+    /// the name's own.
     Named(NodeIndex),
     /// `c ;` discards it, splitting it as the unit under a binder no name
     /// reaches.
@@ -1696,6 +1696,17 @@ enum StatementBinding
         protocol: NodeIndex,
         /// The child computation.
         child: NodeIndex,
+    },
+    /// `recv(c) as x ;` receives on `c` into `x`'s linear binder, over the
+    /// rest of the block.
+    Received
+    {
+        /// The endpoint `c`, read where the statement stands.
+        endpoint: DeBruijnIndex,
+        /// The bytes `c` is written at.
+        subject: ByteSpan,
+        /// The name's own node.
+        name: NodeIndex,
     },
     /// `hold x = e ;` holds the value `e`, under `x`'s linear binder, over the
     /// rest of the block, at the grade `hold[g]` writes.
@@ -13003,6 +13014,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = id;
                 continue;
             }
+            if let StatementBinding::Received {
+                endpoint,
+                subject,
+                name,
+            } = statement.binding
+            {
+                let id = sink.arena.computation_session(SessionAction::Receive {
+                    endpoint,
+                    body: chain,
+                });
+                sink.origins.record_computation(id, origin);
+                sink.origins.record_label(Label {
+                    span: subject,
+                    labelled: Labelled::Endpoint(id),
+                });
+                if let Maybe::Present(name) = self.origin_at(name) {
+                    sink.origins.record_binder(id, name);
+                }
+                chain = id;
+                continue;
+            }
             let Maybe::Present(bound) = self.computation_at(statement.bound)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
@@ -13011,6 +13043,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 StatementBinding::Named(_)
                 | StatementBinding::Typed { .. }
                 | StatementBinding::Forked { .. }
+                | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Opened { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
@@ -13052,6 +13085,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Discarded
                 | StatementBinding::Split { .. }
                 | StatementBinding::Forked { .. }
+                | StatementBinding::Received { .. }
                 | StatementBinding::Held { .. }
                 | StatementBinding::Opened { .. } => bound,
             };
@@ -13089,7 +13123,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Whether every node a statement mints from lowered: a fork's protocol
-    /// and child, and every other statement's bound computation.
+    /// and child, a hold's or an opening's value, nothing of a receive's, and
+    /// every other statement's bound computation.
     ///
     /// # Specification
     /// - requires: the statement's nodes are minted or absent.
@@ -13105,6 +13140,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     #[spec(ensures: |ret| match statement.binding {
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
+        | StatementBinding::Received { .. } => ret == Maybe::Present(()),
         | StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
         | StatementBinding::Typed { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
@@ -13119,6 +13155,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .value_type_at(protocol)
                 .and_then(|_protocol| self.computation_at(child))
                 .map(|_child| ()),
+            StatementBinding::Received { .. } => Maybe::Present(()),
             StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => {
                 self.value_at(value).map(|_value| ())
             },

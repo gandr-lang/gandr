@@ -1344,11 +1344,16 @@ pub(super) fn commute(
                             steps.push(Step::Open(arm, ends, depth));
                         }
                     },
-                    Some(&Computation::Session(SessionAction::Fork { parent, .. })) => {
-                        steps.push(Step::Close(node));
-                        steps.push(Step::Open(parent, ends, depth));
-                    },
-                    Some(&Computation::Memory(MemoryForm::Hold { body: scope, .. })) => {
+                    // A fork's parent, a receive's body and a hold's scope are
+                    // the tail, under a linear binder, so no intuitionistic one
+                    // deeper.
+                    Some(
+                        &Computation::Session(
+                            SessionAction::Fork { parent: scope, .. }
+                            | SessionAction::Receive { body: scope, .. },
+                        )
+                        | &Computation::Memory(MemoryForm::Hold { body: scope, .. }),
+                    ) => {
                         steps.push(Step::Close(node));
                         steps.push(Step::Open(scope, ends, depth));
                     },
@@ -1895,7 +1900,7 @@ fn rebuild(
         Computation::Bind(..)
         | Computation::Split { .. }
         | Computation::Lambda(_)
-        | Computation::Session(SessionAction::Fork { .. })
+        | Computation::Session(SessionAction::Fork { .. } | SessionAction::Receive { .. })
         | Computation::Memory(MemoryForm::Hold { .. })
         | Computation::World(WorldForm::Leta { .. }) => 1_usize,
         Computation::Fixpoint { .. } if sink.loops.contains(&node) => 1_usize,
@@ -1995,6 +2000,14 @@ fn rebuild(
             child,
             parent: commuted,
         }),
+        (Computation::Session(SessionAction::Receive { endpoint, body }), &[commuted])
+            if commuted != body =>
+        {
+            sink.arena.computation_session(SessionAction::Receive {
+                endpoint,
+                body: commuted,
+            })
+        },
         (Computation::Memory(MemoryForm::Hold { value, body, grade }), &[commuted])
             if commuted != body =>
         {

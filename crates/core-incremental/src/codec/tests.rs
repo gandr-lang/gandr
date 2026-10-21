@@ -877,7 +877,10 @@ fn session_nodes_persist_their_protocol_and_children()
             endpoint,
             payload: index(1_usize),
         }),
-        ContentNode::Session(SessionAction::Receive { endpoint }),
+        ContentNode::Session(SessionAction::Receive {
+            endpoint,
+            body: index(2_usize),
+        }),
         ContentNode::Session(SessionAction::Select {
             endpoint,
             label: label("report"),
@@ -955,6 +958,10 @@ fn session_refusals_round_trip_with_their_endpoints()
         side: ForkSide::Parent,
         ..child
     };
+    let received = EndpointSite {
+        side: ForkSide::Received,
+        ..child
+    };
     let state = || crate::fixture::type_content(&[ContentNode::Product(Vec::new())]);
     let mut refusals = vec![
         Refusal::SessionMismatch {
@@ -998,8 +1005,8 @@ fn session_refusals_round_trip_with_their_endpoints()
             endpoint: child,
             by: Capture::Continuation,
         },
-        Linearity::Delegated,
         Linearity::AsValue { endpoint: parent },
+        Linearity::Closed { endpoint: received },
         Linearity::ArmsDisagree {
             endpoint: child,
             first: Site::Node(NodeIndex::from(4_usize)),

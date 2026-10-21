@@ -6,10 +6,9 @@
 import "../../model/completion/ring-base.gandr" ;
 
 /// The buffer finished by its submitter after it was moved into the
-/// submission. Refused today before the move: an endpoint received over a
-/// session is not acted on (#1167). With delegation, the refusal names the
-/// sent buffer's consumed slot.
-@[ refuses("OutOfFragment") ]
+/// submission: the send consumed the submitter's end, so the close acts on a
+/// spent slot.
+@[ refuses("UsedAfterClose") ]
 def bufferTouched() -> -F Unit {
   fork (owner : Ring.Buffer) { close(owner) } as buffer;
   fork (kernel : Ring.Moving) {

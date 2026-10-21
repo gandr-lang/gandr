@@ -133,6 +133,8 @@ pub enum Label
     Reported,
     /// The fork that opened the endpoint a session refusal names.
     Forked,
+    /// The receive that bound the endpoint a session refusal names.
+    Received,
     /// The first arm of an offer, which a later arm disagrees with.
     FirstArm,
     /// The earlier rule of a pair that rewrites one term apart, or whose
@@ -185,6 +187,7 @@ impl fmt::Display for Label
             },
             Self::Reported => f.write_str("reported here"),
             Self::Forked => f.write_str("the endpoint was opened by this fork"),
+            Self::Received => f.write_str("the endpoint was received here"),
             Self::FirstArm => f.write_str("the arm it disagrees with"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
         }
@@ -652,6 +655,20 @@ impl Annotations
     }
 }
 
+/// The label of the binder that opened `endpoint`: its fork, or the receive
+/// that took it.
+///
+/// # Specification
+/// trivial.
+const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
+{
+    match endpoint.side {
+        gandr_core_checker::session::ForkSide::Child
+        | gandr_core_checker::session::ForkSide::Parent => Label::Forked,
+        gandr_core_checker::session::ForkSide::Received => Label::Received,
+    }
+}
+
 /// The loci of the checker refusal `refusal`.
 ///
 /// # Specification
@@ -688,6 +705,9 @@ impl Annotations
         Maybe::Absent(report_context::Absent::Unrecorded) => true,
         Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
     };
+    let opened = |slot: &Maybe<Annotation, report_context::Absent>| {
+        role(slot, Label::Forked) || role(slot, Label::Received)
+    };
     labelled && match refusal {
         CheckRefusal::DataFieldLevel {..} | CheckRefusal::RepresentationAboveKind {..} | CheckRefusal::MissingRecordField {..}
             | CheckRefusal::CapabilityForged {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
@@ -706,9 +726,9 @@ impl Annotations
         CheckRefusal::SessionMismatch { .. }
             | CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. } | LinearityDefect::Closed { .. }
                 | LinearityDefect::UsedTwice { .. } | LinearityDefect::Captured { .. } | LinearityDefect::AsValue { .. }, .. } =>
-            role(&ret.context[0_usize], Label::Forked) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+            opened(&ret.context[0_usize]) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. } =>
-            role(&ret.context[0_usize], Label::Forked) && role(&ret.context[1_usize], Label::FirstArm),
+            opened(&ret.context[0_usize]) && role(&ret.context[1_usize], Label::FirstArm),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_) | CheckRefusal::NotAnAbstractType(_)
             | CheckRefusal::SealSiteRepeated(_)
@@ -911,7 +931,10 @@ fn checked(
         | CheckRefusal::MachineInvariant
         | CheckRefusal::CapabilityUngranted { .. } => return Annotations::at(declaration, label),
         CheckRefusal::SessionMismatch { at, endpoint, .. } => (spanned(origins.computation(at)), [
-            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            annotated(
+                spanned(origins.computation(endpoint.fork)),
+                opener(endpoint),
+            ),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
         CheckRefusal::Linearity {
@@ -921,7 +944,10 @@ fn checked(
                     endpoint, first, ..
                 },
         } => (node(origins, at), [
-            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            annotated(
+                spanned(origins.computation(endpoint.fork)),
+                opener(endpoint),
+            ),
             annotated(spanned(origins.computation(first)), Label::FirstArm),
         ]),
         CheckRefusal::Linearity {
@@ -933,15 +959,15 @@ fn checked(
                 | LinearityDefect::Captured { endpoint, .. }
                 | LinearityDefect::AsValue { endpoint },
         } => (node(origins, at), [
-            annotated(spanned(origins.computation(endpoint.fork)), Label::Forked),
+            annotated(
+                spanned(origins.computation(endpoint.fork)),
+                opener(endpoint),
+            ),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
         CheckRefusal::Linearity {
             at,
-            defect:
-                LinearityDefect::Delegated
-                | LinearityDefect::Unrestricted
-                | LinearityDefect::Unbound { .. },
+            defect: LinearityDefect::Unrestricted | LinearityDefect::Unbound { .. },
         }
         | CheckRefusal::Access { at, .. }
         | CheckRefusal::Codata { at, .. }
@@ -1358,7 +1384,7 @@ impl fmt::Display for Checked
             },
             | CheckRefusal::Linearity { defect, .. } => match defect {
                 | LinearityDefect::Residue { .. } => f.write_str(
-                    "a half of the fork finishes with an endpoint its session type has not closed",
+                    "a half of the fork or a receive's body finishes with an endpoint its session type has not closed",
                 ),
                 | LinearityDefect::Closed { .. } => f.write_str("the endpoint is used after it was closed"),
                 | LinearityDefect::UsedTwice { .. } => {
@@ -1368,9 +1394,6 @@ impl fmt::Display for Checked
                     f,
                     "the endpoint is named inside {}, which may run its use other than once",
                     Captor(by)
-                ),
-                | LinearityDefect::Delegated => f.write_str(
-                    "a payload is an endpoint or a session type: sending an endpoint is not admitted",
                 ),
                 | LinearityDefect::AsValue { .. } => {
                     f.write_str("the endpoint is read as a value outside a session action")
@@ -1383,7 +1406,7 @@ impl fmt::Display for Checked
                 ),
                 | LinearityDefect::Unbound { index } => write!(
                     f,
-                    "the action names linear index {}, which no fork bound",
+                    "the action names linear index {}, which no fork or receive bound",
                     u32::from(index)
                 ),
             },
@@ -3107,7 +3130,12 @@ mod tests
             },
             CheckRefusal::Linearity {
                 at: comp,
-                defect: gandr_core_checker::session::LinearityDefect::Delegated,
+                defect: gandr_core_checker::session::LinearityDefect::Closed {
+                    endpoint: gandr_core_checker::session::Endpoint {
+                        fork: computation,
+                        side: gandr_core_checker::session::ForkSide::Received,
+                    },
+                },
             },
             CheckRefusal::Linearity {
                 at: comp,
@@ -3833,10 +3861,6 @@ mod tests
             }),
             title(CheckRefusal::Linearity {
                 at: comp,
-                defect: gandr_core_checker::session::LinearityDefect::Delegated,
-            }),
-            title(CheckRefusal::Linearity {
-                at: comp,
                 defect: gandr_core_checker::session::LinearityDefect::AsValue {
                     endpoint: Endpoint {
                         fork: computation,
@@ -3863,7 +3887,7 @@ mod tests
                 );
             }
         }
-        assert_eq!(ordinals(&linearity[6]), [1_usize], "the unbound index");
+        assert_eq!(ordinals(&linearity[5]), [1_usize], "the unbound index");
         let access = [
             title(CheckRefusal::Access {
                 at: comp,
@@ -4212,6 +4236,7 @@ mod tests
             Label::Shadows.to_string(),
             Label::Reported.to_string(),
             Label::Forked.to_string(),
+            Label::Received.to_string(),
             Label::FirstArm.to_string(),
             Label::Overlaps.to_string(),
             Label::Inferred(gandr_surface_lowering::Exit::Return).to_string(),
@@ -4225,15 +4250,15 @@ mod tests
             }
         }
         assert!(
-            labels[10].contains("return"),
+            labels[11].contains("return"),
             "an inferred exit names its keyword"
         );
         assert!(
-            labels[11].contains("become"),
+            labels[12].contains("become"),
             "an inferred exit names its keyword"
         );
         assert!(
-            labels[13].contains("performing an effect"),
+            labels[14].contains("performing an effect"),
             "an effectful run says it performs an effect"
         );
     }

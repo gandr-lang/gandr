@@ -23,9 +23,31 @@ def seat_closed_in_a_thunk() -> -F Unit {
   close(desk)
 }
 
-@[ refuses("Delegation") ]
-def protocol_sends_a_protocol() -> -F Unit {
-  fork (seat : !end. end) { close(seat) } as desk;
+/// An end sent over a session leaves its sender, so closing it after the send
+/// acts on a spent slot (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).
+@[ refuses("UsedAfterClose") ]
+def seat_closed_after_delegating() -> -F Unit {
+  fork (seat : !end. end) {
+    fork (inner : end) { close(inner) } as held;
+    send(seat, held);
+    close(held);
+    close(seat)
+  } as desk;
+  recv(desk) as passed;
+  close(passed);
+  close(desk)
+}
+
+/// A received end is the receiver's to close: the receive's body ends with it
+/// still open.
+@[ refuses("LinearResidue") ]
+def received_seat_left_open() -> -F Unit {
+  fork (seat : !end. end) {
+    fork (inner : end) { close(inner) } as held;
+    send(seat, held);
+    close(seat)
+  } as desk;
+  recv(desk) as passed;
   close(desk)
 }
 

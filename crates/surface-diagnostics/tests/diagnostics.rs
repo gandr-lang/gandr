@@ -1914,8 +1914,9 @@ fn an_importer_s_refusal_is_located_in_its_own_text()
 #[test]
 fn an_importer_keeps_the_marks_its_import_holds_1199()
 {
-    let scratch = Scratch::new(Path::new("delegated"));
-    let base = "module P :> #{\n  type Buffer = end,\n  type Moving = ?Buffer. end\n} {\n}\n";
+    let scratch = Scratch::new(Path::new("consumable"));
+    let base =
+        "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} {\n}\n";
     let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork (kernel : \
                 P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } as ring;\n  \
                 close(ring)\n}\n";
@@ -1949,13 +1950,8 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
         .expect("every mark lies in the base");
     assert_eq!(
         marked,
-        ["end", "?Buffer. end"],
-        "the refused payload, then the session type it was formed in"
-    );
-    assert_eq!(
-        refusal.elsewhere.first().map(|mark| mark.span),
-        Some(nth(SourceText::from(base), SourceText::from("end"))[0]),
-        "the payload is the `end` the buffer's type writes"
+        ["Cap[1] {write}"],
+        "the refused payload, where the import writes it"
     );
 }
 

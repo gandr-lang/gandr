@@ -18,8 +18,9 @@
 //! [`ValueType::Session`] is the endpoint type: a [`Protocol`] graph, the
 //! payload types its sends and receives carry, and the state the endpoint
 //! stands at. An endpoint is held in the linear zone `Σ` of the one
-//! [`Context`], opened by [`SessionAction::Fork`] and nowhere else, so the
-//! zone's discipline — one consumption, no weakening — is the endpoint's.
+//! [`Context`], opened by [`SessionAction::Fork`] or by the receive of an
+//! endpoint sent over another, so the zone's discipline — one consumption, no
+//! weakening — is the endpoint's.
 //!
 //! # One protocol graph, a state into it
 //!
@@ -55,10 +56,12 @@
 //! `fork`, which binds the two ends. No action returns an endpoint: the
 //! checker rebinds the endpoint's slot at its continuation type, as
 //! [`Context::advance`] states, and `close` consumes it. `send`, `select`
-//! and `close` return the unit; `recv` returns the payload, which a bind
-//! names. The alternative was pair-returning actions, `(x, c′) = recv c`,
-//! which needs a binding form per action and a fresh name per step; it
-//! reverses when delegation needs the continuation as a value.
+//! and `close` return the unit. `recv` carries the rest of its block as its
+//! body, under one linear binder that holds the payload, as `fork` carries
+//! its parent: a received endpoint is a linear resident like the ends a fork
+//! binds, and the checker places every other payload in that slot too, read
+//! by copy. The alternative was pair-returning actions, `(x, c′) = recv c`,
+//! which needs a binding form per action and a fresh name per step.
 //!
 //! **Choice.** One computation former whose cases are the six actions, the
 //! subject an index rather than a value, so an action on something that is
@@ -1305,11 +1308,14 @@ pub enum SessionAction<V = ValueId, C = ComputationId, T = ValueTypeId>
         /// The payload.
         payload: V,
     },
-    /// `recv(c)`: receive a payload and return it.
+    /// `recv(c) as x ; body`: receive a payload into one linear binder and
+    /// run `body` under it.
     Receive
     {
         /// The endpoint, a linear index.
         endpoint: DeBruijnIndex,
+        /// The rest of the block, under the payload's linear binder.
+        body: C,
     },
     /// `select(c, l)`: choose `label`, returning the unit.
     Select
@@ -1365,7 +1371,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     {
         match *self {
             Self::Send { endpoint, .. }
-            | Self::Receive { endpoint }
+            | Self::Receive { endpoint, .. }
             | Self::Select { endpoint, .. }
             | Self::Offer { endpoint, .. }
             | Self::Close { endpoint } => Maybe::Present(endpoint),
@@ -1415,8 +1421,8 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
         .into_iter()
     }
 
-    /// The computation children in canonical order: an offer's arms in label
-    /// order, a fork's child before its parent.
+    /// The computation children in canonical order: a receive's body, an
+    /// offer's arms in label order, a fork's child before its parent.
     ///
     /// # Specification
     /// trivial.
@@ -1425,12 +1431,30 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     {
         let (arms, fork) = match *self {
             Self::Offer { ref arms, .. } => (Some(arms.values().copied()), None),
-            Self::Fork { child, parent, .. } => (None, Some([child, parent])),
-            Self::Send { .. } | Self::Receive { .. } | Self::Select { .. } | Self::Close { .. } => {
-                (None, None)
-            },
+            Self::Fork { child, parent, .. } => (None, Some([Some(child), Some(parent)])),
+            Self::Receive { body, .. } => (None, Some([Some(body), None])),
+            Self::Send { .. } | Self::Select { .. } | Self::Close { .. } => (None, None),
         };
-        arms.into_iter().flatten().chain(fork.into_iter().flatten())
+        arms.into_iter()
+            .flatten()
+            .chain(fork.into_iter().flatten().flatten())
+    }
+
+    /// The linear binders a computation child opens: one for a receive's
+    /// body and for each half of a fork, none for an offer's arm.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn child_binders(&self) -> crate::Binders
+    {
+        match *self {
+            Self::Receive { .. } | Self::Fork { .. } => crate::Binders::ONE,
+            Self::Send { .. } | Self::Select { .. } | Self::Offer { .. } | Self::Close { .. } => {
+                crate::Binders::NONE
+            },
+        }
     }
 
     /// The value-type children: a fork's protocol.
@@ -1504,7 +1528,7 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|mapped| match (self, mapped) {
         | (&Self::Offer { ref arms, .. }, &SessionAction::Offer { arms: ref images, .. }) => arms.keys().eq(images.keys()),
         | (&Self::Send { endpoint: a, .. }, &SessionAction::Send { endpoint: b, .. })
-        | (&Self::Receive { endpoint: a }, &SessionAction::Receive { endpoint: b })
+        | (&Self::Receive { endpoint: a, .. }, &SessionAction::Receive { endpoint: b, .. })
         | (&Self::Close { endpoint: a }, &SessionAction::Close { endpoint: b }) => a == b,
         | (&Self::Select { endpoint: a, label: ref x }, &SessionAction::Select { endpoint: b, label: ref y }) => a == b && x == y,
         | (&Self::Fork { .. }, &SessionAction::Fork { .. }) => true,
@@ -1529,7 +1553,10 @@ impl<V: Copy, C: Copy, T: Copy> SessionAction<V, C, T>
                 endpoint,
                 payload: value(state, payload)?,
             },
-            Self::Receive { endpoint } => SessionAction::Receive { endpoint },
+            Self::Receive { endpoint, body } => SessionAction::Receive {
+                endpoint,
+                body: computation(state, body)?,
+            },
             Self::Select {
                 endpoint,
                 ref label,

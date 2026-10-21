@@ -8,10 +8,10 @@
 import "../../model/completion/ring-base.gandr" ;
 
 /// A pending completion handed to a reaping peer while its frame ends.
-/// Refused today at the reaper: an endpoint received over a session is not
-/// acted on (#1167). With delegation, it waits on the buffer's region
-/// outliving the reaper's (#1164).
-@[ refuses("OutOfFragment") ]
+/// Delegation admits the handover, and nothing yet ties the buffer to a
+/// region: this checks until region indices refuse a reaper that outlives the
+/// buffer's region (#1164), when its expectation becomes that refusal.
+@[ checks ]
 def bufferOrphaned() -> -F Unit {
   fork (reactor : Ring.Reaping) {
     recv(reactor) as pending;
