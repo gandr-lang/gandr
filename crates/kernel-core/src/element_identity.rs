@@ -2400,8 +2400,9 @@ where
 /// # Specification
 /// - requires: `motive` is the decode of the motive's own binder at level zero.
 /// - ensures: back along `ua(e)`, the reduct `x ← e.1; l ← x.0; g ← l.0; g(v)`,
-///   which applies the record's left inverse; back along a held `back(p)`,
-///   transport along `p` in `motive`. `None` for any other path.
+///   which applies the record's left inverse; back along a native equivalence
+///   `equiv(f, g)`, the reduct `g(v)`; back along a held `back(p)`, transport
+///   along `p` in `motive`. `None` for any other path.
 /// - provides: the reverse half of the decode rows, which `back` and a
 ///   transported function's argument read.
 /// - fails: never.
@@ -2412,6 +2413,7 @@ where
 ///   inverse, reaches the operand, and back along a `back` moves forward.
 /// - witness: `element_identity::tests::transport_back_along_univalence_applies_the_left_inverse`
 /// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `element_identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
 fn back_along<M>(
     arena: &mut TermArena,
@@ -2445,6 +2447,11 @@ where
             let applied = arena.computation_bind(section, applied);
             Some(arena.computation_bind(inverses, applied))
         },
+        // A native equivalence carries its backward map.
+        Some(&Value::PathEquiv { backward, .. }) => {
+            let force = arena.computation_force(backward);
+            Some(arena.computation_application(force, value))
+        },
         _ => match held(arena, table, memo, along)? {
             (Held::Back, inner, _) => Some(arena.computation_path_transport(motive, inner, value)),
             (Held::Then, ..) => None,
@@ -2456,13 +2463,13 @@ where
 ///
 /// # Specification
 /// - requires: `function_type` is the motive's thunk type under its own binder.
-/// - ensures: for a non-dependent arrow into a returner along `ua(e)` or a held
-///   `back` or `then`, the reduct `return thunk(λa. tr(B, p, ⟨force f m⟩))`,
-///   the call moving as the value it returns as `then`'s first leg does, or
-///   `return thunk(λa. force f m)` when `B` ignores the binder; the argument
-///   `m` is `a` when `A` ignores the binder and `⟨tr(A, back(p), a)⟩`, by
-///   [`back_along`], when `A` is the binder's decode and the path reads back;
-///   `None` for any other type, path or argument.
+/// - ensures: for a non-dependent arrow into a returner along `ua(e)`, a native
+///   equivalence or a held `back` or `then`, the reduct `return thunk(λa. tr(B,
+///   p, ⟨force f m⟩))`, the call moving as the value it returns as `then`'s
+///   first leg does, or `return thunk(λa. force f m)` when `B` ignores the
+///   binder; the argument `m` is `a` when `A` ignores the binder and `⟨tr(A,
+///   back(p), a)⟩`, by [`back_along`], when `A` is the binder's decode and the
+///   path reads back; `None` for any other type, path or argument.
 /// - provides: the cubical table's function row, as the evaluator's transported
 ///   function mirrors it.
 /// - fails: never.
@@ -2473,6 +2480,7 @@ where
 ///   result forward by the forward map; moving the argument forward, by the
 ///   right inverse, or leaving the result where it is changes the reduct.
 /// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `element_identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
 fn transported_function<M>(
     arena: &mut TermArena,
@@ -2495,8 +2503,10 @@ where
     else {
         return None;
     };
-    if !matches!(arena.value(path), Some(&Value::Univalence(_)))
-        && held(arena, table, memo, path).is_none()
+    if !matches!(
+        arena.value(path),
+        Some(&(Value::Univalence(_) | Value::PathEquiv { .. }))
+    ) && held(arena, table, memo, path).is_none()
     {
         return None;
     }

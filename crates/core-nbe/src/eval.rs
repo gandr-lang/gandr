@@ -5802,7 +5802,7 @@ fn step_transport(
 ///   against reflexivity returns the path itself; a word moves by the rules of
 ///   the `words` module, and in that singleton a path no word rule reads moves
 ///   the empty word or a letter-headed word by appending on it; a function
-///   motive along `ua(e)` or a held transport returns the thunk
+///   motive along `ua(e)`, `equiv(f, g)` or a held transport returns the thunk
 ///   [`CompBody::TransportFunction`] holds, wherever [`function_parts`] reads
 ///   its motives; any other configuration over a stuck path stacks the
 ///   transport on the path's spine.
@@ -5835,6 +5835,7 @@ fn step_transport(
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 /// - witness: `identity::tests::transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive`
 /// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 /// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
@@ -6136,10 +6137,11 @@ fn along_held(
 /// - ensures: back along `ua(e)`, the kernel's reduct `x ← e.1; l ← x.0; g ←
 ///   l.0; force g v`, run by the machine: a literal record selects its left
 ///   inverse, and a record held as a definition or a variable keeps each
-///   projection on its spine for the conversion to unfold; back along a held
-///   `back(p)`, transport of the operand along `p` in `motive`.
+///   projection on its spine for the conversion to unfold; back along `equiv(f,
+///   g)`, native or written, `force g v`; back along a held `back(p)`,
+///   transport of the operand along `p` in `motive`.
 /// - provides: the reverse half of the decode rows: the kernel's reducts `g ←
-///   e.1.0.0; g(x)` and `tr(El, p, x)`.
+///   e.1.0.0; g(x)`, `g(x)` and `tr(El, p, x)`.
 /// - fails: [`EvalFault::TransportedNonPath`] for any other path; domain faults
 ///   for dangling nodes; [`EvalFault::DanglingTerm`] for a family naming no
 ///   core node.
@@ -6154,6 +6156,7 @@ fn along_held(
 ///   faulting; and back along a `back` moves forward.
 /// - witness: `identity::tests::transport_back_along_univalence_applies_the_left_inverse`
 /// - witness: `identity::tests::transport_back_along_univalence_projects_a_held_record`
+/// - witness: `identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(
     captures: [tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || machine.tasks.len() > tasks,
@@ -6183,6 +6186,19 @@ fn back_along(
             machine.values.push(record);
             Ok(())
         },
+        DomainValue::PathCertificate { certificate, .. } => match core.value(certificate) {
+            Some(&(Value::PathEquiv { backward, .. } | Value::Equiv(_, backward))) => {
+                machine.values.push(value);
+                machine.tasks.push(Task::Apply);
+                machine.tasks.push(Task::Force);
+                machine.tasks.push(Task::Value {
+                    term: backward,
+                    env: Machine::root_env(),
+                });
+                Ok(())
+            },
+            _ => Err(EvalFault::TransportedNonPath),
+        },
         DomainValue::HeldTransport {
             motive: formed,
             path: inner,
@@ -6194,7 +6210,6 @@ fn back_along(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
-        | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::HeldTransport { .. }
@@ -6227,12 +6242,12 @@ type FunctionMotives = (
 /// - requires: `function_type` is the motive's thunk type under its own binder
 ///   and `environment` the motive's captures; `carried` is the path.
 /// - ensures: for a non-dependent `U(A → F B)` whose returner performs no
-///   effect, along `ua(e)` or a held transport, each motive is none when its
-///   type reads no binder; the result's closes `B` over `environment`
-///   otherwise, and the argument's closes `A` when `A` is the decode of the
-///   binder and moving back along the path needs no endpoint: the path is
-///   `ua(e)` or a held `back`. `None` for any other type, returner, path or
-///   argument.
+///   effect, along `ua(e)`, `equiv(f, g)` or a held transport, each motive is
+///   none when its type reads no binder; the result's closes `B` over
+///   `environment` otherwise, and the argument's closes `A` when `A` is the
+///   decode of the binder and moving back along the path needs no endpoint: the
+///   path is `ua(e)`, `equiv(f, g)` or a held `back`. `None` for any other
+///   type, returner, path or argument.
 /// - provides: the function row's guard and the motives its reduct reads.
 /// - fails: [`EvalFault::DanglingTerm`] for a type naming no core node; domain
 ///   faults for a dangling held transport.
@@ -6243,11 +6258,12 @@ type FunctionMotives = (
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decoded argument moves back along `ua(e)` by the left
-///   inverse and a constant argument stays as it is, while a dependent
-///   function, a neutral path and a decoded argument along a held `then` keep
-///   the transport as it was; swapping the motives or moving the argument
-///   forward changes the transported function.
+///   inverse and along `equiv(f, g)` by `g`, and a constant argument stays as
+///   it is, while a dependent function, a neutral path and a decoded argument
+///   along a held `then` keep the transport as it was; swapping the motives or
+///   moving the argument forward changes the transported function.
 /// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
+/// - witness: `identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 /// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
 /// - witness: `identity::tests::a_function_with_a_constant_result_leaves_its_call_unmoved`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |parts| parts.is_none()
@@ -6278,14 +6294,35 @@ fn function_parts(
     if effects.signatures().next().is_some() {
         return Ok(None);
     }
-    let back_reads = if matches!(carried, DomainValue::Univalence { .. }) {
-        true
-    }
-    else if let DomainValue::HeldTransport { motive: formed, .. } = carried {
-        held_family(core, domain, formed)? == crate::identity::TransportFamily::Reversed
-    }
-    else {
-        return Ok(None);
+    let back_reads = match carried {
+        DomainValue::Univalence { .. } => true,
+        DomainValue::PathCertificate { certificate, .. }
+            if matches!(
+                core.value(certificate),
+                Some(&(Value::PathEquiv { .. } | Value::Equiv(..)))
+            ) =>
+        {
+            true
+        },
+        DomainValue::HeldTransport { motive: formed, .. } => {
+            held_family(core, domain, formed)? == crate::identity::TransportFamily::Reversed
+        },
+        DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
+        | DomainValue::PathProduct { .. }
+        | DomainValue::Here { .. }
+        | DomainValue::Flow { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Tuple { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Neutral { .. }
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => return Ok(None),
     };
     let free = |fault| match fault {
         crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,

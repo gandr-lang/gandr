@@ -1710,13 +1710,15 @@ impl CodeDefinitions
     }
 
     /// The machine's convertible trace from the closed claim `claim` to its
-    /// normal form `normal`.
+    /// normal form `normal`, recorded with returned endpoints held at the
+    /// definitions they call ([`gandr_core_nbe::Endpoints::Hold`]).
     ///
     /// # Specification
     /// - requires: as [`Self::evaluate_claim`]; `normal` is the claim's
     ///   readback.
     /// - ensures: the decisions the machine recorded converting the two, in
-    ///   order.
+    ///   order; every δ-step the claim takes, a returned endpoint's among them,
+    ///   is one of those decisions.
     /// - fails: [`CheckRefusal::Undecided`] at `claim` when either side does
     ///   not evaluate or the machine does not convert them.
     /// - panics: none.
@@ -1725,9 +1727,14 @@ impl CodeDefinitions
     /// - [`CheckRefusal::Undecided`] — as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`].
+    /// - hypothesis: L3 — as [`Self::evaluate_claim`] and [`Self::read_claim`];
+    ///   a function carried along a named path, `⟨tr(x. x → x, p, f)⟩`, runs
+    ///   through `p`'s definition, and a run left to the evaluation records no
+    ///   step for it, so the kernel's replay, which unfolds `p` only on a
+    ///   recorded step, refuses what the checker accepted.
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `bridge::tests::a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335`
     #[spec(ensures: |ret| ret.is_ok() || ret == Err(CheckRefusal::Undecided { at: claim }))]
     fn claim_trace(
         &self,
@@ -1738,7 +1745,8 @@ impl CodeDefinitions
     {
         let undecided = CheckRefusal::Undecided { at: claim };
         let definitions =
-            Definitions::new(&self.lowered, &self.environment, self.environment.root());
+            Definitions::new(&self.lowered, &self.environment, self.environment.root())
+                .reading_endpoints(gandr_core_nbe::Endpoints::Hold);
         let fuel = Fuel::from(CODE_FUEL);
         let mut domain = DomainArena::new();
         let left = gandr_core_nbe::eval_value(core, &mut domain, definitions, fuel, claim)
