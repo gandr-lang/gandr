@@ -965,6 +965,10 @@ pub struct Structure<'source>
     /// type: a reference through the namespace reads the witness, so the
     /// member's own type does not leak past the seal.
     pub exported_as: BTreeMap<SlotIndex, SlotIndex>,
+    /// Each record type an enclosing module's signature states this module
+    /// at, in the order matched: a type the signature writes, lowered on its
+    /// own so it answers for itself.
+    pub stated_at: Vec<Placed>,
     /// Whether matching coerced the body.
     pub coerced: Coerced,
     /// What the module is in the stratum: a module, a functor's body or
@@ -5870,6 +5874,7 @@ impl<'source> Collector<'_, 'source>
             types: Vec::new(),
             type_members: Vec::new(),
             exported_as: BTreeMap::new(),
+            stated_at: Vec::new(),
             coerced: Coerced(false),
             stratum: Stratum::Module,
         });
@@ -6998,7 +7003,9 @@ impl<'source> Collector<'_, 'source>
     ///   the field's type as [`Self::state`] states it, and a nested module a
     ///   record-typed field as a further layer queued on `queue`. A field the
     ///   exports do not hold files a held slot carrying the refusal under its
-    ///   name; a record out of shape files one under the module's name.
+    ///   name; a record out of shape files one under the module's name. A
+    ///   record in shape is kept among the module's [`Structure::stated_at`],
+    ///   read in the layer's scope, so it lowers as the type it writes.
     /// - provides: the matching of a module against a signature its enclosing
     ///   module states for it.
     /// - fails: [`LoweringRefusal::UnknownMold`].
@@ -7059,6 +7066,12 @@ impl<'source> Collector<'_, 'source>
                 return Ok(());
             },
         };
+        if let Maybe::Present(seen) = layer.scope {
+            self.collected.scopes.push((layer.record.node, seen));
+        }
+        if let Some(entry) = self.collected.structures.get_mut(layer.structure.0) {
+            entry.stated_at.push(layer.record);
+        }
         let container = Container::Module(layer.structure);
         let Some((module, exports)) = self
             .collected

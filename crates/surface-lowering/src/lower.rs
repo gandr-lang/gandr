@@ -2576,6 +2576,26 @@ struct Fractional(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct InPayload(bool);
 
+/// Whether a node is a type a module signature states, read in the
+/// signature's scope: the signature's text, minted though the member it states
+/// is refused.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: carries only the flag.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the flag holds no node; `stated_apart` and `mint_at`
+///   check it and its effect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refused member's stated type answers for itself, and
+///   its body stays unminted.
+/// - witness: `lower::tests::a_signature_s_types_answer_whatever_its_members_1115`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct StatedApart(bool);
+
 /// One form being classified: where it stands, what it is called, and how
 /// its position reads it.
 ///
@@ -4982,6 +5002,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     seeds.push((defined.node, Reading::ValueType(Frame::Outermost)));
                 }
             }
+            for record in &structure.stated_at {
+                seeds.push((record.node, Reading::ValueType(Frame::Outermost)));
+            }
         }
         for recorded in self
             .collected
@@ -5486,6 +5509,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(InPayload(false))
+    }
+
+    /// Whether `position` is a type a module signature states, read in that
+    /// signature's scope.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: affirmative exactly when the position holds a signature
+    ///   scope; an out-of-range position holds none.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused member's stated type is minted while its
+    ///   body is not.
+    /// - witness: `lower::tests::a_signature_s_types_answer_whatever_its_members_1115`
+    #[spec(ensures: |ret| ret.0 == matches!(self.scopes.get(usize::from(position)), Some(&Maybe::Present(_))))]
+    fn stated_apart(
+        &self,
+        position: NodeIndex,
+    ) -> StatedApart
+    {
+        StatedApart(matches!(
+            self.scopes.get(usize::from(position)),
+            Some(&Maybe::Present(_))
+        ))
     }
 
     /// Classify one node at the reading its parent fixed.
@@ -11263,12 +11312,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   node whose position bridges its sort has the bridge minted over its
     ///   own core node, with the same syntax node's origin marked as inserted.
     ///   A node under a declaration that refused is not minted, and neither is
-    ///   any node above it, unless it lies inside an attribute payload: the
-    ///   side table files a payload whatever its declaration's outcome, so an
-    ///   expectation about a refused declaration stays readable. Last, the body
-    ///   of every witness of a member whose member and own type are unrefused
-    ///   is minted as that member's constant, its origin the form that stated
-    ///   the second type.
+    ///   any node above it, unless it lies inside an attribute payload or is a
+    ///   type a module signature states for it: the side table files a payload
+    ///   whatever its declaration's outcome, so an expectation about a refused
+    ///   declaration stays readable, and a signature's type is the signature's
+    ///   text, which answers for itself. The record type an enclosing signature
+    ///   states a nested module at is minted as a root. Last, the body of every
+    ///   witness of a member whose member and own type are unrefused is minted
+    ///   as that member's constant, its origin the form that stated the second
+    ///   type.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -11296,7 +11348,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || self.plans.iter().enumerate().all(|(position, plan)| {
                     let position = NodeIndex::from(position);
-                    (self.collected.refused(position).0 && !self.in_payload(position).0)
+                    (self.collected.refused(position).0
+                        && !self.in_payload(position).0
+                        && !self.stated_apart(position).0)
                         || *plan == Plan::Unplanned
                         || self.taken.get(usize::from(position)) == Some(&true)
                 })
@@ -11322,6 +11376,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     None
                 },
             })
+            // The record type an enclosing signature states a nested module at
+            // is a type that signature writes.
+            .chain(
+                self.collected
+                    .structures
+                    .iter()
+                    .skip(from.structures)
+                    .flat_map(|structure| structure.stated_at.iter().copied()),
+            )
             .chain(self.collected.families.iter().skip(from.families).flat_map(|family| {
                 family
                     .parameters
@@ -11553,8 +11616,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   writes it; a constructor awaiting its data family's application, or
     ///   the constructor a field it stands in belongs to, is left for that
     ///   node, which mints it first; a node with no plan, or whose plan was
-    ///   carried out, or under a refused declaration outside a payload, is left
-    ///   as it is.
+    ///   carried out, or under a refused declaration outside a payload and
+    ///   outside the types a module signature states, is left as it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -11567,13 +11630,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   exit once; a call of no arguments answers at the call, its head at the
     ///   head.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+    /// - witness: `lower::tests::a_signature_s_types_answer_whatever_its_members_1115`
     /// - witness: `lower::tests::a_call_of_no_arguments_is_the_call_the_source_wrote_364`
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
         captures: before = (
-            (self.collected.refused(position).0 && !self.in_payload(position).0)
+            (self.collected.refused(position).0
+                && !self.in_payload(position).0
+                && !self.stated_apart(position).0)
                 || self.awaiting.contains(&position),
             matches!(
                 self.plans.get(position),
@@ -11598,7 +11664,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink: &mut Sink<'_>,
     )
     {
-        if self.collected.refused(position).0 && !self.in_payload(position).0 {
+        if self.collected.refused(position).0
+            && !self.in_payload(position).0
+            && !self.stated_apart(position).0
+        {
             return;
         }
         // A constructor classified by its place in a data family's application
@@ -18057,6 +18126,43 @@ mod tests
         assert!(
             matches!(arrow(&arena, 1_usize), Some(CompType::Arrow { .. })),
             "`-F Integer` names nothing, so the arrow binds nothing"
+        );
+    }
+
+    /// #1115: a module signature's types are the signature's text, so each
+    /// answers for itself: the record it states a nested module at, and the
+    /// field it states for a member though that member is refused.
+    #[test]
+    fn a_signature_s_types_answer_whatever_its_members_1115()
+    {
+        let text = "module Facts : #{ inner: #{ answer: Integer }, total: Integer } {\n  module \
+                    inner : #{ answer: Integer } {\n    def answer = 1;\n  }\n  def total = \
+                    inner.answer + 1;\n}\n";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text), &mut arena);
+        let mut written: Vec<(usize, &str)> = module
+            .origins()
+            .value_types()
+            .iter()
+            .filter(|&&(_, origin)| origin.provenance() == Provenance::Written)
+            .filter_map(|&(_, origin)| {
+                let span = origin.span();
+                let start = usize::from(span.start());
+                text.get(start .. usize::from(span.end()))
+                    .map(|spelled| (start, spelled))
+            })
+            .collect();
+        written.sort_unstable();
+        assert_eq!(
+            written,
+            [
+                (25, "#{ answer: Integer }"),
+                (36, "Integer"),
+                (54, "Integer"),
+                (94, "Integer"),
+            ],
+            "the nested signature, its field, the refused member's field and the nested \
+             module's own field, each a written type"
         );
     }
 

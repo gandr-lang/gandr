@@ -151,9 +151,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern unit", Standing::Owed(0)),
     ("Pattern |", Standing::Owed(0)),
     ("Type !", Standing::Owed(0)),
-    // A nested module's signature inside a module signature, the type of
-    // `inner` in `Facts`'s `#{ inner: #{ answer: Integer }, … }` (#1115).
-    ("Type #{", Standing::Owed(1)),
+    ("Type #{", Standing::Owed(0)),
     ("Type &", Standing::Owed(0)),
     (
         "Type ( group",
@@ -171,9 +169,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type ?", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
-    // The signature field of a refused member, `total: Integer` in `Facts`'s
-    // signature where `total` is refused (#1115).
-    ("Type Integer", Standing::Owed(1)),
+    ("Type Integer", Standing::Owed(0)),
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
     ("Type Type", Standing::Owed(0)),
