@@ -56,6 +56,8 @@ use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_cell_complexes::HoleName;
+use gandr_theory_cell_complexes::NonLinearPattern;
 use gandr_theory_computads::AdmittedFaceIndex;
 use gandr_theory_computads::CircuitElaboration;
 use gandr_theory_computads::DeclinedFaceIndex;
@@ -68,8 +70,11 @@ use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::elaborate_data_desc;
 use gandr_theory_computads::elaborate_theory_desc;
 use gandr_theory_computads::presented_reading;
+use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SurfaceSpan;
+use gandr_theory_levitation::TermArgs;
+use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::WhiskeredCell;
 use quenchant_shape::shape::Maybe;
 
@@ -80,6 +85,8 @@ use crate::coincide::orient_block;
 use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
 use crate::description::written::RuleDirection;
+use crate::description::written::WrittenCircuit;
+use crate::description::written::WrittenTerm;
 use crate::description::written::arrow;
 use crate::form::Placed;
 
@@ -97,6 +104,16 @@ pub enum CellFault
     Operation(OpElaborateError),
     /// The written face or circuit composite did not pass the cell gate.
     Rule(ElaborateError),
+    /// The written face or circuit copies a variable on its left side
+    /// ([`ElaborateError::NonLinear`]).
+    NonLinear
+    {
+        /// The copied variable.
+        pattern: NonLinearPattern,
+        /// The bytes of its second occurrence, or of the member when the
+        /// written side cannot be read off.
+        copy: ByteSpan,
+    },
     /// The declaration's rules are no one rewriting system: the fault stands
     /// at the rule that shows it.
     Coherence(CoherenceFault),
@@ -128,6 +145,10 @@ impl CellDiagnostic
                 form: crate::FormName::DECLARATION,
                 sort: crate::FragmentSort::Declaration,
                 boundary: crate::FragmentBoundary::Unadmitted,
+            },
+            CellFault::NonLinear { copy, .. } => crate::LoweringRefusal::RulesNonLinear {
+                span: self.span,
+                copy,
             },
         }
     }
@@ -294,17 +315,38 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
         }
         let mut declined = Vec::with_capacity(declined_faces.len());
         for (index, error) in declined_faces {
+            let at = usize::from(index);
             let span = declaration
                 .description
                 .rules
-                .get(usize::from(index))
+                .get(at)
                 .map_or(declaration.at.span, |face| {
                     located(face.provenance, declaration.at.span)
                 });
-            report.diagnostics.push(CellDiagnostic {
-                span,
-                fault: CellFault::Rule(error),
-            });
+            let fault = if let ElaborateError::NonLinear(pattern) = error {
+                let read_from = declaration.written.faces.get(at).map(|written| {
+                    match oriented
+                        .as_ref()
+                        .and_then(|block| block.directions.get(at).copied())
+                    {
+                        Some(RuleDirection::RightToLeft) => &written.right,
+                        Some(RuleDirection::LeftToRight) | None => &written.left,
+                    }
+                });
+                let copy = reading
+                    .rules
+                    .get(at)
+                    .zip(read_from)
+                    .and_then(|(face, written)| {
+                        second_leaf(&face.lhs, written, pattern.copied().hole())
+                    })
+                    .unwrap_or(span);
+                CellFault::NonLinear { pattern, copy }
+            }
+            else {
+                CellFault::Rule(error)
+            };
+            report.diagnostics.push(CellDiagnostic { span, fault });
             declined.push(index);
         }
         let mut outcomes = Vec::with_capacity(circuits.len());
@@ -322,10 +364,19 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
                             located(rule.sphere.provenance, declaration.at.span)
                         });
                     let diagnostic = CellDiagnosticIndex(report.diagnostics.len());
-                    report.diagnostics.push(CellDiagnostic {
-                        span,
-                        fault: CellFault::Rule(error),
-                    });
+                    let fault = if let ElaborateError::NonLinear(pattern) = error {
+                        let copy = declaration
+                            .written
+                            .circuits
+                            .get(index)
+                            .and_then(|written| second_wire(written, pattern.copied().hole()))
+                            .unwrap_or(span);
+                        CellFault::NonLinear { pattern, copy }
+                    }
+                    else {
+                        CellFault::Rule(error)
+                    };
+                    report.diagnostics.push(CellDiagnostic { span, fault });
                     CircuitCell::Refused(diagnostic)
                 },
             };
@@ -400,6 +451,90 @@ pub(crate) fn located(
 ) -> ByteSpan
 {
     ByteSpan::new(usize::from(span.start).into(), usize::from(span.end).into()).unwrap_or(owner)
+}
+
+/// The bytes of the second variable leaf spelled `copied` in `lhs`, read off
+/// `written`, the written side `lhs` was read from: its nodes are `lhs`'s in
+/// pre-order.
+///
+/// # Specification
+/// - ensures: the span of `written`'s node at the pre-order position of the
+///   second variable leaf of `lhs` spelled `copied`; `None` when `lhs` has no
+///   second such leaf or `written` holds fewer nodes than the walk reaches.
+/// - panics: none.
+///
+/// # Termination
+/// Each step takes the next node of the finite term `lhs`, and each pending
+/// argument list yields each of its finitely many arguments once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a data rule copying a variable under its operation and a
+///   theory law copying one beside another argument each name the second
+///   occurrence.
+/// - witness: `desc_cells::tests::a_copied_variable_is_refused_at_its_second_occurrence`
+#[spec(ensures: |ret| ret.is_none_or(|span| written.nodes.iter().any(|node| node.span == span)))]
+fn second_leaf(
+    lhs: &FreeTerm,
+    written: &WrittenTerm,
+    copied: &HoleName,
+) -> Option<ByteSpan>
+{
+    let mut pending: Vec<TermArgs<'_>> = Vec::with_capacity(written.nodes.len());
+    let mut nodes = written.nodes.iter();
+    let mut next = Some(lhs.to_node());
+    let mut seen = false;
+    while let Some(node) = next {
+        let at = nodes.next()?;
+        match node.view() {
+            TermView::Var(name) if name.as_ref() == copied.as_ref() => {
+                if seen {
+                    return Some(at.span);
+                }
+                seen = true;
+            },
+            TermView::Var(_) => {},
+            TermView::Ctor { args, .. }
+            | TermView::Op { args, .. }
+            | TermView::Results { args }
+            | TermView::Inst { args, .. } => pending.push(args),
+        }
+        next = None;
+        while let Some(arguments) = pending.last_mut() {
+            if let Some(argument) = arguments.next() {
+                next = Some(argument);
+                break;
+            }
+            pending.pop();
+        }
+    }
+    None
+}
+
+/// The bytes of the second argument wire spelled `copied` among `circuit`'s
+/// node lines, in written order.
+///
+/// # Specification
+/// - ensures: the span of the second wire spelled `copied` among the arguments
+///   of `circuit`'s frames, in written order; `None` when there is no second.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a circuit whose one node line reads its data port twice
+///   names the second.
+/// - witness: `desc_cells::tests::a_copied_variable_is_refused_at_its_second_occurrence`
+#[spec(ensures: |ret| ret.is_none_or(|span| circuit.frames.iter().any(|frame| frame.arguments.iter().any(|wire| wire.span == span))))]
+fn second_wire(
+    circuit: &WrittenCircuit,
+    copied: &HoleName,
+) -> Option<ByteSpan>
+{
+    circuit
+        .frames
+        .iter()
+        .flat_map(|frame| frame.arguments.iter())
+        .filter(|wire| wire.name.as_ref() == copied.as_ref())
+        .nth(1)
+        .map(|wire| wire.span)
 }
 
 #[cfg(test)]

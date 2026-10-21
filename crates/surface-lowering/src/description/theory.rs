@@ -1955,7 +1955,7 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a two-argument node keeps its arguments in order, and
     ///   a repeated argument reaches the cell layer's linearity refusal.
     /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
-    /// - witness: `description::theory::tests::a_repeated_argument_name_reaches_the_linearity_refusal`
+    /// - witness: `desc_cells::tests::a_copied_variable_is_refused_at_its_second_occurrence`
     fn wire_tuple(
         &self,
         run: &mut Run<'_>,

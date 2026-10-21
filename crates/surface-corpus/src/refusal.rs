@@ -512,6 +512,8 @@ pub enum RefusalName
     /// A rule of a block's rules the path order does not orient, so the
     /// rules may not end.
     RulesUnoriented,
+    /// A rule of a block whose left side names one variable twice.
+    RulesNonLinear,
     /// Two rules of a block rewriting one term to two constructor terms.
     RulesDiverge,
     /// Two rules of a block whose left sides overlap, one of which
@@ -701,7 +703,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 189_usize] = [
+    pub const VOCABULARY: [Self; 190_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -810,6 +812,7 @@ impl RefusalName
         Self::DirectedCell,
         Self::CellNotALoop,
         Self::RulesUnoriented,
+        Self::RulesNonLinear,
         Self::RulesDiverge,
         Self::RulesOverlapSecondOrder,
         Self::RulesUncompleted,
@@ -951,6 +954,7 @@ impl RefusalName
         (Self::DirectedCell, b"DirectedCell") |
         (Self::CellNotALoop, b"CellNotALoop") |
         (Self::RulesUnoriented, b"RulesUnoriented") |
+        (Self::RulesNonLinear, b"RulesNonLinear") |
         (Self::RulesDiverge, b"RulesDiverge") |
         (Self::RulesOverlapSecondOrder, b"RulesOverlapSecondOrder") |
         (Self::RulesUncompleted, b"RulesUncompleted") |
@@ -1256,6 +1260,7 @@ impl RefusalName
             Self::DirectedCell => "DirectedCell",
             Self::CellNotALoop => "CellNotALoop",
             Self::RulesUnoriented => "RulesUnoriented",
+            Self::RulesNonLinear => "RulesNonLinear",
             Self::RulesDiverge => "RulesDiverge",
             Self::RulesOverlapSecondOrder => "RulesOverlapSecondOrder",
             Self::RulesUncompleted => "RulesUncompleted",
@@ -1486,6 +1491,8 @@ impl Refusal<'_>
         RefusalName::CellNotALoop) |
         (Self::Lowering(LoweringRefusal::RulesUnoriented { .. }),
         RefusalName::RulesUnoriented) |
+        (Self::Lowering(LoweringRefusal::RulesNonLinear { .. }),
+        RefusalName::RulesNonLinear) |
         (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
         RefusalName::RulesDiverge) |
         (Self::Lowering(LoweringRefusal::RulesOverlapSecondOrder { .. }),
@@ -1698,7 +1705,8 @@ impl Refusal<'_>
         RefusalName::WithoutK) | (LoweringRefusal::DirectedCell { .. },
         RefusalName::DirectedCell) | (LoweringRefusal::CellNotALoop { .. },
         RefusalName::CellNotALoop) | (LoweringRefusal::RulesUnoriented { .. },
-        RefusalName::RulesUnoriented) | (LoweringRefusal::RulesDiverge { .. },
+        RefusalName::RulesUnoriented) | (LoweringRefusal::RulesNonLinear { .. },
+        RefusalName::RulesNonLinear) | (LoweringRefusal::RulesDiverge { .. },
         RefusalName::RulesDiverge) | (LoweringRefusal::RulesOverlapSecondOrder { .. },
         RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesUncompleted { .. },
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesUndecided { .. },
@@ -1761,6 +1769,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::DirectedCell { .. } => RefusalName::DirectedCell,
         LoweringRefusal::CellNotALoop { .. } => RefusalName::CellNotALoop,
         LoweringRefusal::RulesUnoriented { .. } => RefusalName::RulesUnoriented,
+        LoweringRefusal::RulesNonLinear { .. } => RefusalName::RulesNonLinear,
         LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
         LoweringRefusal::RulesOverlapSecondOrder { .. } => RefusalName::RulesOverlapSecondOrder,
         LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,

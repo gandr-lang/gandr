@@ -142,6 +142,65 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
     );
 }
 
+/// #1450: a rule whose left side copies a variable, in a data block, a theory
+/// law or a circuit, is refused by name at the copy's second occurrence.
+#[test]
+fn a_copied_variable_is_refused_at_its_second_occurrence()
+{
+    for (source, member, second) in [
+        (
+            "data NatSub : Type { Zero : NatSub; oper minus(m : NatSub, n : NatSub) -> NatSub; rule minus(x, x) ==> Zero; }",
+            "rule minus(x, x) ==> Zero",
+            "rule minus(x, ".len(),
+        ),
+        (
+            "theory Idem { sort M : Type; oper mul : (x : M, y : M) --> M; rule idem : mul(x, x) ==> x; }",
+            "rule idem : mul(x, x) ==> x",
+            "rule idem : mul(x, ".len(),
+        ),
+        (
+            "theory Copy { sort Nat : Type; oper add : (l : Nat, r : Nat) --> (s : Nat); rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }; }",
+            "rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, x) --> (z); }",
+            "rule copy2 : (data x : Nat) ==> (z : Nat) { node : add(x, ".len(),
+        ),
+    ] {
+        let descriptions = descriptions(source);
+        assert_eq!(descriptions.diagnostics, [], "{source}");
+        let cells = elaborate_desc_cells(&descriptions.declarations);
+        let [ref refusal] = *cells.diagnostics.as_slice()
+        else {
+            panic!("one refusal in {source}: {:?}", cells.diagnostics)
+        };
+        let CellFault::NonLinear { ref pattern, copy } = refusal.fault
+        else {
+            panic!("{source} is refused as a copy: {:?}", refusal.fault)
+        };
+        assert_eq!(pattern.copied().hole().as_ref(), "x", "{source}");
+        let start = source.find(member).unwrap();
+        assert_eq!(
+            (
+                usize::from(refusal.span.start()),
+                usize::from(refusal.span.end())
+            ),
+            (start, start + member.len()),
+            "{source}: the refusal stands at the rule"
+        );
+        assert_eq!(
+            (usize::from(copy.start()), usize::from(copy.end())),
+            (start + second, start + second + 1),
+            "{source}: the copy is the second `x`"
+        );
+        assert!(
+            matches!(
+                refusal.lowering_refusal(),
+                crate::LoweringRefusal::RulesNonLinear { span, copy: named }
+                    if span == refusal.span && named == copy
+            ),
+            "{source}"
+        );
+    }
+}
+
 #[test]
 fn a_source_with_no_declarations_elaborates_to_no_stores()
 {

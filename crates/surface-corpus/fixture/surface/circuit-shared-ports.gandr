@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("RulesNonLinear") ]
 theory ConsumedTwice {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);

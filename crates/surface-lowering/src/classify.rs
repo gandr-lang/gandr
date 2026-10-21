@@ -159,6 +159,7 @@ impl LoweringRefusal<'_>
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
+            | Self::RulesNonLinear { .. }
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
@@ -206,6 +207,7 @@ impl LoweringRefusal<'_>
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
             | Self::RulesUnoriented { .. }
+            | Self::RulesNonLinear { .. }
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
@@ -448,7 +450,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 51_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 52_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -599,6 +601,10 @@ mod tests
                 exit: crate::error::CrossedExit::Break,
             },
             LoweringRefusal::RulesUnoriented { span: empty },
+            LoweringRefusal::RulesNonLinear {
+                span: empty,
+                copy: empty,
+            },
             LoweringRefusal::RulesDiverge {
                 span: empty,
                 first: empty,
@@ -700,6 +706,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

@@ -1161,6 +1161,17 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A rule of a `data` or `theory` block whose left side names one
+    /// variable twice: a rule matches each variable once, because a copy of
+    /// a matched value needs a comonoid its sort may not have.
+    RulesNonLinear
+    {
+        /// The bytes the rule covers.
+        span: ByteSpan,
+        /// The bytes of the variable's second occurrence on the left side.
+        copy: ByteSpan,
+    },
+
     /// Two rules of a block whose left sides overlap, one of which
     /// instantiates a variable a binding port binds: a second-order rule may
     /// overlap no rule, so the block's rules are not known to be confluent.
@@ -1459,6 +1470,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "this rule's right-hand side is not below its left-hand side in the path order, \
                  so the block's rules may never end",
             ),
+            Self::RulesNonLinear { .. } => f.write_str(
+                "this rule's left-hand side names one variable twice: a rule matches each \
+                 variable once, since copying a matched value needs a comonoid its sort may not \
+                 have, so the rule is refused",
+            ),
             Self::RulesOverlapSecondOrder { .. } => f.write_str(
                 "this rule and an earlier one rewrite overlapping terms, and one of them \
                  instantiates a variable: a rule that substitutes under a binder may overlap no \
@@ -1586,6 +1602,7 @@ impl LoweringRefusal<'_>
             | Self::DirectedCell { span }
             | Self::CellNotALoop { span }
             | Self::RulesUnoriented { span }
+            | Self::RulesNonLinear { span, .. }
             | Self::RulesDiverge { span, .. }
             | Self::RulesOverlapSecondOrder { span, .. }
             | Self::RulesUncompleted { span, .. }
@@ -1653,7 +1670,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 48_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 49_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -1814,6 +1831,10 @@ mod tests
             LoweringRefusal::RulesUnoriented {
                 span: s(61_usize, 62_usize),
             },
+            LoweringRefusal::RulesNonLinear {
+                span: s(91_usize, 92_usize),
+                copy: s(0_usize, 1_usize),
+            },
             LoweringRefusal::RulesDiverge {
                 span: s(63_usize, 64_usize),
                 first: s(0_usize, 1_usize),
@@ -1920,6 +1941,7 @@ mod tests
             s(55_usize, 56_usize),
             s(59_usize, 60_usize),
             s(61_usize, 62_usize),
+            s(91_usize, 92_usize),
             s(63_usize, 64_usize),
             s(65_usize, 66_usize),
             s(67_usize, 68_usize),

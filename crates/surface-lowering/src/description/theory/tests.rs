@@ -975,23 +975,6 @@ fn a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal()
 }
 
 #[test]
-fn a_repeated_argument_name_reaches_the_linearity_refusal()
-{
-    let report = described(
-        "theory Copy {\n  sort Nat : Type;\n  oper add : (l : Nat, r : Nat) --> (s : Nat);\n  rule copy2 : (data x : Nat) ==> (z : Nat) {\n    node : add(x, x) --> (z);\n  };\n}\n",
-    );
-    let cells = crate::desc_cells::elaborate_desc_cells(&report.declarations);
-    let [ref refusal] = *cells.diagnostics.as_slice()
-    else {
-        panic!("one cell refusal")
-    };
-    assert!(matches!(
-        refusal.fault,
-        crate::desc_cells::CellFault::Rule(gandr_theory_computads::ElaborateError::NonLinear(_))
-    ));
-}
-
-#[test]
 fn a_doubling_body_declines_on_the_derivation_node_budget()
 {
     let mut source = alloc::string::String::from(

@@ -140,6 +140,8 @@ pub enum Label
     /// The earlier rule of a pair that rewrites one term apart, or whose
     /// joining the coincidence check's budget left undecided.
     Overlaps,
+    /// A variable's second occurrence on a rule's left side.
+    Copied,
 }
 
 impl fmt::Display for Label
@@ -190,6 +192,7 @@ impl fmt::Display for Label
             Self::Received => f.write_str("the endpoint was received here"),
             Self::FirstArm => f.write_str("the arm it disagrees with"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
+            Self::Copied => f.write_str("the variable matched again"),
         }
     }
 }
@@ -508,6 +511,8 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: import, label: Label::First }),
                 LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesOverlapSecondOrder { first, .. } | LoweringRefusal::RulesUncompleted { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
+                LoweringRefusal::RulesNonLinear { copy, .. } =>
+                    ret.context[0_usize] == Maybe::Present(Annotation { span: copy, label: Label::Copied }),
                 LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::UnresolvedTypeHead { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed),
             }
     })]
@@ -550,6 +555,10 @@ impl Annotations
             | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::Overlaps,
+            }),
+            LoweringRefusal::RulesNonLinear { copy, .. } => Maybe::Present(Annotation {
+                span: copy,
+                label: Label::Copied,
             }),
             LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::UnresolvedDocLink { .. }
@@ -4281,6 +4290,7 @@ mod tests
             Label::Inferred(gandr_surface_lowering::Exit::Become).to_string(),
             Label::Ran(gandr_core_term::effect::Purity::Pure).to_string(),
             Label::Ran(gandr_core_term::effect::Purity::Effectful).to_string(),
+            Label::Copied.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

@@ -1,0 +1,12 @@
+// A rule whose left side names one variable twice matches only equal
+// arguments, and matching them needs a copy of the matched value: a
+// comonoid the sort may not have. The law is refused by name at its second
+// occurrence, where it was refused as an unsupported def value (#1450).
+
+/// A theory law that collapses a product of equal factors.
+@[ refuses("RulesNonLinear") ]
+theory Idempotent {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule idem : mul(x, x) ==> x;
+}

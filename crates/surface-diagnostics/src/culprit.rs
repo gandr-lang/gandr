@@ -214,6 +214,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::DirectedCell { .. } => "a directed cell between terms",
         LoweringRefusal::CellNotALoop { .. } => "a cell between two distinct terms",
         LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
+        LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
         LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
         LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
         LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
@@ -570,6 +571,7 @@ mod tests
             LoweringRefusal::DirectedCell { .. } => "a directed cell between terms",
             LoweringRefusal::CellNotALoop { .. } => "a cell between two distinct terms",
             LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
+            LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
             LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
             LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
             LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
@@ -834,6 +836,7 @@ mod tests
             LoweringRefusal::DirectedCell { span: at },
             LoweringRefusal::CellNotALoop { span: at },
             LoweringRefusal::RulesUnoriented { span: at },
+            LoweringRefusal::RulesNonLinear { span: at, copy: at },
             LoweringRefusal::RulesDiverge {
                 span: at,
                 first: at,
