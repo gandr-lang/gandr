@@ -1,0 +1,12 @@
+// A value whose own region keeps a view of it is the address-shaped
+// self-reference, and it freezes: an exclusive access waits until the region
+// ends, as Rust refuses a write through a value borrowed from itself.
+
+/// A hold written while its own region keeps a shared view of it (#1183).
+@[ refuses("HeldKept") ]
+def writtenWhileKept() -> -F Integer {
+  hold s = 3;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  access s as v { resume(v, 4) };
+  force k
+}
