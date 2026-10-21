@@ -132,6 +132,7 @@ where
             format!("{name} : {} => {}", telescope(binders), results.join(" * "))
         },
         Ok(ModelForm::Constant(ref of)) => format!("{name} : {}", sort(of)),
+        Ok(ModelForm::Nested(ref theory)) => format!("{name} : Model({theory})"),
         Ok(ModelForm::Law {
             telescope: ref binders,
             ref carrier,

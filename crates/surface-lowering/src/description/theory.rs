@@ -984,7 +984,8 @@ impl Reader<'_, '_>
     ///   index terms, an unnamed port at the empty name — beside the
     ///   operation's name tile and where its name and each port are written; an
     ///   `oper` written as a type alone, with no port group and no arrow, is a
-    ///   constant of that type.
+    ///   constant of that type; and one written at a model type, `Model(T)`, a
+    ///   nested model of the theory `T`, its one unnamed output port at `T`.
     /// - fails: a filler is an explicit decline; a port name written twice on
     ///   the boundary is two ports, not one wire, and is refused by name.
     /// - panics: none.
@@ -1017,24 +1018,43 @@ impl Reader<'_, '_>
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
         // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
-        // operation of those inputs and that output; `oper zero : T`, a type
+        // operation of those inputs and that output; `oper inner : Model(T)` a
+        // model of the theory `T` nested in this one; `oper zero : T`, a type
         // alone with no arrow and no port group, a constant of `T`; and
         // `oper zero : () --> T` an operation of no inputs.
         let thunked = self.thunked(run)?;
+        let modeled = match kind {
+            OperationKind::Operation if thunked.is_none() => self.modeled(run)?,
+            OperationKind::Operation
+            | OperationKind::Observation
+            | OperationKind::Constant
+            | OperationKind::Nested => None,
+        };
         let kind = match kind {
+            OperationKind::Operation if modeled.is_some() => OperationKind::Nested,
             OperationKind::Operation
                 if thunked.is_none() && !run.at(Spelling("(")).0 && !run.has_arrow().0 =>
             {
                 OperationKind::Constant
             },
-            OperationKind::Operation | OperationKind::Observation | OperationKind::Constant => kind,
+            OperationKind::Operation
+            | OperationKind::Observation
+            | OperationKind::Constant
+            | OperationKind::Nested => kind,
         };
-        let (boundary, formers) = match thunked {
-            Some(thunk) => {
+        let (boundary, formers) = match (thunked, modeled) {
+            (Some(thunk), _) => {
                 let _thunk = run.take()?;
                 self.thunk_boundary(thunk)?
             },
-            None => (self.boundary(run, sorts, ArrowRow::Mapping)?, Vec::new()),
+            (None, Some(theory)) => {
+                let model = run.take()?;
+                (self.model_boundary(theory), vec![(
+                    model.span,
+                    GroundSort::Value,
+                )])
+            },
+            (None, None) => (self.boundary(run, sorts, ArrowRow::Mapping)?, Vec::new()),
         };
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));
@@ -1111,6 +1131,85 @@ impl Reader<'_, '_>
         let pieces = self.pieces(at)?;
         let thunk = matches!(pieces.first(), Some(&Piece::Tile { ref label, .. }) if label.as_ref() == "+U");
         Ok(thunk.then_some(at))
+    }
+
+    /// The theory a model type, `Model(T)`, written as the whole of an
+    /// operation's judgment names, when it writes one.
+    ///
+    /// # Specification
+    /// - ensures: the name `T` when the one piece left in `run` reads `Model`,
+    ///   `(`, one name and `)`, and nothing otherwise; `run` is not advanced.
+    /// - fails: the piece's reading refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The piece's reading refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model type, a sort over an index and a sort alone
+    ///   separate the nested model from the constant readings.
+    /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|_| matches!(*run.remaining(), [Piece::Operand(_)]))))]
+    fn modeled(
+        &self,
+        run: &Run<'_>,
+    ) -> Result<Option<Placed>, DescriptionDiagnostic>
+    {
+        let [Piece::Operand(at)] = *run.remaining()
+        else {
+            return Ok(None);
+        };
+        let pieces = self.pieces(at)?;
+        let [
+            Piece::Tile { at: former, .. },
+            Piece::Tile {
+                label: ref open, ..
+            },
+            Piece::Operand(theory) | Piece::Tile { at: theory, .. },
+            Piece::Tile {
+                label: ref close, ..
+            },
+        ] = *pieces.as_slice()
+        else {
+            return Ok(None);
+        };
+        let named = self.text(former).0 == "Model"
+            && open.as_ref() == "("
+            && close.as_ref() == ")"
+            && self.pieces(theory)?.len() <= 1;
+        Ok(named.then_some(theory))
+    }
+
+    /// The boundary of a nested model of the theory `theory` names: no inputs
+    /// and one unnamed output at `theory`.
+    ///
+    /// # Specification
+    /// - requires: `theory` is the name a model type `Model(T)` applies.
+    /// - ensures: no input port and one unnamed output port whose sort is the
+    ///   name, written at `theory`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::modeled`].
+    /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
+    #[spec(ensures: |ret| ret.inputs.is_empty() && ret.outputs.len() == 1 && ret.output_sorts == [theory])]
+    fn model_boundary(
+        &self,
+        theory: Placed,
+    ) -> Boundary
+    {
+        Boundary {
+            inputs: Vec::new(),
+            outputs: vec![SortRef::new(fresh_port(theory), self.text(theory).0)],
+            input_names: Vec::new(),
+            output_names: vec![Maybe::Absent(port_name::Absent::Unnamed)],
+            input_binders: Vec::new(),
+            output_binders: vec![Vec::new()],
+            input_sorts: Vec::new(),
+            output_sorts: vec![theory],
+            rewrites: Vec::new(),
+            written_rewrites: Vec::new(),
+        }
     }
 
     /// Read a thunk of curried arrows, `+U[ω] (A1 -> … -> An -> -F R)`, as the

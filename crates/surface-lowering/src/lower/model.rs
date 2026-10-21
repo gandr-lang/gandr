@@ -448,9 +448,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: an operation's or a law's telescope Π, as the module's
     ///   documentation states it, and a constant's type itself, every node
     ///   carrying `origin`.
-    /// - fails: a component the derivation cannot state or that is a sort, and
-    ///   one naming a component that did not lower, as unlowered; one naming a
-    ///   refused component, with its refusal.
+    /// - fails: a component the derivation cannot state, a sort or a nested
+    ///   model, and one naming a component that did not lower, as unlowered;
+    ///   one naming a refused component, with its refusal. refused component,
+    ///   with its refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -503,7 +504,7 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 return self.sort_type(sort, closed, &minting, sink);
             },
-            ModelForm::Sort { .. } => return Err(Missing::Unlowered),
+            ModelForm::Sort { .. } | ModelForm::Nested(_) => return Err(Missing::Unlowered),
         };
         let dependent = dependence(telescope, tail);
         let mut domains = Vec::with_capacity(telescope.len());
@@ -586,7 +587,8 @@ impl<'source> Lowerer<'_, 'source>
                 let read = match component.form {
                     Ok(ModelForm::Operation { .. }) => MemberRead::Applied,
                     Ok(ModelForm::Constant(_)) => MemberRead::Held,
-                    Ok(ModelForm::Sort { .. } | ModelForm::Law { .. }) | Err(_) => return None,
+                    Ok(ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_))
+                    | Err(_) => return None,
                 };
                 Some((
                     component.name.clone(),

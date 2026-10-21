@@ -5700,7 +5700,9 @@ impl<'source> Collector<'_, 'source>
     ///   otherwise the module takes the next pre-order position, joins its
     ///   enclosing module's members, a functor's parameter takes the position
     ///   after it, the module declares one abstract type per abstract component
-    ///   when it is sealed, and its body is pushed.
+    ///   when it is sealed — by its own `:>`, or as the nested model a sealed
+    ///   enclosing module's model signature states under its name — and its
+    ///   body is pushed.
     /// - provides: the recording half of [`Self::module`].
     /// - fails: never.
     /// - panics: none.
@@ -5714,6 +5716,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
     /// - witness: `tests::modules::duplicate_module_member_definition_is_rejected`
     /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     #[spec(
         captures: before = (
@@ -5727,7 +5730,7 @@ impl<'source> Collector<'_, 'source>
                 .modules
                 .get(&(container, opened.name))
                 .copied(),
-            opened.sealed,
+            Sealed(opened.sealed.0 || self.seals_nested(container, opened.name).0),
             usize::from(matches!(opened.parameter, Maybe::Present(_))),
         ),
         ensures: |_| match before.6 {
@@ -5787,6 +5790,7 @@ impl<'source> Collector<'_, 'source>
             return;
         }
         let structure = StructureIndex(self.collected.structures.len());
+        let sealed = Sealed(opened.sealed.0 || self.seals_nested(container, opened.name).0);
         let model = opened.model.map(|derived| {
             let index = ModelIndex(self.collected.models.len());
             self.collected.models.push(derived);
@@ -5799,7 +5803,7 @@ impl<'source> Collector<'_, 'source>
             named: opened.named,
             ascription: opened.ascription,
             model,
-            sealed: opened.sealed,
+            sealed,
             members: Vec::new(),
             exports: Vec::new(),
             types: Vec::new(),
@@ -5823,6 +5827,50 @@ impl<'source> Collector<'_, 'source>
             members: opened.members,
             next: 0_usize,
         });
+    }
+
+    /// Whether the module `container` names seals the nested module `name` it
+    /// declares: the container is sealed, and its model signature states a
+    /// nested model under that name.
+    ///
+    /// # Specification
+    /// - ensures: affirmative exactly when `container` is a sealed module whose
+    ///   derived model signature has a nested-model component named `name`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the predicate is the body's one lookup.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested model under a sealed module reads its sorts
+    ///   as atoms, and under a transparent one as the nested module states.
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    fn seals_nested(
+        &self,
+        container: Container,
+        name: SurfaceName<'source>,
+    ) -> Sealed
+    {
+        let Container::Module(parent) = container
+        else {
+            return Sealed(false);
+        };
+        let Some(entry) = self.collected.structures.get(parent.0)
+        else {
+            return Sealed(false);
+        };
+        let Maybe::Present(model) = entry.model
+        else {
+            return Sealed(false);
+        };
+        Sealed(
+            entry.sealed.0
+                && self.collected.models.get(model.0).is_some_and(|signature| {
+                    signature.components.iter().any(|component| {
+                        component.name.as_ref() == name.as_ref()
+                            && matches!(component.form, Ok(crate::model::ModelForm::Nested(_)))
+                    })
+                }),
+        )
     }
 
     /// Read one member form of `structure`'s body.

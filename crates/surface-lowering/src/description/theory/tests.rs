@@ -221,6 +221,44 @@ fn a_two_output_operation_keeps_both_ports_in_order()
     );
 }
 
+/// `oper inner : Model(Answering)` is a nested model: a member whose one
+/// unnamed output is the theory it models, beside a constant and an operation
+/// read as before.
+#[test]
+fn a_model_type_reads_as_a_nested_model_1226()
+{
+    let report = described(
+        "theory Faceted { sort T : Type; oper inner : Model(Answering); oper total : Integer; oper step : (x : T) --> T; }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let Maybe::Present(ref presentation) = report.declarations[0].presentation
+    else {
+        panic!("the theory presents its members")
+    };
+    let members = presentation.members().unwrap();
+    let read: Vec<(&str, OperationKind, usize, usize, Option<&str>)> = members
+        .operations
+        .iter()
+        .map(|operation| {
+            (
+                operation.name.as_ref(),
+                operation.kind,
+                operation.inputs.len(),
+                operation.outputs.len(),
+                operation
+                    .outputs
+                    .first()
+                    .map(|port| port.sort.sort.as_ref()),
+            )
+        })
+        .collect();
+    assert_eq!(read, [
+        ("inner", OperationKind::Nested, 0, 1, Some("Answering")),
+        ("total", OperationKind::Constant, 0, 1, Some("Integer")),
+        ("step", OperationKind::Operation, 1, 1, Some("T")),
+    ]);
+}
+
 #[test]
 fn a_port_name_on_both_sides_is_two_ports()
 {
@@ -1027,7 +1065,9 @@ fn a_theory_block_defines_its_presentation()
             .iter()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
-        [3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4],
+        [
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4
+        ],
         "each constructor's names, then its recursions"
     );
     let mut declarations = alloc::vec![gandr_core_checker::Declaration::data(

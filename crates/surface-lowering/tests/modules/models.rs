@@ -323,6 +323,79 @@ fn an_operation_at_a_builtin_type_derives_it_1226()
     );
 }
 
+/// `oper inner : Model(Answering)` is answered by a nested module ascribed
+/// `Model(Answering)`, read through the outer model; a model sealed at the
+/// outer theory seals the nested model too; a nested module ascribed no
+/// model, and a value, are the wrong sort at the component; a nested module
+/// the parser repaired answers for the component by its parse error alone.
+#[test]
+fn a_nested_model_is_a_module_ascribed_its_theory_1226()
+{
+    let faceted = |inner: &str| {
+        format!(
+            "theory Answering {{\n  oper answer : Integer;\n}}\ntheory Faceted {{\n  oper inner : \
+             Model(Answering);\n}}\nmodule Facts : Model(Faceted) {{\n  {inner}\n}}\ndef read : () \
+             => Integer ;\ndef read = thunk {{ return Facts.inner.answer }} ;\n"
+        )
+    };
+
+    let ascribed = faceted("module inner : Model(Answering) { def answer = 41; }");
+    let mut lowered = lower(ascribed.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "a nested module ascribed the theory answers the nested model: {judgements:?}"
+    );
+
+    let sealed = "theory Carrier {\n  sort T : Type;\n  oper zero : T;\n}\ntheory Outer {\n  oper \
+                  inner : Model(Carrier);\n}\nmodule Sealed :> Model(Outer) {\n  module inner : \
+                  Model(Carrier) { type T = Integer; def zero = 0; }\n}\ndef leaked : Integer ;\ndef \
+                  leaked = Sealed.inner.zero ;\n";
+    let mut lowered = lower(sealed);
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .any(|&(_, judgement)| judgement == Judgement::Mismatched),
+        "the outer seal keeps the nested model's sort abstract: {judgements:?}"
+    );
+
+    for wrong in ["module inner { def answer = 41; }", "def inner = 41;"] {
+        let source = faceted(wrong);
+        let refused = row(
+            "Facts.inner",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::OutOfFragment {
+                span: span_of(source.as_str(), "Faceted", 1_usize),
+                form: gandr_surface_lowering::FormName::MODULE,
+                sort: FragmentSort::Module,
+                boundary: FragmentBoundary::WrongSort,
+            }),
+        );
+        let found = rows(&lower(source.as_str()));
+        assert!(
+            found.contains(&refused),
+            "`{wrong}` does not answer the nested model: {found:?}"
+        );
+    }
+
+    let malformed = "theory Answering {\n  oper answer : Integer;\n}\ntheory Faceted {\n  oper inner \
+                     : Model(Answering);\n}\nmodule Facts : Model(Faceted) {\n  module inner ";
+    let found = rows(&super::repaired(malformed));
+    let refusals = found
+        .iter()
+        .filter(|found| found.0 == "Facts.inner" && found.1 == Role::Held)
+        .count();
+    assert_eq!(
+        refusals, 1_usize,
+        "a repaired nested module is refused by its parse error, never again at the \
+         component: {found:?}"
+    );
+}
+
 #[test]
 fn a_family_of_the_wrong_telescope_is_refused()
 {

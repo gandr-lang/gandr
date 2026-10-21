@@ -883,7 +883,8 @@ impl Typer<'_>
     }
 
     /// Record every member of a theory presenting `presentation`, written as
-    /// `written`.
+    /// `written`, the theories it nests models of read at `code`, the type
+    /// `Theory` the module mints, when it mints one.
     ///
     /// # Specification
     /// - requires: `written` is where the theory reader read `presentation`'s
@@ -891,7 +892,8 @@ impl Typer<'_>
     /// - ensures: as the module documentation states for a theory: each sort,
     ///   operation and law at what its `Model(S)` component states, each port
     ///   at its sort, each node of a law at its sort, each written sort at its
-    ///   universe, each circuit's ports and wires at their sorts; and each
+    ///   universe, each circuit's ports and wires at their sorts, a nested
+    ///   model's `Model(T)` at its universe and its `T` at `code`; and each
     ///   written sort's head and each operation applied, beside the name tile
     ///   of the member it names.
     /// - fails: never; a presentation whose members cannot be read records
@@ -909,10 +911,12 @@ impl Typer<'_>
     ///   binder answers at its indexed sort and its name nowhere.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
+    /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
     fn theory(
         &mut self,
         presentation: &Presentation,
         written: &WrittenMembers,
+        code: Option<ValueTypeId>,
     )
     {
         let Ok(members) = presentation.members()
@@ -1042,6 +1046,11 @@ impl Typer<'_>
             }
             else if form == Some(&Err(ModelFault::Binding)) {
                 self.binding(&mut scope, operation, member, &declared);
+            }
+            else if let Some(&Ok(ModelForm::Nested(_))) = form {
+                if let (Some(code), Some(port)) = (code, member.outputs.first()) {
+                    self.emit(port.sort.span, DescribedRole::Term, code, closed);
+                }
             }
             else {
                 let presented = operation.inputs.iter().chain(&operation.outputs);
@@ -1889,10 +1898,11 @@ impl LoweredModule<'_>
                 let _first = constructors.insert(Name::from(name.as_str()), (fields.clone(), ty));
             }
         }
+        let code = families.get(&Name::from("Theory")).map(|&(ty, _)| ty);
         for described in &self.descriptions().declarations {
             match described.presentation {
                 Maybe::Present(ref presentation) => {
-                    typer.theory(presentation, &described.written);
+                    typer.theory(presentation, &described.written, code);
                 },
                 Maybe::Absent(_) => {
                     if described.description.polarity == DeclPolarity::Codata {
