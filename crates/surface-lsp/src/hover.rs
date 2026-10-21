@@ -160,6 +160,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::DeclaredHalf;
+use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::NameKind;
 use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Shadows;
@@ -167,6 +168,7 @@ use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::TypedSpan;
 use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_lowering::DocumentationText;
@@ -184,7 +186,6 @@ use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
-use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::complete::Names;
@@ -351,22 +352,55 @@ impl Hovering
 }
 
 /// What the hovers of `text`, the document at `path` that `session` judges,
-/// read: one typed run per text, rather than one per hover.
+/// read, laid out over the import closure the dispatcher's
+/// [`lay_out_shadowed`] lays `text` out in under `shadows`.
 ///
 /// # Specification
 /// - requires: nothing; `session` may have judged any revision.
-/// - ensures: the type table [`Session::type_held_unit`] answers over the
-///   import closure the dispatcher's [`lay_out_shadowed`] lays `text` out in
-///   under `shadows` when it imports a sibling by path — typed after the
-///   closure's judgement when the process holds it — beside the closure's
-///   paths, else [`TypeTable::of_parsed`] over `text` parsed through
-///   `session`'s form store ([`Session::parse_held`]), beside no path; the
-///   store is left as it was, and the table is empty when the text did not
-///   parse.
+/// - ensures: [`hovering_laid`] over that lay-out.
+/// - provides: a table for a text no recheck laid out.
+/// - fails: never; a refusal answers the empty table.
+/// - panics: none.
+/// - executable: none — as [`hovering_laid`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`hovering_laid`].
+/// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+/// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
+#[must_use]
+pub fn hovering<Store, Blocks>(
+    text: SourceText<'_>,
+    path: &Path,
+    session: &Session<Store, Blocks>,
+    shadows: &dyn Shadows,
+) -> Hovering
+{
+    hovering_laid(
+        text,
+        path,
+        session,
+        &lay_out_shadowed(session.grammar(), path, classify(path), text, shadows),
+    )
+}
+
+/// What the hovers of `text`, the document at `path` that `session` judges,
+/// laid out as `laid`, read: one typed run per text, rather than one per hover.
+///
+/// # Specification
+/// - requires: `laid` is the lay-out of `text` at `path` over its import
+///   closure, or why it has none.
+/// - ensures: the type table [`Session::type_held_unit`] answers over `laid`
+///   when `text` imports a sibling by path — typed after the closure's
+///   judgement when the process holds it — beside the closure's paths, else
+///   [`TypeTable::of_parsed`] over `text` parsed through `session`'s form store
+///   ([`Session::parse_held`]), beside no path; the store is left as it was,
+///   and the table is empty when the text did not parse.
 /// - provides: what a document copy keeps for its hovers, its definitions, its
 ///   completions and its signature help: the names read off the table once
 ///   ([`Names::of`]) and the heads read off the same parse
-///   ([`Signatures::of`]); a name an import brings in types at its use as its
+///   ([`Signatures::after`] when the tree is laid after the closure lowering
+///   the process holds, so the closure's heads are read once per lowering, else
+///   [`Signatures::of`]); a name an import brings in types at its use as its
 ///   declaration does.
 /// - fails: never; a refusal answers the empty table.
 /// - panics: none.
@@ -380,49 +414,64 @@ impl Hovering
 ///   answer; a hover on an imported name in a corpus importer answers its type.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
+/// - witness: `server::tests::a_hover_reads_the_lay_out_its_recheck_made_1403`
 #[must_use]
-pub fn hovering<Store, Blocks>(
+pub fn hovering_laid<Store, Blocks>(
     text: SourceText<'_>,
     path: &Path,
     session: &Session<Store, Blocks>,
-    shadows: &dyn Shadows,
+    laid: &Maybe<Laid, laid::Absent>,
 ) -> Hovering
 {
     let grammar = session.grammar();
-    let heads = |tree: &SyntaxTree<'_>, unit: &Unit| {
-        roles().map_or_else(
-            |_| Signatures::default(),
-            |roles| Signatures::of(grammar, roles, tree, unit),
-        )
-    };
-    let (typed, paths, targets) =
-        match lay_out_shadowed(grammar, path, classify(path), text, shadows) {
-            Maybe::Present(laid) => {
-                let mut signatures = Signatures::default();
-                let table = session.type_held_unit(
-                    SourceText::from(laid.text.as_str()),
-                    (&laid.unit, laid.base),
-                    |tree| signatures = heads(tree, &laid.unit),
+    let (typed, paths, targets) = match *laid {
+        Maybe::Present(ref laid) => {
+            let mut signatures = Signatures::default();
+            let table = session.type_held_unit(
+                SourceText::from(laid.text.as_str()),
+                (&laid.unit, laid.base),
+                |tree, closure| {
+                    if let Ok(roles) = roles() {
+                        signatures = closure.as_ref().map_or_else(
+                            || Signatures::of(grammar, roles, tree, &laid.unit),
+                            |closure| {
+                                Signatures::after(
+                                    grammar,
+                                    roles,
+                                    (tree, &laid.unit, laid.base),
+                                    closure,
+                                )
+                            },
+                        );
+                    }
+                },
+            );
+            let targets = laid
+                .unit
+                .sources()
+                .last()
+                .map(|importer| importer.imports().to_vec())
+                .unwrap_or_default();
+            (
+                table.map(|table| (table, signatures)),
+                laid.paths.clone(),
+                targets,
+            )
+        },
+        Maybe::Absent(_) => (
+            session.parse_held(text).ok().and_then(|parsed| {
+                let signatures = roles().map_or_else(
+                    |_| Signatures::default(),
+                    |roles| Signatures::of(grammar, roles, parsed.tree(), &Unit::single()),
                 );
-                let targets = laid
-                    .unit
-                    .sources()
-                    .last()
-                    .map(|importer| importer.imports().to_vec())
-                    .unwrap_or_default();
-                (table.map(|table| (table, signatures)), laid.paths, targets)
-            },
-            Maybe::Absent(_) => (
-                session.parse_held(text).ok().and_then(|parsed| {
-                    let signatures = heads(parsed.tree(), &Unit::single());
-                    TypeTable::of_parsed(grammar, parsed)
-                        .ok()
-                        .map(|table| (table, signatures))
-                }),
-                Vec::new(),
-                Vec::new(),
-            ),
-        };
+                TypeTable::of_parsed(grammar, parsed)
+                    .ok()
+                    .map(|table| (table, signatures))
+            }),
+            Vec::new(),
+            Vec::new(),
+        ),
+    };
     let (table, signatures) = typed.unwrap_or_default();
     Hovering {
         names: Names::of(&table),

@@ -7,10 +7,13 @@
 //! constructor its import closure writes ([`Signatures`]): the name through its
 //! parameters and its result, each parameter's place in that label, and the
 //! documentation written for it. Both are read once per text, off the parse
-//! each already makes. A request takes the innermost call whose arguments hold
-//! the position. The type table's referent index ([`TypeTable::referent`])
-//! gives the declaration the call's head refers to, and the request answers
-//! that declaration's head. It reads no text and resolves no name.
+//! each already makes; the heads the closure writes are read once per closure
+//! lowering the process holds and shared by every text laid after it, so a
+//! keystroke reads the document's own forms alone. A request takes the
+//! innermost call whose arguments hold the position. The type table's referent
+//! index ([`TypeTable::referent`]) gives the declaration the call's head refers
+//! to, and the request answers that declaration's head. It reads no text and
+//! resolves no name.
 //!
 //! A head is read off its declaring form:
 //!
@@ -28,8 +31,11 @@
 //! [`TypeTable::referent`]: gandr_surface_dispatcher::TypeTable::referent
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt::Write as _;
+use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Referent;
@@ -42,6 +48,8 @@ use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::read_doc;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::ClosureKey;
+use gandr_surface_session::Holding;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::Node;
@@ -387,22 +395,40 @@ impl Signature
     }
 }
 
+/// One head: the source holding its name and the name's span in that source's
+/// own text, and the head written there.
+type Head = ((SourceIndex, ByteSpan), Signature);
+
+/// The heads each closure lowering's part of a tree writes, by the lowering's
+/// key: read the first time a text is laid after the lowering, and let go
+/// once nothing holds the lowering.
+static CLOSURE_HEADS: Mutex<Vec<(ClosureKey, Arc<[Head]>)>> = Mutex::new(Vec::new());
+
 /// The heads an import closure writes, by the source and the name tile of
-/// each declaration, constructor and binder typed by a function.
+/// each declaration, constructor and binder typed by a function: those its
+/// closure writes, shared with every text laid after the same closure
+/// lowering, and those the document's own text writes.
 ///
 /// # Specification
-/// - requires: built by [`Signatures::of`].
-/// - ensures: ascending by source, then name tile; no tile twice.
+/// - requires: built by [`Signatures::of`] or [`Signatures::after`].
+/// - ensures: each part ascending by source, then name tile, no tile twice;
+///   every source of the closure's part before every source of the document's.
 /// - panics: none.
-/// - executable: none — a carrier; [`Signatures::of`] and
-///   [`Signatures::declared`] carry the predicates.
+/// - executable: none — a carrier; [`Signatures::of`], [`Signatures::after`]
+///   and [`Signatures::declared`] carry the predicates.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Signatures::of`].
+/// - hypothesis: L3 — as [`Signatures::of`] and [`Signatures::after`].
 /// - witness: `signature::tests::each_head_reads_its_parameters`
-#[repr(transparent)]
+/// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Signatures(Vec<((SourceIndex, ByteSpan), Signature)>);
+pub struct Signatures
+{
+    /// The heads the closure a text is laid after writes.
+    closure: Arc<[Head]>,
+    /// The heads the text's own forms write.
+    own: Vec<Head>,
+}
 
 impl Signatures
 {
@@ -421,7 +447,7 @@ impl Signatures
     ///   the attribute blocks before it; then one head per tile any form owns
     ///   or holds that the form's own `:` follows and a function type after it,
     ///   as the table reads it, undocumented; each for a tile `unit` places in
-    ///   a source, the first head for a tile kept.
+    ///   a source, the first head for a tile kept; all of them the text's own.
     /// - provides: the index a signature-help request answers from, built once
     ///   per text.
     /// - fails: never.
@@ -436,7 +462,8 @@ impl Signatures
     ///   typed by an arrow and record fields typed by an arrow and over a
     ///   telescope each read at their exact label and parameters.
     /// - witness: `signature::tests::each_head_reads_its_parameters`
-    #[spec(ensures: |ret| ret.0.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
+    #[spec(ensures: |ret| ret.closure.is_empty()
+        && ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
     #[must_use]
     pub fn of(
         grammar: &Pbg,
@@ -445,31 +472,69 @@ impl Signatures
         unit: &Unit,
     ) -> Self
     {
-        let text = tree.source();
-        let mut heads: Vec<((SourceIndex, ByteSpan), Signature)> = Vec::new();
-        // The roots of a forest read as the one root of the text they lay end
-        // to end: their children are one level.
-        let mut pending: Vec<(NodeIndex, Option<String>)> = Vec::new();
-        level(
-            grammar,
-            tree,
-            tree.roots().iter().flat_map(|&root| tree.children(root)),
-            &mut pending,
-        );
-        while let Some((at, carried)) = pending.pop() {
-            let read = Form::of(grammar, roles, tree, at);
-            if let Some(ref form) = read {
-                form.heads(grammar, tree, text, carried, &mut |named, signature| {
-                    if let Some(key) = placed(unit, named) {
-                        heads.push((key, signature));
-                    }
-                });
-            }
-            level(grammar, tree, tree.children(at), &mut pending);
+        Self {
+            closure: Arc::default(),
+            own: heads_among(
+                grammar,
+                roles,
+                tree,
+                unit,
+                tree.roots().iter().flat_map(|&root| tree.children(root)),
+            ),
         }
-        heads.sort_by_key(|held| held.0);
-        heads.dedup_by(|second, first| first.0 == second.0);
-        Self(heads)
+    }
+
+    /// The heads `tree`, the text `unit` lays out with the document's own text
+    /// from `base` on, laid after the closure lowering `closure` names, writes,
+    /// as [`Signatures::of`] reads them: those of the forms before `base` as
+    /// the first text laid after the lowering read them, and those of the
+    /// forms from `base` on read now.
+    ///
+    /// # Specification
+    /// - requires: as [`Signatures::of`]; `tree`'s forms before `base` are the
+    ///   closure lowering's own tree, as a tree laid after it holds them.
+    /// - ensures: [`Signatures::of`]'s heads, each top-level form read with the
+    ///   documentation written before it on its own side of `base`: the
+    ///   closure's part is the one kept for `closure`, read now from the forms
+    ///   before `base` when nothing is kept, and kept until nothing holds the
+    ///   lowering.
+    /// - provides: a keystroke's heads read off the document's own forms alone.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the forms from `base` on, one lock and a scan
+    ///   of the kept closures; the closure's forms walked once per lowering.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an importer read after its closure's lowering, read
+    ///   whole, and read again after an edit of its own text answers the same
+    ///   heads, and the second reading finds the closure's part kept.
+    /// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
+    #[spec(ensures: |ret| ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
+    #[must_use]
+    pub fn after(
+        grammar: &Pbg,
+        roles: &RoleTable,
+        (tree, unit, base): (&SyntaxTree<'_>, &Unit, ByteOffset),
+        closure: &ClosureKey,
+    ) -> Self
+    {
+        let top = || tree.roots().iter().flat_map(|&root| tree.children(root));
+        let before = |child: &NodeIndex| {
+            tree.node(*child)
+                .is_some_and(|node| node.span().start() < base)
+        };
+        Self {
+            closure: closure_heads(closure, || {
+                heads_among(grammar, roles, tree, unit, top().filter(before))
+            }),
+            own: heads_among(
+                grammar,
+                roles,
+                tree,
+                unit,
+                top().filter(|child| !before(child)),
+            ),
+        }
     }
 
     /// The head written where `referent` is named.
@@ -483,12 +548,98 @@ impl Signatures
     ) -> Option<&Signature>
     {
         let key = (referent.source(), referent.named());
-        self.0
-            .binary_search_by(|held| held.0.cmp(&key))
-            .ok()
-            .and_then(|at| self.0.get(at))
+        [&*self.closure, self.own.as_slice()]
+            .into_iter()
+            .find_map(|heads| {
+                let at = heads.binary_search_by(|held| held.0.cmp(&key)).ok()?;
+                heads.get(at)
+            })
             .map(|held| &held.1)
     }
+}
+
+/// The heads the forms among `children`, top-level forms of `tree` in order,
+/// and every form inside them write, as [`Signatures::of`] reads them.
+///
+/// # Specification
+/// - requires: as [`Signatures::of`]; `children` are top-level forms of `tree`,
+///   in order.
+/// - ensures: ascending by source, then name tile, the first head for a tile
+///   kept.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Signatures::of`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+#[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
+fn heads_among(
+    grammar: &Pbg,
+    roles: &RoleTable,
+    tree: &SyntaxTree<'_>,
+    unit: &Unit,
+    children: impl IntoIterator<Item = NodeIndex>,
+) -> Vec<Head>
+{
+    let text = tree.source();
+    let mut heads: Vec<Head> = Vec::new();
+    // The roots of a forest read as the one root of the text they lay end to
+    // end: their children are one level.
+    let mut pending: Vec<(NodeIndex, Option<String>)> = Vec::new();
+    level(grammar, tree, children, &mut pending);
+    while let Some((at, carried)) = pending.pop() {
+        let read = Form::of(grammar, roles, tree, at);
+        if let Some(ref form) = read {
+            form.heads(grammar, tree, text, carried, &mut |named, signature| {
+                if let Some(key) = placed(unit, named) {
+                    heads.push((key, signature));
+                }
+            });
+        }
+        level(grammar, tree, tree.children(at), &mut pending);
+    }
+    heads.sort_by_key(|held| held.0);
+    heads.dedup_by(|second, first| first.0 == second.0);
+    heads
+}
+
+/// The heads kept for the closure lowering `key` names, read by `read` and
+/// kept when none are, every kept entry whose lowering nothing holds let go.
+///
+/// # Specification
+/// - requires: `read` reads the heads of the closure's part of a tree laid
+///   after the lowering `key` names.
+/// - ensures: the heads kept for `key` when any are, else `read`'s, kept for
+///   `key`.
+/// - fails: never.
+/// - panics: only by propagating a panic of `read`.
+/// - executable: none — the clauses read the process's table, which the call
+///   locks inside; the witness observes the second reading find the first's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a second text laid after the same lowering takes the
+///   first's heads without reading the closure's forms.
+/// - witness: `signature::tests::a_closure_s_heads_are_read_once_per_lowering_1403`
+fn closure_heads(
+    key: &ClosureKey,
+    read: impl FnOnce() -> Vec<Head>,
+) -> Arc<[Head]>
+{
+    let kept = CLOSURE_HEADS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .find(|entry| entry.0 == *key)
+        .map(|entry| Arc::clone(&entry.1));
+    if let Some(heads) = kept {
+        return heads;
+    }
+    let heads: Arc<[Head]> = Arc::from(read());
+    let mut kept = CLOSURE_HEADS.lock().unwrap_or_else(PoisonError::into_inner);
+    kept.retain(|entry| entry.0.holding() == Holding::Held);
+    kept.push((key.clone(), Arc::clone(&heads)));
+    drop(kept);
+    heads
 }
 
 /// Push the forms among `children`, one level of `tree`, onto `pending` so
@@ -1248,6 +1399,80 @@ mod tests
                           thunk { plus(Succ(Zero), Zero) } ;\ndata List(a : Type) : Type {\n  \
                           Nil : List(a);\n}\n";
 
+    /// #1403: an importer's heads, read after its closure's lowering, are the
+    /// heads read off its whole tree, and a second reading after the same
+    /// lowering takes the closure's part kept instead of walking its forms.
+    #[test]
+    fn a_closure_s_heads_are_read_once_per_lowering_1403()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_surface_diagnostics::Verbosity;
+        use gandr_surface_pretty::Spelling;
+        use quenchant_shape::shape::Maybe;
+
+        use crate::protocol::DocumentUri;
+        use crate::quiet::formless;
+        use crate::recheck::open;
+        use crate::recheck::recheck;
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-elim.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
+        let text = SourceText::from(written.as_str());
+        let uri = DocumentUri::from(format!("file://{}", path.display()).as_str());
+        let mut session = open(&uri);
+        let rechecked = recheck(
+            &uri,
+            &mut session,
+            text,
+            &gandr_surface_dispatcher::Unshadowed,
+            Verbosity::User,
+            Spelling::Unicode,
+            Maybe::Absent(formless::Absent::Uncareted),
+        );
+        let Maybe::Present(laid) = rechecked.laid
+        else {
+            panic!("the importer is laid out after its closure");
+        };
+        let session = session.expect("the grammar builds");
+        let grammar = grammar().expect("the grammar builds");
+        let roles = roles().expect("the roles build");
+        let mut read = None;
+        let _table = session.type_held_unit(
+            SourceText::from(laid.text.as_str()),
+            (&laid.unit, laid.base),
+            |tree, closure| {
+                let key = closure.expect("the process holds the closure's lowering");
+                let after = Signatures::after(grammar, roles, (tree, &laid.unit, laid.base), &key);
+                let whole = Signatures::of(grammar, roles, tree, &laid.unit);
+                let again = super::closure_heads(&key, || {
+                    panic!("a closure whose heads are kept is not walked again")
+                });
+                read = Some((after, whole, again));
+            },
+        );
+        let (after, whole, again) = read.expect("the laid revision parses");
+        assert!(
+            !after.closure.is_empty() && !after.own.is_empty(),
+            "the closure and the importer each declare heads"
+        );
+        assert_eq!(
+            after
+                .closure
+                .iter()
+                .chain(&after.own)
+                .cloned()
+                .collect::<Vec<_>>(),
+            whole.own,
+            "the closure's heads then the importer's are the whole tree's"
+        );
+        assert!(
+            Arc::ptr_eq(&after.closure, &again),
+            "the second reading takes the heads the first kept"
+        );
+    }
+
     #[test]
     fn the_innermost_call_answers_with_its_argument()
     {
@@ -1327,7 +1552,7 @@ mod tests
         let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
         let heads = Signatures::of(grammar, roles, parsed.tree(), &Unit::single());
         let read: Vec<(String, String, Vec<String>, Option<String>)> = heads
-            .0
+            .own
             .iter()
             .map(|&((_, named), ref signature)| {
                 let name = text

@@ -511,7 +511,7 @@ impl fmt::Display for Timing
 
 /// What one recheck produced: the diagnostics to publish, the binders left
 /// unused, the form under the caret it was asked about, the paths its closure
-/// named, and its timing.
+/// named, the lay-out it judged, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
@@ -527,6 +527,9 @@ pub struct Rechecked
     /// Every path the document's closure's imports name, as `lay_out` names
     /// them, sorted; none for a document judged alone.
     pub named: Vec<PathBuf>,
+    /// The import closure the text was laid out in and judged over, its
+    /// named paths moved to `named`, or why it was judged alone.
+    pub laid: Maybe<Laid, laid::Absent>,
     /// What the recheck cost.
     pub timing: Timing,
 }
@@ -554,14 +557,16 @@ pub struct Rechecked
 ///   document's origin. A fault that keeps the document from composing, and a
 ///   grammar that did not build, is one error at the origin naming it. The
 ///   unused binders are the composition's, moved back by the document's base;
-///   none when the judgement faulted or refused the document whole. The timing
-///   carries the judgement's form census, the incremental checker's census, and
-///   the wall of the whole recheck; its admission is pending when the judgement
-///   left one. The form is [`caret_form`] of the judged tree at `caret`,
-///   `caret`'s own reason when it is absent, and [`formless::Absent::Unparsed`]
-///   when the judgement faulted or the grammar did not build. A text the
-///   session last judged, submitted again, molds no form and judges no item,
-///   and its diagnostics are the ones its previous recheck produced.
+///   none when the judgement faulted or refused the document whole. The lay-out
+///   is the one judged, `named` taken out of it, and [`laid::Absent::Alone`]
+///   when the grammar did not build. The timing carries the judgement's form
+///   census, the incremental checker's census, and the wall of the whole
+///   recheck; its admission is pending when the judgement left one. The form is
+///   [`caret_form`] of the judged tree at `caret`, `caret`'s own reason when it
+///   is absent, and [`formless::Absent::Unparsed`] when the judgement faulted
+///   or the grammar did not build. A text the session last judged, submitted
+///   again, molds no form and judges no item, and its diagnostics are the ones
+///   its previous recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -603,11 +608,12 @@ pub fn recheck(
 ) -> Rechecked
 {
     let started = Instant::now();
-    let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>| Rechecked {
+    let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| Rechecked {
         diagnostics: vec![diagnostic],
         unused: Vec::new(),
         form: Maybe::Absent(formless::Absent::Unparsed),
         named,
+        laid,
         timing: Timing {
             forms: FormCensus::default(),
             judged: Maybe::Absent(judged::Absent::Unchecked),
@@ -622,6 +628,7 @@ pub fn recheck(
             return unchecked(
                 Diagnostic::at_origin(format!("the built-in grammar did not build: {fault}")),
                 Vec::new(),
+                Maybe::Absent(laid::Absent::Alone),
             );
         },
     };
@@ -659,7 +666,10 @@ pub fn recheck(
     };
     let submission = match outcome {
         Ok(submission) => submission,
-        Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string()), named),
+        Err(fault) => {
+            let fault = fault.to_string();
+            return unchecked(Diagnostic::at_origin(fault), named, laid);
+        },
     };
     let forms = submission.forms();
     let (judged, pending) = match submission.resumed() {
@@ -669,7 +679,7 @@ pub fn recheck(
             admitted::Absent::Unadmitted,
         ),
     };
-    let laid = match laid {
+    let placed = match laid {
         Maybe::Present(ref laid) => Some(laid),
         Maybe::Absent(_) => None,
     };
@@ -683,12 +693,13 @@ pub fn recheck(
             .collect(),
         Composed::Refused(_) => Vec::new(),
     };
-    let diagnostics = diagnostics_of(submission, (uri, laid), text, verbosity, spelling);
+    let diagnostics = diagnostics_of(submission, (uri, placed), text, verbosity, spelling);
     Rechecked {
         diagnostics,
         unused,
         form,
         named,
+        laid,
         timing: Timing {
             forms,
             judged,
