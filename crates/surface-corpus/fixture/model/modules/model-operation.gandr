@@ -1,0 +1,58 @@
+// A theory's operation written at its type: `oper next : +U[ω] (T -> -F T)`,
+// a thunk of curried arrows, is the operation of those inputs and that
+// output, `(_ : T) --> T`, as `functor-pair.gandr`'s record signature writes
+// `next`. A port at a builtin type the theory does not declare reads that
+// type, so `read` returns an `Integer`. A model gives each as the function it
+// writes for an operation.
+
+/// A counter, the theory of `functor-pair.gandr`'s signature
+/// `#{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] (T -> -F Integer) }`.
+theory Counting {
+  sort T : Type;
+  oper zero : T;
+  oper next : +U[ω] (T -> -F T);
+  oper read : +U[ω] (T -> -F Integer);
+}
+
+/// The integers, counting up from zero.
+module Counted : Model(Counting) {
+  type T = Integer;
+  /// The start.
+  @[ runs("0") ]
+  def zero = 0;
+  /// One more.
+  @[ checks ]
+  def next(n : Integer) -> -F Integer { become n + 1 }
+  /// The count itself.
+  @[ checks ]
+  def read(n : Integer) -> -F Integer { return n }
+}
+
+/// Two steps from the start, read out through the model's operations.
+@[ runs("2") ]
+def counted_two : () => Integer ;
+def counted_two = thunk {
+  run one <- Counted.next(Counted.zero) ;
+  run two <- Counted.next(one) ;
+  become Counted.read(two)
+} ;
+
+/// A sum, the theory of `nat-add.gandr`'s signature
+/// `#{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) }`: two
+/// arrows, two inputs.
+theory Summing {
+  sort M : Type;
+  oper zero : M;
+  oper add : +U[ω] (M -> M -> -F M);
+}
+
+/// The integers under addition.
+module Summed : Model(Summing) {
+  type M = Integer;
+  /// The unit.
+  @[ runs("0") ]
+  def zero = 0;
+  /// The sum.
+  @[ checks ]
+  def add(x : Integer, y : Integer) -> -F Integer { become x + y }
+}

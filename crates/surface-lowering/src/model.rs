@@ -582,8 +582,9 @@ pub enum ModelForm
         /// One sort per output port.
         results: Vec<SortTerm>,
     },
-    /// A constant: a value of its type, which binds no variable.
-    Constant(ConstantType),
+    /// A constant: a value of its type, a sort term that binds no variable —
+    /// a sort of the theory, or a builtin type it does not declare.
+    Constant(SortTerm),
     /// A law: a path between two terms, quantified over their variables.
     Law
     {
@@ -596,28 +597,6 @@ pub enum ModelForm
         /// The term it rewrites to.
         right: FreeTerm,
     },
-}
-
-/// The type a constant is a value of.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: a sort of the theory with no variable in its indices, or a type
-///   the theory does not declare, by the name its block writes.
-/// - executable: none — a type is data the lowering mints from.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a constant at a sort and one at `Integer` derive their
-///   types.
-/// - witness: `model::tests::a_constant_derives_its_type_alone`
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ConstantType
-{
-    /// A sort of the theory, closed.
-    Sort(SortTerm),
-    /// A type the theory reads from the scope it is written in, a builtin
-    /// type's name.
-    Ambient(Name),
 }
 
 /// Why the derivation cannot state a component.
@@ -766,12 +745,12 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   rule, in that order and each group in written order; a sort's or an
 ///   operation's telescope binds its free sort variables before its ports, a
 ///   law's binds the variables in another variable's sort first, and every
-///   application carries every argument its operation binds; a constant whose
-///   type leaves no variable free derives that type alone, a sort of the theory
-///   or a builtin type the theory does not declare, and one whose type does
-///   derives as an operation of no inputs; a component that cannot be stated
-///   keeps its fault, an operation one of whose ports binds a variable keeps
-///   [`ModelFault::Binding`], and one naming such a component is
+///   application carries every argument its operation binds; a port at a
+///   builtin type the theory does not declare reads it as a closed sort; a
+///   constant whose type leaves no variable free derives that type alone, and
+///   one whose type does derives as an operation of no inputs; a component that
+///   cannot be stated keeps its fault, an operation one of whose ports binds a
+///   variable keeps [`ModelFault::Binding`], and one naming such a component is
 ///   [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
@@ -807,6 +786,22 @@ pub(crate) fn derive_members(
             form,
         });
     }
+    let ports = members
+        .operations
+        .iter()
+        .flat_map(|operation| operation.inputs.iter().chain(&operation.outputs));
+    for port in ports {
+        let builtin = port.sort.indices.is_empty()
+            && !heads.contains_key(&port.sort.sort)
+            && matches!(
+                crate::resolve::type_atom(port.sort.sort.as_ref().into()),
+                Maybe::Present(_)
+            );
+        if builtin {
+            let closed = infer::derive_head(&heads, infer::HeadKind::Sort, &[], &[]);
+            let _first = heads.insert(port.sort.sort.clone(), closed);
+        }
+    }
     for operation in &members.operations {
         let binds = operation
             .inputs
@@ -824,28 +819,16 @@ pub(crate) fn derive_members(
                 &operation.outputs,
             )
         };
-        let form = match (operation.kind, head.clone(), operation.outputs.as_slice()) {
-            (OperationKind::Constant, Ok(derived), _) if derived.binders.is_empty() => {
+        let form = match (operation.kind, head.clone()) {
+            (OperationKind::Constant, Ok(derived)) if derived.binders.is_empty() => {
                 match *derived.results.as_slice() {
-                    [ref sort] => Ok(ModelForm::Constant(ConstantType::Sort(sort.clone()))),
+                    [ref sort] => Ok(ModelForm::Constant(sort.clone())),
                     _ => Err(ModelFault::ManyOut),
                 }
             },
-            (OperationKind::Constant, Err(ModelFault::UnknownHead), &[ref port])
-                if port.sort.indices.is_empty()
-                    && !heads.contains_key(&port.sort.sort)
-                    && matches!(
-                        crate::resolve::type_atom(port.sort.sort.as_ref().into()),
-                        Maybe::Present(_)
-                    ) =>
-            {
-                Ok(ModelForm::Constant(ConstantType::Ambient(
-                    port.sort.sort.clone(),
-                )))
-            },
             (
                 OperationKind::Operation | OperationKind::Observation | OperationKind::Constant,
-                ..,
+                _,
             ) => head.clone().map(|derived| ModelForm::Operation {
                 telescope: derived.binders,
                 results: derived.results,

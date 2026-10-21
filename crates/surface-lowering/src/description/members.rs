@@ -107,6 +107,7 @@ impl Reader<'_, '_>
                 named: Maybe::Present(named.span),
                 inputs: written_inputs,
                 outputs: written_outputs,
+                formers: Vec::new(),
             },
         ))
     }

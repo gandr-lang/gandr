@@ -9,6 +9,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RuleFace;
@@ -275,6 +276,11 @@ pub struct WrittenOperation
     pub inputs: Vec<WrittenPort>,
     /// Each output port, in written order.
     pub outputs: Vec<WrittenPort>,
+    /// The type formers of a judgment written as a thunk of arrows, the thunk
+    /// first, each with the sort of types it forms: `+U` a value type, each
+    /// `->` and the returner a computation type. None for a judgment written
+    /// as ports.
+    pub formers: Vec<(ByteSpan, GroundSort)>,
 }
 
 /// Where a written face is: its name, when it has one, and both sides.

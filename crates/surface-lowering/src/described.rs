@@ -96,9 +96,9 @@ use crate::description::written::WrittenOperation;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
+// refused_by: fail_closed · collision: none (both sides edited, nowhere the same lines)
 use crate::lower::atom_type;
 use crate::model::Binder;
-use crate::model::ConstantType;
 use crate::model::Dependent;
 use crate::model::Members;
 use crate::model::ModelFault;
@@ -979,6 +979,13 @@ impl Typer<'_>
             scope.push(&sort.name, Dependent(true));
         }
         for (operation, member) in members.operations.iter().zip(&written.operations) {
+            for &(span, ground) in &member.formers {
+                let universe = self
+                    .arena
+                    .value_type_universe(Sort::Ground(ground), Level::zero());
+                let closed = self.context(&Scope::default());
+                self.emit(span, DescribedRole::Type, universe, closed);
+            }
             let form = forms.next();
             if let Some(&Ok(ModelForm::Operation {
                 ref telescope,
@@ -1017,7 +1024,7 @@ impl Typer<'_>
                 }
                 scope.binders.truncate(base);
             }
-            else if let Some(&Ok(ModelForm::Constant(ConstantType::Sort(ref sort)))) = form {
+            else if let Some(&Ok(ModelForm::Constant(ref sort))) = form {
                 if let Some(ty) = self.sort(&scope, sort) {
                     let context = self.context(&scope);
                     if let Maybe::Present(named) = member.named {
@@ -1031,20 +1038,6 @@ impl Typer<'_>
                 let outputs = operation.outputs.iter().zip(&member.outputs);
                 for (raw, port) in outputs {
                     self.port(&scope, &[], &declared, &raw.sort, sort, port);
-                }
-            }
-            else if let Some(&Ok(ModelForm::Constant(ConstantType::Ambient(ref ambient)))) = form
-            {
-                if let Maybe::Present(atom) = type_atom(SurfaceName::from(ambient.as_ref())) {
-                    let ty = atom_type(self.arena, atom);
-                    let context = self.context(&scope);
-                    if let Maybe::Present(named) = member.named {
-                        self.emit(named, DescribedRole::Name, ty, context);
-                    }
-                    let _first = declared.heads.insert(operation.name.clone(), (ty, context));
-                }
-                for port in &member.outputs {
-                    self.occurrence(&port.sort, ambient, &declared.sorts);
                 }
             }
             else if form == Some(&Err(ModelFault::Binding)) {

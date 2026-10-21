@@ -310,6 +310,7 @@ impl Reader<'_, '_>
                     .map(|_| written_port(extension.carrier))
                     .collect(),
                 outputs: vec![written_port(extension.cell)],
+                formers: Vec::new(),
             },
         ));
         for &point in &points {
@@ -325,6 +326,7 @@ impl Reader<'_, '_>
                     named: Maybe::Absent(member_name::Absent::Generated),
                     inputs: vec![written_port(extension.cell)],
                     outputs: vec![written_port(extension.carrier)],
+                    formers: Vec::new(),
                 },
             ));
         }

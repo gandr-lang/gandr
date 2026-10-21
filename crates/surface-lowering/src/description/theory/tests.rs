@@ -249,6 +249,58 @@ fn a_port_name_on_both_sides_is_two_ports()
     );
 }
 
+/// `oper next : +U[ω] (T -> -F T)` reads as the operation `(_ : T) --> T`:
+/// one unnamed input per arrow, parentheses read through, the returner's
+/// type the one output, a builtin type a closed sort; a grade other than `ω`
+/// is refused.
+#[test]
+fn a_thunk_type_reads_as_the_operation_it_curries_1226()
+{
+    let report = described(
+        "theory Counting { sort T : Type; oper next : +U[ω] (T -> -F T); oper add : +U (T -> (T -> -F T)); oper read : +U[ω] (T -> -F Integer); }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let Maybe::Present(ref presentation) = report.declarations[0].presentation
+    else {
+        panic!("the theory presents its members")
+    };
+    let model = crate::model::derive(presentation).unwrap();
+    let mut spelled = alloc::string::String::new();
+    for component in &model.components {
+        if let Ok(crate::model::ModelForm::Operation {
+            ref telescope,
+            ref results,
+        }) = component.form
+        {
+            write!(spelled, "{} :", component.name).unwrap();
+            for binder in telescope {
+                spelled.push(' ');
+                spelled.push_str(binder.sort.sort.as_ref());
+            }
+            spelled.push_str(" -->");
+            for result in results {
+                spelled.push(' ');
+                spelled.push_str(result.sort.as_ref());
+            }
+            spelled.push_str("; ");
+        }
+    }
+    assert_eq!(
+        spelled,
+        "next : T --> T; add : T T --> T; read : T --> Integer; "
+    );
+
+    let graded = described("theory Graded { sort T : Type; oper next : +U[1] (T -> -F T); }");
+    assert_eq!(
+        graded
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.fault.clone())
+            .collect::<Vec<_>>(),
+        [DescriptionFault::Malformed]
+    );
+}
+
 #[test]
 fn a_reversible_map_is_reserved_and_an_equation_is_a_face()
 {

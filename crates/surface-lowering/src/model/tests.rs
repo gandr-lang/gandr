@@ -16,7 +16,6 @@ use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
-use super::ConstantType;
 use super::ModelFault;
 use super::ModelForm;
 use super::ModelSignature;
@@ -132,8 +131,7 @@ where
             let results: Vec<String> = results.iter().map(sort).collect();
             format!("{name} : {} => {}", telescope(binders), results.join(" * "))
         },
-        Ok(ModelForm::Constant(ConstantType::Sort(ref of))) => format!("{name} : {}", sort(of)),
-        Ok(ModelForm::Constant(ConstantType::Ambient(ref of))) => format!("{name} : {of}"),
+        Ok(ModelForm::Constant(ref of)) => format!("{name} : {}", sort(of)),
         Ok(ModelForm::Law {
             telescope: ref binders,
             ref carrier,
