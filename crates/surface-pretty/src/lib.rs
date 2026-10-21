@@ -10,6 +10,7 @@
 //! | item                          | what it is                                               |
 //! | ----------------------------- | -------------------------------------------------------- |
 //! | [`present_type`]              | a value or computation type at a width                   |
+//! | [`present_type_line`]         | the same type on one line, never laid out                |
 //! | [`present_value`]             | a value at a width, bounded at [`DEPTH_LIMIT`]            |
 //! | [`present_computation`]       | an elaborated body at a width, its exits elided           |
 //! | [`present_computation_line`]  | the same body on one line, never laid out                |
@@ -25,9 +26,11 @@
 //!
 //! The walk writes each leaf and join into a composer. The page faces compose
 //! a layout document and let the engine choose its breaks;
-//! [`present_computation_line`] composes text directly, taking at each choice
-//! the side with fewer breaks, because building the document — not choosing
-//! among its layouts — is most of what a value a run prints would cost.
+//! [`present_computation_line`] and [`present_type_line`] compose text
+//! directly, taking at each choice the side with fewer breaks, because
+//! building the document — not choosing among its layouts — is most of what a
+//! value a run prints would cost, and a type a diagnostic keeps only on one
+//! line need never be laid out.
 //!
 //! - **Alternatives.** Rendering the layout document without a break search
 //!   still builds and interns the document for every value.
@@ -577,6 +580,53 @@ where
         (Admits::Type, Bodies::Spelled),
         style,
         Layout::Page(page),
+    )
+}
+
+/// The type at `root` of `source` as [`present_type`] spells it, on as few
+/// lines as it admits.
+///
+/// The layout a page no line overflows selects, written by the same walk
+/// straight into text, with no layout document built and no break searched
+/// for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the text [`present_type`] writes at a page wider than every line,
+///   the same fidelity and the same unspelled reasons.
+/// - provides: the one-line spelling of a type, read before any layout: where
+///   it fits a page, it is exactly what [`present_type`] writes there.
+/// - fails: as [`present_type`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`present_type`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — every core type former's spelling on one line equals its
+///   layout at a page it fits; a choice taken the wrong way or a soft break
+///   kept changes the text.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+#[spec(ensures: |ref ret| match *ret {
+    Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
+    Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
+    Err(_) => true,
+})]
+#[inline]
+pub fn present_type_line<S>(
+    source: &S,
+    root: S::Node,
+    style: Style,
+) -> Result<Presentation, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    present(
+        source,
+        root,
+        (Admits::Type, Bodies::Spelled),
+        style,
+        Layout::Line,
     )
 }
 

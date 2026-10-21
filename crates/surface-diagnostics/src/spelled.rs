@@ -83,11 +83,10 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
-use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
-use gandr_surface_pretty::present_type;
+use gandr_surface_pretty::present_type_line;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -259,16 +258,17 @@ impl TypeSpellings
     ///   measures.
     /// - ensures: each type a produced checker refusal compares, as
     ///   [`gandr_core_checker::CheckRefusal::compared`] names it, and each type
-    ///   [`Failure::types`] names, is keyed by its node and spelled through
-    ///   [`present_type`] in its sugared form, once in each spelling, on a page
-    ///   of [`SPELLING_WIDTH`] columns, constants by their paths from the top
-    ///   level, so a member of a module, a sealed abstract type among them,
-    ///   reads as it is written outside it; a dependent arrow's binder is named
-    ///   as the source writes it, where it captures nothing; a type a failure
-    ///   names is spelled under the hypotheses it stands under, each by the
-    ///   name [`crate::frame::contexts`] gives it, a failure's first naming of
-    ///   a node winning; a type the printer cannot lay out, or lays out over
-    ///   more than one line, is left unkeyed; nothing else is keyed.
+    ///   [`Failure::types`] names, is keyed by its node and spelled on one line
+    ///   through [`present_type_line`] in its sugared form, once in each
+    ///   spelling, constants by their paths from the top level, so a member of
+    ///   a module, a sealed abstract type among them, reads as it is written
+    ///   outside it; a dependent arrow's binder is named as the source writes
+    ///   it, where it captures nothing; a type a failure names is spelled under
+    ///   the hypotheses it stands under, each by the name
+    ///   [`crate::frame::contexts`] gives it, a failure's first naming of a
+    ///   node winning; a type the printer cannot spell, or whose line is wider
+    ///   than a page of [`SPELLING_WIDTH`] columns, is left unkeyed, and is
+    ///   never laid out; nothing else is keyed.
     /// - provides: the spellings a diagnostic reads a refusal's types from once
     ///   the arena is gone.
     /// - fails: never.
@@ -544,12 +544,13 @@ fn spell<'failure>(
                 form: Form::Sugared,
                 spelling,
             };
-            if let Ok(presentation) = present_type(
-                &source.within(context),
-                root,
-                PageWidth::from(SPELLING_WIDTH),
-                style,
-            ) && !presentation.as_ref().contains('\n')
+            // The one-line spelling is the page's layout wherever it fits,
+            // and a type laid out over more lines is not kept, so one whose
+            // line does not fit is never laid out.
+            if let Ok(presentation) = present_type_line(&source.within(context), root, style)
+                && !presentation.as_ref().contains('\n')
+                && u32::try_from(presentation.as_ref().chars().count())
+                    .is_ok_and(|width| width <= SPELLING_WIDTH)
             {
                 let _fresh = spelled.insert(node, presentation);
             }
