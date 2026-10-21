@@ -17,6 +17,8 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::ImportBinding;
 use gandr_surface_lowering::ImportDeclaration;
 use gandr_surface_lowering::ImportIndex;
@@ -1391,6 +1393,35 @@ fn an_unqualified_import_binds_no_alias()
             Maybe::Absent(_)
         ),
         "an unqualified import binds no alias"
+    );
+}
+
+/// An import whose parse is repaired inside a form it holds, here a
+/// declaration left unended after its path, is refused by that form, as every
+/// reader refuses a nested repair, whether its imports are read alone or
+/// lowered.
+#[test]
+fn an_import_repaired_inside_a_nested_form_is_refused_by_that_form()
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, SourceText::from("import \"./base.gandr\" def ;"));
+    let refused = |refusal: LoweringRefusal<'_>| {
+        matches!(
+            refusal,
+            LoweringRefusal::MalformedForm {
+                span,
+                form: FormName::DECLARATION,
+                fault: FormFault::Repaired(_),
+            } if span == bytes(25_usize, 25_usize)
+        )
+    };
+    assert!(
+        gandr_surface_lowering::written_imports(&pbg, &tree).is_err_and(refused),
+        "the imports read alone are refused by the unended declaration"
+    );
+    assert!(
+        lowered(&pbg, &tree).is_err_and(refused),
+        "and so is the lowering"
     );
 }
 
