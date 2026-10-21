@@ -1,5 +1,7 @@
 //! Public standing-state witnesses across independent insertion calls.
 
+use alloc::collections::BTreeSet;
+
 use anodized::spec;
 use gandr_theory_dynamic_graphs::AcyclicityMaintenance;
 use gandr_theory_dynamic_graphs::ConstraintVerdict;
@@ -14,6 +16,7 @@ use gandr_theory_graphs::EdgeId;
 use gandr_theory_graphs::EdgeSource as _;
 use gandr_theory_graphs::NodeCount;
 use gandr_theory_graphs::NodeId;
+use gandr_theory_orders::OrderError;
 use quenchant_shape::shape::Maybe;
 
 /// Construct a fixture edge.
@@ -67,6 +70,16 @@ fn a_standing_graph_preserves_prefixes_across_calls()
         Err(MaintenanceError::NodeCapacity)
     );
     assert!(bool::from(graph.order_is_topological()));
+    assert!(!bool::from(!graph.order_is_topological()));
+    let telemetry = graph.telemetry();
+    assert_eq!(
+        [
+            u64::from(telemetry.insertions),
+            u64::from(telemetry.repairs),
+            u64::from(telemetry.refusals)
+        ],
+        [5, 2, 1]
+    );
 }
 
 #[test]
@@ -256,4 +269,74 @@ fn an_unrepresentable_node_count_is_refused_before_growth()
         Err(PotentialError::NodeCapacity)
     );
     assert_eq!(valuation.nodes(), NodeCount::from(0_u32));
+}
+
+#[test]
+fn the_potential_telemetry_counts_raises_and_refutations()
+{
+    let [a, b] = [0_u32, 1].map(NodeId::from);
+    let mut system = PotentialMaintenance::default();
+    assert_eq!(system.nodes(), NodeCount::from(0_u32));
+    assert_eq!(system.telemetry(), PotentialMaintenance::new().telemetry());
+    assert_eq!(
+        system.insert_constraint(edge(a, b), Offset::from(2_i64)),
+        Ok(ConstraintVerdict::SatisfiedAfterRaise)
+    );
+    let raised = system.telemetry();
+    assert_eq!(
+        [
+            u64::from(raised.insertions),
+            u64::from(raised.raises),
+            u64::from(raised.refutations)
+        ],
+        [1, 1, 0]
+    );
+    let verdict = system
+        .insert_constraint(edge(b, a), Offset::from(0_i64))
+        .expect("finite insertion");
+    assert!(matches!(verdict, ConstraintVerdict::Refuted(_)));
+    let refuted = system.telemetry();
+    assert_eq!(
+        [
+            u64::from(refuted.insertions),
+            u64::from(refuted.refutations)
+        ],
+        [2, 1]
+    );
+    assert_eq!(system.value(b), Maybe::Present(Potential::from(2_i64)));
+    assert!(!bool::from(!system.valuation_is_feasible()));
+}
+
+#[test]
+fn every_maintenance_failure_renders_distinctly()
+{
+    let order = OrderError::CapacityExhausted;
+    assert_eq!(
+        MaintenanceError::from(order),
+        MaintenanceError::Order(order)
+    );
+    let failures = [
+        MaintenanceError::from(order),
+        MaintenanceError::NodeCapacity,
+        MaintenanceError::OrderDesynchronized,
+        MaintenanceError::ArithmeticOverflow,
+    ];
+    let messages = failures.map(|failure| format!("{failure}"));
+    let [ref wrapped, ..] = messages;
+    assert!(wrapped.contains(&format!("{order}")), "{wrapped}");
+    assert_eq!(messages.iter().collect::<BTreeSet<_>>().len(), 4);
+}
+
+#[test]
+fn every_potential_failure_renders_distinctly()
+{
+    let failures = [
+        PotentialError::NodeCapacity,
+        PotentialError::ValueOverflow,
+        PotentialError::WitnessDesynchronized,
+        PotentialError::ArithmeticOverflow,
+    ];
+    let messages = failures.map(|failure| format!("{failure}"));
+    assert!(messages.iter().all(|message| !message.is_empty()));
+    assert_eq!(messages.iter().collect::<BTreeSet<_>>().len(), 4);
 }
