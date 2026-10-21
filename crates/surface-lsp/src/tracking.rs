@@ -20,11 +20,13 @@ pub struct TrackingIssue(u16);
 
 impl TrackingIssue
 {
+    /// A module's documentation, which no face shows.
+    pub const DOCUMENTATION: Self = Self(1135);
     /// A tile inside a form the engine types nothing in: a nested module's
     /// member, a descent claim, a member's signature.
     pub const INNER: Self = Self(1204);
-    /// A tile inside an import.
-    pub const IMPORT: Self = Self(1203);
+    /// An import whose address has a scheme, which nothing resolves.
+    pub const SCHEME: Self = Self(1233);
     /// A tile a declaration writes itself, past its head.
     pub const OWN_TILE: Self = Self(1202);
     /// A tile of a root form that declares nothing, which the lowering reads
@@ -59,7 +61,8 @@ impl fmt::Display for TrackingIssue
     }
 }
 
-/// Why a tile has no hover of its own, in the order a position is tried.
+/// What a hover cannot show yet: a tile with no hover of its own, in the
+/// order a position is tried, or a part of an answer still missing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Gap
 {
@@ -68,8 +71,10 @@ pub enum Gap
     Refused,
     /// In a source the engine refused as a whole: it typed nothing in it.
     Unjudged,
-    /// Inside an import.
-    Imported,
+    /// An import whose address has a scheme, which nothing resolves.
+    Foreign,
+    /// The documentation of the module a path import reads.
+    Undocumented,
     /// A tile a declaration writes itself past its head, of the rule named.
     Owned(&'static str),
     /// In a root form that declares nothing: a run target or a stray.
@@ -89,7 +94,8 @@ impl Gap
     {
         match self {
             Self::Refused | Self::Unjudged => TrackingIssue::UNJUDGED,
-            Self::Imported => TrackingIssue::IMPORT,
+            Self::Foreign => TrackingIssue::SCHEME,
+            Self::Undocumented => TrackingIssue::DOCUMENTATION,
             Self::Owned(_) => TrackingIssue::OWN_TILE,
             Self::Undeclared => TrackingIssue::RUN_TARGET,
             Self::Untyped => TrackingIssue::INNER,
@@ -107,7 +113,8 @@ impl Gap
         let what = match self {
             Self::Refused => String::from("A form inside a refused declaration has no hover yet."),
             Self::Unjudged => String::from("A source the engine has not judged has no hover yet."),
-            Self::Imported => String::from("An import has no hover yet."),
+            Self::Foreign => String::from("An address with a scheme resolves to nothing yet."),
+            Self::Undocumented => String::from("Its module documentation is not shown yet."),
             Self::Owned(rule) => format!("A tile a `{rule}` writes itself has no hover yet."),
             Self::Undeclared => String::from("A form that declares nothing has no hover yet."),
             Self::Untyped => String::from("A form the engine typed nothing at has no hover yet."),

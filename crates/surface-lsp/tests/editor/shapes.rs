@@ -398,9 +398,9 @@ pub(super) fn judged(
 ///   positions sharing one answer is a line: its first and last positions,
 ///   one-based `line:column`, the text from the first to the last, at most 24
 ///   characters, newlines as `⏎`, then `⇒` and the answer — its text with its
-///   fences dropped and its newlines as `⏎`, then `@` and its range — or `∅`
-///   when nothing answers.
-/// - panics: none.
+///   fences dropped, its newlines as `⏎` and the corpus directory's path as
+///   `<corpus>`, then `@` and its range — or `∅` when nothing answers.
+/// - panics: when the corpus directory beside this crate does not resolve.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the five goldens pin every answer of their sources; a
@@ -413,6 +413,12 @@ fn golden(
 ) -> String
 {
     let text = Text(&source.text);
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../surface-corpus")
+        .canonicalize()
+        .expect("the corpus directory exists")
+        .display()
+        .to_string();
     let place = |offset: usize| {
         let at = Position::of(text, Offset(offset));
         format!(
@@ -432,7 +438,8 @@ fn golden(
                     value
                         .replace("```gandr\n", "")
                         .replace("\n```", "")
-                        .replace('\n', "⏎"),
+                        .replace('\n', "⏎")
+                        .replace(corpus.as_str(), "<corpus>"),
                     start.line.saturating_add(1),
                     start.character.saturating_add(1),
                     end.line.saturating_add(1),

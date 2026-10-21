@@ -39,6 +39,7 @@ use gandr_surface_dispatcher::named_path;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_lowering::Address;
+use gandr_surface_lowering::WrittenImport;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
@@ -137,6 +138,18 @@ pub struct Tile
     /// Whether the tile is one of a declaration's own — a top-level item's or
     /// a module member's, past an atom written as its operand.
     pub declares: bool,
+}
+
+/// An import of a read text, as the text writes it, with its place among the
+/// text's path imports.
+#[derive(Clone, Copy, Debug)]
+pub struct ImportAt<'read>
+{
+    /// The import as written.
+    pub written: &'read WrittenImport,
+    /// Its position among the path imports, in the order the text writes them;
+    /// none for an address with a scheme.
+    pub ordinal: Option<usize>,
 }
 
 /// Every tile of `tree`, ascending by start, each with its rule and whether a
@@ -243,9 +256,9 @@ struct Readout
     /// Where the last import of any address ends; none when the text writes
     /// none or its imports do not read.
     imports_end: Option<ByteOffset>,
-    /// The bytes of every import of any address, in source order; none when
-    /// the imports do not read.
-    imported: Vec<ByteSpan>,
+    /// Every import of any address as written, in source order; none when the
+    /// imports do not read.
+    written: Vec<WrittenImport>,
     /// Every tile, ascending by start.
     tiles: Vec<Tile>,
 }
@@ -351,12 +364,12 @@ impl Reading
             calls: Calls::of(grammar, &tree),
             imports_end: None,
             imports: Vec::new(),
-            imported: Vec::new(),
+            written: Vec::new(),
             tiles: tiles(grammar, &tree),
         };
         if let Ok(written) = written_imports(grammar, &tree) {
             readout.imports_end = written.last().map(|import| import.span.end());
-            readout.imported = written.iter().map(|import| import.span).collect();
+            readout.written.clone_from(&written);
             readout.imports = written
                 .into_iter()
                 .filter(|import| import.address == Address::Path)
@@ -414,8 +427,8 @@ impl Reading
             .copied()
     }
 
-    /// The bytes of the import holding `offset`; none outside every import
-    /// or when the text was not read.
+    /// The import holding `offset`, with its place among the path imports;
+    /// none outside every import or when the text was not read.
     ///
     /// # Specification
     /// trivial.
@@ -423,16 +436,27 @@ impl Reading
     pub fn import_at(
         &self,
         offset: ByteOffset,
-    ) -> Option<ByteSpan>
+    ) -> Option<ImportAt<'_>>
     {
-        match self.0 {
-            Maybe::Present(ref readout) => readout
-                .imported
-                .iter()
-                .copied()
-                .find(|span| span.start() <= offset && offset < span.end()),
-            Maybe::Absent(_) => None,
-        }
+        let Maybe::Present(ref readout) = self.0
+        else {
+            return None;
+        };
+        let position = readout
+            .written
+            .iter()
+            .position(|import| import.span.start() <= offset && offset < import.span.end())?;
+        let written = readout.written.get(position)?;
+        let before = readout.written.get(.. position).unwrap_or_default();
+        Some(ImportAt {
+            written,
+            ordinal: (written.address == Address::Path).then(|| {
+                before
+                    .iter()
+                    .filter(|import| import.address == Address::Path)
+                    .count()
+            }),
+        })
     }
 
     /// The declarations of the text, or why it was not read.

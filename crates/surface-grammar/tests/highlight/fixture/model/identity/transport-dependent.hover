@@ -1,8 +1,4 @@
-8:1-8:6 import ⇒ import⏎⏎An import has no hover yet. The tracking issue for this is: [#1203]⏎⏎[#1203]: https://github.com/gandr-lang/gandr/issues/1203 @8:1-8:7
-8:8-8:8 " ⇒ "⏎⏎An import has no hover yet. The tracking issue for this is: [#1203]⏎⏎[#1203]: https://github.com/gandr-lang/gandr/issues/1203 @8:8-8:9
-8:9-8:27 ./circle-base.gandr ⇒ ./circle-base.gandr⏎⏎An import has no hover yet. The tracking issue for this is: [#1203]⏎⏎[#1203]: https://github.com/gandr-lang/gandr/issues/1203 @8:9-8:28
-8:28-8:28 " ⇒ "⏎⏎An import has no hover yet. The tracking issue for this is: [#1203]⏎⏎[#1203]: https://github.com/gandr-lang/gandr/issues/1203 @8:28-8:29
-8:30-8:30 ; ⇒ ;⏎⏎An import has no hover yet. The tracking issue for this is: [#1203]⏎⏎[#1203]: https://github.com/gandr-lang/gandr/issues/1203 @8:30-8:31
+8:1-8:30 import "./circle-base.ga… ⇒ import "./circle-base.gandr" ;⏎⏎Reads `<corpus>/fixture/model/identity/circle-base.gandr`.⏎⏎Its module documentation is not shown yet. The tracking issue for this is: [#1135]⏎⏎[#1135]: https://github.com/gandr-lang/gandr/issues/1135 @8:1-8:31
 11:1-11:11 @[ checks ] ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @11:1-12:1
 12:1-12:3 def ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-22:3
 12:5-12:11 reduced ⇒ reduced : Path(Nat, transport(+U ((a : Nat) -> Path(Nat, Zero, a) -> -F Nat), here(Zero),⏎  here(Zero), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:5-12:12
