@@ -1157,6 +1157,129 @@ jobs:
             gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
           fi
 
+  # The mutants of a pull request's own lines (`mutants:changed`, #1456): each
+  # mutant on a line the change adds runs under the witnesses of its function,
+  # and one comment, updated in place, names the survivors. The lane is a
+  # report, never a gate. No check of it is required and nothing needs it; it
+  # fails while a mutant survives, as a hotpath check fails on a regression.
+  # The merge queue and main do not run it. The nightly keeps the whole-crate
+  # map. Dispatches run it against the parent commit, so `ci:act` exercises
+  # it. As with the obligations comment, the comment is found before the lane
+  # and posted after it from bare runners, so the job running the change's
+  # code holds no write token.
+  mutants-comment-read:
+    name: find the mutants comment
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
+    runs-on: *linux
+    permissions:
+      pull-requests: read
+    outputs:
+      id: ${{ steps.find.outputs.id }}
+    env: *obligations-comment-env
+    steps:
+      - id: find
+        name: find this workflow's comment
+        shell: bash
+        run: |
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .id // ""')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+
+  mutants:
+    name: report the mutants of the change (linux)
+    needs: [changes, ci-image-ref, mutants-comment-read]
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    outputs:
+      comment: ${{ steps.changed.outcome == 'success' }}
+      report: ${{ steps.report.outputs.artifact-url }}
+    env:
+      # The mutants build over main's plain test state and the listing reads
+      # main's rustdoc JSON from the policy state. Nothing is saved.
+      CI_BUILD_STATE: cargo-test-plain-only
+      # A pull request checks out its merge commit, whose first parent is the
+      # base it merges into; a dispatch reads its parent commit.
+      CI_FETCH_DEPTH: "2"
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-policy
+      - *restore-policy-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      # One lane, building into the restored target directory: the lane's
+      # worktree sits elsewhere, so the workspace's own crates rebuild there,
+      # but every dependency is main's.
+      - name: run the mutants of the change's added lines
+        id: changed
+        shell: bash
+        run: |
+          export CARGO_TARGET_DIR="$PWD/target"
+          mise run mutants:changed -- --base HEAD^ --lanes 1
+          { printf '<!-- gandr-mutants -->\n'; cat mutants.out/changed/report.md; } > mutants.out/changed/comment.md
+          cat mutants.out/changed/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: upload the mutants comment
+        id: report
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.changed.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: mutants-comment
+          path: mutants.out/changed/comment.md
+          if-no-files-found: error
+      - name: fail while a mutant survives
+        if: ${{ !cancelled() && steps.changed.outcome == 'success' }}
+        shell: bash
+        run: |
+          survivors=$(wc -l < mutants.out/changed/survivors.txt)
+          if (( survivors > 0 )); then
+            printf '::error::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
+            exit 1
+          fi
+      - *lane-timing
+
+  mutants-comment:
+    name: post the mutants comment
+    needs: [mutants-comment-read, mutants]
+    if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
+    runs-on: *linux
+    permissions:
+      pull-requests: write
+    env: *obligations-comment-env
+    steps:
+      - name: download the mutants comment
+        uses: *download-artifact
+        with:
+          name: mutants-comment
+      - name: create or update the comment
+        shell: bash
+        env:
+          COMMENT_ID: ${{ needs.mutants-comment-read.outputs.id }}
+          REPORT_URL: ${{ needs.mutants.outputs.report }}
+        run: |
+          if (( $(wc -c < comment.md) > 60000 )); then
+            body=$(head -c 60000 comment.md)
+            {
+              printf '%s\n\n' "${body%$'\n'*}"
+              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [mutants-comment artifact](%s).\n' "$REPORT_URL"
+            } > comment.cut.md
+            mv comment.cut.md comment.md
+          fi
+          if [[ -n $COMMENT_ID ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$COMMENT_ID" -F body=@comment.md --silent
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
+          fi
+
   # The benchmark report (`mise run ci:hotpath`): each series runs under the
   # hotpath profiler and uploads its report to hotpath Cloud twice, as
   # `<series>`, judged on allocation in every crate, and as `<series>-timing`,
@@ -1233,6 +1356,34 @@ jobs:
       - *install-policy-tools
       - name: add the landed verdicts
         run: mise run ci:hotpath-landed
+
+  # A landing that leaves a mutant of its own lines alive files it (`mise run
+  # ci:mutants-landed`): main's push reads the mutants comment of every pull
+  # request it landed, and each one whose report names survivors gets one
+  # issue, routed by the tiers of the crates the survivors live in. Nothing
+  # needs this job.
+  mutants-landed:
+    name: file the landings' surviving mutants
+    needs: ci-image-ref
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      MUTANTS_PUSH_BEFORE: ${{ github.event.before }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the surviving mutants
+        run: mise run ci:mutants-landed
 
   # Formatting and workflow security lint share the treefmt pass.
   format-gate:
