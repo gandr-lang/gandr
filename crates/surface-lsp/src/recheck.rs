@@ -165,6 +165,8 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::entries;
@@ -969,8 +971,8 @@ fn own(
 
 /// The diagnostics `submission`, the judgement of `text` at `uri` laid out in
 /// `laid` when it is judged after its imports, publishes at `verbosity` and in
-/// `spelling`: each diagnostic `gandr check --goals` prints for its step, in
-/// order.
+/// `spelling`: each diagnostic `gandr check --goals` prints for its step as
+/// [`reported`] stands it, in order.
 ///
 /// # Specification
 /// trivial.
@@ -984,7 +986,7 @@ fn diagnostics_of(
 {
     let path = uri.path();
     let index = LineIndex::new(text.as_ref().into());
-    let step = submission.into_step(Path::new(&path));
+    let step = reported(submission.into_step(Path::new(&path)));
     entries(&step, Verb::Check(Goals::Reported))
         .spelling(spelling)
         .map(|found| match found.severity {
@@ -996,6 +998,52 @@ fn diagnostics_of(
             },
         })
         .collect()
+}
+
+/// `step` as an editor reports it: a pending source carrying the refusal the
+/// pending set expects stands under the fixture root, which states it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a step standing [`Standing::Pending`] under
+///   [`SourceRoot::Fixture`], standing as [`Standing::of`] stands it there, its
+///   path, text, base and composition unchanged; any other step — a pending
+///   source the lowering reads whole among them — unchanged.
+/// - provides: the step an editor's diagnostics are read off. The pending set
+///   is the corpus runner's account of refusals it expects, which `check`
+///   prints nothing for; an editor has no expectation to settle, so it shows
+///   those refusals as the same text's anywhere else.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pending source refused whole publishes its refusal at
+///   its span, as the same text under the fixture root does, and a pending
+///   source the lowering reads still publishes the note that it belongs under
+///   the fixture root.
+/// - witness: `recheck::tests::a_pending_source_publishes_its_refusal_1248`
+/// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+#[spec(ensures: |ref ret| !matches!(*ret, Step::Source { standing: Standing::Pending, .. }))]
+fn reported(step: Step<'_>) -> Step<'_>
+{
+    match step {
+        Step::Source {
+            path,
+            text,
+            base,
+            composed,
+            standing: Standing::Pending,
+            ..
+        } => Step::Source {
+            path,
+            root: SourceRoot::Fixture,
+            text,
+            base,
+            standing: Standing::of(SourceRoot::Fixture, &composed),
+            composed,
+        },
+        other @ (Step::Source { .. } | Step::Fault { .. }) => other,
+    }
 }
 
 /// The editor diagnostic `found` is published as at `verbosity`, the document
@@ -1614,12 +1662,49 @@ mod tests
         assert_eq!(diagnostic.source, "gandr");
         assert_eq!(diagnostic.code, None);
         assert!(diagnostic.related_information.is_empty());
-        let pending = DocumentUri::from("file:///corpus/fixture/pending/whole.gandr");
-        assert_eq!(
-            checked(&pending, SourceText::from("pure 3\n")),
-            Vec::new(),
-            "a pending source refused as a whole stands as its root expects"
-        );
+    }
+
+    /// A pending source refused as a whole publishes its refusal as the same
+    /// text under the fixture root does, where `check` prints nothing for it.
+    #[test]
+    fn a_pending_source_publishes_its_refusal_1248()
+    {
+        for text in ["nowhere\n", "pure 3\n", "{ }\n"] {
+            let source = SourceText::from(text);
+            let pending = checked(
+                &DocumentUri::from("file:///corpus/fixture/pending/whole.gandr"),
+                source,
+            );
+            let fixture = checked(
+                &DocumentUri::from("file:///corpus/fixture/whole.gandr"),
+                source,
+            );
+            let shown =
+                |diagnostics: &[Diagnostic]| -> Vec<(Range, Severity, Option<String>, String)> {
+                    diagnostics
+                        .iter()
+                        .map(|diagnostic| {
+                            (
+                                diagnostic.range,
+                                diagnostic.severity,
+                                diagnostic.code.clone(),
+                                diagnostic.message.clone(),
+                            )
+                        })
+                        .collect()
+                };
+            assert!(
+                !pending.is_empty(),
+                "`{}` under the pending set publishes its refusal",
+                text.trim_end()
+            );
+            assert_eq!(
+                shown(&pending),
+                shown(&fixture),
+                "`{}` publishes as the same text under the fixture root",
+                text.trim_end()
+            );
+        }
     }
 
     #[test]
