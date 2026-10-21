@@ -24,14 +24,15 @@ stacking_current() {
 }
 
 # The open pull requests that land, drafts left out, as a JSON array of
-# `{number, head, base, created, landing, stack}`: `landing` when the pull
-# request is in the merge queue or set to enter it (auto-merge), so its branch
-# is about to be deleted and nothing new stacks on it (#1455); `stack` the
-# number of the linked stack holding it, or null (#1520).
+# `{number, head, base, created, landing, held, stack}`: `landing` when the
+# pull request is in the merge queue or set to enter it (auto-merge), so its
+# branch is about to be deleted and nothing new stacks on it (#1455); `held`
+# when it carries the `landing` label, a `pr:land` waiting to queue it
+# (#1556); `stack` the number of the linked stack holding it, or null (#1520).
 open_prs() {
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } stack { number } } } } }' \
-    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), stack: .stack.number}' \
+    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } } } } }' \
+    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), held: any(.labels.nodes[]; .name == "landing"), stack: .stack.number}' \
     | jq -cs .
 }
 
@@ -191,6 +192,32 @@ retarget_landing() {
     gh pr edit "$number" -R "$repo" --base "$trunk" > /dev/null
     echo "#$number retargeted from $base to $trunk: the landing deletes its base" >&2
   done < <(open_prs | jq -r --argjson landing "$1" -f "$pr_stack_dir/retarget.jq" | jq -r '.[] | [.number, .base] | @tsv')
+}
+
+# The pull requests a waiting `pr:land` holds, labelled `landing` (#1556):
+# from the moment it starts waiting until the chain is queued, the top is not
+# in the merge queue yet, so without the label a `pr:open` would stack on it
+# and move the top out from under the landing. `hold_landing` labels each of
+# the JSON array `$1`'s pull requests and remembers them; `release_landing`
+# takes the label off every one it holds, and `pr:land` runs it when the chain
+# is queued and on every exit, a refusal or a red check included. A label a
+# killed seat left behind is taken off by `pr:watch` once its pull request is
+# queued or merged.
+landing_held=()
+hold_landing() {
+  local number
+  for number in $(jq -r '.[]' <<< "$1"); do
+    [[ " ${landing_held[*]} " == *" $number "* ]] && continue
+    gh pr edit "$number" -R "$repo" --add-label landing > /dev/null
+    landing_held+=("$number")
+  done
+}
+release_landing() {
+  local number
+  for number in "${landing_held[@]}"; do
+    gh pr edit "$number" -R "$repo" --remove-label landing > /dev/null 2>&1 || true
+  done
+  landing_held=()
 }
 
 # The open pull requests outside the stack `$1` that are in the merge queue,
