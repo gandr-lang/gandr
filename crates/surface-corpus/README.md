@@ -47,6 +47,8 @@ The control subjects take a case that is hard in other languages and write it as
 
 | Case | Subject | Compared with |
 | ---- | ------- | ------------- |
+| Async drop | `drop` | Rust's async-drop experiment and its `AsyncDrop` proposal; Swift's synchronous `deinit` (SE-0371); C++ destructors, which cannot await |
+| Cancellation safety | `cancellation` | Rust's futures dropped at an `.await`; Kotlin's `NonCancellable` section |
 | Completion-based I/O | `completion` | io_uring's submission and completion queues; Rust's owned-buffer completion APIs |
 | Move semantics | `moves` | C++'s moved-from objects and move constructors; Rust's `Copy` and move split, and `mem::forget` |
 | Structured concurrency | `tasks` | Trio's nurseries; Rust's scoped threads (`std::thread::scope`) |

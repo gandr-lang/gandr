@@ -1,0 +1,28 @@
+// An abandoned stack that holds a pending completion cancels it: the stack's
+// end of the kernel's protocol counts as ended, and the kernel's next action
+// is the one that observes the cancellation (Fowler, Lindley, Morris and
+// Decova, _Exceptional Asynchronous Session Types_, POPL 2019,
+// doi:10.1145/3290341).
+
+// The ring's protocol and its entries.
+import "../completion/ring-base.gandr" ;
+
+/// A read submitted and its completion abandoned in flight: the clause
+/// abandons the rest that would reap it (#1334).
+@[ checks ]
+def inFlight() -> -F Unit {
+  handle c : Proc {
+    fork (kernel : Ring.Submission) {
+      recv(kernel) as sqe;
+      send(kernel, Ring.done);
+      close(kernel)
+    } as ring;
+    send(ring, Ring.read);
+    c.exit(1);
+    recv(ring) as cqe;
+    close(ring)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => abandon(k)
+  }
+}

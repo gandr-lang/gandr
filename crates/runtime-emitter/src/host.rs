@@ -204,6 +204,8 @@ pub struct Calls<'run, 'host>
     handlers: &'run [Handler],
     /// Each frame label with its window's slot count.
     windows: &'run [(Label, Slots)],
+    /// Each access's frame code with its unwind's code.
+    unwinds: BTreeMap<Word, Word>,
     /// The heads a head object names, by family.
     heads: &'run [ConstructorTag],
     /// The codes a code object names, by family.
@@ -333,6 +335,11 @@ impl<'run, 'host> Calls<'run, 'host>
             callees: &lowered.callees,
             handlers: &lowered.handlers,
             windows: &lowered.windows,
+            unwinds: lowered
+                .unwinds
+                .iter()
+                .map(|&(ended, unwind)| (codes.label(ended), codes.label(unwind)))
+                .collect(),
             heads: &lowered.heads,
             code_table: &lowered.codes,
             codes,
@@ -478,6 +485,7 @@ impl<'run, 'host> Calls<'run, 'host>
             },
             Callee::Shift(_) => self.shift(runtime),
             Callee::Replay(_) => self.replay(runtime, first),
+            Callee::Abandon(_) => self.abandon(runtime, first),
             Callee::Hold => allocate_cell(runtime, &[first]),
             Callee::Access => {
                 let held = cell(first)?;
@@ -520,6 +528,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Undefined(constant) => Some(Refused::UndefinedConstant(constant)),
                 Callee::Cyclic(constant) => Some(Refused::CyclicConstant(constant)),
                 Callee::Primitive(_)
+                | Callee::Abandon(_)
                 | Callee::Hold
                 | Callee::Access
                 | Callee::AccessAt(_)
@@ -1047,6 +1056,58 @@ impl<'run, 'host> Calls<'run, 'host>
         }
         runtime.set_frame_top(top);
         Ok(stack)
+    }
+
+    /// Push above the top a frame for each access `stack` captured, in the
+    /// stack's order so the innermost is on top, each entering that access's
+    /// unwind in the window its frame held; answers the unit. The stack's
+    /// other frames are dropped unrun.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a value that is no stack;
+    /// [`Refusal::Frames`] past the frame region's limit; as [`unit()`].
+    fn abandon(
+        &self,
+        runtime: &mut Runtime,
+        stack: Word,
+    ) -> Result<Word, Refusal>
+    {
+        if kind(stack)? != Kind::Stack {
+            return Err(Refusal::Operands);
+        }
+        let object = stack.to_pointer::<Word>();
+        // SAFETY: a stack's first word is its header.
+        let header = Header::from_word(unsafe { *object });
+        let mut top = runtime.frame_top();
+        for index in 0 .. usize::from(header.arity()) {
+            let at = object.wrapping_add(STACK_PREFIX.saturating_add(index.saturating_mul(2)));
+            // SAFETY: the stack holds its frames after its prefix.
+            let code = unsafe { *at };
+            let Some(&unwind) = self.unwinds.get(&code)
+            else {
+                continue;
+            };
+            let next = top.wrapping_add(2);
+            if next > runtime.frame_limit() {
+                return Err(Refusal::Frames);
+            }
+            // SAFETY: as above.
+            let window = unsafe { *at.wrapping_add(1) };
+            // SAFETY: the frame fits below the region's limit.
+            unsafe {
+                *top = unwind;
+            }
+            // SAFETY: as above.
+            unsafe {
+                *top.wrapping_add(1) = window;
+            }
+            top = next;
+        }
+        runtime.set_frame_top(top);
+        unit(runtime)
     }
 
     /// Pop an access's frame with `answer` in hand and the view `view`: a

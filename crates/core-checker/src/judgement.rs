@@ -7268,8 +7268,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(input),
                 }))
             },
-            // An abandoned stack runs nothing: the form returns the unit and
-            // performs no operation.
+            // An abandonment returns the unit and performs no operation: the
+            // unwinds it runs answer under the empty row.
             (Frame::Abandon { stack }, Produced::ValueType(classifier)) => {
                 let classifier = classifier.settle(self.context.arena_mut());
                 let _fed = self.stack_expected(stack, classifier)?;

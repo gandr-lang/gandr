@@ -1,0 +1,20 @@
+// Abandoning the rest of a scope ends what it held without resuming it: an
+// access abandoned before its `resume` writes nothing back, so its hold keeps
+// the value it held. A handler clause that does not resume its continuation
+// discards it (Plotkin and Pretnar, _Handling Algebraic Effects_,
+// doi:10.2168/LMCS-9(4:23)2013).
+
+/// An access whose view the scope's clause abandons before its write-back:
+/// the held value stays (#1334).
+@[ runs("1") ]
+def unwritten() -> -F Integer {
+  hold x = 1;
+  run r : Integer <- handle c : Proc {
+    access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { pure unit };
+    pure 0
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  };
+  pure x
+}

@@ -1,0 +1,27 @@
+// The peer's cancellation hop: the scope's clause abandons the rest while its
+// peer still owes a send, and the peer's next action observes the
+// cancellation and abandons its own rest (Fowler, Lindley, Morris and Decova,
+// _Exceptional Asynchronous Session Types_, POPL 2019, doi:10.1145/3290341).
+// No session action runs in the machine yet, so the program checks and does
+// not run.
+
+/// A peer cancelled at its next action. It runs to 7 once session actions
+/// run in the machine (#1380).
+@[ runs("unrunnable: `cancelled` did not focus: a session action has no image in the command IL") ]
+def cancelled() -> -F Integer {
+  handle c : Proc {
+    fork (peer : !Integer. !Integer. end) {
+      send(peer, 1);
+      send(peer, 2);
+      close(peer)
+    } as found;
+    recv(found) as first;
+    c.exit(1);
+    recv(found) as second;
+    close(found);
+    pure second
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  }
+}

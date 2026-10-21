@@ -1,0 +1,25 @@
+// An abandoned stack runs the unwind of each access it captured, innermost
+// first, in place of the write-back it never reaches; its other frames never
+// run. Each captured frame's destructor runs in reverse order (Congard,
+// Munch-Maccagnoni and Douence, _Linear Effects, Exceptions, and Resource
+// Safety_, 2025, arXiv:2510.23517). An unwind that calls a declaration owed
+// its body blames the run, which shows the abandonment ran it.
+
+/// A declaration owed its body: a run that calls it is blamed.
+@[ owes(1) ]
+def later : Integer => Unit ;
+
+/// The rest of the scope abandoned while an access's view is open: the
+/// access's unwind runs, and its call of `later` blames the run (#1334).
+@[ runs("blame: `later` is owed its body") ]
+def unwound() -> -F Integer {
+  hold x = 1;
+  run r : Integer <- handle c : Proc {
+    access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { later(1) };
+    pure 0
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  };
+  pure x
+}
