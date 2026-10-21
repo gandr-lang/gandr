@@ -1135,6 +1135,33 @@ fn incomplete_input_flags_statement_local_obligations() -> Result<(), Box<dyn Er
     Ok(())
 }
 
+/// #1391: a definition's missing `}` is a ghost brace past the last token its
+/// body writes, not at the `{` that opens the body.
+#[test]
+fn a_missing_brace_stands_past_the_body_it_closes_1391() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unclosed-body.gandr");
+    let src = read_source(&path)?;
+    let result = parse(pbg, SourceText::from(src.as_str()))?;
+    let tree = result.tree();
+    let ghosts: Vec<(usize, usize)> = tree
+        .positions()
+        .filter_map(|position| {
+            let node = tree.node(position)?;
+            matches!(node.label(), NodeLabel::GhostClose { .. }).then(|| {
+                (
+                    usize::from(node.span().start()),
+                    usize::from(node.span().end()),
+                )
+            })
+        })
+        .collect();
+    let end = src.trim_end().len();
+    assert_eq!(ghosts, [(end, end)], "one ghost brace, past `return n + 1`");
+    Ok(())
+}
+
 #[test]
 fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn Error>>
 {
