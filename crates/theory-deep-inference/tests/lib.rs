@@ -36,6 +36,8 @@ mod flow;
 #[cfg(test)]
 mod footprint;
 #[cfg(test)]
+mod modular;
+#[cfg(test)]
 mod normal_form;
 #[cfg(test)]
 mod oracle;

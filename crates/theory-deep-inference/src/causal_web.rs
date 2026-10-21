@@ -624,7 +624,7 @@ else { WebRelation::Independent })]
         )
     )]
     #[spec(ensures: |output| bool::from(output) == (self.precedes.rows.len() == self.events.len() && self.precedes.rows.iter().all(|row| row.len() == self.events.len())))]
-    fn has_valid_shape(&self) -> WebShapeValidity
+    pub(crate) fn has_valid_shape(&self) -> WebShapeValidity
     {
         self.precedes.has_shape(self.vertex_count())
     }
