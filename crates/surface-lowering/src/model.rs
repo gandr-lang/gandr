@@ -585,6 +585,9 @@ pub enum ModelForm
     /// A constant: a value of its type, a sort term that binds no variable —
     /// a sort of the theory, or a builtin type it does not declare.
     Constant(SortTerm),
+    /// A nested model: a module ascribed the model signature of the theory
+    /// this name declares, `oper inner : Model(T)`.
+    Nested(Name),
     /// A law: a path between two terms, quantified over their variables.
     Law
     {
@@ -825,6 +828,12 @@ pub(crate) fn derive_members(
                     [ref sort] => Ok(ModelForm::Constant(sort.clone())),
                     _ => Err(ModelFault::ManyOut),
                 }
+            },
+            (OperationKind::Nested, _) => match *operation.outputs.as_slice() {
+                [ref port] if port.sort.indices.is_empty() => {
+                    Ok(ModelForm::Nested(port.sort.sort.clone()))
+                },
+                _ => Err(ModelFault::ManyOut),
             },
             (
                 OperationKind::Operation | OperationKind::Observation | OperationKind::Constant,

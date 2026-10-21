@@ -62,6 +62,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::Collector;
@@ -102,6 +103,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::model::ModelForm;
 use crate::model::ModelSignature;
+use crate::model::Presentation;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -114,6 +116,14 @@ type ReadModel<'source> = (
     ModelSignature,
     (ByteSpan, SlotIndex),
 );
+
+/// Whether a nested module is ascribed the model signature a theory derives.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ModelsTheory(bool);
 
 quenchant_shape::reason_enum! {
     /// Why a module carries no derived model signature.
@@ -406,7 +416,7 @@ impl<'source> Collector<'_, 'source>
                             | Ok(ModelForm::Sort { .. }) => {
                                 component.form == ComponentForm::Family(FamilyForm::Derived)
                             },
-                            | Ok(ModelForm::Operation { .. } | ModelForm::Constant(_) | ModelForm::Law { .. }) | Err(_) => {
+                            | Ok(ModelForm::Operation { .. } | ModelForm::Constant(_) | ModelForm::Nested(_) | ModelForm::Law { .. }) | Err(_) => {
                                 component.form == ComponentForm::Derived
                             },
                         }
@@ -458,66 +468,7 @@ impl<'source> Collector<'_, 'source>
             });
         }
         let name = self.name_of(theory);
-        let local = self
-            .collected
-            .by_name
-            .get(&(self.collected.top(form.span.start()), name))
-            .copied()
-            .filter(|position| {
-                self.collected
-                    .slots
-                    .get(position.0)
-                    .is_some_and(|slot| slot.introduced_by.span.end() <= form.span.start())
-            });
-        let position = match local {
-            Some(position) => Some(position),
-            None => {
-                match self
-                    .collected
-                    .imported_slot(self.collected.unit.source_at(form.span.start()), name)
-                {
-                    Ok(Maybe::Present((position, _import))) => Some(position),
-                    Ok(Maybe::Absent(_)) => None,
-                    Err(ambiguity) => {
-                        return Err(LoweringRefusal::ImportShadows {
-                            span: theory.span,
-                            name,
-                            import: ambiguity.import,
-                            other: ambiguity.other,
-                        });
-                    },
-                }
-            },
-        };
-        let presented = position.and_then(|position| {
-            let slot = self.collected.slots.get(position.0)?;
-            if !matches!(
-                slot.definition,
-                Maybe::Present(Half {
-                    operand: Operand::Presented,
-                    ..
-                })
-            ) {
-                return None;
-            }
-            match self
-                .collected
-                .descriptions
-                .get(&slot.introduced_by.node)?
-                .presentation
-            {
-                Maybe::Present(ref presentation) => Some((position, presentation)),
-                Maybe::Absent(_) => None,
-            }
-        });
-        let Some((position, presentation)) = presented
-        else {
-            return Err(LoweringRefusal::UnresolvedTypeHead {
-                span: theory.span,
-                name,
-                arity: HeadArity::Nullary,
-            });
-        };
+        let (position, presentation) = self.presented_theory(form, theory.span, name)?;
         let Ok(model) = crate::model::derive(presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
@@ -582,6 +533,7 @@ impl<'source> Collector<'_, 'source>
                         Ok(
                             ModelForm::Operation { .. }
                             | ModelForm::Constant(_)
+                            | ModelForm::Nested(_)
                             | ModelForm::Law { .. },
                         )
                         | Err(_) => ComponentForm::Derived,
@@ -592,6 +544,144 @@ impl<'source> Collector<'_, 'source>
             .collect();
 
         Ok((components, model, (theory.span, position)))
+    }
+
+    /// The `theory` block `name` names where the module form `form` stands: one
+    /// its source defines wholly before `form`, or one a source it imports
+    /// unqualified declares.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the declaration's slot and the presentation its `theory`
+    ///   block defines.
+    /// - fails: a shadowed import for a name two imports bind, at `span`; an
+    ///   unresolved head, at `span`, for a name no such block defines.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ImportShadows`] and
+    /// [`LoweringRefusal::UnresolvedTypeHead`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a local theory, an imported one, an undeclared one
+    ///   and a nested model's theory.
+    /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
+    /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.collected.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
+    fn presented_theory(
+        &self,
+        form: Placed,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> Result<(SlotIndex, &Presentation), LoweringRefusal<'source>>
+    {
+        let local = self
+            .collected
+            .by_name
+            .get(&(self.collected.top(form.span.start()), name))
+            .copied()
+            .filter(|position| {
+                self.collected
+                    .slots
+                    .get(position.0)
+                    .is_some_and(|slot| slot.introduced_by.span.end() <= form.span.start())
+            });
+        let position = match local {
+            Some(position) => Some(position),
+            None => {
+                match self
+                    .collected
+                    .imported_slot(self.collected.unit.source_at(form.span.start()), name)
+                {
+                    Ok(Maybe::Present((position, _import))) => Some(position),
+                    Ok(Maybe::Absent(_)) => None,
+                    Err(ambiguity) => {
+                        return Err(LoweringRefusal::ImportShadows {
+                            span,
+                            name,
+                            import: ambiguity.import,
+                            other: ambiguity.other,
+                        });
+                    },
+                }
+            },
+        };
+        let presented = position.and_then(|position| {
+            let slot = self.collected.slots.get(position.0)?;
+            if !matches!(
+                slot.definition,
+                Maybe::Present(Half {
+                    operand: Operand::Presented,
+                    ..
+                })
+            ) {
+                return None;
+            }
+            match self
+                .collected
+                .descriptions
+                .get(&slot.introduced_by.node)?
+                .presentation
+            {
+                Maybe::Present(ref presentation) => Some((position, presentation)),
+                Maybe::Absent(_) => None,
+            }
+        });
+        presented.ok_or(LoweringRefusal::UnresolvedTypeHead {
+            span,
+            name,
+            arity: HeadArity::Nullary,
+        })
+    }
+
+    /// Whether the nested module at `nested` is ascribed the model signature
+    /// of the theory `theory` names, read where the module form `form` stands.
+    ///
+    /// # Specification
+    /// - requires: `nested` is closed.
+    /// - ensures: affirmative exactly when some slot bears the name `theory`
+    ///   spells, the name resolves to a `theory` block where `form` stands, and
+    ///   the nested module's model signature is the one that block derives.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — restating it resolves and derives again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested module ascribed the theory, one ascribed
+    ///   another and one unascribed.
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    fn models_theory(
+        &self,
+        nested: StructureIndex,
+        form: Placed,
+        theory: &Name,
+    ) -> ModelsTheory
+    {
+        let Some(name) = self
+            .collected
+            .slots
+            .iter()
+            .find(|slot| slot.name.as_ref() == theory.as_ref())
+            .map(|slot| slot.name)
+        else {
+            return ModelsTheory(false);
+        };
+        let Ok((_, presentation)) = self.presented_theory(form, form.span, name)
+        else {
+            return ModelsTheory(false);
+        };
+        let ascribed =
+            self.collected
+                .structures
+                .get(nested.0)
+                .and_then(|entry| match entry.model {
+                    Maybe::Present(index) => self.collected.models.get(index.0),
+                    Maybe::Absent(_) => None,
+                });
+        ModelsTheory(ascribed.is_some_and(|signature| {
+            crate::model::derive(presentation).is_ok_and(|derived| derived == *signature)
+        }))
     }
 
     /// Read a type member's parameters, `( a : A, … )`, the cursor standing
@@ -908,6 +998,7 @@ impl<'source> Collector<'_, 'source>
                     Ok(
                         ModelForm::Operation { .. }
                         | ModelForm::Constant(_)
+                        | ModelForm::Nested(_)
                         | ModelForm::Law { .. },
                     )
                     | Err(_) => 0_usize,
@@ -922,9 +1013,13 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `structure`'s body is read and ascribed a model signature.
     /// - ensures: a component the derivation states is stated for the
     ///   definition member of its name as [`Self::state`] states a written
-    ///   type, the member yielded; a component the derivation cannot state, a
-    ///   name a nested module answers, and a name nothing answers each refuse a
-    ///   held slot under the component's name, and nothing is yielded.
+    ///   type, the member yielded; a nested model is answered by the nested
+    ///   module of its name ascribed the model signature its theory derives,
+    ///   the module yielded; a component the derivation cannot state, a value
+    ///   component a nested module answers, a nested model anything else
+    ///   answers, and a name nothing answers each refuse a held slot under the
+    ///   component's name, and nothing is yielded — save a name whose member
+    ///   was repaired, whose parse error already answers for it.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -934,6 +1029,7 @@ impl<'source> Collector<'_, 'source>
     ///   member, and a missing operation is refused naming it.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
+    /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
     #[spec(
         captures: before = self.member_named(Container::Module(structure), component.name),
         ensures: |ret| match ret {
@@ -955,24 +1051,51 @@ impl<'source> Collector<'_, 'source>
         else {
             return undeclared;
         };
-        let module = entry.name;
+        let (module, declared_by) = (entry.name, entry.declared_by);
         let Maybe::Present(model) = entry.model
         else {
             return undeclared;
         };
-        let fault = self
+        let derived = self
             .collected
             .models
             .get(model.0)
-            .and_then(|signature| signature.components.get(place.0))
-            .and_then(|derived| derived.form.as_ref().err().copied());
-        let refusal = match (fault, self.member_named(container, component.name)) {
-            (Some(fault), _) => LoweringRefusal::UnstatedComponent {
+            .and_then(|signature| signature.components.get(place.0));
+        let fault = derived.and_then(|derived| derived.form.as_ref().err().copied());
+        let nested_theory = derived.and_then(|derived| match derived.form {
+            Ok(ModelForm::Nested(ref theory)) => Some(theory.clone()),
+            Ok(
+                ModelForm::Sort { .. }
+                | ModelForm::Operation { .. }
+                | ModelForm::Constant(_)
+                | ModelForm::Law { .. },
+            )
+            | Err(_) => None,
+        });
+        let wrong_sort = LoweringRefusal::OutOfFragment {
+            span: component.named.span,
+            form: FormName::MODULE,
+            sort: FragmentSort::Module,
+            boundary: FragmentBoundary::WrongSort,
+        };
+        let refusal = match (
+            fault,
+            nested_theory,
+            self.member_named(container, component.name),
+        ) {
+            (Some(fault), ..) => LoweringRefusal::UnstatedComponent {
                 span: component.named.span,
                 name: component.name,
                 fault,
             },
-            (None, Maybe::Present(Member::Slot(slot))) => {
+            (None, Some(ref theory), Maybe::Present(Member::Module(nested)))
+                if self.models_theory(nested, declared_by, theory).0 =>
+            {
+                return Maybe::Present(Member::Module(nested));
+            },
+            (None, Some(_), Maybe::Present(_))
+            | (None, None, Maybe::Present(Member::Module(_))) => wrong_sort,
+            (None, None, Maybe::Present(Member::Slot(slot))) => {
                 let part = ModelPart {
                     model,
                     component: place,
@@ -985,13 +1108,10 @@ impl<'source> Collector<'_, 'source>
                 );
                 return Maybe::Present(Member::Slot(slot));
             },
-            (None, Maybe::Present(Member::Module(_))) => LoweringRefusal::OutOfFragment {
-                span: component.named.span,
-                form: FormName::MODULE,
-                sort: FragmentSort::Module,
-                boundary: FragmentBoundary::WrongSort,
+            (None, _, Maybe::Absent(_)) if self.repaired_member(container, component.name).0 => {
+                return undeclared;
             },
-            (None, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
+            (None, _, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
                 span: component.named.span,
                 module,
                 member: component.name,

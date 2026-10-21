@@ -65,7 +65,8 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty constructors, in tag order:
+//! `Theory` is one self-recursive sort of twenty-one constructors, in tag
+//! order:
 //!
 //! | tag | constructor | fields |
 //! |---|---|---|
@@ -89,6 +90,7 @@
 //! | 17 | `Derived` | its peak's outer rule, position and inner rule, its left term, its right term, the rest |
 //! | 18 | `Rank` | an operation's name, its rank, the rest |
 //! | 19 | `Const` | as `Oper`, for a constant |
+//! | 20 | `Nested` | as `Oper`, for a model of another theory |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -171,6 +173,15 @@
 //! fields, no input ports and its type as its one output port; its rules and
 //! terms apply it to no arguments as they do a nullary operation. A
 //! presentation that declares no constant keeps the bytes it had.
+//!
+//! # Nested models
+//!
+//! An `oper` member written at a model type, `oper inner : Model(Answering)`,
+//! declares a model of the theory `Answering` as a member of this one, as a
+//! record signature nests a module signature as a field. It is a `Nested`
+//! member of the operation chain with `Oper`'s fields, no input ports and one
+//! output port whose sort names the theory it models. A presentation that
+//! nests no model keeps the bytes it had.
 //!
 //! # The rule certificate
 //!
@@ -257,7 +268,7 @@ use crate::rule::TermView;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 20] = [
+pub const THEORY_CONSTRUCTORS: [&str; 21] = [
     "Presents",
     "End",
     "Sort",
@@ -278,11 +289,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 20] = [
     "Derived",
     "Rank",
     "Const",
+    "Nested",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 20] = [
+const CONSTRUCTORS: [(&str, usize, usize); 21] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -303,6 +315,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 20] = [
     (THEORY_CONSTRUCTORS[17], 3, 3),
     (THEORY_CONSTRUCTORS[18], 2, 1),
     (THEORY_CONSTRUCTORS[19], 1, 3),
+    (THEORY_CONSTRUCTORS[20], 1, 3),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -349,6 +362,8 @@ enum Tag
     Rank,
     /// A constant and the rest of the operations.
     Const,
+    /// A nested model and the rest of the operations.
+    Nested,
 }
 
 impl Tag
@@ -381,11 +396,12 @@ impl Tag
             Self::Derived => 17,
             Self::Rank => 18,
             Self::Const => 19,
+            Self::Nested => 20,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty constructors.
+/// The description of `Theory`, one data sort of twenty-one constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -394,11 +410,11 @@ impl Tag
 /// - ensures: no parameters, one data sort `Theory`, and the constructors
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
-///   `Turned`, `Derived`, `Rank` and `Const` in that order, each at the result
-///   sort `Theory`; a constructor's `String` fields carry `grade` and come
-///   first, three for `Derived`, two for `Port`, `Bound`, `Shape`, `Face` and
-///   `Rank` and one for every other constructor that names something, and its
-///   remaining fields are `Theory`.
+///   `Turned`, `Derived`, `Rank`, `Const` and `Nested` in that order, each at
+///   the result sort `Theory`; a constructor's `String` fields carry `grade`
+///   and come first, three for `Derived`, two for `Port`, `Bound`, `Shape`,
+///   `Face` and `Rank` and one for every other constructor that names
+///   something, and its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -407,7 +423,7 @@ impl Tag
 ///   constructor table and the exact identity bytes of a presentation;
 ///   reordered constructors, a dropped field or a name read as a recursion
 ///   change them.
-/// - witness: `theory::tests::the_code_is_one_data_sort_of_twenty_constructors`
+/// - witness: `theory::tests::the_code_is_one_data_sort_of_the_tabled_constructors`
 /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
 #[inline]
 #[must_use]
@@ -542,7 +558,8 @@ pub struct TheoryOperation
 {
     /// The operation's name.
     pub name: Name,
-    /// Whether it is an operation, an observation or a constant.
+    /// Whether it is an operation, an observation, a constant or a nested
+    /// model.
     pub kind: OperationKind,
     /// The input ports, in order.
     pub inputs: Vec<TheoryPort>,
@@ -561,6 +578,9 @@ pub enum OperationKind
     /// An `oper` member written at a type alone, `oper zero : T`: a constant of
     /// that type, where `oper zero : () --> T` is an operation with no inputs.
     Constant,
+    /// An `oper` member written at a model type, `oper inner : Model(T)`: a
+    /// model of the theory its one output port's sort names.
+    Nested,
 }
 
 /// One rule face of a presentation: its name and its two terms.
@@ -1119,6 +1139,7 @@ impl TheoryValue
                 OperationKind::Operation => Tag::Oper,
                 OperationKind::Observation => Tag::Obs,
                 OperationKind::Constant => Tag::Const,
+                OperationKind::Nested => Tag::Nested,
             };
             operations = value(tag, vec![
                 leaf(&operation.name),
@@ -1268,6 +1289,9 @@ impl TheoryValue
             }
             else if at.ctor == Tag::Const.constructor() {
                 (OperationKind::Constant, Tag::Const)
+            }
+            else if at.ctor == Tag::Nested.constructor() {
+                (OperationKind::Nested, Tag::Nested)
             }
             else {
                 (OperationKind::Operation, Tag::Oper)

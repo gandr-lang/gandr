@@ -1,0 +1,34 @@
+// A nested model: `oper inner : Model(Answering)` states that a model of the
+// theory holds a model of `Answering` under the name `inner`, as
+// `module-members.gandr`'s record signature nests `inner : #{ answer: Integer }`.
+// A model answers it with a nested module ascribed `Model(Answering)`, and a
+// reader reaches the nested model's members through the outer one.
+
+/// The theory of `module-members.gandr`'s nested `#{ answer: Integer }`.
+theory Answering {
+  oper answer : Integer;
+}
+
+/// The theory of its outer `#{ inner: #{ answer: Integer }, total: Integer }`.
+theory Faceted {
+  oper inner : Model(Answering);
+  oper total : Integer;
+}
+
+/// The facts: the nested answer and the total beside it.
+module Facts : Model(Faceted) {
+  /// The nested model.
+  module inner : Model(Answering) {
+    /// The answer.
+    @[ checks ]
+    def answer = 41;
+  }
+  /// The total.
+  @[ checks ]
+  def total = 42;
+}
+
+/// The nested answer, read through the outer model.
+@[ runs("41") ]
+def nested_answer : () => Integer ;
+def nested_answer = thunk { return Facts.inner.answer } ;

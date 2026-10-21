@@ -278,8 +278,9 @@ pub struct WrittenOperation
     pub outputs: Vec<WrittenPort>,
     /// The type formers of a judgment written as a thunk of arrows, the thunk
     /// first, each with the sort of types it forms: `+U` a value type, each
-    /// `->` and the returner a computation type. None for a judgment written
-    /// as ports.
+    /// `->` and the returner a computation type; for a nested model, its
+    /// model type `Model(T)`, a value type. None for a judgment written as
+    /// ports.
     pub formers: Vec<(ByteSpan, GroundSort)>,
 }
 
