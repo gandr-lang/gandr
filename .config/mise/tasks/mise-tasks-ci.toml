@@ -239,6 +239,14 @@ run = "cargo nextest run --workspace --locked --profile nightly"
 # workspace's objects first: a restored state otherwise keeps the previous
 # revision's test binary beside this one's, and its coverage map, at the old
 # line numbers with no hits, merges in as missed lines.
+# Each object is exported on its own, then each line keeps its highest count
+# across every export (#1368): llvm-cov keeps one record per function across
+# the objects it is given, the first it reads, and a binary that links a crate
+# without calling one of its `#[inline]` or generic functions carries a zero
+# record for it that shadowed the counts of the binary that ran it. Within one
+# object the real record replaces the zero one. `report -v` prints the export
+# command cargo-llvm-cov builds, so the profile, the objects and the ignored
+# paths are cargo-llvm-cov's own; its merged report is discarded.
 # llvm-tools already supplies llvm-cov.
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
@@ -247,16 +255,45 @@ run = '''
 set -euo pipefail
 root="{{ config_root }}"
 export NEXTEST_PROFILE=coverage
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+exports() {
+  local target=$1 prefix=$2 line llvm_cov object index=0 count=0
+  local -a options=() objects=()
+  line=$(CARGO_TARGET_DIR="$target" cargo llvm-cov report -v --lcov --output-path "$scratch/$prefix.discarded" 2>&1 > /dev/null \
+    | grep -F ' export -format=lcov ')
+  line=${line#*\`}
+  line=${line%\`*}
+  # The command is cargo-llvm-cov's: paths and one single-quoted pattern.
+  eval "set -- $line"
+  llvm_cov=$1
+  shift
+  while (( $# > 0 )); do
+    if [[ $1 == -object ]]; then objects+=("$2"); count=$((count + 1)); shift 2; else options+=("$1"); shift; fi
+  done
+  if (( count == 0 )); then
+    echo "cargo llvm-cov report named no object in $target" >&2
+    return 1
+  fi
+  for object in "${objects[@]}"; do
+    "$llvm_cov" "${options[@]}" -object "$object" > "$scratch/$prefix-$index.lcov" &
+    index=$((index + 1))
+    while (( $(jobs -rp | wc -l) >= $(nproc) )); do wait -n; done
+  done
+  while (( $(jobs -rp | wc -l) > 0 )); do wait -n; done
+  rm -f "$scratch/$prefix.discarded"
+  echo "$prefix: $count objects exported"
+}
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR="$root/target/coverage" \
-  cargo llvm-cov nextest --workspace --locked --lcov --output-path "$root/coverage.lcov"
+  cargo llvm-cov nextest --workspace --locked --no-report
+exports "$root/target/coverage" enforcing
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov clean --workspace
 CARGO_TARGET_DIR="$root/target/coverage-plain" \
   cargo llvm-cov nextest --locked --no-report \
   -p gandr-surface-parser --test tests \
   -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'
-CARGO_TARGET_DIR="$root/target/coverage-plain" \
-  cargo llvm-cov report --lcov --output-path "$root/coverage-plain.lcov"
+exports "$root/target/coverage-plain" plain
 awk '
   /^SF:/ {
     file = substr($0, 4)
@@ -292,9 +329,7 @@ awk '
       print "end_of_record"
     }
   }
-' "$root/coverage.lcov" "$root/coverage-plain.lcov" > "$root/coverage.merged.lcov"
-mv "$root/coverage.merged.lcov" "$root/coverage.lcov"
-rm -f "$root/coverage-plain.lcov"
+' "$scratch"/*.lcov > "$root/coverage.lcov"
 '''
 
 # Main's coverage upload against the one before it, as Markdown; with
