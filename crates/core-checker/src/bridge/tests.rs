@@ -3102,6 +3102,48 @@ fn an_equiv_crosses_as_a_universe_path()
 }
 
 #[test]
+fn a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335()
+{
+    // def not : U (+{(), ()} -> F +{(), ()}) ;
+    // def negation : Path(Type, +{(), ()}, +{(), ()}) = equiv(not, not) ;
+    // def stepped : Path(U (…), ⟨tr(t. U (El t -> F El t), negation, not)⟩, not)
+    //   = funext(⟨tr(…)⟩, not) ;
+    // The function carried along the named path runs through `negation`'s
+    // definition; the trace the checker records for each input names that
+    // unfolding, or the kernel's replay cannot reach the carried function.
+    let mut arena = CoreArena::new();
+    let functions = crate::fixture::booleans(&mut arena);
+    let [not, negation] =
+        [0_usize, 1_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    let universe = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Value),
+        Level::zero(),
+    );
+    let code = arena.value_quote(functions.ty);
+    let path = arena.value_type_path(universe, code, code);
+    let equiv = arena.value_equiv(not, not);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(bound, Level::zero());
+    let returns = arena.comp_type_returner(decoded);
+    let arrow = arena.comp_type_arrow(decoded, returns);
+    let motive = arena.value_type_thunk(arrow);
+    let transported = arena.computation_path_transport(motive, negation, not);
+    let carried = arena.value_returned(transported);
+    let extensional = arena.value_type_path(functions.function, carried, not);
+    let funext = arena.value_funext(carried, not);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(
+            At(0),
+            Maybe::Present(functions.function),
+            Maybe::Present(functions.not),
+        ),
+        declaration(At(1), Maybe::Present(path), Maybe::Present(equiv)),
+        declaration(At(2), Maybe::Present(extensional), Maybe::Present(funext)),
+    ]);
+    checks_and_readmits(&report, &readmission);
+}
+
+#[test]
 fn marks_and_holes_are_refused_beside_their_positive_controls()
 {
     let mut arena = CoreArena::new();

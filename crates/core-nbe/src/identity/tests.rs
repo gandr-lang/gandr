@@ -712,6 +712,36 @@ fn a_function_moves_along_univalence_by_its_maps()
 }
 
 #[test]
+fn a_function_moves_along_an_equivalence_by_its_maps()
+{
+    // In `y. U(El(y) → F El(y))` along `equiv(not, id)`, the identity
+    // function moves to `a. not(id(a))`: the argument moves back by the
+    // backward map and the result forward by the forward map, so `truth`
+    // goes to `falsity`. Moving the argument forward too would send `truth`
+    // to `truth`.
+    let mut core = CoreArena::new();
+    let [forward, backward] = [Map::Not, Map::Same].map(|map| boolean_map(&mut core, map));
+    let path = core.value_equiv(forward, backward);
+    let (_, _, decode) = universe_parts(&mut core);
+    let returner = core.comp_type_returner(decode);
+    let arrow = core.comp_type_arrow(decode, returner);
+    let motive = core.value_type_thunk(arrow);
+    let function = boolean_map(&mut core, Map::Same);
+    let run = applied_after_transport(&mut core, (motive, path, function));
+    let [truth, falsity] = booleans(&mut core);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, run, moved),
+        CertificateEquality::Equal,
+        "the argument moves back by the backward map and the result forward"
+    );
+    assert_eq!(
+        normalises_to(&mut core, run, kept),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
 fn a_function_with_a_constant_argument_moves_its_result_only()
 {
     // In `y. U(Bool → F El(y))` the argument's type reads no binder, so the

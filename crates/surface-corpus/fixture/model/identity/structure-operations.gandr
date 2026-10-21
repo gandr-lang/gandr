@@ -1,0 +1,47 @@
+// Representation independence of two structures with operations: the toggles
+// of Sterling, Gratzer and Birkedal's counters (_Towards univalent reference
+// types_, § 5, `posCounter ≡ negCounter`), related along negation. Each
+// operation is carried along the carrier's path, its argument moved back by
+// the equivalence's backward map and its result forward by its forward map,
+// and the carried operation is related to the other structure's by `funext`.
+
+// Negation, `not`, and the identity, `same`, on the booleans.
+import "./funext.gandr" ;
+// The booleans' path to themselves by negation, `negation`.
+import "./transport-list.gandr" ;
+
+/// A toggle that starts false and reads its state as it is.
+@[ checks ]
+def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} ;
+def plainToggle = (Bool, (+{.0 = unit}, (not, same))) ;
+
+/// A toggle that starts true and reads its state negated.
+@[ checks ]
+def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} ;
+def flippedToggle = (Bool, (+{.1 = unit}, (not, not))) ;
+
+/// The step carried along negation is the step: negating back, stepping and
+/// negating again steps.
+@[ checks ]
+def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) ;
+def stepped = funext(transport(\t. t => t, negation, not), not) ;
+
+/// The reading carried along negation reads negated.
+@[ checks ]
+def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) ;
+def reread = funext(transport(\t. t => Bool, negation, same), not) ;
+
+/// The two toggles are one: the carriers by negation, the start carried to
+/// `true`, and each operation carried to the other's.
+@[ checks ]
+def oneToggle : Path(
+  #{t : Type, start : t, step : t => t, read : t => Bool},
+  plainToggle,
+  flippedToggle
+) ;
+def oneToggle = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
+
+/// The reading carried along negation is not the reading left as it is.
+@[ refuses("PointwiseDistinct") ]
+def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) ;
+def unread = funext(transport(\t. t => Bool, negation, same), same) ;

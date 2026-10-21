@@ -3272,6 +3272,33 @@ fn a_function_moves_along_univalence_by_its_maps()
 }
 
 #[test]
+fn a_function_moves_along_an_equivalence_by_its_maps()
+{
+    // In `y. U(El(y) → F El(y))` along the native equivalence of negation
+    // forward and the identity backward, the identity function moves to `a.
+    // not(a)`: the argument moves back by the backward map and the result
+    // forward by the forward map, so `truth` goes to `falsity`. Moving the
+    // argument forward too would send `truth` to `truth`.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let (truth, falsity) = (boolean.truth, boolean.falsity);
+    let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
+    let path = arena.value_path_equiv(classifier, boolean.not, boolean.identity, Arc::default());
+    let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let decode = arena.value_type_element(binder, Level::zero());
+    let returner = arena.comp_type_returner(decode);
+    let arrow = arena.comp_type_arrow(decode, returner);
+    let motive = arena.value_type_thunk(arrow);
+    let transported = arena.computation_path_transport(motive, path, boolean.identity);
+    let forced = arena.computation_force(binder);
+    let applied = arena.computation_application(forced, truth);
+    let run = arena.computation_bind(transported, applied);
+    let [kept, moved] = [truth, falsity].map(|value| arena.computation_return(value));
+    assert_eq!(computes(&mut arena, run, moved), KernelVerdict::Convertible);
+    assert_ne!(computes(&mut arena, run, kept), KernelVerdict::Convertible);
+}
+
+#[test]
 fn transport_along_then_moves_along_both_paths()
 {
     // The first path sends every point to `falsity` and the second negates:
