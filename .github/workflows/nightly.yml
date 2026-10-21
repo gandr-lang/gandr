@@ -224,8 +224,8 @@ jobs:
   # (#702): checker 0.41, rest 0.26, and the surface shard's 0.51 split as
   # engine 0.37 and faces 0.32, each its setup, two thirds of the one
   # shard's build and its own tests' share (#1177); a join is setup,
-  # transfer and the witness listing. The macOS lanes run on main's push and
-  # the daily run, which this job does not sample.
+  # transfer and the witness listing. The macOS lanes run in the daily run
+  # and on a dispatch, which this job does not sample.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
