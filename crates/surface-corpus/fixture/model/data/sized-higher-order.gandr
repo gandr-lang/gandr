@@ -77,3 +77,29 @@ def rec halvedAt(n : Nat) -> -F Nat {
 @[ runs("Succ(Succ(Zero))") ]
 def halvedAtFour : () => Nat ;
 def halvedAtFour = thunk { halvedAt(Succ(three)) } ;
+
+/// A number below a stage `j` handed back, the stage `k` it stands at bounded
+/// below `j`: the result stands below `j`, as the body was checked with `k`
+/// there.
+@[ checks ]
+def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> -F Nat[<j] {
+  return y
+}
+
+/// A number rebuilt, each predecessor read back through `boundedAt`: the call
+/// reads `j` at the number's stage and `k` at the predecessor's, below it, so
+/// the result stands below the number and `boundedHelped[<]` takes it. A call
+/// whose `k` is not below its `j` is refused in
+/// `../../pathological/data/sized-higher-order.gandr` (#1241).
+@[ checks ]
+def rec boundedHelped(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => { run q <- boundedAt(n, p); Succ(boundedHelped[<](q)) }
+  }
+}
+
+/// Two rebuilt through `boundedAt`.
+@[ runs("Succ(Succ(Zero))") ]
+def boundedTwo : () => Nat ;
+def boundedTwo = thunk { boundedHelped(Succ(Succ(Zero))) } ;

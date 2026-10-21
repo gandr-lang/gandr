@@ -33,6 +33,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::staged::Part;
 use gandr_core_term::staged::placed;
 use gandr_core_term::staged::rebuild;
+use gandr_kernel_core::stage_order::Fit;
 use gandr_kernel_core::stage_order::StageOrder;
 use gandr_kernel_core::stage_order::below;
 use gandr_kernel_term::PlacedChild;
@@ -363,12 +364,15 @@ fn wrapped(
 ///
 /// # Specification
 /// - requires: `spine` holds the call's arguments, first applied first;
-///   `declared` is the thunk of the definition's arrows.
+///   `declared` is the thunk of the definition's arrows; `order` holds every
+///   stage the arguments' types name.
 /// - ensures: one entry per binder: a stage read off an argument, a bounded
 ///   binder no argument shows read one step below its bound's stage, and no
 ///   stage otherwise. A mark at `<i` reads `i` off an argument bound `<s` at
 ///   `s`, and off nothing at a stage itself.
-/// - fails: `found`'s refusal.
+/// - fails: `found`'s refusal; [`CheckRefusal::StageNotBelow`] at the argument
+///   a bounded binder is read off when `order` does not place its stage below
+///   its bound's, where the body was checked with it.
 /// - panics: none.
 ///
 /// # Errors
@@ -377,12 +381,14 @@ fn wrapped(
 /// # Adequacy
 /// - hypothesis: L3 — a recursion's claim handed to a helper typed at a stage
 ///   instantiates it at the recursion's own; a call on a value at no stage
-///   instantiates nothing.
+///   instantiates nothing; a bounded binder read at its bound's own stage is
+///   refused.
 /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
 /// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
+/// - witness: `quantified::tests::a_bounded_binder_read_above_its_bound_is_refused_1241`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
 pub fn instantiation<Found>(
-    arena: &CoreArena,
+    (arena, order): (&CoreArena, &StageOrder),
     (declared, signature): (ValueTypeId, &StageSignature),
     spine: &[ValueId],
     mut found: Found,
@@ -395,6 +401,7 @@ where
         .iter()
         .map(|_| Maybe::Absent(Unread::Plain))
         .collect();
+    let mut shown: Vec<Option<ValueId>> = signature.bounds().iter().map(|_| None).collect();
     for mark in signature.marks() {
         let binder = usize::from(mark.binder());
         if !matches!(read.get(binder), Some(&Maybe::Absent(_))) {
@@ -440,14 +447,35 @@ where
         if let Some(slot) = read.get_mut(binder) {
             *slot = instance;
         }
+        if let Some(slot) = shown.get_mut(binder) {
+            *slot = Some(argument);
+        }
     }
     for (binder, &bound) in signature.bounds().iter().enumerate() {
-        if let StageBound::Below(over) = bound
-            && let Some(&Maybe::Absent(_)) = read.get(binder)
-            && let Some(&Maybe::Present(stage)) = read.get(usize::from(over))
-            && let Some(slot) = read.get_mut(binder)
-        {
-            *slot = Maybe::Present(below(stage));
+        let StageBound::Below(over) = bound
+        else {
+            continue;
+        };
+        let Some(&Maybe::Present(above)) = read.get(usize::from(over))
+        else {
+            continue;
+        };
+        match (read.get(binder), shown.get(binder)) {
+            (Some(&Maybe::Present(stage)), Some(&Some(argument))) => {
+                if order.fit(stage, below(above)) == Fit::NotBelow {
+                    return Err(CheckRefusal::StageNotBelow {
+                        at: argument,
+                        found: gandr_kernel_term::Standing::Staged(stage),
+                        bound: below(above),
+                    });
+                }
+            },
+            (Some(&Maybe::Absent(_)), _) => {
+                if let Some(slot) = read.get_mut(binder) {
+                    *slot = Maybe::Present(below(above));
+                }
+            },
+            (Some(&Maybe::Present(_)), Some(&None) | None) | (None, _) => {},
         }
     }
     Ok(read)

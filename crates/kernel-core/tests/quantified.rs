@@ -285,3 +285,101 @@ fn a_call_at_no_stage_reads_its_result_plain()
     let admitted = environment.add_decl(declaration);
     assert!(admitted.is_ok(), "{admitted:?}");
 }
+
+/// `boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) : F
+/// Nat[<j] = return y`: the plain type `U (Nat → Nat → F Nat)` with `x` at
+/// `j`, `y` at `k` and the result one below `j`.
+///
+/// # Specification
+/// trivial.
+fn bounded_at(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let returner = arena.comp_type_returner(nat_type);
+    let inner = arena.comp_type_arrow(nat_type, returner);
+    let outer = arena.comp_type_arrow(nat_type, inner);
+    let declared = arena.value_type_thunk(outer);
+    // Under λx λy: `y` 0.
+    let y = arena.value_variable(DeBruijnIndex::from(0));
+    let returned = arena.computation_return(y);
+    let second = arena.computation_lambda(returned);
+    let first = arena.computation_lambda(second);
+    let value = arena.value_thunk(first);
+    let at = |binder: usize, path: &[usize]| {
+        StageMark::new(
+            path.iter().copied().map(PlacedChild::from).collect(),
+            StageBinder::from(binder),
+            StageReach::At,
+        )
+    };
+    let signature = StageSignature::new(
+        vec![
+            StageBound::Unbounded,
+            StageBound::Below(StageBinder::from(0_usize)),
+        ],
+        vec![
+            at(0, &[0, 0]),
+            at(1, &[0, 1, 0]),
+            StageMark::new(
+                [0_usize, 1, 1, 0].map(PlacedChild::from).to_vec(),
+                StageBinder::from(0_usize),
+                StageReach::Below(StageDepth::from(core::num::NonZeroU32::MIN)),
+            ),
+        ],
+    );
+    let declaration = staging
+        .def(LevelSignature::monomorphic(), declared, value)
+        .staged(signature);
+    environment.add_decl(declaration)
+}
+
+/// #1241: `looping : U (Nat → F Nat) = fix h. λn. case n { zero ↦ return
+/// zero ; succ ↦ λp. bind ((force boundedAt) p n) λq. (force h) q }`. The
+/// call reads `j` at `p`'s stage and `k` at `n`'s, which is not below it: the
+/// result would type `n` below the recursion's stage and `h` would take it.
+/// Handing `p` twice reads `k` at `j`'s own stage, refused the same way.
+#[test]
+fn a_bounded_binder_read_above_its_bound_is_refused_1241()
+{
+    let mut environment = Environment::new();
+    let nat = nat(&mut environment).position();
+    let bounded = bounded_at(&mut environment, nat)
+        .expect("the helper checks at its minted stages")
+        .position();
+    for second in [1_u32, 0] {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let nat_type = arena.value_type_data(nat, vec![]);
+        let returner = arena.comp_type_returner(nat_type);
+        let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+        let on_zero = arena.computation_return(zero);
+        // Under λp: `p` 0, `n` 1, `h` 2.
+        let head = arena.value_constant(bounded);
+        let p = arena.value_variable(DeBruijnIndex::from(0));
+        let handed = arena.value_variable(DeBruijnIndex::from(second));
+        let called = spine(arena, head, &[p, handed]);
+        // Under λq: `q` 0, `h` 3.
+        let own = arena.value_variable(DeBruijnIndex::from(3));
+        let q = arena.value_variable(DeBruijnIndex::from(0));
+        let recursed = spine(arena, own, &[q]);
+        let bound = arena.computation_bind(called, recursed);
+        let on_successor = arena.computation_lambda(bound);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        let declared = unary(arena, nat);
+        let value = arena.value_thunk(fixpoint);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+        let refused = environment.add_decl(declaration);
+        assert!(
+            matches!(refused, Err(KernelError::StageNotBelow { .. })),
+            "handing {second}: {refused:?}"
+        );
+    }
+}
