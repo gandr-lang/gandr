@@ -544,6 +544,7 @@ impl<'source> Collector<'_, 'source>
             types: Vec::new(),
             type_members: Vec::new(),
             exported_as: BTreeMap::new(),
+            stated_at: Vec::new(),
             coerced: Coerced(true),
             stratum: Stratum::Parameter(functor),
         });
@@ -1101,6 +1102,7 @@ impl<'source> Collector<'_, 'source>
             types: Vec::new(),
             type_members: Vec::new(),
             exported_as: BTreeMap::new(),
+            stated_at: Vec::new(),
             coerced: body.coerced,
             stratum: Stratum::Instance(index),
         });
@@ -1165,6 +1167,7 @@ impl<'source> Collector<'_, 'source>
                 types: Vec::new(),
                 type_members: Vec::new(),
                 exported_as: BTreeMap::new(),
+                stated_at: Vec::new(),
                 ..entry
             });
             let _fresh = images.insert(StructureIndex(nested), image);
