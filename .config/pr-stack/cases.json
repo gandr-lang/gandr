@@ -350,6 +350,46 @@
     "output": "[{\"number\":1448,\"base\":\"surface-1365-file-doc\"}]"
   },
   {
+    "name": "a landing retargets an unlinked pull request on its branch, never one its linked stack carries (#1520)",
+    "program": "retarget.jq",
+    "args": { "landing": [1496, 1513] },
+    "input": [
+      {
+        "number": 1496,
+        "head": "soundness-164250",
+        "base": "main",
+        "created": "2026-10-21T16:21:24Z",
+        "landing": true,
+        "stack": 31
+      },
+      {
+        "number": 1513,
+        "head": "witness-lsp-survivors",
+        "base": "soundness-164250",
+        "created": "2026-10-21T16:30:52Z",
+        "landing": true,
+        "stack": 31
+      },
+      {
+        "number": 1519,
+        "head": "core-1471-methods",
+        "base": "witness-lsp-survivors",
+        "created": "2026-10-21T17:01:29Z",
+        "landing": false,
+        "stack": 31
+      },
+      {
+        "number": 1521,
+        "head": "surface-beside",
+        "base": "witness-lsp-survivors",
+        "created": "2026-10-21T17:05:00Z",
+        "landing": false,
+        "stack": null
+      }
+    ],
+    "output": "[{\"number\":1521,\"base\":\"witness-lsp-survivors\"}]"
+  },
+  {
     "name": "a restacked head re-runs the newer of its twins, cancelled by the older, and leaves an older cancelled one (#1381)",
     "program": "twins.jq",
     "input": [

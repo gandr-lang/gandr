@@ -668,9 +668,9 @@ cat "$scratch/rows"
 # lands on its own, in the merge queue or set to auto-merge, cannot take a link
 # (#1353); the pull request then opens unlinked on the top. GitHub closes an
 # unlinked pull request, unmerged, when a merge deletes its base branch
-# (#1420), so every open pull request on the branch of one that lands on its
-# own is retargeted to main (`retarget_landing`), and `pr:land` from the top
-# waits for that one to merge, then restacks and queues the chain.
+# (#1420), so every open, unlinked pull request on the branch of one that lands
+# on its own is retargeted to main (`retarget_landing`), and `pr:land` from the
+# top waits for that one to merge, then restacks and queues the chain.
 # `decide.jq` reads which, as it does for `pr:land`. The task prints which path
 # it took. With nothing open it opens against main.
 #
@@ -806,9 +806,11 @@ fi
 # queueing and before such a wait, every open pull request on a branch the
 # landing deletes, outside it, is retargeted to main (`retarget_landing`):
 # GitHub closes an unlinked pull request, unmerged, when a merge deletes its
-# base branch (#1420). Run from a branch that is not the top, the landing is
-# refused, naming the top. `.config/pr-stack/decide.jq` makes the decision
-# and `check:pr-stack` holds its cases.
+# base branch (#1420). One linked into the landing's stack is left alone: the
+# stack carries it, and GitHub refuses to change its base (#1520). Run from a
+# branch that is not the top, the landing is refused, naming the top.
+# `.config/pr-stack/decide.jq` makes the decision and `check:pr-stack` holds
+# its cases.
 #
 # Before queueing, the prose obligations are written into the pull request's
 # body against the rebased branch, its ticks carried, and the landing is
