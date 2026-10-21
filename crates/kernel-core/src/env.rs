@@ -37,7 +37,7 @@
 //! committed, and a rejection truncating to it would delete an admitted
 //! declaration's nodes, leaving the entries intact with their roots dangling.
 //! The environment carries a third mark, the **admission floor** — the
-//! watermark as of the most recent admission, checked or bypassed — and a
+//! watermark at the most recent admission, checked or bypassed — and a
 //! rejection truncates to this declaration's content-start clamped into
 //! `[admission floor, content-end]`. It therefore never reaches below committed
 //! content and never leaves an intermediate behind. For the ordinary
@@ -1195,7 +1195,7 @@ pub struct Environment
     arena: TermArena,
     /// The admitted declarations, in admission order.
     entries: Vec<AdmittedDeclaration>,
-    /// The admission floor: the watermark as of the most recent admission,
+    /// The admission floor: the watermark at the most recent admission,
     /// checked or bypassed. No rejection truncates below it.
     admission_floor: ArenaWatermark,
     /// The content-start marks of declarations staged into the arena and not
@@ -1852,10 +1852,10 @@ impl Environment
     /// # Specification
     /// - requires: nothing — a receipt for anything but an open abstract type
     ///   is refused.
-    /// - ensures: on success the atom is no longer manifest, its held
-    ///   declaration's scope is closed at the number of declarations admitted
-    ///   after it, and that extent is returned. Every other face of the
-    ///   environment is unchanged, and on failure nothing changes.
+    /// - ensures: on success the atom is not manifest, its held declaration's
+    ///   scope is closed at the number of declarations admitted after it, and
+    ///   that extent is returned. Every other face of the environment is
+    ///   unchanged, and on failure nothing changes.
     /// - provides: the close a producer sealing a module issues once its
     ///   members are admitted.
     /// - fails: [`KernelError::SealNotOpen`] when `atom` names no abstract type

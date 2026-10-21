@@ -8,7 +8,7 @@
 //! rather than interleaving with them: an item is addressed by core position,
 //! a match by the source coordinates its producer gives it, and one source
 //! item may lower to several core items, so there is no item a match belongs
-//! beside. A submission whose source records the producer no longer holds is
+//! beside. A submission whose source records the producer has dropped is
 //! named by an event of its own rather than left silent, because silence
 //! would read as a submission with no matches. The stream reads its inputs
 //! and computes nothing, so a run that adopted and a run that judged publish

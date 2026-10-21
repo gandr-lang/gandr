@@ -493,7 +493,7 @@ impl CoreArena
     ///   watermark.comp_types.min(entry.comp_types), words:
     ///   watermark.words.min(entry.words) }` — each family holds exactly its
     ///   watermark-many leading nodes, and a mark above the entry lengths
-    ///   leaves that family where it was. Removed nodes no longer resolve
+    ///   leaves that family where it was. Removed nodes do not resolve
     ///   immediately after truncation; later allocation can reuse their
     ///   indices, so the caller discards the corresponding ids.
     /// - provides: the wholesale truncation a per-run arena is torn down by.

@@ -320,9 +320,9 @@ impl Context
     /// # Specification
     /// - requires: `declared` resolves in the arena the caller reads this
     ///   context against; the context stores the id and never dereferences it.
-    /// - ensures: the zone's depth is one greater, every previously bound index
-    ///   is reachable at one more than it was, and index zero of the zone names
-    ///   `declared`, located at the register.
+    /// - ensures: the zone's depth is one greater, every index bound before the
+    ///   call is reachable at one more than it was, and index zero of the zone
+    ///   names `declared`, located at the register.
     /// - provides: the binder-opening half of every rule that goes under a
     ///   binder. The predicate observes depth, the new slot and the untouched
     ///   zone's depth; the shift of older slots is witnessed by lookup.

@@ -113,9 +113,9 @@ pub trait BlockStore
     ///
     /// # Errors
     /// [`RecordTreeError::UnknownNode`] — nothing is stored under the identity.
-    /// [`RecordTreeError::HashMismatch`] — the stored bytes no longer hash to
+    /// [`RecordTreeError::HashMismatch`] — the stored bytes do not hash to
     /// the identity.
-    /// [`RecordTreeError::MalformedNode`] — the stored bytes no longer decode
+    /// [`RecordTreeError::MalformedNode`] — the stored bytes do not decode
     /// as node material.
     /// [`RecordTreeError::UnsupportedVersion`] — the stored bytes name an
     /// unknown encoding version.
@@ -291,7 +291,7 @@ impl BlockStore for InMemoryBlockStore
     ///   recomputing rather than by trusting the map's key.
     /// - fails: [`RecordTreeError::UnknownNode`] when the map holds nothing
     ///   under `hash`, and the verification refusal unchanged when the stored
-    ///   bytes no longer authenticate.
+    ///   bytes do not authenticate.
     /// - panics: none.
     ///
     /// # Adequacy

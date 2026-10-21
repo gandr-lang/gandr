@@ -1726,7 +1726,7 @@ SupportLog::Recording { ref codata, .. } => codata.last().is_some_and(|entry| en
     ///
     /// # Adequacy
     /// - hypothesis: L3 — changing only a constructor table, or supplying a
-    ///   formerly missing declaration, changes a dependent judgment's answer; a
+    ///   declaration that was missing, changes a dependent judgment's answer; a
     ///   declaration's own fields read its forming signature, which no later
     ///   run can disagree with.
     /// - witness: `tests::native_formers::native_signature_support_and_adoption`

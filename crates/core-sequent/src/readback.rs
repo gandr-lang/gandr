@@ -430,8 +430,8 @@ impl<'run> Reading<'run>
         Ok(())
     }
 
-    /// The reading of one value, looking up its previously recorded
-    /// dependencies.
+    /// The reading of one value, looking up the dependencies already recorded
+    /// for it.
     ///
     /// # Specification
     /// - requires: recorded heap addresses and core readings still resolve,

@@ -1,7 +1,7 @@
 //! **Incremental checking over the core judgement**: a front end hands over
 //! one program per revision, as items under stable keys; the crate answers
 //! every item's typing exactly as the batch checker would, judging again only
-//! the items whose earlier answer no longer holds.
+//! the items whose earlier answer has gone stale.
 //!
 //! # Five pieces
 //!

@@ -151,13 +151,13 @@ impl Environment
     /// - requires: `bound` resolves in the domain arena this environment is
     ///   read against; the environment stores the id and never dereferences it.
     /// - ensures: the zone's depth is one greater, index zero of that zone
-    ///   names `bound`, every previously bound index of that zone is reachable
-    ///   at one more than it was, and the other zone is untouched.
+    ///   names `bound`, every index of that zone bound before the call is
+    ///   reachable at one more than it was, and the other zone is untouched.
     /// - provides: the binder-entering half of every rule that goes under a
     ///   binder, and the counterpart of the typing context's own binder
     ///   opening. The clause states the extended zone's depth, the new
-    ///   innermost binding, the shift of the previously innermost one, and the
-    ///   other zone's depth; the shift of every deeper index and the other
+    ///   innermost binding, the shift of the binding innermost before it, and
+    ///   the other zone's depth; the shift of every deeper index and the other
     ///   zone's contents would need owned entry snapshots, which the pinned
     ///   expansion evaluates even in a non-enforcing build.
     /// - fails: never.

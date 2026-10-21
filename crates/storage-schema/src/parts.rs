@@ -409,8 +409,8 @@ impl PartSet
         }
     }
 
-    /// Sets a previously minted key's bit again, undoing a removal or
-    /// confirming a mint.
+    /// Sets the bit of a key already minted, undoing a removal or confirming
+    /// a mint.
     ///
     /// # Specification
     /// - requires: the key is below the counter.

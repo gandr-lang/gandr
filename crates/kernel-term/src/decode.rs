@@ -2165,8 +2165,8 @@ impl<'bytes> ByteReader<'bytes>
 ///   and one under [`tags::KIND_ABSTRACT_LAWFUL`] those and its law's root, and
 ///   only a codata declaration carries observation roots.
 /// - provides: segment parsing, not semantic validation of producer claims. On
-///   failure the cursor and previously completed entries may have advanced;
-///   this operation does not roll back an entire segment.
+///   failure the cursor and the entries completed before the failure may have
+///   advanced; this operation does not roll back an entire segment.
 /// - fails: reserved or unknown kinds and marks, malformed names, occupied
 ///   reserved slots, malformed dialogue words, and entry, level or root
 ///   refusals.

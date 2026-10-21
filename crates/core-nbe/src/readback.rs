@@ -1026,7 +1026,7 @@ impl<'run> Machine<'run>
     ///
     /// # Specification
     /// - requires: nothing — an empty result stack is admissible input.
-    /// - ensures: the most recent value type, which is no longer on the stack.
+    /// - ensures: the most recent value type, removed from the stack.
     /// - provides: the one read of the value-type result stack.
     /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty.
     /// - panics: none.
@@ -1056,8 +1056,7 @@ impl<'run> Machine<'run>
     ///
     /// # Specification
     /// - requires: nothing — an empty result stack is admissible input.
-    /// - ensures: the most recent computation type, which is no longer on the
-    ///   stack.
+    /// - ensures: the most recent computation type, removed from the stack.
     /// - provides: the one read of the computation-type result stack.
     /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty.
     /// - panics: none.
@@ -1085,7 +1084,7 @@ impl<'run> Machine<'run>
     ///
     /// # Specification
     /// - requires: nothing — an empty result stack is admissible input.
-    /// - ensures: the most recent value term, which is no longer on the stack.
+    /// - ensures: the most recent value term, removed from the stack.
     /// - provides: the one read of the value result stack.
     /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty,
     ///   which a frame reaches only by claiming an operand its own tasks never
@@ -1125,8 +1124,7 @@ impl<'run> Machine<'run>
     ///
     /// # Specification
     /// - requires: nothing — an empty result stack is admissible input.
-    /// - ensures: the most recent computation term, which is no longer on the
-    ///   stack.
+    /// - ensures: the most recent computation term, removed from the stack.
     /// - provides: the one read of the computation result stack.
     /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty.
     /// - panics: none.

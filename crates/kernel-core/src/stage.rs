@@ -19,7 +19,7 @@
 //! `MissingHypothesis`; nested lifts return `StageMismatch`.
 //!
 //! [`replay`] independently forms both endpoints, derives every elementary
-//! reduct, and checks congruence only over previously proved child equations.
+//! reduct, and checks congruence only over child equations it has proved.
 //! Its local equivalence table connects checked equations, carries no imported
 //! answers, and is discarded on return. The ordinary check memo and its six
 //! binding conditions are unchanged. The auxiliary arena retains replay

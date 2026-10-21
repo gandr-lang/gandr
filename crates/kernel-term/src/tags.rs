@@ -14,7 +14,7 @@
 //!
 //! # What holds the version and what bumps it
 //!
-//! Assigning a previously unassigned tag or kind byte, or filling a reserved
+//! Assigning an unassigned tag or kind byte, or filling a reserved
 //! slot that framed itself from birth, **holds** the version. Reassigning an
 //! existing byte, or changing a field's shape, ordering, or width, **bumps**
 //! it.

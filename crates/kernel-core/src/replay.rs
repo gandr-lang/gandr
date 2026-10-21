@@ -2984,7 +2984,7 @@ where
     /// - ensures: for a computation whose head, under application, bind and
     ///   projection frames, forces `constant`, whose body is a suspended
     ///   fixpoint, the fixpoint refolded — its body opened at the constant and
-    ///   weakened past the binder it no longer reads, its evidence kept — under
+    ///   weakened past the binder it does not read, its evidence kept — under
     ///   those frames; otherwise [`Self::unfold_term`]'s reduct.
     /// - provides: the δ-step of [`Self::normalize_returned`] and
     ///   [`Self::run_held_operand`].

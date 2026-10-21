@@ -4,7 +4,7 @@
 //! # Every payload survives the truncation that produced it
 //!
 //! Admission truncates the arena on rejection, so an error carrying an arena id
-//! would name a node that no longer exists by the time the caller reads it.
+//! would name a node that is gone by the time the caller reads it.
 //! Every payload here is therefore **content**: a head former the caller can
 //! match on, and the offending node's content digest, which identifies it
 //! across the truncation and across arenas without holding a reference into

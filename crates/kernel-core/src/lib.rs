@@ -48,8 +48,8 @@
 //! one call. The lifetime rests on the two-wall discipline directly: a hit
 //! claims only its own history, and no kernel-checked support discipline
 //! exists. An outcome also carries arena ids even though the key does not, so
-//! an entry outliving its arena would hand back a type that no longer
-//! resolves.
+//! an entry outliving its arena would hand back a type that does not
+//! resolve.
 //!
 //! The verdict differential excludes operational refusal: with sound per-call
 //! histories, the typing answers agree when neither run reaches
@@ -585,7 +585,7 @@
 //! the library anyway. The alternative, an inline `mod tests { … }`, keeps a
 //! module's tests beside it at the price of a cone rebuild for every added
 //! test. Revisit this if the build tracks test-only items finely enough that
-//! an inline test module no longer dirties the library.
+//! an inline test module leaves the library clean.
 //!
 //! # Arithmetic and absence
 //!

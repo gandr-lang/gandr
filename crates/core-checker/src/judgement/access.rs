@@ -542,9 +542,9 @@ impl Machine<'_, '_>
     /// # Specification
     /// - requires: the body was judged.
     /// - ensures: the view's slot is closed and the held slot, and a linear
-    ///   index, no longer lent; for an exclusive access, one `AccessUnwind`
-    ///   frame, carrying the body's result, waits on the unwind's check; a
-    ///   shared access hands the body's result on.
+    ///   index, not lent; for an exclusive access, one `AccessUnwind` frame,
+    ///   carrying the body's result, waits on the unwind's check; a shared
+    ///   access hands the body's result on.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Unended`] at an
     ///   exclusive access whose view was neither resumed nor aborted;
     ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this

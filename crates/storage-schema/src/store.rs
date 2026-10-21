@@ -1114,7 +1114,7 @@ impl ArrowColumn
         }
     }
 
-    /// Records that a source no longer maps to a target in the inverse.
+    /// Removes a source's entry under a target from the inverse.
     ///
     /// # Specification
     /// trivial.
@@ -1152,7 +1152,7 @@ impl ValueColumn
         }
     }
 
-    /// Records that a part no longer holds a value in the inverse.
+    /// Removes a part's entry under a value from the inverse.
     ///
     /// # Specification
     /// trivial.
