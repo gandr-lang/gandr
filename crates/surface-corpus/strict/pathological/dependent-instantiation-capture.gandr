@@ -3,12 +3,11 @@ def comp(
   a : Type,
   b : Type,
   c : Type,
-  f : +U[ω] (a -> -F b),
-  g : +U[ω] (b -> -F c),
+  f : a => b,
+  g : b => c,
   x : a
 ) -> -F c {
-  run y <- f(x);
-  become g(y)
+  become g(f(x))
 }
 
 @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
@@ -17,10 +16,10 @@ def collide(
   b : Type,
   c : Type,
   d : Type,
-  u : +U[ω] (a -> -F c),
-  h : +U[ω] (c -> -F d)
-) -> -F (+U[ω] (a -> -F d)) {
-  return thunk { become comp(a, c, d, u, h) }
+  u : a => c,
+  h : c => d
+) -> -F (a => d) {
+  thunk { become comp(a, c, d, u, h) }
 }
 
 @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { thunk { comp(a, c, d, e, f) } } } } } } }") ]
@@ -29,8 +28,8 @@ def clean(
   q : Type,
   r : Type,
   s : Type,
-  u : +U[ω] (p -> -F r),
-  h : +U[ω] (r -> -F s)
-) -> -F (+U[ω] (p -> -F s)) {
-  return thunk { become comp(p, r, s, u, h) }
+  u : p => r,
+  h : r => s
+) -> -F (p => s) {
+  thunk { become comp(p, r, s, u, h) }
 }

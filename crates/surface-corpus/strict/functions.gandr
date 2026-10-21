@@ -1,10 +1,10 @@
 @[ runs("fn (a) { a }") ]
 def identity : Integer => Integer ;
-def identity = thunk { fn (x) { return x } } ;
+def identity = fn (x) { x } ;
 
 @[ runs("fn (a) { fn (b) { a } }") ]
 def first : (Integer, Integer) => Integer ;
-def first = thunk { fn (x) { fn (y) { return x } } } ;
+def first = fn (x) { fn (y) { x } } ;
 
 @[ runs("42") ]
 def answer : Integer ;
@@ -20,4 +20,4 @@ def chosen = thunk { become (force first)(answer)(7) } ;
 
 @[ runs("\"later\"") ]
 def delayed : () => String ;
-def delayed = thunk { return "later" } ;
+def delayed = thunk { "later" } ;
