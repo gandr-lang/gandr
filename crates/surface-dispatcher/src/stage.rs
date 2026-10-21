@@ -1,14 +1,14 @@
 //! The `stage` verb: build staging observer programs and check each through
-//! the checker's program entry, on a pool of the driver's width.
+//! the checker's program entry, on the driver's pool.
 //!
 //! # The pool is the driver's; the checker forks through it
 //!
 //! [`gandr_core_checker::staging::check`] names no thread: it hands each
-//! stage's independent jobs to a [`Fork`]. Here that fork is a `rayon` pool of
-//! the invocation's width, built once per invocation and entered once per
-//! program; at one thread it is the checker's [`Serial`] fork and no pool is
-//! built. Every program of one invocation is checked through one memo, in
-//! order, so a later program drafts from the templates an earlier one left.
+//! stage's independent jobs to a [`Fork`](gandr_core_checker::fork::Fork).
+//! Here that fork is the driver's [`Pool`], entered once per program; at one
+//! thread it is the checker's [`Serial`] fork and no pool is built. Every
+//! program of one invocation is checked through one memo, in order, so a
+//! later program drafts from the templates an earlier one left.
 //!
 //! # The stage verb checks staged programs on a stealing pool
 //!
@@ -34,48 +34,27 @@
 //! exit. The digest is a hash of each value's structural rendering and holds on
 //! one build; it is not a format.
 //!
-//! **`rayon`, built once per run.** The checker names no thread: it forks
-//! through `gandr_core_checker::fork::Fork`, and the dispatcher's fork is a
-//! `rayon` pool of the run's width, built once per run and entered once per
-//! program. Each forked stage spawns one task per worker, at most one per item;
-//! the tasks take items from one shared cursor, and each makes its worker state
-//! — an arena snapshot, a drafter — on its first item, so a stage clones no
-//! more snapshots than it has busy workers. The readmissions and the family
-//! admissions are the two halves of one `rayon::join`, and each half forks per
-//! item inside it. At one thread no pool is built, and the checker's serial
-//! fork is the reference every width is tested against.
-//!
-//! The check forks below the source and nests a per-item fork inside each half
-//! of a join, which is the walk's recorded reversal for `rayon`. The
-//! alternatives were these:
-//!
-//! - _`std::thread::scope` and a cursor per stage, the walk's pool._ A per-item
-//!   fork inside each half of a join starts a second set of threads beside the
-//!   first, so the halves either oversubscribe the cores or run one after the
-//!   other. Reversal: a check whose stages do not nest.
-//! - _[`chili`](https://crates.io/crates/chili), a heartbeat-scheduled `join`._
-//!   It offers `join` without a scope for the per-item fork, and one maintainer
-//!   carries it. Reversal: a scope and a release history in it, and a measured
-//!   gain on this verb.
-//!
-//! `rayon` is the ecosystem's standard data-parallel pool, maintained by many
-//! contributors, with default features off; it brings `rayon-core` and the
-//! `crossbeam` deque and epoch crates. The choice reverses on an advisory
-//! against `rayon` or `rayon-core` that no release fixes, an unmaintained mark,
-//! or a measured loss against scoped threads on this verb.
+//! **On the driver's pool.** The checker names no thread: it forks through
+//! `gandr_core_checker::fork::Fork`, and the dispatcher's fork runs on the
+//! driver's pool (the `pool` module, which records the choice of `rayon`),
+//! entered once per program. Each forked stage spawns one task per worker, at
+//! most one per item; the tasks take items from one shared cursor, and each
+//! makes its worker state — an arena snapshot, a drafter — on its first item,
+//! so a stage clones no more snapshots than it has busy workers. The
+//! readmissions and the family admissions are the two halves of one
+//! `rayon::join`, and each half forks per item inside it. At one thread no
+//! pool is built, and the checker's serial fork is the reference every width
+//! is tested against.
 
 use core::fmt;
 use core::fmt::Write as _;
 use core::hash::Hasher as _;
-use core::num::NonZeroUsize;
 use core::str::FromStr;
 use core::time::Duration;
 use std::hash::DefaultHasher;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use anodized::spec;
-use gandr_core_checker::fork::Fork;
 use gandr_core_checker::fork::Serial;
 use gandr_core_checker::staging;
 use gandr_core_checker::staging::Allowance;
@@ -100,7 +79,9 @@ use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::Type;
 use gandr_kernel_term::stage::TypeId;
 
-use crate::width::Threads;
+use crate::pool::Forked;
+use crate::pool::Pool;
+use crate::pool::PoolFault;
 use crate::width::Width;
 
 /// The work each job of a staged check may spend: ample for every program the
@@ -331,172 +312,8 @@ impl Clock for Monotonic
     }
 }
 
-/// The pool the driver's width runs on, as the checker's fork: each forked
-/// stage spawns one task per worker, at most one per item, and each task
-/// takes items from one shared cursor until none is left.
-///
-/// # Specification
-/// - provides: a [`Fork`] whose every task makes its worker state once, on its
-///   first item, so a stage clones no more snapshots than it has workers with
-///   work; halves join through `rayon::join`.
-/// - panics: none of its own; a job's panic resumes at the fork.
-/// - executable: none — the schedule is the pool's.
-///
-/// # Adequacy
-/// - hypothesis: L2 — programs checked at three workers and at the host's width
-///   print the serial run, digest and verdict.
-/// - witness: `stage::tests::every_width_stages_the_serial_run`
-#[derive(Clone, Copy, Debug)]
-#[repr(transparent)]
-struct Pooled(Threads);
-
-impl Fork for Pooled
-{
-    /// Run `job` on every item from one task per worker, each taking items
-    /// from a shared cursor.
-    ///
-    /// # Specification
-    /// - ensures: `job` runs once per item; each task makes its state on its
-    ///   first item and keeps it for the rest. A stage of one item, or a pool
-    ///   of one worker, runs on the calling thread.
-    /// - panics: a job's panic, at the end of the scope.
-    /// - executable: none — the schedule is the pool's.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — no item, one item, fewer items than workers and many
-    ///   more, counting each item's visits and the states made, distinguish a
-    ///   skipped or repeated item and a state made per item or per idle worker.
-    /// - witness: `stage::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
-    #[inline]
-    fn each<Item, State, Start, Job>(
-        &self,
-        items: &mut [Item],
-        start: Start,
-        job: Job,
-    ) where
-        Item: Send,
-        Start: Fn() -> State + Sync,
-        Job: Fn(&mut State, &mut Item) + Sync,
-    {
-        let workers = NonZeroUsize::from(self.0).get().min(items.len());
-        if workers <= 1 {
-            Serial.each(items, start, job);
-            return;
-        }
-        let cursor = Mutex::new(items.iter_mut());
-        rayon::scope(|scope| {
-            for _ in 0 .. workers {
-                scope.spawn(|_| {
-                    let mut state = None;
-                    loop {
-                        // A poisoned cursor only means another task's job
-                        // panicked; the panic resumes when the scope ends.
-                        let next = match cursor.lock() {
-                            Ok(mut items) => items.next(),
-                            Err(poisoned) => poisoned.into_inner().next(),
-                        };
-                        let Some(item) = next
-                        else {
-                            break;
-                        };
-                        job(state.get_or_insert_with(&start), item);
-                    }
-                });
-            }
-        });
-    }
-
-    /// Run both halves through `rayon::join`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn join<Left, Right, LeftOutput, RightOutput>(
-        &self,
-        left: Left,
-        right: Right,
-    ) -> (LeftOutput, RightOutput)
-    where
-        Left: FnOnce() -> LeftOutput + Send,
-        Right: FnOnce() -> RightOutput + Send,
-        LeftOutput: Send,
-        RightOutput: Send,
-    {
-        rayon::join(left, right)
-    }
-}
-
-/// Where a staged check's jobs run.
-#[derive(Debug)]
-enum Workers
-{
-    /// The calling thread alone.
-    Serial,
-    /// A pool, and the fork over it.
-    Pooled(rayon::ThreadPool, Pooled),
-}
-
-impl Workers
-{
-    /// Check `program` through `memo` on these workers.
-    ///
-    /// # Specification
-    /// - ensures: what [`staging::check`] returns for the program at the verb's
-    ///   gate and allowance, on the calling thread or inside the pool.
-    /// - fails: as [`staging::check`].
-    /// - panics: none of its own.
-    /// - executable: none — a dispatch to [`staging::check`], whose contract
-    ///   carries the postcondition.
-    ///
-    /// # Errors
-    /// Returns the [`ProgramError`] of the first source that failed.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — as [`Pooled`].
-    /// - witness: `stage::tests::every_width_stages_the_serial_run`
-    fn check(
-        &self,
-        program: staging::Program,
-        memo: &mut Memo,
-        clock: &Monotonic,
-    ) -> Result<Checked, ProgramError>
-    {
-        match *self {
-            Self::Serial => staging::check(program, memo, GATE, ALLOWANCE, &Serial, clock),
-            Self::Pooled(ref pool, ref fork) => {
-                pool.install(|| staging::check(program, memo, GATE, ALLOWANCE, fork, clock))
-            },
-        }
-    }
-}
-
-/// Why the verb could not start its pool.
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct PoolFault(rayon::ThreadPoolBuildError);
-
-impl fmt::Display for PoolFault
-{
-    /// Name the pool's error.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(f, "the worker pool did not start: {}", self.0)
-    }
-}
-
-impl core::error::Error for PoolFault
-{
-}
-
 /// The `stage` verb's run, not yet started: its programs, in order, and the
-/// width to check them at.
+/// width the driver's pool runs them at.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Staging
 {
@@ -920,15 +737,14 @@ impl Staging
     }
 
     /// Build and check every program in order through one memo, forking each
-    /// program's stages on a pool of the run's width.
+    /// program's stages on `pool`.
     ///
     /// # Specification
     /// - ensures: one check per program, in order: the `n`th program is
     ///   harvested as producer `n` and drafts from the templates every earlier
-    ///   one left. At one thread no pool is built and every stage runs on the
-    ///   calling thread; wider, one pool of that many workers is built and
-    ///   every program checks inside it. Every line, the digest and the verdict
-    ///   are the same at every width.
+    ///   one left. At one thread every stage runs on the calling thread; wider,
+    ///   every program checks inside the pool. Every line, the digest and the
+    ///   verdict are the same at every width.
     /// - fails: the pool's build error.
     /// - panics: none of its own.
     ///
@@ -942,27 +758,20 @@ impl Staging
     #[inline]
     #[spec(captures: [programs = self.programs.len()],
         ensures: |output| output.as_ref().ok().is_none_or(|run| run.programs.len() == programs))]
-    pub fn run(self) -> Result<StageRun, PoolFault>
+    pub fn run(
+        self,
+        pool: &Pool,
+    ) -> Result<StageRun, PoolFault>
     {
-        let threads = self.width.threads();
-        let workers = if threads == Threads::ONE {
-            Workers::Serial
-        }
-        else {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(NonZeroUsize::from(threads).get())
-                .build()
-                .map_err(PoolFault)?;
-            Workers::Pooled(pool, Pooled(threads))
-        };
+        let forked = pool.forked()?;
         let clock = Monotonic(Instant::now());
         let mut memo = Memo::default();
         let mut programs = Vec::with_capacity(self.programs.len());
         for (index, spec) in self.programs.into_iter().enumerate() {
             let outcome = match spec.program(ProgramId(index)) {
-                Ok(program) => workers
-                    .check(program, &mut memo, &clock)
-                    .map_err(StageFault::Checked),
+                Ok(program) => {
+                    check(&forked, program, &mut memo, &clock).map_err(StageFault::Checked)
+                },
                 Err(error) => Err(StageFault::Built(error)),
             };
             programs.push(Staged { spec, outcome });
@@ -971,13 +780,44 @@ impl Staging
     }
 }
 
+/// Check `program` through `memo` where `forked` runs its jobs.
+///
+/// # Specification
+/// - ensures: what [`staging::check`] returns for the program at the verb's
+///   gate and allowance, on the calling thread or inside the pool.
+/// - fails: as [`staging::check`].
+/// - panics: none of its own.
+/// - executable: none — a dispatch to [`staging::check`], whose contract
+///   carries the postcondition.
+///
+/// # Errors
+/// Returns the [`ProgramError`] of the first source that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`Pool`].
+/// - witness: `stage::tests::every_width_stages_the_serial_run`
+fn check(
+    forked: &Forked<'_>,
+    program: staging::Program,
+    memo: &mut Memo,
+    clock: &Monotonic,
+) -> Result<Checked, ProgramError>
+{
+    match *forked {
+        Forked::Serial => staging::check(program, memo, GATE, ALLOWANCE, &Serial, clock),
+        Forked::Pooled(pool, ref fork) => {
+            pool.install(|| staging::check(program, memo, GATE, ALLOWANCE, fork, clock))
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
-    use core::sync::atomic::AtomicUsize;
-    use core::sync::atomic::Ordering;
+    use core::num::NonZeroUsize;
 
     use super::*;
+    use crate::width::Threads;
 
     #[test]
     fn spellings_read_and_print_alike()
@@ -1007,17 +847,19 @@ mod tests
         }
     }
 
-    /// The run of `programs` at `width`: each program's line, the digest and
+    /// The run of `programs` on `pool`: each program's line, the digest and
     /// the verdict.
     ///
     /// # Specification
     /// trivial.
     fn printed(
         programs: &[ProgramSpec],
-        width: Width,
+        pool: &Pool,
     ) -> (Vec<String>, RunDigest, StageVerdict)
     {
-        let run = Staging::new(programs.to_vec(), width).run().unwrap();
+        let run = Staging::new(programs.to_vec(), pool.width())
+            .run(pool)
+            .unwrap();
         (
             run.programs().iter().map(ToString::to_string).collect(),
             run.digest(),
@@ -1031,7 +873,7 @@ mod tests
         let three = Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2)));
         let spellings = ["pow:0..8", "double:0..8", "pow:0..12", "double:4..12"]
             .map(|spelling| spelling.parse::<ProgramSpec>().unwrap());
-        let serial = printed(&spellings, Width::SERIAL);
+        let serial = printed(&spellings, &Pool::new(Width::SERIAL));
         assert_eq!(serial.2, StageVerdict::Readmitted);
         assert!(
             serial.0[0].starts_with("pow:0..8: 9 of 9 certificates readmitted;"),
@@ -1043,45 +885,18 @@ mod tests
             "{:?}",
             serial.0
         );
+        // One pool serves every run at its width, as the driver's does.
         for width in [three, Width::PerformanceCores] {
-            assert_eq!(printed(&spellings, width), serial, "{width:?}");
+            let pool = Pool::new(width);
+            assert_eq!(printed(&spellings, &pool), serial, "{width:?}");
+            assert_eq!(printed(&spellings, &pool), serial, "{width:?}, again");
         }
         let reordered = ["double:0..8", "pow:0..8"].map(|spelling| spelling.parse().unwrap());
+        let pool = Pool::new(Width::SERIAL);
         assert_ne!(
-            printed(&reordered, Width::SERIAL).1,
-            printed(&spellings[.. 2], Width::SERIAL).1
+            printed(&reordered, &pool).1,
+            printed(&spellings[.. 2], &pool).1
         );
-    }
-
-    #[test]
-    fn a_pool_visits_each_item_once_from_a_state_per_busy_worker()
-    {
-        let workers = 4_usize;
-        let fork = Pooled(Threads::from(NonZeroUsize::new(workers).unwrap()));
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(workers)
-            .build()
-            .unwrap();
-        for count in [0_usize, 1, 3, 64] {
-            let made = AtomicUsize::new(0);
-            let mut visits = vec![0_usize; count];
-            pool.install(|| {
-                fork.each(
-                    &mut visits,
-                    || {
-                        made.fetch_add(1, Ordering::Relaxed);
-                    },
-                    |_state, visited| *visited = visited.checked_add(1).unwrap(),
-                );
-            });
-            assert!(visits.iter().all(|&visited| visited == 1), "{count} items");
-            let made = made.load(Ordering::Relaxed);
-            assert_eq!(made == 0, count == 0, "{count} items");
-            assert!(
-                made <= count.min(workers),
-                "{made} states for {count} items"
-            );
-        }
     }
 
     #[test]

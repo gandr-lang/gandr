@@ -604,6 +604,7 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
+ "rayon",
  "ringbuf",
  "rtrb",
  "serde",

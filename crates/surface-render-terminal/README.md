@@ -38,6 +38,7 @@ use core::ops::ControlFlow;
 
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::entries;
@@ -47,7 +48,7 @@ use gandr_surface_render_terminal::render;
 
 let verb = Verb::Check(Goals::Gated);
 let walk = Walk::new(vec![std::path::PathBuf::from("broken.gandr")]);
-let ControlFlow::Continue(_report) = walk.visit(Width::SERIAL, |step| -> ControlFlow<core::convert::Infallible> {
+let ControlFlow::Continue(_report) = walk.visit(&Pool::new(Width::SERIAL), |step| -> ControlFlow<core::convert::Infallible> {
     for diagnostic in entries(&step, verb) {
         println!("{}", render(&diagnostic, RenderStyle::Plain, Verbosity::User));
     }

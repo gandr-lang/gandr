@@ -44,6 +44,7 @@ use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_lsp::Spelling;
@@ -81,7 +82,8 @@ fn closure_check()
     else {
         panic!("check dispatches a walk");
     };
-    let ControlFlow::Continue(report) = walk.visit(width, |_step| ControlFlow::<()>::Continue(()))
+    let ControlFlow::Continue(report) =
+        walk.visit(&Pool::new(width), |_step| ControlFlow::<()>::Continue(()))
     else {
         panic!("the visitor never stops the walk");
     };

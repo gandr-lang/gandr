@@ -4651,6 +4651,7 @@ mod tests
         use crate::component::lay_out;
         use crate::compose::Composed;
         use crate::evaluate::Evaluation;
+        use crate::pool::Pool;
         use crate::walk::Step;
         use crate::walk::Walk;
         use crate::walk::tests::Scratch;
@@ -4680,7 +4681,7 @@ mod tests
         let grammar = built_in().expect("the built-in grammar builds");
         let mut reprinted = Vec::new();
         let ControlFlow::Continue(_) = Walk::new(vec![scratch.root().join("fixture")]).visit(
-            Width::SERIAL,
+            &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
                 let Step::Source {
                     path,

@@ -14,6 +14,7 @@ use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
@@ -406,8 +407,9 @@ mod sweeps
         let drawn = visited.len();
         let mut scripted = 0_usize;
         let mut over = 0_usize;
-        let ControlFlow::Continue(_report) =
-            Walk::new(visited).visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(_report) = Walk::new(visited).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 let Step::Source {
                     path, root, text, ..
                 } = step
@@ -423,7 +425,8 @@ mod sweeps
                     scripted = scripted.saturating_add(1);
                 }
                 ControlFlow::Continue(())
-            });
+            },
+        );
         eprintln!("{over} sources past the script ceiling, scripted by the `sweeps` profile");
         assert_eq!(
             scripted.saturating_add(over),

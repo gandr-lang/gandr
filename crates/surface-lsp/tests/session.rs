@@ -20,6 +20,7 @@ use gandr_surface_diagnostics::AnnotationKind;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -798,9 +799,10 @@ fn a_refusal_is_published_where_the_model_locates_it()
     let text = "def answer = 42 ;\ndef broken = missing ;\n";
     std::fs::write(&path, text).expect("the source is written");
 
-    let ControlFlow::Break(found) = Walk::new(vec![path.clone()]).visit(Width::SERIAL, |step| {
-        ControlFlow::Break(entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>())
-    })
+    let ControlFlow::Break(found) = Walk::new(vec![path.clone()])
+        .visit(&Pool::new(Width::SERIAL), |step| {
+            ControlFlow::Break(entries(&step, Verb::Check(Goals::Reported)).collect::<Vec<_>>())
+        })
     else {
         panic!("the walk reaches the source");
     };
@@ -853,8 +855,9 @@ fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
     let mut expected = BTreeMap::new();
     let mut sources = Vec::new();
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = walk.visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path, text, base, ..
             } = step
@@ -897,7 +900,8 @@ fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
             let _prior = expected.insert(source.uri.clone(), reports);
             sources.push(source);
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert!(
         sources.len() > 100_usize,
         "the corpus is walked whole: {} sources",
@@ -1431,15 +1435,17 @@ mod sweeps
         let root = corpus();
         let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
         let mut expected_uris = alloc::collections::BTreeSet::new();
-        let ControlFlow::Continue(_report) =
-            walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+        let ControlFlow::Continue(_report) = walk.visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
                 let Step::Source { path, .. } = step
                 else {
                     panic!("a readable corpus source");
                 };
                 let _inserted = expected_uris.insert(uri(path));
                 ControlFlow::Continue(())
-            });
+            },
+        );
         assert_eq!(
             all.iter()
                 .map(|source| uri(&source.path))

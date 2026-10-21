@@ -27,6 +27,7 @@ use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Walk;
@@ -592,8 +593,9 @@ fn every_judged_node_answers_at_its_own_span()
     let mut astray = Vec::new();
     let mut nodes = 0_usize;
     let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = walk.visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path,
                 root,
@@ -724,7 +726,8 @@ fn every_judged_node_answers_at_its_own_span()
                 }
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     let mut failures = Vec::new();
     for key in &met {
         match standings.get(key.as_str()) {

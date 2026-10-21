@@ -22,6 +22,7 @@ use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
@@ -59,8 +60,9 @@ fn every_source_submits_as_the_walk_composes_it()
         corpus(CorpusRoot::Fixture),
     ]);
     let mut sources = Sources::default();
-    let ControlFlow::Continue(_report) =
-        walk.visit(Width::SERIAL, |step| -> ControlFlow<Infallible> {
+    let ControlFlow::Continue(_report) = walk.visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
             let Step::Source {
                 path,
                 root,
@@ -158,7 +160,8 @@ fn every_source_submits_as_the_walk_composes_it()
                 );
             }
             ControlFlow::Continue(())
-        });
+        },
+    );
     assert!(
         sources.strict > 0_usize,
         "the strict root is populated: {sources:?}"

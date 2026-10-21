@@ -857,6 +857,7 @@ mod tests
     use crate::Goals;
     use crate::Lints;
     use crate::LoweringCount;
+    use crate::Pool;
     use crate::SourceRoot;
     use crate::Standing;
     use crate::Step;
@@ -1006,7 +1007,7 @@ mod tests
         let mut printed = Vec::new();
         let ControlFlow::Continue(_report) =
             Walk::new(vec![scratch.root().join("corpus/fixture/importer.gandr")]).visit(
-                Width::SERIAL,
+                &Pool::new(Width::SERIAL),
                 |step| -> ControlFlow<Infallible> {
                     printed.extend(
                         entries(&step, Verb::Test)
@@ -1393,7 +1394,7 @@ mod tests
                 );
             }
         };
-        let faulted = Walk::new(vec![PathBuf::new()]).visit(Width::SERIAL, |fault| {
+        let faulted = Walk::new(vec![PathBuf::new()]).visit(&Pool::new(Width::SERIAL), |fault| {
             assert!(
                 matches!(fault, Step::Fault { .. }),
                 "an empty path is a fault, not an empty walk"
