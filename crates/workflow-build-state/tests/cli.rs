@@ -115,3 +115,40 @@ fn a_malformed_invocation_exits_two()
         .unwrap();
     assert!(help.status.success());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn an_unwritable_report_exits_two_after_the_prune()
+{
+    let root = std::env::temp_dir().join(format!("build-state-cli-{}-full", std::process::id()));
+    let profile = root.join("debug");
+    let deps = profile.join("deps");
+    std::fs::create_dir_all(&deps).unwrap();
+    std::fs::write(deps.join(RECORDED), "lib").unwrap();
+    std::fs::write(deps.join(SUPERSEDED), "old").unwrap();
+    let units = root.join("units.jsonl");
+    std::fs::write(
+        &units,
+        MESSAGES
+            .replace("LIBRARY", &deps.join(RECORDED).display().to_string())
+            .replace("FINISHED", r#"{"reason":"build-finished","success":true}"#),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_build-state"))
+        .arg("prune")
+        .arg("--profile-dir")
+        .arg(&profile)
+        .arg(&units)
+        .stdout(std::fs::File::create("/dev/full").unwrap())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2_i32));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("build-state: standard output: "),
+        "{stderr}"
+    );
+    assert!(deps.join(RECORDED).exists());
+    assert!(!deps.join(SUPERSEDED).exists());
+    std::fs::remove_dir_all(&root).unwrap();
+}

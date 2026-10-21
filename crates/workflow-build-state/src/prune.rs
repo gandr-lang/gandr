@@ -442,4 +442,88 @@ mod tests
             Err(BuildStateError::Io { ref path, .. }) if *path == profile
         ));
     }
+
+    #[test]
+    fn a_profile_that_is_a_file_is_refused()
+    {
+        let root = std::env::temp_dir().join(format!("build-state-{}-file", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let profile = root.join("debug");
+        fs::write(&profile, "not a profile").unwrap();
+        assert!(matches!(
+            prune(&profile, &Units::default()),
+            Err(BuildStateError::Io { ref path, ref message })
+                if *path == profile && message == "not a directory"
+        ));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_unit_directory_that_cannot_be_listed_is_refused()
+    {
+        let root =
+            std::env::temp_dir().join(format!("build-state-{}-unlisted", std::process::id()));
+        let profile = root.join("debug");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("deps"), "a file where the units live").unwrap();
+        assert!(matches!(
+            prune(&profile, &Units::default()),
+            Err(BuildStateError::Io { ref path, .. }) if *path == profile.join("deps")
+        ));
+        assert!(profile.join("deps").is_file());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_uplifted_copy_keeps_every_unit_of_its_stem()
+    {
+        let root = std::env::temp_dir().join(format!("build-state-{}-copied", std::process::id()));
+        let deps = root.join("debug").join("deps");
+        fs::create_dir_all(&deps).unwrap();
+        fs::write(deps.join("my_tool-00000000000000c1"), "new").unwrap();
+        fs::write(deps.join("my_tool-00000000000000c2"), "old").unwrap();
+        fs::write(deps.join("other-00000000000000f4"), vec![0_u8; 5]).unwrap();
+        let profile = root.join("debug");
+        for copy in ["my-tool", "my_tool"] {
+            fs::copy(deps.join("my_tool-00000000000000c1"), profile.join(copy)).unwrap();
+        }
+        let messages = format!(
+            concat!(
+                r#"{{"reason":"compiler-artifact","filenames":["{p}/my-tool","{p}/my_tool"]}}"#,
+                "\n",
+                r#"{{"reason":"build-finished","success":true}}"#,
+                "\n",
+            ),
+            p = profile.display()
+        );
+        let mut units = Units::default();
+        units
+            .read(Path::new("units.jsonl"), Messages::from(messages.as_str()))
+            .unwrap();
+        let pruned = prune(&profile, &units).unwrap();
+        assert_eq!((pruned.removed, pruned.bytes, pruned.kept), (1, 5, 2));
+        assert!(deps.join("my_tool-00000000000000c1").exists());
+        assert!(deps.join("my_tool-00000000000000c2").exists());
+        assert!(!deps.join("other-00000000000000f4").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn an_entry_whose_name_is_not_unicode_is_untouched()
+    {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt as _;
+
+        let root = std::env::temp_dir().join(format!("build-state-{}-bytes", std::process::id()));
+        let deps = root.join("debug").join("deps");
+        fs::create_dir_all(&deps).unwrap();
+        let unreadable = deps.join(OsStr::from_bytes(b"\xff-00000000000000f5"));
+        fs::write(&unreadable, "kept").unwrap();
+        fs::write(deps.join("stale-00000000000000f6"), "gone").unwrap();
+        let pruned = prune(&root.join("debug"), &Units::default()).unwrap();
+        assert_eq!((pruned.removed, pruned.kept), (1, 0));
+        assert!(unreadable.exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
