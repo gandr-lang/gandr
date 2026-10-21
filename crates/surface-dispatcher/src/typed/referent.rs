@@ -793,6 +793,27 @@ impl Referents
         best
     }
 
+    /// Every use lying wholly inside `within`, ascending by start, each with
+    /// what it refers to.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn within(
+        &self,
+        within: ByteSpan,
+    ) -> impl Iterator<Item = &(ByteSpan, Target)>
+    {
+        let first = self
+            .uses
+            .partition_point(|&(span, _)| span.start() < within.start());
+        self.uses
+            .get(first ..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(move |&&(span, _)| span.start() < within.end())
+            .filter(move |&&(span, _)| span.end() <= within.end())
+    }
+
     /// The referent of the declaration admitting `constant`.
     ///
     /// # Specification

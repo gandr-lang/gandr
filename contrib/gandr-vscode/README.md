@@ -10,6 +10,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Check the connection](#check-the-connection)
 - [Hover colours](#hover-colours)
 - [Drop to import](#drop-to-import)
+- [Paste with imports](#paste-with-imports)
 - [Develop the extension](#develop-the-extension)
 
 ## Requirements
@@ -112,6 +113,10 @@ The server colours a hover by the roles its semantic tokens carry: the extension
 ## Drop to import
 
 Drag `.gandr` files from the Explorer into a gandr editor, holding Shift, and each source the document does not import yet is imported: the server writes an `import "…" ;` line for it after the document's last import, or at its start when it has none, addressed from the document's directory. Nothing is written where the files were dropped. A drop of only sources the document imports already falls back to the editor's own drop.
+
+## Paste with imports
+
+Copy text from one gandr editor and paste it into another, and the paste control offers _Paste with gandr imports_: the pasted text, plus an `import "…" ;` line for each source declaring a name it uses that the document does not import yet. A name declared in the text copied, or bound inside it, needs no import. The editor's plain paste stays the default; set `"editor.pasteAs.preferences": ["text.updateImports.gandr"]` to make the imports the default. A paste into the document copied from adds nothing.
 
 ## Develop the extension
 

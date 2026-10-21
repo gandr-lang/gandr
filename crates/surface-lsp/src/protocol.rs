@@ -349,6 +349,18 @@ pub struct ImportFilesParams
     pub files: Vec<DocumentUri>,
 }
 
+/// The parameters of `gandr/copiedSources`: the document copied from and the
+/// ranges copied.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CopiedSourcesParams
+{
+    /// The document copied from.
+    pub text_document: DocumentIdentifier,
+    /// The ranges copied.
+    pub ranges: Vec<Range>,
+}
+
 /// A document, by its URI alone.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[repr(transparent)]
@@ -2667,6 +2679,9 @@ pub enum Answer
     /// What an inlay-hint request answers for an open document: the hints
     /// over the range asked about, in document order.
     Hints(Vec<InlayHint>),
+    /// What `gandr/copiedSources` answers for an open document: the sources
+    /// declaring what the copied ranges name, ascending.
+    Sources(Vec<DocumentUri>),
     /// What a selection-range request answers for an open document: one per
     /// position asked about, in order.
     Selections(Vec<SelectionRange>),

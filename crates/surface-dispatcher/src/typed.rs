@@ -2108,6 +2108,35 @@ impl TypeTable
         )
     }
 
+    /// Every written name lying wholly inside `within` and what it refers to,
+    /// ascending by where the name starts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each use the table's referent index keeps whose span, in the
+    ///   source's own text, starts at or after `within`'s start and ends at or
+    ///   before its end, with its referent, ascending by start; a use crossing
+    ///   either end of `within` is not answered.
+    /// - provides: the names a copied range of the source uses.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a lazy iterator over the index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a range holding a declaration's use and a parameter's
+    ///   use answers both, a range ending inside a name answers none of it.
+    /// - witness: `typed::tests::the_uses_within_a_range_answer_whole`
+    #[inline]
+    pub fn uses_within(
+        &self,
+        within: ByteSpan,
+    ) -> impl Iterator<Item = (ByteSpan, Referent)> + '_
+    {
+        self.referents
+            .within(within)
+            .map(|&(span, target)| (span, target.referent()))
+    }
+
     /// The site of the `half` of the declaration `referent` names, as
     /// written: its own name tile and form.
     ///
@@ -4529,6 +4558,50 @@ mod tests
         );
         assert_eq!(at("case"), None, "a keyword refers to nothing");
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
+    }
+
+    #[test]
+    fn the_uses_within_a_range_answer_whole()
+    {
+        let referred = SourceText::from(REFERRED);
+        let table = table(referred);
+        let text = <&str>::from(referred);
+        let named = |span: ByteSpan| {
+            String::from(
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default(),
+            )
+        };
+        let within = |needle: &str| {
+            let start = text.find(needle).expect("the needle occurs");
+            let span = ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(needle.len())),
+            )
+            .expect("an ordered span");
+            table
+                .uses_within(span)
+                .map(|(used, referent)| (named(used), named(referent.named())))
+                .collect::<Vec<_>>()
+        };
+        let pair = |used: &str, at: &str| (String::from(used), String::from(at));
+        assert_eq!(
+            within("Succ(plus[<](n, p))"),
+            [
+                pair("Succ", "Succ"),
+                pair("Succ(plus[<](n, p))", "Succ"),
+                pair("plus", "plus"),
+                pair("plus[<]", "plus"),
+                pair("n", "n"),
+                pair("p", "p")
+            ],
+            "each use the index keeps, a call's whole application and its staged head beside their names, in order"
+        );
+        assert_eq!(
+            within("Succ(pl"),
+            [pair("Succ", "Succ")],
+            "a name the range cuts is not answered"
+        );
     }
 
     /// #1371: the words a loop presents are minted at its data declaration
