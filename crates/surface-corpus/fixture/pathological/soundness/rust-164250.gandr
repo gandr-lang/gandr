@@ -1,0 +1,41 @@
+// The hole rust-lang/rust 164250 names: a struct's bound `T : 'static` is
+// checked when `Q(None)` is built and assumed by its destructor; the covariant
+// assignment `q.0 = Some(&l)` then re-instantiates `Q` at the local's lifetime,
+// and the destructor stores a view of `l` where only a `'static` value may go.
+// Here the region a slot keeps is part of the slot's type, a built value's type
+// never changes under it, and a destructor is a region's end action that reaches
+// only what the region keeps: the write is refused before anything runs (#1492).
+//
+// What the hole is made of: evidence in two currencies. A bound written on a
+// type's definition is a side condition outside the value, re-proved at every
+// explicit use (a call, a coercion) but inherited as an assumption by the one
+// consumer with no use site, the destructor — an explicit `Drop` must repeat
+// the type's bounds exactly and so assumes them, and the generated drop glue has
+// none — while subtyping by variance changes the type beneath it and nothing
+// re-establishes the bound. The same shape is the ergonomic rule "bounds on the
+// impl, never on the struct": a bound on the definition is re-stated on every
+// implementation and constrains every use. Here a constraint is a field of the
+// value's record, carried and projected, never implied from a definition and
+// never assumed by an implementation; the region is that field for a slot.
+
+/// The outer region keeps a slot; the inner scope holds `l` and lends a view of
+/// it; keeping that view in the outer slot is refused at the write — the view
+/// would outlive the access that lent it.
+@[ refuses("ViewEscaped") ]
+def bypassed() -> -F Integer {
+  handle outer : Proc {
+    run q : (() => Integer) at outer <- pure thunk { pure 0 } ;
+    run x : Integer <- handle inner : Proc {
+      hold l = 42;
+      run q2 : (() => Integer) at outer <- access shared l as w { pure thunk { pure w } } ;
+      force q2
+    } with {
+      pure(y) => pure y,
+      oper exit(code, k) => pure 0
+    };
+    force q
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => pure 0
+  }
+}
