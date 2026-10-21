@@ -55,8 +55,14 @@ self_cell.workspace = true
 serde_json.workspace = true
 tracing = { workspace = true, optional = true }
 
-# The corpus sweeps draw their samples through the sweep crate.
+# The corpus sweeps draw their samples through the sweep crate; the
+# critical-pair differential reads both overlap enumerators over the cells
+# and the presented terms.
 [dev-dependencies]
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-circuit-algebras.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-levitation.workspace = true
 gandr-workflow-sweep.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads

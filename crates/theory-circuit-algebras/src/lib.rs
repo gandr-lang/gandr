@@ -26,6 +26,10 @@
 //! [`same_diagram`] decides whether two wirings denote one diagram, with both
 //! relabellings on one arm and the located [`DiagramDivergence`] on the other.
 //!
+//! [`overlaps`] glues two wirings along every connected region of shared
+//! generators the fragment admits; read at two rules' left-hand sides, each
+//! [`Overlap`] is a pre-critical pair.
+//!
 //! The crate is `no_std` and depends on `core`, `alloc`, the cell-shape
 //! substrate `gandr-theory-cell-complexes` and the shape vocabulary of
 //! `quenchant-shape`.
@@ -222,6 +226,7 @@ macro_rules! edges {
 mod interface;
 mod matching;
 mod normal_form;
+mod overlap;
 
 pub use crate::interface::BijectionClash;
 pub use crate::interface::ComponentCount;
@@ -286,3 +291,6 @@ pub use crate::normal_form::canonicalize;
 pub use crate::normal_form::relabelled_generator;
 pub use crate::normal_form::relabelled_wire;
 pub use crate::normal_form::same_diagram;
+pub use crate::overlap::Overlap;
+pub use crate::overlap::OverlapShape;
+pub use crate::overlap::overlaps;
