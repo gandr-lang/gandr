@@ -19,8 +19,12 @@
 //!
 //! The summary is the lower median of ten runs: a time some job took, ignoring
 //! the slowest half of the window. Merge-queue and pull-request runs together
-//! sample every lane: the test lanes run only in the queue, the obligations
-//! lane only on a pull request.
+//! sample every landing lane: the test lanes run only in the queue, the
+//! obligations lane only on a pull request. A lane only the daily scheduled
+//! run holds, such as the nightly mutation run, is a `--daily` budget and is
+//! sampled over the scheduled runs alone, in a table of its own; the listing
+//! asks for scheduled runs, since a day's landing runs fill any window of the
+//! newest hundred.
 //!
 //! A landing that touches the kernel or core stack — a file under
 //! `crates/kernel-*` or `crates/core-*`, `Cargo.lock`, `rust-toolchain.toml`
@@ -45,5 +49,6 @@ pub use crate::cone::Cone;
 pub use crate::error::BudgetError;
 pub use crate::github::Filed;
 pub use crate::github::IssueTitle;
+pub use crate::github::Window;
 pub use crate::report::Report;
 pub use crate::report::Standing;

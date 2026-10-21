@@ -15,11 +15,11 @@ Each CI lane's median job time over the latest merge-queue and pull-request runs
 
 **Why.** CI time drifts one small change at a time: a cache that stops matching, a lane that gains a step, a test that slows. Each change passes review because none is large, and the queue's wall time grows unnoticed. A nightly comparison against budgets written beside the jobs catches the drift within a day and names the lane, without blocking any landing. A landing that touches the kernel or core stack rebuilds the whole enforcing graph and takes longer than one that touches only the surface, so the enforcing lanes are held by cone: one budget is tight enough to miss a surface regression and loose enough to excuse a deep one.
 
-**How.** `gh api` lists the runs and each run's jobs; a job's time is its completion less its start. Each run's head is compared against its merge base — the queue's branch names the entry's base — and the changed files name its cone. The lower median of a lane's samples in a cone is a time some job took, and ignores the slowest half of the window. The budgets are `--budget NAME=SECONDS` arguments in `nightly.yml`, with `NAME:deep=SECONDS` naming a cone's budget, so changing a lane's shape and its budget is one commit. The [crate docs](src/lib.rs) state the nightly report, the two cones and the one issue.
+**How.** `gh api` lists the runs and each run's jobs; a job's time is its completion less its start. Each run's head is compared against its merge base — the queue's branch names the entry's base — and the changed files name its cone. The lower median of a lane's samples in a cone is a time some job took, and ignores the slowest half of the window. The budgets are `--budget NAME=SECONDS` arguments in `nightly.yml`, with `NAME:deep=SECONDS` naming a cone's budget, so changing a lane's shape and its budget is one commit. A lane only the daily scheduled run of `ci.yml` holds is a `--daily NAME=SECONDS` budget, sampled over the newest scheduled runs in a table of its own. The [crate docs](src/lib.rs) state the nightly report, the two cones, the daily window and the one issue.
 
 ## Provided features
 
-- `lane-budget --budget NAME=SECONDS...` prints the report; `NAME:deep=SECONDS` names the deep budget of a cone-classified lane; `--runs N` sets the window, ten by default.
+- `lane-budget --budget NAME=SECONDS...` prints the report; `NAME:deep=SECONDS` names the deep budget of a cone-classified lane; `--daily NAME=SECONDS` holds a lane of the daily scheduled run over the scheduled runs; `--runs N` sets each window, ten by default.
 - `--issue TITLE` opens, updates, reopens or closes the one issue with exactly that title.
 - `BudgetError` names the argument or the `gh` invocation behind every refusal.
 

@@ -207,6 +207,82 @@ fn a_malformed_budget_exits_two()
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(log!(scratch), "", "no gh call before the arguments parse");
+    let output = run!(
+        scratch,
+        [
+            "--budget",
+            "check Clippy wall=150",
+            "--daily",
+            "mutate the night's crate (linux):deep=840",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(output.status.code(), Some(2_i32));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains(
+            "`mutate the night's crate (linux):deep=840` names the deep cone; a daily lane is \
+             held to one budget over the scheduled runs"
+        ),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(log!(scratch), "", "no gh call before the arguments parse");
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn a_daily_lane_is_sampled_over_the_scheduled_runs()
+{
+    let scratch = scratch!("daily");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=250",
+            "--daily",
+            "mutate the night's crate (linux)=75",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Runs 3 and 2 hold the landing lane; the scheduled runs 9 and 8 hold
+    // the daily one, at 90 and 80 seconds. Every run's jobs list both, and
+    // each table reads only its own window.
+    assert!(
+        stdout.contains(
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Median job time over the last 2 scheduled runs of `ci.yml`, for the lanes only the \
+             daily run holds.\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "| mutate the night's crate (linux) | daily | 1m 20s | 1m 15s | 2 | **over** |\n\nRuns: 9, 8.\n"
+        ),
+        "{stdout}"
+    );
+    let log = log!(scratch);
+    assert!(log.contains("event=schedule"), "{log}");
+    assert!(log.contains("/runs/9/jobs"), "{log}");
+    assert!(log.contains("/runs/8/jobs"), "{log}");
+    assert!(
+        !log.contains("actions/runs/9 "),
+        "a scheduled run is not cone-classified: {log}"
+    );
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 

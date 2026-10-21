@@ -1162,8 +1162,8 @@ jobs:
   # and one comment, updated in place, names the survivors. The lane is a
   # report, never a gate. No check of it is required and nothing needs it; it
   # fails while a mutant survives, as a hotpath check fails on a regression.
-  # The merge queue and main do not run it. The nightly keeps the whole-crate
-  # map. Dispatches run it against the parent commit, so `ci:act` exercises
+  # The merge queue and main do not run it. The daily run maps each crate
+  # whole (`mutants-nightly`). Dispatches run it against the parent commit, so `ci:act` exercises
   # it. As with the obligations comment, the comment is found before the lane
   # and posted after it from bare runners, so the job running the change's
   # code holds no write token.
@@ -1279,6 +1279,76 @@ jobs:
           else
             gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
           fi
+
+  # The daily mutation run (`mutants:nightly`, #1456): one crate a night in a
+  # fixed rotation, each mutant under the witnesses of its function, resumed
+  # where the last night stopped. A night is held to fifteen minutes of
+  # runner time. The job's own limit is fourteen, and the run starts no group
+  # later than eleven minutes after the job's first step, which leaves the
+  # image start, the stop of the group then running and the state's save
+  # inside the limit. A crate too large for one night continues the next, so
+  # it is cut into as many nights as its cost needs and no night waits
+  # longer. A crate's next pass lists only its new mutants and its survivors
+  # (`--iterate`). The outcomes, a few names per mutant, are one cache entry
+  # per night, restored from the newest; only a scheduled run saves one. The
+  # report is the job summary. Nothing needs this job; the nightly lane
+  # budget holds it over the scheduled runs.
+  mutants-nightly:
+    name: mutate the night's crate (linux)
+    needs: ci-image-ref
+    if: *main-lane
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 14
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+    steps:
+      - name: note the night's deadline
+        shell: bash
+        run: printf 'CI_MUTANTS_DEADLINE=%s\n' "$(( $(date +%s) + 660 ))" >> "$GITHUB_ENV"
+      - *git-checkout
+      - *trust-workspace
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-policy
+      - *restore-policy-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: restore the mutants outcomes
+        uses: *cache-restore
+        with:
+          path: &mutants-state |
+            mutants.out/nightly/cursor
+            mutants.out/nightly/*/iterate
+          key: gandr-v1-mutants-nightly-${{ github.run_id }}
+          restore-keys: gandr-v1-mutants-nightly-
+      # One lane, building into the restored target directory, as the
+      # change's lane builds.
+      - name: run the night's mutants
+        id: night
+        shell: bash
+        run: |
+          left=$(( CI_MUTANTS_DEADLINE - $(date +%s) ))
+          if (( left <= 0 )); then
+            echo "::error::the job's setup spent the night's eleven minutes"
+            exit 1
+          fi
+          export CARGO_TARGET_DIR="$PWD/target"
+          mise run mutants:nightly -- --until "$left" --lanes 1
+          cat mutants.out/nightly/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: save the mutants outcomes
+        if: ${{ !cancelled() && env.ACT != 'true' && github.event_name == 'schedule' && steps.night.outcome == 'success' }}
+        uses: *cache-save
+        with:
+          path: *mutants-state
+          key: gandr-v1-mutants-nightly-${{ github.run_id }}
+      - *lane-timing
 
   # The benchmark report (`mise run ci:hotpath`): each series runs under the
   # hotpath profiler and uploads its report to hotpath Cloud twice, as

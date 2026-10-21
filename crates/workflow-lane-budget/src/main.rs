@@ -1,29 +1,34 @@
 //! `lane-budget`: each budgeted CI lane's median job time over the latest
 //! merge-queue and pull-request runs, against its budget.
 //!
-//! `lane-budget --budget NAME=SECONDS... [--runs N] [--issue TITLE]` samples
-//! the newest `N` runs through `gh`, classifies each by the cone its landing
-//! touched, prints the Markdown report, and with `--issue` opens, updates,
-//! reopens or closes the one issue of that title.
+//! `lane-budget --budget NAME=SECONDS... [--daily NAME=SECONDS...] [--runs N]
+//! [--issue TITLE]` samples the newest `N` runs through `gh`, classifies each
+//! by the cone its landing touched, and, with `--daily`, samples the newest
+//! `N` scheduled runs for the lanes only they hold. It prints the Markdown
+//! report and with `--issue` opens, updates, reopens or closes the one issue
+//! of that title.
 //!
 //! # Exit codes
 //!
 //! - `0`: the report was printed and filed, whatever it found; also `--help`
 //!   and `--version`.
-//! - `2`: a refusal — a malformed budget, a failed `gh` invocation, or standard
-//!   output closed; also a malformed invocation.
+//! - `2`: a refusal — a malformed budget, a deep daily budget, a failed `gh`
+//!   invocation, or standard output closed; also a malformed invocation.
 
+use core::str::FromStr;
 use std::io::Write as _;
 use std::process::ExitCode;
 
 use anodized::spec;
 use gandr_workflow_lane_budget::Budget;
 use gandr_workflow_lane_budget::BudgetError;
+use gandr_workflow_lane_budget::Cone;
 use gandr_workflow_lane_budget::IssueTitle;
 use gandr_workflow_lane_budget::Report;
 use gandr_workflow_lane_budget::RunCount;
 use gandr_workflow_lane_budget::cone;
 use gandr_workflow_lane_budget::github;
+use gandr_workflow_lane_budget::github::Window;
 
 /// The exit code of a refusal or a malformed invocation.
 const REFUSED: u8 = 2;
@@ -38,13 +43,58 @@ struct Cli
     /// `NAME:deep=SECONDS`; repeat for each lane and cone.
     #[arg(long = "budget", required = true)]
     budgets: Vec<Budget>,
-    /// How many of the newest merge-queue and pull-request runs to sample.
+    /// How many of the newest runs of each window to sample.
     #[arg(long, default_value = "10")]
     runs: RunCount,
+    /// A lane only the daily scheduled run holds and the whole seconds its
+    /// median over the scheduled runs may take, as `NAME=SECONDS`; such a lane
+    /// is not cone-classified, so a deep budget is refused.
+    #[arg(long = "daily")]
+    daily: Vec<Daily>,
     /// The title of the one issue to open while a lane is over budget and to
     /// close once every lane is within.
     #[arg(long)]
     issue: Option<String>,
+}
+
+/// A `--daily` budget: a `--budget` of the surface cone.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+struct Daily(Budget);
+
+impl FromStr for Daily
+{
+    type Err = BudgetError;
+
+    /// Reads `NAME=SECONDS` as [`Budget`] does, refusing the deep cone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the budget `text` names, of the surface cone.
+    /// - provides: the daily budget table from the workflow's arguments.
+    /// - fails: [`BudgetError::Budget`] as [`Budget`]'s parse fails;
+    ///   [`BudgetError::Daily`] when `text` names the deep cone.
+    /// - panics: none.
+    /// - executable: none — the outcome is the parse itself.
+    ///
+    /// # Errors
+    /// As `fails` lists.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a deep daily budget is refused; accepting a cone the
+    ///   daily window never classifies changes the exit code.
+    /// - witness: `tests::cli::a_malformed_budget_exits_two`
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        let budget = text.parse::<Budget>()?;
+        if budget.cone == Cone::Deep {
+            return Err(BudgetError::Daily {
+                text: text.to_owned(),
+            });
+        }
+        Ok(Self(budget))
+    }
 }
 
 /// Parses the invocation, reports and chooses the exit code.
@@ -89,8 +139,8 @@ fn main() -> ExitCode
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
-/// - ensures: standard output receives the report, then, with `--issue`, one
-///   line naming what filing did.
+/// - ensures: standard output receives the report, its daily table sampled only
+///   with `--daily`, then, with `--issue`, one line naming what filing did.
 /// - provides: the whole command.
 /// - fails: every refusal of [`github::recent_runs`], [`github::samples`] and
 ///   [`github::file`]; [`BudgetError::Output`] when standard output cannot be
@@ -106,9 +156,10 @@ fn main() -> ExitCode
 /// - hypothesis: L3 — as [`main`].
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
+/// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
 fn run(cli: Cli) -> Result<(), BudgetError>
 {
-    let runs = github::recent_runs(cli.runs)?;
+    let runs = github::recent_runs(cli.runs, Window::Landing)?;
     let mut samples = Vec::new();
     for &run_id in &runs {
         let cone = cone::classify(run_id)?;
@@ -116,7 +167,16 @@ fn run(cli: Cli) -> Result<(), BudgetError>
             samples.push((cone, sample));
         }
     }
-    let report = Report::new(&cli.budgets, runs, samples);
+    let mut report = Report::new(&cli.budgets, runs, samples);
+    if !cli.daily.is_empty() {
+        let budgets: Vec<Budget> = cli.daily.into_iter().map(|Daily(budget)| budget).collect();
+        let runs = github::recent_runs(cli.runs, Window::Scheduled)?;
+        let mut samples = Vec::new();
+        for &run_id in &runs {
+            samples.extend(github::samples(run_id)?);
+        }
+        report = report.with_daily(&budgets, runs, samples);
+    }
     let output = |error: std::io::Error| BudgetError::Output {
         message: error.to_string(),
     };

@@ -4,8 +4,8 @@ if [ "$FAKE_GH_MODE" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1
 case "$1 $2" in
   'api --method')
     case "$4" in
-      */workflows/ci.yml/runs) printf '3\n2\n1\n' ;;
-      */runs/*/jobs) run=${4%/jobs}; run=${run##*/}; printf '%s00\tcheck Clippy wall\n5\tdetect changed-file categories\n' "$run" ;;
+      */workflows/ci.yml/runs) case "$*" in *event=schedule*) printf '9\n8\n' ;; *) printf '3\n2\n1\n' ;; esac ;;
+      */runs/*/jobs) run=${4%/jobs}; run=${run##*/}; printf '%s00\tcheck Clippy wall\n5\tdetect changed-file categories\n%s0\tmutate the night'"'"'s crate (linux)\n' "$run" "$run" ;;
       */actions/runs/3) printf 'merge_group\t3333333333333333333333333333333333333333\t\tgh-readonly-queue/main/pr-9-1111111111111111111111111111111111111111' ;;
       */actions/runs/2) printf 'merge_group\t4444444444444444444444444444444444444444\t\tgh-readonly-queue/main/pr-10-2222222222222222222222222222222222222222' ;;
       */actions/runs/1) printf 'merge_group\t5555555555555555555555555555555555555555\t\tgh-readonly-queue/main/pr-11-3333333333333333333333333333333333333333' ;;
