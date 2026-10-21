@@ -5908,8 +5908,8 @@ pub(crate) fn form_declared(
 /// nothing here persists.
 ///
 /// An *outcome* also carries arena ids even though the key does not, so an
-/// entry outliving its arena would hand back a synthesized type that no longer
-/// resolves.
+/// entry outliving its arena would hand back a synthesized type that does not
+/// resolve.
 ///
 /// # Specification
 /// - requires: as [`check_declaration`]; additionally, `memo` holds only

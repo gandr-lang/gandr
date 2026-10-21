@@ -1219,10 +1219,10 @@ impl StoredRoot
     /// - panics: none.
     ///
     /// # Errors
-    /// [`RecordTreeError::UnknownNode`] — the store no longer holds the node.
-    /// [`RecordTreeError::HashMismatch`] — the stored bytes no longer
+    /// [`RecordTreeError::UnknownNode`] — the store does not hold the node.
+    /// [`RecordTreeError::HashMismatch`] — the stored bytes do not
     /// recompute.
-    /// [`RecordTreeError::MalformedNode`] — the stored bytes are no longer node
+    /// [`RecordTreeError::MalformedNode`] — the stored bytes are not node
     /// material.
     /// [`RecordTreeError::UnsupportedVersion`] — unsupported encoding version.
     /// [`RecordTreeError::BudgetExceeded`] — a declared count exceeds its

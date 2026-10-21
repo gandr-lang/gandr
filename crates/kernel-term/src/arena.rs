@@ -849,7 +849,7 @@ impl TermArena
     ///   family index, so [`Self::truncate_to`] makes index reuse a supported
     ///   path: after a truncation the next push mints an id equal to one minted
     ///   before it; and above the ceiling [`id_index`] saturates at, the
-    ///   returned id no longer names the appended node.
+    ///   returned id does not name the appended node.
     /// - panics: none.
     ///
     /// # Adequacy

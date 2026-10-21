@@ -1087,7 +1087,7 @@ pub struct Firing
 /// - ensures: results produced by saturation contain the least model above the
 ///   seed, its finite updates in application order and its divergence.
 /// - executable: none — leastness quantifies over models of the external clause
-///   system, and the initial seed is no longer retained in this value.
+///   system, and this value does not retain the initial seed.
 ///
 /// # Adequacy
 /// - hypothesis: L1 — the published example fixes each finite model value and

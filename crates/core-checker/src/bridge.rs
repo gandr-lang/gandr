@@ -169,8 +169,8 @@
 //! the relative monad's operators written with and without the static spelling;
 //! `a_static_lambda_crosses_only_as_a_closed_operator` asserts both arms of the
 //! open-lambda refusal. The definition's normal body and the normaliser's trace
-//! differ because the trace walks the unnormalized body and names operators the
-//! normal form no longer holds.
+//! differ because the trace walks the unnormalized body and names operators
+//! absent from the normal form.
 //!
 //! Each step is certified and replayed on its own, by rules the kernel already
 //! has, because the machine produces no trace under a quote. The alternatives
@@ -4229,10 +4229,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   body, by the kernel's own δ-step at that constant closed on the two
     ///   α-equal normal forms: the body the kernel holds is that normal form,
     ///   so the step is the whole derivation, where the normaliser's trace
-    ///   walks the unnormalized body and names operators the normal form no
-    ///   longer holds. Any other step replays between its redex and its reduct
-    ///   each erased verbatim, every static operator they name numbered and its
-    ///   body erased verbatim, the certificate's trace read at the kernel's
+    ///   walks the unnormalized body and names operators absent from the normal
+    ///   form. Any other step replays between its redex and its reduct each
+    ///   erased verbatim, every static operator they name numbered and its body
+    ///   erased verbatim, the certificate's trace read at the kernel's
     ///   positions, a static lambda's step prefixed by the unfolding of its
     ///   operator. Each replays as a convertibility claim. `target` holds the
     ///   images minted and nothing the replay minted.

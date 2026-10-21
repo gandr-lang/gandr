@@ -104,7 +104,7 @@ enum Task
     Visit(TermId),
     /// Rebuild the parent and contract its head when possible.
     Finish(TermId),
-    /// Record a previously reduced source's final normal form.
+    /// Record the final normal form of a source reduced earlier in the walk.
     Forward(TermId, TermId),
 }
 

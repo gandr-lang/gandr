@@ -44,7 +44,7 @@
 //! **The precondition every constructor inherits is therefore one sentence: the
 //! core arena outlives the domain arena and is not truncated below any node the
 //! domain holds.** A run that violated it would leave a term face naming a node
-//! that no longer exists, which is a *wrong* readback rather than a slow one —
+//! that does not exist, which is a *wrong* readback rather than a slow one —
 //! the same failure the face's own documentation names. The mitigation is the
 //! run discipline rather than a check: one domain arena per evaluation run,
 //! over one core arena, torn down together.
@@ -1803,7 +1803,7 @@ impl DomainArena
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `DomainFault::Dangling` when the span no longer resolves.
+    /// Returns `DomainFault::Dangling` when the span does not resolve.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — native record readback retains labels and ordered

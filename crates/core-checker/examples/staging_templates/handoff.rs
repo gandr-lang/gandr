@@ -150,7 +150,7 @@ pub(super) enum Census
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Task
 {
-    /// Dense identity used to detect duplicate or missing completions.
+    /// Dense identity that detects duplicate or missing completions.
     id: Natural,
     /// Half-open interval of repeated family instances.
     instances: [Natural; 2],

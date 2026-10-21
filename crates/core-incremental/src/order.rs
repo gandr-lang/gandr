@@ -295,8 +295,8 @@ impl ItemOrder
     /// - requires: nothing.
     /// - ensures: the order of the two items in the latest revision, decided in
     ///   constant time.
-    /// - provides: `handle::Absent::Stale` when either handle no longer names
-    ///   an item.
+    /// - provides: `handle::Absent::Stale` when either handle names no live
+    ///   item.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -328,7 +328,7 @@ impl ItemOrder
     /// - requires: nothing.
     /// - ensures: the reference the item carried when it took or kept the
     ///   handle.
-    /// - provides: `handle::Absent::Stale` for a handle no longer in the order.
+    /// - provides: `handle::Absent::Stale` for a handle absent from the order.
     /// - panics: none.
     ///
     /// # Adequacy

@@ -164,8 +164,8 @@
 //!   alternative, minting canonical case tables from the evaluated tables,
 //!   makes equivalent equivalences convertible and so discharges the two-cell
 //!   obligation by normalisation; it is a second identity of certificates
-//!   beside the kernel's, and conversion would no longer be structural.
-//!   Reversal: a kernel conversion that compares certificates by their tables.
+//!   beside the kernel's, and conversion would stop being structural. Reversal:
+//!   a kernel conversion that compares certificates by their tables.
 //!   [`tabulate`] mints the canonical translator for a table, for a caller that
 //!   holds tables.
 //! - **The telescope's unit is explicit.** Degree zero is a component, so the
@@ -205,8 +205,8 @@
 //!   editor rebuilds on each keystroke, a cache the caller threads through the
 //!   incremental checker, which every face would have to own, and a spinning
 //!   `Once` from `spin`, whose initialiser has carried an unsoundness advisory
-//!   where a race loser here only drops its copy. Reversal: a bound the checker
-//!   no longer fixes in advance, or an advisory against `once_cell`.
+//!   where a race loser here only drops its copy. Reversal: a checker that does
+//!   not fix the bound in advance, or an advisory against `once_cell`.
 //!
 //! # References
 //!

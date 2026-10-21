@@ -221,7 +221,7 @@ impl Store
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a task's standing is set and found through its
-    ///   value's inverse, and no longer through the old value's.
+    ///   value's inverse, and not through the old value's.
     /// - witness: `tests::keyed::a_standing_moves_between_inverses`
     #[inline]
     pub fn set_value<V>(

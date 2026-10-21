@@ -988,8 +988,8 @@ impl Machine<'_, '_>
     /// - requires: the payload checked.
     /// - ensures: the endpoint stands at `next`; the send synthesises the
     ///   returner of the unit.
-    /// - fails: [`CheckRefusal::MachineInvariant`] when the endpoint is no
-    ///   longer available, which a payload naming no endpoint cannot cause.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when the endpoint is not
+    ///   available, which a payload naming no endpoint cannot cause.
     /// - panics: none.
     ///
     /// # Errors
@@ -1199,7 +1199,7 @@ impl Machine<'_, '_>
     /// - requires: the zone stands as the offer found it.
     /// - ensures: one `OfferArm` frame waits on the arm's check.
     /// - fails: [`CheckRefusal::MachineInvariant`] for a position past the arms
-    ///   or an endpoint no longer at the offer.
+    ///   or an endpoint not at the offer.
     /// - panics: none.
     ///
     /// # Errors

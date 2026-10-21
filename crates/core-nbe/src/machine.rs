@@ -20,8 +20,8 @@
 //! A process runs only while something needs it. The root is needed by the
 //! caller; a goal needs the channels and children it waits on. When a
 //! combinator answers early — a biased choice whose authoritative branch
-//! answered, a decomposition refuted at one subgoal — the processes it no
-//! longer waits on lose that demand, and a process left with none stops being
+//! answered, a decomposition refuted at one subgoal — the processes it stops
+//! waiting on lose that demand, and a process left with none stops being
 //! scheduled. Demand propagates through an explicit worklist in both
 //! directions, so a dormant subtree wakes intact if it is needed again.
 //!
@@ -41,7 +41,7 @@
 //!
 //! Comparing two defined heads starts the alternatives the rule table names as
 //! concurrent goals and combines them as it says. In the branch that unfolds
-//! the right side the left constant is **frozen** — it may no longer unfold
+//! the right side the left constant is **frozen** — it may not unfold
 //! there — so each further unfolding of it happens in one branch only. A
 //! frozen branch may refute two convertible terms, so its refutation is not
 //! authoritative: the biased combinator takes a convertible answer from any
@@ -72,7 +72,7 @@
 //! names the channels and children it waits on by id, and each process lists
 //! its waiters; nothing recurses and nothing holds a reference to another
 //! process. A process runs only while something needs it: when a combinator
-//! answers early, the processes it no longer waits on lose that need,
+//! answers early, the processes it stops waiting on lose that need,
 //! transitively, and stop being scheduled.
 //!
 //! The root first runs steps 1 to 3. An identical or structurally equal pair is
@@ -93,7 +93,7 @@
 //! otherwise the last, authoritative alternative decides. Two different
 //! constants drop the shortcut. A constant frozen on one side against itself
 //! unfrozen runs the shortcut or the unfolding of the unfrozen side, either
-//! answering. A frozen constant may no longer unfold in that branch, so each
+//! answering. A frozen constant may not unfold in that branch, so each
 //! later unfolding of it happens in one branch only; a frozen branch can refute
 //! two convertible terms, which is why its refutation is never authoritative.
 //! Rigid heads decompose: one head over spines of one shape compares the
@@ -1504,7 +1504,7 @@ where
     /// - [`ConversionFault`] — as a channel raises.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the domain is fresh or previously recorded weak-head
+    /// - hypothesis: L3 — the domain is fresh or already recorded weak-head
     ///   pairs and opened closure pairs at a fixed binder level. Verdict,
     ///   process counts and unchanged domain state at the level ceiling
     ///   distinguish missed sharing, reused foreign processes and allocation

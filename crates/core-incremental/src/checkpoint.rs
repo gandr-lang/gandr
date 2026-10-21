@@ -656,7 +656,7 @@ pub struct ResumeCensus
     pub judged: ItemCount,
     /// Seats minted for adopted synthesised types.
     pub minted: ItemCount,
-    /// Recalled items declined because a recorded answer no longer holds.
+    /// Recalled items declined because a recorded answer fails to hold.
     pub outdated: ItemCount,
     /// Recalled items declined because a type position of theirs reads a
     /// definition whose value changed: the guard against an answer that
