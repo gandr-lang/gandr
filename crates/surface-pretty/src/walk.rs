@@ -1388,7 +1388,8 @@ enum Surface
 /// - requires: nothing.
 /// - ensures: a type for a type slot of a value or a computation that writes
 ///   itself — an annotation, a binder's type, a typed bind's result — where the
-///   expression grammar embeds a type; `surface` itself otherwise. A quote, a
+///   expression grammar embeds a type, and for a static abstraction's body,
+///   which the grammar reads as a type; `surface` itself otherwise. A quote, a
 ///   nested or returned computation and an elided ascription write nothing of
 ///   their own, so their slot is read as they are; a type former's value slot
 ///   is read as the type is, since every type application reads its arguments
@@ -1399,14 +1400,15 @@ enum Surface
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a quote as an argument, as a definition's body and as a
-///   decoded code in a type position distinguish the slots an expression reads
-///   from those a type reads.
+/// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
+///   static abstraction's body and as a decoded code in a type position
+///   distinguish the slots an expression reads from those a type reads.
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
-#[spec(ensures: |ret| ret == if !matches!(*former,
+/// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
+#[spec(ensures: |ret| ret == if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. })
     && matches!(kind(former), Kind::Value | Kind::Computation)
-    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
 {
     Surface::Type
 } else {
@@ -1426,9 +1428,12 @@ fn surface_below<Node>(
             | Former::Returned(_)
             | Former::Ascription { .. }
     );
-    if !writes_nothing
-        && matches!(kind(former), Kind::Value | Kind::Computation)
-        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+    // A static abstraction `\A. T` is a type form: its body is read as a type.
+    let typed_body = matches!(*former, Former::StaticLambda(_));
+    if typed_body
+        || (!writes_nothing
+            && matches!(kind(former), Kind::Value | Kind::Computation)
+            && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
     {
         Surface::Type
     }
@@ -4164,36 +4169,39 @@ impl Walk<'_, '_>
         Some((body, result))
     }
 
-    /// Whether `node` is written with a head no expression reads: a session
-    /// type standing at a receive `?A. S`, a selection `+{…}` or an offer
-    /// `&{…}`, or a sum or a lazy product written between braces.
+    /// Whether `node` is written with a head no expression reads as the type:
+    /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
+    /// offer `&{…}`; a sum or a lazy product, written between braces or, in
+    /// the sugared form, as a chain an expression reads as arithmetic; or a
+    /// product written as such a chain, `A * B`.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
     /// - ensures: true exactly when `node` reads as a session type whose
     ///   state's own node is a receive, a selection or an offer; as a sum of
-    ///   one or more components that is not `Bool` and not, in the sugared
-    ///   form, a chain of two or more; or as a lazy product of one or more
-    ///   components that is not, in the sugared form, a chain of two or more.
+    ///   one or more components that is not `Bool`; as a lazy product of one or
+    ///   more components; or, in the sugared form, as a product of two or more
+    ///   components.
     /// - provides: the heads [`Self::unread_as_expression`] looks for.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a braced sum, a sum chain, `Bool` and a base type
-    ///   quoted as values, in both forms, distinguish the braced spellings from
-    ///   the bare ones.
+    /// - hypothesis: L3 — a braced sum, `Bool` and a base type quoted as
+    ///   values, in both forms, distinguish the braced spellings from the bare
+    ///   ones; a product, a sum and a lazy product chain quoted alone and as an
+    ///   argument distinguish the sugared chains from the explicit braces an
+    ///   expression reads.
     /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
     #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
         | Former::Session { protocol, state, .. } => matches!(
             protocol.node(state),
             Ok(&(ProtocolNode::Receive { .. } | ProtocolNode::Select(_) | ProtocolNode::Offer(_)))
         ),
-        | Former::Sum(arity) => usize::from(arity) >= 1_usize
-            && named_sum(source, node).is_none()
-            && (self.form == Form::Explicit || usize::from(arity) == 1_usize),
-        | Former::With(arity) => usize::from(arity) >= 1_usize
-            && (self.form == Form::Explicit || usize::from(arity) == 1_usize),
+        | Former::Sum(arity) => usize::from(arity) >= 1_usize && named_sum(source, node).is_none(),
+        | Former::With(arity) => usize::from(arity) >= 1_usize,
+        | Former::Product(arity) => self.form == Form::Sugared && usize::from(arity) >= 2_usize,
         | _ => false,
     })]
     fn unread_head<S>(
@@ -4204,8 +4212,6 @@ impl Walk<'_, '_>
     where
         S: Source + ?Sized,
     {
-        let braced =
-            |count: usize| count >= 1_usize && (self.form == Form::Explicit || count == 1_usize);
         let former = source.read(node);
         let unread = if let Former::Session {
             protocol, state, ..
@@ -4218,11 +4224,18 @@ impl Walk<'_, '_>
                     | ProtocolNode::Offer(_)))
             )
         }
+        // Braced, no expression reads the head; chained, an expression reads
+        // `+` and `&` as operators over the components.
         else if let Former::Sum(arity) = former {
-            braced(usize::from(arity)) && named_sum(source, node).is_none()
+            usize::from(arity) >= 1_usize && named_sum(source, node).is_none()
         }
         else if let Former::With(arity) = former {
-            braced(usize::from(arity))
+            usize::from(arity) >= 1_usize
+        }
+        // `#{A, B}` reads as the product's code, `A * B` as the product of two
+        // codes.
+        else if let Former::Product(arity) = former {
+            self.form == Form::Sugared && usize::from(arity) >= 2_usize
         }
         else {
             false

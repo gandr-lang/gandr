@@ -1,0 +1,14 @@
+// A product or a sum written as a chain where an expression stands, quoted as
+// `type(T)`: an expression reads `*` and `+` as operators over the
+// components, so the quote is the chain's one spelling as an argument, as it
+// is spelled bare in a signature (#1127).
+
+/// The stationary flow at a product of two components.
+@[ checks ]
+def quoted_product : Flow(Type, Unit * Integer, Unit * Integer) ;
+def quoted_product = stay(type(Unit * Integer)) ;
+
+/// The stationary flow at a sum of two summands.
+@[ checks ]
+def quoted_chain : Flow(Type, Integer + Unit, Integer + Unit) ;
+def quoted_chain = stay(type(Integer + Unit)) ;
