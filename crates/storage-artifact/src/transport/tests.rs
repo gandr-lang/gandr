@@ -1,5 +1,6 @@
 //! Fixed framing, width and readback witnesses.
 
+use alloc::format;
 use alloc::string::ToString as _;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -128,6 +129,42 @@ fn a_shared_identity_with_distinct_content_is_refused()
         })
     );
     assert_eq!(index, before);
+}
+
+#[test]
+fn every_refusal_renders_what_it_refused()
+{
+    let length = StepIdError::ImageLength {
+        found: 31,
+        expected: TRANSPORT_STEP_ID_LEN,
+    };
+    let rendered = length.to_string();
+    assert!(
+        rendered.contains("31") && rendered.contains(&TRANSPORT_STEP_ID_LEN.to_string()),
+        "{rendered}"
+    );
+    let width = StepIdError::WidthOverflow { found: 70 };
+    assert!(width.to_string().contains("70"), "{width}");
+    let encoding = TransportStepObstruction::from(width);
+    assert_eq!(encoding, TransportStepObstruction::Encoding(width));
+    assert_eq!(encoding.to_string(), width.to_string());
+    let mut store = CellStore::new();
+    let held = factor(&mut store, &gandr_theory_cell_complexes::Sym::new("Succ"));
+    let offered = factor(&mut store, &gandr_theory_cell_complexes::Sym::new("Pred"));
+    let cell = held.0.cell;
+    let unknown = TransportStepObstruction::UnknownCell { cell }.to_string();
+    assert!(
+        unknown.ends_with(&usize::from(cell).to_string()),
+        "{unknown}"
+    );
+    let id = TransportStepId::from([7_u8; 32]);
+    assert_eq!(format!("{id:?}"), id.to_string());
+    let collision = TransportStepObstruction::ContentAddressCollision {
+        address: id,
+        held: Box::new(held),
+        offered: Box::new(offered),
+    };
+    assert!(collision.to_string().contains(&id.to_string()));
 }
 
 #[test]

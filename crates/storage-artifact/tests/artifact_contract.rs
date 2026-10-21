@@ -4,6 +4,8 @@
 //!
 //! The artifact contract suite.
 
+use core::fmt::Write as _;
+
 use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
@@ -20,12 +22,15 @@ use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::decode;
 use gandr_kernel_term::encode;
+use gandr_storage_artifact::ARTIFACT_IDENTITY_LEN;
 use gandr_storage_artifact::AdmissionKey;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
+use gandr_storage_artifact::ArtifactManifestVersion;
 use gandr_storage_artifact::ArtifactRecord;
 use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::HEADER_KEY;
+use gandr_storage_artifact::MANIFEST_DOMAIN;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
 use gandr_storage_records::BlockStore as _;
@@ -438,6 +443,29 @@ fn the_same_artifact_mints_the_same_identity()
 }
 
 #[test]
+fn a_manifest_names_its_version_and_spells_its_identity_bytes()
+{
+    let (manifest, _store) = committed(&records_of(&shared_artifact()));
+    assert_eq!(ArtifactManifestVersion::V1, manifest.manifest_version());
+    let identity = manifest.identity();
+    assert_eq!(ARTIFACT_IDENTITY_LEN, identity.as_ref().len());
+    let mut spelled = String::new();
+    for byte in identity.as_ref() {
+        write!(spelled, "{byte:02x}").expect("a string takes any text");
+    }
+    assert_eq!(
+        spelled,
+        identity.to_string(),
+        "the identity spells its bytes"
+    );
+    let image = manifest.encode();
+    assert!(
+        image.as_image().as_ref().starts_with(MANIFEST_DOMAIN),
+        "the image opens with its domain"
+    );
+}
+
+#[test]
 fn any_perturbation_changes_the_identity()
 {
     let header = SegmentBytes::from(b"header".as_slice());
@@ -573,6 +601,24 @@ fn a_foreign_profile_or_format_is_refused_before_any_load()
     assert!(
         cut_otherwise.read_under(&foreign_store, foreign).is_ok(),
         "the reader sharing the rule reads it"
+    );
+}
+
+#[test]
+fn a_manifest_naming_another_record_count_is_refused()
+{
+    let set = records_of(&shared_artifact());
+    let (manifest, store) = committed(&set);
+    let miscounted = ArtifactManifest::new(
+        FORMAT_VERSION,
+        manifest.commitment().clone(),
+        RecordCount(u64::from(manifest.record_count()).saturating_add(1)),
+        manifest.root_node(),
+    );
+    assert_eq!(
+        Err(ArtifactError::TreeMismatch),
+        miscounted.read_under(&store, TreeParams::current()),
+        "the stored records do not rebuild the tree a miscounted manifest names"
     );
 }
 
@@ -714,6 +760,66 @@ fn records_cut_off_a_segment_boundary_are_refused()
             "{what} is refused at its record"
         );
     }
+}
+
+#[test]
+fn a_set_is_held_to_the_layout_s_segment_count()
+{
+    let artifact = shared_artifact();
+    let honest = records_of(&artifact);
+    assert!(
+        honest
+            .records()
+            .iter()
+            .all(|record| record.key().as_ref()
+                == AdmissionKey::from(record.admission_index()).as_ref()),
+        "each record sits under its admission index's key"
+    );
+    let decoded = decode(artifact.as_image()).expect("the artifact decodes");
+    let layout = decoded.segments();
+    assert_eq!(Ok(()), honest.ensure_cut_at(layout));
+
+    let count = honest.records().len();
+    let mut padded_records = honest.records().to_vec();
+    padded_records.push(ArtifactRecord::new(
+        ConstantIndex::from(count),
+        SegmentBytes::from(b"".as_slice()),
+    ));
+    let padded = ArtifactRecordSet::from_records(honest.header(), padded_records)
+        .expect("the keys are unique");
+    assert_eq!(
+        Err(ArtifactError::SegmentBoundary {
+            position: RecordIndex::from(count.saturating_add(1)),
+        }),
+        padded.ensure_cut_at(layout),
+        "a record past the last segment is refused at that record"
+    );
+
+    let short = ArtifactRecordSet::from_records(
+        honest.header(),
+        honest
+            .records()
+            .iter()
+            .take(count.saturating_sub(1))
+            .cloned()
+            .collect(),
+    )
+    .expect("the keys are unique");
+    assert_eq!(
+        Err(ArtifactError::SegmentBoundary {
+            position: RecordIndex::from(count),
+        }),
+        short.ensure_cut_at(layout),
+        "a set one segment short is refused past its last record"
+    );
+
+    assert_eq!(
+        Err(ArtifactError::MisplacedRecord {
+            position: RecordIndex::ZERO,
+        }),
+        ArtifactRecordSet::from_stored(&[]).map(|set| set.records().len()),
+        "an empty tree has no header"
+    );
 }
 
 /// One generated declaration kind.
