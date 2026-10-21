@@ -4149,6 +4149,62 @@ mod tests
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
     }
 
+    /// #1360: a constructor's result names its family, and each of the
+    /// result's arguments what it names, as a field's type does.
+    #[test]
+    fn a_constructor_s_result_names_its_family_1360()
+    {
+        let source = SourceText::from(
+            "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndata Vec(a : \
+             Type) : Nat -> Type {\n  VNil : Vec(a, Zero);\n  VCons : (n : Nat, head : a, tail \
+             : Vec(a, n)) --> Vec(a, Succ(n));\n}\n",
+        );
+        let table = table(source);
+        let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                source,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        assert_eq!(
+            at("Nat;\n  Succ"),
+            named("Nat : Type", "Nat"),
+            "a constant constructor's result, its family"
+        );
+        assert_eq!(
+            at("Nat;\n}"),
+            named("Nat : Type", "Nat"),
+            "a constructor's result after its fields, its family"
+        );
+        assert_eq!(
+            at("Vec(a, Zero)"),
+            named("Vec(a : Type)", "Vec"),
+            "an indexed constructor's result, its family"
+        );
+        assert_eq!(
+            at("Vec(a, Succ(n));"),
+            named("Vec(a : Type)", "Vec"),
+            "an indexed result after its fields, its family"
+        );
+        assert_eq!(
+            at("Zero);"),
+            named("Zero : Nat", "Zero"),
+            "a result's index, the constructor it writes"
+        );
+        assert_eq!(
+            at("Succ(n));"),
+            named("Succ : (n", "Succ"),
+            "a result's index applying a constructor, that constructor"
+        );
+        assert_eq!(
+            at("a, Zero"),
+            named("a : Type", "a"),
+            "a result's argument repeating a parameter, the parameter's binder"
+        );
+    }
+
     /// #836: a constructor applied to no field yet refuses its declaration,
     /// and its name still refers to the constructor.
     #[test]

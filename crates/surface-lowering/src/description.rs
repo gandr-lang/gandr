@@ -1172,7 +1172,15 @@ impl Reader<'_, '_>
                 first
             }
         };
-        let arguments = self.uniform_result(result, family, parameters, indices)?;
+        let (head, arguments) = self.uniform_result(result, family, parameters, indices)?;
+        let repeated = arguments
+            .iter()
+            .zip(parameters)
+            .map(|(&span, parameter)| written::WrittenUse {
+                span,
+                named: parameter.named.span,
+            })
+            .collect();
         let attrs = self.attrs(run)?;
         run.end()?;
         Ok(Generator {
@@ -1191,6 +1199,8 @@ impl Reader<'_, '_>
                 named: named.span,
                 fields: ports,
                 result: result.span,
+                head,
+                parameters: repeated,
                 arguments,
             },
         })

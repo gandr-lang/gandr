@@ -67,7 +67,8 @@ impl Reader<'_, '_>
     ///
     /// # Specification
     /// - ensures: success has the declared head, parameter prefix and total
-    ///   arity, and answers the bytes of each argument in written order.
+    ///   arity, and answers the head's name tile and the bytes of each argument
+    ///   in written order.
     /// - fails: a foreign, instantiated, reordered or wrong-arity result is
     ///   located at the result rather than at a sibling member.
     /// - panics: none.
@@ -84,7 +85,8 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::a_foreign_result_head_declines`
     /// - witness: `description::tests::a_result_must_repeat_each_parameter_by_its_own_name`
     #[spec(ensures: |result| match result.as_ref() {
-        Ok(arguments) => arguments.len() == parameters.len().saturating_add(indices.0),
+        Ok(&(head, ref arguments)) => arguments.len() == parameters.len().saturating_add(indices.0)
+            && at.span.start() <= head.start() && head.end() <= at.span.end(),
         Err(diagnostic) => diagnostic.span == at.span,
     })]
     pub(super) fn uniform_result(
@@ -93,7 +95,7 @@ impl Reader<'_, '_>
         family: &Name,
         parameters: &[FamilyParameter],
         indices: IndexArity,
-    ) -> Result<Vec<ByteSpan>, DescriptionDiagnostic>
+    ) -> Result<(ByteSpan, Vec<ByteSpan>), DescriptionDiagnostic>
     {
         let refusal = || DescriptionDiagnostic {
             span: at.span,
@@ -108,7 +110,7 @@ impl Reader<'_, '_>
         let expected = parameters.len().saturating_add(indices.0);
         if !run.eat(Spelling("(")).0 {
             return if expected == 0 && run.remaining().is_empty() {
-                Ok(Vec::new())
+                Ok((head.span, Vec::new()))
             }
             else {
                 Err(refusal())
@@ -133,7 +135,7 @@ impl Reader<'_, '_>
         if arguments.len() != expected || !run.remaining().is_empty() {
             return Err(refusal());
         }
-        Ok(arguments)
+        Ok((head.span, arguments))
     }
 
     /// Retain an optional symbol-attribute slot for the description checker.
