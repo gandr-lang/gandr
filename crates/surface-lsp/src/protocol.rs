@@ -2636,7 +2636,7 @@ pub struct Legend
     /// The token types, in the order a token's type integer indexes.
     pub token_types: [&'static str; 15],
     /// The token modifiers, in the order a token's modifier bits index.
-    pub token_modifiers: [&'static str; 2],
+    pub token_modifiers: [&'static str; 4],
 }
 
 /// The server's name and version.

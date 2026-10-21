@@ -1504,7 +1504,7 @@ mod tests
         let spans = reading.spans();
         let index = gandr_surface_render_remote::LineIndex::new(text.into());
         assert_eq!(
-            encode(&index, spans, &[]),
+            encode(&index, spans, &[], &[]),
             TokenStream::from(vec![0, 0, 3, 0, 0, 0, 4, 1, 2, 1, 0, 4, 2, 9, 0]),
             "`def` a keyword, `f` a declared function, `42` a number"
         );

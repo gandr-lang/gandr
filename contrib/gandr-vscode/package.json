@@ -358,6 +358,16 @@
         ],
         "configuration": "./languages/gandr/language-configuration.json"
       }
+    ],
+    "semanticTokenModifiers": [
+      {
+        "id": "value",
+        "description": "A name read as a value: a binder, a constructor, an argument passed along."
+      },
+      {
+        "id": "computation",
+        "description": "A name run as a computation: a thunk forced where it is written, as a call forces the function it names."
+      }
     ]
   },
   "activationEvents": [
