@@ -734,6 +734,16 @@ pub enum KernelError
         /// The type synthesized under the binder.
         actual: CompTypeWitness,
     },
+    /// A fixpoint without termination evidence names its own binder at a type
+    /// that ends in a returner, outside a ruled operation. The kernel's
+    /// fragment is pure, so such a loop could not state that it diverges, and
+    /// a call that never returns would break what conversion assumes of every
+    /// call: that it returns.
+    PartialFixpoint
+    {
+        /// The fixpoint's type.
+        actual: CompTypeWitness,
+    },
     /// A level variable's index reached or exceeded the declaration's prenex
     /// parameter count.
     LevelVariableOutOfScope
@@ -1005,6 +1015,9 @@ impl core::fmt::Display for KernelError
             Self::BinderEscape { .. } => {
                 f.write_str("a type synthesized under a binder mentions the value it bound")
             },
+            Self::PartialFixpoint { .. } => {
+                f.write_str("a fixpoint without termination evidence recurses at a returner")
+            },
             Self::LevelVariableOutOfScope { .. } => {
                 f.write_str("a level variable escaped the declaration's prenex parameters")
             },
@@ -1168,6 +1181,9 @@ mod tests
             KernelError::ComputationTypeMismatch(mismatch),
             KernelError::CaseBranchMismatch(mismatch),
             KernelError::BinderEscape {
+                actual: unit_returner,
+            },
+            KernelError::PartialFixpoint {
                 actual: unit_returner,
             },
             KernelError::LevelVariableOutOfScope { variable },

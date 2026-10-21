@@ -2489,6 +2489,10 @@ where
                 self.return_eta(id, goal, pair, side)?;
                 Ok(Turn::Again)
             },
+            Plan::Step(Step::Discard(side)) => {
+                self.discard(id, goal, pair, side)?;
+                Ok(Turn::Again)
+            },
             Plan::Step(Step::Reassociate(side)) => {
                 self.reassociate(id, goal, pair, side)?;
                 Ok(Turn::Again)
@@ -3735,6 +3739,65 @@ where
             .map_err(ConversionFault::Domain)?;
         let bound = self.domain.comp_neutral(rebuilt, CompTermFace::Reduced);
         Self::set_side(goal, side, Slot::Ready(Glued::Computation(bound)));
+        Ok(())
+    }
+
+    /// Run the continuation of the unread call on `side` in its place.
+    ///
+    /// # Specification
+    /// - requires: [`crate::rules::unread_call`] reads `side` as an unread
+    ///   call.
+    /// - ensures: the derivation records `Discard` naming `side`, and that side
+    ///   waits on the call's continuation opened at the goal's depth, which
+    ///   never reads the variable it is opened under; the other side and the
+    ///   depth are unchanged.
+    /// - provides: the discard of a call that returns, `M to x. N ≡ N` when `x`
+    ///   is not free in `N`.
+    /// - fails: every fault the channel or the domain raises, and
+    ///   [`ConversionFault::MachineInvariant`] when `side` is not an unread
+    ///   call.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every fault the channel or the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unread call against its continuation, on either
+    ///   side, converts only through this step, and the kernel replays the
+    ///   recorded side; the same call of a variable not known to return stays
+    ///   apart from it.
+    /// - witness: `machine::tests::an_unread_call_is_discarded_only_where_it_returns`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || (goal.depth == depth && match side {
+            ConversionSide::Left => goal.right == right && matches!(goal.left, Slot::Waiting(_)),
+            ConversionSide::Right => goal.left == left && matches!(goal.right, Slot::Waiting(_)),
+        }),
+    )]
+    fn discard(
+        &mut self,
+        id: ProcessId,
+        goal: &mut Goal,
+        pair: (Glued, Glued),
+        side: ConversionSide,
+    ) -> Result<(), ConversionFault>
+    {
+        let Glued::Computation(call) = Self::side_of(pair, side)
+        else {
+            return Err(ConversionFault::MachineInvariant);
+        };
+        let held = *self
+            .domain
+            .computation(call)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let continuation =
+            crate::rules::unread_call(self.core, self.domain, self.definitions, held)?
+                .ok_or(ConversionFault::MachineInvariant)?;
+        self.derivations
+            .decide(id, ConversionDecision::Discard { side })?;
+        let channel = self.open_channel(continuation, goal.depth, Opening::One)?;
+        Self::set_side(goal, side, Slot::Waiting(channel));
+        self.depend(id, channel)?;
         Ok(())
     }
 

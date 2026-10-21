@@ -2,8 +2,9 @@
 // run forever, so the function holding it states `Div` in its row: the host
 // interface with no operation, which no handler eliminates. A caller of such a
 // function holds `Div` in its own row, as it holds any interface its callee
-// performs, so a function at the empty row returns. What refuses is in
-// `../../pathological/control/divergence.gandr`.
+// performs, so a function at the empty row returns. A call that returns and
+// whose result nothing reads is the computation that follows it. What refuses
+// is in `../../pathological/control/divergence.gandr`.
 
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.
@@ -44,4 +45,44 @@ def onceThree() -> -F [Div] Integer {
 @[ checks ]
 def rec unused(x : Bool) -> -F Bool {
   x
+}
+
+/// A call at the empty row returns and nothing observes it but its value, so
+/// a call whose value is never read is the computation that follows it: the
+/// function calling `g` and dropping what it returns is `f`.
+@[ checks ]
+def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> -F Path(
+  a => b,
+  thunk { fn (x) { run v <- g(x); f(x) } },
+  f
+) {
+  here(f)
+}
+
+/// Two unread calls in a row are dropped one after the other.
+@[ checks ]
+def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> -F Path(
+  a => b,
+  thunk { fn (x) { run v <- g(x); run w <- h(x); f(x) } },
+  f
+) {
+  here(f)
+}
+
+/// Applies `h` to `x`.
+@[ checks ]
+def apply(a : Type, b : Type, h : a => b, x : a) -> -F b {
+  h(x)
+}
+
+/// The discard is a step of the dialogue the kernel replays from the
+/// certificate: after it the call of `apply` unfolds, which the kernel's own
+/// reading does not do under a binder.
+@[ checks ]
+def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> -F Path(
+  a => b,
+  thunk { fn (x) { run v <- g(x); apply(a, b, f, x) } },
+  f
+) {
+  here(f)
 }

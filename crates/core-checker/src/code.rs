@@ -141,6 +141,7 @@ use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -1173,7 +1174,7 @@ impl CodeDefinitions
             {
                 return Ok(reading);
             }
-            let (verdict, decisions) = self.relation(core, step.redex, step.reduct)?;
+            let (verdict, decisions) = self.relation(core, step.redex, step.reduct, &[])?;
             return match verdict {
                 MachineVerdict::Convertible => Ok(Certificate {
                     derivation: Derivation::Dialogue,
@@ -1278,7 +1279,8 @@ impl CodeDefinitions
         let definitions =
             Definitions::new(&self.lowered, &self.environment, self.environment.root());
         let mut domain = DomainArena::new();
-        let problem = rigid_problem(core, &mut domain, definitions, left, right)?;
+        let (problem, _returning) =
+            rigid_problem(core, &mut domain, definitions, left, right, &[])?;
         decide::<NullSink, ResharingMemo>(
             core,
             &mut domain,
@@ -1294,8 +1296,8 @@ impl CodeDefinitions
     /// Relate a reflexivity's point to one endpoint standing under the same
     /// binders, recording the derivation: each evaluated with the free
     /// binders either reaches read as rigid variables, every definition this
-    /// table holds unfolding, and a returned endpoint held at the definition
-    /// it calls.
+    /// table holds unfolding, a returned endpoint held at the definition it
+    /// calls, and an unread call of a variable among `returning` discarded.
     ///
     /// # Specification
     /// - requires: every body this table holds, and both values, live in
@@ -1303,8 +1305,10 @@ impl CodeDefinitions
     /// - ensures: the machine's convertible trace from `point` to `endpoint`,
     ///   each side evaluated in one environment of rigid variables, one per
     ///   binder the farther side reaches, under
-    ///   [`gandr_core_nbe::Endpoints::Hold`]; [`converted::Absent::Apart`] when
-    ///   the machine refutes or declines the pair.
+    ///   [`gandr_core_nbe::Endpoints::Hold`] and with the variables at
+    ///   `returning`, by index, read as variables whose calls return;
+    ///   [`converted::Absent::Apart`] when the machine refutes or declines the
+    ///   pair.
     /// - provides: the endpoint condition of reflexivity's rule and the
     ///   dialogue the kernel replays for it. Holding returned endpoints puts
     ///   every δ-step an endpoint needs in the trace as an `Unfold`, where
@@ -1323,9 +1327,12 @@ impl CodeDefinitions
     ///   body it unfolds to, two distinct literals are apart, and an arithmetic
     ///   redex over a variable is apart from the variable; skipping the
     ///   unfolding or the rigid environment changes a verdict. The recorded
-    ///   dialogue replays in the kernel against the admitted definitions.
+    ///   dialogue replays in the kernel against the admitted definitions. An
+    ///   unread call converts with what follows it only when its variable is
+    ///   among `returning`.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
+    /// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
     #[inline]
@@ -1334,9 +1341,10 @@ impl CodeDefinitions
         core: &CoreArena,
         point: ValueId,
         endpoint: ValueId,
+        returning: &[DeBruijnIndex],
     ) -> Result<Maybe<Vec<ConversionDecision<TraceNode>>, converted::Absent>, CheckRefusal>
     {
-        let (verdict, decisions) = self.relation(core, point, endpoint)?;
+        let (verdict, decisions) = self.relation(core, point, endpoint, returning)?;
         Ok(match verdict {
             MachineVerdict::Convertible => Maybe::Present(decisions),
             MachineVerdict::NotConvertible | MachineVerdict::Declined(_) => {
@@ -1374,6 +1382,7 @@ impl CodeDefinitions
         core: &CoreArena,
         point: ValueId,
         endpoint: ValueId,
+        returning: &[DeBruijnIndex],
     ) -> Result<(MachineVerdict, Vec<ConversionDecision<TraceNode>>), CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at: point };
@@ -1381,7 +1390,9 @@ impl CodeDefinitions
             Definitions::new(&self.lowered, &self.environment, self.environment.root())
                 .reading_endpoints(Endpoints::Hold);
         let mut domain = DomainArena::new();
-        let problem = rigid_problem(core, &mut domain, definitions, point, endpoint)?;
+        let (problem, levels) =
+            rigid_problem(core, &mut domain, definitions, point, endpoint, returning)?;
+        let definitions = definitions.returning(&levels);
         let mut log = TraceLog::new();
         let report = decide::<TraceLog<TraceNode>, ResharingMemo>(
             core,
@@ -1864,16 +1875,18 @@ impl Stalled
 
 /// The machine problem relating two values standing under the same binders:
 /// each evaluated under `definitions` in one environment of rigid variables,
-/// one per binder the farther side reaches.
+/// one per binder the farther side reaches; and the levels of the variables
+/// among `returning`.
 ///
 /// # Specification
 /// - requires: every body `definitions` holds, and both values, live in `core`;
 ///   the two values stand under the same binders.
 /// - ensures: the problem between both evaluations, under as many binders as
-///   the environment binds.
+///   the environment binds, and, ascending, the level each index in `returning`
+///   the environment binds stands at.
 /// - provides: the shared preamble of [`CodeDefinitions::convert_terms`] and
 ///   [`CodeDefinitions::relate_terms`], which differ only in the reading of a
-///   returned endpoint and in the sink.
+///   returned endpoint, in the variables known to return and in the sink.
 /// - fails: [`CheckRefusal::Undecided`] at `left` when either side does not
 ///   evaluate; [`CheckRefusal::DanglingNode`] for a node `core` does not hold;
 ///   [`CheckRefusal::MachineInvariant`] for a reach past the address space.
@@ -1899,7 +1912,8 @@ fn rigid_problem(
     definitions: Definitions<'_>,
     left: ValueId,
     right: ValueId,
-) -> Result<Problem, CheckRefusal>
+    returning: &[DeBruijnIndex],
+) -> Result<(Problem, Vec<BinderLevel>), CheckRefusal>
 {
     let undecided = CheckRefusal::Undecided { at: left };
     let mut environment = Environment::new();
@@ -1930,7 +1944,19 @@ fn rigid_problem(
     };
     let one = evaluate(left)?;
     let other = evaluate(right)?;
-    Ok(Problem::values(one, other).under(BinderLevel::from(open)))
+    let mut levels: Vec<BinderLevel> = returning
+        .iter()
+        .filter_map(|&index| {
+            open.checked_sub(u32::from(index))
+                .and_then(|outside| outside.checked_sub(1))
+                .map(BinderLevel::from)
+        })
+        .collect();
+    levels.sort_unstable();
+    Ok((
+        Problem::values(one, other).under(BinderLevel::from(open)),
+        levels,
+    ))
 }
 
 /// Decide whether two computations standing under the same binders convert

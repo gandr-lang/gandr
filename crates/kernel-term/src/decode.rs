@@ -6718,7 +6718,7 @@ mod tests
                     site: MalformedSite::IndexRange,
                 },
             ),
-            (&[0x38, 1, 1, 0x11, 0, 5, 1, 5], DecodeError::Malformed {
+            (&[0x38, 1, 1, 0x7F, 0, 5, 1, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
             (
@@ -6727,10 +6727,10 @@ mod tests
                     site: MalformedSite::PathEvidence,
                 },
             ),
-            (&[0x3A, 1, 1, 1, 0x11, 0, 5, 5], DecodeError::Malformed {
+            (&[0x3A, 1, 1, 1, 0x7F, 0, 5, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
-            (&[0x31, 0, 1, 0x11, 5], DecodeError::Malformed {
+            (&[0x31, 0, 1, 0x7F, 5], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
             (&[0x34, 5], DecodeError::Malformed {
@@ -7062,11 +7062,11 @@ mod tests
             ),
             (&[0x4B, 0, 0, 6], malformed(MalformedSite::Polarity)),
             (
-                &[0x4B, 0, 1, 0x11, 5],
+                &[0x4B, 0, 1, 0x7F, 5],
                 malformed(MalformedSite::PathEvidence),
             ),
             (
-                &[0x4C, 1, 1, 0x11, 4, 5, 5],
+                &[0x4C, 1, 1, 0x7F, 4, 5, 5],
                 malformed(MalformedSite::PathEvidence),
             ),
             (&[0x4C, 1, 0, 5, 5, 5], malformed(MalformedSite::Polarity)),

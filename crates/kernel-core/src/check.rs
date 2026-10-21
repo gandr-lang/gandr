@@ -470,6 +470,51 @@ fn comp_shape_mismatch(
     }
 }
 
+/// The first returner `expected` ends in, reached through arrows, dependent
+/// arrows and lazy-product components as they stand.
+///
+/// # Specification
+/// - requires: nothing — a dangling id is admissible input.
+/// - ensures: `Some` naming a returner exactly when one is reached from
+///   `expected` through those formers; `None` for a type that ends only in
+///   codata types, decodes and dangling ids.
+/// - provides: the types a partial fixpoint may not recurse at outside a ruled
+///   operation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over an explicit worklist, not recursion.
+/// - measure: the computation types under `expected`, each minted before the
+///   former that holds it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a partial loop at a returner and a partial recursion at a
+///   function to one are refused; a partial stream at a codata type is
+///   admitted.
+/// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::codata::a_stream_is_admitted_and_observed`
+#[spec(ensures: |ret| ret.is_none_or(|returner| matches!(arena.comp_type(returner), Some(&CompType::Returner(_)))))]
+fn returner_ending(
+    arena: &TermArena,
+    expected: CompTypeId,
+) -> Option<CompTypeId>
+{
+    let mut pending = Vec::from([expected]);
+    while let Some(shape) = pending.pop() {
+        match arena.comp_type(shape) {
+            Some(&CompType::Returner(_)) => return Some(shape),
+            Some(&(CompType::Arrow { codomain, .. } | CompType::Pi { codomain, .. })) => {
+                pending.push(codomain);
+            },
+            Some(&CompType::With(ref components)) => pending.extend(components.iter().copied()),
+            Some(&(CompType::Element { .. } | CompType::Codata { .. })) | None => {},
+        }
+    }
+    None
+}
+
 /// What `goal` comes to once the returned endpoints its structure leaves open
 /// are read: normalized with the admitted definitions in `entries` unfolding,
 /// and the normal forms converted by the one conversion; and, where that
@@ -659,6 +704,21 @@ pub struct Judgement<'session>
     /// The structural fixpoint whose result of its recursed-on parameter's
     /// type is read at that parameter's stage.
     following: Maybe<ComputationId, recursion::Unowned>,
+    /// Whether a fixpoint without termination evidence may recurse at a
+    /// returner.
+    partial: Partiality,
+}
+
+/// Whether a fixpoint without termination evidence may recurse at a type that
+/// ends in a returner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Partiality
+{
+    /// It may not: every call in the kernel's fragment returns.
+    Refused,
+    /// It may: the declaration is a ruled operation, whose rules the kernel
+    /// admits only oriented, so its recursion terminates.
+    Ruled,
 }
 
 /// The block a judgement may name past the admitted prefix.
@@ -719,6 +779,22 @@ impl<'session> Judgement<'session>
             presentations: &crate::presented::FREE,
             own: Maybe::Absent(recursion::Unowned::Outside),
             following: Maybe::Absent(recursion::Unowned::Outside),
+            partial: Partiality::Refused,
+        }
+    }
+
+    /// The same judgement admitting the partial fixpoints of a ruled
+    /// operation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn ruled(self) -> Self
+    {
+        Self {
+            partial: Partiality::Ruled,
+            ..self
         }
     }
 
@@ -3904,11 +3980,23 @@ where
                     // slot, its body against the classifier weakened past that
                     // slot. A partial one checks at any computation type, and
                     // progress is the unfolding rule's gate, not a typing
-                    // condition. A structural one opens its stage first
-                    // (`recursion::open_fixpoint`): the self binder takes the
-                    // recursed-on parameter below the stage and the body takes
-                    // it at the stage.
+                    // condition; but one that names itself at a type ending in
+                    // a returner is refused outside a ruled operation, since
+                    // every call the fragment makes returns. A structural one
+                    // opens its stage first (`recursion::open_fixpoint`): the
+                    // self binder takes the recursed-on parameter below the
+                    // stage and the body takes it at the stage.
                     Computation::Fixpoint { body, evidence } => {
+                        if matches!(evidence, FixpointEvidence::Partial)
+                            && judgement.partial == Partiality::Refused
+                            && returner_ending(arena, expected).is_some()
+                            && session.comp_reads(arena, body).innermost()
+                                == crate::element_identity::BinderUse::Read
+                        {
+                            return Err(KernelError::PartialFixpoint {
+                                actual: comp_type_witness(arena, expected),
+                            });
+                        }
                         let position = match evidence {
                             FixpointEvidence::Partial => None,
                             FixpointEvidence::StructuralDescent => {
@@ -6283,14 +6371,21 @@ where
         DeclarationContent::Def { body, .. } => {
             // The body is checked at the declared type the seal rule read.
             let context: Vec<ValueTypeId> = Vec::new();
+            // A ruled operation's partial fixpoints terminate by its rules.
+            let ruled = if declaration.operation_rules().rules().is_empty() {
+                judgement
+            }
+            else {
+                judgement.ruled()
+            };
             // A block's definition whose body thunks a fixpoint is that
             // fixpoint: inside it, the definition's own constant — which only
             // the block's families name — reads as the self binder.
-            let owning = match (judgement.block, arena.value(body)) {
+            let owning = match (ruled.block, arena.value(body)) {
                 (Block::Mutual { .. }, Some(&Value::Thunk(root)))
                     if matches!(arena.computation(root), Some(&Computation::Fixpoint { .. })) =>
                 {
-                    judgement.owning(root)
+                    ruled.owning(root)
                 },
                 (
                     Block::Outside
@@ -6298,7 +6393,7 @@ where
                     | Block::Mutual { .. }
                     | Block::Codata { .. },
                     _,
-                ) => judgement,
+                ) => ruled,
             };
             // A definition quantified over stages checks its body with each
             // binder at a stage minted for it, the marked occurrences of its

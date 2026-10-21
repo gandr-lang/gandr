@@ -1,5 +1,6 @@
 use alloc::vec;
 
+use gandr_core_nbe::Calls;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -9,6 +10,7 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::host::divergence;
 use gandr_core_term::equal_comp_type_syntax;
+use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
@@ -20,6 +22,8 @@ use gandr_kernel_term::RuleVariable;
 use quenchant_shape::shape::Maybe;
 
 use super::Divergence;
+use super::calls;
+use super::returning;
 use super::stated;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
@@ -245,4 +249,84 @@ fn a_ruled_operation_terminates_by_its_rules()
         matches!(*verdicts.as_slice(), [Verdict::Checked { .. }]),
         "a ruled operation's fixpoint needs no entry: the kernel orients its rules: {verdicts:?}"
     );
+}
+
+#[test]
+fn a_call_returns_only_where_every_row_is_empty()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let pure = arena.comp_type_returner(unit);
+    let stated_row = diverging(&mut arena, unit);
+    let function = arena.comp_type_arrow(unit, pure);
+    let partial = arena.comp_type_arrow(unit, stated_row);
+    let both_pure = arena.comp_type_with(&[pure, function]);
+    let one_partial = arena.comp_type_with(&[pure, partial]);
+    let rows = [
+        (arena.value_type_thunk(function), Calls::Return),
+        (arena.value_type_thunk(both_pure), Calls::Return),
+        (arena.value_type_thunk(partial), Calls::Unknown),
+        (arena.value_type_thunk(one_partial), Calls::Unknown),
+        (unit, Calls::Unknown),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (bound, answer) in rows {
+        assert_eq!(
+            calls(&mut context, bound),
+            Ok(answer),
+            "a thunk's calls return when each returner it reaches has the empty row; anything else \
+             is unknown: {bound:?}"
+        );
+    }
+}
+
+#[test]
+fn an_unread_call_converts_only_where_its_row_is_empty()
+{
+    // Under `f` and `g`, `thunk (λx. force g x to v. force f x)` against `f`:
+    // the call of `g` is dropped exactly when `g`'s row is empty.
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let pure = arena.comp_type_returner(unit);
+    let stated_row = diverging(&mut arena, unit);
+    let function = arena.comp_type_arrow(unit, pure);
+    let function = arena.value_type_thunk(function);
+    let partial = arena.comp_type_arrow(unit, stated_row);
+    let partial = arena.value_type_thunk(partial);
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let call = |arena: &mut CoreArena, (function, argument): (u32, u32)| {
+        let function = variable(arena, function);
+        let forced = arena.computation_force(function);
+        let argument = variable(arena, argument);
+        arena.computation_application(forced, argument)
+    };
+    let dropped = call(&mut arena, (1, 0));
+    let followed = call(&mut arena, (3, 1));
+    let bound = arena.computation_bind(dropped, followed);
+    let lambda = arena.computation_lambda(bound);
+    let point = arena.value_thunk(lambda);
+    let endpoint = variable(&mut arena, 1);
+    for (called, discarded) in [(function, true), (partial, false)] {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.binders().open(Zone::Intuitionistic, function);
+        context.binders().open(Zone::Intuitionistic, called);
+        let returning = returning(&mut context).expect("both binders are formed");
+        let related =
+            context
+                .definitions()
+                .relate_terms(context.arena(), point, endpoint, &returning);
+        let found = match related {
+            Ok(Maybe::Present(ref decisions)) => decisions
+                .iter()
+                .any(|decision| matches!(decision, ConversionDecision::Discard { .. })),
+            Ok(Maybe::Absent(_)) | Err(_) => false,
+        };
+        assert_eq!(
+            found, discarded,
+            "the call converts away with the empty row and stands with `Div`: {returning:?} \
+             {related:?}"
+        );
+    }
 }

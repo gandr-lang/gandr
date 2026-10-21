@@ -60,6 +60,13 @@
 //! kernel refuses `here_two_up` at that decision, naming the endpoint and the
 //! replay refusal.
 //!
+//! `kernel_export::kernel_discard_readmission::an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name`
+//! readmits `fixture/model/control/divergence.gandr`, whose `unreadApplied`
+//! relates a function that calls `g` and never reads the result to `f` by the
+//! dialogue that drops the call, then tampers that dialogue so the drop names
+//! the other side: the kernel refuses `unreadApplied` at that decision, naming
+//! the endpoint and the replay refusal.
+//!
 //! `kernel_export::kernel_presented_readmission::a_circle_read_without_or_against_its_rules_is_refused_by_name`
 //! readmits `fixture/model/identity/loop-words.gandr`, whose `cancelled_word`
 //! relates `Loop(Unloop(Loop(Nil)))` to `Loop(Nil)` by reflexivity alone: the
@@ -1274,6 +1281,7 @@ mod kernel_ride_readmission
                 | ConversionDecision::EtaExpand { .. }
                 | ConversionDecision::ReturnEta { .. }
                 | ConversionDecision::Reassociate { .. }
+                | ConversionDecision::Discard { .. }
                 | ConversionDecision::Force { .. }
                 | ConversionDecision::ComparedShared { .. }
                 | ConversionDecision::Decompose
@@ -1529,6 +1537,148 @@ mod kernel_here_congruence_readmission
                 *refusal.error(),
                 KernelError::Identity(IdentityError::EndpointsDiffer {
                     side: EndpointSide::Right,
+                    verdict: KernelVerdict::Declined(ReplayDecline::Refused(
+                        ReplayRefusal::Inapplicable { at }
+                    )),
+                    ..
+                }) if at == TracePosition::from(misread)
+            ),
+            "the kernel names the endpoint and the misread decision: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// An unread call readmits by the dialogue that discards it and then unfolds
+/// a definition, which the kernel's own reading does not do under a binder; a
+/// twin whose dialogue discards on the side that holds no call is refused by
+/// name.
+mod kernel_discard_readmission
+{
+    use alloc::sync::Arc;
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_conversion_trace::ConversionDecision;
+    use gandr_kernel_conversion_trace::ConversionSide;
+    use gandr_kernel_core::EndpointSide;
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::IdentityError;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixture/model/control/divergence.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("divergence lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("divergence's export decodes");
+        let mut declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .expect("divergence readmits, `unreadApplied` by the discard its dialogue names");
+
+        let segment = NameSegment::from_text("unreadApplied".into())
+            .expect("`unreadApplied` is a name segment");
+        let unread_applied = StructuredName::from(vec![segment]);
+        let Some(position) = declarations
+            .iter()
+            .position(|marked| *marked.declaration().name() == unread_applied)
+        else {
+            panic!("`unreadApplied` crossed");
+        };
+        let Some(statement) = declarations.get_mut(position)
+        else {
+            panic!("`unreadApplied` is a declaration");
+        };
+        let DeclarationContent::Def { declared, body } = *statement.declaration().content()
+        else {
+            panic!("`unreadApplied` is a definition");
+        };
+        // `unreadApplied` is a function of four parameters returning the
+        // reflexivity: its body thunks four lambdas over a `return`.
+        let Some(&Value::Thunk(mut focus)) = arena.value(body)
+        else {
+            panic!("`unreadApplied` crosses as a thunk");
+        };
+        let mut binders = 0_usize;
+        while let Some(&Computation::Lambda(inner)) = arena.computation(focus) {
+            focus = inner;
+            binders = binders.saturating_add(1);
+        }
+        let Some(&Computation::Return(returned)) = arena.computation(focus)
+        else {
+            panic!("`unreadApplied` returns under its parameters");
+        };
+        let Some(Value::Here { point, dialogues }) = arena.value(returned).cloned()
+        else {
+            panic!("`unreadApplied` returns the kernel's reflexivity");
+        };
+        // The left endpoint calls `g` and drops its value before it calls
+        // `apply`: the dialogue relating the point `f` to it discards that
+        // call on the endpoint's side, which the twin names on the point's.
+        let mut tampered = (*dialogues).clone();
+        let Some(misread) = tampered.left.iter().position(|decision| {
+            *decision
+                == ConversionDecision::Discard {
+                    side: ConversionSide::Right,
+                }
+        })
+        else {
+            panic!("the dialogue discards the call on the endpoint's side: {dialogues:?}");
+        };
+        if let Some(discard) = tampered.left.get_mut(misread) {
+            *discard = ConversionDecision::Discard {
+                side: ConversionSide::Left,
+            };
+        }
+        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let mut rebuilt = arena.computation_return(forged);
+        for _ in 0 .. binders {
+            rebuilt = arena.computation_lambda(rebuilt);
+        }
+        let forged = arena.value_thunk(rebuilt);
+        let content = DeclarationBuilder::new(&mut arena).def(
+            statement.declaration().levels().clone(),
+            declared,
+            forged,
+        );
+        *statement = MarkedDeclaration::new(
+            statement.mark(),
+            content.named(statement.declaration().name().clone()),
+        );
+
+        let refusal = Environment::replay(arena, &declarations)
+            .expect_err("a discard on the side that holds no call is refused");
+        assert_eq!(usize::from(refusal.position()), position);
+        assert!(
+            matches!(
+                *refusal.error(),
+                KernelError::Identity(IdentityError::EndpointsDiffer {
+                    side: EndpointSide::Left,
                     verdict: KernelVerdict::Declined(ReplayDecline::Refused(
                         ReplayRefusal::Inapplicable { at }
                     )),

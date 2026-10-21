@@ -560,8 +560,10 @@ fn call(
 /// # Specification
 /// - requires: `nat` names the admitted `Nat`, and a handed claim's position
 ///   names [`apply`]'s definition.
-/// - ensures: admitted when the evidence is partial or every call stands below
-///   the fixpoint's stage; otherwise refused as `StageNotBelow`.
+/// - ensures: admitted when the evidence is structural and every call stands
+///   below the fixpoint's stage; refused as `StageNotBelow` when a structural
+///   call does not, and as `PartialFixpoint` when the evidence is partial: its
+///   body names its binder at a type ending in a returner.
 /// - panics: none.
 ///
 /// # Errors
@@ -574,9 +576,9 @@ fn call(
 /// - witness: `tests::recursive_data::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
 /// - witness: `tests::recursive_data::a_nullary_argument_needs_a_value_below_the_stage`
 /// - witness: `tests::recursive_data::a_self_reference_never_stands_for_an_unstaged_function`
-#[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial
-            || matches!(claim, Claim::Descends | Claim::Rebuilt | Claim::NullaryUnderField))
-        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
+#[spec(ensures: |ret| ret.is_ok() == (evidence != FixpointEvidence::Partial
+            && matches!(claim, Claim::Descends | Claim::Rebuilt | Claim::NullaryUnderField))
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. } | KernelError::PartialFixpoint { .. }))))]
 fn claim(
     environment: &mut Environment,
     nat: ConstantIndex,
@@ -691,19 +693,19 @@ fn apply(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: admitted exactly when the evidence is partial; a structural one,
-///   with no arrow to recurse on, is refused wanting one.
+/// - ensures: refused: a structural one, with no arrow to recurse on, wanting
+///   one; a partial one as a loop at a returner.
 /// - panics: none.
 ///
 /// # Errors
 /// The kernel's refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a fixpoint at a non-function type checks as partial and
-///   opens no stage when structural.
+/// - hypothesis: L3 — a fixpoint at a non-function type opens no stage when
+///   structural, and is no partial loop the kernel's fragment admits.
 /// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
-#[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial)
-        && (ret.is_ok() || matches!(ret, Err(KernelError::ComputationShapeMismatch { expected: ExpectedComputationShape::Arrow, .. }))))]
+#[spec(ensures: |ret| matches!(ret, Err(KernelError::ComputationShapeMismatch { expected: ExpectedComputationShape::Arrow, .. }))
+        || (evidence == FixpointEvidence::Partial && matches!(ret, Err(KernelError::PartialFixpoint { .. }))))]
 fn loop_at_unit(
     environment: &mut Environment,
     evidence: FixpointEvidence,
@@ -1742,8 +1744,13 @@ fn a_recursion_descends_on_its_first_parameter()
             }),
             "{fixture:?}"
         );
-        claim(&mut environment, nat, fixture, FixpointEvidence::Partial)
-            .expect("a fixpoint without a claim checks as partial");
+        assert!(
+            matches!(
+                claim(&mut environment, nat, fixture, FixpointEvidence::Partial),
+                Err(KernelError::PartialFixpoint { .. })
+            ),
+            "nor does it check as partial: the fragment's calls return ({fixture:?})"
+        );
     }
 }
 
@@ -1758,8 +1765,13 @@ fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
             ..
         })
     ));
-    loop_at_unit(&mut environment, FixpointEvidence::Partial)
-        .expect("a loop at F 1 checks as partial");
+    assert!(
+        matches!(
+            loop_at_unit(&mut environment, FixpointEvidence::Partial),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does a loop at F 1 check as partial: it never returns"
+    );
 }
 
 #[test]
@@ -1820,13 +1832,18 @@ fn a_nullary_argument_needs_a_value_below_the_stage()
             bound: below(root),
         })
     );
-    claim(
-        &mut environment,
-        nat,
-        Claim::NullaryUnderZero,
-        FixpointEvidence::Partial,
-    )
-    .expect("a fixpoint without a claim checks as partial");
+    assert!(
+        matches!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::NullaryUnderZero,
+                FixpointEvidence::Partial,
+            ),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: `rec zero` need not return"
+    );
 }
 
 #[test]
@@ -1951,8 +1968,13 @@ fn a_thunked_field_shows_no_value_below_the_stage_598()
         })
     );
     let mut environment = Environment::new();
-    thunked_call(&mut environment, FixpointEvidence::Partial)
-        .expect("a fixpoint without a claim checks as partial");
+    assert!(
+        matches!(
+            thunked_call(&mut environment, FixpointEvidence::Partial),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: the call never returns"
+    );
 }
 
 #[test]
@@ -1977,13 +1999,18 @@ fn a_self_reference_never_stands_for_an_unstaged_function()
             bound: below(root),
         })
     );
-    claim(
-        &mut environment,
-        nat,
-        Claim::Handed(apply),
-        FixpointEvidence::Partial,
-    )
-    .expect("a fixpoint without a claim checks as partial");
+    assert!(
+        matches!(
+            claim(
+                &mut environment,
+                nat,
+                Claim::Handed(apply),
+                FixpointEvidence::Partial,
+            ),
+            Err(KernelError::PartialFixpoint { .. })
+        ),
+        "nor does it check as partial: `apply` may call `rec` at `x` itself"
+    );
 }
 
 #[test]

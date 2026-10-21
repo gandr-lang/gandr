@@ -334,6 +334,7 @@ use crate::conv::convert_values;
 use crate::conv::equal_values;
 use crate::conv::equal_weakened;
 use crate::conv::pending_endpoints;
+use crate::element_identity::BinderUse;
 use crate::encoding::ContentTable;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
@@ -341,6 +342,8 @@ use crate::rewrite::shift_computation;
 use crate::rewrite::shift_value;
 use crate::rewrite::substitute_computation;
 use crate::rewrite::substitute_value;
+use crate::support::Reaches;
+use crate::support::Reads;
 
 /// What the replay reads of a trace identifier: the constant it names, if
 /// any. A caller maps its own identifiers into this before replaying.
@@ -2263,6 +2266,15 @@ where
             {
                 return Err(self.refuse(next));
             }
+            // Every call of the fragment returns, so an unread one is the
+            // continuation it binds: the trace names the side it drops, and a
+            // refutation may not leave one standing.
+            if self
+                .discard(&mut goal, [&left_shape, &right_shape], next)?
+                .is_some()
+            {
+                continue;
+            }
             let bind = bind_rule(&left_shape, &right_shape);
             if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
                 if !matches!(rule(&left_shape, &right_shape), Rule::Structural)
@@ -3256,6 +3268,7 @@ where
             | ConversionDecision::EtaExpand { .. }
             | ConversionDecision::ReturnEta { .. }
             | ConversionDecision::Reassociate { .. }
+            | ConversionDecision::Discard { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
             | ConversionDecision::Decompose
@@ -3736,6 +3749,98 @@ where
         }
         goal.set(side, Term::Computation(rebuilt));
         Ok(())
+    }
+
+    /// Read an unread call on one side as the continuation it binds.
+    ///
+    /// # Specification
+    /// - requires: `shapes` are the goal's left and right shapes, and `next`
+    ///   the trace's next decision.
+    /// - ensures: under [`Reading::Recorded`], when `next` is `Discard` naming
+    ///   a side whose shape [`unread_call`] reads, that decision is consumed
+    ///   and the side becomes the continuation with its unread binder dropped;
+    ///   `None` and nothing changed when `next` is no `Discard` and the goal is
+    ///   owed convertible, or no side holds an unread call. Under
+    ///   [`Reading::Forced`] and [`Reading::Unfolding`], the left side's unread
+    ///   call is dropped before the right's, reading nothing.
+    /// - provides: the replay of the discard, `M to x. N ≡ N` when `x` is not
+    ///   free in `N` and `M` is a call of a variable.
+    /// - fails: a refusal when the trace names a `Discard` on a side that holds
+    ///   no unread call, or names anything else at a goal owed apart while a
+    ///   side holds one.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: an unread call against its continuation converts on
+    ///   either side by the named decision and by the forced reading alone; a
+    ///   decision naming the side with no call refuses, and so does a
+    ///   refutation that decomposes past a call it could drop.
+    /// - witness: `replay::tests::an_unread_call_replays_as_its_continuation`
+    #[spec(
+        captures: before = (self.position, goal.side(ConversionSide::Left), goal.side(ConversionSide::Right)),
+        ensures: |ret| match ret {
+            Ok(None) => self.position == before.0
+                && goal.side(ConversionSide::Left) == before.1
+                && goal.side(ConversionSide::Right) == before.2,
+            Ok(Some(side)) => goal.side(opposite(side)) == match opposite(side) {
+                ConversionSide::Left => before.1,
+                ConversionSide::Right => before.2,
+            },
+            Err(_) => self.position == before.0,
+        },
+    )]
+    fn discard(
+        &mut self,
+        goal: &mut Goal,
+        shapes: [&Shape; 2],
+        next: Next,
+    ) -> Result<Option<ConversionSide>, Stop>
+    {
+        let [left, right] = shapes;
+        let mut reads = Reaches::<Reads>::new();
+        let mut unread = |shape: &Shape| {
+            unread_call(shape).filter(|&continuation| {
+                reads.comp_reach(self.arena, continuation).innermost() == BinderUse::Ignored
+            })
+        };
+        let calls = [
+            (ConversionSide::Left, unread(left)),
+            (ConversionSide::Right, unread(right)),
+        ];
+        let chosen = match (self.reading, next) {
+            (Reading::Recorded, Next::Decision(ConversionDecision::Discard { side })) => {
+                let Some(&(_, Some(continuation))) = calls.iter().find(|&&(at, _)| at == side)
+                else {
+                    return Err(self.refuse(next));
+                };
+                self.take();
+                (side, continuation)
+            },
+            (Reading::Recorded, Next::Decision(_) | Next::End) => {
+                if goal.expect == Expect::NotConvertible
+                    && calls.iter().any(|&(_, call)| call.is_some())
+                {
+                    return Err(self.refuse(next));
+                }
+                return Ok(None);
+            },
+            (Reading::Forced | Reading::Unfolding, _) => {
+                let Some(&(side, Some(continuation))) =
+                    calls.iter().find(|&&(_, call)| call.is_some())
+                else {
+                    return Ok(None);
+                };
+                (side, continuation)
+            },
+        };
+        let (side, continuation) = chosen;
+        let dropped = self.arena.value_unit();
+        let opened = self.instantiate(continuation, dropped);
+        goal.set(side, Term::Computation(opened));
+        Ok(Some(side))
     }
 
     /// Close or decompose a goal no decision is needed to rewrite.
@@ -7039,6 +7144,45 @@ fn bind_rule(
         return BindRule::ReturnEta(ConversionSide::Right);
     }
     BindRule::Normal
+}
+
+/// The continuation a call bound last into stands under, when `shape` is one:
+/// a variable forced, applied and projected, then bound.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(continuation)` exactly when `shape` is a neutral headed by
+///   a variable whose spine's last elimination is a bind into `continuation`
+///   and whose other eliminations force, apply or project; `None` otherwise.
+///   Whether the continuation reads its binder is the caller's question.
+/// - provides: the shape half of the discard.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Replay::discard`].
+/// - witness: `replay::tests::an_unread_call_replays_as_its_continuation`
+#[spec(ensures: |ret| ret.is_none() || matches!(*shape, Shape::Neutral(Head::Variable(_), ref spine)
+    if matches!(spine.last(), Some(&Elimination::Bind(continuation)) if ret == Some(continuation))))]
+fn unread_call(shape: &Shape) -> Option<ComputationId>
+{
+    let Shape::Neutral(Head::Variable(_), ref spine) = *shape
+    else {
+        return None;
+    };
+    let (&Elimination::Bind(continuation), prefix) = spine.split_last()?
+    else {
+        return None;
+    };
+    prefix
+        .iter()
+        .all(|elimination| {
+            matches!(
+                *elimination,
+                Elimination::Force | Elimination::Apply(_) | Elimination::Project(_)
+            )
+        })
+        .then_some(continuation)
 }
 
 /// The premises two spines decompose into, innermost elimination first.

@@ -7,8 +7,9 @@
 //! every choice point and the premise every refutation of a decomposition
 //! rests on, which a search-free replay needs. `Unfold` and `Postpone` are the
 //! two outcomes of one unfolding choice. `ReturnEta` and `Reassociate` are the
-//! two commuting conversions of `F`, each acting on one side. The variants are
-//! those of [`ConversionDecision`].
+//! two commuting conversions of `F`, each acting on one side, and `Discard`
+//! drops an unread call on one side. The variants are those of
+//! [`ConversionDecision`].
 //!
 //! # The refuted premise
 //!
@@ -37,11 +38,11 @@
 //! eta.
 //!
 //! [`ConversionSide`] is a type. `Freeze` records which side froze,
-//! `EtaExpand` which side was applied to the fresh variable, and `ReturnEta`
-//! and `Reassociate` which side was rewritten; `ReduceLeft` and `ReduceRight`
-//! carry the side structurally. A trace whose side is implicit cannot be
-//! replayed without searching for it, and search-free replay is what the seam
-//! exists to deliver.
+//! `EtaExpand` which side was applied to the fresh variable, and `ReturnEta`,
+//! `Reassociate` and `Discard` which side was rewritten; `ReduceLeft` and
+//! `ReduceRight` carry the side structurally. A trace whose side is implicit
+//! cannot be replayed without searching for it, and search-free replay is what
+//! the seam exists to deliver.
 //!
 //! # The commuting conversions of `F`
 //!
@@ -54,6 +55,13 @@
 //! it as its bind into `return`. Applied until neither fires, the two spines
 //! carry no two binds in a row and end at one length, so the decomposition
 //! that follows compares continuations position by position.
+//!
+//! `Discard` names the side whose computation is a call of a variable that
+//! returns, bound last into a continuation that never reads the value: `M to
+//! x. N` reads as `N`. The call performs nothing and runs to its end, so
+//! dropping it changes no observation. The engine knows which variables
+//! return from their types; the kernel, whose fragment is pure and total,
+//! knows it of every variable.
 
 /// Which of the two compared terms a one-sided decision acted on.
 ///
@@ -246,6 +254,14 @@ pub enum ConversionDecision<Id>
         /// Which side was reassociated.
         side: ConversionSide,
     },
+    /// The discard of an unread call: on one side `M to x. N`, its bind the
+    /// last elimination and `x` unread in `N`, became `N`, since `M`
+    /// returns.
+    Discard
+    {
+        /// Which side was discarded.
+        side: ConversionSide,
+    },
     /// A suspended computation or thunk was forced for the comparison.
     Force
     {
@@ -331,6 +347,7 @@ impl<Id> ConversionDecision<Id>
             },
             Self::ReturnEta { side } => ConversionDecision::ReturnEta { side },
             Self::Reassociate { side } => ConversionDecision::Reassociate { side },
+            Self::Discard { side } => ConversionDecision::Discard { side },
             Self::Force { thunk } => ConversionDecision::Force {
                 thunk: anchor(thunk),
             },
@@ -379,6 +396,9 @@ mod tests
             ConversionDecision::Reassociate {
                 side: ConversionSide::Left,
             },
+            ConversionDecision::Discard {
+                side: ConversionSide::Right,
+            },
             ConversionDecision::Force { thunk: 8 },
             ConversionDecision::ComparedShared { left: 9, right: 10 },
             ConversionDecision::Decompose,
@@ -420,6 +440,9 @@ mod tests
             },
             ConversionDecision::Reassociate {
                 side: ConversionSide::Left,
+            },
+            ConversionDecision::Discard {
+                side: ConversionSide::Right,
             },
             ConversionDecision::Force { thunk: 108 },
             ConversionDecision::ComparedShared {

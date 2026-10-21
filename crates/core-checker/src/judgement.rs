@@ -9310,11 +9310,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   and to the right one: the same node or the same syntax at once, a hole
     ///   or a mark consistently with anything, each with the empty dialogue,
     ///   and otherwise by the normaliser's conversion with every definition
-    ///   admitted so far unfolding and returned endpoints held
-    ///   ([`crate::code::CodeDefinitions::relate_terms`]), with the trace it
-    ///   recorded. On success the context records the two dialogues at `at`. A
-    ///   side the normaliser cannot run — a native primitive, which only the
-    ///   runtime computes — converts by syntax alone.
+    ///   admitted so far unfolding, returned endpoints held and an unread call
+    ///   of a binder whose calls return ([`crate::divergence::returning`])
+    ///   discarded ([`crate::code::CodeDefinitions::relate_terms`]), with the
+    ///   trace it recorded. On success the context records the two dialogues at
+    ///   `at`. A side the normaliser cannot run — a native primitive, which
+    ///   only the runtime computes — converts by syntax alone.
     /// - provides: the endpoint condition of reflexivity's rule, and the
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
@@ -9348,6 +9349,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<(), CheckRefusal>
     {
         let mut dialogues = [Vec::new(), Vec::new()];
+        let mut returning = None;
         for (endpoint, dialogue) in [left, right].into_iter().zip(&mut dialogues) {
             let arena = self.context.arena();
             let syntactic = point == endpoint
@@ -9359,11 +9361,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
             if syntactic {
                 continue;
             }
-            match self
-                .context
-                .definitions()
-                .relate_terms(arena, point, endpoint)
-            {
+            if returning.is_none() {
+                returning = Some(crate::divergence::returning(self.context)?);
+            }
+            match self.context.definitions().relate_terms(
+                self.context.arena(),
+                point,
+                endpoint,
+                returning.as_deref().unwrap_or_default(),
+            ) {
                 Ok(Maybe::Present(decisions)) => *dialogue = decisions,
                 Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => {
                     return Err(CheckRefusal::EndpointMismatch { at, left, right });

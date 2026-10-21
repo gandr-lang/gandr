@@ -923,23 +923,22 @@ fn the_laws_of_bind_replay_by_name()
         );
     }
 
-    // Not pointwise: `force f` against `force f to x. return g`, `g`
-    // free. The refutation runs through the law, never past it.
-    let other = variable(&mut arena, 2);
-    let constant = arena.computation_return(other);
-    let apart = arena.computation_bind(held, constant);
+    // Not pointwise: `force f` against `force f to x. force x`, whose
+    // continuation reads what the call returned. The refutation runs through
+    // the law, never past it.
+    let read = variable(&mut arena, 0);
+    let forced = arena.computation_force(read);
+    let apart = arena.computation_bind(held, forced);
     let apart = ReplaySides::Computations(held, apart);
     assert_eq!(
         run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
             return_eta(ConversionSide::Left),
-            negative(0),
             negative(0)
         ]),
         KernelVerdict::NotConvertible
     );
     assert_eq!(
         run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
-            negative(0),
             negative(0)
         ]),
         refused(ReplayRefusal::Inapplicable {
@@ -1025,6 +1024,81 @@ fn the_laws_of_bind_replay_by_name()
             EngineClaim::Convertible,
             &[ConversionDecision::Decompose]
         ),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(0),
+        })
+    );
+}
+
+#[test]
+fn an_unread_call_replays_as_its_continuation()
+{
+    let mut arena = TermArena::new();
+    let none = Unfoldings::default();
+    let discard = |side| ConversionDecision::Discard { side };
+    let negative = |position: u32| ConversionDecision::NegativeSubgoal {
+        position: SubgoalPosition::from(position),
+    };
+    let variable =
+        |arena: &mut TermArena, index: u32| arena.value_variable(DeBruijnIndex::from(index));
+
+    // `force f to x. return g` against `return g`, `f` and `g` free: the
+    // call never reads what `f` returns, so it is `return g`.
+    let function = variable(&mut arena, 0);
+    let called = arena.computation_force(function);
+    let under = variable(&mut arena, 2);
+    let after = arena.computation_return(under);
+    let unread = arena.computation_bind(called, after);
+    let outside = variable(&mut arena, 1);
+    let returned = arena.computation_return(outside);
+    let dropped = ReplaySides::Computations(unread, returned);
+    assert_eq!(
+        run(&mut arena, &none, dropped, EngineClaim::Convertible, &[
+            discard(ConversionSide::Left)
+        ]),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &none,
+            ReplaySides::Computations(returned, unread),
+            EngineClaim::Convertible,
+            &[discard(ConversionSide::Right)]
+        ),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(&mut arena, &none, dropped, EngineClaim::Convertible, &[
+            discard(ConversionSide::Right)
+        ]),
+        refused(ReplayRefusal::Inapplicable {
+            at: TracePosition::from(0),
+        }),
+        "the side named holds no call"
+    );
+    assert_eq!(
+        convert(&mut arena, &none, dropped, ReplayBudget::default()),
+        KernelVerdict::Convertible,
+        "the kernel's own reading drops the call unread"
+    );
+
+    // Against `return h`, the pair is apart only once the call is dropped:
+    // a refutation that decomposes past it is refused.
+    let other = variable(&mut arena, 2);
+    let elsewhere = arena.computation_return(other);
+    let apart = ReplaySides::Computations(unread, elsewhere);
+    assert_eq!(
+        run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
+            discard(ConversionSide::Left),
+            negative(0)
+        ]),
+        KernelVerdict::NotConvertible
+    );
+    assert_eq!(
+        run(&mut arena, &none, apart, EngineClaim::NotConvertible, &[
+            negative(0)
+        ]),
         refused(ReplayRefusal::Inapplicable {
             at: TracePosition::from(0),
         })
@@ -2380,9 +2454,14 @@ fn neutral_spines_keep_subgoal_order_and_reject_kind_mismatches()
             at: TracePosition::from(0)
         })
     );
+    // An application against a bind that returns what it bound: the spines
+    // differ in kind at one length. A bind that never read its value would be
+    // dropped instead.
     let forced = arena.computation_force(head);
     let applied = arena.computation_application(forced, unit);
-    let bound = arena.computation_bind(forced, same_branch);
+    let bound_value = arena.value_variable(DeBruijnIndex::from(0));
+    let returned = arena.computation_return(bound_value);
+    let bound = arena.computation_bind(forced, returned);
     for other in [forced, bound] {
         assert_eq!(
             run(

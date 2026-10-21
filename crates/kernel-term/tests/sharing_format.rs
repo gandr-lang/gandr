@@ -2015,7 +2015,7 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
             decode(ArtifactImage::from(&bytes.0[.. end])).err()
         );
     }
-    for invalid in [0x11_u64, 0x0100_0000_000C_u64] {
+    for invalid in [0x7F_u64, 0x0100_0000_000C_u64] {
         let entry = declaration.entries.last_mut().expect("certificate entry");
         entry.0.truncate(premise_offset);
         entry.varint(WireValue(invalid));

@@ -11,7 +11,9 @@
 //! entry: a caller of a diverging function holds it in its own row, as it
 //! holds any interface its callee performs, and a handler or a capability
 //! scope of `Div` has no operation to answer and leaves it in the row it
-//! answers at. The empty row is the row of a computation that returns.
+//! answers at. The empty row is the row of a computation that returns, and a
+//! conversion drops an unread call of a variable whose type ends in empty rows
+//! alone ([`returning`]): it runs to its end and nothing observes it.
 //!
 //! # Boundaries
 //!
@@ -35,12 +37,15 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_nbe::Calls;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::EffectPresence;
 use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::host::DIV;
 use gandr_core_term::effect::host::divergence;
 use gandr_kernel_term::DeBruijnIndex;
@@ -54,7 +59,9 @@ use crate::refusal::Mismatch;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::view::CompTypeView;
+use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
+use crate::view::value_type_view;
 
 /// What a partial fixpoint's type says about divergence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -233,4 +240,98 @@ pub fn stated(
         .get(&expected)
         .copied()
         .map_or(Divergence::Stated, Divergence::Unstated))
+}
+
+/// Whether every call of a variable of type `bound` returns.
+///
+/// # Specification
+/// - requires: `bound` is formed.
+/// - ensures: [`Calls::Return`] exactly when `bound`'s weak head is a thunk
+///   type each returner of which, reached through arrows, dependent arrows and
+///   lazy-product components at their weak heads, has the empty row;
+///   [`Calls::Unknown`] for any other type, and for one that reaches a decode
+///   no definition unfolds, a codata type or the unknown type.
+/// - fails: the weak-head reading's refusal.
+/// - panics: none.
+/// - executable: none — the answer reads the arena's types at their weak heads,
+///   which the witness holds to stated types.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the `while let` loop over an explicit worklist, not recursion.
+/// - measure: the computation types under the thunk, each read once: a node is
+///   replaced by its codomain or its components, minted before it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function to a returner at the empty row, the same at a
+///   row holding `Div`, a lazy product with one such component, and a value
+///   type that is no thunk, each asserted as the exact answer.
+/// - witness: `divergence::tests::a_call_returns_only_where_every_row_is_empty`
+pub fn calls(
+    context: &mut CheckingContext<'_>,
+    bound: ValueTypeId,
+) -> Result<Calls, CheckRefusal>
+{
+    let head = context.whnf_value_type(bound)?;
+    let ValueTypeView::Thunk(computation) = value_type_view(context.arena(), head)?
+    else {
+        return Ok(Calls::Unknown);
+    };
+    let mut pending = vec![computation];
+    while let Some(shape) = pending.pop() {
+        let head = context.whnf_comp_type(shape)?;
+        match comp_type_view(context.arena(), head)? {
+            CompTypeView::Arrow { codomain, .. } | CompTypeView::Pi { codomain, .. } => {
+                pending.push(codomain);
+            },
+            CompTypeView::With(components) => pending.extend(components.iter().copied()),
+            CompTypeView::Returner { effects, .. } => {
+                if effects.purity() != Purity::Pure {
+                    return Ok(Calls::Unknown);
+                }
+            },
+            CompTypeView::Element { .. } | CompTypeView::Unknown | CompTypeView::Codata { .. } => {
+                return Ok(Calls::Unknown);
+            },
+        }
+    }
+    Ok(Calls::Return)
+}
+
+/// The intuitionistic variables of the judgement's binders whose calls
+/// return, by index, innermost first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each index whose declared type [`calls`] answers
+///   [`Calls::Return`] for, ascending.
+/// - provides: the variables a reflexivity's endpoint conversion discards an
+///   unread call of.
+/// - fails: as [`calls`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`calls`], read at every binder.
+/// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |indices| indices.is_sorted()))]
+pub fn returning(context: &mut CheckingContext<'_>) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
+{
+    let depth = u32::try_from(usize::from(context.binders().depth(Zone::Intuitionistic)))
+        .map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+    let mut indices = Vec::new();
+    for index in (0 .. depth).map(DeBruijnIndex::from) {
+        let declared = context
+            .binders()
+            .declared(Zone::Intuitionistic, index)
+            .map_err(|_unbound| CheckRefusal::MachineInvariant)?;
+        if calls(context, declared)? == Calls::Return {
+            indices.push(index);
+        }
+    }
+    Ok(indices)
 }
