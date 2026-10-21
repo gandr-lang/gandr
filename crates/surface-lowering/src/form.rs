@@ -140,14 +140,13 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 74_usize] = [
+    pub const ALL: [Self; 73_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
         Self::ANNOTATION,
         Self::SIGNATURE,
         Self::FUNCTION,
-        Self::RECURSIVE,
         Self::INSTANTIATION,
         Self::PARAMETERS,
         Self::PARAMETER,
@@ -265,9 +264,6 @@ impl FormName
     pub const PARAMETERS: Self = Self("parameters");
     /// The projection `e.1` or `e.field`.
     pub const PROJECTION: Self = Self("projection_expression");
-    /// The recursive tail `rec name (params) { … }`, folded into the
-    /// declaration.
-    pub const RECURSIVE: Self = Self("def_rec");
     /// The statement `recv …;`, inlined into its block.
     pub const RECV_STATEMENT: Self = Self("recv_statement");
     /// The statement `release …;`, inlined into its block.
@@ -776,6 +772,9 @@ pub enum Former
     /// The telescope value `#{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
+    /// The list literal `[v, …]`: the native list of its elements in order,
+    /// the empty list when it has none.
+    List,
     /// A module packed at the model type its signature states, `pack M at
     /// Model(T)`: the bundled record of the module's members.
     PackModel,
@@ -922,7 +921,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 67_usize] = [
+    pub const ALL: [Self; 68_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -946,6 +945,7 @@ impl Former
         Self::Call,
         Self::Case,
         Self::Telescope,
+        Self::List,
         Self::PackModel,
         Self::Injection,
         Self::LazyRecord,
@@ -1012,7 +1012,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 83_usize] = [
+pub const FORMERS: [(&str, Former); 84_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1038,6 +1038,7 @@ pub const FORMERS: [(&str, Former); 83_usize] = [
     ("call_expression", Former::Call),
     ("case_expression", Former::Case),
     ("telescope_expression", Former::Telescope),
+    ("list_expression", Former::List),
     ("labelled_sum_expression", Former::Injection),
     ("pack_model_expression", Former::PackModel),
     ("lazy_record_expression", Former::LazyRecord),

@@ -125,8 +125,6 @@ impl TrackingIssue
     pub const RECURSIVE_CLAIM: Self = Self(1497);
     /// A function passed as a value with only some of its implicits supplied.
     pub const PARTIAL_SUPPLY: Self = Self(1498);
-    /// A recursive definition with no parameters.
-    pub const NULLARY_RECURSION: Self = Self(1499);
     /// A `fork` or a `hold` in a match arm that continues its block.
     pub const JOINED_SCOPE: Self = Self(1500);
     /// Shared sessions: `fork !`, `dup`, `acquire` and `release`.

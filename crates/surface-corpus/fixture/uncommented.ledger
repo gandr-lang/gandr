@@ -146,7 +146,6 @@ fragment/undefined-type-head.gandr:counted:ef17b2f3eb86de87
 fragment/unmarked-self-reference.gandr:<file>
 fragment/unmarked-self-reference.gandr:Nat:7c8cfc5b76d8efd9
 fragment/unmarked-self-reference.gandr:bare:c78175776d973f53
-fragment/unmarked-self-reference.gandr:constant:468f169e12ee8af0
 fragment/unmarked-self-reference.gandr:idle:a8d7eb0e054a41fb
 fragment/unmarked-self-reference.gandr:marked:a4fc14d0109ccf78
 model/data/data-nested-type.gandr:import_declaration:e6bf8b86a1b96c18

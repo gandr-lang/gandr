@@ -805,6 +805,7 @@ fn operand_of(
         | Former::Case
         | Former::Scope
         | Former::Telescope
+        | Former::List
         | Former::PackModel
         | Former::Injection
         | Former::LazyRecord

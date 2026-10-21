@@ -25,6 +25,13 @@ def rec always(n : Integer) -> Stream(Integer) {
   &{ .tail => always[>](n), .head => n }
 }
 
+/// One forever: a corecursive constant, which binds its own name over its
+/// copattern block though it takes no parameter (#1499).
+@[ checks ]
+def rec ones() -> Stream(Integer) {
+  &{ .head => 1, .tail => ones[>]() }
+}
+
 /// The head of a stream: observing a thunk of it.
 @[ checks ]
 def first(s : +U Stream(Integer)) -> -F Integer {
@@ -73,6 +80,11 @@ def four = thunk { second(thunk { upward(3) }) } ;
 @[ runs("9") ]
 def nine : () => Integer ;
 def nine = thunk { second(thunk { zipWith(add, thunk { upward(1) }, thunk { always(7) }) }) } ;
+
+/// The ones, observed one further: the constant unfolds once.
+@[ runs("1") ]
+def unfolded : () => Integer ;
+def unfolded = thunk { second(thunk { ones() }) } ;
 
 /// An observation by its position, counted from zero in declaration order:
 /// `s.1` is `s.tail`, so this is `second`.

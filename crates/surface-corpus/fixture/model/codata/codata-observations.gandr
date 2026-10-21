@@ -11,9 +11,10 @@ codata Point : Type {
   y : Integer;
 }
 
-/// The point at three and four, its observations written bare; the lowering
-/// reads a `def rec` body only as a computation.
-@[ refuses("OutOfFragment") ]
+/// The point at three and four, its observations written bare as the earlier
+/// surface wrote them: a copattern clause stands inside `&{ … }`, so a bare
+/// one is out of place.
+@[ refuses("MalformedForm") ]
 def rec origin() -> Point {
   .x => 3,
   .y => 4

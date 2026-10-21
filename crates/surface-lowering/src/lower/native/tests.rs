@@ -715,6 +715,41 @@ fn fixpoint_of(
 }
 
 #[test]
+fn a_parameterless_recursive_tail_binds_its_own_name_1499()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}codata Ones : Type[-] {{ head : Integer; tail : Ones; }}\n\
+         def rec constant() -> -F Nat {{ return Zero }}\n\
+         def rec ones() -> Ones {{ &{{ .head => 1, .tail => ones[>]() }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["constant", "ones"].map(SurfaceName::from) {
+        let (outside, fixpoint) = fixpoint_of(&arena, &module, name);
+        assert_eq!(
+            outside,
+            ParameterAt(0),
+            "`{name:?}` binds no lambda outside its fixpoint"
+        );
+        let Some(&Computation::Fixpoint {
+            body,
+            evidence: FixpointEvidence::Partial,
+        }) = arena.computation(fixpoint)
+        else {
+            panic!(
+                "`{name:?}` closes a partial fixpoint: {:?}",
+                arena.computation(fixpoint)
+            );
+        };
+        assert!(
+            !matches!(arena.computation(body), Some(&Computation::Lambda(_))),
+            "`{name:?}`'s fixpoint stands over its body, with no parameter's lambda"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 fn a_definition_descends_on_the_parameter_its_cases_scrutinise()
 {
     let mut arena = CoreArena::new();
@@ -1935,6 +1970,49 @@ fn a_field_classifies_the_constructor_written_in_it_1171()
         gandr_core_term::CertificateEquality::Equal,
         "the field classifies its constructor as the annotation does"
     );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_listed_constructor_takes_the_element_type_1544()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def annotated = ([Some(3), None] : List(Maybe(Integer))) ;\n\
+         def signed : List(Maybe(Integer)) ;\ndef signed = [Some(3), None] ;\n\
+         def nested = ([[Some(3)], [], [None]] : List(List(Maybe(Integer)))) ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let integer = |argument| matches!(arena.value(argument), Some(&Value::Quote(quoted)) if arena.value_type(quoted) == Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer)));
+    for name in ["annotated", "signed", "nested"].map(SurfaceName::from) {
+        let mut pending = Vec::from([body_named(&module, name)]);
+        let mut constructed = 0_usize;
+        while let Some(id) = pending.pop() {
+            match arena.value(id) {
+                Some(&Value::ListCons(head, tail)) => pending.extend([tail, head]),
+                Some(&Value::ListNil) => {},
+                Some(&Value::Constructor { datatype, .. }) => {
+                    assert!(
+                        matches!(
+                            arena.value_type(datatype),
+                            Some(&ValueType::Data { ref arguments, .. })
+                                if matches!(arguments.as_slice(), [argument] if integer(*argument))
+                        ),
+                        "`{name}`'s element is classified `Maybe(Integer)`: {:?}",
+                        arena.value_type(datatype)
+                    );
+                    constructed = constructed.saturating_add(1_usize);
+                },
+                other => panic!("`{name}` holds lists and constructors only: {other:?}"),
+            }
+        }
+        assert_eq!(
+            constructed,
+            2_usize,
+            "each of `{name}`'s constructors is minted: {:?}",
+            outcome_of(&module, name)
+        );
+    }
     assert_accepted(&judged(&module, &mut arena));
 }
 

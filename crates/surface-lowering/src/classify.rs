@@ -423,7 +423,6 @@ fn tracked_form(
         FormName::INSTANTIATION if matches!(sort, FragmentSort::Value) => {
             TrackingIssue::PARTIAL_SUPPLY
         },
-        FormName::RECURSIVE => TrackingIssue::NULLARY_RECURSION,
         FormName::FORK_STATEMENT | FormName::HOLD_STATEMENT => TrackingIssue::JOINED_SCOPE,
         FormName::FORK_SHARED_STATEMENT
         | FormName::DUP
@@ -957,12 +956,6 @@ mod tests
                 FragmentSort::Value,
                 FragmentBoundary::Unadmitted,
                 FailureClass::Unimplemented(TrackingIssue::PARTIAL_SUPPLY),
-            ),
-            (
-                "def_rec",
-                FragmentSort::Declaration,
-                FragmentBoundary::Unadmitted,
-                FailureClass::Unimplemented(TrackingIssue::NULLARY_RECURSION),
             ),
             (
                 "fork_statement",

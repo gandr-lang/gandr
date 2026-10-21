@@ -544,6 +544,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Run
             | Former::Call
             | Former::Telescope
+            | Former::List
             | Former::PackModel
             | Former::Injection
             | Former::Binary
