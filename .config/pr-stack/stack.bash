@@ -26,6 +26,33 @@ stack_top() {
   open_prs | jq -c --arg own "$1" --arg trunk "$trunk" -f "$pr_stack_dir/top.jq"
 }
 
+# The commit below the checked-out branch `$1`'s own commits, where its rebase
+# onto the top's branch `$2` starts (#1298). Its own commits are those above
+# `origin/$trunk` that no other open pull request's head holds and whose patch
+# `origin/$2` does not already carry. A branch an earlier run stacked holds
+# the commits of the top it was stacked on, and of any pull request that top
+# has since been rebased off; neither is its own. Its own commits sit at its
+# top, so the parent of the oldest is the fork. Prints `HEAD` when it holds
+# none.
+own_fork() {
+  local heads=() head commit
+  local -A held=()
+  for head in $(open_prs | jq -r --arg own "$1" '.[] | select(.head != $own) | .head'); do
+    git fetch --quiet origin "$head"
+    heads+=("origin/$head")
+  done
+  # The patch comparison reads the top's side whole, so it runs apart from the
+  # exclusion of the other heads.
+  for commit in $(git rev-list --no-merges HEAD --not "origin/$trunk" "${heads[@]}"); do held[$commit]=1; done
+  for commit in $(git rev-list --reverse --cherry-pick --right-only --no-merges "origin/$2...HEAD"); do
+    if [[ -n "${held[$commit]:-}" ]]; then
+      git rev-parse "$commit^"
+      return
+    fi
+  done
+  echo HEAD
+}
+
 # Whether pull request `$1` is in the merge queue or set to enter it on its
 # own (auto-merge). Either way it lands alone, and GitHub refuses to link it
 # into a stack.
