@@ -329,7 +329,6 @@
 586 Other module_declaration : L[type_variable] R[<type>]
 587 Other module_declaration , L[<type> type_variable] R[)]
 588 Other module_declaration ) L[, <type> type_variable] R[, : = }]
-589 Other module_declaration = L[) type_identifier] R[<type>]
 590 Other module_declaration : L[) type_identifier] R[<type>]
 591 Keyword module_declaration mobile L[#{] R[type]
 592 Keyword module_declaration type L[mobile] R[type_identifier]

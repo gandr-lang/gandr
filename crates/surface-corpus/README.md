@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`. Every `.gandr` source under `fixture/` opens with a comment, and each top-level item carries a doc comment or a line comment immediately before its attribute block; a body on the next line after its commented signature inherits that comment. `check:corpus-comments` refuses a source that does not. A ledger line is `path:name:` and sixteen hex digits of BLAKE3 over the item text, whitespace collapsed and comments and the attribute block left out, ratcheted against [`fixture/uncommented.ledger`](fixture/uncommented.ledger).
+The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -42,6 +42,13 @@ The expectation language over a lowered module and its verdicts — the `checks`
 The crate-level doctest (`src/lib.rs`, § Example) is the example: it lowers a module of two declarations, one owing a hole and one stating the refusal it earns, checks it, settles it on the fixture root and reads the tally — settled, a ledger of one, unsealed. `cargo nextest run -p gandr-surface-corpus` runs it with the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
 
 Five headline sources — `fixture/model/higher-cells/ua-corolla.gandr`, `fixture/model/identity/transport-dependent.gandr`, `fixture/model/identity/transport-path.gandr`, `fixture/model/identity/funext.gandr` and `fixture/model/identity/circle.gandr` — keep a golden of every hover beside their role goldens, as `crates/surface-grammar/tests/highlight/<source>.hover`: one line per run of positions answered alike, its span, the text, the hover text and its range. A change that moves a hover moves a line; `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-lsp --test tests -E 'test(the_headline_sources_hover_as_their_goldens)'` rewrites them, and the diff is the review.
+
+The control subjects take a case that is hard in other languages and write it as gandr does, the accepting programs under `fixture/model/<subject>/` and each misuse refused by name under `fixture/pathological/<subject>/`:
+
+| Case | Subject | Compared with |
+| ---- | ------- | ------------- |
+| Completion-based I/O | `completion` | io_uring's submission and completion queues; Rust's owned-buffer completion APIs |
+| Move semantics | `moves` | C++'s moved-from objects and move constructors; Rust's `Copy` and move split, and `mem::forget` |
 
 ## Writing to the corpus
 

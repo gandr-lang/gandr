@@ -1,0 +1,27 @@
+// A handle moved twice: two closers would each close the one descriptor, the
+// double close POSIX close(2) warns of, after the first move left the mover
+// with nothing to move.
+
+// The file's protocols.
+import "../../model/moves/file-base.gandr" ;
+
+/// The handle moved into one closer and then into another: the first send
+/// spent the mover's end, so the second sends a spent slot.
+@[ refuses("UsedAfterClose") ]
+def movedTwice() -> -F Unit {
+  fork (owner : File.Handle) { close(owner) } as file;
+  fork (first : File.Closer) {
+    recv(first) as held;
+    close(held);
+    close(first)
+  } as one;
+  fork (second : File.Closer) {
+    recv(second) as held;
+    close(held);
+    close(second)
+  } as two;
+  send(one, file);
+  send(two, file);
+  close(one);
+  close(two)
+}
