@@ -698,9 +698,17 @@ impl<'source> Program<'source>
     /// # Adequacy
     /// - hypothesis: L3 — a document judged after a closure judged once
     ///   composes, its program included, as on a fresh judgement of the
-    ///   closure.
+    ///   closure; a position no declaration takes is skipped; a run naming a
+    ///   hidden member reads the declared type the program sealed. Widening the
+    ///   sealed filter to a declaration before `focused`'s boundary or one
+    ///   reaching no hidden member changes no run: the first was sealed by the
+    ///   leading program in the same spelling, and only a run whose read-back
+    ///   mentions a hidden member reads the seal, which such a declaration's
+    ///   run never does.
     /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_skipped_admission_position_holds_no_declaration`
+    /// - witness: `evaluate::tests::a_run_naming_a_hidden_member_is_opaque_at_its_module`
     #[must_use]
     pub(crate) fn after(
         focused: Focused<'source>,
@@ -2126,6 +2134,7 @@ mod tests
     use super::Evaluation;
     use super::Program;
     use super::RunStatus;
+    use super::SealedRun;
     use super::Spelling;
     use super::Unfinished;
     use super::Unrunnable;
@@ -2544,6 +2553,33 @@ def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
         assert!(
             matches!(evaluation, Evaluation::Value(_)),
             "`wrap` names `helper`, which no signature hides: {evaluation}"
+        );
+    }
+
+    /// A run whose value names a member its module's signature hides is
+    /// opaque at that module, reported with the declared type of the
+    /// declaration run, as the program spelled it when it was built.
+    #[test]
+    fn a_run_naming_a_hidden_member_is_opaque_at_its_module()
+    {
+        let mut hiding = program(
+            r"theory Pointed {
+  sort T : Type;
+  oper z : T;
+}
+module Stepped : Model(Pointed) {
+  type T = Integer => Integer;
+  def step(x : Integer) -> -F Integer { x }
+  def z : T ; def z = fn (n) { become step(n) } ;
+}",
+        );
+        assert_eq!(
+            run(&mut hiding, SurfaceName::from("z")),
+            Evaluation::Sealed(SealedRun {
+                module: String::from("Stepped"),
+                declared: String::from("Integer => Integer"),
+            }),
+            "`z` runs to a function applying `step`, which the signature hides"
         );
     }
 

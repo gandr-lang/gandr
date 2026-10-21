@@ -767,8 +767,12 @@ impl Entries<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the witnesses of [`Entries::next`].
+    /// - hypothesis: L3 — the witnesses of [`Entries::next`], and an inferred
+    ///   exit and run each reported where its attribute or the run's lints
+    ///   reach, and only there.
     /// - witness: `entry::tests::each_verb_prints_its_entries`
+    /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
+    /// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
     #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|diagnostic| diagnostic.path.as_path() == self.path))]
     fn reached(&mut self) -> Option<Diagnostic>
     {

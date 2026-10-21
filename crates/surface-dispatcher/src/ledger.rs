@@ -445,9 +445,11 @@ impl SyntaxLedger
     /// # Adequacy
     /// - hypothesis: L2/L3 — the built-in grammar is a finite census: the rows'
     ///   count equals the rules', the molds the rows name are every mold once,
-    ///   and the attribute rows are the registry's names. A grammar other than
+    ///   and the attribute rows are the registry's names; a row keeps an ASCII
+    ///   spelling exactly where it differs from the form. A grammar other than
     ///   the built-in one is outside the domain.
     /// - witness: `ledger::tests::every_rule_mold_and_attribute_has_one_row`
+    /// - witness: `ledger::tests::a_glyph_rule_writes_both_spellings`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.attributes.len() == AttributeRegistry::names().len()))]
     #[inline]
     pub fn build() -> Result<Self, LedgerFault>

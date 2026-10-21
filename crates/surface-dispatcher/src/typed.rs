@@ -843,8 +843,10 @@ fn own(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source writing a value type, a computation type and a
-///   transport answers each at its universe.
+///   transport answers each at its universe; a type a model's header derives
+///   from its signature, written by no one, answers nowhere.
 /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+/// - witness: `typed::tests::a_model_header_answers_no_term_its_signature_derives_477`
 pub fn written_types(
     module: &LoweredModule<'_>,
     arena: &CoreArena,
@@ -1272,9 +1274,20 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a table assembled from a judgement's typed run is the
-    ///   table [`of_unit`](Self::of_unit) builds of the same source.
+    ///   table [`of_unit`](Self::of_unit) builds of the same source; a term
+    ///   checked against another type keeps both; a term under a constructor's
+    ///   stated index answers under its frame; a run's binder answers at what
+    ///   its computation returns; a declaration refused as shadowing answers
+    ///   nowhere inside it while a term after it does; both halves of a
+    ///   declaration find its type.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `tests::corpus::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
+    /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
+    /// - witness: `typed::tests::a_run_binder_answers_at_what_its_computation_returns_298`
+    /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
+    /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
+    /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
     pub(crate) fn assemble(
         source: SourceText<'_>,
         (module, mut arena): (LoweredModule<'_>, CoreArena),
@@ -2757,8 +2770,10 @@ impl TypeTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::at`].
+    /// - hypothesis: L3 — as [`Self::at`], and nodes checked against the type
+    ///   they synthesise, or one spelled alike, answer one type.
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref answer) => answer.span == entry.span && answer.subject == entry.subject,
         Maybe::Absent(typing::Absent::Unspelled) => true,
@@ -4197,10 +4212,14 @@ fn exposed(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched`].
+/// - hypothesis: L3 — as [`matched`], and a record pattern over a product of
+///   three and an indexed pattern over a sum of two, each part at its
+///   component.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
+/// - witness: `typed::tests::a_part_of_a_product_or_a_binary_sum_answers_at_its_component`
+/// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
 #[spec(ensures: |ret| ret.iter().all(|&(_, part, _)| arena.value_type(part).is_some())
     && (ret.is_empty() || matches!(*pattern, Pattern::Constructor { .. } | Pattern::Pair(..) | Pattern::Injection(..))))]
 fn parts(
@@ -6197,6 +6216,29 @@ mod tests
                     expected: Maybe::Absent(checked_against::Absent::Agreed),
                 }),
                 "`{arm}` answers at what the comparison it cases on returns, not as the case"
+            );
+        }
+    }
+
+    /// Parts no arm uses answer at their place's type alone: a record
+    /// pattern's over a product of three at its own component, and an indexed
+    /// sum pattern's over a boolean, the sum of two units it stands for, at
+    /// the summand.
+    #[test]
+    fn a_part_of_a_product_or_a_binary_sum_answers_at_its_component()
+    {
+        let source = SourceText::from(concat!(
+            "def last(t : #{Integer, Bool, Integer}) -> -F Integer {\n",
+            "  case t {\n    #{x, y, z} => return z\n  }\n}\n",
+            "def side(c : Integer) -> -F Integer {\n  run small <- c < 128;\n",
+            "  case small {\n    +{.0 = u} => 1,\n    +{.1 = v} => 2\n  }\n}\n",
+        ));
+        let table = table(source);
+        for (needle, ty) in [("y, z}", "Bool"), ("u} =>", "Unit"), ("v} =>", "Unit")] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "`{needle}` answers at its component"
             );
         }
     }

@@ -312,6 +312,7 @@ impl Referents
     /// - witness: `typed::tests::a_name_ends_where_it_is_written`
     /// - witness: `typed::tests::a_recursive_call_s_head_refers_to_the_name_it_calls`
     /// - witness: `typed::tests::a_name_nothing_declares_is_kept_beside_a_form_refused_as_shadowing`
+    /// - witness: `typed::tests::a_use_s_type_refers_to_the_families_it_names_795`
     #[spec(ensures: |ret| ret.uses.windows(2).all(|pair| matches!(*pair, [(first, _), (second, _)] if first.start() <= second.start()))
         && ret.uses.iter().all(|&(span, _)| usize::from(span.end()).saturating_sub(usize::from(span.start())) <= ret.widest))]
     pub(super) fn of(
