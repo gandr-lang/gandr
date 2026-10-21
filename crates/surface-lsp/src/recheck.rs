@@ -1742,9 +1742,12 @@ mod tests
     #[test]
     fn an_unimplemented_refusal_links_its_tracking_issue()
     {
-        let url = "https://github.com/gandr-lang/gandr/issues/1107";
+        let url = "https://github.com/gandr-lang/gandr/issues/1543";
         let uri = DocumentUri::from("file:///strict/annotated.gandr");
-        let diagnostics = checked(&uri, SourceText::from("def annotated = (3 : Integer) ;\n"));
+        let diagnostics = checked(
+            &uri,
+            SourceText::from("def annotated = ((3 : Integer), 1) ;\n"),
+        );
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
             panic!("one unsupported annotation");
@@ -1760,7 +1763,7 @@ mod tests
         assert!(
             diagnostic
                 .message
-                .ends_with(format!("\nnote: tracked by #1107 <{url}>").as_str()),
+                .ends_with(format!("\nnote: tracked by #1543 <{url}>").as_str()),
             "the message closes with the line the terminal closes with: {:?}",
             diagnostic.message
         );

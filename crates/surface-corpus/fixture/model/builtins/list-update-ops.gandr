@@ -3,8 +3,8 @@
 // reached by projection from the `list` namespace, which the lowering admits
 // for no builtin yet (#1106).
 
-/// Three tens, annotated as a list of integers; the lowering admits no
-/// annotation expression as a definition's value yet (#1107).
+/// Three tens, annotated as a list of integers; the lowering admits no list
+/// literal yet (#1544).
 @[ refuses("OutOfFragment") ]
 def tens = ([10, 20, 30] : List(Integer));
 

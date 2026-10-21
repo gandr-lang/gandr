@@ -145,14 +145,15 @@ quenchant_shape::reason_enum! {
 /// constructor written without one, the eliminations a match compiles to, a
 /// recursive function's fixpoint, a compound endpoint, the transport a
 /// derived identity operation unfolds to, a computation carried where a value
-/// is read for the checker to run or suspend, and the type a model's member
-/// derives from its signature.
+/// is read for the checker to run or suspend, the type a model's member
+/// derives from its signature, and the bind a lambda's typed parameter is
+/// read through.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
 ///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind,
-///   model and relation.
+///   model, relation and parameter.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -239,6 +240,11 @@ pub enum Insertion
     /// hold and the pair a written-through method's body is wrapped in,
     /// located at the declaration.
     Method,
+    /// A node of the bind a lambda's parameter written with its type is read
+    /// through, every one located at the lambda: the source writes
+    /// `fn (x : A)`, never the argument the lambda binds apart, its return,
+    /// the ascription at `-F A` or the bind that names it `x`.
+    Parameter,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

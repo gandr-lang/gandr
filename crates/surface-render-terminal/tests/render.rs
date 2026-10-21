@@ -369,7 +369,7 @@ fn an_unimplemented_refusal_closes_with_its_tracking_issue()
     let diagnostic = only(
         Path::new("annotated.gandr"),
         SourceRoot::Strict,
-        SourceText::from("def annotated = (3 : Integer) ;\n"),
+        SourceText::from("def annotated = ((3 : Integer), 1) ;\n"),
         Verb::Check(Goals::Gated),
     );
     assert_eq!(

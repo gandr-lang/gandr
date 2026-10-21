@@ -2172,7 +2172,8 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Give each definition its signature as the type its constructors are
     /// checked against: a thunk's body the answer the signature states, and
-    /// any other definition the signature itself.
+    /// any other definition the signature itself. A definition no signature
+    /// types whose whole value is an annotation `(e : T)` is signed by `T`.
     ///
     /// # Specification
     /// - requires: the collection has read every slot.
@@ -2181,7 +2182,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   the definition's thunk body with `C`, the alias `() => B` with `-F B`
     ///   and any other alias `(A1, …, An) => B` with the arrows it stands for,
     ///   each read under the outermost frame; any other signature classifies
-    ///   the definition.
+    ///   the definition. A slot with no signature whose written definition is
+    ///   `(e : T)` records `T` as the annotation's ascription and signs `e` by
+    ///   `T` the same way.
     /// - provides: the expected type a constructor takes its classifier from
     ///   where the source states one only in the signature, and the binder
     ///   types and answers of the lambdas a thunk signed with an alias opens.
@@ -2198,36 +2201,40 @@ impl<'source> Lowerer<'_, 'source>
     ///   thunked arrow.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     #[spec(
         captures: before = (self.inherited.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.inherited.len() >= before.0 && self.thunked.len() >= before.1),
     )]
     pub(super) fn sign_definitions(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
-        let signed: Vec<(NodeIndex, NodeIndex)> = self
-            .collected
-            .slots
-            .iter()
-            .skip(self.current.slots)
-            .filter_map(|slot| {
-                if let (
-                    Maybe::Present(Half {
-                        operand: Operand::Written(signature),
-                        ..
-                    }),
-                    Maybe::Present(Half {
-                        operand: Operand::Written(definition),
-                        ..
-                    }),
-                ) = (slot.signature, slot.definition)
-                {
-                    Some((definition.node, signature.node))
-                }
-                else {
-                    None
-                }
-            })
-            .collect();
+        let mut signed: Vec<(NodeIndex, NodeIndex)> = Vec::new();
+        let mut unsigned: Vec<NodeIndex> = Vec::new();
+        for slot in self.collected.slots.iter().skip(self.current.slots) {
+            let Maybe::Present(Half {
+                operand: Operand::Written(definition),
+                ..
+            }) = slot.definition
+            else {
+                continue;
+            };
+            if let Maybe::Present(Half {
+                operand: Operand::Written(signature),
+                ..
+            }) = slot.signature
+            {
+                signed.push((definition.node, signature.node));
+            }
+            else if let Maybe::Absent(_) = slot.signature {
+                unsigned.push(definition.node);
+            }
+        }
+        for definition in unsigned {
+            if let Some((value, classifier)) = self.annotation(definition)? {
+                let _first = self.annotated_definitions.insert(definition, classifier);
+                signed.push((value, classifier));
+            }
+        }
         for (definition, signature) in signed {
             let Maybe::Present(written) = self.unwrapped(signature)?
             else {
@@ -2273,6 +2280,64 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         Ok(())
+    }
+
+    /// The value and the type of the annotation `(e : T)` that `node` writes.
+    ///
+    /// # Specification
+    /// - requires: nothing; a node the tree does not hold writes no annotation.
+    /// - ensures: `e` and `T` where `node` is a parenthesised expression of one
+    ///   operand, a `:` and one more operand; none for any other node.
+    /// - provides: the annotations a definition's whole value and a return's
+    ///   whole operand are read by before they are classified.
+    /// - fails: the refusals the tree's molds yield.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The read's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an annotated definition value and an annotated
+    ///   returned value each found, and a grouping beside them not.
+    /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |parts| parts.is_none_or(|(value, classifier)| value != node && classifier != node && value != classifier)))]
+    pub(super) fn annotation(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Option<(NodeIndex, NodeIndex)>, LoweringRefusal<'source>>
+    {
+        let Some(tree_node) = self.tree.node(node)
+        else {
+            return Ok(None);
+        };
+        let Shape::Form {
+            former: Former::Parenthesized,
+            ..
+        } = shape_of(self.pbg, tree_node)?
+        else {
+            return Ok(None);
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, node, &mut scratch);
+        let parts = match *scratch.pieces.as_slice() {
+            [
+                Piece::Tile { label: open, .. },
+                Piece::Operand(value),
+                Piece::Tile { label: colon, .. },
+                Piece::Operand(classifier),
+                Piece::Tile { label: close, .. },
+            ] if open == TileName::PAREN_OPEN
+                && colon == TileName::COLON
+                && close == TileName::PAREN_CLOSE =>
+            {
+                Some((value.node, classifier.node))
+            },
+            _ => None,
+        };
+        self.scratch = scratch;
+        read?;
+
+        Ok(parts)
     }
 
     /// The form `node` writes once its parentheses are stripped: its former,
@@ -2621,9 +2686,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   `T` as a value type under the same frame, records it as the
     ///   constructor's classifier, and adopts the constructor; an annotation
     ///   over an injection does the same, the injection reading its summand's
-    ///   label among the sum `T` states. An annotation standing at a tail,
-    ///   where a path through a body ends, is a value there and takes the
-    ///   `return` its polarity names.
+    ///   label among the sum `T` states; both keep no ascription, `T` already
+    ///   their classifier. An annotation over any other value is admitted where
+    ///   an ascription carries it: the whole value of a definition no signature
+    ///   types, which `T` signs; the whole operand of a `return`; and a tail,
+    ///   where a path through a body ends, a value there that takes the
+    ///   `return` its polarity names, recorded with `T` for the mint to ascribe
+    ///   that return at. At a subject's result it reads a constructor only.
     /// - fails: the unadmitted annotation refusal for any other annotation; the
     ///   hole's and the tiles' own faults.
     /// - panics: none.
@@ -2634,11 +2703,13 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — an annotated parameterised constructor lowers over
     ///   the annotation's type, at a value position and at a tail, and an
-    ///   annotated name is refused.
+    ///   annotated name is refused, except where an ascription carries it.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     /// - witness: `lower::native::tests::an_annotation_at_a_statement_is_unadmitted`
+    /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
+    /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(_))))]
     pub(super) fn annotated(
         &mut self,
@@ -2652,12 +2723,15 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(declined);
         };
-        let frame = match site.reading {
-            Reading::Value(frame) => frame,
+        let (frame, tail) = match site.reading {
+            Reading::Value(frame) => (frame, false),
             Reading::Computation(_)
                 if self.exits.contains(&site.at.node) || self.results.contains(&site.at.node) =>
             {
-                self.require(site, Produced::Value)?
+                (
+                    self.require(site, Produced::Value)?,
+                    self.exits.contains(&site.at.node),
+                )
             },
             Reading::Unread
             | Reading::ValueType(_)
@@ -2667,15 +2741,24 @@ impl<'source> Lowerer<'_, 'source>
             | Reading::Result(_)
             | Reading::Function => return Err(declined),
         };
-        let injected = matches!(self.form_at(inner)?, Some((_, Former::Injection)));
-        if !injected && let Maybe::Absent(_) = self.applied_constructor(site, inner)? {
+        let signs = self.annotated_definitions.contains_key(&site.at.node);
+        let returned = self.ascribed.contains_key(&site.at.node);
+        let classified = matches!(self.form_at(inner)?, Some((_, Former::Injection)))
+            || matches!(self.applied_constructor(site, inner)?, Maybe::Present(_));
+        if !classified && !signs && !returned && !tail {
             return Err(declined);
+        }
+        if classified {
+            let _held = self.ascribed.remove(&site.at.node);
         }
         let _colon = cursor.tile(TileName::COLON);
         let classifier = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, &cursor)?;
         self.read(classifier.node, Reading::ValueType(frame));
+        if tail && !classified {
+            let _first = self.ascribed.insert(site.at.node, classifier.node);
+        }
         self.read(inner.node, Reading::Value(frame));
         let _first = self.classifiers.insert(inner.node, classifier.node);
         self.plan(site, Plan::Transparent(inner.node));

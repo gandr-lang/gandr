@@ -369,8 +369,7 @@ fn out_of_fragment(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a form an open issue tracks names that issue — a grade where a
-///   declaration is read, the field grade's, a parameter where a computation is
-///   read, the annotated lambda parameter's, and an instantiation, a recursive
+///   declaration is read, the field grade's, and an instantiation, a recursive
 ///   call's claim where a computation is read and a partial supply where a
 ///   value is; every other form names [`TrackingIssue::UNFILED`], the epic that
 ///   files an issue for a feature once a source reaches it.
@@ -402,9 +401,6 @@ fn tracked_form(
         FormName::TYPED_NUMBER => TrackingIssue::TYPED_NUMBER,
         FormName::SHELL_BLOCK => TrackingIssue::SHELL_BLOCK,
         FormName::GRADE if matches!(sort, FragmentSort::Declaration) => TrackingIssue::FIELD_GRADE,
-        FormName::PARAMETER if matches!(sort, FragmentSort::Computation) => {
-            TrackingIssue::LAMBDA_PARAMETER
-        },
         FormName::AS_PATTERN | FormName::LIST_PATTERN | FormName::REST_PATTERN => {
             TrackingIssue::PATTERNS
         },
@@ -1025,12 +1021,6 @@ mod tests
                 FragmentSort::CompType,
                 FragmentBoundary::Unadmitted,
                 FailureClass::Unimplemented(TrackingIssue::UNFILED),
-            ),
-            (
-                "parameter",
-                FragmentSort::Computation,
-                FragmentBoundary::Unadmitted,
-                FailureClass::Unimplemented(TrackingIssue::LAMBDA_PARAMETER),
             ),
             (
                 "parameter",
