@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("UndescribedMember") ]
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;

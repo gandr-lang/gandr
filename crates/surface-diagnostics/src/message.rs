@@ -420,6 +420,7 @@ fn lowered(
                 "the model signature cannot state `{name}`, which {fault}"
             )
         },
+        LoweringRefusal::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
         LoweringRefusal::FamilyTelescope { name, fault, .. } => {
             write!(f, "the type family `{name}` {fault}")
         },
@@ -1344,6 +1345,10 @@ mod tests
             LoweringRefusal::CellNotALoop { span },
             LoweringRefusal::RulesUnoriented { span },
             LoweringRefusal::RulesNonLinear { span, copy: span },
+            LoweringRefusal::UndescribedMember {
+                span,
+                fault: gandr_surface_lowering::description::MemberFault::HigherCell,
+            },
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUncompleted { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },

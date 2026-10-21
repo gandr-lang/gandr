@@ -472,6 +472,9 @@ pub enum RefusalName
     UnreadAscription,
     /// A model signature component the derivation cannot state.
     UnstatedComponent,
+    /// A member of a description declaration the description route or its
+    /// cell layer does not read.
+    UndescribedMember,
     /// A type family whose parameters disagree with the indices its kind
     /// states.
     FamilyTelescope,
@@ -710,7 +713,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 193_usize] = [
+    pub const VOCABULARY: [Self; 194_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -801,6 +804,7 @@ impl RefusalName
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
         Self::UnstatedComponent,
+        Self::UndescribedMember,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
         Self::ImplicitTelescope,
@@ -946,6 +950,7 @@ impl RefusalName
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
         b"UnreadAscription") | (Self::UnstatedComponent, b"UnstatedComponent") |
+        (Self::UndescribedMember, b"UndescribedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
@@ -1256,6 +1261,7 @@ impl RefusalName
             Self::ProjectionFromApplication => "ProjectionFromApplication",
             Self::UnreadAscription => "UnreadAscription",
             Self::UnstatedComponent => "UnstatedComponent",
+            Self::UndescribedMember => "UndescribedMember",
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::ImplicitTelescope => "ImplicitTelescope",
@@ -1471,6 +1477,8 @@ impl Refusal<'_>
         .. }), RefusalName::UnreadAscription) |
         (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
         RefusalName::UnstatedComponent) |
+        (Self::Lowering(LoweringRefusal::UndescribedMember { .. }),
+        RefusalName::UndescribedMember) |
         (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
         RefusalName::FamilyTelescope) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
@@ -1707,7 +1715,8 @@ impl Refusal<'_>
         RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
-        RefusalName::UnstatedComponent) | (LoweringRefusal::FamilyTelescope { .. },
+        RefusalName::UnstatedComponent) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::UndescribedMember) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
@@ -1771,6 +1780,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
         LoweringRefusal::UnstatedComponent { .. } => RefusalName::UnstatedComponent,
+        LoweringRefusal::UndescribedMember { .. } => RefusalName::UndescribedMember,
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,

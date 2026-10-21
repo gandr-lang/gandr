@@ -56,6 +56,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::description::MemberFault;
 
 /// One row of the fragment's exercised table that a green fixture can carry.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -696,8 +697,8 @@ fn is_whole_unsigned_body(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: unresolved term names, unresolved type heads and reserved-form
-///   boundaries mark their respective rows once. Other refusals and every
-///   unrelated row are unchanged.
+///   boundaries, the reserved `<->` member among them, mark their respective
+///   rows once. Other refusals and every unrelated row are unchanged.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -713,7 +714,9 @@ fn is_whole_unsigned_body(
         let selected = match refusal {
             LoweringRefusal::UnresolvedName { .. } => Some(Row::UndefinedTermName),
             LoweringRefusal::UnresolvedTypeHead { .. } => Some(Row::UndefinedTypeHead),
-            LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. } => Some(Row::ReservedForm),
+            LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. }
+            | LoweringRefusal::UndescribedMember { fault: MemberFault::Reversible, .. } => Some(Row::ReservedForm),
+            LoweringRefusal::UndescribedMember { .. } |
             LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::BareFeedback { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::AmbiguousMethod { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesNonLinear { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesOverlapSecondOrder { .. } | LoweringRefusal::RulesUncompleted { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
@@ -730,6 +733,10 @@ fn lowering_row(
         LoweringRefusal::UnresolvedTypeHead { .. } => rows.mark(Row::UndefinedTypeHead),
         LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Reserved,
+            ..
+        }
+        | LoweringRefusal::UndescribedMember {
+            fault: MemberFault::Reversible,
             ..
         } => rows.mark(Row::ReservedForm),
         LoweringRefusal::OutOfFragment {
@@ -776,6 +783,7 @@ fn lowering_row(
         | LoweringRefusal::ProjectionFromApplication { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::UnstatedComponent { .. }
+        | LoweringRefusal::UndescribedMember { .. }
         | LoweringRefusal::FamilyTelescope { .. }
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::ImplicitTelescope { .. }

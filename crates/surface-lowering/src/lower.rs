@@ -20773,7 +20773,7 @@ mod tests
         );
         assert_eq!(
             refused.classify(),
-            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::UNSPLIT),
+            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::UNFILED),
             "it is outside the fragment, not malformed"
         );
     }

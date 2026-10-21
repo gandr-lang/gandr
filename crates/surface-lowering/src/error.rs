@@ -969,6 +969,17 @@ pub enum LoweringRefusal<'source>
         fault: crate::model::ModelFault,
     },
 
+    /// A member of a description declaration the description route or its
+    /// cell layer does not read, kept at its own span under the family's
+    /// name.
+    UndescribedMember
+    {
+        /// The bytes of the member.
+        span: ByteSpan,
+        /// Why it is not read.
+        fault: crate::description::MemberFault,
+    },
+
     /// A type family member whose parameters disagree with the index
     /// telescope its component states.
     FamilyTelescope
@@ -1410,6 +1421,7 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "the model signature cannot state `{name}`, which {fault}"
             ),
+            Self::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
             Self::FamilyTelescope { name, fault, .. } => {
                 write!(f, "the type family `{name}` {fault}")
             },
@@ -1639,6 +1651,7 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
             | Self::UnstatedComponent { span, .. }
+            | Self::UndescribedMember { span, .. }
             | Self::FamilyTelescope { span, .. }
             | Self::LowercaseModuleName { span, .. }
             | Self::ImplicitTelescope { span }

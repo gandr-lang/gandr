@@ -288,15 +288,10 @@ impl<'source> Lowerer<'_, 'source>
                             span: at.span,
                             fault: DescriptionFault::NativeDecode(error),
                         });
-                    if let Some(node) = self.tree.node(at.node)
-                        && let Shape::Form { name, .. } = shape_of(self.pbg, node)?
-                        && let Some(slot) = self.collected.slots.get_mut(position)
-                    {
-                        slot.refuse(at.node, LoweringRefusal::OutOfFragment {
+                    if let Some(slot) = self.collected.slots.get_mut(position) {
+                        slot.refuse(at.node, LoweringRefusal::UndescribedMember {
                             span: at.span,
-                            form: name,
-                            sort: FragmentSort::Declaration,
-                            boundary: FragmentBoundary::Unadmitted,
+                            fault: crate::description::MemberFault::NativeDecode,
                         });
                     }
                 },

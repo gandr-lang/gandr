@@ -5,8 +5,9 @@
 // proved by another law of the same type.
 
 /// The category shape: a sort of morphisms dependent on the objects. Its
-/// rules over the dependent sort are outside the fragment (#522).
-@[ refuses("OutOfFragment") ]
+/// laws over the dependent sort nest an operation the cell layer does not read
+/// there (#1510).
+@[ refuses("UndescribedMember") ]
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;

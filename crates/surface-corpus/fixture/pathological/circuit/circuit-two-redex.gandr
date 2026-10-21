@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("UndescribedMember") ]
 theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;

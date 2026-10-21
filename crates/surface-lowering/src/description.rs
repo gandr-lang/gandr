@@ -88,6 +88,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -178,6 +179,122 @@ pub enum DescriptionFault
     Signature(crate::circuit::SignatureFault),
 }
 
+/// Why a member of a description declaration is not read: the description
+/// route's fault or its cell layer's, each kept apart so the refusal names the
+/// one feature or the one mistake it stands for.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each fault is distinct and names no source position; the refusal
+///   carrying it names the member's span.
+/// - executable: none — a fault is data a refusal carries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an operation filler, a higher cell, the reversible glyph,
+///   a nested operation, two redexes and a copied variable each keep their own
+///   fault from the diagnostic to the refusal.
+/// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
+/// - witness: `desc_cells::tests::each_cell_fault_is_refused_by_its_own_member_fault`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MemberFault
+{
+    /// A function-valued field, which the first-order code does not hold.
+    HigherOrderField,
+    /// A field whose type names a field before it, which the first-order
+    /// code does not hold.
+    DependentField,
+    /// A type shape with no first-order reference.
+    TypeShape,
+    /// A description the native interpreter gives no interpretation.
+    NativeDecode,
+    /// An operation written with a circuit body.
+    OperationFiller,
+    /// A rule between rules: a higher cell with no circuit body.
+    HigherCell,
+    /// The glyph `<->`, reserved for reversible maps.
+    Reversible,
+    /// An operation with no output port.
+    NoOutput,
+    /// An operation feeding an output port from other than one monomial.
+    AggregatedOutput,
+    /// A rule whose left side is no operation application.
+    LhsNotOperation,
+    /// A rule rewriting an operation applied to no argument.
+    EmptyOperation,
+    /// A rule with an operation nested in producer position.
+    NestedOperation,
+    /// A rule applying an operation whose arity the cell frame cannot hold.
+    UnrepresentableOperation,
+    /// A rule returning other than its operation's output count.
+    ResultArity,
+    /// A rule wearing one variable name as a producer and a consumer.
+    MixedPolarity,
+    /// A circuit rule whose wiring derives no boundary.
+    UnderivedWiring,
+    /// A circuit rule rewriting two redexes at once.
+    ParallelRedexes,
+    /// A circuit rule whose redex lies off the boundary its wiring derives.
+    OffBoundary,
+}
+
+impl fmt::Display for MemberFault
+{
+    /// The reason, as a clause after "this member".
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::HigherOrderField => {
+                "has a function-valued field, which the first-order description code does not hold"
+            },
+            Self::DependentField => {
+                "has a field whose type names a field before it, which the first-order \
+                 description code does not hold"
+            },
+            Self::TypeShape => "names a type with no first-order description reference",
+            Self::NativeDecode => "has no interpretation the native description reading gives",
+            Self::OperationFiller => {
+                "is an operation with a circuit body, which the description route does not read \
+                 yet"
+            },
+            Self::HigherCell => "is a rule between rules, a higher cell with no circuit body",
+            Self::Reversible => "writes `<->`, which is reserved for reversible maps",
+            Self::NoOutput => "is an operation with no output port, so its result goes nowhere",
+            Self::AggregatedOutput => {
+                "feeds an output port from other than one monomial, which needs a commutative \
+                 monoid on its target"
+            },
+            Self::LhsNotOperation => "rewrites from something other than an operation application",
+            Self::EmptyOperation => {
+                "rewrites an operation applied to no argument, so no producer is matched"
+            },
+            Self::NestedOperation => {
+                "rewrites a term with an operation nested in producer position, which the cell \
+                 layer does not read yet"
+            },
+            Self::UnrepresentableOperation => {
+                "applies an operation whose arity the cell layer's frame cannot hold"
+            },
+            Self::ResultArity => "returns a number of results other than its operation's outputs",
+            Self::MixedPolarity => "wears one variable name as a producer and as a consumer",
+            Self::UnderivedWiring => "is a circuit whose wiring derives no boundary",
+            Self::ParallelRedexes => {
+                "is a circuit rule rewriting two redexes at once, which has no single whiskered \
+                 composite yet"
+            },
+            Self::OffBoundary => {
+                "is a circuit whose redex lies off the boundary its wiring derives"
+            },
+        })
+    }
+}
+
 /// The field refusals that mark the first-order code's limit rather than a
 /// fault of the source: the native reading admits each such field.
 const UNCODED: [DescriptionFault; 3] = [
@@ -240,10 +357,11 @@ impl DescriptionDiagnostic
     ///
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
-    ///   site; a reserved glyph is a reserved form, a form the route parses and
-    ///   does not read yet (an operation filler or a fillerless higher cell) an
-    ///   unadmitted one, a feed no observation guards its own refusal, and
-    ///   every other fault a malformed form.
+    ///   site; a field past the first-order code, an undecodable description,
+    ///   an operation filler, a fillerless higher cell and the reserved glyph
+    ///   are an undescribed member carrying their own fault, a feed no
+    ///   observation guards its own refusal, and every other fault a malformed
+    ///   form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -255,22 +373,22 @@ impl DescriptionDiagnostic
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
     pub(crate) fn lowering_refusal(&self) -> LoweringRefusal<'static>
     {
-        let unread = |boundary| LoweringRefusal::OutOfFragment {
+        let undescribed = |fault| LoweringRefusal::UndescribedMember {
             span: self.span,
-            form: crate::FormName::DECLARATION,
-            sort: crate::FragmentSort::Declaration,
-            boundary,
+            fault,
         };
         match self.fault {
             DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
-            DescriptionFault::HigherOrderField
-            | DescriptionFault::DependentField
-            | DescriptionFault::TypeShape
-            | DescriptionFault::NativeDecode(_)
-            | DescriptionFault::Signature(
-                crate::circuit::SignatureFault::OperationFiller
-                | crate::circuit::SignatureFault::HigherCell,
-            ) => unread(crate::FragmentBoundary::Unadmitted),
+            DescriptionFault::HigherOrderField => undescribed(MemberFault::HigherOrderField),
+            DescriptionFault::DependentField => undescribed(MemberFault::DependentField),
+            DescriptionFault::TypeShape => undescribed(MemberFault::TypeShape),
+            DescriptionFault::NativeDecode(_) => undescribed(MemberFault::NativeDecode),
+            DescriptionFault::Signature(crate::circuit::SignatureFault::OperationFiller) => {
+                undescribed(MemberFault::OperationFiller)
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::HigherCell) => {
+                undescribed(MemberFault::HigherCell)
+            },
             DescriptionFault::Signature(crate::circuit::SignatureFault::BareFeedback { rule }) => {
                 LoweringRefusal::BareFeedback {
                     span: self.span,
@@ -278,7 +396,7 @@ impl DescriptionDiagnostic
                 }
             },
             DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
-                unread(crate::FragmentBoundary::Reserved)
+                undescribed(MemberFault::Reversible)
             },
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
