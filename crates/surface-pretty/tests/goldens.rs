@@ -4405,6 +4405,21 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     let named = variable(&mut core, 0_u32);
     let leaked = core.computation_return(named);
     let leaking = core.computation_fixpoint(leaked, partial);
+    // `fn (a) { loop { while force a { continue } ; continue } }`: the inner
+    // `while` ends the outer loop's pass, and its rest goes on with the pass.
+    let tested = variable(&mut core, 2_u32);
+    let condition = core.computation_force(tested);
+    let inner = variable(&mut core, 2_u32);
+    let then = core.computation_force(inner);
+    let outer = variable(&mut core, 3_u32);
+    let rest = core.computation_force(outer);
+    let broken = core.computation_split(nothing, ComponentCount::from(0_usize), rest);
+    let test = variable(&mut core, 0_u32);
+    let branches = core.computation_case(test, &[then, broken]);
+    let body = core.computation_bind(condition, branches);
+    let fixpoint = core.computation_fixpoint(body, partial);
+    let fixpoint = core.computation_fixpoint(fixpoint, partial);
+    let nested = core.computation_lambda(fixpoint);
     let source = CoreSource::new(&core, &[]);
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
@@ -4428,6 +4443,13 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
         spelled(&source, body(becoming)),
         faithful(Written("fn (a) { loop { become a(unit) } }")),
         "a call ending a pass is written `become`"
+    );
+    assert_eq!(
+        spelled(&source, body(nested)),
+        faithful(Written(
+            "fn (a) { loop { while force a { continue } ; continue } }"
+        )),
+        "a loop ending another's pass goes on with that pass in its rest"
     );
     assert_eq!(
         spelled(&source, body(leaking)),
@@ -4494,5 +4516,109 @@ fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
         spelled(&source, body(leaking)),
         approximate(Written("fn (a) { for d in a { break(e) } }")),
         "a pass naming the unwritten tail keeps the notation"
+    );
+}
+
+/// A loop threading held slots applies its fixpoint to them, and each pass
+/// holds them again; it prints as the loop it lowered from, each pass reading
+/// and writing the slots by their own names, the loop's own binder applied to
+/// the slots held again `continue`. A pass handing on anything else keeps the
+/// printer's notation (#941).
+#[test]
+fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
+{
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+
+    let mut core = CoreArena::new();
+    let partial = gandr_kernel_term::FixpointEvidence::Partial;
+    let variable = |core: &mut CoreArena, zone, index: u32| {
+        core.value_variable(zone, DeBruijnIndex::from(index))
+    };
+    let hold = |core: &mut CoreArena, value, body| {
+        core.computation_memory(MemoryForm::Hold {
+            value,
+            body,
+            grade: HoldGrade::Many,
+        })
+    };
+    // `fn (a) { hold b = a ; loop { … } }`: the passes under the lambda's
+    // binder, the hold's, the loop's own, the content and its hold again.
+    let one = |core: &mut CoreArena, under| {
+        let content = variable(core, Zone::Intuitionistic, 0_u32);
+        let again = hold(core, content, under);
+        let each = core.computation_lambda(again);
+        let fixpoint = core.computation_fixpoint(each, partial);
+        let slot = variable(core, Zone::Linear, 0_u32);
+        let applied = core.computation_application(fixpoint, slot);
+        let parameter = variable(core, Zone::Intuitionistic, 0_u32);
+        let held = hold(core, parameter, applied);
+        core.computation_lambda(held)
+    };
+    // `fn (a) { hold b = a ; hold c = a ; loop { … } }`: the passes under the
+    // tuple, its two components and their holds again.
+    let two = |core: &mut CoreArena, under| {
+        let second = variable(core, Zone::Intuitionistic, 0_u32);
+        let inner = hold(core, second, under);
+        let first = variable(core, Zone::Intuitionistic, 1_u32);
+        let outer = hold(core, first, inner);
+        let passed = variable(core, Zone::Intuitionistic, 0_u32);
+        let split = core.computation_split(passed, ComponentCount::from(2_usize), outer);
+        let each = core.computation_lambda(split);
+        let fixpoint = core.computation_fixpoint(each, partial);
+        let outermost = variable(core, Zone::Linear, 1_u32);
+        let innermost = variable(core, Zone::Linear, 0_u32);
+        let slots = core.value_tuple(&[outermost, innermost]);
+        let applied = core.computation_application(fixpoint, slots);
+        let parameter = variable(core, Zone::Intuitionistic, 0_u32);
+        let held = hold(core, parameter, applied);
+        let parameter = variable(core, Zone::Intuitionistic, 0_u32);
+        let held = hold(core, parameter, held);
+        core.computation_lambda(held)
+    };
+    let own = variable(&mut core, Zone::Intuitionistic, 1_u32);
+    let forced = core.computation_force(own);
+    let slot = variable(&mut core, Zone::Linear, 0_u32);
+    let continued = core.computation_application(forced, slot);
+    let continuing = one(&mut core, continued);
+    let slot = variable(&mut core, Zone::Linear, 0_u32);
+    let ended = core.computation_return(slot);
+    let breaking = one(&mut core, ended);
+    let passing = |core: &mut CoreArena, order: [u32; 2]| {
+        let own = variable(core, Zone::Intuitionistic, 3_u32);
+        let forced = core.computation_force(own);
+        let [outer, inner] = order.map(|index| variable(core, Zone::Linear, index));
+        let slots = core.value_tuple(&[outer, inner]);
+        core.computation_application(forced, slots)
+    };
+    let continued = passing(&mut core, [1_u32, 0_u32]);
+    let continuing_both = two(&mut core, continued);
+    let swapped = passing(&mut core, [0_u32, 1_u32]);
+    let swapping = two(&mut core, swapped);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(continuing)),
+        faithful(Written("fn (a) { hold b = a ; loop { continue } }")),
+        "the loop's own binder applied to the slot held again is `continue`"
+    );
+    assert_eq!(
+        spelled(&source, body(breaking)),
+        faithful(Written("fn (a) { hold b = a ; loop { break(b) } }")),
+        "a pass reads the slot held again by the slot's own name"
+    );
+    assert_eq!(
+        spelled(&source, body(continuing_both)),
+        faithful(Written(
+            "fn (a) { hold b = a ; hold c = a ; loop { continue } }"
+        )),
+        "two slots are handed on as their tuple, in order"
+    );
+    assert_eq!(
+        spelled(&source, body(swapping)),
+        approximate(Written(
+            "fn (a) { hold b = a ; hold c = a ; loop { become d(#{c, b}) } }"
+        )),
+        "a pass handing the slots on out of order names the unwritten loop"
     );
 }

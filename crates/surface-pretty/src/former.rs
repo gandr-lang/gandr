@@ -1005,10 +1005,10 @@ pub enum Unreadable
 pub enum Notation
 {
     /// A fixpoint no `loop`, `while` or `for` reads as, written
-    /// `rec x { … }`: one over an abstraction no `for` applies, one where no
-    /// body ends, or a loop one of whose passes ends in a computation the
-    /// surface cannot write there or names a binder the loop leaves
-    /// unwritten.
+    /// `rec x { … }`: one over an abstraction that is no `for` and threads no
+    /// held slot, one where no body or pass ends, or a loop one of whose
+    /// passes ends in a computation the surface cannot write there or names a
+    /// binder the loop leaves unwritten.
     Fixpoint,
     /// A delimited-control reset, written `reset { … }`.
     Reset,
