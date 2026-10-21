@@ -1385,6 +1385,8 @@ fn a_data_family_named_where_a_value_is_read_is_quoted()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// Each family applied to an index is declined, and keeps its own form's key,
+/// the form that carries its refusal (#1204).
 #[test]
 fn an_indexed_generator_is_declined()
 {
@@ -1404,6 +1406,14 @@ fn an_indexed_generator_is_declined()
                 ..
             }),
             "`{name}` is declined as indexed"
+        );
+        assert!(
+            module
+                .declarations()
+                .iter()
+                .any(|declaration| declaration.name() == name
+                    && matches!(declaration.signature(), Maybe::Present(_))),
+            "`{name}` keeps its form's key"
         );
     }
 }

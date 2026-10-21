@@ -126,6 +126,7 @@ pub use crate::culprit::Culprit;
 pub use crate::frame::Sentence;
 pub use crate::frame::sentence;
 pub use crate::lint::Lint;
+pub use crate::locus::Checked;
 pub use crate::locus::Label;
 pub use crate::model::AnnotationKind;
 pub use crate::model::Binding;

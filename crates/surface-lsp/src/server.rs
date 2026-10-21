@@ -9588,7 +9588,10 @@ mod tests
         );
         assert_eq!(
             hovered(&mut server),
-            Some(String::from("```gandr\nr : Integer <~> String\n```")),
+            Some(String::from(
+                "```gandr\nr : Integer <~> String\n```\n\nrefused: the type this term \
+                 synthesises does not convert to the type it is checked against"
+            )),
             "and hovers"
         );
         let republished: Vec<Value> = server
@@ -9607,7 +9610,10 @@ mod tests
         );
         assert_eq!(
             hovered(&mut server),
-            Some(String::from("```gandr\nr : Integer ≃ String\n```")),
+            Some(String::from(
+                "```gandr\nr : Integer ≃ String\n```\n\nrefused: the type this term \
+                 synthesises does not convert to the type it is checked against"
+            )),
             "and the next hover answers in it"
         );
     }

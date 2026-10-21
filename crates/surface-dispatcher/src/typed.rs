@@ -133,6 +133,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_diagnostics::Checked;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::PATHLESS;
@@ -603,15 +604,25 @@ struct Read
     relations: Vec<(ValueTypeId, Relation)>,
 }
 
-/// What the table keeps for a declaration: its type node, or the lowering's
-/// refusal of it as text.
+/// What the table keeps for a declaration: its type node, a refusal of it as
+/// text, or its type node and the checker's refusal of it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Held
 {
     /// The declaration's type node.
     Typed(TypeNode),
-    /// The lowering's refusal, as text.
+    /// A refusal, as text: the lowering's, or the checker's of a declaration
+    /// the lowering gave no type.
     Refused(String),
+    /// The declaration's type node, and the checker's refusal of the
+    /// declaration, as text.
+    Rejected
+    {
+        /// The declaration's type node.
+        ty: TypeNode,
+        /// The checker's refusal, as text.
+        refusal: String,
+    },
 }
 
 /// The direction the order chose for a written rule.
@@ -1064,7 +1075,7 @@ impl TypeTable
         // Each wanted type is formed at most once, so the formations sorted by
         // type find a written type's own by search; the stable sort keeps the
         // first should a type appear twice.
-        let mut formed: Vec<&Formed> = typed.values().flat_map(Typings::formed).collect();
+        let mut formed: Vec<&Formed> = typed.typings().values().flat_map(Typings::formed).collect();
         formed.sort_by_key(|formation| formation.ty);
         formed.dedup_by_key(|formation| formation.ty);
         let mut universes = Vec::new();
@@ -1100,6 +1111,7 @@ impl TypeTable
         // its type reads past the binders the term's standing names (#551),
         // so it moves the term's place in the order but never its last type.
         let mut judged: Vec<(TermNode, usize, TypeNode, BinderDepth, ConstantIndex)> = typed
+            .typings()
             .iter()
             .flat_map(|(&constant, typings)| {
                 typings
@@ -1188,6 +1200,7 @@ impl TypeTable
         // Each action's endpoint at the first session type a run found it
         // standing at, and the declaration whose run found it.
         let mut endpoints: Vec<(TermNode, TypeNode, ConstantIndex)> = typed
+            .typings()
             .iter()
             .flat_map(|(&constant, typings)| {
                 typings
@@ -1575,26 +1588,43 @@ impl TypeTable
             if matches!(declaration.role(), Role::Operation | Role::Words) {
                 continue;
             }
-            let held = match declaration.outcome() {
+            let lowered = match declaration.outcome() {
                 DeclarationOutcome::Completed { declared_type, .. }
                 | DeclarationOutcome::Uncompleted { declared_type } => {
-                    Held::Typed(TypeNode::Value(declared_type))
+                    Some(Held::Typed(TypeNode::Value(declared_type)))
                 },
-                DeclarationOutcome::Bodied { body } => match first_type(TermNode::Value(body)) {
-                    Some(first) => Held::Typed(first),
-                    None => continue,
+                DeclarationOutcome::Bodied { body } => {
+                    first_type(TermNode::Value(body)).map(Held::Typed)
                 },
                 DeclarationOutcome::Data(index) => match module.data(index) {
-                    Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
-                    Maybe::Absent(_) => continue,
+                    Maybe::Present(signature) => {
+                        Some(Held::Typed(TypeNode::Value(signature.kind())))
+                    },
+                    Maybe::Absent(_) => None,
                 },
                 DeclarationOutcome::Codata(index) => match module.codata(index) {
-                    Maybe::Present(signature) => Held::Typed(TypeNode::Value(signature.kind())),
-                    Maybe::Absent(_) => continue,
+                    Maybe::Present(signature) => {
+                        Some(Held::Typed(TypeNode::Value(signature.kind())))
+                    },
+                    Maybe::Absent(_) => None,
                 },
-                DeclarationOutcome::Abstract(sealing) => Held::Typed(TypeNode::Value(sealing.kind)),
-                DeclarationOutcome::World => continue,
-                DeclarationOutcome::Refused(refusal) => Held::Refused(refusal.to_string()),
+                DeclarationOutcome::Abstract(sealing) => {
+                    Some(Held::Typed(TypeNode::Value(sealing.kind)))
+                },
+                DeclarationOutcome::World => None,
+                DeclarationOutcome::Refused(refusal) => Some(Held::Refused(refusal.to_string())),
+            };
+            // A declaration the checker refused keeps the type the lowering
+            // gave it and gains the checker's refusal; one the lowering gave no
+            // type is held by the checker's refusal alone.
+            let held = match (lowered, typed.refused().get(&declaration.constant())) {
+                (Some(Held::Typed(ty)), Some(&refusal)) => Held::Rejected {
+                    ty,
+                    refusal: Checked(refusal).to_string(),
+                },
+                (None, Some(&refusal)) => Held::Refused(Checked(refusal).to_string()),
+                (Some(held), _) => held,
+                (None, None) => continue,
             };
             for key in [
                 declaration.signature(),
@@ -2193,10 +2223,11 @@ impl TypeTable
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the refusal the table holds for the declaration, or its type
-    ///   spelled; absent as [`typing::Absent::Untyped`] when no declaration has
-    ///   the key, and as [`typing::Absent::Unspelled`] when the printer cannot
-    ///   lay its type out.
+    /// - ensures: the lowering's refusal the table holds for the declaration,
+    ///   or its type spelled — a declaration the checker refused included;
+    ///   absent as [`typing::Absent::Untyped`] when no declaration has the key,
+    ///   and as [`typing::Absent::Unspelled`] when the printer cannot lay its
+    ///   type out.
     /// - provides: the declaration half of a face's answer.
     /// - fails: never; an absence names its reason.
     /// - panics: none.
@@ -2207,7 +2238,7 @@ impl TypeTable
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
     #[spec(ensures: |ret| match (self.declared.get(&key), &ret) {
         (None, &Maybe::Absent(typing::Absent::Untyped))
-            | (Some(&Held::Typed(_)), &(Maybe::Present(Declared::Typed(_)) | Maybe::Absent(typing::Absent::Unspelled))) => true,
+            | (Some(&(Held::Typed(_) | Held::Rejected { .. })), &(Maybe::Present(Declared::Typed(_)) | Maybe::Absent(typing::Absent::Unspelled))) => true,
         (Some(held), &Maybe::Present(Declared::Refused(ref refusal))) => *held == Held::Refused(refusal.clone()),
         _ => false,
     })]
@@ -2220,9 +2251,11 @@ impl TypeTable
     ) -> Maybe<Declared, typing::Absent>
     {
         match self.declared.get(&key) {
-            Some(&Held::Typed(node)) => match self.spell(node, &Context::default(), page, style) {
-                Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
-                Maybe::Absent(reason) => Maybe::Absent(reason),
+            Some(&(Held::Typed(node) | Held::Rejected { ty: node, .. })) => {
+                match self.spell(node, &Context::default(), page, style) {
+                    Maybe::Present(spelled) => Maybe::Present(Declared::Typed(spelled)),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                }
             },
             Some(&Held::Refused(ref refusal)) => Maybe::Present(Declared::Refused(refusal.clone())),
             None => Maybe::Absent(typing::Absent::Untyped),
@@ -2230,14 +2263,16 @@ impl TypeTable
     }
 
     /// The refusal the table holds for the declaration one of whose forms has
-    /// the key `key`, read without spelling any type.
+    /// the key `key` — the lowering's or the checker's — read without spelling
+    /// any type.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the refusal [`Self::declared`] answers for `key`; absent as
-    ///   [`unrefused::Absent::Typed`] where it answers a type or cannot spell
-    ///   one, and as [`unrefused::Absent::Undeclared`] where no declaration has
-    ///   the key.
+    /// - ensures: the lowering's refusal [`Self::declared`] answers for `key`,
+    ///   or the checker's refusal of a declaration it answers a type for;
+    ///   absent as [`unrefused::Absent::Typed`] where it answers a type the
+    ///   checker accepted, and as [`unrefused::Absent::Undeclared`] where no
+    ///   declaration has the key.
     /// - provides: a face's question whether a declaration was refused, at no
     ///   printer's cost.
     /// - fails: never; an absence names its reason.
@@ -2245,10 +2280,12 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused and a typed declaration are each read as
-    ///   [`Self::declared`] answers them.
+    ///   [`Self::declared`] answers them, and a `data` declaration the checker
+    ///   refused answers the checker's refusal as the editor titles it.
     /// - witness: `typed::tests::a_refusal_is_read_as_the_declaration_answers_it`
+    /// - witness: `typed::tests::a_checker_refusal_is_held_by_its_declaration_1204`
     #[spec(ensures: |ret| match (self.declared.get(&key), &ret) {
-        (Some(&Held::Refused(ref held)), &Maybe::Present(refusal)) => held.as_str() == <&str>::from(refusal),
+        (Some(&(Held::Refused(ref held) | Held::Rejected { refusal: ref held, .. })), &Maybe::Present(refusal)) => held.as_str() == <&str>::from(refusal),
         (Some(&Held::Typed(_)), &Maybe::Absent(unrefused::Absent::Typed))
             | (None, &Maybe::Absent(unrefused::Absent::Undeclared)) => true,
         _ => false,
@@ -2260,7 +2297,9 @@ impl TypeTable
     ) -> Maybe<SourceText<'_>, unrefused::Absent>
     {
         match self.declared.get(&key) {
-            Some(&Held::Refused(ref refusal)) => Maybe::Present(SourceText::from(refusal.as_str())),
+            Some(&(Held::Refused(ref refusal) | Held::Rejected { ref refusal, .. })) => {
+                Maybe::Present(SourceText::from(refusal.as_str()))
+            },
             Some(&Held::Typed(_)) => Maybe::Absent(unrefused::Absent::Typed),
             None => Maybe::Absent(unrefused::Absent::Undeclared),
         }
@@ -2705,7 +2744,7 @@ impl TypeTable
             }
         }
         for (&key, held) in &self.declared {
-            if let Held::Typed(node) = *held {
+            if let Held::Typed(node) | Held::Rejected { ty: node, .. } = *held {
                 let site = ReadSite::Declared(key);
                 printed.push(match self.spell(node, &Context::default(), page, style) {
                     Maybe::Present(spelled) => Printed {
@@ -5184,6 +5223,48 @@ mod tests
         assert!(
             read.contains(&"refused") && read.contains(&"typed"),
             "both kinds are read: {read:?}"
+        );
+    }
+
+    /// A declaration the lowering typed and the checker refused keeps its
+    /// type and answers the checker's refusal, as the editor titles it; one
+    /// the checker accepted answers none.
+    #[test]
+    fn a_checker_refusal_is_held_by_its_declaration_1204()
+    {
+        let source = SourceText::from(
+            "data Small : Type {\n  Pick : (a : Type, f : +U (a -> -F Small)) --> Small;\n}\ndata \
+             Flag : Type {\n  On : Flag;\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        let mut read = Vec::new();
+        for key in tree.positions().filter_map(|position| tree.key(position)) {
+            let declared = table.declared(key, PageWidth::from(80_u32), Form::Explicit.into());
+            match (declared, table.refusal(key)) {
+                (Maybe::Present(Declared::Typed(ty)), refusal) => {
+                    read.push((
+                        ty.as_ref().to_owned(),
+                        refusal.map(|text| <&str>::from(text).to_owned()),
+                    ));
+                },
+                (Maybe::Absent(_), Maybe::Absent(unrefused::Absent::Undeclared)) => {},
+                (declared, refusal) => panic!("unexpected reading: {declared:?} and {refusal:?}"),
+            }
+        }
+        assert_eq!(read.len(), 2, "both declarations are typed: {read:?}");
+        assert!(
+            read.iter().any(|entry| matches!(
+                entry.1,
+                Maybe::Present(ref text)
+                    if text == "a constructor field exceeds the declared universe"
+            )) && read
+                .iter()
+                .any(|entry| matches!(entry.1, Maybe::Absent(unrefused::Absent::Typed))),
+            "the refused declaration answers its refusal and the accepted one none: {read:?}"
         );
     }
 

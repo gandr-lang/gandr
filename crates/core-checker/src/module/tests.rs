@@ -659,7 +659,13 @@ fn a_typed_module_keeps_each_judged_body_s_term_types()
         declaration(At(1), Maybe::Present(product), Maybe::Present(pair)),
         declaration(At(2), Maybe::Present(integer), HOLE),
     ];
-    let typed = type_module(&mut context, &module);
+    let run = type_module(&mut context, &module);
+    assert_eq!(
+        run.refused().keys().copied().collect::<Vec<_>>(),
+        [ConstantIndex::from(1_usize)],
+        "the refused body's refusal is kept, and no other declaration's"
+    );
+    let typed = run.typings();
     assert_eq!(
         typed.keys().copied().collect::<Vec<_>>(),
         [
@@ -737,7 +743,8 @@ fn a_typed_module_keys_what_each_run_formed()
         declaration(At(2), Maybe::Present(dangling), Maybe::Present(zero)),
         declaration(At(3), Maybe::Present(partial), Maybe::Present(zero)),
     ];
-    let typed = type_module(&mut context, &module);
+    let run = type_module(&mut context, &module);
+    let typed = run.typings();
     assert_eq!(
         typed.keys().copied().collect::<Vec<_>>(),
         [
@@ -812,7 +819,8 @@ fn a_typed_module_keeps_the_terms_its_signature_judges()
     let path = arena.value_type_path(integer, zero, one);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let module = [declaration(At(0), Maybe::Present(path), HOLE)];
-    let judged = type_module(&mut context, &module);
+    let run = type_module(&mut context, &module);
+    let judged = run.typings();
     let Some(owed) = judged.get(&ConstantIndex::from(0_usize))
     else {
         panic!("the signature's formation is kept");
@@ -844,7 +852,8 @@ fn a_typed_module_keeps_the_terms_its_signature_judges()
         declaration(At(0), Maybe::Present(path), HOLE),
         declaration(At(1), Maybe::Present(path), HOLE),
     ];
-    let judged = type_module(&mut context, &module);
+    let run = type_module(&mut context, &module);
+    let judged = run.typings();
     let formed = |at: usize| {
         judged.get(&ConstantIndex::from(at)).map(|owed| {
             owed.formed()
