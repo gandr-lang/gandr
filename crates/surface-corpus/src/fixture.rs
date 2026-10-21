@@ -215,6 +215,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                     && usize::from(declared.origin()) == usize::from(lowered.origin())
                     && declared.laws() == module.laws(lowered)
                     && declared.stages() == module.stages(lowered)
+                    && declared.supplies() == module.supplies(lowered)
                     && match lowered.outcome() {
                         DeclarationOutcome::Completed { declared_type, body: value } => {
                             *signature == Maybe::Present(declared_type)
@@ -291,7 +292,8 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
             let declaration = Declaration::new(lowered.constant(), declared, defined, origin)
                 .lawful(module.laws(lowered).to_vec())
                 .ruled(module.operation_rules(lowered))
-                .staged(module.stages(lowered).to_vec());
+                .staged(module.stages(lowered).to_vec())
+                .supplied(module.supplies(lowered).to_vec());
             Some(match Entry::declared(module.worlds(lowered)) {
                 Maybe::Present(entry) => declaration.entered(entry),
                 Maybe::Absent(_) => declaration,

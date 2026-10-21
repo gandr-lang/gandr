@@ -424,6 +424,58 @@ impl<'source> Collector<'_, 'source>
         ))
     }
 
+    /// The stage binders of the function whose header `header` stands just
+    /// past the name of: each entry `i : Size` of its telescope, in written
+    /// order, so a binder's position is the ordinal its stage is minted at.
+    ///
+    /// # Specification
+    /// - requires: `header` stands just past a declaration's name.
+    /// - ensures: the names of the telescope's entries sorted by `Size`, in
+    ///   written order; empty without a telescope or with none. `header` is
+    ///   left where it was.
+    /// - provides: the stage binders of [`super::Collected::stage_binders`],
+    ///   which a call's supply `f[i = s]` names.
+    /// - fails: a form fault reading an entry's sort.
+    /// - panics: none.
+    /// - executable: none — each entry's sort is read off the tree, and a
+    ///   postcondition would repeat that walk to state it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call supplying a stage names the callee's binder,
+    ///   declared after the call or before it.
+    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    pub(super) fn stage_binders(
+        &self,
+        header: &Cursor<'_>,
+    ) -> Result<Vec<SurfaceName<'source>>, LoweringRefusal<'source>>
+    {
+        let mut binders = Vec::new();
+        let mut cursor = header.clone();
+        if let Maybe::Absent(_) = cursor.tile(TileName::ATTRIBUTES) {
+            return Ok(binders);
+        }
+        let mut scratch = Pieces::new();
+        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+            if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                let Maybe::Present(Piece::Operand(sort)) = cursor.read()
+                else {
+                    return Ok(binders);
+                };
+                if self.sort_of(sort, &mut scratch)? == EntrySort::Stage {
+                    binders.push(self.name_of(written));
+                }
+            }
+            else if let Maybe::Present(_) = cursor.tile(TileName::LESS_THAN) {
+                let _over = cursor.tile(TileName::IDENTIFIER);
+            }
+            let _comma = cursor.tile(TileName::COMMA);
+        }
+        Ok(binders)
+    }
+
     /// How a telescope entry's sort `sort` binds: a stage when it is the
     /// type head `Size`, a value otherwise.
     ///

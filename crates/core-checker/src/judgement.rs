@@ -6616,7 +6616,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
 
     /// The type the constant at `constant`, declared `declared`, has where a
     /// call forces it: for a definition quantified over stages, `declared`
-    /// with each binder at the stage the call's arguments show it at.
+    /// with each binder at the stage the call's arguments show it at, which a
+    /// stage the call supplies, `f[i = j]`, must be.
     ///
     /// # Specification
     /// - requires: the constant is the term the machine has just synthesised.
@@ -6637,6 +6638,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   helper's type plain.
     /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
     /// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
+    /// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
         Maybe::Present(staged) => self.context.arena().value_type(staged).is_some(),
         Maybe::Absent(_) => true,
@@ -6652,12 +6654,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
         };
         let mut waiting = self.frames.iter().rev();
-        if !matches!(
-            waiting.next().map(|top| &top.frame),
-            Some(Frame::Force { .. })
-        ) {
+        let Some(&Frame::Force { value: head }) = waiting.next().map(|top| &top.frame)
+        else {
             return Ok(Maybe::Absent(crate::quantified::Unread::Plain));
-        }
+        };
         let spine: Vec<ValueId> = waiting
             .map_while(|waiting| {
                 if let Frame::ApplicationHead { argument, .. } = waiting.frame {
@@ -6669,10 +6669,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
             })
             .collect();
         let context = &*self.context;
+        let supplied: Vec<(gandr_kernel_term::StageBinder, gandr_kernel_term::Stage)> = context
+            .supplies()
+            .iter()
+            .filter(|supply| supply.head == head)
+            .map(|supply| (supply.binder, supply.stage))
+            .collect();
         let at = crate::quantified::instantiation(
             (context.arena(), context.stages()),
             (declared, &signature),
             &spine,
+            (head, &supplied),
             |index| context.hypothesis(index),
         )?;
         crate::quantified::restaged(self.context.arena_mut(), declared, &signature, &at)

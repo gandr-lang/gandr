@@ -14,6 +14,16 @@
 //! the stage its arguments show. A body's types are plain: a case answering a
 //! staged result reads its branches at the stage, as a recursion's does.
 //!
+//! # A call supplies a stage by name
+//!
+//! A call may state the stage of a binder of its callee, `applyAt[i = j](f,
+//! x)`, inside a function quantified over `j`. The supply crosses beside the
+//! declaration making the call ([`crate::LoweredModule::supplies`]), at the
+//! value the call forces: the callee's binder by its ordinal and the stage the
+//! caller's binder `j` mints. It never reaches the kernel, which re-derives
+//! every stage from the arguments; the checker holds the supply to the stage
+//! they show.
+//!
 //! # Boundaries
 //!
 //! - A telescope entry `a : T` of a sort other than `Size` is an implicit
@@ -22,7 +32,10 @@
 //!   [`LoweringRefusal::ImplicitTelescope`].
 //! - A bound `i < n` names a binder `i` and a binder `n` written before it;
 //!   either name otherwise is [`LoweringRefusal::UnresolvedName`], and so is a
-//!   staged type naming no binder of its function's telescope.
+//!   staged type naming no binder of its function's telescope, and a supply `i
+//!   = j` whose `j` names no stage binder of the function making the call. A
+//!   supply's value is that name alone, and a supply on a reference standing
+//!   without a call leaves the fragment.
 //! - A staged type anywhere but a quantified function's parameter and result
 //!   types leaves the fragment: a stage is the signature's, never a body's. So
 //!   does one under a form the marks do not reach through, [`PLACING`] naming
@@ -62,6 +75,7 @@ use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::TileName;
 use crate::form::read_pieces;
+use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 
@@ -240,6 +254,105 @@ impl<'source> Lowerer<'_, 'source>
         let _first = self.stage_bounds.insert(key, bounds);
 
         Ok(())
+    }
+
+    /// The stages a call at `site` supplies the stage binders of the function
+    /// at `callee` at, `f[i = j]`, each such resident taken out of
+    /// `supplied`.
+    ///
+    /// # Specification
+    /// - requires: `supplied` holds the call's residents `a = e` by name, each
+    ///   beside its name's tile and its value's node.
+    /// - ensures: one entry per resident naming a stage binder of `callee`, the
+    ///   binder's ordinal beside the stage of the binder of the function making
+    ///   the call its value names, that binder's own ordinal; those residents
+    ///   are taken out of `supplied`, which keeps every other one. Nothing
+    ///   changes for a callee quantified over no stage.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] at a value naming no stage
+    ///   binder of the function making the call; the reserved refusal at a
+    ///   resident whose value is not a name; a form fault reading a value.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The first refusal met.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call inside a quantified function supplying its own
+    ///   binder files the stage at the callee's binder; a supply naming no
+    ///   binder of the caller is refused at the name.
+    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |staged| staged.len() <= self.collected.stage_binders.get(&callee).map_or(0, Vec::len)))]
+    pub(super) fn stage_supplies(
+        &mut self,
+        site: Site,
+        callee: SlotIndex,
+        supplied: &mut BTreeMap<SurfaceName<'source>, (Placed, NodeIndex)>,
+    ) -> Result<Vec<(StageBinder, Stage)>, LoweringRefusal<'source>>
+    {
+        let mut staged = Vec::new();
+        let ordinals = |names: &[SurfaceName<'source>]| -> BTreeMap<SurfaceName<'source>, usize> {
+            names
+                .iter()
+                .enumerate()
+                .map(|(ordinal, &name)| (name, ordinal))
+                .collect()
+        };
+        let Some(callee) = self
+            .collected
+            .stage_binders
+            .get(&callee)
+            .map(|names| ordinals(names))
+        else {
+            return Ok(staged);
+        };
+        let caller = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self
+                .collected
+                .stage_binders
+                .get(&owner)
+                .map(|names| ordinals(names))
+                .unwrap_or_default(),
+            Maybe::Absent(_) => BTreeMap::new(),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let mut outcome = Ok(());
+        for (name, &(written, value)) in supplied.iter() {
+            let Some(&binder) = callee.get(name)
+            else {
+                continue;
+            };
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, value, &mut scratch) {
+                outcome = Err(refusal);
+                break;
+            }
+            let [Piece::Tile { label, at }] = *scratch.pieces.as_slice()
+            else {
+                outcome = Err(Site {
+                    at: written,
+                    ..site
+                }
+                .out(FragmentBoundary::Reserved));
+                break;
+            };
+            let stage_name = self.name_at(at);
+            match caller.get(&stage_name) {
+                Some(&ordinal) if label == TileName::IDENTIFIER => {
+                    staged.push((StageBinder::from(binder), Stage::At(StageId::from(ordinal))));
+                },
+                Some(_) | None => {
+                    outcome = Err(LoweringRefusal::UnresolvedName {
+                        span: at.span,
+                        name: stage_name,
+                    });
+                    break;
+                },
+            }
+        }
+        self.scratch = scratch;
+        outcome?;
+        supplied.retain(|name, _| !callee.contains_key(name));
+
+        Ok(staged)
     }
 
     /// Mark every staged type under `pending` with the stage of the binder of

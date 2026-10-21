@@ -3010,6 +3010,18 @@ struct Lowerer<'run, 'source>
     /// The bound of each stage binder of each quantified function, in
     /// written order, by the function's declaration key.
     stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    /// The stages a call supplies its callee's binders at, `f[i = s]`, by the
+    /// node of the callee's name, beside the declaration making the call.
+    planned_supplies: BTreeMap<
+        NodeIndex,
+        (
+            ConstantIndex,
+            Vec<(gandr_kernel_term::StageBinder, gandr_kernel_term::Stage)>,
+        ),
+    >,
+    /// Each stage a call supplies, at the value it forces, by the declaration
+    /// whose body makes the call.
+    supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
     /// Each `run` binder written with no type, by the frame it binds: the
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
@@ -3789,6 +3801,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             codata,
             mut resolutions,
             stage_bounds,
+            supplies,
             ..
         } = self;
         resolutions.extend(collected.declared_uses.iter().filter_map(|&(span, slot)| {
@@ -3830,7 +3843,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
         .with_operation_rules(operation_rules)
-        .with_stage_bounds(stage_bounds))
+        .with_stage_bounds(stage_bounds)
+        .with_supplies(supplies))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -4062,6 +4076,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             staged_parameters: BTreeMap::new(),
             stage_marks: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
+            planned_supplies: BTreeMap::new(),
+            supplies: BTreeMap::new(),
             ran: BTreeMap::new(),
             holes: Vec::new(),
             pattern_stated: BTreeMap::new(),
@@ -11444,6 +11460,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let minted = self.mint_plan(plan, sink, origin);
         if stands_in && let Maybe::Present(Lowered::ValueType(id)) = minted {
             sink.origins.record_stand_in(id, origin);
+        }
+        if let Maybe::Present(Lowered::Value(head)) = minted
+            && let Some(&(caller, ref planned)) = self.planned_supplies.get(&position)
+        {
+            self.supplies
+                .entry(caller)
+                .or_default()
+                .extend(
+                    planned
+                        .iter()
+                        .map(|&(binder, stage)| gandr_core_term::staged::Supply {
+                            head,
+                            binder,
+                            stage,
+                        }),
+                );
         }
         // A type a term quotes was minted in its telescope, which counts a
         // typed binder only once a type names it; the term's context binds

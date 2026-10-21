@@ -2787,6 +2787,7 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
             && usize::from(actual.origin()) == usize::from(lowered.origin())
             && actual.laws() == module.laws(lowered)
             && actual.stages() == module.stages(lowered)
+            && actual.supplies() == module.supplies(lowered)
             && match lowered.outcome() {
                 DeclarationOutcome::Completed { declared_type, body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
@@ -2868,7 +2869,8 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         )
         .lawful(module.laws(lowered).to_vec())
         .ruled(module.operation_rules(lowered))
-        .staged(module.stages(lowered).to_vec());
+        .staged(module.stages(lowered).to_vec())
+        .supplied(module.supplies(lowered).to_vec());
         declarations.push(match Entry::declared(module.worlds(lowered)) {
             Maybe::Present(entry) => declaration.entered(entry),
             Maybe::Absent(_) => declaration,

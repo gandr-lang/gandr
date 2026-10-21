@@ -346,6 +346,131 @@ fn arguments_at_apart_stages_disagree_by_name_1227()
     );
 }
 
+/// `supplying @[j : Size, k : Size] (f : U (Nat[<a] → F Nat), x : Nat[<a]) :
+/// F Nat = (force applyAt[i = s]) f x` at position 2, `a` the stage `argued`
+/// names, each type plain for none, and `s` the stage `supplied`.
+///
+/// # Specification
+/// trivial.
+fn supplying(
+    arena: &mut CoreArena,
+    argued: Option<StageId>,
+    supplied: Stage,
+) -> Declaration
+{
+    let nat = nat(arena);
+    let below = argued.map_or(nat, |anchor| {
+        arena.value_type_staged(nat, Stage::Below {
+            anchor,
+            depth: StageDepth::from(core::num::NonZeroU32::MIN),
+        })
+    });
+    let function = function_of(arena, below);
+    let returner = arena.comp_type_returner(nat);
+    let inner = arena.comp_type_arrow(below, returner);
+    let outer = arena.comp_type_arrow(function, inner);
+    let declared = arena.value_type_thunk(outer);
+    let head = arena.value_constant(ConstantIndex::from(1));
+    let f = var(arena, DeBruijnIndex::from(1));
+    let x = var(arena, DeBruijnIndex::from(0));
+    let applied = call(arena, head, &[f, x]);
+    let second = arena.computation_lambda(applied);
+    let first = arena.computation_lambda(second);
+    let body = arena.value_thunk(first);
+    define(ConstantIndex::from(2), declared, body)
+        .staged(vec![StageBound::Unbounded, StageBound::Unbounded])
+        .supplied(vec![gandr_core_term::staged::Supply {
+            head,
+            binder: StageBinder::from(0_usize),
+            stage: supplied,
+        }])
+}
+
+#[test]
+fn a_supplied_stage_is_held_to_the_arguments_1227()
+{
+    // #1227: `applyAt[i = k] f x` with both arguments below `k` reads `i` at
+    // `k`, the stage supplied, and checks.
+    let k = Stage::At(StageId::from(1_usize));
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        apply_at(&mut arena, vec![StageBound::Unbounded]),
+        supplying(&mut arena, Some(StageId::from(1_usize)), k),
+    ];
+    let (verdicts, outcomes) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[2], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[2]
+    );
+    assert!(
+        matches!(outcomes[2], Outcome::Defined { .. }),
+        "the kernel re-reads `i` from the arguments: {:?}",
+        outcomes[2]
+    );
+
+    // `applyAt[i = j] f x`: the arguments show `k`, the supply states `j`,
+    // refused by name at the call's head.
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        apply_at(&mut arena, vec![StageBound::Unbounded]),
+        supplying(
+            &mut arena,
+            Some(StageId::from(1_usize)),
+            Stage::At(StageId::from(0_usize)),
+        ),
+    ];
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StagesDisagree { at, binder })
+                if binder == StageBinder::from(0_usize)
+                    && arena.value(at) == Some(&gandr_core_term::Value::Constant(ConstantIndex::from(1)))
+        ),
+        "{:?}",
+        verdicts[2]
+    );
+
+    // `applyAt[i = k] f x` with both arguments at no stage: nothing shows `i`
+    // for the supply to agree with.
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        apply_at(&mut arena, vec![StageBound::Unbounded]),
+        supplying(&mut arena, None, k),
+    ];
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::OutOfFragment {
+                former: UnadmittedFormer::Stage,
+                ..
+            })
+        ),
+        "{:?}",
+        verdicts[2]
+    );
+
+    // The control: the same call supplying nothing reads `i` at no stage and
+    // checks.
+    let mut arena = CoreArena::new();
+    let declarations = vec![
+        declare_nat(&mut arena),
+        apply_at(&mut arena, vec![StageBound::Unbounded]),
+        supplying(&mut arena, None, k).supplied(Vec::new()),
+    ];
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(verdicts[2], Verdict::Checked { .. }),
+        "{:?}",
+        verdicts[2]
+    );
+}
+
 #[test]
 fn a_call_at_no_stage_reads_its_result_plain()
 {

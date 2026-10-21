@@ -281,6 +281,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
         laws: Vec::new(),
         rules: Vec::new(),
         stages: Vec::new(),
+        supplies: Vec::new(),
     };
     let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
         crate::content::ContentNode::Tuple(vec![
@@ -311,6 +312,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
             laws: Vec::new(),
             rules: Vec::new(),
             stages: Vec::new(),
+            supplies: Vec::new(),
         },
         &[],
     );

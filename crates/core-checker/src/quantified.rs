@@ -18,6 +18,10 @@
 //!   satisfies refused by name; a binder no argument shows leaves its
 //!   occurrences plain. The arguments then check against the re-staged type
 //!   ([`restaged`]) by the stage order.
+//! - **A supplied stage is held to the solved one.** A call writing `f[i = j]`
+//!   carries the stage beside its declaration, never into the kernel; the stage
+//!   solved for `i` must be `j`, and a supply for a binder no argument shows
+//!   leaves the fragment.
 //!
 //! An occurrence the stage order does not place — inside a path type's
 //! carrier, say — is not marked; it crosses as a stage the kernel never
@@ -53,6 +57,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::refusal::CoreNode;
+use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
 
@@ -377,9 +382,12 @@ fn wrapped(
 ///   exactly, any other from below — a bounded binder no argument shows read
 ///   one step below its bound's stage, and no stage otherwise. A mark at `<i`
 ///   reads `i` off an argument bound `<s` at `s`, and off nothing at a stage
-///   itself. The kernel reads the same stages.
+///   itself. The kernel reads the same stages. A stage `supplied` for a binder,
+///   `f[i = j]`, is the stage solved for it.
 /// - fails: `found`'s refusal; [`CheckRefusal::StagesDisagree`] at the argument
-///   whose reading the solved stage does not satisfy, naming the binder;
+///   whose reading the solved stage does not satisfy, naming the binder, and at
+///   `head` for a supplied stage other than the solved one; the out-of-fragment
+///   refusal at `head` for a stage supplied to a binder no argument shows;
 ///   [`CheckRefusal::StageNotBelow`] at an argument a bounded binder is read
 ///   off when `order` does not place its stage below its bound's, where the
 ///   body was checked with it.
@@ -393,16 +401,19 @@ fn wrapped(
 ///   instantiates it at the recursion's own; a call on a value at no stage
 ///   instantiates nothing; a bounded binder read at its bound's own stage is
 ///   refused; two arguments at apart stages for one binder are refused by name,
-///   whichever comes first.
+///   whichever comes first; a supplied stage the arguments show checks, and one
+///   they do not show, or show apart, is refused.
 /// - witness: `quantified::tests::a_helper_at_a_stage_takes_a_recursion_s_claim`
 /// - witness: `quantified::tests::a_call_at_no_stage_reads_its_result_plain`
 /// - witness: `quantified::tests::a_bounded_binder_read_above_its_bound_is_refused_1241`
 /// - witness: `quantified::tests::arguments_at_apart_stages_disagree_by_name_1227`
+/// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
 pub fn instantiation<Found>(
     (arena, order): (&CoreArena, &StageOrder),
     (declared, signature): (ValueTypeId, &StageSignature),
     spine: &[ValueId],
+    (head, supplied): (ValueId, &[(StageBinder, Stage)]),
     mut found: Found,
 ) -> Result<Vec<Maybe<Stage, Unread>>, CheckRefusal>
 where
@@ -461,6 +472,20 @@ where
             },
             None => Maybe::Absent(Unread::Plain),
         });
+    }
+    for &(binder, stage) in supplied {
+        match read.get(usize::from(binder)) {
+            Some(&Maybe::Present(solved)) if solved == stage => {},
+            Some(&Maybe::Present(_)) => {
+                return Err(CheckRefusal::StagesDisagree { at: head, binder });
+            },
+            Some(&Maybe::Absent(_)) | None => {
+                return Err(CheckRefusal::OutOfFragment {
+                    at: CoreNode::Term(TermNode::Value(head)),
+                    former: UnadmittedFormer::Stage,
+                });
+            },
+        }
     }
     for (binder, &bound) in signature.bounds().iter().enumerate() {
         let StageBound::Below(over) = bound

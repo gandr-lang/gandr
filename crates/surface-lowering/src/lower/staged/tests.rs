@@ -5,10 +5,13 @@ use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
 use gandr_core_term::staged::Part;
 use gandr_core_term::staged::unstaged;
+use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageBinder;
 use gandr_kernel_term::StageBound;
+use gandr_kernel_term::StageId;
 use gandr_surface_syntax::SourceText;
 
 use crate::error::FragmentBoundary;
@@ -150,6 +153,65 @@ fn a_bound_or_stage_naming_no_binder_is_refused_by_name()
             LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("j")
         ),
         "a staged type names a binder of its function's telescope"
+    );
+}
+
+#[test]
+fn a_supplied_stage_crosses_at_the_call_s_head_1227()
+{
+    let source = format!(
+        "{NAT}{APPLIED}def appliedAt @[j : Size, k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat {{\n  applyAt[i = k](f, x)\n}}\ndef stray @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {{\n  applyAt[i = m](f, x)\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let named = |name: &str| {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("{name} is declared");
+        };
+        declaration
+    };
+    let [supply] = *module.supplies(named("appliedAt"))
+    else {
+        panic!(
+            "the call files one supply: {:?}",
+            module.supplies(named("appliedAt"))
+        );
+    };
+    assert_eq!(
+        (supply.binder, supply.stage),
+        (
+            StageBinder::from(0_usize),
+            Stage::At(StageId::from(1_usize))
+        ),
+        "`applyAt`'s first binder at the caller's second"
+    );
+    assert_eq!(
+        arena.value(supply.head),
+        Some(&Value::Constant(named("applyAt").constant())),
+        "at the value the call forces, `applyAt`'s name"
+    );
+    assert!(
+        module.supplies(named("helped")).is_empty(),
+        "a call supplying nothing files nothing"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("stray")),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("m")
+        ),
+        "a supply names a stage binder of the function making the call"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, SurfaceName::from("appliedAt")),
+            Verdict::Checked { .. }
+        ),
+        "the arguments show `i` at `k`, the stage supplied: {report:?}"
     );
 }
 
