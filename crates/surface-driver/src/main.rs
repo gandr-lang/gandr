@@ -1682,7 +1682,10 @@ fn render(
             let pool = Pool::new(staging.width());
             stage(staging, &pool, stdout, stderr)
         },
-        Outcome::Format(formatting) => fmt(formatting, stdout, stderr),
+        Outcome::Format(formatting) => {
+            let pool = Pool::new(formatting.width());
+            fmt(formatting, &pool, stdout, stderr)
+        },
         Outcome::Ledger(task) => ledger(&task, stdout, stderr),
     }
 }
@@ -1748,8 +1751,8 @@ fn ledger(
     }
 }
 
-/// Lay out `formatting`'s sources, printing the path of each whose layout
-/// changed, and choose the exit code.
+/// Lay out `formatting`'s sources on `pool`, printing the path of each whose
+/// layout changed, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1791,13 +1794,14 @@ fn ledger(
             || (checking && *exit == ExitCode::from(UNFORMATTED))))]
 fn fmt(
     formatting: Formatting,
+    pool: &Pool,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let rewrite = formatting.rewrite();
     let (mut changed, mut faulted) = (false, false);
-    let visited = formatting.visit(|step| {
+    let visited = formatting.visit(pool, |step| {
         let written = match step {
             FormatStep::Unchanged { path, withdrawn } => kept(stderr, path, &withdrawn),
             FormatStep::Changed { path, withdrawn } => {

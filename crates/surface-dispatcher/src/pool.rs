@@ -3,17 +3,17 @@
 //! # One pool, held by the driver
 //!
 //! The driver makes one [`Pool`] at its [`Width`] and hands it to every verb
-//! that forks. A walk forks its components on it, and a staging forks each
-//! program's stages on it. The threads start the first time a fork has two
-//! items or more, so a visit of one source never asks the host for its
+//! that forks. A walk forks its components on it, a formatting its sources,
+//! and a staging each program's stages. The threads start the first time a fork
+//! has two items or more, so a visit of one source never asks the host for its
 //! topology and never starts a thread. Later forks reuse the same threads.
 //! At one thread no pool is built, and every fork runs on the calling thread,
 //! the serial reference that every wider fork is tested against.
 //!
 //! The `no_std` crates name no thread. `gandr-core-checker`'s
 //! [`Fork`] is their seam: [`Pooled`] runs a staged check's stages on this
-//! pool, and the walk spawns its lowering jobs on it directly, because its
-//! consumer stays on the calling thread.
+//! pool, and the walk and the formatting spawn their jobs on it directly,
+//! because each hands its steps over on the calling thread.
 //!
 //! **One pool, not one per verb.** Before, the walk started scoped threads for
 //! each visit and the staging built a `rayon` pool for each run. A process
