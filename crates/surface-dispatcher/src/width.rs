@@ -304,6 +304,7 @@ fn physical_cores_under(devices: &Path) -> Maybe<Threads, topology::Absent>
 /// - witness: `width::tests::second_hardware_threads_share_a_core`
 /// - witness: `width::tests::a_hybrid_processor_counts_its_performance_cores`
 /// - witness: `width::tests::a_malformed_tree_reports_nothing`
+/// - witness: `width::tests::a_list_names_at_most_the_bound_of_cpus`
 #[cfg(any(target_os = "linux", test))]
 #[spec(ensures: |ret| match ret {
     Maybe::Present(ref listed) => listed.windows(2).all(|pair| match *pair {
@@ -348,8 +349,10 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Cpu;
+    use super::MOST_CPUS;
     use super::Threads;
     use super::Width;
+    use super::cpus;
     use super::physical_cores_under;
     use super::topology;
 
@@ -561,5 +564,29 @@ mod tests
             unreadable,
             "an online CPU without a topology"
         );
+    }
+
+    /// A list may name [`MOST_CPUS`] CPUs and no more, however its items add
+    /// up to them.
+    #[test]
+    fn a_list_names_at_most_the_bound_of_cpus()
+    {
+        let devices = Devices::new(Path::new("bound"));
+        let last = MOST_CPUS - 1;
+        for (name, list, named) in [
+            ("at", format!("0-{last}"), Some(MOST_CPUS)),
+            ("past", format!("0-{}", last - 1), Some(MOST_CPUS - 1)),
+            ("over", format!("0-{},{last}-{MOST_CPUS}", last - 1), None),
+        ] {
+            devices.file(Path::new(name), OsStr::new(&list));
+            assert_eq!(
+                match cpus(&devices.0.join(name)) {
+                    Maybe::Present(listed) => Some(listed.len()),
+                    Maybe::Absent(_) => None,
+                },
+                named,
+                "{name}"
+            );
+        }
     }
 }

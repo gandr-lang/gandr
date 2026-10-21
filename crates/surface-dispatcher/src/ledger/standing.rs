@@ -802,6 +802,7 @@ fn slot(
 /// - hypothesis: L3 — the shell block's reading holds the shell word's sample
 ///   and molds it.
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
+/// - witness: `ledger::standing::tests::a_reading_holds_the_probe_where_a_hole_of_its_sort_stands`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |read| read.holds == Holds::Nothing || read.text.contains(<&str>::from(probe))))]
 fn reading(
     context: &Rule,
@@ -918,5 +919,85 @@ fn molds(
     }
     else {
         Probed::Unmolded
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_surface_grammar::PrecName;
+    use gandr_surface_grammar::Provenance;
+    use gandr_surface_grammar::Regex;
+    use gandr_surface_grammar::Rule;
+    use gandr_surface_grammar::RuleName;
+    use gandr_surface_grammar::Sort;
+    use gandr_surface_grammar::TileLabel;
+    use gandr_surface_grammar::built_in_prec_table;
+    use gandr_surface_syntax::SourceFragment;
+
+    use super::Holds;
+    use super::reading;
+
+    /// The shortest reading of a probe context `regex` holding `x` in each
+    /// expression hole, and what it holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read(regex: Regex) -> (String, Holds)
+    {
+        let precs = built_in_prec_table().expect("the band table builds");
+        let prec = precs
+            .prec(PrecName("expression.atom"))
+            .expect("the band is built in");
+        let context = Rule::with_provenance(
+            RuleName("context"),
+            Provenance("context"),
+            Sort::Expression,
+            prec,
+            regex,
+        );
+        let read = reading(&context, Sort::Expression, SourceFragment::from("x"))
+            .expect("every tile is literal");
+        (read.text, read.holds)
+    }
+
+    /// A context's reading takes the probe in its hole, an option holding it
+    /// once and an alternation's branch holding it, and holds nothing where
+    /// no hole is of the probed sort; its parts are spaced only between two
+    /// word characters.
+    #[test]
+    fn a_reading_holds_the_probe_where_a_hole_of_its_sort_stands()
+    {
+        let tile = |label| Regex::tile(TileLabel(label));
+        assert_eq!(
+            read(Regex::seq([
+                tile("return"),
+                Regex::sort(Sort::Expression),
+                tile(";")
+            ])),
+            (String::from("return x;"), Holds::Probe),
+            "a word and the probe are spaced, the probe and a semicolon are not"
+        );
+        assert_eq!(
+            read(Regex::seq([tile("return_"), tile("_x")])),
+            (String::from("return_ _x"), Holds::Nothing),
+            "an underscore is a word character, and a form without a hole holds nothing"
+        );
+        assert_eq!(
+            read(Regex::seq([
+                tile("("),
+                Regex::alt([tile(")"), Regex::sort(Sort::Expression)])
+            ])),
+            (String::from("(x"), Holds::Probe),
+            "an alternation takes the branch holding the probe"
+        );
+        assert_eq!(
+            read(Regex::seq([
+                tile("("),
+                Regex::optional(Regex::sort(Sort::Expression))
+            ])),
+            (String::from("(x"), Holds::Probe),
+            "an option holding the probe takes it once"
+        );
     }
 }

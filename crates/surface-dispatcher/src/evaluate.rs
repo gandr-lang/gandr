@@ -1340,6 +1340,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_body_that_did_not_focus_is_carried_until_reached`
     /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
+    /// - witness: `evaluate::tests::a_run_reaching_a_static_code_is_blocked_by_it`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1706,6 +1707,7 @@ impl<'source> Program<'source>
 /// - hypothesis: L3 — a model whose helpers stand outside its signature, and
 ///   sealed modules whose runs name only their exports.
 /// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `evaluate::tests::a_run_naming_a_declaration_outside_every_sealed_module_is_spelled`
 #[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
 fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
@@ -2491,6 +2493,57 @@ def kept : +U (-F (+U (-F Path(Integer, 1, 1)))) ; def kept = thunk { return rea
             run(&mut laws, SurfaceName::from("kept")).to_string(),
             "thunk { law((thunk { fn (a) { a } }, thunk { fn (a) { a } })) }",
             "a run that carries the unfocused body without reaching it returns"
+        );
+    }
+
+    /// A static code has no image in the machine, so a run that reaches one
+    /// through a reference is blocked by it even where the run would only
+    /// carry it, as it carries a body that did not focus for another reason.
+    #[test]
+    fn a_run_reaching_a_static_code_is_blocked_by_it()
+    {
+        let mut codes = program(
+            r"def twice : Type -> Type ; def twice = \Y. Y * Y ;
+def again : Type -> Type ; def again = twice ;
+def held : +U (-F (Type -> Type)) ; def held = thunk { return twice } ;
+def kept : +U (-F (+U (-F (Type -> Type)))) ; def kept = thunk { return held } ;",
+        );
+        for name in ["twice", "again", "held", "kept"] {
+            let evaluation = run(&mut codes, SurfaceName::from(name));
+            assert!(
+                matches!(
+                    evaluation,
+                    Evaluation::Unrunnable(Unrunnable::Unfocused {
+                        declaration,
+                        refusal: FocusRefusal::Code(_),
+                    }) if declaration == SurfaceName::from("twice")
+                ),
+                "`{name}` reaches the static code: {evaluation}"
+            );
+        }
+    }
+
+    /// Only a member of a module a signature coerced is hidden: beside such a
+    /// module, a run naming a declaration outside it is spelled, not sealed.
+    #[test]
+    fn a_run_naming_a_declaration_outside_every_sealed_module_is_spelled()
+    {
+        let mut beside = program(
+            r"theory Pointed {
+  sort T : Type;
+  oper z : T;
+}
+module ZeroPointed : Model(Pointed) {
+  type T = Integer;
+  def z = 0;
+}
+def helper(x : Integer) -> -F Integer { x }
+def wrap : Integer => Integer ; def wrap = fn (n) { become helper(n) } ;",
+        );
+        let evaluation = run(&mut beside, SurfaceName::from("wrap"));
+        assert!(
+            matches!(evaluation, Evaluation::Value(_)),
+            "`wrap` names `helper`, which no signature hides: {evaluation}"
         );
     }
 

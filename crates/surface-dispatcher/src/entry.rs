@@ -432,8 +432,10 @@ fn cursor<'step>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration calling one the lowering refused is a note
-///   naming it, and one calling a declaration that checks is not.
+///   naming it, not another refused before it, and one calling a declaration
+///   that checks is not.
 /// - witness: `entry::tests::a_declaration_naming_a_refused_one_is_a_note`
+/// - witness: `entry::tests::a_note_names_the_refused_declaration_it_rests_on`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(found) => found.settlement() == Settlement::Unsettled,
     Maybe::Absent(_) => true,
@@ -1095,6 +1097,36 @@ mod tests
             ],
             "the refused declaration is the one error; the one calling it is a note at the call, \
              and the one calling a declaration that checks prints nothing"
+        );
+    }
+
+    /// The note of a declaration calling a refused one names the declaration
+    /// it calls, not another the lowering refused before it.
+    #[test]
+    fn a_note_names_the_refused_declaration_it_rests_on()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let text = SourceText::from(
+            "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef x() -> Integer {\n  return 3 ~ \
+             4\n}\n\ndef b() -> Integer {\n  return x()\n}\n",
+        );
+        let cascade = step(
+            Path::new("named.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Unsettled,
+            &grammar,
+        );
+        let notes: Vec<String> = entries(&cascade, Verb::Check(Goals::Gated))
+            .filter(|diagnostic| diagnostic.severity == Severity::Note)
+            .filter_map(|diagnostic| match diagnostic.note {
+                Maybe::Present(note) => Some(note),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        assert!(
+            matches!(notes.as_slice(), [note] if note.contains("`x`") && !note.contains("`a`")),
+            "one note, naming `x`, the declaration `b` calls: {notes:?}"
         );
     }
 

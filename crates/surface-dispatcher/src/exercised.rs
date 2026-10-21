@@ -1207,6 +1207,8 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
                     (Row::SubsumptionBridge, 4_usize),
                 ],
             ),
+            // A synthesised literal converts nothing, so crosses no bridge.
+            ("def answer = 42 ;", &[]),
             (r#"@[ refuses("UnresolvedName") ] def a = missing ;"#, &[(
                 Row::UndefinedTermName,
                 1_usize,

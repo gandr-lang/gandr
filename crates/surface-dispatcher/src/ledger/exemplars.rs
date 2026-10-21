@@ -868,7 +868,7 @@ mod tests
     fn named(report: &ExemplarReport) -> Vec<String>
     {
         report
-            .findings
+            .findings()
             .iter()
             .map(|finding| {
                 let file = finding.path.file_name().expect("a file").display();
