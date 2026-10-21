@@ -38,7 +38,6 @@ fragment/exits.gandr:<file>
 fragment/exits.gandr:Nat:7c8cfc5b76d8efd9
 fragment/exits.gandr:count:5df9f72f01e5aaa2
 fragment/exits.gandr:count_elided:f13fec909280ce5f
-fragment/exits.gandr:discarded:6a9f69d9c406c5d1
 fragment/exits.gandr:discards_any:53603d080819997c
 fragment/exits.gandr:discards_any_elided:5d20e4adb4338b98
 fragment/exits.gandr:discards_nat:8ca83469331b3d3f

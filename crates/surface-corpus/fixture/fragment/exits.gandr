@@ -122,7 +122,9 @@ def sequenced_run(n : Nat) -> -F Nat {
   return run down(n)
 }
 
-@[ refuses("OutOfFragment") ]
+/// A last statement discards its value and the block returns the unit, so a
+/// body answering a natural cannot end in one (#1205).
+@[ refuses("TypeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
   run m <- down(n) ;
   down(m) ;

@@ -51,15 +51,18 @@ use gandr_core_term::ArenaWatermark;
 use gandr_core_term::Binders;
 use gandr_core_term::Carried;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::SplitMotive;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::world::WorldForm;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -703,6 +706,117 @@ impl<'source> Lowerer<'_, 'source>
         let _tail = self.exits.insert(body.last);
         let _owner = self.bodies.insert(body.last, body.last);
         self.paths_through(site, body, answer)
+    }
+
+    /// Record that the form at `site`, a block's last statement that is not
+    /// an exit, runs with its result discarded, the block returning the unit
+    /// after it.
+    ///
+    /// # Specification
+    /// - requires: `site` is a block's last computation written as a statement
+    ///   and no exit, outside a loop's end.
+    /// - ensures: a form whose every path leaves is left as it is, the end of
+    ///   its block; any other is recorded as trailing, is no longer where a
+    ///   path ends, so nothing in its tail position takes an inferred exit, and
+    ///   either joins what follows it, when a path through it leaves, or
+    ///   answers nothing, since its result is discarded.
+    /// - provides: the reading of `{ s… c ; }` as Rust reads it: `c` runs and
+    ///   the block's value is the unit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call, a `pure` and a session action ending a body
+    ///   as a statement each run before the unit is returned; a match whose
+    ///   every arm returns stays the body's end.
+    /// - witness: `lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
+    #[spec(ensures: (self.leaves_at(site.at.node) == Leaves::Always) != self.trailing.contains(&site.at.node)
+        && (!self.trailing.contains(&site.at.node) || !self.exits.contains(&site.at.node)))]
+    pub(super) fn trail(
+        &mut self,
+        site: super::Site,
+    )
+    {
+        let leaves = self.leaves_at(site.at.node);
+        if leaves == Leaves::Always {
+            return;
+        }
+        let _first = self.trailing.insert(site.at.node);
+        // A path passes the statement on to the unit returned after it.
+        let _passed = self.exits.remove(&site.at.node);
+        if leaves == Leaves::Never {
+            let _discarded = self.answers.remove(&site.at.node);
+        }
+        else {
+            let _joined = self.joined.insert(site.at.node);
+        }
+    }
+
+    /// `end`, minted at `position` where a block ends in a statement, with
+    /// its result discarded and the unit returned after it.
+    ///
+    /// # Specification
+    /// - requires: `position` trails, as [`Self::trail`] records; `end` is the
+    ///   node's bridged computation.
+    /// - ensures: `x ← end; split x (); return ()`, `end` ascribed the returner
+    ///   of the unit when no path through it leaves, every inserted node at
+    ///   `origin` marked as the statement's insertion, the `return` recorded as
+    ///   an exit, and the bind recorded as distributed when a path through
+    ///   `end` leaves.
+    /// - provides: the minting half of [`Self::trail`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a body ending in `c ;` lowers to the body written
+    ///   with the unit returned after `c`. L3 — the checker accepts it.
+    /// - witness: `lower::exits::tests::a_block_ending_in_a_statement_returns_the_unit_1205`
+    #[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
+    pub(super) fn conclude(
+        &self,
+        position: NodeIndex,
+        end: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let inserted = origin.inserted(Insertion::Statement);
+        let discarded = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        sink.origins.record_value(discarded, inserted);
+        let unit = sink.arena.value_unit();
+        sink.origins.record_value(unit, inserted);
+        let returned = sink.arena.computation_return(unit);
+        sink.origins.record_computation(returned, inserted);
+        let _exit = sink.exits.insert(returned);
+        let split = sink
+            .arena
+            .computation_split(discarded, ComponentCount::default(), returned);
+        sink.origins.record_computation(split, inserted);
+        let leaves = self.leaves_at(position);
+        // The discarded result is the unit, so a statement no path leaves is
+        // ascribed the returner of the unit: the bind then checks it against
+        // that type rather than synthesising one.
+        let ran = if leaves == Leaves::Never {
+            let unit = sink.arena.value_type_unit();
+            sink.origins.record_value_type(unit, inserted);
+            let returner = sink.arena.comp_type_returner(unit);
+            sink.origins.record_comp_type(returner, inserted);
+            let ascribed = sink.arena.computation_ascribe(end, returner);
+            sink.origins.record_computation(ascribed, inserted);
+            ascribed
+        }
+        else {
+            end
+        };
+        let bound = sink.arena.computation_bind(ran, split);
+        sink.origins.record_computation(bound, inserted);
+        if leaves != Leaves::Never {
+            let _first = sink.distributed.insert(bound, inserted);
+        }
+
+        bound
     }
 
     /// Read `subject`, the block the capability scope at `site` handles, as

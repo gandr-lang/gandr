@@ -201,6 +201,9 @@ pub enum Insertion
     /// where a path through a loop's body ends without leaving it — the
     /// result discarded and the loop's fixpoint forced again.
     Loop,
+    /// A node a block ending in a statement writes that the source does not:
+    /// the statement's result discarded and the unit the block returns.
+    Statement,
     /// The value a computation returns, standing where a path type's endpoint
     /// or reflexivity's point is read: a compound endpoint.
     Endpoint,
