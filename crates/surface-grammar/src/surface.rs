@@ -460,6 +460,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "loop_expression",
     "operator_declaration",
     "pack_expression",
+    "pack_model_expression",
     "package_type",
     "path_type",
     "unpack_statement",

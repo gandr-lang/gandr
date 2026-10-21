@@ -1561,7 +1561,7 @@ struct Positional(bool);
 
 /// Whether the places of a dependent record a pattern splits are written,
 /// each with its type, or are the fields of the record a relation between
-/// types abbreviates, which no syntax states.
+/// types abbreviates or a theory's models state, which no syntax writes.
 ///
 /// # Specification
 /// trivial.
@@ -1573,6 +1573,9 @@ enum Places
     /// The record is a relation's, or one nested in it: its fields' types are
     /// the relation's.
     Related(Layout),
+    /// The record is a theory's models: its fields' types are the
+    /// signature's.
+    Modelled,
 }
 
 /// Whether a word's letter is a loop's inverse rather than the loop.
@@ -4091,7 +4094,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::dependent_components`] reads them; at one written as an
     ///   equivalence or a quasi-inverse, as [`Self::stated_relation`] reads it,
     ///   or at a record nested in one, so are those of the record it
-    ///   abbreviates, each component unstated; otherwise positional entries, in
+    ///   abbreviates, and at one written `Model(T)` whose record nests pairs,
+    ///   as [`Self::stated_bundle`] reads it, those of the record the signature
+    ///   states, each component unstated; otherwise positional entries, in
     ///   index order, make a tuple and labelled ones a record of their labels;
     ///   each component queued with the positional type of the same place, or
     ///   the labelled type of the same label, of the telescope type `queued`
@@ -4106,11 +4111,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — positional, reordered and labelled telescope
-    ///   patterns, a tuple pattern, patterns at a dependent record, and
-    ///   patterns at a relation.
+    ///   patterns, a tuple pattern, patterns at a dependent record, patterns at
+    ///   a relation, and patterns at a theory's models.
     /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
     /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
+    /// - witness: `tests::modules::models::a_pattern_at_a_model_type_splits_its_fields`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { .. } | Matcher::Record { .. })))]
     fn components(
         &mut self,
@@ -4178,6 +4184,23 @@ impl<'source> Lowerer<'_, 'source>
                 layout.links(),
                 arranged,
                 Places::Related(layout),
+                patterns,
+                work,
+            );
+        }
+        if let Maybe::Present(node) = stated
+            && let Maybe::Present((typed, links)) = self.stated_bundle(node, here.at)
+            && match arranged {
+                arity::Arranged::Positional(ref entries) => entries.len() == typed.len(),
+                arity::Arranged::Labelled(_) => true,
+            }
+        {
+            return Self::dependent_components(
+                here,
+                &typed,
+                &links,
+                arranged,
+                Places::Modelled,
                 patterns,
                 work,
             );
@@ -4258,7 +4281,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   link or the last entry; a split of a link that binds is dependent; a
     ///   place no entry names is a wildcard, kept with its field's label when
     ///   the record labels it; each written entry queued with its place's
-    ///   written type, or unstated at a relation's record, in written order.
+    ///   written type, or unstated at a relation's or a model's record, in
+    ///   written order.
     /// - fails: the unresolved-name refusal for a label the record lacks.
     /// - panics: none.
     ///
@@ -4320,13 +4344,15 @@ impl<'source> Lowerer<'_, 'source>
                         (Places::Written, Some(component)) => {
                             Maybe::Present(component.held.at().node)
                         },
-                        (Places::Written, None) | (Places::Related(_), _) => {
+                        (Places::Written, None) | (Places::Related(_) | Places::Modelled, _) => {
                             Maybe::Absent(binder_type::Absent::Untyped)
                         },
                     },
                     related: match places {
                         Places::Related(layout) => layout.inner(arity::Place(place)),
-                        Places::Written => Maybe::Absent(related::Absent::Otherwise),
+                        Places::Written | Places::Modelled => {
+                            Maybe::Absent(related::Absent::Otherwise)
+                        },
                     },
                     punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
                 }));

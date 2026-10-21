@@ -1273,7 +1273,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1301,6 +1301,7 @@ fn ending(former: Former) -> Ending
         | Former::Run
         | Former::Call
         | Former::Telescope
+        | Former::PackModel
         | Former::Injection
         | Former::Binary
         | Former::Unary
@@ -1364,7 +1365,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1431,6 +1432,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Projection
                     | Former::Case
                     | Former::Telescope
+                    | Former::PackModel
                     | Former::Injection
                     | Former::LazyRecord
                     | Former::Instantiation
@@ -1509,6 +1511,7 @@ const fn family_of(former: Former) -> Family
         | Former::Projection
         | Former::Case
         | Former::Telescope
+        | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
         | Former::Instantiation
@@ -2360,6 +2363,9 @@ enum Plan
     /// A theory's models as a type, `Model(S)`: the bundled record the
     /// signature derived from `S` states.
     Bundle(Arc<model::Bundled>),
+    /// A module packed at its model type, `pack M at Model(S)`: the bundled
+    /// record of the module's members.
+    Packed(Arc<model::Packed>),
     /// A first-class continuation's type over the computation types it runs
     /// from and to: `Stack(C, D)`.
     Stack(NodeIndex, NodeIndex),
@@ -5701,6 +5707,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Call => self.call(site, cursor),
             Former::Case => self.case(site, cursor),
             Former::Telescope => self.telescope(site, cursor),
+            Former::PackModel => self.pack_model(site, cursor),
             Former::Injection => self.injection(site, cursor),
             Former::LazyRecord => self.copattern(site, cursor),
             Former::Binary | Former::Unary => self.operator(site, pieces),
@@ -11945,7 +11952,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FunctionFlow(..)
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
-                | Plan::Constructor(_) => Some(Produced::Value),
+                | Plan::Constructor(_)
+                | Plan::Packed(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
@@ -12224,6 +12232,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_relation(relation, [left, right], sink, origin)
             },
             Plan::Bundle(ref signature) => self.mint_bundle(signature, sink, origin),
+            Plan::Packed(ref packed) => self.mint_packed(packed, sink, origin),
             Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Path(..)
@@ -13228,7 +13237,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Ride(..)
             | Plan::FlowThen(..)
             | Plan::Relation(..)
-            | Plan::Bundle(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Bundle(_)
+            | Plan::Packed(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -16611,6 +16621,7 @@ fn halves<'source>(
                     | Former::Unit
                     | Former::Thunk
                     | Former::Telescope
+                    | Former::PackModel
                     | Former::Injection
             )
     },
@@ -16627,6 +16638,7 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Unit
             | Former::Thunk
             | Former::Telescope
+            | Former::PackModel
             | Former::Injection
     ))
 }
@@ -16760,6 +16772,7 @@ pub fn parse_literal(
         | Former::Call
         | Former::Case
         | Former::Telescope
+        | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
         | Former::Instantiation
@@ -21935,6 +21948,7 @@ mod tests
             Former::Unit,
             Former::Thunk,
             Former::Telescope,
+            Former::PackModel,
             Former::Injection,
         ];
         for former in Former::ALL {

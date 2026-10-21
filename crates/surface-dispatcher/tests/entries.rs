@@ -119,6 +119,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression migrate", Standing::Owed(0)),
     ("Expression number", Standing::Owed(0)),
     ("Expression offer", Standing::Owed(0)),
+    ("Expression pack", Standing::Owed(0)),
     ("Expression pure", Standing::Design(EXIT)),
     ("Expression resume", Standing::Owed(0)),
     ("Expression return", Standing::Owed(0)),
@@ -306,7 +307,8 @@ fn kind(
 /// a run literal's move, as an inner link of a product, a sum or a lazy
 /// product chain, as the value a discarded bind drops, as an arrow of a data
 /// family's kind, as the sort of a stage binder or the binder a call
-/// supplies, or as the theory a model type names.
+/// supplies, as the theory a model type names, or as the module and the
+/// model type a pack names.
 ///
 /// # Specification
 /// trivial.
@@ -364,6 +366,12 @@ enum Placed
     /// lowering forms, the record it derives located there and inserted, so
     /// the model type answers.
     Theory,
+    /// The module a pack packs and the model type it states, `M` and
+    /// `Model(T)` in `pack M at Model(T)`: the module is a namespace and the
+    /// model type names the theory whose record the pack builds of the
+    /// module's members, neither a core node of its own, so the pack, the
+    /// record they give, answers.
+    Packed,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -502,6 +510,12 @@ fn gated(
         // The theory a model type names: every child of `Model(…)` in a type
         // but its head.
         let modelled = melded && def.sort == Sort::Type && spelled(opener) == "Model";
+        // The module and the model type a pack names: every child of a
+        // `pack M at Model(T)`, its third child the `at` tile.
+        let packing = melded
+            && def.label == "pack"
+            && def.sort == Sort::Expression
+            && spelled(children.get(2).copied()) == "at";
         stack.extend(
             children
                 .iter()
@@ -515,6 +529,9 @@ fn gated(
                         child,
                         if modelled && opener != Some(child) {
                             placed.or(Some(Placed::Theory))
+                        }
+                        else if packing {
+                            placed.or(Some(Placed::Packed))
                         }
                         else {
                             placed

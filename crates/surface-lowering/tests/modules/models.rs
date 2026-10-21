@@ -4,7 +4,9 @@
 //! not supply refused by name.
 
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::Value;
 use gandr_core_term::equal_type_syntax;
+use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
@@ -14,7 +16,9 @@ use gandr_surface_lowering::model::ModelFault;
 
 use super::Amounts;
 use super::Judgement;
+use super::NamedKind;
 use super::Role;
+use super::body_of;
 use super::declared_type_of;
 use super::lower;
 use super::name;
@@ -652,5 +656,132 @@ fn a_model_type_of_an_undeclared_theory_is_refused()
             })
         )],
         "a theory nothing declares before the type derives nothing"
+    );
+}
+
+/// A counter that starts, steps and reads, and a module giving it on the
+/// integers, ascribed transparently.
+const COUNTER: &str = "theory Counter {\n  sort C : Type;\n  oper start : () --> C;\n  oper step \
+                       : (c : C) --> C;\n  oper read : (c : C) --> Integer;\n}\nmodule Open : \
+                       Model(Counter) {\n  type C = Integer;\n  def start() -> -F Integer { 0 \
+                       }\n  def step(n : Integer) -> -F Integer { become n + 1 }\n  def read(n : \
+                       Integer) -> -F Integer { n }\n}\n";
+
+/// A module packed at its theory's models is the record of its members in
+/// signature order, nested as the record nests its fields: the code of its
+/// carrier beside its start, its step and its reading. The kernel checks it
+/// at `Model(Counter)`.
+#[test]
+fn a_manifest_module_packs_as_the_record_of_its_members()
+{
+    let source = format!(
+        "{COUNTER}def packed : Model(Counter) ;\ndef packed = pack Open at Model(Counter) ;\n"
+    );
+    let mut lowered = lower(source.as_str());
+    let member =
+        |path: &str| Value::Constant(super::declaration(&lowered, path, Role::Declared).constant());
+    let (start, step, read) = (
+        member("Open.start"),
+        member("Open.step"),
+        member("Open.read"),
+    );
+    let value = |id| lowered.arena.value(id).cloned();
+    let pair = |id| match value(id) {
+        Some(Value::Tuple(ref components)) => match **components {
+            [first, rest] => (first, rest),
+            ref other => panic!("a pair, not {other:?}"),
+        },
+        other => panic!("a pair, not {other:?}"),
+    };
+    let (carrier, rest) = pair(body_of(&lowered, "packed"));
+    let (first, rest) = pair(rest);
+    let (second, third) = pair(rest);
+    assert!(
+        matches!(value(carrier), Some(Value::Quote(_)))
+            && [value(first), value(second), value(third)] == [Some(start), Some(step), Some(read)],
+        "the carrier's code, then each operation the module gives"
+    );
+    let packed = super::declaration(&lowered, "packed", Role::Declared).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&(packed, Judgement::Checked))
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "the record checks at the theory's models: {judgements:?}"
+    );
+}
+
+/// A module that seals its carrier does not pack: the record would name the
+/// representation the seal hides, which a package over an abstract type
+/// carries instead.
+#[test]
+fn a_pack_of_a_sealed_sort_is_refused()
+{
+    let source = format!(
+        "{}def packed : Model(Counter) ;\ndef packed = pack Open at Model(Counter) ;\n",
+        COUNTER.replace("module Open :", "module Open :>")
+    );
+    let found = rows(&lower(source.as_str()));
+    let refused = Amounts::Refused(LoweringRefusal::OutOfFragment {
+        span: span_of(source.as_str(), "pack Open at Model(Counter)", 0_usize),
+        form: FormName::from(NamedKind("pack_model_expression")),
+        sort: FragmentSort::Value,
+        boundary: FragmentBoundary::Unadmitted,
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, role, amounts)| path == "packed"
+                && role == Role::Declared
+                && amounts == refused),
+        "the pack of a sealed carrier is refused at the pack: {found:?}"
+    );
+}
+
+/// A pack names a module declared before it, and nothing else.
+#[test]
+fn a_pack_of_no_module_is_refused()
+{
+    let source = format!(
+        "{COUNTER}def packed : Model(Counter) ;\ndef packed = pack Closed at Model(Counter) ;\n"
+    );
+    let found = rows(&lower(source.as_str()));
+    let refused = Amounts::Refused(LoweringRefusal::UnresolvedName {
+        span: span_of(source.as_str(), "Closed", 0_usize),
+        name: name("Closed"),
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, role, amounts)| path == "packed"
+                && role == Role::Declared
+                && amounts == refused),
+        "a name no module answers is unresolved: {found:?}"
+    );
+}
+
+/// A pattern at a theory's models names the fields of the record by the
+/// components' names, whatever pairs the record nests: a consumer reads the
+/// start, the step and the reading of any counter, and reads a packed one.
+#[test]
+fn a_pattern_at_a_model_type_splits_its_fields()
+{
+    let source = format!(
+        "{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{\n  case m {{\n    #{{.start = s, \
+         .step = f, .read = r}} => {{\n      run z <- s();\n      run once <- f(z);\n      become \
+         r(once)\n    }}\n  }}\n}}\ndef packed : Model(Counter) ;\ndef packed = pack Open at \
+         Model(Counter) ;\ndef observed : () => Integer ;\ndef observed = thunk {{ become \
+         observe(packed) }} ;\n"
+    );
+    let mut lowered = lower(source.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && judgements.iter().all(|&(_, judgement)| matches!(
+                judgement,
+                Judgement::Checked | Judgement::Declared
+            )),
+        "the consumer splits the record and reads the packed counter: {judgements:?}"
     );
 }

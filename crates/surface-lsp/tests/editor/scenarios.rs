@@ -120,6 +120,7 @@ const COUNTED: &[&str] = &[
     "expression number",
     "expression offer_expression",
     "expression pack_expression",
+    "expression pack_model_expression",
     "expression parenthesized_expression",
     "expression pipeline",
     "expression projection_expression",

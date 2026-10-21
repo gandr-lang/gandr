@@ -3060,6 +3060,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Call
                 | Former::Case
                 | Former::Telescope
+                | Former::PackModel
                 | Former::Injection
                 | Former::LazyRecord
                 | Former::Binary

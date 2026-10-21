@@ -159,6 +159,7 @@ unproduced = [
   { rule = "operator_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "or_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
   { rule = "pack_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "pack_model_expression", reason = "sugar the lowering elaborates away: a pack lowers to the record of the module's members, which the printer writes as `telescope_expression`" },
   { rule = "package_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
   { rule = "pipeline.pipe", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "pipeline.pipe_both", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },

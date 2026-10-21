@@ -1221,6 +1221,7 @@ pub fn spine_domains<'source>(
             | Former::Call
             | Former::Case
             | Former::Telescope
+            | Former::PackModel
             | Former::Injection
             | Former::LazyRecord
             | Former::Binary

@@ -1,0 +1,2 @@
+/// `pack_model_expression`: a module packed at its theory's models.
+def zero = pack Zero at Model(Pointed);

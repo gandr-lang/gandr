@@ -365,6 +365,7 @@ fn operand_of(
         | Former::Case
         | Former::Scope
         | Former::Telescope
+        | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
         | Former::Projection

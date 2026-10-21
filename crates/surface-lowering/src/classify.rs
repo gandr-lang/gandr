@@ -328,9 +328,10 @@ fn tracked_form(
 {
     match form {
         FormName::PROJECTION => TrackingIssue::PROJECTION,
-        FormName::PACK | FormName::PACKAGE_TYPE | FormName::UNPACK_STATEMENT => {
-            TrackingIssue::PACKAGES
-        },
+        FormName::PACK
+        | FormName::PACK_MODEL
+        | FormName::PACKAGE_TYPE
+        | FormName::UNPACK_STATEMENT => TrackingIssue::PACKAGES,
         FormName::ANNOTATION => TrackingIssue::ANNOTATION_VALUE,
         FormName::RECORD_UPDATE => TrackingIssue::RECORD_UPDATE,
         FormName::TYPED_NUMBER => TrackingIssue::TYPED_NUMBER,

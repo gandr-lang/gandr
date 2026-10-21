@@ -1,0 +1,28 @@
+// A module that seals its carrier does not pack at its theory's models: the
+// bundled record would name the representation the seal hides. A package over
+// the abstract carrier carries such a module (#1108), so the pack is refused
+// in front of it.
+
+/// A counter: a carrier, a zero and a step.
+@[ checks ]
+theory Counter {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+}
+
+/// Counting on the integers, sealed: its carrier is abstract outside.
+module Hidden :> Model(Counter) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(n : Integer) -> -F Integer { become n + 1 }
+}
+
+/// The sealed counter packed at its models (#1108).
+@[ refuses("OutOfFragment") ]
+def hidden : Model(Counter) ;
+def hidden = pack Hidden at Model(Counter) ;
