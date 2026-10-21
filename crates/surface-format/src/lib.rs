@@ -66,7 +66,13 @@
 //! moving one form between its two spellings, and the default grade `ω` of a
 //! thunk type, which the printer writes in neither form and both leave
 //! unwritten, so a value function written with it is sugared as one written
-//! without. Each moves its form on the
+//! without. The sugared form also leaves out a tail's `return` where the
+//! lowering would infer it, as the printer's canonical body does: a `return`
+//! of a value where a path through its body ends, which the lowering lists
+//! (`gandr_surface_lowering::ElidableExit`). An early `return`, one of a
+//! computation, one an `explicit_exits` attribute asks for and every written
+//! `become` keep their keyword, and the explicit form writes none it was not
+//! given. Each moves its form on the
 //! concrete syntax
 //! tree: its operands and their comments are kept, its own tiles are the
 //! other spelling's, each comment it owns goes before the operand it
@@ -85,6 +91,7 @@
 //! | `path-composite` | `transport(\y. Path(A, a, y), q, p)` | `p then q` |
 //! | `path-inverse`   | `transport(\y. Path(A, y, a), p, here(a))` | `back(p)` |
 //! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |
+//! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
@@ -198,6 +205,8 @@ mod leaf;
 mod meaning;
 
 mod rewrite;
+
+mod tail;
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -736,6 +745,10 @@ pub fn format_beside(
         ),
         (Some(_) | None, _) => composite::Motives::default(),
     };
+    let tails = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => tail::Tails::of(module, base),
+        (Some(_) | None, _) => tail::Tails::default(),
+    };
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
         options.page,
@@ -745,6 +758,7 @@ pub fn format_beside(
     let mut reports: Vec<Withdrawal> = Vec::new();
     if let (Some(chosen), false) = (chosen, refused.is_empty()) {
         let any = composite::Motives::any();
+        let every = tail::Tails::any();
         let unchecked = write(
             grammar,
             tree,
@@ -753,6 +767,7 @@ pub fn format_beside(
                 chosen,
                 withdrawn: &[],
                 motives: &any,
+                tails: &every,
             }),
             &layout,
             ending,
@@ -776,6 +791,7 @@ pub fn format_beside(
                 chosen,
                 withdrawn: spans.as_slice(),
                 motives: &motives,
+                tails: &tails,
             }),
             (Some(_) | None, _) => None,
         };

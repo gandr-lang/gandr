@@ -62,7 +62,7 @@ def collapse_bool = equiv(not, same) ;
 /// The identity on lists of booleans.
 @[ checks ]
 def keep(xs : List(Bool)) -> -F List(Bool) {
-  return xs
+  xs
 }
 
 /// Lists of booleans to themselves by the identity: its round trip returns
@@ -80,7 +80,7 @@ def kept_beta = here(both) ;
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
   case entry {
-    #{b, xs} => { run c <- not(b); return (c, xs) }
+    #{b, xs} => { run c <- not(b); (c, xs) }
   }
 }
 

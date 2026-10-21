@@ -415,6 +415,7 @@ pub use crate::import::aliased;
 pub use crate::lower::AskedRuns;
 pub use crate::lower::CarriedOrigins;
 pub use crate::lower::ClosureLowering;
+pub use crate::lower::ElidableExit;
 pub use crate::lower::Exit;
 pub use crate::lower::Explicitness;
 pub use crate::lower::Fuel;

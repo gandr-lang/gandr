@@ -24,8 +24,8 @@ data Written : Type {
 @[ checks ]
 def copy(s : Repr) -> -F Repr {
   case s {
-    Inline(bs) => return Inline(bs),
-    Shared(n, bs) => return Shared(n + 1, bs)
+    Inline(bs) => Inline(bs),
+    Shared(n, bs) => Shared(n + 1, bs)
   }
 }
 
@@ -33,13 +33,13 @@ def copy(s : Repr) -> -F Repr {
 @[ checks ]
 def rec beforeZero(bs : List(Integer), b : Integer) -> -F List(Integer) {
   case bs {
-    Nil => return Nil,
+    Nil => Nil,
     Cons(x, rest) => {
       case rest {
-        Nil => return (Cons(b, Cons(x, Nil)) : List(Integer)),
+        Nil => (Cons(b, Cons(x, Nil)) : List(Integer)),
         Cons(y, more) => {
           run tail <- beforeZero[<](rest, b);
-          return (Cons(x, tail) : List(Integer))
+          (Cons(x, tail) : List(Integer))
         }
       }
     }
@@ -56,16 +56,16 @@ def push(s : Repr, b : Integer) -> -F Written {
       run grown <- beforeZero(bs, b);
       run stored <- store(grown);
       case stored {
-        Inline(kept) => return Written(stored, 0),
-        Shared(n, moved) => return Written(stored, 1)
+        Inline(kept) => Written(stored, 0),
+        Shared(n, moved) => Written(stored, 1)
       }
     },
     Shared(n, bs) => {
       run grown <- beforeZero(bs, b);
       run alone <- n == 1;
       case alone {
-        true => return Written(Shared(1, grown), 0),
-        false => return Written(Shared(1, grown), 1)
+        true => Written(Shared(1, grown), 0),
+        false => Written(Shared(1, grown), 1)
       }
     }
   }

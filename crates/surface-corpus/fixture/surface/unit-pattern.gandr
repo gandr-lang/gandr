@@ -6,7 +6,7 @@
 @[ checks ]
 def answer(u : Unit) -> -F Integer {
   case u {
-    unit => return 42
+    unit => 42
   }
 }
 

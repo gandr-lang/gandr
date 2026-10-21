@@ -16,9 +16,9 @@ import "./loop-shape.gandr" ;
 @[ checks ]
 def rec windWords(c : Words) -> -F Int {
   case c {
-    Nil => return Z,
-    Loop(x) => { run n <- windWords[<](x); return S(n) },
-    Unloop(x) => { run n <- windWords[<](x); return P(n) }
+    Nil => Z,
+    Loop(x) => { run n <- windWords[<](x); S(n) },
+    Unloop(x) => { run n <- windWords[<](x); P(n) }
   }
 }
 
@@ -54,7 +54,7 @@ def wound_never = here(Z) ;
 @[ respects((NativeWinding.turnUnturn, NativeWinding.unturnTurn)), owes(2) ]
 def rec native_wind(c : Words) -> -F Integer {
   case c {
-    Nil => return 0,
+    Nil => 0,
     Loop(x) => become NativeWinding.turn(native_wind[<](x)),
     Unloop(x) => become NativeWinding.unturn(native_wind[<](x))
   }

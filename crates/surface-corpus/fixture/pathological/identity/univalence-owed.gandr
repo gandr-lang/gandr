@@ -14,7 +14,7 @@ import "../../model/identity/univalence.gandr" ;
 /// `J` leaves of `uaEta`, refused (#520).
 @[ refuses("EndpointMismatch") ]
 def uaEtaRefl(a : Type) -> -F Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a)) {
-  return here(here(a))
+  here(here(a))
 }
 
 /// Two functions that agree at every point are one function, from the
@@ -27,5 +27,5 @@ def funextFromHomotopy(
   g : a => b,
   h : (x : a) => Path(b, f(x), g(x))
 ) -> -F Path(a => b, f, g) {
-  return funext(f, g)
+  funext(f, g)
 }

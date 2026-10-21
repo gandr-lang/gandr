@@ -31,7 +31,7 @@ def terminated(cs : List(Integer)) -> -F List(Integer) {
 @[ checks ]
 def rec cView(bs : List(Integer)) -> -F CView {
   case bs {
-    Nil => return Interior,
+    Nil => Interior,
     Cons(b, rest) => {
       run zero <- b == 0;
       run left <- count(rest);
@@ -39,18 +39,18 @@ def rec cView(bs : List(Integer)) -> -F CView {
       case last {
         true => {
           case zero {
-            true => return Borrowed(bs),
-            false => return Interior
+            true => Borrowed(bs),
+            false => Interior
           }
         },
         false => {
           case zero {
-            true => return Interior,
+            true => Interior,
             false => {
               run tail <- cView[<](rest);
               case tail {
-                Borrowed(t) => return Borrowed(bs),
-                Interior => return Interior
+                Borrowed(t) => Borrowed(bs),
+                Interior => Interior
               }
             }
           }
@@ -72,8 +72,8 @@ def hiForC = thunk {
   run bs <- force hi ;
   run v <- cView(bs) ;
   case v {
-    Borrowed(t) => return t,
-    Interior => return Nil
+    Borrowed(t) => t,
+    Interior => Nil
   }
 } ;
 

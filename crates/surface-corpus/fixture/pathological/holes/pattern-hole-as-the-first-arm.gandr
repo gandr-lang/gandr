@@ -14,7 +14,7 @@ data Color : Type {
 @[ refuses("UndecidedCoverage") ]
 def classify(c : Color) -> -F Integer {
   case c {
-    ?branch => return 1
+    ?branch => 1
   }
 }
 

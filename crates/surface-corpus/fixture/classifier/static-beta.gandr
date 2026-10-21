@@ -33,7 +33,7 @@ def sumRun = thunk { become sum((1, 2)) } ;
 /// A pair returned at an operator's type.
 @[ checks ]
 def doubled(n : Integer) -> -F twice(Integer) {
-  return (n, n)
+  (n, n)
 }
 
 /// `doubled` runs to the pair the operator's reduct types.

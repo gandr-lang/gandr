@@ -86,7 +86,7 @@ def halvedAtFour = thunk { halvedAt(Succ(three)) } ;
 /// there.
 @[ checks ]
 def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> -F Nat[<j] {
-  return y
+  y
 }
 
 /// A number rebuilt, each predecessor read back through `boundedAt`: the call

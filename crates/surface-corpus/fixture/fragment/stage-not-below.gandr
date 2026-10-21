@@ -14,7 +14,7 @@ data Nat : Type {
 @[ refuses("StageNotBelow") ]
 def rec same(n : Nat) -> -F Nat {
   case n {
-    Zero => return n,
+    Zero => n,
     Succ(p) => become same[<](n)
   }
 }
@@ -28,7 +28,7 @@ def rec counted(n : Integer) -> -F Integer { become counted[<](n) }
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
   case n {
-    Zero => return n,
+    Zero => n,
     Succ(p) => become down[<](p)
   }
 }

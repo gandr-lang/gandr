@@ -12,8 +12,8 @@ def named() -> -F Unit {
     run d : Cap {exit} at c <- pure c ;
     return unit
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    pure(x) => x,
+    oper exit(code, k) => unit
   }
 }
 
@@ -25,8 +25,8 @@ def held() -> -F Unit {
     run d : Cap {exit} <- pure c ;
     return unit
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    pure(x) => x,
+    oper exit(code, k) => unit
   }
 }
 
@@ -38,12 +38,12 @@ def outer() -> -F Unit {
       run d : Cap {exit} at c <- pure c ;
       return unit
     } with {
-      pure(x) => return x,
-      oper exit(code, k) => return unit
+      pure(x) => x,
+      oper exit(code, k) => unit
     }
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    pure(x) => x,
+    oper exit(code, k) => unit
   }
 }
 
@@ -57,12 +57,12 @@ def swapped() -> -F Unit {
       run f : Cap {exit} at c <- pure e ;
       return unit
     } with {
-      pure(x) => return x,
-      oper exit(code, k) => return unit
+      pure(x) => x,
+      oper exit(code, k) => unit
     }
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    pure(x) => x,
+    oper exit(code, k) => unit
   }
 }
 
@@ -86,7 +86,7 @@ def plain() -> -F Unit {
     run d : Integer at c <- pure 1 ;
     return unit
   } with {
-    pure(x) => return x,
-    oper exit(code, k) => return unit
+    pure(x) => x,
+    oper exit(code, k) => unit
   }
 }

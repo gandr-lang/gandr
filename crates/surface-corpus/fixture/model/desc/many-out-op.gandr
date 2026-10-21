@@ -26,5 +26,5 @@ data NatDiv : Type {
 def five_by_two : () => NatDiv * NatDiv ;
 def five_by_two = thunk {
   run (quot, rem) <- divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)));
-  return (quot, rem)
+  (quot, rem)
 } ;

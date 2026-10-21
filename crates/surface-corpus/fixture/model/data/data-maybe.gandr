@@ -14,8 +14,8 @@ data Maybe(a : Type) : Type {
 @[ checks ]
 def unwrap_or_zero() -> -F Integer {
   case (Some(3) : Maybe(Integer)) {
-    None => return 0,
-    Some(x) => return x
+    None => 0,
+    Some(x) => x
   }
 }
 
@@ -24,7 +24,7 @@ def unwrap_or_zero() -> -F Integer {
 @[ checks ]
 def kept(m : Maybe(Integer)) -> -F Path(Maybe(Integer), m, m) {
   case m {
-    None => return here(m),
-    Some(x) => return here(m)
+    None => here(m),
+    Some(x) => here(m)
   }
 }

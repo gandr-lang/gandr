@@ -10,7 +10,7 @@ import "../../model/identity/transport-list.gandr" ;
 /// Every list of booleans to the empty list.
 @[ checks ]
 def emptied(xs : List(Bool)) -> -F List(Bool) {
-  return nil
+  nil
 }
 
 /// To the empty list and back by the identity: the empty pattern returns,

@@ -299,6 +299,7 @@ use crate::import::ImportIndex;
 use crate::import::ImportResolution;
 use crate::import::ImportUri;
 use crate::import::ModuleImports;
+use crate::lower::ElidableExit;
 use crate::lower::Fuel;
 use crate::lower::InferredExit;
 use crate::lower::InferredRun;
@@ -8297,6 +8298,9 @@ pub struct LoweredModule<'source>
     /// Every exit the lowering inferred where a path through a body ends in a
     /// form that is no exit, in source order.
     inferred_exits: Vec<InferredExit>,
+    /// Every written `return` the lowering would infer were it left out, in
+    /// source order.
+    elidable_exits: Vec<ElidableExit>,
     /// What the lowering recorded of each syntax node it held a computation
     /// nested at.
     nested: BTreeMap<NodeIndex, NestedSite>,
@@ -8352,6 +8356,7 @@ impl<'source> LoweredModule<'source>
             attributes,
             documentation: BTreeMap::new(),
             inferred_exits: Vec::new(),
+            elidable_exits: Vec::new(),
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
             resolutions: Vec::new(),
@@ -8460,6 +8465,21 @@ impl<'source> LoweredModule<'source>
         self
     }
 
+    /// This module, carrying `elidable_exits`, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_elidable_exits(
+        mut self,
+        elidable_exits: Vec<ElidableExit>,
+    ) -> Self
+    {
+        self.elidable_exits = elidable_exits;
+        self
+    }
+
     /// This module, carrying the names of each data declaration's
     /// constructors in tag order, by [`DataIndex`].
     ///
@@ -8503,6 +8523,19 @@ impl<'source> LoweredModule<'source>
     pub fn inferred_exits(&self) -> &[InferredExit]
     {
         &self.inferred_exits
+    }
+
+    /// Every written `return` the lowering would infer were it left out, in
+    /// source order: a tail's `return` of a value, under no `explicit_exits`
+    /// attribute, which the sugared form writes as the value alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn elidable_exits(&self) -> &[ElidableExit]
+    {
+        &self.elidable_exits
     }
 
     /// This module, carrying what the lowering recorded of each syntax node

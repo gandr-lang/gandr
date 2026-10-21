@@ -15,10 +15,10 @@ module Unnatural {
   @[ checks ]
   def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
     case e {
-      +{.0 = u} => return +{.2 = u},
-      +{.1 = u} => return +{.1 = u},
-      +{.2 = u} => return +{.0 = u},
-      +{.3 = u} => return +{.3 = u}
+      +{.0 = u} => +{.2 = u},
+      +{.1 = u} => +{.1 = u},
+      +{.2 = u} => +{.0 = u},
+      +{.3 = u} => +{.3 = u}
     }
   }
 

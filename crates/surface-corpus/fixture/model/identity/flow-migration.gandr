@@ -13,7 +13,7 @@ module Schema {
   @[ checks ]
   def toNew(old : Old) -> -F New {
     case old {
-      #{name, age} => return (age, name, +{.0 = unit})
+      #{name, age} => (age, name, +{.0 = unit})
     }
   }
   /// The flow from the old schema to the new, by its translator.

@@ -10,8 +10,8 @@ import "./data-base.gandr" ;
 @[ checks ]
 def rank() -> -F Integer {
   case (Green : Color) {
-    Red => return 0,
-    Green => return 1,
-    Blue => return 2
+    Red => 0,
+    Green => 1,
+    Blue => 2
   }
 }

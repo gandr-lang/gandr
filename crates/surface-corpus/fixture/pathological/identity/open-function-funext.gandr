@@ -6,5 +6,5 @@ def open(f : Unit + Unit => Unit + Unit) -> -F Path(
   f,
   f
 ) {
-  return funext(f, f)
+  funext(f, f)
 }

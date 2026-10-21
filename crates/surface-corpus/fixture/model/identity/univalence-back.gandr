@@ -22,7 +22,7 @@ def backBeta(
   r : (y : b) => Path(b, t(h(y)), y),
   y : b
 ) -> -F Path(a, bwdAlong(a, b, ua((t, ((g, s), (h, r)))), y), g(y)) {
-  return here(g(y))
+  here(g(y))
 }
 
 /// Transport back along a path from the loops at the point to the integers.

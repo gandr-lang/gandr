@@ -15,14 +15,14 @@ codata Stream(a : Type) : Type[-] {
 /// The integers from `n` upward, one observation at a time.
 @[ checks ]
 def rec upward(n : Integer) -> Stream(Integer) {
-  &{ .head => return n, .tail => upward[>](n + 1) }
+  &{ .head => n, .tail => upward[>](n + 1) }
 }
 
 /// `n` forever, its clauses written tail first: a copattern block answers
 /// the observations in the order the declaration states them.
 @[ checks ]
 def rec always(n : Integer) -> Stream(Integer) {
-  &{ .tail => always[>](n), .head => return n }
+  &{ .tail => always[>](n), .head => n }
 }
 
 /// The head of a stream: observing a thunk of it.

@@ -6,7 +6,7 @@
 /// The pair's components swapped.
 @[ refuses("EndpointMismatch") ]
 def etaSwapped(e : Integer * Integer) -> -F Path(Integer * Integer, (e.1, e.0), e) {
-  return here(e)
+  here(e)
 }
 
 /// The projections of one pair against another pair.
@@ -16,7 +16,7 @@ def etaOther(e : Integer * Integer, d : Integer * Integer) -> -F Path(
   (e.0, e.1),
   d
 ) {
-  return here(e)
+  here(e)
 }
 
 /// A record whose fields read each other's labels.
@@ -26,5 +26,5 @@ def etaCrossed(e : #{l : Integer, r : Integer}) -> -F Path(
   #{.l = e.r, .r = e.l},
   e
 ) {
-  return here(e)
+  here(e)
 }

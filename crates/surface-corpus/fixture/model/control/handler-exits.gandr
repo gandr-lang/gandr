@@ -125,7 +125,7 @@ def answered() -> -F Integer {
     pure 1
   } with {
     pure(x) => pure x,
-    oper exit(code, k) => return 9
+    oper exit(code, k) => 9
   }
 }
 
@@ -133,7 +133,7 @@ def answered() -> -F Integer {
 /// from and the one it ends as; a clause hands its continuation on by it.
 @[ checks ]
 def dropped(k : Stack(-F Unit, -F Integer)) -> -F Integer {
-  return 9
+  9
 }
 
 /// A clause hands its continuation to a function stating the continuation's

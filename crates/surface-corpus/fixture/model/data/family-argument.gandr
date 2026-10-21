@@ -24,11 +24,11 @@ def keptTagged(
   t : Tagged(Integer, String, Inl(a)),
   u : Tagged(Integer, String, Inr(b))
 ) -> -F Tagged(Integer, String, Inl(a)) {
-  return t
+  t
 }
 
 /// A `String` is no left summand of `SumOb(Integer, String)`.
 @[ refuses("TypeMismatch") ]
 def misplaced(b : String, t : Tagged(Integer, String, Inl(b))) -> -F Integer {
-  return 0
+  0
 }

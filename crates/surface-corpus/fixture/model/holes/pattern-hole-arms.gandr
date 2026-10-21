@@ -14,9 +14,9 @@ data Color : Type {
 @[ checks ]
 def classify(c : Color) -> -F Integer {
   case c {
-    Red => return 0,
-    Green => return 1,
-    Blue => return 2
+    Red => 0,
+    Green => 1,
+    Blue => 2
   }
 }
 
@@ -25,8 +25,8 @@ def classify(c : Color) -> -F Integer {
 @[ checks ]
 def sketch(c : Color) -> -F Integer {
   case c {
-    Red => return 0,
+    Red => 0,
     Green => ?,
-    Blue => return 2
+    Blue => 2
   }
 }

@@ -9,7 +9,7 @@ def four_eq_four = here(4);
 /// A path between four and itself, given back.
 @[ checks ]
 def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
-  return p
+  p
 }
 
 /// Reflexivity at four, checked against its written type.
@@ -25,7 +25,7 @@ def cast_four = thunk { become cast(four_eq_four) };
 /// The value a parameter of any type takes, given back.
 @[ checks ]
 def pick(t : Type, x : t) -> -F t {
-  return x
+  x
 }
 
 /// A path type written as `pick`'s type argument is the code of the type it

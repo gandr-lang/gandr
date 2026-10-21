@@ -52,5 +52,5 @@ def uaEtaByConversion(a : Type) -> -F Path(
   ua(idtoequiv(a, a, here(a))),
   here(a)
 ) {
-  return here(here(a))
+  here(here(a))
 }

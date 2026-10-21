@@ -31,7 +31,7 @@ def along_returned(
   a : Type,
   x : a
 ) -> -F Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) {
-  return here(x)
+  here(x)
 }
 
 /// Transport along reflexivity in the universe keeps the value, by

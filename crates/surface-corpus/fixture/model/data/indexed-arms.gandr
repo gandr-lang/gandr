@@ -8,8 +8,8 @@
 def written(c : Integer) -> -F Integer {
   run small <- c < 128;
   case small {
-    true => return 1,
-    false => return 2
+    true => 1,
+    false => 2
   }
 }
 
@@ -19,8 +19,8 @@ def written(c : Integer) -> -F Integer {
 def printed(c : Integer) -> -F Integer {
   run small <- c < 128;
   case small {
-    +{.0 = u} => return 1,
-    +{.1 = u} => return 2
+    +{.0 = u} => 1,
+    +{.1 = u} => 2
   }
 }
 

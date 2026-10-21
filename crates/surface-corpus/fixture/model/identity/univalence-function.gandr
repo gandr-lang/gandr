@@ -19,7 +19,7 @@ def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> -F Path
   transport(\X. X => X, loopsAreIntegers, f),
   thunk { fn (n) { wind(f(spin(n))) } }
 ) {
-  return here(thunk { fn (n) { wind(f(spin(n))) } })
+  here(thunk { fn (n) { wind(f(spin(n))) } })
 }
 
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer

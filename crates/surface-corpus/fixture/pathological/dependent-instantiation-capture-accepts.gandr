@@ -20,5 +20,5 @@ def captured(
   u : a => d,
   h : d => d
 ) -> -F (a => d) {
-  return thunk { become comp(a, c, d, u, h) }
+  thunk { become comp(a, c, d, u, h) }
 }

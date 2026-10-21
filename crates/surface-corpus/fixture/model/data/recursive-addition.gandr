@@ -14,8 +14,8 @@ import "./data-base.gandr" ;
 @[ checks ]
 def rec plus_returned(n : Nat, m : Nat) -> -F Nat {
   case m {
-    Zero => return n,
-    Succ(p) => { run r <- plus_returned[<](n, p); return Succ(r) }
+    Zero => n,
+    Succ(p) => { run r <- plus_returned[<](n, p); Succ(r) }
   }
 }
 

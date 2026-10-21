@@ -12,6 +12,6 @@ data Color3 : Type {
 @[ checks ]
 def green_channel() -> -F Integer {
   case (RGB(10, 20, 30) : Color3) {
-    RGB(r, g, b) => return g
+    RGB(r, g, b) => g
   }
 }

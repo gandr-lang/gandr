@@ -21,7 +21,7 @@ theory Counter {
 module Open : Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { return 0 }
+  def start() -> -F Integer { 0 }
 
   def step(n : Integer) -> -F Integer { become n + 1 }
 }
@@ -31,7 +31,7 @@ module Open : Model(Counter) {
 module Sealed :> Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { return 0 }
+  def start() -> -F Integer { 0 }
 
   def step(n : Integer) -> -F Integer { become n + 1 }
 }
@@ -72,8 +72,8 @@ module Bits : Model(Toggle) {
 
   def flip(b : Bit) -> -F Bit {
     case b {
-      Low => return High,
-      High => return Low
+      Low => High,
+      High => Low
     }
   }
 
@@ -81,8 +81,8 @@ module Bits : Model(Toggle) {
   @[ checks ]
   def twice(b : Bit) -> -F Path(Bit, flip(flip(b)), b) {
     case b {
-      Low => return here(Low),
-      High => return here(High)
+      Low => here(Low),
+      High => here(High)
     }
   }
 }
