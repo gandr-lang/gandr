@@ -185,8 +185,16 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type end", Standing::Owed(0)),
     ("Type mu", Standing::Owed(0)),
     ("Type number", Standing::Owed(0)),
+    (
+        "Type sort",
+        Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
+    ),
     ("Type type_identifier", Standing::Owed(0)),
     ("Type type_variable", Standing::Owed(0)),
+    (
+        "Type with",
+        Standing::Design("a manifest model type: the model type whose sorts it fixes answers"),
+    ),
     ("Type ⇝", Standing::Owed(0)),
     ("Type ≃", Standing::Owed(0)),
     ("Type ≅", Standing::Owed(0)),

@@ -1,0 +1,2 @@
+/// `manifest_sort`: the binding a `with` fixes, a sort and the type it is.
+def counters : Model(Counter) with sort C = Integer + Unit ;

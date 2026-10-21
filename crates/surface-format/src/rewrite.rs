@@ -490,6 +490,8 @@ impl Band
             | "equivalence_type"
             | "isomorphism_type"
             | "universe_flow_type"
+            | "manifest_type"
+            | "manifest_sort"
             | "send_session_type"
             | "receive_session_type"
             | "mu_session_type" => Self::Loose,
@@ -2507,7 +2509,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 30] = [
+const RULES: [MoldName; 32] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2530,6 +2532,8 @@ const RULES: [MoldName; 30] = [
     MoldName("equivalence_type"),
     MoldName("isomorphism_type"),
     MoldName("universe_flow_type"),
+    MoldName("manifest_type"),
+    MoldName("manifest_sort"),
     MoldName("call_expression"),
     MoldName("path_type"),
     MoldName("binary_expression.then"),

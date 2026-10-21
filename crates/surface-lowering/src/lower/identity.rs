@@ -3083,6 +3083,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ManifestType
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock

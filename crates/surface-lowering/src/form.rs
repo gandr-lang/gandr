@@ -819,6 +819,9 @@ pub enum Former
     /// and the quasi-inverse `A ≅ B`, each the record type it abbreviates,
     /// and the flow `A ⇝ B`, the directed identity `Flow(Type, A, B)`.
     RelationType,
+    /// A model type with manifest sorts, `Model(T) with sort x = A`: the
+    /// bundled record `Model(T)` with the component `x` fixed as `A`.
+    ManifestType,
     /// The capability type `Cap[r]? {op, …}`: the authority to exercise the
     /// named host operations.
     CapabilityType,
@@ -896,7 +899,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 65_usize] = [
+    pub const ALL: [Self; 66_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -944,6 +947,7 @@ impl Former
         Self::ParenthesizedType,
         Self::PathType,
         Self::RelationType,
+        Self::ManifestType,
         Self::CapabilityType,
         Self::StagedType,
         Self::Scope,
@@ -984,7 +988,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 79_usize] = [
+pub const FORMERS: [(&str, Former); 80_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1038,6 +1042,7 @@ pub const FORMERS: [(&str, Former); 79_usize] = [
     ("equivalence_type", Former::RelationType),
     ("isomorphism_type", Former::RelationType),
     ("universe_flow_type", Former::RelationType),
+    ("manifest_type", Former::ManifestType),
     ("capability_type", Former::CapabilityType),
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),

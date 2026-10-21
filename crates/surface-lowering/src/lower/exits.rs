@@ -567,6 +567,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::ParenthesizedType
             | Former::PathType
             | Former::RelationType
+            | Former::ManifestType
             | Former::CapabilityType
             | Former::AtType
             | Former::StagedType

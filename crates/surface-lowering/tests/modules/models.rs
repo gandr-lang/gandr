@@ -6,6 +6,8 @@
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::Value;
 use gandr_core_term::equal_type_syntax;
+use gandr_surface_lowering::AscriptionForm;
+use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
@@ -656,6 +658,143 @@ fn a_model_type_of_an_undeclared_theory_is_refused()
             })
         )],
         "a theory nothing declares before the type derives nothing"
+    );
+}
+
+/// `Model(Toggle) with sort T = Integer` is the record of the toggle's
+/// operations with its carrier read as `Integer`: the sort is no field, so no
+/// field binds and the record is keyed by the operations.
+#[test]
+fn a_manifest_model_type_writes_its_sort_as_its_type()
+{
+    states_the_written_types(
+        "theory Toggle {\n  sort T : Type;\n  oper start : T;\n  oper step : (t : T) --> T;\n  \
+         oper read : (t : T) --> Integer;\n}\ndef derived : Model(Toggle) with sort T = Integer \
+         ;\ndef written : #{start : Integer, step : Integer => Integer, read : Integer => Integer} \
+         ;\n",
+        &[("derived", "written")],
+    );
+}
+
+/// A manifest sort read inside the record stands under the fields that bind
+/// before it: `x` is raised past the carrier `A` binds, as the written
+/// dependent record reads it. Two sorts fixed in a chain leave neither a
+/// field.
+#[test]
+fn a_manifest_sort_reads_past_the_links_before_it()
+{
+    states_the_written_types(
+        "theory Pair {\n  sort A : Type;\n  sort B : Type;\n  oper a : A;\n  oper b : B;\n}\ndef \
+         derived : (x : Type) => (Model(Pair) with sort B = x) ;\ndef written : (x : Type) => #{a0 \
+         : Type, a : a0, b : x} ;\ndef both : Model(Pair) with sort A = Integer with sort B = Unit \
+         + Unit ;\ndef bothWritten : #{a : Integer, b : Unit + Unit} ;\n",
+        &[("derived", "written"), ("both", "bothWritten")],
+    );
+}
+
+/// A manifest sort names an unindexed sort of the theory, once: another name
+/// is no member of it, an indexed sort is no type to fix, a sort fixed twice
+/// is defined twice, and an operand that is no `sort x = A` fixes nothing.
+#[test]
+fn a_manifest_sort_the_theory_cannot_fix_is_refused()
+{
+    // The refusal a case expects, built from the source it lowers.
+    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+    let theories = "theory Toggle {\n  sort T : Type;\n  oper start : T;\n}\ntheory Graph {\n  \
+                    sort V : Type;\n  sort E(s : V, t : V) : Type;\n}\n";
+    // The one byte opening the `nth` appearance of `needle`: a sort's name.
+    let opening = |source: &str, needle: &str, nth: usize| {
+        let span = span_of(source, needle, nth);
+        super::ByteSpan::new(
+            span.start(),
+            super::ByteOffset::from(usize::from(span.start()).saturating_add(1)),
+        )
+        .expect("the span is ordered")
+    };
+    let cases: [(&str, Expected<'_>, &str); 4] = [
+        (
+            "Model(Toggle) with sort Nope = Integer",
+            &|source| LoweringRefusal::UnknownMember {
+                span: span_of(source, "Nope", 0_usize),
+                module: name("Toggle"),
+                member: name("Nope"),
+            },
+            "a name that is no sort of the theory",
+        ),
+        (
+            "Model(Graph) with sort E = Integer",
+            &|source| LoweringRefusal::UnreadAscription {
+                span: opening(source, "E = ", 0_usize),
+                name: name("E"),
+                form: AscriptionForm::Parameterized,
+            },
+            "an indexed sort",
+        ),
+        (
+            "Model(Toggle) with sort T = Integer with sort T = Integer",
+            &|source| LoweringRefusal::DuplicateDefinition {
+                span: opening(source, "T = ", 1_usize),
+                name: name("T"),
+                first: opening(source, "T = ", 0_usize),
+            },
+            "a sort fixed twice",
+        ),
+        (
+            "Model(Toggle) with Integer",
+            &|source| LoweringRefusal::MalformedForm {
+                span: span_of(source, "Integer", 0_usize),
+                form: FormName::from(NamedKind("manifest_type")),
+                fault: FormFault::ExtraOperand,
+            },
+            "an operand that is no binding",
+        ),
+    ];
+    for (written, refusal, why) in cases {
+        let source = format!("{theories}def m : {written} ;\n");
+        let declared: Vec<_> = rows(&lower(source.as_str()))
+            .into_iter()
+            .filter(|declared| declared.0 == "m")
+            .collect();
+        assert_eq!(
+            declared,
+            [row("m", Role::Declared, Amounts::Refused(refusal(&source)))],
+            "{why}"
+        );
+    }
+}
+
+/// Manifest sorts close `Model` alone: after any other head the application
+/// refuses the first sort, and a `with` after no application is misplaced.
+#[test]
+fn a_manifest_sort_after_another_head_is_refused()
+{
+    let source = "def m : List(Integer) with sort T = Integer ;";
+    assert_eq!(
+        rows(&lower(source)),
+        [row(
+            "m",
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::MalformedForm {
+                span: span_of(source, "T", 0_usize),
+                form: FormName::from(NamedKind("type_application")),
+                fault: FormFault::MisplacedTile,
+            })
+        )],
+        "a head other than `Model`"
+    );
+    let source = "def m : Integer with sort T = Integer ;";
+    assert_eq!(
+        rows(&lower(source)),
+        [row(
+            "m",
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::MalformedForm {
+                span: span_of(source, "with", 0_usize),
+                form: FormName::from(NamedKind("manifest_type")),
+                fault: FormFault::MisplacedTile,
+            })
+        )],
+        "no application"
     );
 }
 

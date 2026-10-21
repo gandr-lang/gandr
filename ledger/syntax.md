@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xa1d7153c81797cb4`
-- Rules: 153 — 152 committed, 1 internal
-- Molds: 2932
+- Grammar fingerprint: `0xb28392713261ef9e`
+- Rules: 155 — 154 committed, 1 internal
+- Molds: 2936
 - Attributes: 11
 
 ## Reading a form
@@ -146,7 +146,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`file_descriptor`](exemplars/syntax/file_descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | Number |
 | [`redirection_operator`](exemplars/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | Operator |
 
-## `type` — 37 rules
+## `type` — 39 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
@@ -161,6 +161,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`equivalence_type`](exemplars/syntax/equivalence_type.gandr) | `TYPE ≃ TYPE` or `TYPE <~> TYPE` | `type.equivalence` | `equivalence_type` * | Operator |
 | [`isomorphism_type`](exemplars/syntax/isomorphism_type.gandr) | `TYPE ≅ TYPE` or `Iso(TYPE, TYPE)` | `type.equivalence` | `isomorphism_type` * | Operator |
 | [`universe_flow_type`](exemplars/syntax/universe_flow_type.gandr) | `TYPE ⇝ TYPE` or `TYPE ~~> TYPE` | `type.equivalence` | `universe_flow_type` * | Operator |
+| [`manifest_type`](exemplars/syntax/manifest_type.gandr) | `TYPE with TYPE` | `type.equivalence` | `manifest_type` * | Keyword |
+| [`manifest_sort`](exemplars/syntax/manifest_sort.gandr) | `sort ‹type_identifier› = TYPE` | `type.union` | `manifest_sort` * | Keyword, Type, Other |
 | [`sum_type`](exemplars/syntax/sum_type.gandr) | `TYPE + TYPE` | `type.sum` | `sum_type` | Operator |
 | [`product_type`](exemplars/syntax/product_type.gandr) | `TYPE * TYPE` | `type.product` | `product_type` | Operator |
 | [`f_type.row`](exemplars/syntax/f_type.row.gandr) | `-F [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `f_type` | Keyword, Other, Type |

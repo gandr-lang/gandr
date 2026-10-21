@@ -458,6 +458,8 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "lazy_record_expression",
     "lazy_record_type",
     "loop_expression",
+    "manifest_sort",
+    "manifest_type",
     "operator_declaration",
     "pack_expression",
     "pack_model_expression",
