@@ -1,0 +1,27 @@
+[
+  { "name": "a conflict's opening marker", "line": "<<<<<<< HEAD", "residue": true },
+  { "name": "a conflict's bare separator", "line": "=======", "residue": true },
+  { "name": "a conflict's closing marker", "line": ">>>>>>> theirs", "residue": true },
+  { "name": "a diff3 base marker", "line": "||||||| base", "residue": true },
+  { "name": "a setext underline is no marker", "line": "========", "residue": false },
+  {
+    "name": "the driver's resolution trailer",
+    "line": "// weave: run 'weave check' to verify",
+    "residue": true
+  },
+  {
+    "name": "the driver's annotation at column 0 (#1560)",
+    "line": "// refused_by: fail_closed · collision: none",
+    "residue": true
+  },
+  {
+    "name": "the driver's annotation indented in a list (#1560)",
+    "line": "            // refused_by: container_member · collision: none",
+    "residue": true
+  },
+  {
+    "name": "a comment that names the word",
+    "line": "// what refused_by means here",
+    "residue": false
+  }
+]
