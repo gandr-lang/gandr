@@ -1,12 +1,19 @@
 //! The heap object header: each field's width is where its refusal starts,
-//! and a header built from the widest values reads every field back.
+//! and a header built from the widest values reads every field back. A
+//! word keeps its bits under either reading, and every stencil names a
+//! symbol of its own.
+
+use alloc::vec::Vec;
 
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::Family;
 use gandr_runtime_stencils::FieldOverflow;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
+use gandr_runtime_stencils::StencilId;
+use gandr_runtime_stencils::Symbol;
 use gandr_runtime_stencils::Tag;
+use gandr_runtime_stencils::Word;
 
 /// The largest family position the field holds: stored plus one, it is
 /// 2³² − 1.
@@ -89,4 +96,39 @@ fn a_header_reads_back_every_field()
         "a narrow tag beside zero fields"
     );
     assert_eq!(Family::UNNAMED, small.family(), "no family stays none");
+}
+
+/// A word keeps its bits through the unsigned reading, and the signed and
+/// unsigned readings of one word are the same two's-complement bits.
+#[test]
+fn a_word_keeps_its_bits_under_either_reading()
+{
+    for bits in [0_u64, 1_u64, 0x8000_0000_0000_0000_u64, u64::MAX] {
+        assert_eq!(bits, u64::from(Word::from(bits)), "{bits:#x}");
+    }
+    assert_eq!(u64::MAX, u64::from(Word::from(-1_i64)), "−1 is every bit");
+    assert_eq!(
+        i64::MIN,
+        i64::from(Word::from(0x8000_0000_0000_0000_u64)),
+        "the top bit alone is the least integer"
+    );
+}
+
+/// Every stencil names a symbol of its own, and none is empty: the emitter
+/// finds each stencil's code in the stencil object by its symbol.
+#[test]
+fn every_stencil_names_its_own_symbol()
+{
+    let mut symbols: Vec<Symbol> = StencilId::ALL
+        .iter()
+        .map(|stencil| stencil.symbol())
+        .collect();
+    assert!(
+        symbols.iter().all(|symbol| !symbol.as_ref().is_empty()),
+        "{symbols:?}"
+    );
+    let count = symbols.len();
+    symbols.sort_unstable();
+    symbols.dedup();
+    assert_eq!(count, symbols.len(), "{symbols:?}");
 }
