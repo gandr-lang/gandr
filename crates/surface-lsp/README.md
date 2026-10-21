@@ -37,7 +37,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - Published diagnostics: one per diagnostic the model builds for the document's step, at its lead range, under its code, with its message and related information; republished at every change, cleared at close.
 - The `gandr.diagnostics.verbosity` and `quiet` settings, pushed or pulled: a new verbosity republishes open documents; `quiet` is how long a diagnostic of the form being typed waits ([`quiet`](src/quiet.rs)).
 - Imports read an editor's copy before the disk: an edit, or a `.gandr` file or folder changed, created, deleted or renamed, rechecks every open document whose imports name it.
-- Semantic tokens for the whole document, or as edits of the last answer, and for a range; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
+- Semantic tokens for the whole document, as edits of the last answer, and for a range, each use typed by its referent; `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend.
 - Completion: the binders in scope, the import closure's names and the keywords the slot at the cursor admits, each starting with the word typed.
 - Cancellation: a request withdrawn by a `$/cancelRequest`, or by a change of the document it reads, before it is handled is answered without being run ([`quiet`](src/quiet.rs)).
 - Progress and trace: an open and a recheck of changed files reported to a client that shows progress; each log line sent as `$/logTrace` at the level the client sets.

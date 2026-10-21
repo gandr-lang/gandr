@@ -38,8 +38,10 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::HalfAt;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Role;
@@ -222,6 +224,9 @@ pub(super) struct Referents
     offered: Vec<(Referent, NameKind)>,
     /// The sites of each declaration's halves, by the declaration's referent.
     halves: Vec<(Referent, Halved)>,
+    /// Each name the lowering refused as naming nothing, where its refusal of
+    /// a declaration stands, ascending.
+    unresolved: Vec<ByteSpan>,
 }
 
 /// `span`, a span of the unit's text, as the source holding its start writes
@@ -280,7 +285,10 @@ impl Referents
     ///   name tile. A use both name at one span is kept once. Each
     ///   declaration's halves are kept at their own name tiles and forms. A
     ///   referent's spans are in the text of the source holding it. A use whose
-    ///   referent no record places is not kept.
+    ///   referent no record places is not kept. Each declaration the lowering
+    ///   refused for a name nothing declares or binds (`UnresolvedName`,
+    ///   `UnresolvedTypeHead`) keeps that refusal's span, moved back by `base`
+    ///   and inside no `hidden` form, as unresolved, ascending.
     /// - provides: the index a definition request answers from.
     /// - fails: never.
     /// - panics: none.
@@ -554,6 +562,29 @@ impl Referents
             });
             keep(member.span, referent, false);
         }
+        // A name nothing declares or binds, where the lowering's refusal of the
+        // declaration writing it stands.
+        let mut unresolved: Vec<ByteSpan> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(
+                    LoweringRefusal::UnresolvedName { span, .. }
+                    | LoweringRefusal::UnresolvedTypeHead { span, .. },
+                ) = declaration.outcome()
+                    && !hidden
+                        .iter()
+                        .any(|form| form.start() <= span.start() && span.end() <= form.end())
+                {
+                    moved(span, base)
+                }
+                else {
+                    None
+                }
+            })
+            .collect();
+        unresolved.sort_unstable();
+        unresolved.dedup();
         uses.sort_by_key(|&(span, _)| (span.start(), span.end()));
         uses.dedup_by_key(|&mut (span, _)| span);
         let widest = uses
@@ -579,6 +610,7 @@ impl Referents
             declarations,
             offered,
             halves,
+            unresolved,
         }
     }
 
@@ -617,6 +649,16 @@ impl Referents
         let rest = self.by_referent.get(first ..).unwrap_or_default();
         let taken = rest.partition_point(|&(held, _)| (held.source, held.named) == key);
         rest.get(.. taken).unwrap_or_default()
+    }
+
+    /// The spans of the names the lowering refused as naming nothing, in the
+    /// source's own text, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn unresolved(&self) -> &[ByteSpan]
+    {
+        &self.unresolved
     }
 
     /// The referent whose name, written in `source`, holds `offset`: a

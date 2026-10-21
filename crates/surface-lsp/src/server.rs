@@ -251,8 +251,10 @@ use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
 use crate::signature::help;
 use crate::syntax::printed;
+use crate::tokens::Resolved;
 use crate::tokens::ResultId;
 use crate::tokens::TokenStream;
+use crate::tokens::classified;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
 use crate::transport::Body;
@@ -1823,9 +1825,10 @@ impl Server
     /// The requests asking this connection's client for its semantic tokens
     /// and folding ranges again, once something other than a document's own
     /// text changed what they answer: one for each its client requests again
-    /// when asked, none when the connection is not running. Every token and
-    /// fold this server answers is read off the document's own text, so
-    /// nothing in this crate calls it.
+    /// when asked, none when the connection is not running. Every fold this
+    /// server answers is read off the document's own text, and a recheck of a
+    /// copy whose closure changed asks for its tokens itself
+    /// ([`Server::resynchronise`]), so nothing in this crate calls it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2820,7 +2823,7 @@ impl Server
     /// # Specification
     /// trivial.
     fn reclosed(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         path: &Path,
         outcome: &mut Outcome,
@@ -2834,12 +2837,14 @@ impl Server
 
     /// Recheck the copies this connection holds that `picks` picks,
     /// republishing each to this connection alone, each import read as the
-    /// editors hold it.
+    /// editors hold it, and, when a copy was rechecked because its closure
+    /// changed, ask a client that refreshes its semantic tokens for them
+    /// again: each use is classified by what the new judgement resolved it to.
     ///
     /// # Specification
     /// trivial.
     fn resynchronise(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         picks: Picks<'_>,
     ) -> Outcome
@@ -2884,6 +2889,10 @@ impl Server
         }
         for message in &outcome.messages {
             workspace.published_by(peer, message);
+        }
+        if !matches!(picks, Picks::Every) && self.phase == Phase::Running && self.refreshing.tokens
+        {
+            outcome.messages.push(self.asked(Refreshed::Tokens));
         }
         outcome
     }
@@ -3652,7 +3661,9 @@ impl Server
     ///   after an open, a change or a close of a copy whose file some copy's
     ///   closure names, every copy this connection holds whose closure names it
     ///   is rechecked and republished after the copy's own publication, and
-    ///   every other hub connection whose copies name it hears it changed.
+    ///   every other hub connection whose copies name it hears it changed. When
+    ///   that rechecks a copy for what its closure names, a client that
+    ///   refreshes its semantic tokens is then asked for them again, once.
     ///   Unknown, malformed and out-of-phase notifications leave documents
     ///   alone.
     /// - provides: document synchronization, configuration, file watching, the
@@ -3687,7 +3698,10 @@ impl Server
     /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
-        ensures: |ret| self.phase == phase
+        ensures: |ret| {
+            let published = ret.messages.iter().filter(|message| matches!(**message,
+                Outgoing::Notification { params: Notified::Published(_), .. })).count();
+            self.phase == phase
             && (ret.messages.len() <= 1
                 || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
                     | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"
@@ -3695,9 +3709,9 @@ impl Server
             && match method.as_ref() {
                 "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles"
                 | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles" =>
-                    ret.log.len() == ret.messages.len(),
-                "textDocument/didClose" => ret.log.len() == ret.messages.len().saturating_sub(1),
-                "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
+                    ret.log.len() == published,
+                "textDocument/didClose" => ret.log.len() == published.saturating_sub(1),
+                "workspace/didChangeConfiguration" => ret.log.len() <= published,
                 _ => ret.log.is_empty(),
             }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
@@ -3725,12 +3739,18 @@ impl Server
                         "workspace/didChangeWorkspaceFolders" => {
                             called == "workspace/workspaceFolders" && self.listing.0
                         },
+                        "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
+                        | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles"
+                        | "workspace/didDeleteFiles" | "workspace/didRenameFiles" => {
+                            called == "workspace/semanticTokens/refresh" && self.refreshing.tokens
+                        },
                         _ => false,
                     },
                     Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
                     | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
                 })
-            },
+            }
+        },
     )]
     fn notification(
         &mut self,
@@ -4269,7 +4289,8 @@ impl Workspace
     }
 
     /// The tokens of the copy of the document at `uri` that `peer` is
-    /// answered from, in `window`.
+    /// answered from, in `window`, each written use classified by what its
+    /// judgement resolved it to.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any range are admitted.
@@ -4277,6 +4298,9 @@ impl Workspace
     ///   token stream, restricted to overlapping whole spans for a range
     ///   request. Empty and inverted ranges yield an empty stream, not Nothing.
     ///   A whole-document stream carries its result id; a range's carries none.
+    ///   A copy with a session sends its spans as [`classified`] classifies
+    ///   them over its type table, a name the table records as unresolved sent
+    ///   as such; one without sends the highlighter's spans.
     /// - provides: full and range token answers in document coordinates.
     /// - fails: never.
     /// - panics: none.
@@ -4290,6 +4314,7 @@ impl Workspace
     /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
     /// - witness: `server::tests::an_empty_range_yields_no_tokens`
     /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
+    /// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
@@ -4313,14 +4338,31 @@ impl Workspace
             return Answer::Nothing;
         };
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        let spans = document.text.reading().spans();
-        let spans = match window {
-            Window::Whole => spans.to_vec(),
-            Window::Within(range) => {
-                overlapping(spans, range.start.byte(&index), range.end.byte(&index))
+        let written = document.text.reading().spans();
+        let judged = document.session.as_ref().map_or_else(
+            |_| Resolved {
+                spans: written.to_vec(),
+                unresolved: Vec::new(),
             },
+            |session| {
+                classified(
+                    written,
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer))
+                        .table(),
+                )
+            },
+        );
+        let spans = match window {
+            Window::Whole => judged.spans,
+            Window::Within(range) => overlapping(
+                &judged.spans,
+                range.start.byte(&index),
+                range.end.byte(&index),
+            ),
         };
-        let data = encode(&index, &spans);
+        let data = encode(&index, &spans, &judged.unresolved);
         Answer::Tokens(SemanticTokens {
             result_id: matches!(window, Window::Whole).then(|| data.result_id()),
             data,
@@ -6413,7 +6455,8 @@ mod tests
                             "legend":{
                                 "tokenTypes":["keyword","operator","function","variable",
                                     "parameter","property","enumMember","type","typeParameter",
-                                    "number","string","comment","macro","label"],
+                                    "number","string","comment","macro","label",
+                                    "unresolvedReference"],
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":{"delta":true},
                             "range":true},
@@ -6480,6 +6523,122 @@ mod tests
                         "resultId":"ac2c5e81f4c6deef122878dc6eb03960e2099f34556da16b15af990a3828c90c"}}]"#
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
+        );
+    }
+
+    /// Over two corpus sources, judged, each use whose referent the
+    /// highlighter's guess misnames is sent as what it refers to, and each
+    /// name the lowering refused as naming nothing is sent as
+    /// `unresolvedReference`; every other token is the highlighter's, at the
+    /// same range. The golden lists exactly the tokens whose type the
+    /// judgement changed, as `line:column `text` before→after`.
+    #[test]
+    fn a_use_is_sent_as_what_it_refers_to()
+    {
+        let changed = |name: &str| -> Vec<String> {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data")
+                .join(name);
+            let text = std::fs::read_to_string(&path).expect("the source is read");
+            let mut server = initialized();
+            let opened = format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///tmp/judged.gandr","languageId":"gandr","version":1,"text":{}}}}}}}"#,
+                serde_json::to_string(&text).expect("the text serialises")
+            );
+            let _published = send(&mut server, Json(&opened));
+            let answered = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
+                        "params":{"textDocument":{"uri":"file:///tmp/judged.gandr"}}}"#,
+                ),
+            )[0]["result"]["data"]
+                .clone();
+            let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
+            let index = gandr_surface_render_remote::LineIndex::new(text.as_str().into());
+            let written = crate::tokens::encode(
+                &index,
+                crate::reading::Reading::of(gandr_surface_syntax::SourceText::from(text.as_str()))
+                    .spans(),
+                &[],
+            );
+            let absolute = |stream: &[u32]| {
+                let (mut line, mut column) = (0_u32, 0_u32);
+                stream
+                    .as_chunks::<5>()
+                    .0
+                    .iter()
+                    .map(|&[down, across, length, kind, _]| {
+                        column = if down == 0 {
+                            column.saturating_add(across)
+                        }
+                        else {
+                            across
+                        };
+                        line = line.saturating_add(down);
+                        (line, column, length, kind)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (after, before) = (absolute(&judged), absolute(written.as_ref()));
+            assert_eq!(
+                after.len(),
+                before.len(),
+                "the judgement keeps every token's range"
+            );
+            let named = |kind: u32| {
+                usize::try_from(kind)
+                    .ok()
+                    .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
+                    .copied()
+                    .unwrap_or("?")
+            };
+            after
+                .iter()
+                .zip(&before)
+                .filter(|&(&(.., judged_kind), &(.., written_kind))| judged_kind != written_kind)
+                .map(
+                    |(&(line, column, length, judged_kind), &(.., written_kind))| {
+                        let spelled = text
+                            .lines()
+                            .nth(usize::try_from(line).unwrap_or(usize::MAX))
+                            .and_then(|row| {
+                                let start = usize::try_from(column).unwrap_or(usize::MAX);
+                                row.get(
+                                    start
+                                        .. start
+                                            .saturating_add(usize::try_from(length).unwrap_or(0)),
+                                )
+                            })
+                            .unwrap_or("?");
+                        format!(
+                            "{}:{column} `{spelled}` {}→{}",
+                            line.saturating_add(1),
+                            named(written_kind),
+                            named(judged_kind)
+                        )
+                    },
+                )
+                .collect()
+        };
+        assert_eq!(
+            changed("data-maybe.gandr"),
+            [
+                "25:56 `m` variable→parameter",
+                "25:59 `m` variable→parameter",
+                "26:7 `m` variable→parameter",
+                "27:17 `m` variable→parameter",
+                "28:20 `m` variable→parameter",
+            ],
+            "each use of the parameter `m` is a parameter; the family and its constructors \
+             the highlighter already names"
+        );
+        assert_eq!(
+            changed("sums-and-case.gandr"),
+            ["8:4 `Inl` enumMember→unresolvedReference"],
+            "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
+             the lowering stops at a declaration's first refusal, so its other names keep \
+             their guess"
         );
     }
 
@@ -8509,6 +8668,107 @@ mod tests
             published(&mut server, &close),
             [(Some(uri("base.gandr")), 0_usize)],
             "a copy closed as the disk holds it rechecks no importer"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// An importer rechecked because its base changed is classified anew:
+    /// a client that refreshes its semantic tokens is asked for them again,
+    /// and the importer's use of a name the base now declares is sent as
+    /// what it refers to where it was unresolved before; a client that does
+    /// not refresh is asked nothing.
+    #[test]
+    fn an_importer_rechecked_for_its_base_asks_for_its_tokens_again()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-retokened-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let declares_one = "def one : Integer ;\ndef one = 1 ;\n";
+        let declares_uno = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        std::fs::write(directory.join("base.gandr"), declares_uno).expect("the base is written");
+        std::fs::write(directory.join("importer.gandr"), importer)
+            .expect("the importer is written");
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let started = |workspace: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{workspace}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            let _initialized = send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+            );
+            server
+        };
+        let open = |server: &mut Connected, file: &str, text: &str| {
+            let message = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri(file), "languageId": "gandr",
+                "version": 1_i32, "text": text}}});
+            send(server, Json(&message.to_string()))
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .filter_map(|message| message["method"].as_str().map(String::from))
+                        .filter(|method| method.ends_with("/refresh"))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let type_of_one = |server: &mut Connected| {
+            let asked = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32,
+                "method": "textDocument/semanticTokens/full",
+                "params": {"textDocument": {"uri": uri("importer.gandr")}}});
+            let data: Vec<u32> = serde_json::from_value(
+                send(server, Json(&asked.to_string()))[0]["result"]["data"].clone(),
+            )
+            .expect("a token stream");
+            let (mut line, mut column) = (0_u32, 0_u32);
+            data.as_chunks::<5>()
+                .0
+                .iter()
+                .find_map(|&[down, across, _, kind, _]| {
+                    column = if down == 0 {
+                        column.saturating_add(across)
+                    }
+                    else {
+                        across
+                    };
+                    line = line.saturating_add(down);
+                    ((line, column) == (2, 10)).then_some(kind)
+                })
+        };
+        let mut refreshing = started(r#"{"semanticTokens":{"refreshSupport":true}}"#);
+        assert_eq!(
+            open(&mut refreshing, "importer.gandr", importer),
+            Vec::<String>::new(),
+            "opening the importer itself asks for nothing"
+        );
+        assert_eq!(
+            type_of_one(&mut refreshing),
+            Some(14),
+            "`one`, which the base on disk does not declare, is unresolved"
+        );
+        assert_eq!(
+            open(&mut refreshing, "base.gandr", declares_one),
+            ["workspace/semanticTokens/refresh"],
+            "the base opened with `one` rechecks the importer and asks for its tokens again"
+        );
+        assert_eq!(
+            type_of_one(&mut refreshing),
+            Some(2),
+            "`one` is now a function the base declares"
+        );
+        let mut quiet = started("{}");
+        let _importing = open(&mut quiet, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut quiet, "base.gandr", declares_one),
+            Vec::<String>::new(),
+            "a client that does not refresh its tokens is asked nothing"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

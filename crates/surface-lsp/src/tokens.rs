@@ -1,5 +1,6 @@
-//! Semantic tokens: the highlighter's spans re-encoded as the protocol's
-//! integer stream.
+//! Semantic tokens: the highlighter's spans, each written use classified by
+//! what the checker resolved it to, re-encoded as the protocol's integer
+//! stream.
 //!
 //! The spans are the grammar's own classification, the [`HlRole`] a terminal
 //! face styles too; this module maps each role onto the protocol's standard
@@ -39,6 +40,19 @@
 //! | `Hole`, `Directive` | `macro` | |
 //! | `Label` | `label` | |
 //!
+//! # Uses are classified by what they refer to
+//!
+//! Once a copy is judged, each written use the referent index resolves is sent
+//! as what it refers to rather than as its syntactic guess
+//! ([`classified`]): a family as `type`, a constructor as `enumMember`, any
+//! other declaration as `function`, and a binder's use as its binder's own
+//! role makes it, a parameter's as `parameter`. A use the lowering refused as
+//! naming nothing (`UnresolvedName`, `UnresolvedTypeHead`) is sent as
+//! `unresolvedReference`, the one type outside the standard set: the legend
+//! declares it, a client with no style for it paints the token unstyled, and
+//! an editor extension contributes its colour. A copy not yet judged is sent
+//! as the highlighter classified it.
+//!
 //! A range request restricts which tokens are sent, never the coordinates they
 //! are sent in: the deltas still chain from the document's origin, and a token
 //! sharing at least one byte with the half-open range is sent whole rather than
@@ -46,8 +60,14 @@
 //! never intersect. An inverted or empty range answers no token. A request for
 //! a document the server does not hold answers `null`.
 
+use alloc::vec::Vec;
+
 use anodized::spec;
+use gandr_surface_dispatcher::NameKind;
+use gandr_surface_dispatcher::Referent;
+use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_render_remote::ByteOffset;
+use gandr_surface_render_remote::ByteRange;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
@@ -57,8 +77,9 @@ use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
 use serde::Serialize;
 
-/// The advertised token types, in the order a token's type integer indexes.
-pub const TOKEN_TYPES: [&str; 14] = [
+/// The advertised token types, in the order a token's type integer indexes:
+/// the standard types, then `unresolvedReference`.
+pub const TOKEN_TYPES: [&str; 15] = [
     "keyword",
     "operator",
     "function",
@@ -73,7 +94,11 @@ pub const TOKEN_TYPES: [&str; 14] = [
     "comment",
     "macro",
     "label",
+    "unresolvedReference",
 ];
+
+/// The legend index of `unresolvedReference`.
+const UNRESOLVED: TokenType = TokenType(14);
 
 /// The advertised token modifiers, in the order a token's modifier bits
 /// index.
@@ -312,17 +337,20 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
     }
 }
 
-/// The token stream of `spans` over the text `index` was built from.
+/// The token stream of `spans` over the text `index` was built from, each span
+/// of `unresolved` sent as `unresolvedReference`.
 ///
 /// # Specification
 /// - requires: `spans` are sorted and pairwise disjoint, each on character
-///   boundaries of the text, as the highlighter yields them.
+///   boundaries of the text, as the highlighter yields them; `unresolved` is
+///   sorted.
 /// - ensures: one token per line each classified span touches, in span order,
 ///   covering the span's bytes on that line with the line's terminator
 ///   excluded; columns and lengths count UTF-16 code units; each token's line
 ///   and start are deltas from the token before it, the first from the
-///   document's origin. A span of [`HlRole::Other`], and a piece of a span
-///   holding only a terminator, sends nothing.
+///   document's origin. A classified span whose range `unresolved` holds is of
+///   type `unresolvedReference` with no modifier. A span of [`HlRole::Other`],
+///   and a piece of a span holding only a terminator, sends nothing.
 /// - provides: the `data` of a semantic-tokens result.
 /// - fails: never; a span offset inside a character, which the requirement
 ///   excludes, sends nothing rather than a token at a guessed column.
@@ -335,6 +363,7 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 ///   asserted at their exact integers; L2 — over every corpus source, the
 ///   decoded stream covers exactly the highlighter's classified bytes, line by
 ///   line.
+/// - witness: `tokens::tests::a_use_refused_as_unresolved_is_sent_as_such`
 /// - witness: `tokens::tests::a_one_line_keyword_encodes_as_five_integers`
 /// - witness: `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`
 /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
@@ -349,15 +378,22 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 pub fn encode(
     index: &LineIndex<'_>,
     spans: &[HlSpan],
+    unresolved: &[ByteRange],
 ) -> TokenStream
 {
     let wire = |count: usize| u32::try_from(count).unwrap_or(u32::MAX);
     let mut data = Vec::with_capacity(spans.len().saturating_mul(INTEGERS_PER_TOKEN));
     let mut previous = Utf16Pos::default();
     for span in spans {
-        let Maybe::Present((kind, modifiers)) = token_of_role(span.role)
+        let Maybe::Present(classified) = token_of_role(span.role)
         else {
             continue;
+        };
+        let (kind, modifiers) = if unresolved.binary_search(&span.range).is_ok() {
+            (UNRESOLVED, TokenModifiers::NONE)
+        }
+        else {
+            classified
         };
         let (Ok(first), Ok(last)) = (
             index.utf16_pos_of_byte(span.range.start()),
@@ -397,6 +433,180 @@ pub fn encode(
         }
     }
     TokenStream(data)
+}
+
+/// The spans of a judged copy, each written use classified by what it refers
+/// to, and the uses that refer to nothing.
+///
+/// # Specification
+/// - requires: built by [`classified`].
+/// - ensures: `spans` covers the bytes the highlighter's spans cover, sorted
+///   and disjoint as they are; `unresolved` is sorted, each range one of
+///   `spans`'.
+/// - panics: none.
+/// - executable: none — a carrier; [`classified`] states what it holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`classified`].
+/// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Resolved
+{
+    /// The spans, each use re-roled by its referent.
+    pub spans: Vec<HlSpan>,
+    /// The ranges of the uses the lowering refused as naming nothing.
+    pub unresolved: Vec<ByteRange>,
+}
+
+/// The roles of a span that is a written use the referent index may resolve.
+const USES: [HlRole; 6] = [
+    HlRole::Variable,
+    HlRole::VariableParam,
+    HlRole::FunctionCall,
+    HlRole::Constructor,
+    HlRole::Type,
+    HlRole::TypeVariable,
+];
+
+/// `spans`, the highlighter's classification of the text `table` judged, with
+/// each written use classified by what `table` resolved it to, and each use
+/// standing inside a name `table` records as unresolved.
+///
+/// # Specification
+/// - requires: `spans` are the highlighter's spans of the text `table`'s own
+///   source holds.
+/// - ensures: one span per span of `spans`, at the same range. A span of a
+///   use's role ([`HlRole::Variable`], [`HlRole::VariableParam`],
+///   [`HlRole::FunctionCall`], [`HlRole::Constructor`], [`HlRole::Type`],
+///   [`HlRole::TypeVariable`]) whose range is exactly a use `table` resolves
+///   takes the role of its referent: [`HlRole::Type`] for a family,
+///   [`HlRole::Constructor`] for a constructor, [`HlRole::FunctionCall`] for
+///   any other declaration, and for a binder the use's role its binder's own
+///   span declares ([`HlRole::VariableParam`] for a parameter,
+///   [`HlRole::TypeVariable`] for a type variable, [`HlRole::FunctionCall`] for
+///   a function, [`HlRole::Variable`] for any other binder), its own role when
+///   the binder has no span. Every other span keeps its role. Such a use
+///   `table` does not resolve, lying wholly inside a span of
+///   [`TypeTable::unresolved`], is listed in `unresolved`, in order.
+/// - provides: the classification the semantic tokens of a judged copy send.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one sort of the unit's declared names, then one lookup in the
+///   referent index and one binary search per use.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family, a constructor, a declaration and a parameter
+///   each written where the highlighter guesses another role are sent as what
+///   they refer to, a name no declaration answers as unresolved, and a span
+///   that is no use keeps its role.
+/// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
+#[spec(ensures: |ret| ret.spans.len() == spans.len()
+    && ret.spans.iter().zip(spans).all(|(kept, written)| kept.range == written.range)
+    && ret.unresolved.is_sorted())]
+#[must_use]
+pub fn classified(
+    spans: &[HlSpan],
+    table: &TypeTable,
+) -> Resolved
+{
+    let mut kinds: Vec<(Referent, NameKind)> = table.declared_names().to_vec();
+    kinds.sort_unstable();
+    let refused = table.unresolved();
+    let mut unresolved = Vec::new();
+    let classified = spans
+        .iter()
+        .map(|&span| {
+            if !USES.contains(&span.role) {
+                return span;
+            }
+            let start = usize::from(span.range.start());
+            let end = usize::from(span.range.end());
+            match table.referent(gandr_surface_syntax::ByteOffset::from(start)) {
+                Maybe::Present((used, referent))
+                    if (usize::from(used.start()), usize::from(used.end())) == (start, end) =>
+                {
+                    HlSpan {
+                        role: referred(span.role, referent, &kinds, spans),
+                        ..span
+                    }
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => {
+                    if refused.iter().any(|within| {
+                        usize::from(within.start()) <= start && end <= usize::from(within.end())
+                    }) {
+                        unresolved.push(span.range);
+                    }
+                    span
+                },
+            }
+        })
+        .collect();
+    Resolved {
+        spans: classified,
+        unresolved,
+    }
+}
+
+/// The role a use written as `role` takes for referring to `referent`.
+///
+/// # Specification
+/// - requires: `kinds` is sorted; `spans` are the highlighter's spans of the
+///   use's own text.
+/// - ensures: as [`classified`] states for one resolved use.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the role is read off the declared kinds and the
+///   binder's own span, which the arguments do not carry back; [`classified`]
+///   states the whole classification, checked through its witness.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`classified`].
+/// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
+fn referred(
+    role: HlRole,
+    referent: Referent,
+    kinds: &[(Referent, NameKind)],
+    spans: &[HlSpan],
+) -> HlRole
+{
+    if let Ok(found) = kinds.binary_search_by_key(&referent, |&(declared, _)| declared) {
+        return match kinds.get(found).map(|&(_, kind)| kind) {
+            Some(NameKind::Family) => HlRole::Type,
+            Some(NameKind::Constructor) => HlRole::Constructor,
+            Some(NameKind::Value) => HlRole::FunctionCall,
+            None => role,
+        };
+    }
+    let named = usize::from(referent.named().start());
+    spans
+        .binary_search_by_key(&named, |site| usize::from(site.range.start()))
+        .ok()
+        .and_then(|found| spans.get(found))
+        .map_or(role, |site| match site.role {
+            HlRole::VariableParam => HlRole::VariableParam,
+            HlRole::TypeVariable => HlRole::TypeVariable,
+            HlRole::FunctionDef => HlRole::FunctionCall,
+            HlRole::VariableDef => HlRole::Variable,
+            HlRole::Keyword
+            | HlRole::Boolean
+            | HlRole::Operator
+            | HlRole::FunctionCall
+            | HlRole::Variable
+            | HlRole::Member
+            | HlRole::Constructor
+            | HlRole::Type
+            | HlRole::TypeBuiltin
+            | HlRole::Number
+            | HlRole::StringLit
+            | HlRole::Character
+            | HlRole::Escape
+            | HlRole::Path
+            | HlRole::Comment
+            | HlRole::Hole
+            | HlRole::Directive
+            | HlRole::Label
+            | HlRole::Other => role,
+        })
 }
 
 /// The spans of `spans` overlapping the bytes from `start` up to `end`.
@@ -680,7 +890,7 @@ mod tests
     fn a_one_line_keyword_encodes_as_five_integers()
     {
         let index = LineIndex::new(SourceText::from("def x"));
-        let stream = encode(&index, &[span(Bytes(0, 3), HlRole::Keyword)]);
+        let stream = encode(&index, &[span(Bytes(0, 3), HlRole::Keyword)], &[]);
         assert_eq!(
             stream,
             TokenStream::from(vec![0, 0, 3, 0, 0]),
@@ -698,13 +908,13 @@ mod tests
     {
         let index = LineIndex::new(SourceText::from("ab\r\ncd"));
         assert_eq!(
-            encode(&index, &[span(Bytes(0, 6), HlRole::Comment)]),
+            encode(&index, &[span(Bytes(0, 6), HlRole::Comment)], &[]),
             TokenStream::from(vec![0, 0, 2, 11, 0, 1, 0, 2, 11, 0]),
             "one comment token per line, the terminator in neither"
         );
         let astral = LineIndex::new(SourceText::from("𝄞\n𝄞"));
         assert_eq!(
-            encode(&astral, &[span(Bytes(0, 9), HlRole::StringLit)]),
+            encode(&astral, &[span(Bytes(0, 9), HlRole::StringLit)], &[]),
             TokenStream::from(vec![0, 0, 2, 10, 0, 1, 0, 2, 10, 0]),
             "each piece's length counts UTF-16 units"
         );
@@ -756,15 +966,44 @@ mod tests
             );
         }
         let index = LineIndex::new(SourceText::from("a\r\n\rb"));
-        assert_eq!(encode(&index, &[]), TokenStream::default());
+        assert_eq!(encode(&index, &[], &[]), TokenStream::default());
         assert_eq!(
-            encode(&index, &[
-                span(Bytes(0, 1), HlRole::Other),
-                span(Bytes(1, 3), HlRole::Comment),
-                span(Bytes(3, 4), HlRole::Comment),
-                span(Bytes(4, 5), HlRole::VariableDef),
-            ]),
+            encode(
+                &index,
+                &[
+                    span(Bytes(0, 1), HlRole::Other),
+                    span(Bytes(1, 3), HlRole::Comment),
+                    span(Bytes(3, 4), HlRole::Comment),
+                    span(Bytes(4, 5), HlRole::VariableDef),
+                ],
+                &[]
+            ),
             TokenStream::from(vec![2, 0, 1, 3, 1])
+        );
+    }
+
+    /// A use listed as unresolved is sent as `unresolvedReference`, the
+    /// legend's last type, with no modifier, beside a use sent as its own
+    /// role; an unclassified span listed as unresolved still sends nothing.
+    #[test]
+    fn a_use_refused_as_unresolved_is_sent_as_such()
+    {
+        let index = LineIndex::new(SourceText::from("f nope ?"));
+        let called = span(Bytes(0, 1), HlRole::FunctionCall);
+        let missing = span(Bytes(2, 6), HlRole::Variable);
+        let other = span(Bytes(7, 8), HlRole::Other);
+        assert_eq!(
+            encode(&index, &[called, missing, other], &[
+                missing.range,
+                other.range
+            ]),
+            TokenStream::from(vec![0, 0, 1, 2, 0, 0, 2, 4, 14, 0]),
+            "`f` a function, `nope` unresolved, `?` unclassified"
+        );
+        assert_eq!(
+            TOKEN_TYPES.get(14).copied(),
+            Some("unresolvedReference"),
+            "the index an unresolved use is sent as names the type"
         );
     }
 

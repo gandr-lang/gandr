@@ -604,8 +604,8 @@ fn a_session_round_trips_over_in_memory_streams()
                 "result": {"data": [
                     0_u32, 0_u32, 3_u32, 0_u32, 0_u32, 0_u32, 4_u32, 6_u32, 2_u32, 1_u32,
                     0_u32, 9_u32, 2_u32, 9_u32, 0_u32, 1_u32, 0_u32, 3_u32, 0_u32, 0_u32,
-                    0_u32, 4_u32, 6_u32, 2_u32, 1_u32, 0_u32, 9_u32, 7_u32, 3_u32, 0_u32,
-                ], "resultId": "12df1aff76d770be36dce32796be278ca8d548c6b9ebe603221cc8cde05347d2"},
+                    0_u32, 4_u32, 6_u32, 2_u32, 1_u32, 0_u32, 9_u32, 7_u32, 14_u32, 0_u32,
+                ], "resultId": "a539992049d7e6b4dc733d8637ca4d7369b0131ed60b2fca5224bcb15790ec70"},
             }),
             json!({"jsonrpc": "2.0", "id": "end", "result": null}),
         ],
