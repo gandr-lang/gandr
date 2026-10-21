@@ -554,3 +554,44 @@ fn native_indices_remain_values_under_telescope_scope()
         Err(DecodeError::ParameterArity)
     );
 }
+
+/// Every refusal renders apart from the others, and one carrying a name
+/// names it.
+#[test]
+fn every_refusal_renders_apart_and_names_what_it_carries()
+{
+    use alloc::string::ToString;
+
+    let refusals = [
+        DecodeError::AtomAbstraction,
+        DecodeError::CodataNu,
+        DecodeError::Uninhabited,
+        DecodeError::ForeignSort(Name::from("Alpha")),
+        DecodeError::MultiSorted,
+        DecodeError::UnresolvedType(Name::from("Beta")),
+        DecodeError::AppliedType(Name::from("Gamma")),
+        DecodeError::Primitive(PrimTy::Char),
+        DecodeError::MalformedCode,
+        DecodeError::ParameterArity,
+    ];
+    let mut rendered: Vec<alloc::string::String> =
+        refusals.iter().map(ToString::to_string).collect();
+    for (text, carried) in rendered.iter().zip([
+        "",
+        "",
+        "",
+        "Alpha",
+        "",
+        "Beta",
+        "Gamma",
+        PrimTy::Char.label().as_ref(),
+        "",
+        "",
+    ]) {
+        assert!(text.contains(carried), "{text} omits {carried}");
+    }
+    let count = rendered.len();
+    rendered.sort();
+    rendered.dedup();
+    assert_eq!(count, rendered.len(), "{rendered:?}");
+}

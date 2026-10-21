@@ -3381,22 +3381,23 @@ fn a_traced_instantiation_reports_no_computation_or_type_it_kept()
 /// One former spelled around `child`, which stands where none of the
 /// former's own binders reaches; a computation is held in a thunk and a type
 /// in a quote, so each reads as a value.
-type Former = fn(&mut CoreArena, ValueId) -> ValueId;
+pub type Former = fn(&mut CoreArena, ValueId) -> ValueId;
 
 /// One former and the name its failures are reported under.
-struct Witnessed
+pub struct Witnessed
 {
     /// The former's name.
-    what: &'static str,
+    pub what: &'static str,
     /// The former.
-    former: Former,
+    pub former: Former,
 }
 
-/// The formers the rebuild decisions are witnessed at.
+/// The formers the rebuild decisions, and the importer's relocation, are
+/// witnessed at.
 ///
 /// # Specification
 /// trivial.
-fn formers() -> Vec<Witnessed>
+pub fn formers() -> Vec<Witnessed>
 {
     use alloc::sync::Arc;
 
