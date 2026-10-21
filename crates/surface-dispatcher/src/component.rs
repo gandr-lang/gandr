@@ -743,8 +743,10 @@ pub fn lay_out_shadowed(
 /// # Adequacy
 /// - hypothesis: L3 — a diamond and a source beside it make two components, the
 ///   diamond's base laid out once, before every source that imports it, under
-///   either reading.
+///   either reading; a source whose import stands inside a module joins the
+///   base it names only when read by its forms.
 /// - witness: `component::tests::a_component_lays_each_source_once`
+/// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 #[spec(
@@ -1244,7 +1246,10 @@ impl Graph
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a cycle's edge, a missing path and a sibling.
+    /// - hypothesis: L3 — a cycle's edge, a missing path and a sibling, then
+    ///   that sibling set apart. A target that does not parse is not exercised:
+    ///   the parser is total over its input and fails only on an arena
+    ///   overflow.
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     #[spec(ensures: |ret| match ret {
         ImportTarget::Source(to) => usize::from(to) < self.read.len(),
@@ -2147,6 +2152,7 @@ mod tests
     use gandr_surface_lowering::ImportTarget;
     use gandr_surface_lowering::PathImportOrdinal;
     use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
@@ -2328,20 +2334,25 @@ mod tests
         );
     }
 
+    /// An importer's three imports: the edge of a cycle, a missing path and a
+    /// sibling. Only the sibling resolves, and it alone is laid out before the
+    /// importer; set apart, it too is unresolved and the importer stands alone.
     #[test]
     fn a_cycle_and_a_missing_path_leave_their_imports_unresolved()
     {
         let grammar = built_in().expect("the grammar builds");
         let first = SourceText::from(
-            "import \"./second.gandr\" ;\nimport \"./missing.gandr\" ;\ndef one : Integer ;\ndef \
-             one = 1 ;",
+            "import \"./second.gandr\" ;\nimport \"./missing.gandr\" ;\nimport \
+             \"./sibling.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;",
         );
+        let sibling = "def three : Integer ;\ndef three = 3 ;";
         let tree = Scratch::new(Path::new("cycle"), &[
             (Path::new("first.gandr"), first),
             (
                 Path::new("second.gandr"),
                 SourceText::from("import \"./first.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;"),
             ),
+            (Path::new("sibling.gandr"), SourceText::from(sibling)),
         ]);
         let Maybe::Present(laid) = lay_out(
             &grammar,
@@ -2355,18 +2366,25 @@ mod tests
 
         assert_eq!(
             laid.text,
-            <&str>::from(first),
-            "a source reached only through a cycle is not laid out"
+            format!("{sibling}\n{}", <&str>::from(first)),
+            "a source reached only through a cycle is not laid out; the sibling is"
         );
+        let targets = |unit: &Unit, importer: usize| {
+            [0_usize, 1_usize, 2_usize].map(|ordinal| {
+                unit.target(
+                    SourceIndex::from(importer),
+                    PathImportOrdinal::from(ordinal),
+                )
+            })
+        };
         assert_eq!(
-            (
-                laid.unit
-                    .target(SourceIndex::from(0_usize), PathImportOrdinal::from(0_usize)),
-                laid.unit
-                    .target(SourceIndex::from(0_usize), PathImportOrdinal::from(1_usize)),
-            ),
-            (ImportTarget::Cycle, ImportTarget::Unresolved),
-            "the edge of the cycle and the missing path"
+            targets(&laid.unit, 1_usize),
+            [
+                ImportTarget::Cycle,
+                ImportTarget::Unresolved,
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+            ],
+            "the edge of the cycle, the missing path and the sibling"
         );
         for reading in [Reading::Whole, Reading::ImportForms] {
             let grouped = group(
@@ -2382,6 +2400,25 @@ mod tests
                 grouped.components.len(),
                 2_usize,
                 "{reading:?}: each source of a cycle is lowered apart"
+            );
+            let grouped = group(
+                &grammar,
+                Vec::from([tree.given(Path::new("first.gandr"))]),
+                reading,
+                &BTreeSet::from([tree.given(Path::new("sibling.gandr")).path]),
+            );
+            let [ref alone] = *grouped.components.as_slice()
+            else {
+                panic!("{reading:?}: one component: {:?}", grouped.components);
+            };
+            assert_eq!(
+                (alone.text.as_str(), targets(&alone.unit, 0_usize)),
+                (<&str>::from(first), [
+                    ImportTarget::Cycle,
+                    ImportTarget::Unresolved,
+                    ImportTarget::Unresolved,
+                ]),
+                "{reading:?}: a sibling set apart is unresolved, the importer laid out alone"
             );
         }
     }
