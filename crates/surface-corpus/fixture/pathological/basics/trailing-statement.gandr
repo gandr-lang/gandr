@@ -1,0 +1,9 @@
+// A block whose last statement ends in `;` returns the unit, so a body that
+// answers anything else is a mismatch at the block (#1205).
+
+/// A body answering an integer that ends in a statement: it answers the unit
+/// instead.
+@[ refuses("TypeMismatch") ]
+def unitAnswered() -> -F Integer {
+  pure unit;
+}

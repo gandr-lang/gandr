@@ -1,0 +1,46 @@
+// A block whose last statement ends in `;` runs it, discards its result and
+// returns the unit, as `{ e; }` is `()` in Rust (#1205).
+
+/// A body of one statement: `pure unit` runs and the unit is returned.
+@[ checks ]
+def plain() -> -F Unit {
+  pure unit;
+}
+
+/// A statement after a bind: the bind runs, then the statement, then the
+/// unit is returned.
+@[ checks ]
+def after(n : Integer) -> -F Unit {
+  run m : Integer <- pure (n + 1);
+  pure unit;
+}
+
+/// A match written as the last statement, each arm falling through to the
+/// unit the block returns.
+@[ checks ]
+def armed(b : Bool) -> -F Unit {
+  case b {
+    true => pure unit,
+    false => pure unit
+  };
+}
+
+/// A match written as the last statement whose arms all leave stays the end
+/// of the body.
+@[ checks ]
+def left(b : Bool) -> -F Integer {
+  case b {
+    true => return 1,
+    false => return 2
+  };
+}
+
+/// A match written as the last statement, one arm leaving and the other
+/// falling through to the unit.
+@[ checks ]
+def some(b : Bool) -> -F Unit {
+  case b {
+    true => return unit,
+    false => pure unit
+  };
+}

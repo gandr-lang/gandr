@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -277,6 +278,38 @@ fn a_bound_match_continues_its_block_through_a_split_arm()
             SurfaceName::from("split_by_hand"),
         ),
     );
+}
+
+#[test]
+fn a_block_ending_in_a_statement_returns_the_unit_1205()
+{
+    let source = "def stated() -> -F Unit { pure unit; }\n\
+         def noop() -> -F Unit { return unit }\n\
+         def some(b : Bool) -> -F Unit { case b { true => return unit, false => noop() }; }\n\
+         def some_by_hand(b : Bool) -> -F Unit { case b { true => return unit, false => { noop(); return unit } } }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
+    let stated = tail_of(&arena, body_named(&module, SurfaceName::from("stated")));
+    assert!(
+        matches!(
+            arena.computation(stated),
+            Some(&Computation::Bind(ran, rest))
+                if matches!(arena.computation(ran), Some(&Computation::Ascribe { body, .. }) if returns(body))
+                    && matches!(
+                        arena.computation(rest),
+                        Some(&Computation::Split { arity, body, .. })
+                            if arity == ComponentCount::default() && returns(body)
+                    )
+        ),
+        "a statement no path leaves runs ascribed, its unit split, and the unit returned"
+    );
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("some"), SurfaceName::from("some_by_hand")),
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]

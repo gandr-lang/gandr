@@ -2940,8 +2940,12 @@ struct Lowerer<'run, 'source>
     /// open with `run`: where a `run` written would open a bind instead.
     leading: BTreeSet<ByteOffset>,
     /// Each block's last computation written as a statement, `c ;` before the
-    /// closing brace, with the statement's span: admitted only as an exit.
+    /// closing brace, with the statement's span.
     stated: BTreeMap<NodeIndex, ByteSpan>,
+    /// Each block's last statement that is not an exit and that does not
+    /// leave on every path: the block runs it, discards its result and
+    /// returns the unit.
+    trailing: BTreeSet<NodeIndex>,
     /// The matches, each compiled to its decision tree.
     cases: Vec<native::CaseForm>,
     /// The position each lowered data declaration's signature takes, by its
@@ -4024,6 +4028,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             asked_runs: BTreeMap::new(),
             leading: BTreeSet::new(),
             stated: BTreeMap::new(),
+            trailing: BTreeSet::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
@@ -5278,18 +5283,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the form at `site`.
-    /// - ensures: a repair refuses the form; a block's last computation written
-    ///   as a statement that is not an exit refuses as an unadmitted expression
-    ///   statement at the statement's bytes; a former of the wrong family for
+    /// - ensures: a repair refuses the form; a former of the wrong family for
     ///   the position refuses as the wrong sort, except a type standing where a
     ///   value is read, which is quoted, and a term name or a capitalised name
     ///   standing where a type is read, which is read as the type head of that
-    ///   spelling; a form where a body ends that is neither an exit nor a form
-    ///   that passes the end on — a block, a match, a grouping — nor a hole
-    ///   takes the exit its polarity names, recorded as inferred and leaving,
-    ///   and is handed to its reader; every other former is handed to its own
-    ///   reader, a declaration form to the function reader, the one reading of
-    ///   the family that seeds one.
+    ///   spelling; a block's last computation written as a statement that is
+    ///   not an exit and does not leave on every path is recorded as trailing,
+    ///   no longer where a path ends; a form where a body ends that is neither
+    ///   an exit nor a form that passes the end on — a block, a match, a
+    ///   grouping — nor a hole takes the exit its polarity names, recorded as
+    ///   inferred and leaving, and is handed to its reader; every other former
+    ///   is handed to its own reader, a declaration form to the function
+    ///   reader, the one reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -5308,21 +5313,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     #[spec(
-        captures: iterated = self.iterated.contains(&site.at.node),
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
                 ret == Err(repaired.refusal(site.name))
-            }
-            else if let Some(&statement) = self.stated.get(&site.at.node)
-                && ending(former) != Ending::Exit
-                && !iterated
-            {
-                ret == Err(LoweringRefusal::OutOfFragment {
-                    span: statement,
-                    form: FormName::EXPRESSION_STATEMENT,
-                    sort: FragmentSort::Computation,
-                    boundary: FragmentBoundary::Unadmitted,
-                })
             }
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
@@ -5358,22 +5351,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(repaired.refusal(site.name));
         }
         let family = family_of(former);
-        if let Some(&statement) = self.stated.get(&site.at.node)
-            && ending(former) != Ending::Exit
-            && !self.iterated.contains(&site.at.node)
-        {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: statement,
-                form: FormName::EXPRESSION_STATEMENT,
-                sort: FragmentSort::Computation,
-                boundary: FragmentBoundary::Unadmitted,
-            });
-        }
         let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
         let headed = matches!(former, Former::Name | Former::Constructor)
             && site.reading.family() == Family::Type;
         if family != site.reading.family() && !quoted && !headed {
             return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        // A block's last statement that is not an exit runs, its result
+        // discarded, and the block returns the unit after it.
+        if self.stated.contains_key(&site.at.node)
+            && ending(former) != Ending::Exit
+            && !self.iterated.contains(&site.at.node)
+        {
+            self.trail(site);
         }
         if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
             let _tail = self.inferred.insert(site.at.node);
@@ -11517,6 +11507,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ),
             (_, bridged) => bridged,
         };
+        let bridged = match bridged {
+            Maybe::Present(Lowered::Computation(end)) if self.trailing.contains(&position) => {
+                Maybe::Present(Lowered::Computation(
+                    self.conclude(position, end, sink, origin),
+                ))
+            },
+            bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
+        };
         if let Some(held) = self.lowered.get_mut(usize::from(position)) {
             *held = bridged;
         }
@@ -15415,6 +15413,7 @@ impl Sink<'_>
                 | Insertion::Match
                 | Insertion::Fixpoint
                 | Insertion::Loop
+                | Insertion::Statement
                 | Insertion::Endpoint
                 | Insertion::Identity
                 | Insertion::Nested
@@ -19810,15 +19809,6 @@ mod tests
                     16_usize,
                     19_usize,
                     FormName::VAL_STATEMENT,
-                    FragmentSort::Computation,
-                ),
-            ),
-            (
-                "def a = thunk { pure 1 ; } ;",
-                unadmitted(
-                    16_usize,
-                    24_usize,
-                    FormName::EXPRESSION_STATEMENT,
                     FragmentSort::Computation,
                 ),
             ),
