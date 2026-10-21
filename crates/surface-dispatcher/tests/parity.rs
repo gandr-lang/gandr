@@ -220,8 +220,13 @@ fn formatted(
         form,
         ..FormatOptions::default()
     };
-    format_beside(grammar, &parsed, options, beside)
-        .map_err(|error| format!("does not format: {error}"))
+    format_beside(
+        grammar,
+        &parsed,
+        options,
+        (beside, Some(&gandr_surface_dispatcher::Elaborating)),
+    )
+    .map_err(|error| format!("does not format: {error}"))
 }
 
 /// The printer's form the source `text` declares at its head, which the
@@ -518,6 +523,9 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
+    /// A declaration holding a `run` statement the sugared form writes at
+    /// its read, which the printer prints as its bind (#1416).
+    Linear,
 }
 
 impl fmt::Display for Held
@@ -534,6 +542,7 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
+            Self::Linear => "#1416, a linear run the printer prints as its bind",
         })
     }
 }
@@ -847,6 +856,24 @@ fn read(
         }
         forms.sort_by_key(|span| span.start());
         let name = format!("{}", declaration.name());
+        // A `run` statement the sugared form writes at its read lowers
+        // otherwise than the bind the printer prints it as.
+        let linear = module.linear_runs().iter().any(|run| {
+            let (Some(start), Some(end)) = (
+                usize::from(run.bound.start()).checked_sub(base),
+                usize::from(run.bound.end()).checked_sub(base),
+            )
+            else {
+                return false;
+            };
+            forms
+                .iter()
+                .any(|form| usize::from(form.start()) <= start && end <= usize::from(form.end()))
+        });
+        if linear {
+            let _previous = read.held.insert(name, Held::Linear);
+            continue;
+        }
         let node = (declared_type, body);
         match (
             spelt(

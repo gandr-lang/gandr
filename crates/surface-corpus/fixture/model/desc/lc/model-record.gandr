@@ -113,6 +113,5 @@ def betaIdentity : () => Term ;
 def betaIdentity = thunk {
   run q <- LCSyntax.qTm(Z);
   run identity <- LCSyntax.lam(Z, q);
-  run single <- LCSyntax.singleTm(Z, identity);
-  become LCSyntax.subTm(S(Z), Z, q, single)
+  become LCSyntax.subTm(S(Z), Z, q, LCSyntax.singleTm(Z, identity))
 } ;

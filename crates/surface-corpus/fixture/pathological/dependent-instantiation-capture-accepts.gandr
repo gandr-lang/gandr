@@ -7,8 +7,7 @@ def comp(
   g : b => c,
   x : a
 ) -> -F c {
-  run y <- f(x);
-  become g(y)
+  become g(f(x))
 }
 
 @[ refuses("TypeMismatch") ]

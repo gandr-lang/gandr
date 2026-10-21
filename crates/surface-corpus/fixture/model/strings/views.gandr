@@ -23,8 +23,7 @@ import "./copy-on-write.gandr" ;
 def readThrough() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { resume(v, v) };
-  run bs <- bytes(s);
-  become count(bs)
+  become count(bytes(s))
 }
 
 /// `!` appended through a view and written back: after the access the held
@@ -63,7 +62,7 @@ def keptInRegion() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w) ; become count(bs) }
+      pure thunk { become count(bytes(w)) }
     } ;
     force k
   } with {

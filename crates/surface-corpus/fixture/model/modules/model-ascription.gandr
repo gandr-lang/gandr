@@ -39,15 +39,14 @@ module Sealed :> Model(Counter) {
 /// Two steps on the transparent counter, read as an integer.
 @[ runs("2") ]
 def openTwice : () => Integer ;
-def openTwice = thunk { run s <- Open.start() ; run t <- Open.step(s) ; become Open.step(t) } ;
+def openTwice = thunk { run s <- Open.start() ; become Open.step(Open.step(s)) } ;
 
 /// Two steps on the sealed counter, at its abstract carrier.
 @[ checks ]
 def sealedTwice : () => Sealed.C ;
 def sealedTwice = thunk {
   run s <- Sealed.start() ;
-  run t <- Sealed.step(s) ;
-  become Sealed.step(t)
+  become Sealed.step(Sealed.step(s))
 } ;
 
 /// A toggle: a step that undoes itself. A law, so the models give its proof.
@@ -90,4 +89,4 @@ module Bits : Model(Toggle) {
 /// The toggle twice from `Low`, run.
 @[ runs("Low") ]
 def flippedTwice : () => Bit ;
-def flippedTwice = thunk { run b <- Bits.flip(Low) ; become Bits.flip(b) } ;
+def flippedTwice = thunk { become Bits.flip(Bits.flip(Low)) } ;

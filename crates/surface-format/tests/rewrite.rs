@@ -4,8 +4,13 @@
 //! by name, and the corpus formatted into either form — a sample on every
 //! pull request, every source under the `sweeps` profile.
 
+use core::cell::Cell;
+
 use expect_test::expect;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_surface_format::Beside;
+use gandr_surface_format::Elaborate;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
@@ -17,6 +22,7 @@ use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::ImportTarget;
+use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
@@ -842,7 +848,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
         before: SourceText::from(CIRCLE),
         unit: &unit,
     };
-    let formatted = format_beside(&grammar, &parsed, options, beside)
+    let formatted = format_beside(&grammar, &parsed, options, (beside, None))
         .unwrap_or_else(|error| panic!("the source formats beside its import: {error}"));
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
@@ -854,7 +860,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
 ) ;
 "
     );
-    let alone = format_beside(&grammar, &parsed, options, Beside::Alone)
+    let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
     let kept: Vec<(&str, bool)> = alone
         .withdrawn()
@@ -931,6 +937,111 @@ fn a_selection_runs_only_the_rewrites_it_names()
             Selection::Only(&[RewriteName::Tuple])
         ),
         "def pair : Integer * String ;\ndef tuple = #{1, 2} ;\n"
+    );
+}
+
+/// What a test's checker answers for every declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Answer
+{
+    /// One body, for the source and the rewritten text alike.
+    Alike,
+    /// A body for the source and none for the rewritten text.
+    Apart,
+    /// None for the source: it refuses it as written.
+    Refused,
+}
+
+/// A checker whose elaborations the test decides, counting the modules it is
+/// asked about: the source's first, then the rewritten text's.
+struct Oracle
+{
+    /// What it answers.
+    answer: Answer,
+    /// The modules it was asked about so far.
+    asked: Cell<usize>,
+}
+
+impl Elaborate for Oracle
+{
+    /// Every declaration's body as [`Answer`] says, for the source asked
+    /// first and the rewritten text after it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definitions(
+        &self,
+        arena: &mut CoreArena,
+        module: &LoweredModule<'_>,
+    ) -> Vec<Option<ValueId>>
+    {
+        let asked = self.asked.get();
+        self.asked.set(asked.saturating_add(1));
+        module
+            .declarations()
+            .iter()
+            .map(|_| match (self.answer, asked) {
+                (Answer::Alike, _) | (Answer::Apart, 0) => Some(arena.value_unit()),
+                (Answer::Apart | Answer::Refused, _) => None,
+            })
+            .collect()
+    }
+}
+
+/// A `run` statement the lowering lists as linear follows the checker: it is
+/// written at its read where the checker elaborates both spellings to one
+/// body, withdrawn and reported where it elaborates them otherwise, and kept
+/// with nothing reported where it refuses the source as written. The
+/// checker's own verdict on a real source is the dispatcher's to witness.
+#[test]
+fn a_linear_run_follows_the_checker_s_elaborations()
+{
+    let grammar = grammar();
+    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                  \n\
+                  def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                  \n\
+                  def field(n : Nat) -> -F Nat {\n  run m <- twice(n) ;\n  Succ(m)\n}\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let format = |answer: Answer| {
+        let oracle = Oracle {
+            answer,
+            asked: Cell::new(0),
+        };
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
+            .expect("the source formats");
+        let withdrawn: Vec<(String, Withdrawn)> = formatted
+            .withdrawn()
+            .iter()
+            .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
+            .collect();
+        (formatted.into_text(), withdrawn)
+    };
+    let written = source.replace(
+        "\n  run m <- twice(n) ;\n  Succ(m)\n",
+        "\n  Succ(twice(n))\n",
+    );
+    assert_eq!(
+        format(Answer::Alike),
+        (written, Vec::new()),
+        "elaborated alike, the run is written at its read"
+    );
+    assert_eq!(
+        format(Answer::Apart),
+        (
+            String::from(source),
+            Vec::from([(String::from("field"), Withdrawn::Lowered)])
+        ),
+        "elaborated otherwise, the declaration keeps its spelling, reported"
+    );
+    assert_eq!(
+        format(Answer::Refused),
+        (String::from(source), Vec::new()),
+        "refused as written, no run is written away and nothing is withdrawn"
     );
 }
 

@@ -14,8 +14,7 @@ def not(b : Unit + Unit) -> -F (Unit + Unit) {
 /// Negation twice.
 @[ checks ]
 def not_not(b : Unit + Unit) -> -F (Unit + Unit) {
-  run c <- not(b);
-  become not(c)
+  become not(not(b))
 }
 
 /// The identity on the booleans.

@@ -39,7 +39,7 @@ def holders(s : Repr) -> -F Integer {
 /// as copy-on-write does.
 @[ runs("0") ]
 def aloneCopies : () => Integer ;
-def aloneCopies = thunk { run s <- force long ; run w <- pushInPlace(s, 33) ; become copies(w) } ;
+def aloneCopies = thunk { run s <- force long ; become copies(pushInPlace(s, 33)) } ;
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
@@ -47,8 +47,7 @@ def aloneHolders : () => Integer ;
 def aloneHolders = thunk {
   run s <- force long ;
   run w <- pushInPlace(s, 33) ;
-  run t <- written(w) ;
-  become holders(t)
+  become holders(written(w))
 } ;
 
 /// On a copy it writes the buffer the original reads too: the written buffer
@@ -60,6 +59,5 @@ def sharedHolders = thunk {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- pushInPlace(c, 33) ;
-  run t <- written(w) ;
-  become holders(t)
+  become holders(written(w))
 } ;

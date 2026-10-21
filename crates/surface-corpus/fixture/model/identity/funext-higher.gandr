@@ -25,8 +25,7 @@ def at_falsity(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
 /// A function applied twice from truth, the second call in tail position.
 @[ checks ]
 def applied_twice(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
-  run b <- f(+{.0 = unit});
-  become f(b)
+  become f(f(+{.0 = unit}))
 }
 
 /// A function applied twice from truth, both results bound.

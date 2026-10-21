@@ -74,7 +74,7 @@ def shrub_nodes = thunk { nodes(shrub) } ;
 /// of its two children gains one, six nodes in all (#452).
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
 def grown_nodes : () => Nat ;
-def grown_nodes = thunk { run grown <- grow(shrub) ; nodes(grown) } ;
+def grown_nodes = thunk { nodes(grow(shrub)) } ;
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
