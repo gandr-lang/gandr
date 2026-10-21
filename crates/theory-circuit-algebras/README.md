@@ -1,6 +1,6 @@
 # gandr-theory-circuit-algebras
 
-The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a sequent command pattern, embedding-based matching with its convexity check and certificate reader, and the diagram normal form that decides when two presentations denote one diagram.
+The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a sequent command pattern, embedding-based matching with its convexity check and certificate reader, the diagram normal form that decides when two presentations denote one diagram, and the overlaps of two diagrams that are a rule system's pre-critical pairs.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -33,6 +33,7 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 - `same_diagram`, `DiagramEquality`, `SharedCanon`, `DiagramDivergence`: whether two wirings denote one diagram, with both relabellings on one arm and the first divergence on the other.
 - `Relabelling`, `Relabelling::verify`, `RelabellingDefect`, `Leg`, `PortPosition`, `PortCount`, the lookups `Relabelling::image_of_wire` and `Relabelling::image_of_generator` with their `relabelled_wire` and `relabelled_generator` absence reasons: the renumbering as a checkable isomorphism, a defect refused by its locus.
 - `CanonicalDiagram` as a map key: `Ord` and `Hash`, holding no address, stamp or session state, so presentations of one diagram land on one entry.
+- `overlaps`, `Overlap`, `OverlapShape`: every connected gluing of two diagrams along shared generators that stays inside the fragment, with its peak, where each side landed and whether one side stands inside the other — the pre-critical pairs of two rules' left-hand sides.
 
 ## Expected features
 
@@ -137,6 +138,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The spine reading | [`interface::spine`](src/interface/spine.rs) |
 | Embeddings, convexity, verdicts, certificates | [`matching`](src/matching.rs) |
 | The diagram normal form and its limits | [`normal_form`](src/normal_form.rs) |
+| Overlaps of two diagrams, the pre-critical pairs | [`overlap`](src/overlap.rs) |
 | An example of two presentations of one diagram, the crate boundary, specification attributes, references | [`src/lib.rs`](src/lib.rs) |
 
 ## License

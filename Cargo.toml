@@ -674,6 +674,7 @@ path = "crates/surface-tui"
 # - runtime-emitter
 # - runtime-stencils (dev)
 # - storage-artifact
+# - surface-dispatcher (dev)
 # - surface-lowering
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
@@ -697,10 +698,12 @@ default-features = false
 path = "crates/theory-cell-complexes-tools"
 
 # The diagram view of circuit algebras: monogamous acyclic wirings with
-# interfaces, their canonical form and the relabelling that checks it.
+# interfaces, their canonical form and the relabelling that checks it, and
+# the overlaps of two diagrams.
 # features:
 # - none: alloc-only wiring and embedding matching.
 # consumers:
+# - surface-dispatcher (dev)
 # - surface-lowering
 # - theory-sites
 [workspace.dependencies.gandr-theory-circuit-algebras]
@@ -713,6 +716,7 @@ default-features = false
 # - none: alloc-only bounded completion and replay.
 # consumers:
 # - storage-artifact (dev)
+# - surface-dispatcher (dev)
 # - surface-lowering
 # - theory-computads
 # - theory-decomposition-spaces
@@ -783,6 +787,7 @@ default-features = false
 # - core-checker (dev)
 # - core-incremental
 # - core-term
+# - surface-dispatcher (dev)
 # - surface-lowering
 # - surface-pretty (dev)
 # - theory-computads
