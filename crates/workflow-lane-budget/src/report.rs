@@ -14,6 +14,7 @@ use crate::budget::Budget;
 use crate::budget::Lane;
 use crate::budget::Seconds;
 use crate::cone::Cone;
+use crate::github::Window;
 
 /// A workflow run's identifier.
 #[repr(transparent)]
@@ -264,17 +265,71 @@ pub fn lower_median(mut samples: Vec<Seconds>) -> Maybe<Seconds, Unsampled>
         .map_or(Maybe::Absent(Unsampled::NoSuccessfulJob), Maybe::Present)
 }
 
-/// The report: the runs sampled and one row per budgeted lane.
+/// One row per budget, in the budget table's order, over `samples`, each in
+/// the cone its run touched.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one row per budget, in order, whose median is the lower median of
+///   the samples of its lane in its cone and whose count is theirs; samples of
+///   lanes without a budget are ignored.
+/// - provides: the rows of either table.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the grouping is the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a cone-classified lane sampled in both cones beside a
+///   single-budget lane, one sampled three times and one never; grouping by the
+///   lane alone, or dropping the unsampled row, changes the rendered report.
+/// - witness: `report::tests::the_report_lists_every_budget_in_order`
+/// - witness: `report::tests::a_cone_classified_lane_holds_each_cone_to_its_own_budget`
+fn rows(
+    budgets: &[Budget],
+    samples: Vec<(Cone, Sample)>,
+) -> Vec<Row>
+{
+    let mut by_lane: BTreeMap<(Lane, Cone), Vec<Seconds>> = BTreeMap::new();
+    for (cone, sample) in samples {
+        by_lane
+            .entry((sample.lane, cone))
+            .or_default()
+            .push(sample.time);
+    }
+    budgets
+        .iter()
+        .map(|budget| {
+            let times = by_lane
+                .remove(&(budget.lane.clone(), budget.cone))
+                .unwrap_or_default();
+            Row {
+                lane: budget.lane.clone(),
+                cone: budget.cone,
+                samples: SampleCount(times.len()),
+                median: lower_median(times),
+                limit: budget.limit,
+            }
+        })
+        .collect()
+}
+
+/// The report: the landing runs sampled and one row per budgeted lane, then,
+/// when a lane runs only in the daily scheduled run, the scheduled runs
+/// sampled and one row per such lane.
 ///
 /// # Specification
 /// - provides: what the nightly run prints and files.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Report
 {
-    /// The runs sampled, newest first.
+    /// The landing runs sampled, newest first.
     runs: Vec<RunId>,
     /// One row per budget, in the budget table's order.
     rows: Vec<Row>,
+    /// The scheduled runs sampled, newest first.
+    daily_runs: Vec<RunId>,
+    /// One row per daily budget, in order; empty without one.
+    daily: Vec<Row>,
 }
 
 impl Report
@@ -284,19 +339,15 @@ impl Report
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one row per budget, in order, whose median is the lower
-    ///   median of the samples of its lane in its cone and whose count is
-    ///   theirs; samples of lanes without a budget are ignored.
+    /// - ensures: the rows [`rows`] gives for `budgets` and `samples`, and no
+    ///   daily row.
     /// - provides: the report.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the grouping is the clause.
+    /// - executable: none — the construction is the clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a cone-classified lane sampled in both cones beside a
-    ///   single-budget lane, one sampled three times and one never; grouping by
-    ///   the lane alone, or dropping the unsampled row, changes the rendered
-    ///   report.
+    /// - hypothesis: L3 — as [`rows`].
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
     #[inline]
     #[must_use]
@@ -306,50 +357,78 @@ impl Report
         samples: Vec<(Cone, Sample)>,
     ) -> Self
     {
-        let mut by_lane: BTreeMap<(Lane, Cone), Vec<Seconds>> = BTreeMap::new();
-        for (cone, sample) in samples {
-            by_lane
-                .entry((sample.lane, cone))
-                .or_default()
-                .push(sample.time);
+        Self {
+            runs,
+            rows: rows(budgets, samples),
+            daily_runs: Vec::new(),
+            daily: Vec::new(),
         }
-        let rows = budgets
-            .iter()
-            .map(|budget| {
-                let times = by_lane
-                    .remove(&(budget.lane.clone(), budget.cone))
-                    .unwrap_or_default();
-                Row {
-                    lane: budget.lane.clone(),
-                    cone: budget.cone,
-                    samples: SampleCount(times.len()),
-                    median: lower_median(times),
-                    limit: budget.limit,
-                }
-            })
+    }
+
+    /// The report with the lanes only the daily scheduled run holds: each of
+    /// `budgets` summarised over `samples`, the jobs of the scheduled `runs`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the landing rows unchanged; one daily row per budget, in
+    ///   order, whose median is the lower median of the samples of its lane,
+    ///   none cone-classified, and whose count is theirs; samples of lanes
+    ///   without a daily budget are ignored.
+    /// - provides: the second table and its share of the standing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the grouping is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a daily lane over budget in the scheduled runs beside
+    ///   a landing lane whose job those runs also hold; a scheduled sample
+    ///   counted in a landing row, or a daily row left out of the standing,
+    ///   changes the report.
+    /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+    #[inline]
+    #[must_use]
+    pub fn with_daily(
+        mut self,
+        budgets: &[Budget],
+        runs: Vec<RunId>,
+        samples: Vec<Sample>,
+    ) -> Self
+    {
+        let samples = samples
+            .into_iter()
+            .map(|sample| (Cone::Surface, sample))
             .collect();
-        Self { runs, rows }
+        self.daily = rows(budgets, samples);
+        self.daily_runs = runs;
+        self
     }
 
     /// How the report stands: over when any lane is over, otherwise within.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Standing::Over`] exactly when some row is over;
-    ///   [`Standing::Within`] otherwise, unmeasured rows included.
+    /// - ensures: [`Standing::Over`] exactly when some row, landing or daily,
+    ///   is over; [`Standing::Within`] otherwise, unmeasured rows included.
     /// - provides: whether the issue is opened or closed.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause would walk every row, the body itself.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Row::standing`].
+    /// - hypothesis: L3 — as [`Row::standing`], and a daily row over beside
+    ///   landing rows within.
     /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
+    /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     #[inline]
     #[must_use]
     pub fn standing(&self) -> Standing
     {
-        if self.rows.iter().any(|row| row.standing() == Standing::Over) {
+        if self
+            .rows
+            .iter()
+            .chain(&self.daily)
+            .any(|row| row.standing() == Standing::Over)
+        {
             Standing::Over
         }
         else {
@@ -358,24 +437,84 @@ impl Report
     }
 }
 
+/// Writes `rows`, sampled over `window`, as the report's Markdown table: lane,
+/// class, median, budget, sample count and standing, the class `daily` for a
+/// row of the scheduled window.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the header, then one line per row, in order, with an unmeasured
+///   median written as `—`.
+/// - provides: either table of the report.
+/// - fails: propagates the formatter's own write failure.
+/// - panics: none.
+/// - executable: none — the formatter exposes no readable output buffer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Report::new`] and [`Report::with_daily`].
+/// - witness: `report::tests::the_report_lists_every_budget_in_order`
+/// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+fn table(
+    f: &mut fmt::Formatter<'_>,
+    rows: &[Row],
+    window: Window,
+) -> fmt::Result
+{
+    writeln!(f, "| lane | class | median | budget | jobs | standing |")?;
+    writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
+    for row in rows {
+        let median = match row.median {
+            Maybe::Present(median) => median.to_string(),
+            Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
+        };
+        let class: &dyn fmt::Display = match window {
+            Window::Landing => &row.cone,
+            Window::Scheduled => &"daily",
+        };
+        writeln!(
+            f,
+            "| {} | {class} | {median} | {} | {} | {} |",
+            row.lane,
+            row.limit,
+            row.samples,
+            row.standing()
+        )?;
+    }
+    Ok(())
+}
+
+/// The runs a table sampled, as the line after it lists them.
+///
+/// # Specification
+/// trivial.
+fn listed(runs: &[RunId]) -> String
+{
+    runs.iter()
+        .map(RunId::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 impl fmt::Display for Report
 {
     /// Writes the report as Markdown: a sentence naming the window, a table
     /// of lane, class, median, budget, sample count and standing, and the
-    /// runs.
+    /// runs; then, with a daily row, the same for the scheduled runs.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one table row per budget, in order, the class beside each
-    ///   row, and an unmeasured median written as `—`.
+    ///   row, and an unmeasured median written as `—`; the daily table only
+    ///   when a daily budget was given.
     /// - provides: the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Report::new`].
+    /// - hypothesis: L3 — as [`Report::new`] and [`Report::with_daily`].
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
+    /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
     #[inline]
     fn fmt(
         &self,
@@ -389,30 +528,19 @@ impl fmt::Display for Report
              landing touched.\n",
             self.runs.len()
         )?;
-        writeln!(f, "| lane | class | median | budget | jobs | standing |")?;
-        writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
-        for row in &self.rows {
-            let median = match row.median {
-                Maybe::Present(median) => median.to_string(),
-                Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
-            };
-            writeln!(
-                f,
-                "| {} | {} | {median} | {} | {} | {} |",
-                row.lane,
-                row.cone,
-                row.limit,
-                row.samples,
-                row.standing()
-            )?;
+        table(f, &self.rows, Window::Landing)?;
+        writeln!(f, "\nRuns: {}.", listed(&self.runs))?;
+        if self.daily.is_empty() {
+            return Ok(());
         }
-        let runs = self
-            .runs
-            .iter()
-            .map(RunId::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        writeln!(f, "\nRuns: {runs}.")
+        writeln!(
+            f,
+            "\nMedian job time over the last {} scheduled runs of `ci.yml`, for the lanes \
+             only the daily run holds.\n",
+            self.daily_runs.len()
+        )?;
+        table(f, &self.daily, Window::Scheduled)?;
+        writeln!(f, "\nRuns: {}.", listed(&self.daily_runs))
     }
 }
 
@@ -571,5 +699,52 @@ mod tests
                 .to_string()
                 .contains("| a | surface | — | 1m 40s | 0 | unmeasured |")
         );
+    }
+
+    #[test]
+    fn a_daily_lane_is_held_over_the_scheduled_runs()
+    {
+        let sample = |time: u64, lane: &str| Sample {
+            lane: Lane::from(lane),
+            time: Seconds::from(time),
+        };
+        let landing = ["check Clippy wall=300".parse::<Budget>().unwrap()];
+        let daily = ["mutate the night's crate (linux)=840"
+            .parse::<Budget>()
+            .unwrap()];
+        let report = Report::new(&landing, vec!["12".parse::<RunId>().unwrap()], vec![(
+            Cone::Surface,
+            sample(200, "check Clippy wall"),
+        )]);
+        assert_eq!(report.standing(), Standing::Within);
+        // The scheduled runs hold a Clippy job too, far over its budget; only
+        // the landing runs measure it.
+        let report = report.with_daily(
+            &daily,
+            vec!["9".parse::<RunId>().unwrap(), "8".parse().unwrap()],
+            vec![
+                sample(900, "check Clippy wall"),
+                sample(850, "mutate the night's crate (linux)"),
+                sample(900, "check Clippy wall"),
+                sample(880, "mutate the night's crate (linux)"),
+            ],
+        );
+        assert_eq!(
+            report.to_string(),
+            "Median job time over the last 1 merge-queue and pull-request runs of `ci.yml`, \
+             against the budgets in `nightly.yml`, each lane held by the cone its \
+             landing touched.\n\n\
+             | lane | class | median | budget | jobs | standing |\n\
+             | --- | --- | ---: | ---: | ---: | --- |\n\
+             | check Clippy wall | surface | 3m 20s | 5m 0s | 1 | within |\n\
+             \nRuns: 12.\n\
+             \nMedian job time over the last 2 scheduled runs of `ci.yml`, for the lanes \
+             only the daily run holds.\n\n\
+             | lane | class | median | budget | jobs | standing |\n\
+             | --- | --- | ---: | ---: | ---: | --- |\n\
+             | mutate the night's crate (linux) | daily | 14m 10s | 14m 0s | 2 | **over** |\n\
+             \nRuns: 9, 8.\n"
+        );
+        assert_eq!(report.standing(), Standing::Over);
     }
 }
