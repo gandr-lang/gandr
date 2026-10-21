@@ -84,6 +84,7 @@ use serde_json::Value;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
+use crate::fix::repairs;
 use crate::format::Scope;
 use crate::format::edits;
 use crate::goto::Goto;
@@ -3508,15 +3509,24 @@ impl Server
                     Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            Maybe::Present(document) => self.edited(
-                                workspace,
-                                Answer::Actions(actions(
+                            Maybe::Present(document) => {
+                                let mut offered = actions(
                                     &params.text_document.uri,
                                     &document.proposals,
                                     params.range,
                                     &params.context.diagnostics,
-                                )),
-                            ),
+                                );
+                                if let (Ok(grammar), Ok(forms)) = (grammar(), forms()) {
+                                    offered.extend(repairs(
+                                        (grammar, forms),
+                                        (&params.text_document.uri, document.version),
+                                        document.text.source(),
+                                        (params.range, &params.context.diagnostics),
+                                        self.editing,
+                                    ));
+                                }
+                                self.edited(workspace, Answer::Actions(offered))
+                            },
                             Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
@@ -10874,6 +10884,69 @@ mod tests
             actions.pointer("/1/isPreferred"),
             Some(&serde_json::json!(true)),
             "a fill that settles the document is preferred"
+        );
+    }
+
+    /// The recovery fixture of #1391, open in the editor, is refused for the
+    /// brace its definition never closes; the diagnostic the server judged,
+    /// sent back with a code action request, is offered the brace past
+    /// `return n + 1` as a preferred fix naming it.
+    #[test]
+    fn a_repaired_form_is_offered_its_closing()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-parser/tests/fixtures/unclosed-body.gandr");
+        let written = std::fs::read_to_string(&path).expect("the fixture is read");
+        let opened = format!(
+            r#","version":1,"text":{}}}"#,
+            serde_json::to_string(&written).expect("the text serialises")
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didOpen"), Json(&opened)),
+        ));
+        let judged = workspace
+            .documents
+            .get(&uri)
+            .map(|held| serde_json::to_value(&held.document.checked))
+            .expect("the document is held")
+            .expect("the diagnostics serialise");
+        let refusal = judged
+            .as_array()
+            .and_then(|all| {
+                all.iter().find(|diagnostic| {
+                    diagnostic.get("code") == Some(&serde_json::json!("MalformedForm"))
+                })
+            })
+            .cloned()
+            .expect("the open body is refused");
+        let end = at(Line::from(4_u32), Character::from(14_u32));
+        assert_eq!(
+            refusal.pointer("/range/start"),
+            Some(&serde_json::json!(end)),
+            "the refusal stands past the body, where #1391 placed it"
+        );
+        let actions = asked(
+            &workspace,
+            Json("textDocument/codeAction"),
+            Json(&format!(
+                r#","range":{{"start":{{"line":4,"character":14}},"end":{{"line":4,"character":14}}}},"context":{{"diagnostics":[{refusal}]}}"#
+            )),
+        );
+        assert_eq!(
+            actions,
+            serde_json::json!([{
+                "title": "Insert `}`",
+                "kind": "quickfix",
+                "diagnostics": [refusal],
+                "isPreferred": true,
+                "edit": {"changes": {"file:///tmp/shared.gandr": [
+                    {"range": {"start": end, "end": end}, "newText": " }"}
+                ]}},
+            }]),
+            "the brace the parser expects, inserted where the refusal stands"
         );
     }
 

@@ -209,6 +209,39 @@ impl AsRef<str> for Snippet
     }
 }
 
+impl Snippet
+{
+    /// The text this snippet inserts when it holds no tab stop: its literal
+    /// text, each escape read back.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none when the snippet holds an unescaped `$`; otherwise its
+    ///   text with each `\` dropped before the character it escapes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closing brace, escaped, reads back as `}`, and a
+    ///   closing with a hole reads back as none.
+    /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|plain| plain.len() <= self.0.len()))]
+    pub fn plain(&self) -> Option<String>
+    {
+        let mut plain = String::with_capacity(self.0.len());
+        let mut characters = self.0.chars();
+        while let Some(character) = characters.next() {
+            match character {
+                '\\' => plain.extend(characters.next()),
+                '$' => return None,
+                _ => plain.push(character),
+            }
+        }
+        Some(plain)
+    }
+}
+
 /// The ghost texts at a cursor, best first: never empty, at most eight.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1783,6 +1816,54 @@ impl Labeled<'_>
             ghosts.push(spell(&[Part::Hole(category)], lead, source, after));
         }
         Ghosts(ghosts)
+    }
+
+    /// The cheapest closing of the innermost form open where `before` ends in
+    /// this text, spelled as a snippet: what finishes that form there, its
+    /// holes tab stops.
+    ///
+    /// # Specification
+    /// - requires: `forms` is [`Forms::new`] of `grammar`; `before` is this
+    ///   text or its [`cut`](Self::cut) at a character boundary.
+    /// - ensures: the first [`Origin::Closing`] candidate
+    ///   [`ghost_before`](Self::ghost_before) weighs at that byte, spelled as
+    ///   [`spell`] spells it; none when no form is open there or its closing is
+    ///   wholly written after it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: [`ghost_before`](Self::ghost_before)'s molding and
+    ///   candidates, one candidate spelled.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition's missing `}` and missing `;` are each
+    ///   closed at the point the parser reports, and a closed form offers none.
+    /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    #[must_use]
+    #[spec(requires: <&str>::from(self.text).starts_with(<&str>::from(before.text)))]
+    pub fn closing(
+        &self,
+        before: &Labeled<'_>,
+        grammar: &Pbg,
+        forms: &Forms,
+    ) -> Option<Snippet>
+    {
+        let whole = <&str>::from(self.text);
+        let at = <&str>::from(before.text).len();
+        let tokens = before.labeling.tokens();
+        let source = before.text;
+        let after = SourceText::from(whole.get(at ..).unwrap_or_default());
+        let mut molder = Molder::new(grammar);
+        let mut state = MeldState::new(grammar);
+        if let Some(&form) = molder.form_runs(tokens, source).last() {
+            molder.mold_run(&mut state, tokens, form, source);
+        }
+        let written = Written::after(grammar, self, ByteOffset::from(at));
+        let menu = state.continuations(ClosingLimit::from(CLOSINGS));
+        let (found, _slot) = candidates(grammar, forms, &menu, &written);
+        found
+            .iter()
+            .find(|candidate| candidate.origin == Origin::Closing)
+            .map(|candidate| spell(&candidate.parts, lead(source, tokens), source, after))
     }
 
     /// Where the word this text ends in starts: the start of its last token
