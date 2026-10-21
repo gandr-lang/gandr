@@ -1,0 +1,153 @@
+// Allocation permutation (Sterling, Gratzer and Birkedal, _Towards univalent
+// reference types_, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19, Fig. 2): two
+// allocations commute. A structure whose parts name each other by ids into an
+// arena is built twice, its nodes allocated in two orders, so the ids of one
+// arena are a relabelling of the other's. The relabelling is a path between
+// the id types; the links and the labels carried along it are the other
+// arena's, so the two arenas are one, and a consumer that walks the links
+// reads both alike.
+
+/// The relabelling between the two allocation orders: the first two ids
+/// swap, the third stays.
+@[ checks ]
+def swapFirstTwo(i : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  case i {
+    +{.0 = u} => +{.1 = +{.0 = u}},
+    +{.1 = +{.0 = u}} => +{.0 = u},
+    +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}},
+  }
+}
+
+/// The ids to themselves along the relabelling, its own inverse.
+@[ checks ]
+def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) ;
+def relabelling = equiv(swapFirstTwo, swapFirstTwo) ;
+
+/// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
+/// each id links to the next one allocated.
+@[ checks ]
+def nextABC : Unit + (Unit + Unit) => Unit + (Unit + Unit) ;
+def nextABC = thunk {
+  fn (i) {
+    case i {
+      +{.0 = u} => +{.1 = +{.0 = u}},
+      +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
+      +{.1 = +{.1 = u}} => +{.0 = u},
+    }
+  }
+} ;
+
+/// The labels of `a`, `b` and `c`, at the ids allocated first, second and
+/// third.
+@[ checks ]
+def labelABC : Unit + (Unit + Unit) => Integer ;
+def labelABC = thunk {
+  fn (i) {
+    case i {
+      +{.0 = u} => 1,
+      +{.1 = +{.0 = u}} => 2,
+      +{.1 = +{.1 = u}} => 3,
+    }
+  }
+} ;
+
+/// The same ring with `b` allocated first, then `a`, then `c`: `b` links to
+/// the third id, `a` to the first, `c` to the second.
+@[ checks ]
+def nextBAC : Unit + (Unit + Unit) => Unit + (Unit + Unit) ;
+def nextBAC = thunk {
+  fn (i) {
+    case i {
+      +{.0 = u} => +{.1 = +{.1 = u}},
+      +{.1 = +{.0 = u}} => +{.0 = u},
+      +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}},
+    }
+  }
+} ;
+
+/// The labels of `b`, `a` and `c`, at the ids allocated first, second and
+/// third.
+@[ checks ]
+def labelBAC : Unit + (Unit + Unit) => Integer ;
+def labelBAC = thunk {
+  fn (i) {
+    case i {
+      +{.0 = u} => 2,
+      +{.1 = +{.0 = u}} => 1,
+      +{.1 = +{.1 = u}} => 3,
+    }
+  }
+} ;
+
+/// The ring allocated `a`, `b`, `c`, walked from `a`.
+@[ checks ]
+def builtABC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} ;
+def builtABC = (type(Unit + (Unit + Unit)), (+{.0 = unit}, (nextABC, labelABC))) ;
+
+/// The ring allocated `b`, `a`, `c`, walked from `a`, now the second id.
+@[ checks ]
+def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} ;
+def builtBAC = (type(Unit + (Unit + Unit)), (+{.1 = +{.0 = unit}}, (nextBAC, labelBAC))) ;
+
+/// The links carried along the relabelling are the other order's links.
+@[ checks ]
+def linksRelabelled : Path(
+  Unit + (Unit + Unit) => Unit + (Unit + Unit),
+  transport(\t. t => t, relabelling, nextABC),
+  nextBAC
+) ;
+def linksRelabelled = funext(transport(\t. t => t, relabelling, nextABC), nextBAC) ;
+
+/// The labels carried along the relabelling are the other order's labels.
+@[ checks ]
+def labelsRelabelled : Path(
+  Unit + (Unit + Unit) => Integer,
+  transport(\t. t => Integer, relabelling, labelABC),
+  labelBAC
+) ;
+def labelsRelabelled = funext(transport(\t. t => Integer, relabelling, labelABC), labelBAC) ;
+
+/// The two allocation orders build one arena: the ids along the relabelling,
+/// the start carried to `a`'s new id, and the links and labels carried to the
+/// other order's.
+@[ checks ]
+def oneArena : Path(
+  #{ids : Type, start : ids, next : ids => ids, label : ids => Integer},
+  builtABC,
+  builtBAC
+) ;
+def oneArena = (relabelling, (here(+{.1 = +{.0 = unit}}), (linksRelabelled, labelsRelabelled))) ;
+
+/// A consumer of any arena: the label two links on from the start.
+@[ checks ]
+def walk(r : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer}) -> -F Integer {
+  case r {
+    #{.start = s, .next = n, .label = l} => {
+      run once <- n(s);
+      run twice <- n(once);
+      l(twice)
+    }
+  }
+}
+
+/// The consumer walks the first order to `c`.
+@[ runs("3") ]
+def walkedABC : () => Integer ;
+def walkedABC = thunk { become walk(builtABC) } ;
+
+/// The consumer walks the second order to `c` alike.
+@[ runs("3") ]
+def walkedBAC : () => Integer ;
+def walkedBAC = thunk { become walk(builtBAC) } ;
+
+/// The consumer reads both orders alike by construction, along the path
+/// between the arenas.
+@[ checks ]
+def walkedAlike : () => Path(Integer, walk(builtABC), walk(builtBAC)) ;
+def walkedAlike = thunk { become cong(walk, oneArena) } ;
+
+/// The labels left at their ids are not the other order's: an id names a
+/// node only within its arena.
+@[ refuses("PointwiseDistinct") ]
+def labelsUnrelabelled : Path(Unit + (Unit + Unit) => Integer, labelABC, labelBAC) ;
+def labelsUnrelabelled = funext(labelABC, labelBAC) ;
