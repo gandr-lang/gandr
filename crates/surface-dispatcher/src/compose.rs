@@ -1275,9 +1275,11 @@ pub fn lower_unit_source<'source>(
 /// As [`lower_parsed`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every witness of [`lower_parsed`] lowers through here.
+/// - hypothesis: L3 — every witness of [`lower_parsed`] lowers through here; a
+///   tree parsed under another grammar is an engine fault.
 /// - witness: `compose::tests::each_composition_lowers_once`
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `compose::tests::a_tree_of_another_grammar_faults_every_lowering_route`
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -1377,8 +1379,11 @@ pub fn lower_closure(
 /// # Adequacy
 /// - hypothesis: L3 — a document resumed twice on one closure lowers each time
 ///   to the module and arena the whole unit lowers to, counted by its own
-///   source.
+///   source; a tree of another grammar is an engine fault, and a document the
+///   lowering refuses whole is carried as refused.
 /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
+/// - witness: `compose::tests::a_tree_of_another_grammar_faults_every_lowering_route`
+/// - witness: `compose::tests::a_refused_source_is_carried_on_every_resumed_route`
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -1743,8 +1748,11 @@ pub enum Checking<'closure>
 /// # Adequacy
 /// - hypothesis: L3 — a document lowered after a judged closure twice, and
 ///   another document after it, lowers alike each time and is counted by its
-///   own source.
+///   own source; a tree of another grammar is an engine fault, and a document
+///   the lowering refuses whole is carried as refused.
 /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+/// - witness: `compose::tests::a_tree_of_another_grammar_faults_every_lowering_route`
+/// - witness: `compose::tests::a_refused_source_is_carried_on_every_resumed_route`
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
@@ -2038,11 +2046,16 @@ struct Share<'source>
 ///   own declarations at each source, and a unit of one source reports all of
 ///   its own; a subject whose importers share their base's component is spelled
 ///   once per component; a match leaving an arm to a pattern hole, beside one
-///   whose arm body is a hole, separates the pattern hole from the term hole.
+///   whose arm body is a hole, separates the pattern hole from the term hole. A
+///   closure judged under another grant or entry is not continued: the document
+///   is judged whole and reports its own declarations alone, and each source of
+///   a component reports its own share.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
 /// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
+/// - witness: `compose::tests::a_closure_judged_otherwise_is_not_continued`
+/// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 #[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
 fn judge_members<'source>(
     root: CorpusRoot,
@@ -2198,8 +2211,10 @@ struct Unitwide<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an importer reports its own declarations, its sibling's
-///   obligations left to the sibling.
+///   obligations left to the sibling; each source of a component, separated by
+///   one line, reports exactly the declarations written in it.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 #[spec(ensures: |ref ret| ret.declarations().iter().all(|declaration| member.start <= declaration.span().start() && declaration.span().start() <= member.end))]
 fn owned<'source>(
     report: &SettleReport<'source>,
@@ -2252,6 +2267,7 @@ fn owned<'source>(
 /// - hypothesis: L3 — as [`judge_members`].
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+/// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 #[spec(ensures: |ref ret| ret.shadowed.iter().all(|shadow| member.start <= shadow.span.start() && shadow.span.start() <= member.end)
     && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end)
     && ret.unused.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
@@ -5081,6 +5097,439 @@ def h = 1 ;"#,
             ["14:n"],
             "`tick` leaves its parameter unused; the capability `handled` handles is no lambda's \
              or bind's, and every other binder is used"
+        );
+    }
+
+    /// A unit of one source, starting at the text's first byte.
+    ///
+    /// # Specification
+    /// trivial.
+    fn alone() -> gandr_surface_lowering::Unit
+    {
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+        use gandr_surface_syntax::ByteOffset;
+
+        Unit::new(vec![UnitSource::new(ByteOffset::from(0_usize), Vec::new())])
+            .expect("one source makes a unit")
+    }
+
+    /// A unit of two sources, the second starting at `base` and importing
+    /// nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pair(base: gandr_surface_syntax::ByteOffset) -> gandr_surface_lowering::Unit
+    {
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+        use gandr_surface_syntax::ByteOffset;
+
+        Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, Vec::new()),
+        ])
+        .expect("two sources make a unit")
+    }
+
+    /// The built-in grammar with one more rule, a form no source writes: a
+    /// grammar of another fingerprint, so a tree molded under it is refused
+    /// under the built-in one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn another_grammar() -> Pbg
+    {
+        use gandr_surface_grammar::PrecName;
+        use gandr_surface_grammar::Provenance;
+        use gandr_surface_grammar::Regex;
+        use gandr_surface_grammar::Rule;
+        use gandr_surface_grammar::RuleName;
+        use gandr_surface_grammar::Sort;
+        use gandr_surface_grammar::TileLabel;
+        use gandr_surface_grammar::built_in_prec_table;
+
+        let precs = built_in_prec_table().expect("the band table builds");
+        let prec = precs
+            .prec(PrecName("expression.atom"))
+            .expect("the band is built in");
+        let mut rules = grammar().rules().to_vec();
+        rules.push(Rule::with_provenance(
+            RuleName("escape_sequence"),
+            Provenance("escape_sequence"),
+            Sort::Expression,
+            prec,
+            Regex::tile(TileLabel("escape_sequence")),
+        ));
+        Pbg::build_table(precs, rules).expect("the grammar builds")
+    }
+
+    /// A tree molded under another grammar is the engine's fault on every
+    /// lowering route — a unit lowered whole, a document resumed on a closure,
+    /// and one lowered onto a judged closure — raised, never carried as the
+    /// source's own refusal.
+    #[test]
+    fn a_tree_of_another_grammar_faults_every_lowering_route()
+    {
+        use alloc::string::String;
+        use alloc::sync::Arc;
+
+        use super::JudgedClosure;
+        use super::lower_closure;
+        use super::lower_onto_closure;
+        use super::lower_parsed_unit;
+        use super::lower_resumed_unit;
+
+        let ours = grammar();
+        let theirs = another_grammar();
+        assert_ne!(
+            ours.fingerprint(),
+            theirs.fingerprint(),
+            "the grammars differ"
+        );
+        let foreign = || {
+            parse(&theirs, SourceText::from("def one = 1 ;\n"))
+                .expect("the source parses under the other grammar")
+        };
+        let engine = |fault: Option<ComposeFault<'_>>| {
+            matches!(fault, Some(ComposeFault::Lowering(refusal))
+                if refusal.classify() == FailureClass::EngineFault)
+        };
+        let mut lowerings = LoweringCount::default();
+        assert!(
+            engine(lower_parsed_unit(&ours, foreign(), &alone(), &mut lowerings).err()),
+            "lowered whole"
+        );
+        let closure = Arc::new(
+            lower_closure(
+                Arc::new(grammar()),
+                String::from("def zero = 0 ;\n"),
+                alone(),
+                &mut lowerings,
+            )
+            .expect("the closure is held"),
+        );
+        assert!(
+            engine(lower_resumed_unit(&closure, foreign(), &alone(), &mut lowerings).err()),
+            "resumed on a closure, which lowers a tree it does not extend whole"
+        );
+        let judged = JudgedClosure::new(closure, &HostGrant::UNBOUNDED, CorpusRoot::Fixture)
+            .expect("the closure lowers to its end");
+        assert!(
+            engine(
+                lower_onto_closure(&judged, judged.arena(), foreign(), &alone(), &mut lowerings)
+                    .err()
+            ),
+            "onto a judged closure, which leaves a tree it does not extend whole"
+        );
+    }
+
+    /// A source the lowering refuses whole, as the author's and not the
+    /// engine's, is carried as a refused lowering on every route that resumes
+    /// a closure: resumed alone, left whole by a judged closure, and laid
+    /// after a judged closure's own tree.
+    #[test]
+    fn a_refused_source_is_carried_on_every_resumed_route()
+    {
+        use alloc::string::String;
+        use alloc::sync::Arc;
+
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::JudgedClosure;
+        use super::lower_closure;
+        use super::lower_onto_closure;
+        use super::lower_resumed_unit;
+
+        let ours = grammar();
+        let own = SourceText::from("pure greeting");
+        let refused = |lowered: &Lowered<'_>| {
+            matches!(*lowered, Lowered::Refused(refusal)
+                if refusal.classify() != FailureClass::EngineFault)
+        };
+        let mut lowerings = LoweringCount::default();
+        let closure_text = "def zero = 0 ;\n";
+        let closure = Arc::new(
+            lower_closure(
+                Arc::new(grammar()),
+                String::from(closure_text),
+                alone(),
+                &mut lowerings,
+            )
+            .expect("the closure is held"),
+        );
+        let alone_parsed = || parse(&ours, own).expect("the source parses");
+        let resumed = lower_resumed_unit(&closure, alone_parsed(), &alone(), &mut lowerings)
+            .expect("a refusal is no fault")
+            .into_lowered();
+        assert!(refused(&resumed), "resumed alone: {resumed:?}");
+        let judged = JudgedClosure::new(
+            Arc::clone(&closure),
+            &HostGrant::UNBOUNDED,
+            CorpusRoot::Fixture,
+        )
+        .expect("the closure lowers to its end");
+        let (whole, checking) = lower_onto_closure(
+            &judged,
+            judged.arena(),
+            alone_parsed(),
+            &alone(),
+            &mut lowerings,
+        )
+        .expect("a refusal is no fault");
+        let whole = whole.into_lowered();
+        assert!(
+            refused(&whole) && matches!(checking, Checking::Whole),
+            "left whole by the judged closure: {whole:?}"
+        );
+        let text = format!("{closure_text}{}", <&str>::from(own));
+        let laid = parse(&ours, own)
+            .expect("the source parses")
+            .after(closure.tree(), SourceText::from(text.as_str()))
+            .expect("the source lays after the closure");
+        let (after, checking) = lower_onto_closure(
+            &judged,
+            judged.arena(),
+            laid,
+            &pair(ByteOffset::from(closure_text.len())),
+            &mut lowerings,
+        )
+        .expect("a refusal is no fault");
+        let after = after.into_lowered();
+        assert!(
+            refused(&after) && matches!(checking, Checking::Whole),
+            "laid after the judged closure: {after:?}"
+        );
+    }
+
+    /// A document is judged on its closure's state only where the closure was
+    /// judged as the document is: a closure judged under another grant, or
+    /// entering at another entry, is not continued, and the document answers
+    /// what judging it whole answers — of its own declarations alone.
+    #[test]
+    fn a_closure_judged_otherwise_is_not_continued()
+    {
+        use alloc::string::String;
+        use alloc::sync::Arc;
+
+        use gandr_core_term::effect::OperationName;
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::Judged;
+        use super::JudgedClosure;
+        use super::judge_member_after;
+        use super::lower_closure;
+        use super::lower_onto_closure;
+        use super::lower_parsed_unit;
+
+        /// The name and outcome of each declaration `judged` reports.
+        ///
+        /// # Specification
+        /// trivial.
+        fn outcomes(judged: Judged<'_>) -> Vec<(String, Outcome)>
+        {
+            let Ok(Composed::Settled { report, .. }) = judged.settled
+            else {
+                panic!("the document settles");
+            };
+            report
+                .declarations()
+                .iter()
+                .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+                .collect()
+        }
+
+        /// What the document `own`, laid after `closure_text`, reports judged
+        /// under `grant`: after the closure judged under `closure_grant`, and
+        /// whole.
+        ///
+        /// # Specification
+        /// trivial.
+        fn judged(
+            (closure_text, own): (SourceText<'_>, SourceText<'_>),
+            (closure_grant, grant): (&HostGrant, &HostGrant),
+        ) -> [Vec<(String, Outcome)>; 2]
+        {
+            let grammar = grammar();
+            let mut lowerings = LoweringCount::default();
+            let closure = Arc::new(
+                lower_closure(
+                    Arc::new(grammar.clone()),
+                    String::from(<&str>::from(closure_text)),
+                    alone(),
+                    &mut lowerings,
+                )
+                .expect("the closure is held"),
+            );
+            let held = JudgedClosure::new(Arc::clone(&closure), closure_grant, CorpusRoot::Fixture)
+                .expect("the closure lowers to its end");
+            let text = format!("{}{}", <&str>::from(closure_text), <&str>::from(own));
+            let text = SourceText::from(text.as_str());
+            let base = ByteOffset::from(<&str>::from(closure_text).len());
+            let unit = pair(base);
+            let laid = parse(&grammar, own)
+                .expect("the document parses")
+                .after(closure.tree(), text)
+                .expect("the document lays after its closure");
+            let (lowering, checking) =
+                lower_onto_closure(&held, held.arena(), laid, &unit, &mut lowerings)
+                    .expect("the document lowers");
+            assert!(
+                matches!(checking, Checking::After(_)),
+                "the document is lowered after the closure"
+            );
+            let Lowered::Module { module, arena } = lowering.into_lowered()
+            else {
+                panic!("the document is not refused whole");
+            };
+            let after = judge_member_after(
+                CorpusRoot::Fixture,
+                (module, text),
+                arena,
+                (grant, checking),
+                base,
+            );
+            let Lowered::Module { module, arena } = lower_parsed_unit(
+                &grammar,
+                parse(&grammar, text).expect("the unit parses"),
+                &unit,
+                &mut lowerings,
+            )
+            .expect("the unit lowers")
+            .into_lowered()
+            else {
+                panic!("the unit is not refused whole");
+            };
+            let whole = judge_member_after(
+                CorpusRoot::Fixture,
+                (module, text),
+                arena,
+                (grant, Checking::Whole),
+                base,
+            );
+            [outcomes(after), outcomes(whole)]
+        }
+
+        let reading =
+            HostGrant::within([&OperationName::from("read")]).expect("the host offers `read`");
+        let [after, whole] = judged(
+            (
+                SourceText::from("def zero = 0 ;\n"),
+                SourceText::from("def fs : Cap {read, write} ;\n"),
+            ),
+            (&HostGrant::UNBOUNDED, &reading),
+        );
+        assert_eq!(
+            after, whole,
+            "after a closure granted otherwise, the document is judged whole"
+        );
+        assert!(
+            matches!(whole.as_slice(), [(name, outcome)]
+                if name == "fs" && *outcome != Outcome::Checks(ObligationCount::from(1_usize))),
+            "a capability beyond the grant is not owed, and the closure's own declaration is not \
+             reported: {whole:?}"
+        );
+
+        let [operator, seat] = ["operator", "seat"].map(WorldName::from);
+        let entering = HostGrant::UNBOUNDED.entering(vec![operator, seat]);
+        let [after, whole] = judged(
+            (
+                SourceText::from("def zero = 0 ;\n"),
+                SourceText::from(
+                    "world operator ;\nworld seat ;\ndef moved() -> -F Integer { migrate [seat] { \
+                     pure 1 } }\n",
+                ),
+            ),
+            (&entering, &entering),
+        );
+        assert_eq!(
+            after, whole,
+            "after a closure that enters at another entry, the document is judged whole"
+        );
+        assert_eq!(
+            whole.last().map(|&(_, ref outcome)| outcome.clone()),
+            Some(Outcome::Checks(ObligationCount::from(0_usize))),
+            "the document's own worlds hold the entry's capability"
+        );
+    }
+
+    /// Each source of a component judged once reports its own declarations,
+    /// the obligations they owe and the builtins they shadow, and none of its
+    /// neighbour's.
+    #[test]
+    fn each_source_of_a_component_reports_its_own_share()
+    {
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::SpellingCount;
+        use super::judge_component;
+        use super::lower_parsed_unit;
+        use crate::component::Member;
+
+        let grammar = grammar();
+        let first = "def one : Integer ;";
+        let second = "def two : Integer ;\ndef three : Integer ;\ndef add = 1 ;";
+        // A component joins its sources with a newline, as the walk lays them.
+        let text = format!("{first}\n{second}");
+        let base = ByteOffset::from(first.len().saturating_add(1_usize));
+        let members = [
+            Member {
+                start: ByteOffset::from(0_usize),
+                end: ByteOffset::from(first.len()),
+            },
+            Member {
+                start: base,
+                end: ByteOffset::from(text.len()),
+            },
+        ];
+        let lowering = lower_parsed_unit(
+            &grammar,
+            parse(&grammar, SourceText::from(text.as_str())).expect("the component parses"),
+            &pair(base),
+            &mut LoweringCount::default(),
+        )
+        .expect("the component lowers");
+        let shares: Vec<(Vec<String>, usize, usize)> = judge_component(
+            CorpusRoot::Fixture,
+            (lowering, SourceText::from(text.as_str())),
+            &HostGrant::UNBOUNDED,
+            &members,
+            &mut SpellingCount::default(),
+        )
+        .into_iter()
+        .map(|composed| match composed {
+            Ok(Composed::Settled {
+                report, shadowed, ..
+            }) => (
+                report
+                    .declarations()
+                    .iter()
+                    .map(|declaration| declaration.name().to_string())
+                    .collect(),
+                usize::from(report.ledger()),
+                shadowed.len(),
+            ),
+            Ok(Composed::Refused(refusal)) => panic!("refused whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
+        })
+        .collect();
+        assert_eq!(
+            shares,
+            [
+                (Vec::from([String::from("one")]), 1_usize, 0_usize),
+                (
+                    Vec::from([
+                        String::from("two"),
+                        String::from("three"),
+                        String::from("add")
+                    ]),
+                    2_usize,
+                    1_usize
+                ),
+            ],
+            "each source reports its own declarations, debts and shadowed builtins"
         );
     }
 }

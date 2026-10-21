@@ -1009,9 +1009,14 @@ impl TypeTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`of_unit`](Self::of_unit) and
-    ///   [`of_parsed_after`](Self::of_parsed_after).
+    ///   [`of_parsed_after`](Self::of_parsed_after); a constructor's stated
+    ///   index answers under its frame and a function between two frames under
+    ///   its own binders; a term after a declaration refused as shadowing still
+    ///   answers.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_document_typed_after_its_closure_types_as_one_typed_whole_776`
+    /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
+    /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
     fn typed(
         source: SourceText<'_>,
         lowering: Lowering<'_>,
@@ -2157,8 +2162,9 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — an unknown term name and an unknown type head are
     ///   each kept at their own spelling, and a declaration that resolves keeps
-    ///   nothing.
+    ///   nothing; an unknown name beside a form refused as shadowing is kept.
     /// - witness: `typed::tests::a_name_nothing_declares_is_kept_where_it_is_written`
+    /// - witness: `typed::tests::a_name_nothing_declares_is_kept_beside_a_form_refused_as_shadowing`
     #[spec(ensures: |ret| ret.is_sorted())]
     #[inline]
     #[must_use]
@@ -2803,12 +2809,14 @@ impl TypeTable
     /// - hypothesis: L3 — a data type, a thunked function type in its sugared
     ///   spelling, a universe, a computation type and a declaration read back
     ///   equal; a term typed under parameters and a bind, one of them a binder
-    ///   the type does not name, reads back equal under them; a type of a
-    ///   source that imports a sibling reads back beside it; and the corpus
-    ///   census reads back every printed type of every source, failing on a
-    ///   class the findings do not pin.
+    ///   the type does not name, reads back equal under them; a term whose two
+    ///   types disagree reads back at both; a type of a source that imports a
+    ///   sibling reads back beside it; and the corpus census reads back every
+    ///   printed type of every source, failing on a class the findings do not
+    ///   pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
+    /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -3542,15 +3550,16 @@ quenchant_shape::reason_enum! {
 ///   settled and in one it refused, and a constructor pattern on a staged
 ///   scrutinee, are asserted at their types; and a record pattern inside a
 ///   dependent pair's second component, at its type under the first; a
-///   constructor pattern's name refers to the constructor it names; a match on
-///   a comparison written as its scrutinee types its patterns at what the
-///   comparison returns.
+///   constructor pattern's name refers to the constructor it names, over the
+///   name's own bytes; a match on a comparison written as its scrutinee types
+///   its patterns at what the comparison returns.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 /// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
 /// - witness: `typed::tests::a_use_refers_to_its_binder_and_its_declaration_795`
 /// - witness: `typed::tests::a_pattern_on_a_computed_scrutinee_answers_1141`
+/// - witness: `typed::tests::a_name_ends_where_it_is_written`
 #[spec(ensures: |ret| ret.iter().all(|&(_, ty, _, _)| arena.value_type(ty).is_some()))]
 fn matched(
     module: &LoweredModule<'_>,
@@ -4706,6 +4715,44 @@ mod tests
         );
     }
 
+    /// A name nothing declares is kept between two declarations refused as
+    /// shadowing an import: only a refused form's own bytes are set aside,
+    /// not those before or after it.
+    #[test]
+    fn a_name_nothing_declares_is_kept_beside_a_form_refused_as_shadowing()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = "data Point : Type {\n  Here : Point;\n}\ndata Spot : Type {\n  There : \
+                       Spot;\n}";
+        let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
+                        a : Integer ;\ndef a = nope ;\ndata Spot : Type {\n  There : Spot;\n}";
+        let laid = format!("{sibling}\n{importer}");
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let spelled: Vec<&str> = table
+            .unresolved()
+            .iter()
+            .filter_map(|span| importer.get(usize::from(span.start()) .. usize::from(span.end())))
+            .collect();
+        assert_eq!(
+            spelled,
+            ["nope"],
+            "the unknown name between the refused forms is kept: {:?}",
+            table.unresolved()
+        );
+    }
+
     /// #831: the binders in scope at an offset of the source's own text are
     /// spelled from that text, the declaration being typed refused, and each
     /// is placed where that text writes its name.
@@ -4864,6 +4911,7 @@ mod tests
         use gandr_surface_lowering::UnitSource;
         use gandr_surface_pretty::Name;
 
+        use super::reprinted;
         use super::signed;
 
         let sibling = "data Point : Type {\n  Here : Point;\n}";
@@ -4887,6 +4935,15 @@ mod tests
             ),
             Maybe::Present(String::from("Here")),
             "the sibling's constructor reads back as written"
+        );
+        assert_eq!(
+            table.reprint_value(
+                &grammar,
+                Maybe::Absent(signed::Absent::Unsigned),
+                SourceText::from("nope")
+            ),
+            Maybe::Absent(reprinted::Absent::Unlowered),
+            "an unsigned value the lowering refuses has no signature to run under"
         );
         assert_eq!(
             table.reprint_value(
@@ -5860,6 +5917,16 @@ mod tests
             "no site of the refused declaration answers: {:?}",
             table.entries
         );
+        let at =
+            |needle: &str| ByteOffset::from(importer.find(needle).expect("the needle is written"));
+        assert!(
+            matches!(table.referent(at("Here ;")), Maybe::Present(_)),
+            "a name after the refused declaration still refers"
+        );
+        assert!(
+            matches!(table.referent(at("Point;")), Maybe::Absent(_)),
+            "a name inside the refused declaration refers to nothing"
+        );
         let trips: Vec<(String, RoundTrip)> = table
             .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
             .into_iter()
@@ -6309,6 +6376,208 @@ mod tests
             read(&after),
             read(&whole),
             "every printed type reads back alike"
+        );
+    }
+
+    /// A term checked against a type spelled otherwise than its own reads
+    /// back at both: its own, and the one it was checked against.
+    #[test]
+    fn a_mismatched_term_reads_back_at_both_its_types()
+    {
+        use super::ReadSite;
+
+        let source = SourceText::from("def answer : Integer ; def answer = unit ;");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = table(source);
+        let at = <&str>::from(source)
+            .find("unit ;")
+            .expect("the term is written");
+        let sides: Vec<(ReadSite, String)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Explicit.into())
+            .into_iter()
+            .filter(|back| {
+                matches!(back.site, ReadSite::Own(span) | ReadSite::CheckedAgainst(span)
+                    if usize::from(span.start()) == at)
+            })
+            .map(|back| (back.site, back.spelled))
+            .collect();
+        assert!(
+            matches!(sides.as_slice(), [(ReadSite::Own(_), own), (ReadSite::CheckedAgainst(_), against)]
+                if against == "Integer" && own != against),
+            "the term reads back at its own type, then at the type it was checked against: \
+             {sides:?}"
+        );
+    }
+
+    /// Where a code is written as a type, a reader pointing at it means the
+    /// type it decodes to, not the code: the decode answers before the code's
+    /// own term of the same width.
+    #[test]
+    fn a_written_code_answers_as_the_type_it_decodes()
+    {
+        let source = SourceText::from(include_str!(
+            "../../surface-corpus/fixture/pathological/universe/closed.gandr"
+        ));
+        let table = table(source);
+        assert!(
+            matches!(
+                answer(&table, source, SourceText::from("el(c)) -> -F")),
+                Maybe::Present(Answer {
+                    subject: Subject::Type,
+                    ..
+                })
+            ),
+            "the decode of `el(c)` answers, a type"
+        );
+    }
+
+    /// A name holds the bytes it is written over and not the byte after it:
+    /// a declaring name and a use each end where the name does, and the byte
+    /// after a use answers what encloses it.
+    #[test]
+    fn a_name_ends_where_it_is_written()
+    {
+        let source = SourceText::from(REFERRED);
+        let table = table(source);
+        let start = |needle: &str| REFERRED.find(needle).expect("the needle is written");
+        let declared = start("plus(");
+        let used = start("n, p)");
+        assert!(
+            matches!(
+                table.named_at(ByteOffset::from(declared)),
+                Maybe::Present(_)
+            ),
+            "a declaring name holds its first byte"
+        );
+        assert!(
+            matches!(
+                table.named_at(ByteOffset::from(declared.saturating_add(4_usize))),
+                Maybe::Absent(_)
+            ),
+            "the byte after a declaring name is not the name's"
+        );
+        let own = |offset: usize| match table.referent(ByteOffset::from(offset)) {
+            Maybe::Present((span, _)) => Some(span),
+            Maybe::Absent(_) => None,
+        };
+        assert_eq!(
+            own(used).map(|span| usize::from(span.start())),
+            Some(used),
+            "a use holds its first byte"
+        );
+        assert!(
+            own(used.saturating_add(1_usize)).is_some_and(|span| usize::from(span.start()) < used),
+            "the byte after a use answers the application around it, not the use"
+        );
+        let pattern = start("Succ(p) =>");
+        assert_eq!(
+            own(pattern).map(|span| (usize::from(span.start()), usize::from(span.end()))),
+            Some((pattern, pattern.saturating_add(4_usize))),
+            "a constructor pattern's name refers over its name, not the whole pattern"
+        );
+    }
+
+    /// A recursive declaration's call refers to the name it calls over the
+    /// whole call head, its measure `[<]` included: the declaration binds its
+    /// own name, and the head is that binder's written use.
+    #[test]
+    fn a_recursive_call_s_head_refers_to_the_name_it_calls()
+    {
+        let text = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef rec \
+                    down(n : Nat) -> -F Nat {\n  case n {\n    Zero => return n,\n    Succ(p) \
+                    => become down[<](p)\n  }\n}\n";
+        let table = table(SourceText::from(text));
+        let declared = text.find("down(").expect("the name is declared");
+        let measure = text.find("[<]").expect("the call is written");
+        assert_eq!(
+            match table.referent(ByteOffset::from(measure)) {
+                Maybe::Present((_, referent)) => Some(usize::from(referent.named().start())),
+                Maybe::Absent(_) => None,
+            },
+            Some(declared),
+            "the call's measure is part of the head that refers to the name it calls"
+        );
+    }
+
+    /// #677: a term after a declaration refused for binding again a name an
+    /// unqualified import binds still answers; only the refused form's own
+    /// sites are set aside.
+    #[test]
+    fn a_term_after_a_declaration_refused_as_shadowing_still_answers_677()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let importer =
+            "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef two = 2 ;";
+        let laid = format!("{sibling}\n{importer}");
+        let base = ByteOffset::from(sibling.len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let two = importer.find("2 ;").expect("the term is written");
+        assert!(
+            matches!(
+                table.at(
+                    ByteOffset::from(two),
+                    PageWidth::from(80_u32),
+                    Form::Sugared.into()
+                ),
+                Maybe::Present(_)
+            ),
+            "the term after the refused declaration answers: {:?}",
+            table.entries
+        );
+    }
+
+    /// #931: a constructor's stated index is read under the family's
+    /// parameters and the constructor's fields, and nothing outside it is: a
+    /// function written after one stated index and before another answers
+    /// under the function's own binders.
+    #[test]
+    fn only_a_stated_index_answers_under_its_frame_931()
+    {
+        let source = SourceText::from(
+            "data Nat : Type { Z : Nat; S : (n : Nat) --> Nat; }\ndata Vec(a : Type) : Nat -> \
+             Type { Nil : Vec(a, Z); Cons : (n : Nat, x : a, xs : Vec(a, n)) --> Vec(a, S(n)); \
+             }\ndef g(k : Nat, v : Vec(Nat, k)) -> -F Vec(Nat, k) { return v }\ndata Fin : Nat \
+             -> Type { FZ : (m : Nat) --> Fin(S(m)); }\n",
+        );
+        let table = table(source);
+        assert_eq!(
+            answer(&table, source, SourceText::from("v }")),
+            agreed(Subject::Term, SourceText::from("Vec(Nat, k)")),
+            "the use answers under its function's binders"
+        );
+    }
+
+    /// A rules block's oriented rules each note the direction the order
+    /// chose, at the rule's own bytes.
+    #[test]
+    fn each_oriented_rule_notes_its_direction()
+    {
+        let text = "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  P : (x : Int) --> \
+                    Int;\n  rule S(P(x)) ==> x;\n  rule P(S(x)) ==> x;\n}\n";
+        let table = table(SourceText::from(text));
+        let noted: Vec<&str> = table
+            .orientations()
+            .iter()
+            .map(|&(span, _)| {
+                text.get(usize::from(span.start()) .. usize::from(span.end()))
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert!(
+            noted.len() == 2_usize && noted.iter().all(|rule| rule.contains("==>")),
+            "each rule notes its direction at its own bytes: {noted:?}"
         );
     }
 }
