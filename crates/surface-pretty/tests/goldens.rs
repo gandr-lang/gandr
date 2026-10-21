@@ -4356,6 +4356,82 @@ fn a_continuation_is_resumed_by_its_call_941()
     );
 }
 
+/// A `return` a handled subject writes lowers to a shift that never resumes
+/// the stack it captures, inside the reset that delimits the body; it prints
+/// as written, `return v`, the reset unwritten, in a loop's pass as at a
+/// body's end. A shift naming the stack it captures, or one no reset
+/// delimits, keeps the printer's notation (#941).
+#[test]
+fn a_return_leaving_a_handler_prints_as_written_941()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "exit".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    // `handle a : Proc { … } with { pure(a) => a }` over `subject`.
+    let scoped = |core: &mut CoreArena, subject| {
+        let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let on_return = core.computation_return(answer);
+        core.computation_scope(signature.clone(), subject, on_return, Arc::from([]))
+    };
+    let returning = |core: &mut CoreArena, value| {
+        let returned = core.computation_return(value);
+        core.computation_shift(returned)
+    };
+    let nothing = core.value_unit();
+    let shifted = returning(&mut core, nothing);
+    let handled = scoped(&mut core, shifted);
+    let left = core.computation_reset(handled);
+    let stack = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let shifted = returning(&mut core, stack);
+    let handled = scoped(&mut core, shifted);
+    let naming = core.computation_reset(handled);
+    let shifted = returning(&mut core, nothing);
+    let undelimited = scoped(&mut core, shifted);
+    let shifted = returning(&mut core, nothing);
+    let looped = core.computation_fixpoint(shifted, gandr_kernel_term::FixpointEvidence::Partial);
+    let handled = scoped(&mut core, looped);
+    let looped_out = core.computation_reset(handled);
+    let source = CoreSource::new(&core, &[]);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(left)),
+        faithful(Written(
+            "handle a : Proc { return unit } with { pure(a) => a }"
+        )),
+        "a shift over a returner in a subject the reset delimits is `return`"
+    );
+    assert_eq!(
+        spelled(&source, body(looped_out)),
+        faithful(Written(
+            "handle a : Proc { loop { return unit } } with { pure(a) => a }"
+        )),
+        "a `return` ending a loop's pass in a subject leaves the handler"
+    );
+    assert_eq!(
+        spelled(&source, body(naming)),
+        approximate(Written(
+            "handle a : Proc { return b } with { pure(a) => a }"
+        )),
+        "a shift naming the stack it captures names the unwritten binder"
+    );
+    assert_eq!(
+        spelled(&source, body(undelimited)),
+        approximate(Written(
+            "handle a : Proc { shift b { unit } } with { pure(a) => a }"
+        )),
+        "a shift no reset delimits keeps the notation"
+    );
+}
+
 /// A fixpoint where a body ends prints as the loop it lowered from: its
 /// own binder forced at the end of a pass is `continue`, a returner there
 /// `break(v)` where the loop ends the body and `return v` where a rest

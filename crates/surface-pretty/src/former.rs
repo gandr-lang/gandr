@@ -1010,9 +1010,13 @@ pub enum Notation
     /// passes ends in a computation the surface cannot write there or names a
     /// binder the loop leaves unwritten.
     Fixpoint,
-    /// A delimited-control reset, written `reset { … }`.
+    /// A delimited-control reset where no body ends, written `reset { … }`;
+    /// one where a body ends delimits the `return`s its handled subjects
+    /// write and goes unwritten.
     Reset,
-    /// A delimited-control shift, written `shift k { … }`.
+    /// A delimited-control shift no `return` reads as, written
+    /// `shift k { … }`: one outside every handler subject of a body a reset
+    /// delimits, or one over anything but a returner.
     Shift,
     /// A projection out of a computation pair, written `c.0` or `c.1`.
     Projection,

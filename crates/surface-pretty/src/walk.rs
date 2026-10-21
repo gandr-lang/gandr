@@ -3260,6 +3260,9 @@ enum Task<Node>
     /// Enter (`true`) or leave (`false`) a handler's subject, where an exit
     /// leaves the handler.
     Handled(bool),
+    /// Enter (`true`) or leave (`false`) the body a reset delimits, where a
+    /// `return` a handler's subject writes is a shift.
+    Unwound(bool),
     /// Close the innermost binder.
     Unbind,
     /// Set the occurrences named so far aside, so the argument visited next
@@ -3851,6 +3854,8 @@ struct Walk<'walk, 'names>
     loops: Vec<Looping>,
     /// How many handler subjects the walk is inside.
     subjects: usize,
+    /// How many bodies a reset delimits the walk is inside.
+    unwinds: usize,
     /// The occurrences set aside by each [`Task::Hold`] whose argument has not
     /// yet been bound, the outermost first.
     held: Vec<BTreeSet<OpenBinders>>,
@@ -4383,8 +4388,9 @@ impl Walk<'_, '_>
     ///   variable whose open binder holds a threading loop's one slot, or the
     ///   tuple of the linear variables whose open binders hold its slots, in
     ///   order; [`PassEnd::Written`] for a loop [`looped`] reads there, a bind,
-    ///   a case of any kind, a returner ending a loop no rest follows, and
-    ///   outside every handler subject a returner and any other call;
+    ///   a case of any kind, a returner ending a loop no rest follows, inside a
+    ///   handler subject of a body a reset delimits a shift over a returner,
+    ///   and outside every handler subject a returner and any other call;
     ///   [`PassEnd::Unwritten`] otherwise.
     /// - provides: the formers a pass's end writes, the rest noted as the
     ///   fixpoint's notation.
@@ -4394,10 +4400,11 @@ impl Walk<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a pass ending in `continue` in a `loop`, a `for` and
     ///   a `while` threading one slot and two, `break(v)`, `return v` and
-    ///   `become c`, one naming the loop's binder, and one ending in another
-    ///   loop whose rest continues the first.
+    ///   `become c`, one naming the loop's binder, one ending in another loop
+    ///   whose rest continues the first, and a `return` leaving a handler.
     /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
     /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
     #[spec(ensures: |ret| ret != PassEnd::Continue || !self.loops.is_empty())]
     fn pass_end<S>(
@@ -4437,6 +4444,13 @@ impl Walk<'_, '_>
         }
         else if let Former::Return(_) = *former {
             outside || !rest
+        }
+        else if let Former::Shift(returned) = *former {
+            // A `return` a handled subject writes in the body a reset
+            // delimits leaves the handler and the loop alike.
+            self.unwinds > 0_usize
+                && self.subjects > 0_usize
+                && matches!(source.read(returned), Former::Return(_))
         }
         else if let Former::Application(function, argument) = *former {
             let handed = match pass {
@@ -5522,14 +5536,16 @@ impl Walk<'_, '_>
     ///   schedules its spine as [`Self::spine`] does and any other application
     ///   its call as [`Self::call`] does, under `become` where it ends a loop's
     ///   pass; a decode, a quote, a returner where the body ends, a nested
-    ///   computation and a returned value push their child's visit alone, so
-    ///   the child's piece is theirs; the loop's own binder forced at the end
-    ///   of a pass, or applied to what the pass hands on, finishes as
-    ///   `continue`, a returner ending a pass is `break(v)` or `return v` and a
-    ///   loop ending a pass is written with its rest, as [`Self::pass_end`]
-    ///   reads them, and a computation the end of a pass cannot write is noted
-    ///   as the fixpoint's notation; a returner anywhere else is `pure v` and a
-    ///   run `run c`.
+    ///   computation, a returned value and a reset where a body ends push their
+    ///   child's visit alone, so the child's piece is theirs, the reset's child
+    ///   inside the body it delimits; there, in a handler's subject, a shift
+    ///   over a returner where a body or a pass ends is `return v`, the stack's
+    ///   binder unwritten; the loop's own binder forced at the end of a pass,
+    ///   or applied to what the pass hands on, finishes as `continue`, a
+    ///   returner ending a pass is `break(v)` or `return v` and a loop ending a
+    ///   pass is written with its rest, as [`Self::pass_end`] reads them, and a
+    ///   computation the end of a pass cannot write is noted as the fixpoint's
+    ///   notation; a returner anywhere else is `pure v` and a run `run c`.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -5553,6 +5569,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -5777,6 +5794,46 @@ impl Walk<'_, '_>
                 Production("run_expression"),
                 Join::Prefix(Prefix::Run),
             )),
+            // A reset where a body ends is the lowering's delimiter for the
+            // `return`s the handled subjects in that body write: the body is
+            // written bare, its pieces the reset's.
+            Former::Reset(body)
+                if matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated)) =>
+            {
+                tasks.push(Task::Unwound(false));
+                tasks.push(Task::Visit {
+                    node: body,
+                    admits,
+                    depth: below(depth, kind),
+                });
+                tasks.push(Task::Unwound(true));
+                return Ok(());
+            },
+            // A `return` a handled subject writes, inside the body a reset
+            // delimits, is a shift that never resumes the stack it captures:
+            // `return v`, the stack's binder unwritten.
+            Former::Shift(returned)
+                if self.unwinds > 0_usize
+                    && self.subjects > 0_usize
+                    && matches!(
+                        admits,
+                        Admits::Computation(Tail::Ends | Tail::Unstated | Tail::Passes)
+                    )
+                    && let Former::Return(value) = source.read(returned) =>
+            {
+                tasks.push(Task::Join(writes(
+                    Production("return_expression"),
+                    Join::Prefix(Prefix::Return),
+                )));
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Visit {
+                    node: value,
+                    admits: Admits::Value,
+                    depth: below(depth, kind),
+                });
+                tasks.push(Task::BindLoop(Zone::Intuitionistic, LoopBinder::Hidden));
+                return Ok(());
+            },
             Former::Path { .. }
             | Former::Flow { .. }
             | Former::Relation { .. }
@@ -8556,6 +8613,7 @@ where
         hidden: BTreeSet::new(),
         loops: Vec::new(),
         subjects: 0_usize,
+        unwinds: 0_usize,
         held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
@@ -8635,6 +8693,14 @@ where
                 }
                 else {
                     walk.subjects.saturating_sub(1_usize)
+                };
+            },
+            Task::Unwound(entered) => {
+                walk.unwinds = if entered {
+                    walk.unwinds.saturating_add(1_usize)
+                }
+                else {
+                    walk.unwinds.saturating_sub(1_usize)
                 };
             },
             Task::BindScope(zone, opener) => {
@@ -8922,6 +8988,7 @@ mod tests
             hidden: super::BTreeSet::new(),
             loops: super::Vec::new(),
             subjects: 0_usize,
+            unwinds: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
@@ -9012,6 +9079,7 @@ mod tests
             hidden: super::BTreeSet::new(),
             loops: super::Vec::new(),
             subjects: 0_usize,
+            unwinds: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
