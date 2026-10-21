@@ -640,6 +640,72 @@ echo "ledger #$ledger"
 cat "$scratch/rows"
 {% endraw %}'''
 
+# A landing's surviving mutants, read on main's push from each merged pull
+# request's mutants comment, the one the `report the mutants of the change`
+# lane last posted (`mutants:changed`, #1456). A merge queue lands a stack in
+# one push, so every commit after the push's base (MUTANTS_PUSH_BEFORE) is
+# read through the compare API, as `ci:hotpath-landed` reads them. Each pull
+# request whose report names a survivor gets one issue, `test: #<n> leaves <k>
+# mutant(s) alive`. A later landing of the same number updates it in place.
+# Its labels are kind:gap, the pull request's `area:` labels and the tier of
+# each crate a survivor lives in, so the lane that owns the crate picks it
+# up. Its body is the report. A commit without a pull request number, or a
+# pull request without a report, files nothing. GH_REPO names the repository.
+["ci:mutants-landed"]
+description = "File each landed pull request's surviving mutants on one issue"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:?}
+before=${MUTANTS_PUSH_BEFORE:-}
+if [[ -n $before && ! $before =~ ^0+$ ]]; then
+  landings=$(gh api "repos/$repo/compare/$before...$(git rev-parse HEAD)" \
+    --jq '.commits[] | .commit.message | split("\n") | first')
+else
+  landings=$(git log -1 --format=%s HEAD)
+fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+while IFS= read -r subject; do
+  [[ $subject =~ \(#([0-9]+)\)$ ]] || continue
+  pr=${BASH_REMATCH[1]}
+  gh api --paginate --slurp "repos/$repo/issues/$pr/comments" \
+    | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .body // ""' \
+    > "$scratch/report.md"
+  if [[ ! -s $scratch/report.md ]]; then
+    echo "#$pr carries no mutants report"
+    continue
+  fi
+  count=$(sed -n 's/^\([0-9][0-9]*\) survivor(s)\.$/\1/p' "$scratch/report.md" | tail -n 1)
+  if [[ -z $count || $count == 0 ]]; then
+    echo "#$pr leaves no mutant of its lines alive"
+    continue
+  fi
+  labels=(--label kind:gap)
+  while IFS= read -r label; do labels+=(--label "$label"); done < <({
+    gh pr view "$pr" --repo "$repo" --json labels --jq '.labels[].name | select(startswith("area:"))'
+    sed -n 's/^| `crates\/\([a-z]*\)-[^`]*` | .*/\1/p' "$scratch/report.md" \
+      | grep -Fx -e kernel -e theory -e core -e storage -e runtime -e surface -e workflow | sed 's/^/area:/' || true
+  } | sort -u)
+  {
+    printf 'Landed with #%s: the mutants of its own lines that no witness caught, as its last mutants report read them. Each survivor is a witness to write, or a `- witness:` bullet its function lacks.\n\n' "$pr"
+    sed '1{/^<!-- gandr-mutants -->$/d;}' "$scratch/report.md"
+  } > "$scratch/body.md"
+  title="test: #$pr leaves $count mutant(s) alive"
+  key="test: #$pr leaves "
+  issue=$(gh issue list --repo "$repo" --state open --search "\"${key% }\" in:title" --json number,title \
+    | jq -r --arg key "$key" '[.[] | select(.title | startswith($key))] | first | .number // empty')
+  if [[ -n $issue ]]; then
+    gh issue edit "$issue" --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]/#--label/--add-label}" > /dev/null
+    echo "#$pr: updated #$issue ($count survivor(s))"
+  else
+    url=$(gh issue create --repo "$repo" --title "$title" --body-file "$scratch/body.md" "${labels[@]}")
+    echo "#$pr: opened $url ($count survivor(s))"
+  fi
+done <<< "$landings"
+{% endraw %}'''
+
 # The pull request's title becomes the header of its merge commit on main,
 # and the PR title workflow lints it with the commit rules: a conventional
 # header of at most 72 characters, its type and scope from

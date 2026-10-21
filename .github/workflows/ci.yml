@@ -1357,6 +1357,34 @@ jobs:
       - name: add the landed verdicts
         run: mise run ci:hotpath-landed
 
+  # A landing that leaves a mutant of its own lines alive files it (`mise run
+  # ci:mutants-landed`): main's push reads the mutants comment of every pull
+  # request it landed, and each one whose report names survivors gets one
+  # issue, routed by the tiers of the crates the survivors live in. Nothing
+  # needs this job.
+  mutants-landed:
+    name: file the landings' surviving mutants
+    needs: ci-image-ref
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+      pull-requests: read
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      MUTANTS_PUSH_BEFORE: ${{ github.event.before }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the surviving mutants
+        run: mise run ci:mutants-landed
+
   # Formatting and workflow security lint share the treefmt pass.
   format-gate:
     name: check formatting and lint gates (treefmt)
