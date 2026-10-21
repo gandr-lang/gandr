@@ -302,6 +302,11 @@ mod tests
              `ascii`"
         );
         assert_eq!(
+            refused("[presentation]\nspelling = 1\n"),
+            "/c/gandr/config.toml: `presentation.spelling` is of type integer; it names \
+             `unicode` or `ascii`"
+        );
+        assert_eq!(
             refused("presentation = 1\n"),
             "/c/gandr/config.toml: `presentation` is of type integer, not a table"
         );

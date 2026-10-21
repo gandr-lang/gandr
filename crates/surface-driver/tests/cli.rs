@@ -1162,6 +1162,33 @@ fn lsp_serves_a_session_over_the_standard_streams()
 }
 
 #[test]
+fn the_printed_capabilities_are_what_a_session_is_initialized_with()
+{
+    let printed = ran(gandr(&["lsp", "--capabilities"]));
+    assert_eq!(code(&printed), Code(0_i32), "{}", stderr(&printed));
+    let printed = stdout(&printed);
+    assert_eq!(printed.lines().count(), 1_usize, "one line: {printed}");
+    let session = served(
+        &["lsp", "--standalone"],
+        &frames(&[
+            Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+            Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+            Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+        ]),
+    );
+    let mut replies = session.stdout.as_slice();
+    let Maybe::Present(initialized) = read_frame(&mut replies).expect("a response is framed")
+    else {
+        panic!("initialize is answered");
+    };
+    let initialized = String::from_utf8(initialized.as_ref().to_vec()).expect("UTF-8");
+    assert!(
+        initialized.contains(&format!(r#""result":{}"#, printed.trim_end())),
+        "the printed line is the initialize result: {printed} against {initialized}"
+    );
+}
+
+#[test]
 fn lsp_clients_share_one_engine_hub()
 {
     use std::ffi::OsStr;
@@ -1454,6 +1481,128 @@ fn a_view_follows_what_an_editor_holds_open()
         !socket.exists(),
         "the hub exits after its linger, removing its socket"
     );
+}
+
+#[test]
+fn a_view_whose_output_closes_notes_why_and_exits_two()
+{
+    use std::ffi::OsStr;
+    use std::io::BufReader;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("view-closed"));
+    let socket = scratch.0.join("hub.sock");
+    let mut editor = gandr(&[
+        OsStr::new("lsp"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+        OsStr::new("--linger-ms"),
+        OsStr::new("200"),
+    ])
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("the editor's server starts");
+    let mut to_editor = editor.stdin.take().expect("standard input is piped");
+    let mut from_editor = BufReader::new(editor.stdout.take().expect("standard output is piped"));
+    let mut next_from_editor = || {
+        let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame")
+        else {
+            panic!("the editor's server ended early");
+        };
+        drop(body);
+    };
+    to_editor
+            .write_all(
+                frames(&[
+                    Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                    Text::from(
+                        r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/closed.gandr","languageId":"gandr","version":1,"text":"def g = missing ;\n"}}}"#,
+                    ),
+                ])
+                .as_ref(),
+            )
+            .expect("the editor's session is written");
+    next_from_editor();
+    next_from_editor();
+    let mut view = gandr(&[
+        OsStr::new("view"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("the view starts");
+    // With its reader gone, the view's next report has nowhere to go; the
+    // edit makes one even if the first reached the pipe before it closed.
+    drop(view.stdout.take());
+    to_editor
+            .write_all(
+                frames(&[Text::from(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/closed.gandr","version":2},"contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
+                )])
+                .as_ref(),
+            )
+            .expect("the editor's edit is written");
+    next_from_editor();
+    let stopped = view.wait_with_output().expect("the view is reaped");
+    assert_eq!(code(&stopped), Code(2_i32), "{}", stderr(&stopped));
+    assert!(
+        stderr(&stopped).starts_with("gandr: the view: "),
+        "the view says why it stopped: {}",
+        stderr(&stopped)
+    );
+    to_editor
+        .write_all(
+            frames(&[
+                Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+            ])
+            .as_ref(),
+        )
+        .expect("the editor's session is ended");
+    drop(to_editor);
+    // The shutdown reply is read, so the editor's last write finds a
+    // reader.
+    let mut rest = Vec::new();
+    std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
+    let ended = editor.wait_with_output().expect("the editor's server runs");
+    assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+    while socket.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(core::time::Duration::from_millis(50));
+    }
+    assert!(
+        !socket.exists(),
+        "the hub exits after its linger once the view has gone"
+    );
+}
+
+#[test]
+fn a_view_reaching_no_hub_notes_why_and_exits_two()
+{
+    use std::ffi::OsStr;
+
+    let scratch = Scratch::new(Path::new("view-unreached"));
+    // Longer than any platform's socket path limit: no client connects to it
+    // and the hub the view starts cannot bind it.
+    let socket = scratch.0.join("h".repeat(200_usize));
+    let unreached = ran(gandr(&[
+        OsStr::new("view"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ]));
+    assert_eq!(code(&unreached), Code(2_i32), "{}", stderr(&unreached));
+    assert!(
+        stderr(&unreached).starts_with("gandr: the engine hub: "),
+        "the view says the hub was never reached: {}",
+        stderr(&unreached)
+    );
+    assert!(unreached.stdout.is_empty(), "nothing is followed");
+    assert!(!socket.exists(), "no hub is left behind");
 }
 
 /// The finished run of `gandr` with `arguments` and `input` on standard
@@ -1899,6 +2048,10 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
         check(&[]).contains("expected `Integer ≃ String`"),
         "no file prints Unicode"
     );
+    assert!(
+        check(&["--spelling", "ascii"]).contains("expected `Integer <~> String`"),
+        "the flag alone chooses"
+    );
     configured("[presentation]\nspelling = \"ascii\"\n");
     assert!(
         check(&[]).contains("expected `Integer <~> String`"),
@@ -1922,5 +2075,55 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
         stderr(&stopped).contains("`presentation.spelling` is `latin`"),
         "and says why: {}",
         stderr(&stopped)
+    );
+}
+
+#[test]
+fn an_unreadable_or_malformed_configuration_stops_the_run()
+{
+    let scratch = Scratch::new(Path::new("configuration-faults"));
+    let file = Path::new("gandr/config.toml");
+    let malformed = scratch.0.join("malformed");
+    let _written = scratch.file(
+        &Path::new("malformed").join(file),
+        Text::from("[presentation\n"),
+    );
+    let unreadable = scratch.0.join("unreadable");
+    std::fs::create_dir_all(unreadable.join(file))
+        .expect("a directory stands where the file is read");
+    let status_under = |home: &Path| {
+        let mut command = gandr::<&str>(&[]);
+        command.env("XDG_CONFIG_HOME", home);
+        ran(command)
+    };
+    let mut noted = Vec::new();
+    for home in [&malformed, &unreadable] {
+        let stopped = status_under(home);
+        assert_eq!(code(&stopped), Code(2_i32), "{}", stderr(&stopped));
+        assert!(stopped.stdout.is_empty(), "stops before the verb runs");
+        let why = stderr(&stopped);
+        assert!(
+            why.contains(&home.join(file).display().to_string()),
+            "names the file: {why}"
+        );
+        noted.push(why);
+    }
+    assert_ne!(
+        noted[0], noted[1],
+        "a malformed file and an unreadable one read apart"
+    );
+    let mut homeless = gandr::<&str>(&[]);
+    let _unset = homeless.env_remove("XDG_CONFIG_HOME").env_remove("HOME");
+    let unconfigured = ran(homeless);
+    assert_eq!(
+        code(&unconfigured),
+        Code(0_i32),
+        "{}",
+        stderr(&unconfigured)
+    );
+    assert_eq!(
+        stdout(&unconfigured),
+        stdout(&ran(gandr::<&str>(&[]))),
+        "no home at all reads as no configuration"
     );
 }
