@@ -848,7 +848,7 @@ fn checked(
         },
         CheckRefusal::Linearity { defect, .. } => match defect {
             LinearityDefect::Residue { .. } => {
-                f.write_str("the endpoint is not closed before its half of the fork ends")
+                f.write_str("the endpoint is not closed before the fork half or receive body that bound it ends")
             },
             LinearityDefect::Closed { .. } => f.write_str("the endpoint is used after `close`"),
             LinearityDefect::UsedTwice { .. } => f.write_str("one action names the endpoint twice"),
@@ -857,9 +857,6 @@ fn checked(
                 "the endpoint is used inside {}, which may run it other than once",
                 Captor(by)
             ),
-            LinearityDefect::Delegated => {
-                f.write_str("an endpoint or a protocol cannot be sent as a payload")
-            },
             LinearityDefect::AsValue { .. } => {
                 f.write_str("an endpoint can be used only by a session action")
             },
@@ -867,10 +864,10 @@ fn checked(
                 f.write_str("the arms of this `offer` leave the endpoints in different states")
             },
             LinearityDefect::Unrestricted => f.write_str(
-                "a declaration cannot have a session type; an endpoint is opened by `fork`",
+                "a declaration cannot have a session type; an endpoint is opened by `fork` or `recv`",
             ),
             LinearityDefect::Unbound { .. } => {
-                f.write_str("internal error: a session action names an endpoint no `fork` opened")
+                f.write_str("internal error: a session action names an endpoint no `fork` or `recv` opened")
             },
         },
         CheckRefusal::Access { defect, .. } => match defect {
@@ -1552,10 +1549,6 @@ mod tests
                     endpoint,
                     by: Capture::Thunk,
                 },
-            },
-            CheckRefusal::Linearity {
-                at: node,
-                defect: LinearityDefect::Delegated,
             },
             CheckRefusal::Linearity {
                 at: node,

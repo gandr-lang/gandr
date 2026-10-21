@@ -1,8 +1,9 @@
 // A cancellation posts its own completion, and the target's is still owed, in
 // either order (io_uring_prep_cancel(3), io_uring_cancelation(7)). The two are
 // independent pending completions, not one sequence, so a program may reap
-// them in either order. Here each is served by its own mock kernel; a cancel
-// that consumes its target's pending completion waits on delegation (#1167).
+// them in either order. In the first two each is served by its own mock
+// kernel; in the last two the cancellation takes the target's pending
+// completion over its session and reaps it.
 
 // The ring's protocol and its entries.
 import "./ring-base.gandr" ;
@@ -47,4 +48,47 @@ def cancelFirst() -> -F Unit {
   recv(pending) as second;
   close(cancel);
   close(pending)
+}
+
+/// The target's pending completion moved into the cancellation, which reaps it
+/// and then posts its own: the submitter keeps only the cancellation's.
+@[ checks ]
+def cancelConsumes() -> -F Unit {
+  fork (target : Ring.Submission) {
+    recv(target) as sqe;
+    send(target, Ring.done);
+    close(target)
+  } as pending;
+  fork (canceller : Ring.Cancelling) {
+    recv(canceller) as owed;
+    recv(owed) as reaped;
+    close(owed);
+    send(canceller, Ring.done);
+    close(canceller)
+  } as cancel;
+  send(pending, Ring.read);
+  send(cancel, pending);
+  recv(cancel) as own;
+  close(cancel)
+}
+
+/// #1229: the cancellation's protocol written out where its endpoint is bound,
+/// a receive whose payload is itself a receive. It takes the target's pending
+/// completion, reaps it and posts nothing of its own.
+@[ checks ]
+def cancelWrittenOut() -> -F Unit {
+  fork (target : Ring.Submission) {
+    recv(target) as sqe;
+    send(target, Ring.done);
+    close(target)
+  } as pending;
+  fork (canceller : ?(?(Ring.Cqe). end). end) {
+    recv(canceller) as owed;
+    recv(owed) as reaped;
+    close(owed);
+    close(canceller)
+  } as cancel;
+  send(pending, Ring.read);
+  send(cancel, pending);
+  close(cancel)
 }

@@ -288,7 +288,6 @@ pathological/sessions/fragment.gandr:parameter_as_endpoint:0071a6269948530e
 pathological/sessions/fragment.gandr:recursion_before_any_action:b9456f142ed79f05
 pathological/sessions/fragment.gandr:value_type_as_continuation:f0a371025cca3866
 pathological/sessions/linearity.gandr:<file>
-pathological/sessions/linearity.gandr:protocol_sends_a_protocol:8a09d59434ee22af
 pathological/sessions/linearity.gandr:seat_arms_leave_it_apart:8487c85f35a04057
 pathological/sessions/linearity.gandr:seat_closed_in_a_thunk:2b1dc534ce2de978
 pathological/sessions/linearity.gandr:seat_closed_twice:8229f35432d066a9

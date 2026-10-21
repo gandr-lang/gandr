@@ -342,7 +342,10 @@ impl Machine<'_, '_>
         let found = self.resided(node, held)?;
         match found.resident {
             Resident::Held { .. } => {},
-            Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } => {
+            Resident::Endpoint(_)
+            | Resident::Received { .. }
+            | Resident::View { .. }
+            | Resident::Capability { .. } => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::NotHeld,
@@ -773,15 +776,16 @@ impl Machine<'_, '_>
         self.spend_view(CoreNode::Term(TermNode::Computation(at)), view)
     }
 
-    /// A read of the linear variable `index` at `term`: a held value's or a
-    /// view's current value, an endpoint's refusal.
+    /// A read of the linear variable `index` at `term`: a held value's, a
+    /// received value's or a view's current value, an endpoint's refusal.
     ///
     /// # Specification
     /// - requires: `term` is the variable `index` of the linear zone.
-    /// - ensures: a slot held at grade `ω` and not lent exclusively, and a live
-    ///   view of one, synthesise their declared type, read where the variable
-    ///   stands, and nothing is spent; an exclusive view of a value held at
-    ///   grade one synthesises it once and its value is moved out.
+    /// - ensures: a slot held at grade `ω` and not lent exclusively, a received
+    ///   value, and a live view of a slot held at grade `ω`, synthesise their
+    ///   declared type, read where the variable stands, and nothing is spent;
+    ///   an exclusive view of a value held at grade one synthesises it once and
+    ///   its value is moved out.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::Lent`] for a
     ///   held slot lent exclusively, [`AccessDefect::Spent`] for a spent view,
     ///   and [`AccessDefect::HeldCopied`] for a slot held at grade one, a
@@ -803,6 +807,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_held_value_lent_or_misnamed_is_refused`
     /// - witness: `judgement::access::tests::a_shared_view_reads_beside_its_held_value_and_ends_with_its_body`
     /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
     pub(super) fn linear_read(
         &mut self,
@@ -842,7 +847,8 @@ impl Machine<'_, '_>
                 HoldGrade::Many => return self.read_type(&read),
                 HoldGrade::One => AccessDefect::HeldCopied,
             },
-            Resident::View {
+            Resident::Received { .. }
+            | Resident::View {
                 grade: HoldGrade::Many,
                 ..
             } => return self.read_type(&read),
@@ -1041,9 +1047,13 @@ impl Machine<'_, '_>
                 }
             },
             (Resident::View { .. }, LinearUse::Consumed) => AccessDefect::Spent,
-            (Resident::Endpoint(_) | Resident::Held { .. } | Resident::Capability { .. }, _) => {
-                AccessDefect::NotAView
-            },
+            (
+                Resident::Endpoint(_)
+                | Resident::Received { .. }
+                | Resident::Held { .. }
+                | Resident::Capability { .. },
+                _,
+            ) => AccessDefect::NotAView,
         };
         Err(CheckRefusal::Access { at: node, defect })
     }

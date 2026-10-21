@@ -428,7 +428,7 @@ enum Kind
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
         | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
         | Former::Scope { .. } | Former::Resume(..) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
-        | Former::Project(..) | Former::Send { .. } | Former::Receive(_) | Former::Select { .. } | Former::Offer { .. }
+        | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Select { .. } | Former::Offer { .. }
         | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
         | Former::AbortView(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
     | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
@@ -529,7 +529,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Ascription { .. }
         | Former::Project(..)
         | Former::Send { .. }
-        | Former::Receive(_)
+        | Former::Receive { .. }
         | Former::Select { .. }
         | Former::Offer { .. }
         | Former::Close(_)
@@ -960,6 +960,8 @@ where
         && ret.get(1_usize).is_some_and(|slot| slot.admits == Admits::Computation(Tail::Continues)),
     | Former::Hold { .. } => ret.len() == 2_usize
         && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Receive { .. } => ret.len() == 1_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
     | Former::Access { mode, place, .. } => {
         let indexed = usize::from(matches!(place, gandr_core_term::memory::Place::At { .. }));
         ret.len() == indexed.saturating_add(match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize })
@@ -967,7 +969,7 @@ where
     },
     | Former::BaseType(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
-        | Former::Reify | Former::Receive(_) | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
+        | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
 })]
 fn slots<S>(
@@ -1303,6 +1305,10 @@ where
                 count: 1_usize,
             }),
         ]),
+        Former::Receive { body, .. } => Vec::from([Slot::of(body, admits, Binds {
+            zone: Zone::Linear,
+            count: 1_usize,
+        })]),
         Former::Access {
             place, body, mode, ..
         } => {
@@ -1329,7 +1335,6 @@ where
         | Former::ListNil
         | Former::Literal(_)
         | Former::Reify
-        | Former::Receive(_)
         | Former::Select { .. }
         | Former::Close(_)
         | Former::AbortView(_)
@@ -2006,10 +2011,6 @@ enum Join
     /// returner returns, and the rest under the bind's binder, named as a
     /// dependent arrow's is: `run x : A <- c ; rest`.
     TypedSequence,
-    /// A bind of what an endpoint receives over the receive and the rest,
-    /// its binder named as a dependent arrow's is: `recv(e) as x ; rest`,
-    /// the one spelling the surface reads a receive in.
-    Received,
     /// A lambda over its body, its binder named as a dependent arrow's is.
     Lambda,
     /// A thunk over its body.
@@ -4020,7 +4021,7 @@ impl Walk<'_, '_>
                 | Former::Ascription { .. }
                 | Former::Project(..)
                 | Former::Send { .. }
-                | Former::Receive(_)
+                | Former::Receive { .. }
                 | Former::Select { .. }
                 | Former::Offer { .. }
                 | Former::Close(_)
@@ -4834,7 +4835,7 @@ impl Walk<'_, '_>
             | Former::Then(..)
             | Former::Project(..)
             | Former::Send { .. }
-            | Former::Receive(_)
+            | Former::Receive { .. }
             | Former::Select { .. }
             | Former::Offer { .. }
             | Former::Close(_)
@@ -5256,9 +5257,6 @@ impl Walk<'_, '_>
                         Slot::of(rest, admits, Binds::ONE),
                     ]));
                     Some(writes(Production("block"), Join::TypedSequence))
-                },
-                None if matches!(source.read(bound), Former::Receive(_)) => {
-                    Some(writes(Production("block"), Join::Received))
                 },
                 None => Some(writes(Production("block"), Join::Sequence)),
             },
@@ -6478,10 +6476,6 @@ impl Walk<'_, '_>
                     .rest(Arity(1_usize));
                 writes(Production("send_expression"), Binding::Atom)
             },
-            Former::Receive(endpoint) => {
-                let _ = parts.text("recv(").part(Part::Endpoint(endpoint)).text(")");
-                writes(Production("block"), Binding::Atom)
-            },
             Former::Close(endpoint) => {
                 let _ = parts
                     .text("close(")
@@ -6541,6 +6535,17 @@ impl Walk<'_, '_>
                     .part(Part::Binder(0_usize))
                     .text(" = ")
                     .piece(Binding::Arrow)
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                writes(Production("block"), Binding::Sequence)
+            },
+            Former::Receive { endpoint, .. } => {
+                let _ = parts
+                    .text("recv(")
+                    .part(Part::Endpoint(endpoint))
+                    .text(") as ")
+                    .part(Part::Binder(0_usize))
                     .text(" ;")
                     .part(Part::Line)
                     .piece(Binding::Sequence);
@@ -6744,7 +6749,7 @@ impl Walk<'_, '_>
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Received | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
@@ -6756,7 +6761,7 @@ impl Walk<'_, '_>
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
-                    Join::Sequence | Join::TypedSequence | Join::Received => Binding::Sequence,
+                    Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
                     Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
@@ -7005,19 +7010,6 @@ impl Walk<'_, '_>
                 (
                     self.builder
                         .concat_all(&[run, binder, arrow, bound, semicolon, line, rest.doc])?,
-                    Binding::Sequence,
-                )
-            },
-            Join::Received => {
-                let rest = self.pop()?;
-                let bound = self.pop()?;
-                let binder = self.binder(OpenBinders(0_usize))?;
-                let bind = self.leaf(Glyphs(" as "))?;
-                let semicolon = self.leaf(Glyphs(" ;"))?;
-                let line = Doc::LINE;
-                (
-                    self.builder
-                        .concat_all(&[bound.doc, bind, binder, semicolon, line, rest.doc])?,
                     Binding::Sequence,
                 )
             },

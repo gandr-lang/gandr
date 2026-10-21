@@ -1631,7 +1631,8 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let base = "module P :> #{\n  type Buffer = end,\n  type Moving = ?Buffer. end\n} {\n}\n";
+        let base =
+            "module P :> #{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} {\n}\n";
         let user = "import \"./base.gandr\" ;\n@[ checks ]\ndef moved() -> -F Unit {\n  fork \
                     (kernel : P.Moving) {\n    recv(kernel) as held;\n    close(kernel)\n  } \
                     as ring;\n  close(ring)\n}\n";
@@ -1660,12 +1661,8 @@ mod tests
             .collect();
         assert_eq!(
             imported,
-            [
-                (&uri("base.gandr"), range(Span(1, 16, 1, 19))),
-                (&uri("base.gandr"), range(Span(2, 16, 2, 28))),
-            ],
-            "the refused payload, then the session type it was formed in, at the import's own \
-             lines"
+            [(&uri("base.gandr"), range(Span(1, 15, 1, 29)))],
+            "the refused payload, at the import's own line"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

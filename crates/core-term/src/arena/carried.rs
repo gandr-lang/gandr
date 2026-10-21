@@ -6,9 +6,9 @@
 //! each child selects past the binders between them, lowered by them. The
 //! binders each child stands under are the former's scoping, stated once
 //! here: the intuitionistic binders are the ones the rewrite machines count
-//! per child, and the linear ones are a fork's two ends and a hold's or an
-//! access's view. A primitive's generated body is closed and stands as a
-//! leaf, as the rewrites read it.
+//! per child, and the linear ones are a fork's two ends, a receive's payload
+//! and a hold's or an access's view. A primitive's generated body is closed
+//! and stands as a leaf, as the rewrites read it.
 //!
 //! A child is read through the support it carries, so minting a node is one
 //! union over its children rather than a walk below them; a dangling child
@@ -28,7 +28,6 @@ use crate::arena::ValueTypeId;
 use crate::context::BinderDepth;
 use crate::control::StackFrame;
 use crate::rewrite::Binders;
-use crate::session::SessionAction;
 use crate::support::Crossing;
 use crate::support::Slot;
 use crate::support::ThinningRef;
@@ -272,8 +271,8 @@ impl CoreArena
     ///   a transport's or a ride's motive, a return clause and a scoped
     ///   subject; two for a fold's cell branch and an operation clause; one per
     ///   component for a split's body and one for its motive; a world form's
-    ///   scoped binders; one linear for each half of a fork and a memory form's
-    ///   scoped binders.
+    ///   scoped binders; one linear for each half of a fork, for a receive's
+    ///   body, and a memory form's scoped binders.
     /// - panics: none.
     /// - executable: none — the clause is the former's scoping, which the body
     ///   states once; a predicate would restate it beside it.
@@ -478,13 +477,9 @@ impl CoreArena
                 for value in action.values() {
                     self.value_into(&mut union, value, at);
                 }
-                let crossing = match *action {
-                    SessionAction::Fork { .. } => under_linear(Binders::ONE),
-                    SessionAction::Send { .. }
-                    | SessionAction::Receive { .. }
-                    | SessionAction::Select { .. }
-                    | SessionAction::Offer { .. }
-                    | SessionAction::Close { .. } => at,
+                let crossing = match action.child_binders() {
+                    Binders::NONE => at,
+                    binders => under_linear(binders),
                 };
                 for child in action.computations() {
                     self.computation_into(&mut union, child, crossing);

@@ -622,8 +622,8 @@ impl FreeIndices
     {
         let mut free = Free::default();
         // A fork's child and parent each stand under one linear binder, and
-        // so do a hold's body and an access's body; an access's unwind
-        // stands under none.
+        // so do a receive's body, a hold's body and an access's body; an
+        // access's unwind stands under none.
         let mut forked = Lowering::NONE;
         let mut scoped: [Lowering; 2] = [Lowering::NONE; 2];
         match node {
@@ -636,10 +636,11 @@ impl FreeIndices
             Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 if let Computation::Session(ref action) = *held {
+                    forked = Lowering(u32::from(action.child_binders()));
                     match *action {
-                        SessionAction::Fork { .. } => forked = Lowering::ONE,
+                        SessionAction::Fork { .. } => {},
                         SessionAction::Send { endpoint, .. }
-                        | SessionAction::Receive { endpoint }
+                        | SessionAction::Receive { endpoint, .. }
                         | SessionAction::Select { endpoint, .. }
                         | SessionAction::Offer { endpoint, .. }
                         | SessionAction::Close { endpoint } => {
@@ -1268,9 +1269,12 @@ Err(_) => false,
                             None,
                             None,
                         ],
-                        SessionAction::Receive { .. }
-                        | SessionAction::Select { .. }
-                        | SessionAction::Close { .. } => [None, None, None, None, None],
+                        SessionAction::Receive { body, .. } => {
+                            one(computation(body), Lowering::NONE)
+                        },
+                        SessionAction::Select { .. } | SessionAction::Close { .. } => {
+                            [None, None, None, None, None]
+                        },
                     },
                     Computation::Memory(ref form) => match *form {
                         MemoryForm::Hold {

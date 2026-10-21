@@ -1630,9 +1630,10 @@ impl ContentNode
                 } => Children::of(&[(protocol, A), (child, M), (parent, M)])
                     .binding(ChildSlot(1), linear)
                     .binding(ChildSlot(2), linear),
-                SessionAction::Receive { .. }
-                | SessionAction::Select { .. }
-                | SessionAction::Close { .. } => Children::default(),
+                SessionAction::Receive { body, .. } => {
+                    Children::of(&[(body, M)]).binding(ChildSlot(0), linear)
+                },
+                SessionAction::Select { .. } | SessionAction::Close { .. } => Children::default(),
             },
             Self::Memory(ref form) => match *form {
                 MemoryForm::Hold { value, body, .. } => {
@@ -2039,7 +2040,9 @@ impl ContentNode
                 SessionAction::Send {
                     ref mut endpoint, ..
                 }
-                | SessionAction::Receive { ref mut endpoint }
+                | SessionAction::Receive {
+                    ref mut endpoint, ..
+                }
                 | SessionAction::Select {
                     ref mut endpoint, ..
                 }

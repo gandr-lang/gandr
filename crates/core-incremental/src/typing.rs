@@ -197,8 +197,6 @@ pub enum Linearity
         /// What may run it.
         by: Capture,
     },
-    /// An endpoint, or a session type, was sent as a payload.
-    Delegated,
     /// The endpoint was read as a value outside an action.
     AsValue
     {
@@ -217,7 +215,7 @@ pub enum Linearity
     },
     /// A declaration's type is a session type.
     Unrestricted,
-    /// An action names a linear index no fork bound.
+    /// An action names a linear index no fork or receive bound.
     Unbound
     {
         /// The index.
@@ -1110,7 +1108,6 @@ impl Projection<'_, '_, '_, '_>
     ///   endpoint, state and arm sites.
     /// - witness: `typing::tests::session_refusals_project_their_endpoints_and_states`
     #[spec(ensures: |ret| core::mem::discriminant(&ret) == match defect {
-        | LinearityDefect::Delegated => core::mem::discriminant(&Linearity::Delegated),
         | LinearityDefect::Unrestricted => core::mem::discriminant(&Linearity::Unrestricted),
         | _ => core::mem::discriminant(&ret),
     })]
@@ -1134,7 +1131,6 @@ impl Projection<'_, '_, '_, '_>
                 endpoint: self.endpoint(endpoint),
                 by,
             },
-            LinearityDefect::Delegated => Linearity::Delegated,
             LinearityDefect::AsValue { endpoint } => Linearity::AsValue {
                 endpoint: self.endpoint(endpoint),
             },

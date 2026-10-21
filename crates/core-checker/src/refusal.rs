@@ -41,9 +41,9 @@
 //! bug in the producer behind a source diagnostic; it reverses if a producer
 //! ever hands over unresolved author text. A session action the endpoint's
 //! state does not admit and every break of an endpoint's linear use are the
-//! author's, an action naming a linear index no fork bound among them: the
-//! linearity refusal is one variant, and the lowering binds every endpoint
-//! it names, so that defect is unreachable from source.
+//! author's, an action naming a linear index no fork or receive bound among
+//! them: the linearity refusal is one variant, and the lowering binds every
+//! endpoint it names, so that defect is unreachable from source.
 //!
 //! # The absence class has no refusal, and that is the point
 //!
@@ -921,7 +921,7 @@ pub enum CheckRefusal
         defect: crate::session::ProtocolDefect,
     },
     /// An endpoint escaped its one linear use: left unconsumed, used after
-    /// its close or twice, captured, delegated, read as a value, left in two
+    /// its close or twice, captured, read as a value, left in two
     /// states by an offer's arms, or a session type outside the linear zone.
     Linearity
     {

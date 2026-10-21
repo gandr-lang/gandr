@@ -574,15 +574,13 @@ pub enum RefusalName
     EndpointUsedTwice,
     /// An endpoint named where its use may run other than once.
     CapturedEndpoint,
-    /// An endpoint, or a session type, sent as a payload.
-    Delegation,
     /// An endpoint read as a value outside an action.
     EndpointAsValue,
     /// Two arms of an offer leaving an endpoint in different states.
     ArmsDisagree,
     /// A declaration whose type is a session type.
     UnrestrictedEndpoint,
-    /// An action naming a linear index no fork bound.
+    /// An action naming a linear index no fork or receive bound.
     UnboundEndpoint,
     /// An access naming a linear slot that holds no value.
     NotHeld,
@@ -670,7 +668,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 178_usize] = [
+    pub const VOCABULARY: [Self; 177_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -813,7 +811,6 @@ impl RefusalName
         Self::UsedAfterClose,
         Self::EndpointUsedTwice,
         Self::CapturedEndpoint,
-        Self::Delegation,
         Self::EndpointAsValue,
         Self::ArmsDisagree,
         Self::UnrestrictedEndpoint,
@@ -981,7 +978,6 @@ impl RefusalName
         | (Self::UsedAfterClose, b"UsedAfterClose")
         | (Self::EndpointUsedTwice, b"EndpointUsedTwice")
         | (Self::CapturedEndpoint, b"CapturedEndpoint")
-        | (Self::Delegation, b"Delegation")
         | (Self::EndpointAsValue, b"EndpointAsValue")
         | (Self::ArmsDisagree, b"ArmsDisagree")
         | (Self::UnrestrictedEndpoint, b"UnrestrictedEndpoint")
@@ -1108,7 +1104,6 @@ impl RefusalName
             Self::UsedAfterClose => "UsedAfterClose",
             Self::EndpointUsedTwice => "EndpointUsedTwice",
             Self::CapturedEndpoint => "CapturedEndpoint",
-            Self::Delegation => "Delegation",
             Self::EndpointAsValue => "EndpointAsValue",
             Self::ArmsDisagree => "ArmsDisagree",
             Self::UnrestrictedEndpoint => "UnrestrictedEndpoint",
@@ -1498,7 +1493,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
-        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::Delegation | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
+        | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
@@ -1796,7 +1791,6 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Linearity { defect: LinearityDefect::Closed { .. }, .. }, RefusalName::UsedAfterClose)
         | (CheckRefusal::Linearity { defect: LinearityDefect::UsedTwice { .. }, .. }, RefusalName::EndpointUsedTwice)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Captured { .. }, .. }, RefusalName::CapturedEndpoint)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Delegated, .. }, RefusalName::Delegation)
         | (CheckRefusal::Linearity { defect: LinearityDefect::AsValue { .. }, .. }, RefusalName::EndpointAsValue)
         | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
         | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
@@ -1915,7 +1909,6 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             LinearityDefect::Closed { .. } => RefusalName::UsedAfterClose,
             LinearityDefect::UsedTwice { .. } => RefusalName::EndpointUsedTwice,
             LinearityDefect::Captured { .. } => RefusalName::CapturedEndpoint,
-            LinearityDefect::Delegated => RefusalName::Delegation,
             LinearityDefect::AsValue { .. } => RefusalName::EndpointAsValue,
             LinearityDefect::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
             LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,

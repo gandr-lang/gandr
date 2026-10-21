@@ -1,17 +1,18 @@
-//! Binary sessions in the judgement: the endpoint a fork binds into the
-//! linear zone, the actions that advance it, and the refusals that name it.
+//! Binary sessions in the judgement: the endpoints a fork or a receive binds
+//! into the linear zone, the actions that advance them, and the refusals that
+//! name them.
 //!
 //! # An endpoint is a linear slot that changes type
 //!
 //! `fork (c : S) { t } as d ; u` opens one slot of the linear zone `Σ` at `S`
 //! for the child `t` and, once the child is checked, one at `dual(S)` for the
-//! parent `u`; nothing else binds an endpoint. Each action names its endpoint
-//! by its linear index and moves the slot along the protocol: `send`, `recv`
-//! and `select` rebind the slot at the continuation, `offer` rebinds it at
-//! each arm's branch, and `close` consumes it at `end`. The zone's own
-//! discipline — one consumption, no weakening — is then the endpoint's: a
-//! slot still available when its fork's half finishes is a leftover endpoint,
-//! an action on a consumed slot is an action after `close`.
+//! parent `u`. Each action names its endpoint by its linear index and moves
+//! the slot along the protocol: `send`, `recv` and `select` rebind the slot
+//! at the continuation, `offer` rebinds it at each arm's branch, and `close`
+//! consumes it at `end`. The zone's own discipline — one consumption, no
+//! weakening — is then the endpoint's: a slot still available when the half
+//! or the body that bound it finishes is a leftover endpoint, an action on a
+//! consumed slot is an action after `close`.
 //!
 //! The rules run as frames of the judgement's one machine, as the rest of
 //! the judgement does:
@@ -19,24 +20,36 @@
 //! |rule|frame|what it waits on|
 //! |---|---|---|
 //! |send|`SessionSend`|the payload's check, then advances the endpoint|
+//! |receive|`ReceiveBody`|the body's judgement with the payload bound, then requires a received endpoint spent|
 //! |offer|`OfferArm`|each arm's check, from the zone as the offer found it|
 //! |fork|`ForkProtocol`|the protocol annotation's formation|
 //! |fork|`ForkChild`|the child's check against `F 1`|
 //! |fork|`ForkParent`|the parent's judgement in the fork's direction|
-//! |formation|`FormSession`|each payload type's formation, refusing a session type|
 //!
-//! **Choice.** An action is a computation that returns the unit or the
-//! payload, sequenced by the ordinary bind, so the bind's body frame is the
-//! session continuation. **Alternative.** A continuation-carrying action —
-//! `send c v; S` as one former whose frame holds the rest — which needs a
-//! second sequencing form beside bind. **Reversal.** Delegation, where an
-//! action must hand back the endpoint as a value.
+//! **Choice.** `send`, `select` and `close` are computations returning the
+//! unit, sequenced by the ordinary bind; `recv` carries the rest of its block
+//! as its body under one linear binder, as a fork carries its parent.
+//! **Alternative.** A receive returning its payload to a bind, which binds the
+//! payload intuitionistically and so can never hold an endpoint.
+//! **Reversal.** A payload whose zone the checker cannot fix at the receive,
+//! which no payload type is.
+//!
+//! # Delegation: a payload is placed by its type
+//!
+//! A send whose payload is a linear variable naming an endpoint consumes
+//! that endpoint's slot: the endpoint leaves the sender, its session type
+//! converted to the payload type (Honda, Vasconcelos and Kubo). The receive
+//! places its payload in its linear binder by the payload type: a session
+//! type opens an endpoint, available, which the body must act on and close
+//! like an end a fork binds; any other type opens a received value already
+//! spent, whose reads copy, so it leaves no residue.
 //!
 //! # The fork splits the zone by what the child names
 //!
 //! The child's share of the enclosing endpoints is exactly the linear indices
 //! it reads free; the parent may name none of them, and the child must
 //! consume every one of them as well as its own end before the parent runs.
+//! A received value the child reads is shared, since its reads copy.
 //! The child is checked against the pure returner of the unit, and the fork
 //! itself must stand at a pure returner, so no operation a handler could
 //! resume twice runs while an endpoint is live.
@@ -63,16 +76,12 @@
 //!
 //! # Where an endpoint may not stand
 //!
-//! An endpoint lives only in the linear zone a fork opened. A declaration
-//! whose type is a session type is refused as [`LinearityDefect::Unrestricted`]
-//! at its signature: a top-level name is unrestricted, so its endpoint could be
-//! used any number of times. A payload whose type is a session type, or an
-//! endpoint named as a payload, is [`LinearityDefect::Delegated`]: binary
-//! sessions here carry values, never channels. An endpoint read anywhere but as
-//! the subject of an action is [`LinearityDefect::AsValue`]. **Reversal.**
-//! Delegation needs an action that consumes the sent endpoint's slot and a
-//! receive that binds a fresh one; the frames above take both without a new
-//! machine.
+//! An endpoint lives only in the linear zone a fork or a receive opened. A
+//! declaration whose type is a session type is refused as
+//! [`LinearityDefect::Unrestricted`] at its signature: a top-level name is
+//! unrestricted, so its endpoint could be used any number of times. An
+//! endpoint read anywhere but as the subject of an action or as a payload
+//! sent whole is [`LinearityDefect::AsValue`].
 //!
 //! The kernel has no channels: a session type crosses only as a code, at its
 //! protocol's root, where a session statement relates it
@@ -94,6 +103,10 @@
 //! - Simon Gay and Malcolm Hole. "Subtyping for Session Types in the Pi
 //!   Calculus." _Acta Informatica_ 42 (2005). <https://doi.org/10.1007/s00236-005-0177-z>
 //!   — the coinductive subtyping the engine decides.
+//! - Kohei Honda, Vasco T. Vasconcelos and Makoto Kubo. "Language
+//!   Primitives and Type Discipline for Structured Communication-Based
+//!   Programming." _ESOP 1998_, LNCS 1381. <https://doi.org/10.1007/BFb0053567>
+//!   — delegation: a channel sent over a channel leaves the sender.
 
 use alloc::vec::Vec;
 
@@ -118,7 +131,7 @@ use crate::refusal::CheckRefusal;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
 
-/// Which half of a fork an endpoint belongs to.
+/// Which binder of an endpoint bound it: a half of a fork, or a receive.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ForkSide
 {
@@ -126,13 +139,15 @@ pub enum ForkSide
     Child,
     /// The parent's end, at its dual.
     Parent,
+    /// An end sent over another endpoint, bound by the receive that took it.
+    Received,
 }
 
-/// An endpoint, named by the fork that bound it and its side.
+/// An endpoint, named by the fork or the receive that bound it and its side.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Endpoint
 {
-    /// The fork.
+    /// The fork, or for [`ForkSide::Received`] the receive.
     pub fork: ComputationId,
     /// The side.
     pub side: ForkSide,
@@ -205,8 +220,6 @@ pub enum LinearityDefect
         /// What may run it.
         by: Capture,
     },
-    /// An endpoint, or a session type, was sent as a payload: delegation.
-    Delegated,
     /// The endpoint was read as a value outside an action.
     AsValue
     {
@@ -226,7 +239,7 @@ pub enum LinearityDefect
     /// A declaration's type is a session type: an endpoint outside the
     /// linear zone.
     Unrestricted,
-    /// An action names a linear index no fork bound.
+    /// An action names a linear index no fork or receive bound.
     Unbound
     {
         /// The index.

@@ -10,7 +10,9 @@
 
 /// A ring: its entries sealed behind the interface, the protocol of one
 /// submission as the kernel serves it, the buffer and the pending completion
-/// on the submitter's side, and one entry of each kind.
+/// on the submitter's side, the protocols that take a buffer, a pending
+/// completion or a target's pending completion over a session, and one entry
+/// of each kind.
 module Ring :> #{
   type Sqe,
   type Cqe,
@@ -19,6 +21,7 @@ module Ring :> #{
   type Pending = ?Cqe. end,
   type Moving = ?Buffer. !Cqe. end,
   type Reaping = ?Pending. end,
+  type Cancelling = ?Pending. !Cqe. end,
   read : Sqe,
   done : Cqe
 } {

@@ -2313,9 +2313,13 @@ where
             endpoint(writer, subject);
             write_index(writer, payload)?;
         },
-        SessionAction::Receive { endpoint: subject } => {
+        SessionAction::Receive {
+            endpoint: subject,
+            body,
+        } => {
             writer.tag(Tag(1));
             endpoint(writer, subject);
+            write_index(writer, body)?;
         },
         SessionAction::Select {
             endpoint: subject,
@@ -2355,7 +2359,7 @@ where
 ///
 /// # Specification
 /// - ensures: the action of the written kind over the written endpoint, label,
-///   payload, arms or fork edges.
+///   payload, arms, receive body or fork edges.
 /// - fails: [`CodecError::Corrupt`] for malformed bytes, an unknown kind or an
 ///   endpoint past the `u32` ceiling; [`CodecError::NonCanonical`] for arms out
 ///   of label order.
@@ -2382,6 +2386,7 @@ fn read_session_action(
         },
         1 => SessionAction::Receive {
             endpoint: endpoint(reader)?,
+            body: read_index(reader)?,
         },
         2 => SessionAction::Select {
             endpoint: endpoint(reader)?,
@@ -2717,7 +2722,6 @@ where
             write_endpoint(writer, endpoint)?;
             write_listed(writer, &CAPTURES, &by)?;
         },
-        Linearity::Delegated => writer.tag(Tag(4)),
         Linearity::AsValue { endpoint } => {
             writer.tag(Tag(5));
             write_endpoint(writer, endpoint)?;
@@ -2770,7 +2774,6 @@ fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
             endpoint: read_endpoint(reader)?,
             by: read_listed(reader, &CAPTURES)?,
         },
-        4 => Linearity::Delegated,
         5 => Linearity::AsValue {
             endpoint: read_endpoint(reader)?,
         },
@@ -5412,8 +5415,8 @@ const ACTIONS: [ActionKind; 5] = [
     ActionKind::Close,
 ];
 
-/// The sides of a fork, in stable wire order.
-const SIDES: [ForkSide; 2] = [ForkSide::Child, ForkSide::Parent];
+/// The binders of an endpoint, in stable wire order.
+const SIDES: [ForkSide; 3] = [ForkSide::Child, ForkSide::Parent, ForkSide::Received];
 
 /// What may run an endpoint's use other than once, in stable wire order.
 const CAPTURES: [Capture; 5] = [

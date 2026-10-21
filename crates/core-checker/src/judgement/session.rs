@@ -60,8 +60,8 @@ use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
-/// Who bound a linear slot: a fork's endpoint, a hold's held value, an
-/// access's view, or an entry's capability.
+/// Who bound a linear slot: a fork's or a receive's endpoint, a received
+/// value, a hold's held value, an access's view, or an entry's capability.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Resident
 {
@@ -71,6 +71,12 @@ pub(super) enum Resident
     Held
     {
         /// The hold.
+        at: ComputationId,
+    },
+    /// A value the receive `at` bound, opened spent: its reads copy.
+    Received
+    {
+        /// The receive.
         at: ComputationId,
     },
     /// The view the access `at` lends, of a value held at `grade`.
@@ -271,7 +277,10 @@ impl Machine<'_, '_>
                     state,
                     use_state,
                 }),
-                Resident::Held { .. } | Resident::View { .. } | Resident::Capability { .. } => None,
+                Resident::Received { .. }
+                | Resident::Held { .. }
+                | Resident::View { .. }
+                | Resident::Capability { .. } => None,
             })
             .collect()
     }
@@ -389,8 +398,10 @@ impl Machine<'_, '_>
                 use_state: resided.use_state,
                 depth: resided.depth,
             }),
-            Resident::Held { .. } | Resident::View { .. } | Resident::Capability { .. } => match at
-            {
+            Resident::Received { .. }
+            | Resident::Held { .. }
+            | Resident::View { .. }
+            | Resident::Capability { .. } => match at {
                 CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
                     at: term,
                     wanted: ExpectedShape::Session,
@@ -681,7 +692,7 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an endpoint returned as a value is refused by name.
-    /// - witness: `judgement::session::tests::delegation_and_sharing_are_refused_by_name`
+    /// - witness: `judgement::session::tests::an_endpoint_read_as_a_value_is_refused`
     #[spec(ensures: |ret| ret.is_err())]
     pub(super) fn endpoint_as_value(
         &mut self,
@@ -838,7 +849,9 @@ impl Machine<'_, '_>
         };
         match (action, direction) {
             (&SessionAction::Send { endpoint, payload }, _) => self.send(term, endpoint, payload),
-            (&SessionAction::Receive { endpoint }, _) => self.receive(term, endpoint),
+            (&SessionAction::Receive { endpoint, body }, _) => {
+                self.receive(term, endpoint, body, direction)
+            },
             (
                 &SessionAction::Select {
                     endpoint,
@@ -925,27 +938,34 @@ impl Machine<'_, '_>
         Ok(session)
     }
 
-    /// Start a send: check the payload, then advance the endpoint.
+    /// Start a send: delegate an endpoint sent whole, or check the payload,
+    /// then advance the endpoint.
     ///
     /// # Specification
     /// - requires: `at` is a send on `endpoint` of `payload`.
-    /// - ensures: one `SessionSend` frame waits on the payload's check against
+    /// - ensures: a payload that is a linear variable naming another endpoint
+    ///   is delegated: its slot, read where the send stands, is converted to
+    ///   the payload type and consumed, and the endpoint advances; any other
+    ///   payload leaves one `SessionSend` frame waiting on its check against
     ///   the payload type, read where the send stands.
     /// - fails: as [`Self::live`] and [`Self::admitted`];
     ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::UsedTwice`] when
-    ///   the payload names the endpoint and [`LinearityDefect::Delegated`] when
-    ///   it names another.
+    ///   the payload names the endpoint, and [`LinearityDefect::Closed`] when
+    ///   it delegates an endpoint already consumed; the value bridge's refusal
+    ///   when the delegated endpoint's session type is not the payload type.
     /// - panics: none.
     ///
     /// # Errors
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a send over its own endpoint and a send of another
-    ///   endpoint are refused, and the seat exchange's sends check.
+    /// - hypothesis: L3 — a send over its own endpoint is refused, an endpoint
+    ///   sent whole leaves the sender and a later action on it is refused, and
+    ///   the seat exchange's sends check.
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
-    /// - witness: `judgement::session::tests::delegation_and_sharing_are_refused_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { .. }))))]
+    /// - witness: `judgement::session::tests::a_delegated_endpoint_leaves_its_sender`
+    /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { .. }) | Step::Ascend(Produced::CompType(_)))))]
     fn send(
         &mut self,
         at: ComputationId,
@@ -959,24 +979,60 @@ impl Machine<'_, '_>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        let named = self.free_linear(CoreTerm::Value(payload))?;
-        if let Some(&other) = named.first() {
-            let node = CoreNode::Term(TermNode::Value(payload));
+        let node = CoreNode::Term(TermNode::Value(payload));
+        if self
+            .free_linear(CoreTerm::Value(payload))?
+            .contains(&endpoint)
+        {
             return Err(CheckRefusal::Linearity {
                 at: node,
-                defect: if named.contains(&endpoint) {
-                    LinearityDefect::UsedTwice {
-                        endpoint: slot.endpoint,
-                    }
-                }
-                else {
-                    let _named = self.slot(node, other)?;
-                    LinearityDefect::Delegated
+                defect: LinearityDefect::UsedTwice {
+                    endpoint: slot.endpoint,
                 },
             });
         }
         let next = self.context.arena_mut().value_type_session(next);
         let expected = self.here(ty, slot.depth)?;
+        if let Value::Variable {
+            zone: Zone::Linear,
+            index,
+        } = *self.value(payload)?
+        {
+            let sent = self.resided(node, index)?;
+            if let Resident::Endpoint(delegated) = sent.resident {
+                if sent.use_state == LinearUse::Consumed {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::Closed {
+                            endpoint: delegated,
+                        },
+                    });
+                }
+                let found = self.here(sent.state, sent.depth)?;
+                crate::conversion::value_bridge(
+                    self.context,
+                    payload,
+                    found,
+                    expected,
+                    &mut self.conversions,
+                )?;
+                // The payload is judged here, not by a descent, so its typing
+                // is kept as a checked value's would be.
+                if self.context.recording() == Recording::On {
+                    self.context.keep_typing(Typing {
+                        term: TermNode::Value(payload),
+                        ty: TypeNode::Value(expected),
+                        depth: self.context.depth(Zone::Intuitionistic),
+                    });
+                }
+                let _delegated = self
+                    .context
+                    .binders()
+                    .occurrence(Zone::Linear, index)
+                    .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+                return self.sent(endpoint, next);
+            }
+        }
         self.wait(Frame::SessionSend { at, endpoint, next });
         Ok(Step::Descend(Goal::Value {
             term: payload,
@@ -1016,12 +1072,17 @@ impl Machine<'_, '_>
         Ok(Step::Ascend(Produced::CompType(self.unit_returner())))
     }
 
-    /// Receive on `endpoint`.
+    /// Receive on `endpoint` into the receive's linear binder and judge its
+    /// body.
     ///
     /// # Specification
-    /// - requires: `at` is a receive on `endpoint`.
-    /// - ensures: the endpoint stands at the continuation; the receive
-    ///   synthesises the returner of the payload type, read where it stands.
+    /// - requires: `at` is a receive on `endpoint` whose body is `body`.
+    /// - ensures: the endpoint stands at the continuation; one linear slot
+    ///   more, at the payload type read where the receive stands: an endpoint
+    ///   the receive binds, available, for a payload that is a session type at
+    ///   its weak head, and otherwise a received value opened spent, whose
+    ///   reads copy; one `ReceiveBody` frame waits on the body's judgement in
+    ///   the receive's direction.
     /// - fails: as [`Self::live`] and [`Self::admitted`].
     /// - panics: none.
     ///
@@ -1029,13 +1090,21 @@ impl Machine<'_, '_>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the seat's first receive binds the dispatch.
+    /// - hypothesis: L3 — the seat's first receive binds the dispatch, read by
+    ///   copy, and a received endpoint is acted on and closed in the body.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
-    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
+    /// - witness: `judgement::session::tests::a_received_endpoint_is_acted_on_and_must_be_closed`
+    #[spec(
+        captures: before = self.context.depth(Zone::Linear),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
+            && self.context.depth(Zone::Linear) > before),
+    )]
     fn receive(
         &mut self,
         at: ComputationId,
         endpoint: DeBruijnIndex,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
     ) -> Result<Step, CheckRefusal>
     {
         let slot = self.live(at, endpoint)?;
@@ -1051,8 +1120,105 @@ impl Machine<'_, '_>
             .advance(endpoint, next)
             .map_err(|_fault| CheckRefusal::MachineInvariant)?;
         let payload = self.here(payload, slot.depth)?;
-        let returner = self.context.arena_mut().comp_type_returner(payload);
-        Ok(Step::Ascend(Produced::CompType(returner)))
+        let head = self.context.whnf_value_type(payload)?;
+        let delegated = matches!(
+            value_type_view(self.context.arena(), head)?,
+            ValueTypeView::Session(_)
+        );
+        let depth = self.context.depth(Zone::Intuitionistic);
+        if delegated {
+            self.context.binders().open(Zone::Linear, head);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Endpoint(Endpoint {
+                    fork: at,
+                    side: ForkSide::Received,
+                }),
+                depth,
+            });
+        }
+        else {
+            self.context.binders().open(Zone::Linear, payload);
+            self.sessions.opened.push(Opened {
+                resident: Resident::Received { at },
+                depth,
+            });
+            // A received value owes nothing: its slot opens spent, so a
+            // read copies and the body's end finds no residue.
+            let _received = self
+                .context
+                .binders()
+                .occurrence(Zone::Linear, DeBruijnIndex::from(0_u32))
+                .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        }
+        self.wait(Frame::ReceiveBody { at, direction });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction,
+        }))
+    }
+
+    /// Finish a receive whose body was judged: require a received endpoint
+    /// spent, drop the payload's slot and hand the body's result on.
+    ///
+    /// # Specification
+    /// - requires: the body was judged in `direction`.
+    /// - ensures: the payload's slot is closed and its entry dropped; the
+    ///   receive checked, or synthesised the body's type.
+    /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Residue`]
+    ///   at the receive for a received endpoint left unconsumed;
+    ///   [`CheckRefusal::MachineInvariant`] when the innermost slot is not this
+    ///   receive's.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a received endpoint the body never closes is refused
+    ///   at the receive, and a closed one checks.
+    /// - witness: `judgement::session::tests::a_received_endpoint_is_acted_on_and_must_be_closed`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(_))))]
+    pub(super) fn received(
+        &mut self,
+        at: ComputationId,
+        direction: Direction<CompTypeId>,
+        produced: Produced,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let innermost = self.resided(node, DeBruijnIndex::from(0_u32))?;
+        match innermost.resident {
+            Resident::Endpoint(endpoint) if endpoint.fork == at => {
+                if innermost.use_state == LinearUse::Available {
+                    return Err(CheckRefusal::Linearity {
+                        at: node,
+                        defect: LinearityDefect::Residue {
+                            endpoint,
+                            state: innermost.state,
+                        },
+                    });
+                }
+            },
+            Resident::Received { at: receive } if receive == at => {},
+            Resident::Endpoint(_)
+            | Resident::Received { .. }
+            | Resident::Held { .. }
+            | Resident::View { .. }
+            | Resident::Capability { .. } => return Err(CheckRefusal::MachineInvariant),
+        }
+        let _state = self
+            .context
+            .binders()
+            .close(Zone::Linear)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let _opened = self.sessions.opened.pop();
+        match (direction, produced) {
+            (Direction::Check(_), Produced::Checked) => Ok(Step::Ascend(Produced::Checked)),
+            (Direction::Synthesise, Produced::CompType(ty)) => {
+                Ok(Step::Ascend(Produced::CompType(ty)))
+            },
+            (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
+        }
     }
 
     /// Select `label` on `endpoint`.
@@ -1398,6 +1564,9 @@ impl Machine<'_, '_>
                         other,
                     },
                 },
+                // A received value opens spent, so two arms never leave it
+                // otherwise.
+                Resident::Received { .. } => CheckRefusal::MachineInvariant,
                 Resident::Held { .. } | Resident::View { .. } => CheckRefusal::Access {
                     at,
                     defect: AccessDefect::Unended,
@@ -1531,11 +1700,14 @@ impl Machine<'_, '_>
             }
             let outer = DeBruijnIndex::from(u32::from(index).saturating_sub(1));
             // A child runs as its own continuation: a held value or a view
-            // it names would be shared with the parent.
+            // it names would be shared with the parent. A received value is
+            // read by copy and never written, so sharing it is sound.
             let named = self.resided(node, outer)?;
             let Resident::Endpoint(endpoint) = named.resident
             else {
-                captured(node, named.resident, Capture::Continuation)?;
+                if !matches!(named.resident, Resident::Received { .. }) {
+                    captured(node, named.resident, Capture::Continuation)?;
+                }
                 continue;
             };
             if !shared.contains(&index) {
@@ -1601,13 +1773,17 @@ impl Machine<'_, '_>
         let node = CoreNode::Term(TermNode::Computation(at));
         let named = share.iter().copied().filter(|&index| u32::from(index) != 0);
         for index in core::iter::once(DeBruijnIndex::from(0_u32)).chain(named) {
-            let slot = self.slot(node, index)?;
-            if slot.use_state == LinearUse::Available {
+            let read = self.resided(node, index)?;
+            let Resident::Endpoint(endpoint) = read.resident
+            else {
+                continue;
+            };
+            if read.use_state == LinearUse::Available {
                 return Err(CheckRefusal::Linearity {
                     at: node,
                     defect: LinearityDefect::Residue {
-                        endpoint: slot.endpoint,
-                        state: slot.state,
+                        endpoint,
+                        state: read.state,
                     },
                 });
             }
@@ -1709,56 +1885,18 @@ impl Machine<'_, '_>
             (Direction::Check(_) | Direction::Synthesise, _) => Err(CheckRefusal::MachineInvariant),
         }
     }
-
-    /// Finish a session type's formation: no payload may be a session type.
-    ///
-    /// # Specification
-    /// - requires: every payload of `at` formed.
-    /// - ensures: nothing changes; the session type formed.
-    /// - fails: [`CheckRefusal::Linearity`] naming
-    ///   [`LinearityDefect::Delegated`] at the first payload that is a session
-    ///   type at its weak head.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As above.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a protocol sending a session type is refused.
-    /// - witness: `judgement::session::tests::delegation_and_sharing_are_refused_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::Checked))))]
-    pub(super) fn session_formed(
-        &mut self,
-        at: ValueTypeId,
-    ) -> Result<Step, CheckRefusal>
-    {
-        let payloads: Vec<ValueTypeId> = session_at(self.context, at)?.payloads().to_vec();
-        for payload in payloads {
-            let head = self.context.whnf_value_type(payload)?;
-            if matches!(
-                value_type_view(self.context.arena(), head)?,
-                ValueTypeView::Session(_)
-            ) {
-                return Err(CheckRefusal::Linearity {
-                    at: CoreNode::Type(TypeNode::Value(payload)),
-                    defect: LinearityDefect::Delegated,
-                });
-            }
-        }
-        Ok(Step::Ascend(Produced::Checked))
-    }
 }
 
 /// Refuse the resident `resident`, named at `node` by a former that may run
-/// its use other than once, as `by` says; a held value a branch reads
-/// passes.
+/// its use other than once, as `by` says; a held or received value a branch
+/// reads passes.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: success for a held value named by a branch.
+/// - ensures: success for a held or received value named by a branch.
 /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Captured`]
 ///   for an endpoint; [`CheckRefusal::Access`] naming
-///   [`AccessDefect::HeldCaptured`] for a held value and
+///   [`AccessDefect::HeldCaptured`] for a held or received value and
 ///   [`AccessDefect::Escaped`] for a view, each at `node` with `by`.
 /// - panics: none.
 ///
@@ -1772,7 +1910,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
 /// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
 #[spec(ensures: |ret| match (resident, ret) {
-    | (Resident::Held { .. }, Ok(())) => by == Capture::Branch,
+    | (Resident::Held { .. } | Resident::Received { .. }, Ok(())) => by == Capture::Branch,
     | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. }, Ok(())) => false,
     | (_, Err(_)) => true,
 })]
@@ -1787,8 +1925,8 @@ fn captured(
             at: node,
             defect: LinearityDefect::Captured { endpoint, by },
         }),
-        Resident::Held { .. } if by == Capture::Branch => Ok(()),
-        Resident::Held { .. } => Err(CheckRefusal::Access {
+        Resident::Held { .. } | Resident::Received { .. } if by == Capture::Branch => Ok(()),
+        Resident::Held { .. } | Resident::Received { .. } => Err(CheckRefusal::Access {
             at: node,
             defect: AccessDefect::HeldCaptured { by },
         }),

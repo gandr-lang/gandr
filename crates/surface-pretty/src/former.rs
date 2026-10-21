@@ -819,8 +819,15 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A receive on a linear endpoint, `recv(e)`.
-    Receive(DeBruijnIndex),
+    /// A receive on a linear endpoint, `recv(e) as x ; t`: the rest under the
+    /// payload's linear binder.
+    Receive
+    {
+        /// The endpoint, a linear index.
+        endpoint: DeBruijnIndex,
+        /// The rest of the block.
+        body: Node,
+    },
     /// A selection on a linear endpoint, `select(e, l)`.
     Select
     {

@@ -3649,23 +3649,24 @@ fn a_loop_arm_is_written_under_its_loop_813()
 }
 
 /// What an endpoint receives is bound as the surface reads a receive,
-/// `recv(e) as x ; rest`: under `run x <- …` a receive reads as a statement
-/// that cannot stand there, and the source does not parse (#815).
+/// `recv(e) as x ; rest`, the rest under the payload's linear binder: under
+/// `run x <- …` a receive reads as a statement that cannot stand there, and
+/// the source does not parse (#815).
 #[test]
 fn a_received_payload_is_bound_as_the_surface_reads_it_815()
 {
     let mut core = CoreArena::new();
+    let payload = core.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(payload);
     let received = core.computation_session(gandr_core_term::session::SessionAction::Receive {
         endpoint: DeBruijnIndex::from(0_u32),
+        body: returned,
     });
-    let payload = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let returned = core.computation_return(payload);
-    let bound = core.computation_bind(received, returned);
     let source = CoreSource::new(&core, &[]);
-    let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(bound)));
+    let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(received)));
     assert!(
-        text.contains(") as a ;") && !text.contains("<-"),
-        "the receive binds its payload with `as`: {text}"
+        text.contains(") as a ;") && text.ends_with('a') && !text.contains("<-"),
+        "the receive binds its payload with `as`, and the rest reads it: {text}"
     );
 }
 

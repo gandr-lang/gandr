@@ -1501,8 +1501,9 @@ fn covers_preserve_every_binding_former()
             "receive",
             ContentNode::Session(SessionAction::Receive {
                 endpoint: at(0_u32),
+                body: index(1_usize),
             }),
-            linear,
+            both,
         ),
         (
             "select",
