@@ -137,6 +137,28 @@ pub enum Recursion
     Productive,
 }
 
+/// A recursive definition's own binder in a presented body: the claim each
+/// of its calls writes, and how many uniform parameters the context binds
+/// before it.
+///
+/// The uniform parameters are bound outside the fixpoint, so the context
+/// reads `p₁ … pₖ`, then the definition's own name, then the parameters the
+/// fixpoint binds. A call of the definition passes each uniform parameter as
+/// itself before its own arguments, `f[<](p₁, …, pₖ, a, …)`, which lowers to
+/// the fixpoint applied to its arguments alone.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Recursive
+{
+    /// The claim each call writes.
+    pub claim: Recursion,
+    /// The uniform parameters bound before the definition's own binder: its
+    /// position in the context.
+    pub uniform: Arity,
+}
+
 /// The moves of a recorded run, as the printer spells them.
 pub trait Moves: core::fmt::Debug
 {
@@ -1243,16 +1265,17 @@ pub trait Source
         &[]
     }
 
-    /// The claim each occurrence of the outermost binder of
-    /// [`Self::context`] writes, where that binder is a recursive
-    /// definition's own; none when it is not.
+    /// The binder of [`Self::context`] that is a recursive definition's own,
+    /// at the position [`Recursive::uniform`] names, and the claim each of
+    /// its occurrences writes; none when no binder is.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: where present and the context holds a binder, the walk writes
-    ///   the outermost one's name `name[<]` or `name[>]` at each occurrence as
-    ///   [`Recursion`] says, as a claimed call of the definition writes its
-    ///   head. The default is none.
+    /// - ensures: where present and the context holds a binder at that
+    ///   position, the walk writes its name `name[<]` or `name[>]` at each
+    ///   occurrence as [`Recursion`] says, as a claimed call of the definition
+    ///   writes its head, and a call of it passes the context binders before
+    ///   it, outermost first, ahead of its own arguments. The default is none.
     /// - provides: the head of a claimed call in the body of a `def rec`.
     /// - fails: never.
     /// - panics: none.
@@ -1262,11 +1285,13 @@ pub trait Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a recursive definition's body spells a descending
-    ///   call of itself `name[<](p)` and a productive one `name[>](p)`; the
-    ///   same body with no such binder spells the bare name.
+    ///   call of itself `name[<](p)` and a productive one `name[>](p)`, and a
+    ///   call under a uniform parameter `name[<](u, p)`; the same body with no
+    ///   such binder spells the bare name.
     /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
     #[inline]
-    fn recursive(&self) -> Option<Recursion>
+    fn recursive(&self) -> Option<Recursive>
     {
         None
     }

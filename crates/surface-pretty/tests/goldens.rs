@@ -3331,6 +3331,73 @@ fn two_parameters(
     (case, core.value_thunk(fixpoint))
 }
 
+/// The body of `def rec down(n : Nat, m : Nat) -> -F Nat { case m { Zero =>
+/// n, Succ(p) => down[<](n, p) } }`, its uniform `n` bound outside the
+/// fixpoint as the lowering binds it, and the case under the fixpoint.
+///
+/// # Specification
+/// trivial.
+fn one_uniform(core: &mut CoreArena) -> (gandr_core_term::ComputationId, ValueId)
+{
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // Under the case: `m`, the fixpoint's own, `n`; the successor's field
+    // binds one more.
+    let (staged, kept) = (variable(core, 0_u32), variable(core, 2_u32));
+    let (field, itself) = (variable(core, 0_u32), variable(core, 2_u32));
+    let returned = core.computation_return(kept);
+    let forced = core.computation_force(itself);
+    let call = core.computation_application(forced, field);
+    let succeeded = core.computation_lambda(call);
+    let case = core.computation_data_case(staged, returns_nat, vec![returned, succeeded]);
+    let abstraction = core.computation_lambda(case);
+    let fixpoint = core.computation_fixpoint(
+        abstraction,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let uniform = core.computation_lambda(fixpoint);
+    (case, core.value_thunk(uniform))
+}
+
+/// The body of `def rec down(a : Nat, g : Nat => Nat, m : Nat) -> -F Nat {
+/// case m { Zero => a, Succ(p) => g(down[<](a, g, p)) } }`, its uniform `a`
+/// and `g` bound outside the fixpoint, and the case under the fixpoint.
+///
+/// # Specification
+/// trivial.
+fn two_uniform(core: &mut CoreArena) -> (gandr_core_term::ComputationId, ValueId)
+{
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // Under the case: `m`, the fixpoint's own, `g`, `a`; the successor's
+    // field binds one more, and the bind of the call one more again.
+    let (staged, first) = (variable(core, 0_u32), variable(core, 3_u32));
+    let (field, itself) = (variable(core, 0_u32), variable(core, 2_u32));
+    let (result, map) = (variable(core, 0_u32), variable(core, 4_u32));
+    let returned = core.computation_return(first);
+    let forced = core.computation_force(itself);
+    let call = core.computation_application(forced, field);
+    let forced_map = core.computation_force(map);
+    let mapped = core.computation_application(forced_map, result);
+    let bound = core.computation_bind(call, mapped);
+    let succeeded = core.computation_lambda(bound);
+    let case = core.computation_data_case(staged, returns_nat, vec![returned, succeeded]);
+    let abstraction = core.computation_lambda(case);
+    let fixpoint = core.computation_fixpoint(
+        abstraction,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let inner = core.computation_lambda(fixpoint);
+    let outer = core.computation_lambda(inner);
+    (case, core.value_thunk(outer))
+}
+
 /// A definition's presentation as a `def rec`: its text and fidelity, or why
 /// it is no recursive definition.
 ///
@@ -3495,6 +3562,68 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
             "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
         ),
         "an arrow's name the body mentions is passed over"
+    );
+}
+
+/// A recursive definition whose leading parameters the lowering binds
+/// outside the fixpoint, its uniform parameters, spells whole with every
+/// parameter in its header, and each call of its own binder passes them as
+/// themselves before its own arguments, `down[<](a, g, p)`, as the surface
+/// requires; a call of a uniform parameter, `g(…)`, passes nothing more. A
+/// fixpoint under every abstraction its type runs through is no `def rec`
+/// (#941).
+#[test]
+fn a_uniform_parameter_is_passed_by_each_call_941()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty_one = core.value_type_thunk(curried);
+    let map = core.value_type_thunk(function);
+    let mapped = core.comp_type_arrow(map, function);
+    let leading = core.comp_type_arrow(nat, mapped);
+    let ty_two = core.value_type_thunk(leading);
+    let (one_case, one) = one_uniform(&mut core);
+    let (two_case, two) = two_uniform(&mut core);
+    // Every abstraction outside the fixpoint: no parameter is left for the
+    // fixpoint to bind.
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let bare = core.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);
+    let inner = core.computation_lambda(bare);
+    let outer = core.computation_lambda(inner);
+    let exhausted = core.value_thunk(outer);
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Nat"), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    constructors.case(one_case, Name::from("Nat"));
+    constructors.case(two_case, Name::from("Nat"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let wide = PageWidth::from(100_u32);
+    assert_eq!(
+        recursive(&source, (ty_one, one), wide),
+        written(
+            "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](a, c) }\n}"
+        ),
+        "a call passes the uniform parameter before its argument"
+    );
+    assert_eq!(
+        recursive(&source, (ty_two, two), wide),
+        written(
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> -F Nat {\n  case c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
+        ),
+        "a call passes both uniform parameters in order, a call of one passes nothing more"
+    );
+    assert_eq!(
+        recursive(&source, (ty_one, exhausted), wide),
+        Maybe::Absent(recursive::Absent::NotAFixpoint),
+        "a fixpoint binding no parameter is no recursive definition"
     );
 }
 

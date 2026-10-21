@@ -33,6 +33,7 @@ use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Recursion;
+use crate::former::Recursive;
 use crate::former::Source;
 use crate::former::Unreadable;
 
@@ -433,9 +434,9 @@ pub struct CoreSource<'arena>
     constructors: &'arena Constructors<'arena>,
     /// The names of the binders the root stands under, outermost first.
     context: &'arena [Option<Name<'arena>>],
-    /// The claim the calls of the outermost binder in `context` write, where
-    /// it is a recursive definition's own.
-    recursive: Option<Recursion>,
+    /// The binder of `context` that is a recursive definition's own, and the
+    /// claim its calls write.
+    recursive: Option<Recursive>,
     /// The names of the capability scopes the root stands in, outermost
     /// first.
     regions: &'arena [Option<Name<'arena>>],
@@ -523,8 +524,9 @@ impl<'arena> CoreSource<'arena>
         Self { context, ..self }
     }
 
-    /// This source, the outermost binder of its context a recursive
-    /// definition's own, each call of which writes `recursion`'s claim.
+    /// This source, the binder of its context at `recursive`'s position a
+    /// recursive definition's own, each call of which writes its claim after
+    /// the uniform parameters bound before it.
     ///
     /// # Specification
     /// trivial.
@@ -532,11 +534,11 @@ impl<'arena> CoreSource<'arena>
     #[must_use]
     pub const fn recursing(
         self,
-        recursion: Recursion,
+        recursive: Recursive,
     ) -> Self
     {
         Self {
-            recursive: Some(recursion),
+            recursive: Some(recursive),
             ..self
         }
     }
@@ -2167,12 +2169,12 @@ impl Source for CoreSource<'_>
         self.context
     }
 
-    /// The position of the recursive definition's own binder in the context.
+    /// The recursive definition's own binder in the context, and its claim.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn recursive(&self) -> Option<Recursion>
+    fn recursive(&self) -> Option<Recursive>
     {
         self.recursive
     }

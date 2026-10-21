@@ -322,6 +322,7 @@ pub use crate::former::Name;
 pub use crate::former::Notation;
 pub use crate::former::Placement;
 pub use crate::former::Recursion;
+pub use crate::former::Recursive;
 pub use crate::former::Source;
 pub use crate::former::Unreadable;
 pub use crate::former::Unspelled;
@@ -813,20 +814,23 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
-///   `body` is `thunk { rec f { fn (x₁) { … fn (xₙ) { b } … } } }`, `n` the
-///   abstractions the arrows run through, at least one: the header `def rec
+///   `body` is `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) { … fn (xₙ) { b
+///   } … } } } … } }`, `n` the abstractions the arrows run through, `k ≥ 0` of
+///   them outside the fixpoint and at least one inside: the header `def rec
 ///   name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under the binders of the
 ///   dependent arrows before it, then `b` as [`present_computation`] writes it
-///   at a page two columns narrower under the context binding `name` and then
-///   `x₁` to `xₙ`, each of its lines two columns in, then `}`. Each occurrence
-///   of the fixpoint's own binder is written with its claim: `name[<]` where
-///   the fixpoint claims structural recursion on a parameter, `name[>]` where
-///   it claims nothing. `xᵢ` is its dependent arrow's binder where the source
-///   names it and neither the definition nor an earlier parameter takes it,
-///   otherwise the next generated name that neither `name`, the definition nor
-///   an earlier parameter takes. The presentation is approximate, its unspelled
-///   reasons collected, when a header type or the body is. Absent for any other
-///   shape, and when no names for the parameters are found.
+///   at a page two columns narrower under the context binding `x₁` to `xₖ`,
+///   `name`, then `xₖ₊₁` to `xₙ`, each of its lines two columns in, then `}`.
+///   Each occurrence of the fixpoint's own binder is written with its claim:
+///   `name[<]` where the fixpoint claims structural recursion on a parameter,
+///   `name[>]` where it claims nothing; each call of it passes the uniform
+///   parameters `x₁` to `xₖ` as themselves before its own arguments. `xᵢ` is
+///   its dependent arrow's binder where the source names it and neither the
+///   definition nor an earlier parameter takes it, otherwise the next generated
+///   name that neither `name`, the definition nor an earlier parameter takes.
+///   The presentation is approximate, its unspelled reasons collected, when a
+///   header type or the body is. Absent for any other shape, and when no names
+///   for the parameters are found.
 /// - provides: the declaration a recursive definition reads back as, written
 ///   whole where `def name = body` would write a fixpoint the surface spells
 ///   only in its declaration.
@@ -840,11 +844,14 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a descending fixpoint over a case, of one parameter and
 ///   of two, a staged fixpoint and one claiming nothing distinguish a lost or
 ///   wrong claim, a parameter left in the body, a lost header, a lost indent
-///   and a body under the wrong context; a body mentioning the first candidate
-///   name distinguishes a captured parameter, and a body that is no fixpoint
-///   and a type that is no function are absent.
+///   and a body under the wrong context; a fixpoint under one and two uniform
+///   parameters distinguishes a call that drops or reorders them and a body
+///   under the wrong context; a body mentioning the first candidate name
+///   distinguishes a captured parameter, and a body that is no fixpoint and a
+///   type that is no function are absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
+/// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def rec ")
         && presentation.as_ref().ends_with('}')
@@ -865,20 +872,32 @@ pub fn present_recursive(
     else {
         return Ok(Maybe::Absent(recursive::Absent::NotAFunction));
     };
-    let Former::Thunk(fixpoint) = source.read(CoreNode::Value(body))
-    else {
-        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
-    };
-    let (Former::Fixpoint(abstraction), Some(recursion)) =
-        (source.read(fixpoint), source.recursion(fixpoint))
+    let Former::Thunk(suspended) = source.read(CoreNode::Value(body))
     else {
         return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
     };
     // Each parameter: its arrow, its domain, and whether the arrow binds it
-    // in what follows; then the codomain and the body under them all.
+    // in what follows; then the codomain and the body under them all. The
+    // fixpoint stands after the uniform parameters, and its own abstractions
+    // follow it.
     let mut arrows: Vec<(CoreNode, CoreNode, bool)> = Vec::new();
-    let (mut codomain, mut inner) = (function, abstraction);
+    let mut fixpoint: Option<Recursive> = None;
+    let (mut codomain, mut inner) = (function, suspended);
     loop {
+        if fixpoint.is_none()
+            && let Former::Fixpoint(abstraction) = source.read(inner)
+        {
+            let Some(claim) = source.recursion(inner)
+            else {
+                return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+            };
+            fixpoint = Some(Recursive {
+                claim,
+                uniform: Arity::from(arrows.len()),
+            });
+            inner = abstraction;
+            continue;
+        }
         let former = source.read(codomain);
         let (domain, rest, dependent) = if let Former::Arrow { domain, codomain } = former {
             (domain, codomain, false)
@@ -909,6 +928,10 @@ pub fn present_recursive(
             },
         ));
     }
+    let Some(recursive) = fixpoint.filter(|own| usize::from(own.uniform) < arrows.len())
+    else {
+        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+    };
     let mut roots: Vec<(CoreNode, Admits)> = arrows
         .iter()
         .map(|&(_, domain, _)| (domain, Admits::Type))
@@ -931,7 +954,8 @@ pub fn present_recursive(
         return Ok(Maybe::Absent(recursive::Absent::Unnamed));
     };
     // A type stands under the binders of the dependent arrows before it;
-    // the body under the definition's own binder and every parameter.
+    // the body under the uniform parameters, the definition's own binder and
+    // the parameters its fixpoint binds.
     let mut header: Vec<String> = Vec::with_capacity(arrows.len());
     let mut bound: Vec<Option<Name<'_>>> = Vec::new();
     let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
@@ -945,14 +969,20 @@ pub fn present_recursive(
     }
     let header = header.join(", ");
     let returned = present_type(&source.within(&bound), codomain, page, style)?;
-    let context: Vec<Option<Name<'_>>> = core::iter::once(Some(name))
-        .chain(
-            names
-                .iter()
-                .map(|parameter| Some(Name::from(parameter.as_str()))),
-        )
+    // The definition's own binder stands among the parameters, after the
+    // uniform ones.
+    let own = usize::from(recursive.uniform);
+    let context: Vec<Option<Name<'_>>> = names
+        .iter()
+        .enumerate()
+        .flat_map(|(at, parameter)| {
+            (at == own)
+                .then_some(Some(name))
+                .into_iter()
+                .chain(core::iter::once(Some(Name::from(parameter.as_str()))))
+        })
         .collect();
-    let under = source.within(&context).recursing(recursion);
+    let under = source.within(&context).recursing(recursive);
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
     let mut text = format!("def rec {}({header}) -> {returned} {{", name.as_ref());

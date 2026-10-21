@@ -228,6 +228,7 @@ use crate::former::Name;
 use crate::former::Notation;
 use crate::former::Placement;
 use crate::former::Recursion;
+use crate::former::Recursive;
 use crate::former::Source;
 use crate::former::Unreadable;
 use crate::former::Unspelled;
@@ -366,6 +367,12 @@ struct Ordinal(u32);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct OpenBinders(usize);
+
+/// A binder's position in the context the root stands under, counted from
+/// the outermost.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContextPosition(usize);
 
 /// How many arguments one spelled application holds.
 #[repr(transparent)]
@@ -2615,6 +2622,9 @@ enum Task<Node>
     Substitute(Arity),
     /// Spell a component the source did not answer, as `?`.
     Missing,
+    /// Spell the context binder at this position, outermost first: a uniform
+    /// parameter a recursive definition's call passes as itself.
+    Context(ContextPosition),
     /// Spell the label an entry is written after.
     Label(Labelled<Node>),
     /// Combine finished pieces.
@@ -3194,9 +3204,9 @@ struct Walk<'walk, 'names>
     /// The names of the intuitionistic binders the root stands under,
     /// outermost first.
     context: &'names [Option<Name<'names>>],
-    /// The claim the calls of the outermost binder in `context` write, where
-    /// it is a recursive definition's own.
-    recursive: Option<Recursion>,
+    /// The binder of `context` that is a recursive definition's own, and the
+    /// claim its calls write.
+    recursive: Option<Recursive>,
     /// Whether every node so far was spelled in full.
     fidelity: Fidelity,
     /// Why each `?` written so far was written.
@@ -3583,45 +3593,33 @@ impl Walk<'_, '_>
         index: DeBruijnIndex,
     ) -> Result<Doc, PresentationError>
     {
-        let found = self.opened_at(zone, index);
-        let open = self.opened.iter().filter(|&&open| open == zone).count();
-        let remaining = usize::try_from(u32::from(index))
-            .unwrap_or(usize::MAX)
-            .saturating_sub(open);
-        let spelled = match found {
-            Some(position) => {
-                let _fresh = self.occurring.insert(position);
-                match self.names.get(position.0) {
-                    Some(&Some(ref name)) => Ok(name.0.clone()),
-                    Some(&None) | None => Err(Unspelled::Exhausted),
-                }
-            },
-            None => match zone {
-                Zone::Intuitionistic => {
-                    let position = self
-                        .context
-                        .len()
-                        .checked_sub(remaining)
-                        .and_then(|outer| outer.checked_sub(1_usize));
-                    match position.and_then(|at| self.context.get(at).copied().flatten()) {
-                        Some(name) => match (unwritable(name, self.spelling), self.recursive) {
-                            // A recursive definition's call of itself writes
-                            // its claim.
-                            (None, Some(recursion)) if position == Some(0_usize) => {
-                                Ok(format!("{}{}", name.as_ref(), match recursion {
-                                    Recursion::Descends => "[<]",
-                                    Recursion::Productive => "[>]",
-                                }))
-                            },
-                            (None, _) => Ok(String::from(name.as_ref())),
-                            (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),
-                            (Some(_), _) => Err(Unspelled::Unbound),
-                        },
-                        None => Err(Unspelled::Unbound),
-                    }
+        let spelled = if let Some(position) = self.opened_at(zone, index) {
+            let _fresh = self.occurring.insert(position);
+            match self.names.get(position.0) {
+                Some(&Some(ref name)) => Ok(name.0.clone()),
+                Some(&None) | None => Err(Unspelled::Exhausted),
+            }
+        }
+        else {
+            let position = self.context_position(zone, index);
+            match position.and_then(|at| self.context.get(at.0).copied().flatten()) {
+                Some(name) => match (unwritable(name, self.spelling), self.recursive) {
+                    // A recursive definition's call of itself writes its
+                    // claim.
+                    (None, Some(recursive))
+                        if position == Some(ContextPosition(usize::from(recursive.uniform))) =>
+                    {
+                        Ok(format!("{}{}", name.as_ref(), match recursive.claim {
+                            Recursion::Descends => "[<]",
+                            Recursion::Productive => "[>]",
+                        }))
+                    },
+                    (None, _) => Ok(String::from(name.as_ref())),
+                    (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),
+                    (Some(_), _) => Err(Unspelled::Unbound),
                 },
-                Zone::Linear => Err(Unspelled::Unbound),
-            },
+                None => Err(Unspelled::Unbound),
+            }
         };
         match spelled {
             Ok(name) => self.leaf(Glyphs(name.as_str())),
@@ -3702,6 +3700,137 @@ impl Walk<'_, '_>
             remaining = remaining.saturating_sub(1_usize);
         }
         None
+    }
+
+    /// The position in the context, outermost first, of the binder an
+    /// intuitionistic variable `index` binders out counts out to past every
+    /// open binder of its zone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none for a variable an open binder of `zone` takes, for a
+    ///   linear variable and for one past the context; otherwise the position
+    ///   of the context binder it names, counted from the outermost.
+    /// - provides: the context binder a variable reads as, and whether it is a
+    ///   recursive definition's own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::variable_leaf`]: a free variable reads its
+    ///   context binder's name and one past the context reads none.
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(ensures: |ret| ret.is_none_or(|at| at.0 < self.context.len()))]
+    fn context_position(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<ContextPosition>
+    {
+        if zone != Zone::Intuitionistic || self.opened_at(zone, index).is_some() {
+            return None;
+        }
+        let open = self.opened.iter().filter(|&&open| open == zone).count();
+        let remaining = usize::try_from(u32::from(index))
+            .unwrap_or(usize::MAX)
+            .saturating_sub(open);
+        let position = self
+            .context
+            .len()
+            .checked_sub(remaining)?
+            .checked_sub(1_usize)?;
+        Some(ContextPosition(position))
+    }
+
+    /// How many uniform parameters a call headed by `head` passes as
+    /// themselves before its own arguments.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the recursive definition's [`Recursive::uniform`] when the
+    ///   walk presents its body and `head` forces an intuitionistic variable
+    ///   naming the context binder at that position, its own; zero otherwise.
+    /// - provides: the leading arguments a call of the definition writes, which
+    ///   the lowering reads as the parameters bound outside its fixpoint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of the definition under one and two uniform
+    ///   parameters, and a call of a uniform parameter itself, distinguish the
+    ///   definition's own binder from the binders before it.
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(ensures: |ret| ret.0 == 0_usize
+        || self.recursive.is_some_and(|recursive| usize::from(recursive.uniform) == ret.0))]
+    fn uniform<S>(
+        &self,
+        source: &S,
+        head: S::Node,
+    ) -> Arity
+    where
+        S: Source + ?Sized,
+    {
+        let Some(recursive) = self.recursive
+        else {
+            return Arity(0_usize);
+        };
+        let Former::Force(forced) = source.read(head)
+        else {
+            return Arity(0_usize);
+        };
+        let Former::Variable { zone, index } = source.read(forced)
+        else {
+            return Arity(0_usize);
+        };
+        let own = usize::from(recursive.uniform);
+        if self.context_position(zone, index) == Some(ContextPosition(own)) {
+            Arity(own)
+        }
+        else {
+            Arity(0_usize)
+        }
+    }
+
+    /// Pushes the name of the context binder at `position`, outermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one atom piece: the binder's name as [`Self::name`] writes
+    ///   it, or `?`, approximate and recorded unbound, for a position past the
+    ///   context and a binder the source cannot name.
+    /// - provides: a uniform parameter a recursive definition's call passes as
+    ///   itself.
+    /// - fails: as [`Self::name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::name`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::uniform`].
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| ret.is_err() || entry.checked_add(1_usize) == Some(self.pieces.len()),
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a position past the context, or a binder the source cannot name, names \
+                      no binder to spell"
+        )
+    )]
+    fn context_binder(
+        &mut self,
+        position: ContextPosition,
+    ) -> Result<(), PresentationError>
+    {
+        match self.context.get(position.0).copied().flatten() {
+            Some(name) => self.name(name),
+            None => self.unspell(Unspelled::Unbound),
+        }
     }
 
     /// Opens one binder for each of the top `arity` pieces, the deepest
@@ -5242,7 +5371,7 @@ impl Walk<'_, '_>
                 return writes(Production("type_application"), Ok(()));
             },
             Former::Application(function, argument) => {
-                Self::call(source, function, argument, depth, tasks);
+                self.call(source, function, argument, depth, tasks);
                 return writes(Production("call_expression"), Ok(()));
             },
             // A body that ends answering a type's code keeps its `pure`: the
@@ -5590,12 +5719,16 @@ impl Walk<'_, '_>
     ///   value it forces, the bridge the lowering writes before a value it
     ///   calls, and any other head as a computation where the body goes on; the
     ///   join over the head and the arguments, left to right, is pushed below
-    ///   their visits, the head visited first. A forced thunk literal of at
-    ///   least as many abstractions as the call has arguments, whose body then
-    ///   returns, is scheduled instead as the value it returns, under one
-    ///   binder per argument standing for the argument, the first outermost:
-    ///   the type grammar has no call of a literal, and the reading back
-    ///   compares such a call as what it returns (#675).
+    ///   their visits, the head visited first. Where the head forces a
+    ///   recursive definition's own binder, each uniform parameter
+    ///   ([`Self::uniform`]) is scheduled as its context binder between the
+    ///   head and the first argument, outermost first, and the join counts them
+    ///   among the arguments. A forced thunk literal of at least as many
+    ///   abstractions as the call has arguments, whose body then returns, is
+    ///   scheduled instead as the value it returns, under one binder per
+    ///   argument standing for the argument, the first outermost: the type
+    ///   grammar has no call of a literal, and the reading back compares such a
+    ///   call as what it returns (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -5610,10 +5743,12 @@ impl Walk<'_, '_>
     ///   and the head's parentheses; a call of a literal identity and of a
     ///   literal projection on two arguments observe the reduct and the binder
     ///   each argument stands for, and a literal whose body does more than
-    ///   return stays a call.
+    ///   return stays a call; a recursive definition's call under one and two
+    ///   uniform parameters observes them passed first, in order.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -5626,14 +5761,20 @@ impl Walk<'_, '_>
             }
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
             else { return false; };
-            arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0)
+            arity > 0_usize
                 && arity.checked_add(1_usize) == Some(visits.len())
-                && visits.split_last().is_some_and(|(head, arguments)|
+                && visits.split_last().is_some_and(|(head, arguments)| {
+                    let passed = arguments.iter().filter(|task| matches!(**task, Task::Visit { .. })).count();
                     matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
-                        && arguments.iter().all(|task| matches!(*task, Task::Visit { admits: Admits::Value, depth: at, .. } if at == depth)))
+                        && passed > 0_usize
+                        && u32::try_from(passed).is_ok_and(|count| count <= DEPTH_LIMIT.0)
+                        && arguments.iter().all(|task| matches!(*task, Task::Context(_))
+                            || matches!(*task, Task::Visit { admits: Admits::Value, depth: at, .. } if at == depth))
+                })
         }),
     )]
     fn call<S>(
+        &self,
         source: &S,
         function: S::Node,
         argument: S::Node,
@@ -5689,13 +5830,21 @@ impl Walk<'_, '_>
                 return;
             }
         }
-        tasks.push(Task::Join(Join::Apply(Arity(arguments.len()))));
+        // A recursive definition's call of itself passes each uniform
+        // parameter as itself, ahead of the arguments its fixpoint takes.
+        let Arity(uniform) = self.uniform(source, head);
+        tasks.push(Task::Join(Join::Apply(Arity(
+            arguments.len().saturating_add(uniform),
+        ))));
         for node in arguments {
             tasks.push(Task::Visit {
                 node,
                 admits: Admits::Value,
                 depth,
             });
+        }
+        for position in (0_usize .. uniform).rev() {
+            tasks.push(Task::Context(ContextPosition(position)));
         }
         tasks.push(if let Former::Force(thunk) = source.read(head) {
             Task::Visit {
@@ -7399,6 +7548,7 @@ where
                 )
             )]
             Task::Missing => walk.unspell(Unspelled::Missing)?,
+            Task::Context(position) => walk.context_binder(position)?,
             Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
             Task::Join(join) => walk.join(join)?,
             Task::Surface(surface) => walk.surface = surface,
