@@ -138,6 +138,10 @@ enum Head
     Op(Name, Count),
     /// A results tuple over its component count.
     Results(Count),
+    /// A metavariable's instantiation over its argument count: read rigidly,
+    /// as a head of its own, since no store holds a cell whose face
+    /// instantiates a metavariable.
+    Inst(Name, Count),
 }
 
 impl Head
@@ -150,7 +154,10 @@ impl Head
     {
         match *self {
             Self::Var(_) | Self::Konst(_) => Count(0),
-            Self::Ctor(_, arity) | Self::Op(_, arity) | Self::Results(arity) => arity,
+            Self::Ctor(_, arity)
+            | Self::Op(_, arity)
+            | Self::Results(arity)
+            | Self::Inst(_, arity) => arity,
         }
     }
 }
@@ -179,8 +186,8 @@ impl From<&FreeTerm> for Term
     ///
     /// # Specification
     /// - ensures: one node per free-term node in prefix order, a variable a
-    ///   metavariable, a constructor, an operation and a results tuple each
-    ///   their own head over their argument count.
+    ///   metavariable, a constructor, an operation, a results tuple and an
+    ///   instantiation each their own head over their argument count.
     /// - panics: none.
     /// - intension: one pass with an explicit stack of the subterms still to
     ///   visit, so nesting costs no call stack.
@@ -207,6 +214,9 @@ impl From<&FreeTerm> for Term
                 },
                 TermView::Op { name, args } => (Head::Op(name.clone(), Count(args.len())), args),
                 TermView::Results { args } => (Head::Results(Count(args.len())), args),
+                TermView::Inst { name, args } => {
+                    (Head::Inst(name.clone(), Count(args.len())), args)
+                },
             };
             nodes.push(head);
             let mark = pending.len();
@@ -259,6 +269,7 @@ impl Term
                 Head::Ctor(ref name, arity) => FreeTerm::ctor(name, take(&mut built, arity)),
                 Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
                 Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
+                Head::Inst(ref name, arity) => FreeTerm::inst(name, take(&mut built, arity)),
             };
             built.push(node);
         }
@@ -381,7 +392,9 @@ impl Term
     {
         self.0.iter().filter_map(|head| match *head {
             Head::Var(ref var) => Some(var),
-            Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => None,
+            Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => {
+                None
+            },
         })
     }
 
@@ -413,9 +426,11 @@ impl Term
                 .iter()
                 .map(|head| match *head {
                     Head::Var(ref var) => relabel(var),
-                    Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => {
-                        head.clone()
-                    },
+                    Head::Konst(_)
+                    | Head::Ctor(..)
+                    | Head::Op(..)
+                    | Head::Results(_)
+                    | Head::Inst(..) => head.clone(),
                 })
                 .collect(),
         )
@@ -461,7 +476,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => 1,
+        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -1290,7 +1305,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))

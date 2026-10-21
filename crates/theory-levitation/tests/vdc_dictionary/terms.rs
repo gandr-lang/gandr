@@ -86,6 +86,8 @@ enum Application
     Op,
     /// A results tuple, whose head carries no name.
     Results,
+    /// A metavariable's instantiation.
+    Inst,
 }
 
 impl Application
@@ -105,6 +107,7 @@ impl Application
             Self::Ctor => FreeTerm::ctor(name, args),
             Self::Op => FreeTerm::op(name, args),
             Self::Results => FreeTerm::results(args),
+            Self::Inst => FreeTerm::inst(name, args),
         }
     }
 }
@@ -185,7 +188,8 @@ fn schedule<'term>(
     | (TermView::Var(_), _) => true,
     | (TermView::Ctor { args: before, .. }, TermView::Ctor { args: after, .. })
     | (TermView::Op { args: before, .. }, TermView::Op { args: after, .. })
-    | (TermView::Results { args: before }, TermView::Results { args: after }) => before.count() == after.count(),
+    | (TermView::Results { args: before }, TermView::Results { args: after })
+    | (TermView::Inst { args: before, .. }, TermView::Inst { args: after, .. }) => before.count() == after.count(),
     | _ => false,
 })]
 pub fn rebuild<V, H>(
@@ -211,6 +215,9 @@ where
                 },
                 TermView::Results { args } => {
                     schedule(&mut work, Application::Results, Name::from(""), args);
+                },
+                TermView::Inst { name, args } => {
+                    schedule(&mut work, Application::Inst, name.clone(), args);
                 },
             },
             Rebuild::Assemble {
@@ -386,7 +393,7 @@ fn match_node(
 /// - witness: `tests::vdc_dictionary::terms::tests::positions_and_replacement_preserve_the_spine`
 #[spec(ensures: |ref found| *found == position.iter().try_fold(term.to_node(), |node, index| {
     match node.view() {
-        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } => args.nth(usize::from(*index)),
+        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } => args.nth(usize::from(*index)),
         | TermView::Var(_) => None,
     }
 }).map_or(Maybe::Absent(position::Absent::OffTerm), Maybe::Present))]
@@ -400,7 +407,8 @@ pub fn subterm_at<'term>(
         let next = match cursor.view() {
             TermView::Ctor { mut args, .. }
             | TermView::Op { mut args, .. }
-            | TermView::Results { mut args } => args.nth(usize::from(index)),
+            | TermView::Results { mut args }
+            | TermView::Inst { mut args, .. } => args.nth(usize::from(index)),
             TermView::Var(_) => None,
         };
         let Some(next) = next
@@ -455,6 +463,7 @@ pub fn replace_at(
             TermView::Ctor { name, args } => (Application::Ctor, name.clone(), args),
             TermView::Op { name, args } => (Application::Op, name.clone(), args),
             TermView::Results { args } => (Application::Results, Name::from(""), args),
+            TermView::Inst { name, args } => (Application::Inst, name.clone(), args),
             TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
         };
         let args: Vec<TermNode<'_>> = args.collect();

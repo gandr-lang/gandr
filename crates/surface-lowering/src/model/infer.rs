@@ -594,8 +594,9 @@ impl Engine
     ///   scope then holds; an application queues its operation after its
     ///   arguments, left to right.
     /// - fails: [`ModelFault::Constructor`] and [`ModelFault::ManyOut`] for a
-    ///   constructor term or a results tuple; [`ModelFault::UnknownHead`] for a
-    ///   name the environment does not bind.
+    ///   constructor term or a results tuple; [`ModelFault::Binding`] for a
+    ///   metavariable's instantiation, which only a second-order law writes;
+    ///   [`ModelFault::UnknownHead`] for a name the environment does not bind.
     /// - executable: none — the node pushed is the variable's image.
     ///
     /// # Adequacy
@@ -654,6 +655,7 @@ impl Engine
             },
             TermView::Ctor { .. } => return Err(ModelFault::Constructor),
             TermView::Results { .. } => return Err(ModelFault::ManyOut),
+            TermView::Inst { .. } => return Err(ModelFault::Binding),
         }
         Ok(())
     }

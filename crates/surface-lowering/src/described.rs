@@ -316,6 +316,9 @@ enum Rebuild<'term>
     Ctor(&'term Name, usize),
     /// A results tuple of this many terms last rebuilt.
     Results(usize),
+    /// An instantiation of the metavariable named over this many terms last
+    /// rebuilt.
+    Inst(&'term Name, usize),
 }
 
 /// A data family's operation, read over the module's families.
@@ -348,6 +351,127 @@ struct Declared<'form>
     operations: BTreeMap<Name, (&'form [Binder], &'form [SortTerm])>,
     /// Each stated operation's type, with the context it is stated in.
     heads: BTreeMap<Name, (ValueTypeId, ContextIndex)>,
+}
+
+/// How a law's side is read: over the arguments its `Model(S)` component's
+/// elaboration gives each application, or, for a law no component states,
+/// at the sorts the theory writes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Reading<'law, 'form>
+{
+    /// The side as the component elaborates it, when it states one.
+    Elaborated(Option<&'form FreeTerm>),
+    /// The sorts the theory writes for a law no component states.
+    Written(&'law Unstated<'form>),
+}
+
+/// The sorts a law no `Model(S)` component states reads its nodes at, as the
+/// theory writes them: each operation by name, each variable its left side
+/// places at a first-order port at that port's sort, and each variable a
+/// binding port binds at the sort of the term it stands for, under the
+/// port's binders.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct Unstated<'form>
+{
+    /// Each operation the theory declares, by name.
+    operations: &'form BTreeMap<&'form Name, &'form PresentedOperation>,
+    /// Each first-order variable of the left side, at its port's sort.
+    variables: BTreeMap<&'form Name, &'form SortTerm>,
+    /// Each variable a binding port binds, at the port's sort.
+    bound: BTreeMap<&'form Name, &'form SortTerm>,
+}
+
+impl<'form> Unstated<'form>
+{
+    /// The sorts the left side `left` gives its variables, each at the port
+    /// of `operations` it fills.
+    ///
+    /// # Specification
+    /// - ensures: each variable an application of a declared operation holds
+    ///   directly, at the sort of the port it fills: among `variables` for a
+    ///   first-order port, among `bound` for a binding one; a variable no
+    ///   application holds directly is in neither.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the placement is read off the side's nodes, which a
+    ///   predicate would walk again.
+    ///
+    /// # Termination
+    /// Each node of the finite side is popped once, and each application's
+    /// finite arguments are read once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `let(u, t)` places `u` at `Tm` and `t` at the binding
+    ///   port's `Tm`.
+    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
+    fn of(
+        operations: &'form BTreeMap<&'form Name, &'form PresentedOperation>,
+        left: &'form FreeTerm,
+    ) -> Self
+    {
+        let mut variables = BTreeMap::new();
+        let mut bound = BTreeMap::new();
+        let mut pending = Vec::from([left.to_node()]);
+        while let Some(node) = pending.pop() {
+            match node.view() {
+                TermView::Var(_) => {},
+                TermView::Op { name, args } => {
+                    if let Some(operation) = operations.get(name) {
+                        for (arg, port) in args.clone().zip(&operation.inputs) {
+                            if let TermView::Var(variable) = arg.view() {
+                                let into = if port.binders.is_empty() {
+                                    &mut variables
+                                }
+                                else {
+                                    &mut bound
+                                };
+                                let _first = into.insert(variable, &port.sort);
+                            }
+                        }
+                    }
+                    pending.extend(args);
+                },
+                TermView::Ctor { args, .. }
+                | TermView::Results { args }
+                | TermView::Inst { args, .. } => pending.extend(args),
+            }
+        }
+        Self {
+            operations,
+            variables,
+            bound,
+        }
+    }
+
+    /// The sort an application of `operation` stands at, when it has one
+    /// output of an unindexed sort.
+    ///
+    /// # Specification
+    /// - ensures: the output's sort for a declared operation of one output
+    ///   whose sort has no indices; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `let(u, t)` stands at `Tm`.
+    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
+    #[spec(ensures: |ret| ret.is_none_or(|sort| sort.indices.is_empty()))]
+    fn result(
+        &self,
+        operation: &Name,
+    ) -> Option<&'form SortTerm>
+    {
+        match *self.operations.get(operation)?.outputs.as_slice() {
+            [ref one] if one.sort.indices.is_empty() => Some(&one.sort),
+            _ => None,
+        }
+    }
 }
 
 /// The minting of every described node's type into one arena.
@@ -415,6 +539,11 @@ fn substitute(
                     pending.push(Rebuild::Results(args.len()));
                     pending.extend(args.into_iter().rev().map(Rebuild::Read));
                 },
+                TermView::Inst { name, args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Rebuild::Inst(name, args.len()));
+                    pending.extend(args.into_iter().rev().map(Rebuild::Read));
+                },
             },
             Rebuild::Op(name, count) => {
                 let args = take(&mut built, count);
@@ -427,6 +556,10 @@ fn substitute(
             Rebuild::Results(count) => {
                 let args = take(&mut built, count);
                 built.push(FreeTerm::results(args));
+            },
+            Rebuild::Inst(name, count) => {
+                let args = take(&mut built, count);
+                built.push(FreeTerm::inst(name.clone(), args));
             },
         }
     }
@@ -541,7 +674,9 @@ impl Typer<'_>
                         pending.push(Step::Apply(name, args.len()));
                         pending.extend(args.into_iter().rev().map(Step::Read));
                     },
-                    TermView::Ctor { .. } | TermView::Results { .. } => return None,
+                    TermView::Ctor { .. } | TermView::Results { .. } | TermView::Inst { .. } => {
+                        return None;
+                    },
                 },
                 Step::Apply(name, count) => {
                     let start = built.len().checked_sub(count)?;
@@ -741,7 +876,14 @@ impl Typer<'_>
     {
         let terms = raw.indices.iter().zip(&elaborated.indices);
         for ((term, image), nodes) in terms.zip(&written.indices) {
-            self.law_side(scope, telescope, declared, term, nodes, Some(image));
+            self.law_side(
+                scope,
+                telescope,
+                declared,
+                term,
+                nodes,
+                Reading::Elaborated(Some(image)),
+            );
         }
     }
 
@@ -1060,6 +1202,11 @@ impl Typer<'_>
             }
             scope.push(&operation.name, Dependent(true));
         }
+        let presented: BTreeMap<&Name, &PresentedOperation> = members
+            .operations
+            .iter()
+            .map(|operation| (&operation.name, operation))
+            .collect();
         for (law, member) in members.laws.iter().zip(&written.faces) {
             let form = forms.next();
             let stated = match form {
@@ -1087,12 +1234,20 @@ impl Typer<'_>
                 }
                 binders = telescope;
             }
+            // A law no component states, one over a binding operation, reads
+            // its nodes at the sorts the theory writes.
+            let unstated = stated
+                .is_none()
+                .then(|| Unstated::of(&presented, &law.left));
             let sides = [
                 (&law.left, &member.left, stated.map(|stated| stated.2)),
                 (&law.right, &member.right, stated.map(|stated| stated.3)),
             ];
             for (side, nodes, elaborated) in sides {
-                self.law_side(&scope, binders, &declared, side, nodes, elaborated);
+                let read = unstated
+                    .as_ref()
+                    .map_or(Reading::Elaborated(elaborated), Reading::Written);
+                self.law_side(&scope, binders, &declared, side, nodes, read);
             }
             scope.binders.truncate(base);
         }
@@ -1103,15 +1258,19 @@ impl Typer<'_>
     }
 
     /// Record each node of a law's side `side`, written as `nodes`, under
-    /// `scope`: a variable at its binder's sort among `telescope`, an
-    /// application at its operation's result over the arguments `elaborated`
-    /// gives it, and an application's head at its operation's type.
+    /// `scope`, as `read` reads it: a variable at its binder's sort among
+    /// `telescope`, an application at its operation's result over the
+    /// arguments the elaboration gives it, and an application's head at its
+    /// operation's type; for a law no component states, a variable and an
+    /// application at the unindexed sort the theory writes for them, and an
+    /// instantiation at the sort of its variable's binding port.
     ///
     /// # Specification
-    /// - requires: `elaborated`, when present, is `side` with each
+    /// - requires: an elaboration, when present, is `side` with each
     ///   application's implicit arguments inserted.
     /// - ensures: as the summary states, each node at the bytes `nodes` holds
-    ///   for it.
+    ///   for it; a variable a binding port binds and a binding operation's head
+    ///   answer nowhere, as their ports do.
     /// - fails: never; a node no sort is minted for records nothing.
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
@@ -1123,9 +1282,10 @@ impl Typer<'_>
     /// - hypothesis: L3 — `comp(id(a), f)` answers at `Hom(a, b)`, `id(a)` at
     ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
     ///   the code its sort returns; the identity-return signature's index
-    ///   `arrow(a, b)` at `CTy`.
+    ///   `arrow(a, b)` at `CTy`; `let(u, t)`, `u` and `t(u)` at `Tm`.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
+    /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
     fn law_side(
         &mut self,
         scope: &Scope,
@@ -1133,9 +1293,13 @@ impl Typer<'_>
         declared: &Declared<'_>,
         side: &FreeTerm,
         nodes: &WrittenTerm,
-        elaborated: Option<&FreeTerm>,
+        read: Reading<'_, '_>,
     )
     {
+        let (elaborated, unstated) = match read {
+            Reading::Elaborated(elaborated) => (elaborated, None),
+            Reading::Written(unstated) => (None, Some(unstated)),
+        };
         let context = self.context(scope);
         let mut pending: Vec<(TermNode<'_>, Option<TermNode<'_>>)> =
             Vec::from([(side.to_node(), elaborated.map(FreeTerm::to_node))]);
@@ -1150,8 +1314,18 @@ impl Typer<'_>
             };
             match node.view() {
                 TermView::Var(name) => {
-                    if let Some(binder) = telescope.iter().rev().find(|binder| binder.name == *name)
-                        && let Some(ty) = self.sort(scope, &binder.sort)
+                    let sort = telescope
+                        .iter()
+                        .rev()
+                        .find(|binder| binder.name == *name)
+                        .map(|binder| &binder.sort)
+                        .or_else(|| {
+                            unstated
+                                .and_then(|unstated| unstated.variables.get(name).copied())
+                                .filter(|sort| sort.indices.is_empty())
+                        });
+                    if let Some(sort) = sort
+                        && let Some(ty) = self.sort(scope, sort)
                     {
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
@@ -1204,11 +1378,30 @@ impl Typer<'_>
                             self.emit(written.span, DescribedRole::Term, ty, context);
                         }
                     }
+                    else if let Some(sort) = unstated.and_then(|unstated| unstated.result(name))
+                        && let Some(ty) = self.sort(scope, sort)
+                    {
+                        self.emit(written.span, DescribedRole::Term, ty, context);
+                    }
                     let images = images.unwrap_or_default();
                     let implicit = images.len().saturating_sub(args.len());
                     for (place, arg) in args.into_iter().enumerate().rev() {
                         let image = images.get(place.saturating_add(implicit)).copied();
                         pending.push((arg, image));
+                    }
+                },
+                TermView::Inst { name, args } => {
+                    if let Some(sort) = unstated
+                        .and_then(|unstated| unstated.bound.get(name).copied())
+                        .filter(|sort| sort.indices.is_empty())
+                        && let Some(ty) = self.sort(scope, sort)
+                    {
+                        self.emit(written.span, DescribedRole::Term, ty, context);
+                    }
+                    let first = pending.len();
+                    pending.extend(args.map(|arg| (arg, None)));
+                    if let Some(added) = pending.get_mut(first ..) {
+                        added.reverse();
                     }
                 },
                 TermView::Ctor { args, .. } | TermView::Results { args } => {
@@ -1498,7 +1691,10 @@ impl Typer<'_>
             let mut unsorted: Vec<(ByteSpan, Name)> = Vec::new();
             let root = match face.lhs.view() {
                 TermView::Op { name, .. } => operations.get(name).map(|operation| operation.result),
-                TermView::Var(_) | TermView::Ctor { .. } | TermView::Results { .. } => None,
+                TermView::Var(_)
+                | TermView::Ctor { .. }
+                | TermView::Results { .. }
+                | TermView::Inst { .. } => None,
             };
             for (side, nodes, expected) in [
                 (&face.lhs, &member.left, None),
@@ -1567,6 +1763,9 @@ impl Typer<'_>
                                 .map(|(place, arg)| (arg, components.get(place).copied()))
                                 .collect();
                             (expected.filter(|_| !components.is_empty()), below)
+                        },
+                        TermView::Inst { args, .. } => {
+                            (expected, args.map(|arg| (arg, None)).collect())
                         },
                     };
                     if let Some(ty) = ty {

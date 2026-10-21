@@ -775,7 +775,9 @@ pub struct DescElaboration
     pub declined_faces: Vec<(DeclinedFaceIndex, ElaborateError)>,
     /// The rules read over terms, when a face calls for them
     /// ([`presented_reading`]); a face only that reading holds is in neither
-    /// list above.
+    /// list above, and a face whose right-hand side instantiates a variable is
+    /// in no list and no store: a cell rewrites first-order terms, and an
+    /// instantiation substitutes under a binder no term marks.
     pub presented: Maybe<PresentedRules, presented_reading::Absent>,
     /// One entry per circuit rule member, in declaration order.
     pub circuits: Vec<CircuitElaboration>,
@@ -892,9 +894,10 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   pairs each operation face the sequent reading admitted with its cell,
 ///   `declined_faces` each declined face with its [`ElaborateError`], and
 ///   `presented` the faces only the term reading holds, between them every face
-///   once, in rule order; a face applying a declined operation is declined with
+///   whose right-hand side instantiates no variable once, in rule order; a face
+///   applying a declined operation is declined with
 ///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
-///   store.
+///   store, and a face instantiating a variable reaches neither.
 /// - ensures: a face calls for terms when it passed the operation gate and is
 ///   constructor-headed, or, under [`DescReading::Shape`] with every sort
 ///   unindexed, when its sequent elaboration fails with
@@ -936,6 +939,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 /// - witness: `elaborate::tests::a_law_returning_a_nullary_operation_is_read_over_terms_909`
+/// - witness: `elaborate::tests::a_second_order_law_reaches_no_store`
 #[spec(
     ensures: |ret| {
     ret.opers.len().saturating_add(ret.declined_opers.len()) == desc.opers.len()
@@ -951,12 +955,13 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
         && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()).saturating_add(match ret.presented {
             Maybe::Present(ref presented) => presented.faces.len().saturating_sub(ret.admitted_faces.len()),
             Maybe::Absent(_) => 0,
-        }) == desc.rules.len()
+        }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len()
         && match ret.presented {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
                 .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
-            Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len()) == desc.rules.len(),
+            Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len())
+                .saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len(),
         }
         && ret
             .admitted_faces
@@ -1017,6 +1022,9 @@ fn elaborate_desc<G>(
     let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
     let mut presents = false;
     for (index, face) in desc.rules.iter().enumerate() {
+        if bool::from(face.rhs.instantiates()) {
+            continue;
+        }
         let outcome = if matches!(face.lhs.view(), TermView::Ctor { .. }) {
             declined_operation(face, &unrepresentable).map(|()| true)
         }
@@ -1352,7 +1360,7 @@ fn inverts<G>(
                                     )
                                 })
                         }
-                        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. } => false,
+                        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } => false,
                     })
             }
             _ => false,
@@ -1666,7 +1674,7 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
     while let Some(term) = pending.pop() {
         match term.view() {
             TermView::Var(_) => {}
-            TermView::Ctor { args, .. } | TermView::Results { args } => pending.extend(args),
+            TermView::Ctor { args, .. } | TermView::Results { args } | TermView::Inst { args, .. } => pending.extend(args),
             TermView::Op { name, args } => {
                 mentioned |= declined.contains(&name);
                 pending.extend(args);
@@ -1695,7 +1703,11 @@ fn declined_operation(
                 }
                 stack.extend(args);
             },
-            TermView::Ctor { args, .. } | TermView::Results { args } => stack.extend(args),
+            TermView::Ctor { args, .. }
+            | TermView::Results { args }
+            | TermView::Inst { args, .. } => {
+                stack.extend(args);
+            },
         }
     }
     Ok(())
@@ -2176,8 +2188,8 @@ fn operation_cut(
 ///   an operation with as many outputs.
 /// - fails: [`ElaborateError::ResultArity`] when the result count differs from
 ///   the continuation count; [`ElaborateError::UnsupportedShape`] for a results
-///   tuple holding an operation; as [`operation_cut`] and [`elaborate_value`]
-///   fail.
+///   tuple holding an operation, or a metavariable's instantiation, which no
+///   cell spells; as [`operation_cut`] and [`elaborate_value`] fail.
 /// - panics: none.
 ///
 /// # Errors
@@ -2241,6 +2253,7 @@ fn elaborate_result(
                 ConsPat::operation(Sym::from(DELIVER), components, conts),
             ))
         },
+        TermView::Inst { .. } => Err(ElaborateError::UnsupportedShape),
         TermView::Var(_) | TermView::Ctor { .. } => match <[ConsPat; 1]>::try_from(conts) {
             Ok([cont]) => elaborate_value(term, cont, polarity, opers),
             Err(_) => Err(mismatch(ContinuationCount::ONE)),
@@ -2258,9 +2271,10 @@ fn elaborate_result(
 ///   flattened into a return-side frame `K⁻(cont)` around its argument's
 ///   elaboration.
 /// - fails: [`ElaborateError::UnsupportedShape`] for a several-argument
-///   constructor wrapping an operation or a results tuple below the root;
-///   [`ElaborateError::ResultArity`] for a many-out operation where one value
-///   is expected; and as [`operation_cut`] fails.
+///   constructor wrapping an operation or a results tuple below the root, and
+///   for a metavariable's instantiation; [`ElaborateError::ResultArity`] for a
+///   many-out operation where one value is expected; and as [`operation_cut`]
+///   fails.
 /// - panics: none.
 /// - intension: a loop that descends one constructor per turn, so nesting costs
 ///   no stack.
@@ -2317,7 +2331,9 @@ fn elaborate_value(
                 }
                 return operation_cut(name, args, alloc::vec![cont], polarity);
             },
-            TermView::Results { .. } => return Err(ElaborateError::UnsupportedShape),
+            TermView::Results { .. } | TermView::Inst { .. } => {
+                return Err(ElaborateError::UnsupportedShape);
+            },
             TermView::Ctor { name, args } => {
                 if let Ok(producers) = elaborate_producers(args.clone()) {
                     return Ok(CmdPat::cut(
@@ -2394,7 +2410,7 @@ fn elaborate_value(
             match source.view() {
                 TermView::Var(_) => {}
                 TermView::Ctor { args, .. } => pending.extend(args),
-                TermView::Op { .. } | TermView::Results { .. } => operation = true,
+                TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } => operation = true,
             }
         }
         operation
@@ -2434,7 +2450,7 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
     loop {
         let mut value = match current.view() {
             TermView::Var(name) => ProdPat::meta(hole(name)),
-            TermView::Op { .. } | TermView::Results { .. } => {
+            TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } => {
                 return Err(ElaborateError::UnsupportedShape);
             },
             TermView::Ctor { name, mut args } => match args.next() {
@@ -3855,6 +3871,55 @@ mod tests
             )],
             elaborate_theory_desc(&indexed).declined_faces,
             "an indexed presentation declines it"
+        );
+    }
+
+    #[test]
+    fn a_second_order_law_reaches_no_store()
+    {
+        // `rule zeta : let(u, t) ==> t(u)` beside `rule r : f(x) ==> zero()`:
+        // a cell rewrites first-order terms, so ζ is in neither reading, and
+        // `r` is read as it is alone.
+        let var = FreeTerm::var;
+        let laws = nat_with(
+            [
+                op("zero", []),
+                op("f", [SortRef::new("x", "Nat")]),
+                op("let", [
+                    SortRef::new("u", "Nat"),
+                    SortRef::new("t", "Nat").pi_plus([SortIndex::new("x", "Nat")]),
+                ]),
+            ],
+            [
+                face(
+                    FreeTerm::op("let", [var("u"), var("t")]),
+                    FreeTerm::inst("t", [var("u")]),
+                ),
+                face(FreeTerm::op("f", [var("x")]), FreeTerm::op("zero", [])),
+            ],
+        );
+        let presentation = elaborate_theory_desc(&laws);
+        assert_eq!(
+            (presentation.admitted_faces, presentation.declined_faces),
+            (Vec::new(), Vec::new()),
+            "ζ is neither admitted nor declined"
+        );
+        let Maybe::Present(presented) = presentation.presented
+        else {
+            panic!("the first-order law is read over terms");
+        };
+        assert_eq!(
+            vec![(AdmittedFaceIndex::from(1_usize), CellId::from(0_usize))],
+            presented.faces,
+            "the first-order law is the one term cell"
+        );
+        assert_eq!(
+            vec![(
+                DeclinedFaceIndex::from(1_usize),
+                ElaborateError::EmptyOperation
+            )],
+            elaborate_data_desc(&laws).declined_faces,
+            "a family declines the first-order law alone"
         );
     }
 

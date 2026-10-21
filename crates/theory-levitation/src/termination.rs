@@ -48,6 +48,24 @@
 //! wants a quasi-precedence with multiset or permuted status per operation,
 //! added beside the call graph rather than instead of it.
 //!
+//! # Second-order rules
+//!
+//! A variable a rule's right side instantiates, as `t(u)`, is a metavariable:
+//! a term of a function type, one argument per variable the binding port that
+//! binds it on the left binds. [`path_greater`] is then the higher-order
+//! recursive path order of Jouannaud and Rubio restricted to patterns: every
+//! other term has the one base type, and a base term is above no
+//! metavariable; a term covers a right-side argument when it is above it or
+//! one of its own arguments is equal to or above it, and an application is
+//! above an instantiation `X(ū)` when `X` is one of its arguments and it
+//! covers every one of `ū`. A rule that instantiates nothing compares exactly
+//! as under the lexicographic path order: its variables are replaced, never
+//! applied, so it rewrites as a first-order rule does. `let(u, t) ==> t(u)` is
+//! oriented: `t` and `u` are both arguments of the left side. β,
+//! `app(lam(t), u) ==> t(u)`, is not: `t` sits under `lam`, and no argument of
+//! `app` is or covers it, so a theory writing it is refused as
+//! non-terminating. The kernel reads metavariables the same way.
+//!
 //! # From faces to cells
 //!
 //! The cell store's rewriting is the faces' rewriting read through the command
@@ -70,7 +88,10 @@
 //! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
 //!   University Press, 1998, § 5.4 — the order's definition, its
 //!   simplification-order property, and the critical-pair lemma.
+//! - Jean-Pierre Jouannaud and Albert Rubio. "The Higher-Order Recursive Path
+//!   Ordering." LICS 1999 — the order on instantiations of metavariables.
 
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -409,15 +430,20 @@ impl From<Rank> for usize
     }
 }
 
-/// Whether the lexicographic path order over `precedence` puts `left` above
-/// `right`.
+/// Whether the higher-order recursive path order over `precedence` puts
+/// `left` above `right`: the lexicographic path order, with the variables
+/// `right` instantiates read as metavariables.
 ///
 /// # Specification
-/// - ensures: positive exactly when `left` is an application and some argument
-///   of it is equal to or above `right`; or `right` is an application every
-///   argument of which `left` is above, and either `left`'s symbol precedes
-///   `right`'s or the two share a symbol and the first argument pair that
-///   differs, left to right, is in the order.
+/// - ensures: negative when `right` is a metavariable. Otherwise positive
+///   exactly when `left` is an application and some argument of it is equal to
+///   or above `right`; or `right` is an application every argument of which
+///   `left` covers, and either `left`'s symbol precedes `right`'s or the two
+///   share a symbol and the first argument pair that differs, left to right, is
+///   in the order; or `right` instantiates a metavariable that is an argument
+///   of `left`, and `left` covers every argument of the instantiation. `left`
+///   covers a term it is above, or one of its own arguments is equal to or
+///   above.
 /// - ensures: a variable is above nothing, and no term is above itself.
 /// - panics: none.
 /// - intension: one table of every argument pair of the two terms, filled from
@@ -430,9 +456,12 @@ impl From<Rank> for usize
 ///   descending first argument; an equal pair, a variable on the left and a
 ///   variable absent from the left side are not in the order. Swapping the
 ///   table's sweep direction, comparing arguments right to left or dropping the
-///   dominance check changes one of them.
+///   dominance check changes one of them. A `let` instantiating its own
+///   argument is above the instantiation and β is not; reading every variable
+///   at base type orients β, and dropping the instantiation case refuses `let`.
 /// - witness: `termination::tests::recursion_on_a_descending_argument_is_oriented`
 /// - witness: `termination::tests::the_order_is_irreflexive_and_reads_variables_by_occurrence`
+/// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
 #[spec(ensures: |ret| !bool::from(ret) || (left != right && !matches!(left.view(), TermView::Var(_))))]
 #[inline]
 #[must_use]
@@ -444,6 +473,9 @@ pub fn path_greater(
 {
     let above = flatten(left);
     let below = flatten(right);
+    let metavariables = metavariables(&below);
+    let higher =
+        |node: &Node<'_>| matches!(node.symbol, Symbol::Var(name) if metavariables.contains(name));
     let mut table = Table::new(&above, &below);
     let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
         (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results) => true,
@@ -459,6 +491,16 @@ pub fn path_greater(
             .find(|pair| !pair.equal)
             .is_some_and(|pair| pair.greater)
     };
+    // A node covers a right-side node it is above, or one of its own
+    // arguments is equal to or above: the comparison a metavariable passed
+    // bare takes, which no base term is above.
+    let covers = |table: &Table, node: &Node<'_>, row: At, column: At| {
+        table.at(row, column).greater
+            || node.arguments().any(|argument| {
+                let pair = table.at(argument, column);
+                pair.equal || pair.greater
+            })
+    };
     for (row, node) in above.iter().enumerate().rev() {
         for (column, other) in below.iter().enumerate().rev() {
             let (row, column) = (At(row), At(column));
@@ -469,23 +511,60 @@ pub fn path_greater(
                     .zip(other.arguments())
                     .all(|(left, right)| table.at(left, right).equal);
             let greater = !matches!(node.symbol, Symbol::Var(_))
+                && !higher(other)
                 && (node.arguments().any(|argument| {
                     let pair = table.at(argument, column);
                     pair.equal || pair.greater
-                }) || (!matches!(other.symbol, Symbol::Var(_))
-                    && other
-                        .arguments()
-                        .all(|argument| table.at(row, argument).greater)
-                    && if same {
-                        lexicographic(&table, node, other)
-                    }
-                    else {
-                        precedes(node.symbol, other.symbol)
-                    }));
+                }) || match other.symbol {
+                    Symbol::Var(_) => false,
+                    Symbol::Inst(name) => {
+                        node.arguments().any(|argument| {
+                            above
+                                .get(argument.0)
+                                .is_some_and(|bound| bound.symbol == Symbol::Var(name))
+                        }) && other
+                            .arguments()
+                            .all(|argument| covers(&table, node, row, argument))
+                    },
+                    Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results => {
+                        other
+                            .arguments()
+                            .all(|argument| covers(&table, node, row, argument))
+                            && if same {
+                                lexicographic(&table, node, other)
+                            }
+                            else {
+                                precedes(node.symbol, other.symbol)
+                            }
+                    },
+                });
             table.set(row, column, Comparison { equal, greater });
         }
     }
     PathOrderStatus::from(table.at(At(0), At(0)).greater)
+}
+
+/// The variables `nodes` instantiates: the metavariables of a rule whose right
+/// side `nodes` is.
+///
+/// # Specification
+/// - ensures: exactly the names of the instantiations among `nodes`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`path_greater`]: reading no metavariable orients β,
+///   which the witness refuses.
+/// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
+#[spec(ensures: |ret| ret.iter().all(|name| nodes.iter().any(|node| node.symbol == Symbol::Inst(name))))]
+fn metavariables<'term>(nodes: &[Node<'term>]) -> BTreeSet<&'term Name>
+{
+    nodes
+        .iter()
+        .filter_map(|node| match node.symbol {
+            Symbol::Inst(name) => Some(name),
+            Symbol::Var(_) | Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results => None,
+        })
+        .collect()
 }
 
 /// What a node of a flattened term applies.
@@ -500,6 +579,8 @@ enum Symbol<'term>
     Op(&'term Name),
     /// A results tuple.
     Results,
+    /// A metavariable's instantiation.
+    Inst(&'term Name),
 }
 
 /// One node of a term read breadth first: what it applies, how many
@@ -542,6 +623,7 @@ fn flatten(term: &FreeTerm) -> Vec<Node<'_>>
             TermView::Ctor { name, args } => (Symbol::Ctor(name), Some(args)),
             TermView::Op { name, args } => (Symbol::Op(name), Some(args)),
             TermView::Results { args } => (Symbol::Results, Some(args)),
+            TermView::Inst { name, args } => (Symbol::Inst(name), Some(args)),
         };
         let arity = arguments.map_or(0, |arguments| {
             let count = arguments.len();
@@ -955,6 +1037,50 @@ mod tests
                 &FreeTerm::results([var("m"), zero()])
             )),
             "an operation is above the results tuple it returns"
+        );
+    }
+
+    #[test]
+    fn an_instantiation_is_below_the_application_that_binds_its_metavariable()
+    {
+        let bind = |u, t| FreeTerm::op("let", [u, t]);
+        let app = |t, u| FreeTerm::op("app", [t, u]);
+        let lam = |t| FreeTerm::op("lam", [t]);
+        let zeta = nat([binary("let")], vec![(
+            bind(var("u"), var("t")),
+            FreeTerm::inst("t", [var("u")]),
+        )]);
+        assert_eq!(
+            orient_rules(&zeta),
+            Termination::Oriented,
+            "`let` holds the metavariable and its argument, so `t(u)` is below it"
+        );
+        let growing = nat([binary("let")], vec![(
+            bind(var("u"), var("t")),
+            FreeTerm::inst("t", [bind(var("u"), var("t"))]),
+        )]);
+        assert_eq!(
+            orient_rules(&growing),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "an instantiation at the rule's own call does not descend"
+        );
+        let beta = nat([binary("app"), unary("lam")], vec![(
+            app(lam(var("t")), var("u")),
+            FreeTerm::inst("t", [var("u")]),
+        )]);
+        assert_eq!(
+            orient_rules(&beta),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "β's metavariable stands under `lam`, so the order cannot see past the binder"
+        );
+        let shadow = nat([binary("app"), unary("lam")], vec![(
+            app(lam(var("t")), var("u")),
+            app(var("t"), var("u")),
+        )]);
+        assert_eq!(
+            orient_rules(&shadow),
+            Termination::Oriented,
+            "read with every variable at base type, β's first-order shadow orients"
         );
     }
 }

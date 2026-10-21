@@ -1,5 +1,6 @@
 //! Operations and rewrite faces read from declaration members.
 
+use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -205,8 +206,8 @@ impl Reader<'_, '_>
         let arrow = run.take()?.span;
         let rhs = run.take()?;
         run.end()?;
-        let (lhs, left) = self.free_term(lhs)?;
-        let (rhs, right) = self.free_term(rhs)?;
+        let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
+        let (rhs, right) = self.free_term(rhs, &lhs.to_node().vars().collect())?;
         let variables = derive_cell_var_meta(&lhs);
         let span = SurfaceSpan::new(
             usize::from(run.span.start()).into(),
@@ -221,16 +222,19 @@ impl Reader<'_, '_>
         }))
     }
 
-    /// Read free terms iteratively, distinguishing constructors, operations
-    /// and results tuples, and keep where each node is written.
+    /// Read free terms iteratively, distinguishing constructors, operations,
+    /// instantiations and results tuples, and keep where each node is written.
     ///
     /// # Specification
     /// - ensures: every application preserves its head and ordered argument
-    ///   terms; a parenthesized term is its one component, and a parenthesized
-    ///   list of several is a results tuple of them in order; a variable
-    ///   spelled in a type hole, as a pinned rewrite endpoint is, is a
-    ///   variable. The written term holds one node per node of the term, in
-    ///   pre-order, each at its own bytes and an application with its head's.
+    ///   terms; an application whose head is a name of `instantiable` — a
+    ///   variable of the rule's left side, read on its right — is that
+    ///   variable's instantiation; a parenthesized term is its one component,
+    ///   and a parenthesized list of several is a results tuple of them in
+    ///   order; a variable spelled in a type hole, as a pinned rewrite endpoint
+    ///   is, is a variable. The written term holds one node per node of the
+    ///   term, in pre-order, each at its own bytes and an application with its
+    ///   head's.
     /// - fails: forms outside names, applications and parenthesized lists are
     ///   located.
     /// - panics: none.
@@ -247,10 +251,12 @@ impl Reader<'_, '_>
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
         at: Placed,
+        instantiable: &BTreeSet<&Name>,
     ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
     {
         let mut pending = vec![TermFrame::Read(at)];
@@ -325,18 +331,18 @@ impl Reader<'_, '_>
                         head: Maybe::Present(head.span),
                     });
                     let head_pieces = self.pieces(head)?;
+                    let name = Name::from(self.text(head).0);
                     let kind = if matches!(head_pieces.as_slice(), [Piece::Tile { label, .. }] if label.as_ref() == "constructor")
                     {
                         TermKind::Constructor
                     }
+                    else if instantiable.contains(&name) {
+                        TermKind::Instantiation
+                    }
                     else {
                         TermKind::Operation
                     };
-                    pending.push(TermFrame::Apply(
-                        Name::from(self.text(head).0),
-                        ArgumentCount(args.len()),
-                        kind,
-                    ));
+                    pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));
                     pending.extend(args.into_iter().rev().map(TermFrame::Read));
                 },
                 TermFrame::Apply(head, count, kind) => {
@@ -351,6 +357,7 @@ impl Reader<'_, '_>
                     let term = match kind {
                         TermKind::Constructor => FreeTerm::ctor(head, args),
                         TermKind::Operation => FreeTerm::op(head, args),
+                        TermKind::Instantiation => FreeTerm::inst(head, args),
                     };
                     terms.push(term);
                 },
@@ -383,6 +390,8 @@ enum TermKind
     Constructor,
     /// An operation application.
     Operation,
+    /// An instantiation of a left-side variable.
+    Instantiation,
 }
 
 /// A suspended free-term reading.

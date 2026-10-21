@@ -1150,6 +1150,17 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// Two rules of a block whose left sides overlap, one of which
+    /// instantiates a variable a binding port binds: a second-order rule may
+    /// overlap no rule, so the block's rules are not known to be confluent.
+    RulesOverlapSecondOrder
+    {
+        /// The bytes the later rule covers.
+        span: ByteSpan,
+        /// The bytes the earlier rule covers.
+        first: ByteSpan,
+    },
+
     /// Two rules of a block that match one term and rewrite it to two normal
     /// forms headed by constructors: no rule joins two values, so the block's
     /// first-match reading and its equational reading part.
@@ -1432,6 +1443,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "this rule's right-hand side is not below its left-hand side in the path order, \
                  so the block's rules may never end",
             ),
+            Self::RulesOverlapSecondOrder { .. } => f.write_str(
+                "this rule and an earlier one rewrite overlapping terms, and one of them \
+                 instantiates a variable: a rule that substitutes under a binder may overlap no \
+                 rule, so the block's rules are refused",
+            ),
             Self::RulesDiverge { .. } => f.write_str(
                 "this rule and an earlier one rewrite one term to two different constructor \
                  terms, so the rule written first decides what runs and the equations do not",
@@ -1554,6 +1570,7 @@ impl LoweringRefusal<'_>
             | Self::CellNotALoop { span }
             | Self::RulesUnoriented { span }
             | Self::RulesDiverge { span, .. }
+            | Self::RulesOverlapSecondOrder { span, .. }
             | Self::RulesUncompleted { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnknownMold { span, .. }

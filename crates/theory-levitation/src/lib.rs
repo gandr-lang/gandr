@@ -270,6 +270,7 @@ pub use crate::boundary::ContextTotality;
 pub use crate::boundary::DiagnosticMessage;
 pub use crate::boundary::FirstOrderStatus;
 pub use crate::boundary::GenericEquality;
+pub use crate::boundary::InstantiationStatus;
 pub use crate::boundary::LeafBytes;
 pub use crate::boundary::MonomialCount;
 pub use crate::boundary::NameRef;

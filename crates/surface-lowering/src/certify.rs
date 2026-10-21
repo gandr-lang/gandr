@@ -250,7 +250,8 @@ impl<'term> Symbols<'term>
     }
 
     /// `term` in pre-order, interning its symbols and numbering its
-    /// variables among `variables`.
+    /// variables among `variables`, an instantiated one as an instantiated
+    /// variable is.
     ///
     /// # Specification
     /// trivial.
@@ -267,11 +268,16 @@ impl<'term> Symbols<'term>
             arguments.clear();
             let (class, name) = match node.view() {
                 TermView::Var(name) => {
-                    let fresh =
-                        RuleVariable::from(u32::try_from(variables.len()).unwrap_or(u32::MAX));
-                    nodes.push(TheoryNode::Variable(
-                        *variables.entry(name).or_insert(fresh),
+                    nodes.push(TheoryNode::Variable(Self::variable(variables, name)));
+                    continue;
+                },
+                TermView::Inst { name, args } => {
+                    arguments.extend(args);
+                    nodes.push(TheoryNode::Instance(
+                        Self::variable(variables, name),
+                        FieldCount::from(arguments.len()),
                     ));
+                    pending.extend(arguments.iter().rev());
                     continue;
                 },
                 TermView::Op { name, args } => {
@@ -297,6 +303,20 @@ impl<'term> Symbols<'term>
             pending.extend(arguments.iter().rev());
         }
         nodes
+    }
+
+    /// The kernel's number for the variable `name`: its first occurrence's
+    /// place among `variables`, appended when new.
+    ///
+    /// # Specification
+    /// trivial.
+    fn variable(
+        variables: &mut BTreeMap<&'term Name, RuleVariable>,
+        name: &'term Name,
+    ) -> RuleVariable
+    {
+        let fresh = RuleVariable::from(u32::try_from(variables.len()).unwrap_or(u32::MAX));
+        *variables.entry(name).or_insert(fresh)
     }
 }
 

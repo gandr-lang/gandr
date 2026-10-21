@@ -161,6 +161,9 @@ pub enum RouteFault
     Callee(Name),
     /// A result tuple below the right-hand side's root.
     Results,
+    /// A right-hand side instantiating the variable named, which no port of a
+    /// family's operation binds.
+    Instantiated(Name),
 }
 
 /// The function an operation's call reaches.
@@ -425,7 +428,7 @@ pub fn plan_operation(
 ///   its width; a variable as its first occurrence's ordinal on the left.
 /// - fails: [`RouteFault::Callee`], [`RouteFault::Constructor`] or
 ///   [`RouteFault::Unbound`] for a name the table or the left side does not
-///   bind.
+///   bind; [`RouteFault::Instantiated`] for an instantiation.
 /// - panics: none.
 ///
 /// # Errors
@@ -496,6 +499,7 @@ fn read_rule(
                     arguments.extend(args);
                     OperationNode::Results(gandr_kernel_term::FieldCount::from(arguments.len()))
                 },
+                TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
             };
             side.push(read);
             pending.extend(arguments.iter().rev().copied());
@@ -625,7 +629,7 @@ fn switch<'face>(
                     }
                     columns.extend(args.map(Some));
                 },
-                Some(TermView::Op { .. } | TermView::Results { .. }) => {
+                Some(TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. }) => {
                     return Err(RouteFault::Pattern);
                 },
             }
@@ -723,7 +727,12 @@ fn leaf(
         match column.map(TermNode::view) {
             None => {},
             Some(TermView::Var(variable)) => bindings.push((variable, level)),
-            Some(TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. }) => {
+            Some(
+                TermView::Ctor { .. }
+                | TermView::Op { .. }
+                | TermView::Results { .. }
+                | TermView::Inst { .. },
+            ) => {
                 return Err(RouteFault::Pattern);
             },
         }
@@ -763,8 +772,8 @@ enum Rooted
 ///   [`Step::Deliver`] or [`Step::Tail`].
 /// - fails: [`RouteFault::Unbound`], [`RouteFault::Callee`],
 ///   [`RouteFault::Constructor`], [`RouteFault::Pattern`] for a constructor
-///   over the wrong field count, and [`RouteFault::Results`] for a tuple below
-///   the root.
+///   over the wrong field count, [`RouteFault::Results`] for a tuple below the
+///   root, and [`RouteFault::Instantiated`] for an instantiation.
 /// - panics: none.
 ///
 /// # Errors
@@ -792,7 +801,8 @@ fn steps(
                     TermView::Var(_) => Vec::new(),
                     TermView::Ctor { args, .. }
                     | TermView::Op { args, .. }
-                    | TermView::Results { args } => args.collect(),
+                    | TermView::Results { args }
+                    | TermView::Inst { args, .. } => args.collect(),
                 };
                 stack.extend(
                     arguments
@@ -851,6 +861,7 @@ fn steps(
                     }
                     planned.push(Step::Deliver(Width(args.len())));
                 },
+                TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
             },
         }
     }

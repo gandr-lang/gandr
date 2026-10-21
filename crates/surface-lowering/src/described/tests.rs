@@ -583,3 +583,48 @@ fn a_codata_observation_s_type_answers_at_its_universe()
     assert!(value(ty(integer)), "a base type at `Type`");
     assert_eq!(context(&types, integer), Vec::<String>::new());
 }
+
+/// A law over a binding operation, which no `Model(S)` component states,
+/// answers each node at the sort the theory writes for it: the application,
+/// the variable at a first-order port and the instantiation at `Tm`; the
+/// variable the binding port binds and the binding operation's head answer
+/// nowhere, as their ports do.
+#[test]
+fn a_second_order_law_answers_at_its_written_sorts()
+{
+    let source = SourceText::from(
+        "theory Let {\n  sort Tm : Type+;\n  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> \
+         Tm;\n  rule zeta : let(u, t) <=> t(u);\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let applied = entry(
+        &types,
+        span("zeta : let(u, t)", "let(u, t)"),
+        DescribedRole::Term,
+    );
+    assert!(code(applied).is_some(), "an application at its sort");
+    for (around, inner) in [("let(u,", "u"), ("<=> t(u)", "t(u)"), ("t(u);", "u")] {
+        assert_eq!(
+            code(entry(&types, span(around, inner), DescribedRole::Term)),
+            code(applied),
+            "`{inner}` in `{around}` at the same sort"
+        );
+    }
+    for unstated in [
+        span("zeta : let", "let"),
+        span("u, t)", "t"),
+        span("<=> t(u)", "t"),
+    ] {
+        assert!(
+            types.entries.iter().all(|held| held.span != unstated),
+            "no component states a binding operation or the variable its port binds"
+        );
+    }
+}

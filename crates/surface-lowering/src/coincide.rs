@@ -14,8 +14,14 @@
 //!
 //! 1. Termination, by the lexicographic path order over the block's faces
 //!    (`orient_rules`; the order and why it is not the cell layer's own are in
-//!    that function's crate). The first rule it does not orient is refused as
-//!    [`LoweringRefusal::RulesUnoriented`] at that rule.
+//!    that function's crate), the higher-order recursive path order where a
+//!    rule instantiates a variable. The first rule it does not orient is
+//!    refused as [`LoweringRefusal::RulesUnoriented`] at that rule. A rule that
+//!    instantiates a variable, `let(u, t) ==> t(u)`, is a second-order rule: no
+//!    cell holds one, and its left side may overlap no rule's, the later of two
+//!    such rules refused as [`LoweringRefusal::RulesOverlapSecondOrder`] naming
+//!    the earlier. Orthogonal second-order pattern rules are confluent (Mayr
+//!    and Nipkow), so the joins below decide the rest.
 //! 2. Joinability of every critical pair over the block's own cells
 //!    (`join_critical_pairs`), completed where a pair parts. A pair whose two
 //!    normal forms are both headed by a constructor is refused as
@@ -425,6 +431,14 @@ pub enum CoherenceFault
     /// The path order does not put the rule's right-hand side below its left,
     /// so the rules are not known to terminate.
     Unoriented,
+    /// The rule and an earlier one, or the rule itself below its root,
+    /// overlap, and one of them instantiates a variable: a second-order rule
+    /// takes part in no critical pair.
+    OverlapsSecondOrder
+    {
+        /// The earlier rule's written interval.
+        first: ByteSpan,
+    },
     /// The rule and an earlier one overlap at `peak` and rewrite it to two
     /// normal forms each headed by a constructor or a results tuple: no rule
     /// joins two values.
@@ -488,6 +502,9 @@ impl CoherenceFault
     {
         match *self {
             Self::Unoriented => LoweringRefusal::RulesUnoriented { span },
+            Self::OverlapsSecondOrder { first } => {
+                LoweringRefusal::RulesOverlapSecondOrder { span, first }
+            },
             Self::Diverges { first, .. } => LoweringRefusal::RulesDiverge { span, first },
             Self::Uncompleted { first, .. } => LoweringRefusal::RulesUncompleted { span, first },
             Self::Undecided { first, .. } | Self::Unfinished { first, .. } => {
@@ -532,6 +549,10 @@ impl fmt::Display for CoherenceFault
             Self::Unoriented => f.write_str(
                 "the right-hand side is not below the left in the path order, so the rules may not \
                  end",
+            ),
+            Self::OverlapsSecondOrder { .. } => f.write_str(
+                "the two rules' left sides overlap, and one of them instantiates a variable, \
+                 which no critical pair may hold",
             ),
             Self::Diverges {
                 ref peak,
@@ -620,13 +641,17 @@ impl fmt::Display for Spelled<'_>
 ///   elaboration of `description`, which declined none of its operations, faces
 ///   or circuit rules; `at` is the declaration's interval.
 /// - ensures: the first unoriented rule as [`CoherenceFault::Unoriented`] at
-///   its span; else each reading completed in turn, the sequent one first, as
-///   [`Reading::complete`] completes it, its first fault at the later rule's
-///   span naming the earlier one's; else [`Coincidence::Orthogonal`] when no
-///   two cells overlap in either reading and [`Coincidence::Joined`] with every
-///   pair's certificate and every derived rule otherwise. Each derived rule's
-///   cell is appended to `store` or to the presented reading's store, in
-///   derivation order, so the store a reading rewrites with ends with them.
+///   its span; else the first overlap of a second-order rule, as
+///   [`second_order_overlap`] finds it, as
+///   [`CoherenceFault::OverlapsSecondOrder`] at the later rule's span naming
+///   the earlier one's; else each reading completed in turn, the sequent one
+///   first, as [`Reading::complete`] completes it, its first fault at the later
+///   rule's span naming the earlier one's; else [`Coincidence::Orthogonal`]
+///   when no two cells overlap in either reading and [`Coincidence::Joined`]
+///   with every pair's certificate and every derived rule otherwise. Each
+///   derived rule's cell is appended to `store` or to the presented reading's
+///   store, in derivation order, so the store a reading rewrites with ends with
+///   them.
 /// - panics: none.
 ///
 /// # Errors
@@ -653,6 +678,7 @@ impl fmt::Display for Spelled<'_>
 /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
 /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
 /// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
+/// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
@@ -660,6 +686,8 @@ impl fmt::Display for Spelled<'_>
     Ok(Coincidence::Unexamined | Coincidence::Refused(_)) => false,
     Err((span, CoherenceFault::Unoriented)) => matches!(orient_rules(description), Termination::Unoriented(_))
         && span.start() >= at.start() && span.end() <= at.end(),
+    Err((_, CoherenceFault::OverlapsSecondOrder { .. })) => orient_rules(description) == Termination::Oriented
+        && second_order_overlap(&description.rules).is_some(),
     Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 pub(crate) fn decide<G>(
@@ -679,6 +707,14 @@ pub(crate) fn decide<G>(
     };
     if let Termination::Unoriented(index) = orient_rules(description) {
         return Err((rule_span(usize::from(index)), CoherenceFault::Unoriented));
+    }
+    if let Some((later, earlier)) = second_order_overlap(&description.rules) {
+        return Err((
+            rule_span(usize::from(later)),
+            CoherenceFault::OverlapsSecondOrder {
+                first: rule_span(usize::from(earlier)),
+            },
+        ));
     }
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
@@ -737,6 +773,70 @@ pub(crate) fn decide<G>(
         derived_commands,
         derived_terms,
     }))
+}
+
+/// The first overlap of a second-order rule of `rules`: the later rule's index
+/// and the earlier one's.
+///
+/// # Specification
+/// - ensures: [`Some`] with the larger and the smaller index of the first pair
+///   — in order of the outer rule, then of a position of its left side, then of
+///   the inner rule, as the kernel reads them — at least one of whose
+///   right-hand sides instantiates a variable, where the inner rule's left
+///   side, renamed apart, unifies with the outer one's subterm at a position
+///   holding no lone variable, other than the root of one rule overlapping
+///   itself; [`None`] when no such pair exists.
+/// - panics: none.
+/// - intension: each left side read as a term once; a pair neither of whose
+///   rules instantiates is never unified.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `let`'s rule beside a rule rewriting `let` at a constant
+///   overlaps at the root, the same rule beside one rewriting under `let`'s
+///   bound term overlaps below it, and `let` beside a first-order rule over
+///   other operations does not; reading only first-order pairs, or counting a
+///   root self-overlap, changes a verdict.
+/// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
+#[spec(ensures: |ret| ret.is_none_or(|(later, earlier)| earlier <= later && usize::from(later) < rules.len()))]
+fn second_order_overlap(rules: &[RuleFace]) -> Option<(RuleIndex, RuleIndex)>
+{
+    let second_order: Vec<bool> = rules
+        .iter()
+        .map(|face| bool::from(face.rhs.instantiates()))
+        .collect();
+    if !second_order.contains(&true) {
+        return None;
+    }
+    let lefts: Vec<Term> = rules.iter().map(|face| Term::from(&face.lhs)).collect();
+    let root = TermAlphabet::root_position();
+    for (outer, left) in lefts.iter().enumerate() {
+        let outer_second = second_order.get(outer).copied().unwrap_or(false);
+        for seam in TermAlphabet::command_positions(left) {
+            let Maybe::Present(sub) = TermAlphabet::subterm_cmd_at(left, &seam)
+            else {
+                continue;
+            };
+            if TermAlphabet::metavariables(&sub).len() == 1
+                && TermAlphabet::command_positions(&sub).len() == 1
+            {
+                continue;
+            }
+            for ((inner, other), &inner_second) in lefts.iter().enumerate().zip(&second_order) {
+                if !(outer_second || inner_second) || (seam == root && inner == outer) {
+                    continue;
+                }
+                let (renamed, _) = TermAlphabet::rename_apart((left, left), (other, other));
+                let mut unifier = <TermAlphabet as CellAlphabet>::Subst::default();
+                if bool::from(TermAlphabet::unify_cmd(&sub, &renamed, &mut unifier)) {
+                    return Some((
+                        RuleIndex::from(outer.max(inner)),
+                        RuleIndex::from(outer.min(inner)),
+                    ));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// A completed reading: one certificate per critical pair, then the rules it
@@ -1085,7 +1185,9 @@ fn orient_derived<G>(
                     }
                 },
                 TermView::Ctor { args, .. } => pending.extend(args),
-                TermView::Op { .. } | TermView::Results { .. } => return false,
+                TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } => {
+                    return false;
+                },
             }
         }
         true
@@ -1581,7 +1683,9 @@ fn spell(term: &FreeTerm) -> String
                 format!("#{{{joined}}}")
             }
         },
-        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } => term.to_string(),
+        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Inst { .. } => {
+            term.to_string()
+        },
     }
 }
 

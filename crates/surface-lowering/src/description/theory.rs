@@ -1461,7 +1461,7 @@ impl Reader<'_, '_>
         let mut indices = Vec::new();
         let mut written = Vec::new();
         while !run.eat(Spelling(")")).0 {
-            let (index, nodes) = self.free_term(run.take()?)?;
+            let (index, nodes) = self.free_term(run.take()?, &BTreeSet::new())?;
             indices.push(index);
             written.push(nodes);
             if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
@@ -1554,8 +1554,8 @@ impl Reader<'_, '_>
             run.arrow(Some(ArrowRow::Face))?;
             let rhs = run.take()?;
             run.end()?;
-            let (lhs, left) = self.free_term(lhs)?;
-            let (rhs, right) = self.free_term(rhs)?;
+            let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
+            let (rhs, right) = self.free_term(rhs, &lhs.to_node().vars().collect())?;
             return Ok(RuleMember::Face(
                 TheoryRule {
                     name: self.text(name).0.into(),
@@ -1886,8 +1886,8 @@ impl Reader<'_, '_>
                     RewritePort::sorted(self.text(name).0, self.text(lhs).0)
                 }
                 else {
-                    let (left, _) = self.free_term(lhs)?;
-                    let (right, _) = self.free_term(rhs)?;
+                    let (left, _) = self.free_term(lhs, &BTreeSet::new())?;
+                    let (right, _) = self.free_term(rhs, &BTreeSet::new())?;
                     RewritePort::pinned(self.text(name).0, left, right)
                 };
                 rewrites.push(port);

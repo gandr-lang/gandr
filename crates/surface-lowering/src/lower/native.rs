@@ -9522,9 +9522,10 @@ quenchant_shape::reason_enum! {
 /// - ensures: one node per term node, a constructor by its position in `names`
 ///   and a variable by its position in `variables` — appended there on its
 ///   first occurrence when `binding` binds.
-/// - fails: [`rule_side::Absent::Foreign`] for an operation, a results tuple or
-///   a constructor `names` does not hold; [`rule_side::Absent::Unbound`] for a
-///   variable a reading side meets unbound.
+/// - fails: [`rule_side::Absent::Foreign`] for an operation, a results tuple,
+///   an instantiation or a constructor `names` does not hold;
+///   [`rule_side::Absent::Unbound`] for a variable a reading side meets
+///   unbound.
 /// - panics: none.
 ///
 /// # Termination
@@ -9590,7 +9591,8 @@ fn rule_side(
                 }
             },
             gandr_theory_levitation::TermView::Op { .. }
-            | gandr_theory_levitation::TermView::Results { .. } => {
+            | gandr_theory_levitation::TermView::Results { .. }
+            | gandr_theory_levitation::TermView::Inst { .. } => {
                 return Maybe::Absent(rule_side::Absent::Foreign);
             },
         }

@@ -512,6 +512,9 @@ pub enum RefusalName
     RulesUnoriented,
     /// Two rules of a block rewriting one term to two constructor terms.
     RulesDiverge,
+    /// Two rules of a block whose left sides overlap, one of which
+    /// instantiates a variable a binding port binds.
+    RulesOverlapSecondOrder,
     /// Two rules of a block rewriting one term to two normal forms no rule
     /// the path order orients joins.
     RulesUncompleted,
@@ -696,7 +699,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 187_usize] = [
+    pub const VOCABULARY: [Self; 188_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -805,6 +808,7 @@ impl RefusalName
         Self::CellNotALoop,
         Self::RulesUnoriented,
         Self::RulesDiverge,
+        Self::RulesOverlapSecondOrder,
         Self::RulesUncompleted,
         Self::RulesUndecided,
         Self::BudgetExceeded,
@@ -944,6 +948,7 @@ impl RefusalName
         (Self::CellNotALoop, b"CellNotALoop") |
         (Self::RulesUnoriented, b"RulesUnoriented") |
         (Self::RulesDiverge, b"RulesDiverge") |
+        (Self::RulesOverlapSecondOrder, b"RulesOverlapSecondOrder") |
         (Self::RulesUncompleted, b"RulesUncompleted") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
@@ -1247,6 +1252,7 @@ impl RefusalName
             Self::CellNotALoop => "CellNotALoop",
             Self::RulesUnoriented => "RulesUnoriented",
             Self::RulesDiverge => "RulesDiverge",
+            Self::RulesOverlapSecondOrder => "RulesOverlapSecondOrder",
             Self::RulesUncompleted => "RulesUncompleted",
             Self::RulesUndecided => "RulesUndecided",
             Self::BudgetExceeded => "BudgetExceeded",
@@ -1475,6 +1481,8 @@ impl Refusal<'_>
         RefusalName::RulesUnoriented) |
         (Self::Lowering(LoweringRefusal::RulesDiverge { .. }),
         RefusalName::RulesDiverge) |
+        (Self::Lowering(LoweringRefusal::RulesOverlapSecondOrder { .. }),
+        RefusalName::RulesOverlapSecondOrder) |
         (Self::Lowering(LoweringRefusal::RulesUncompleted { .. }),
         RefusalName::RulesUncompleted) |
         (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
@@ -1683,7 +1691,8 @@ impl Refusal<'_>
         RefusalName::DirectedCell) | (LoweringRefusal::CellNotALoop { .. },
         RefusalName::CellNotALoop) | (LoweringRefusal::RulesUnoriented { .. },
         RefusalName::RulesUnoriented) | (LoweringRefusal::RulesDiverge { .. },
-        RefusalName::RulesDiverge) | (LoweringRefusal::RulesUncompleted { .. },
+        RefusalName::RulesDiverge) | (LoweringRefusal::RulesOverlapSecondOrder { .. },
+        RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesUncompleted { .. },
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
@@ -1744,6 +1753,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::CellNotALoop { .. } => RefusalName::CellNotALoop,
         LoweringRefusal::RulesUnoriented { .. } => RefusalName::RulesUnoriented,
         LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => RefusalName::RulesOverlapSecondOrder,
         LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,

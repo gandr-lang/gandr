@@ -303,8 +303,9 @@ fn kind(
 /// a run literal's move, as an inner link of a product, a sum or a lazy
 /// product chain, as the value a discarded bind drops, as an arrow of a data
 /// family's kind, as the sort of a stage binder or the binder a call
-/// supplies, as the theory a model type names, or as the module and the
-/// model type a pack names.
+/// supplies, as the theory a model type names, as the module and the model
+/// type a pack names, or as a binding operation or a variable a binding port
+/// binds in a theory's rule.
 ///
 /// # Specification
 /// trivial.
@@ -368,6 +369,12 @@ enum Placed
     /// module's members, neither a core node of its own, so the pack, the
     /// record they give, answers.
     Packed,
+    /// A binding operation applied in a theory's rule, `let` in `rule zeta :
+    /// let(u, t) <=> t(u)`, or a variable a binding port binds, `t` there
+    /// and in `t(u)`: no core type states a `pi+` port, so the operation's
+    /// and the port's own names answer nowhere, and the application around
+    /// answers at its sort.
+    Unstated,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -400,6 +407,36 @@ fn gated(
                 .rfind(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
                 .map_or(0_usize, |at| at.saturating_add(1));
             before.get(start ..)
+        })
+        .collect();
+    // The name `before` ends with, as a stage binder's is read.
+    let named = |before: &'_ str| {
+        let before = before.trim_end();
+        let start = before
+            .rfind(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
+            .map_or(0_usize, |at| at.saturating_add(1));
+        before.get(start ..).map(str::to_owned)
+    };
+    // The ports that bind, `t` in `t : pi+ (x : Tm) . Tm`, and the operations
+    // declaring them, `let` in `oper let : (u : Tm, t : pi+ …) --> Tm`, by
+    // name; and the bytes of every rule a theory writes, `rule` to its `;`.
+    let binding: BTreeSet<String> = source
+        .match_indices(": pi+")
+        .flat_map(|(at, _)| {
+            let before = source.get(.. at).unwrap_or("");
+            let operation = before.rfind("oper ").and_then(|oper| {
+                let after = before.get(oper.saturating_add(5) ..)?;
+                named(after.get(.. after.find(char::is_whitespace)?)?)
+            });
+            [named(before), operation]
+        })
+        .flatten()
+        .collect();
+    let rules: Vec<(usize, usize)> = source
+        .match_indices("rule ")
+        .filter_map(|(at, _)| {
+            let end = source.get(at ..)?.find(';')?;
+            Some((at, at.saturating_add(end)))
         })
         .collect();
     let mut gated = Vec::new();
@@ -595,6 +632,12 @@ fn gated(
                     .mold(held)
                     .is_ok_and(|resident| resident.sort == Sort::Instantiation)
             });
+        let unstated = !melded
+            && def.label == "identifier"
+            && binding.contains(text.trim())
+            && rules.iter().any(|&(start, end)| {
+                start <= usize::from(span.start()) && usize::from(span.end()) <= end
+            });
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
@@ -603,7 +646,8 @@ fn gated(
             .or_else(|| chained.then_some(Placed::Chained))
             .or_else(|| dropped.then_some(Placed::Discarded))
             .or_else(|| kinded.then_some(Placed::Kind))
-            .or_else(|| (sized || supplied).then_some(Placed::Stage));
+            .or_else(|| (sized || supplied).then_some(Placed::Stage))
+            .or_else(|| unstated.then_some(Placed::Unstated));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

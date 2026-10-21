@@ -776,6 +776,68 @@ fn a_rule_that_rebuilds_its_own_call_refuses_the_block()
 }
 
 #[test]
+fn a_second_order_rule_overlapping_another_refuses_the_block()
+{
+    let theory = |rules: &str| {
+        format!(
+            "theory Let {{
+    sort Tm : Type+;
+    oper zero : () --> Tm;
+    oper f : (a : Tm) --> Tm;
+    oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+    rule zeta : let(u, t) <=> t(u);
+    {rules}
+}}"
+        )
+    };
+    for (rules, later) in [
+        (
+            "rule zetaZero : let(zero(), t) <=> t(zero());",
+            "rule zetaZero : let(zero(), t) <=> t(zero())",
+        ),
+        (
+            "rule under : f(let(u, t)) <=> f(u);",
+            "rule under : f(let(u, t)) <=> f(u)",
+        ),
+    ] {
+        let source = theory(rules);
+        let source = SourceText::from(source.as_str());
+        lowered(source, |module| {
+            let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+            else {
+                panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+            };
+            let CellFault::Coherence(CoherenceFault::OverlapsSecondOrder { first }) =
+                diagnostic.fault
+            else {
+                panic!("{later} overlaps ζ: {:?}", diagnostic.fault)
+            };
+            assert_eq!(text(source, diagnostic.span).as_ref(), later);
+            assert_eq!(
+                text(source, first).as_ref(),
+                "rule zeta : let(u, t) <=> t(u)",
+                "{later} names ζ"
+            );
+            assert_eq!(
+                module.declarations()[0].outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::RulesOverlapSecondOrder {
+                    span: diagnostic.span,
+                    first
+                })
+            );
+        });
+    }
+    let apart = theory("rule fZero : f(zero()) <=> zero();");
+    lowered(SourceText::from(apart.as_str()), |module| {
+        assert_eq!(
+            module.cells().diagnostics,
+            [],
+            "ζ overlaps no left side of a rule over `f` alone, nor its own below the root"
+        );
+    });
+}
+
+#[test]
 fn an_equation_written_backwards_orients_forwards()
 {
     let source = SourceText::from(

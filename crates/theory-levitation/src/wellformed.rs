@@ -28,10 +28,12 @@
 //!
 //! [`Code`]: crate::Code
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -39,6 +41,7 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arity::BridgeArity;
+use crate::arity::SortRef;
 use crate::boundary::DiagnosticMessage;
 use crate::boundary::NameRef;
 use crate::boundary::RuleVariableLinearity;
@@ -48,6 +51,7 @@ use crate::circuit::CircuitRule;
 use crate::circuit::derive_boundaries;
 use crate::code::Attrs;
 use crate::code::Name;
+use crate::desc::OperDesc;
 use crate::desc::Representability;
 use crate::desc::SurfaceSpan;
 use crate::desc::TheoryDesc;
@@ -111,6 +115,11 @@ pub enum WfKind
     DuplicateFaceName,
     /// A face of the signature's shape holds a point the shape lacks.
     FaceOutsideShape,
+    /// A rule uses a variable a binding port of its left side binds neither
+    /// where a port binds the same variables over the same sort nor applied
+    /// to one argument per variable it binds, or applies a variable no binding
+    /// port binds.
+    UnsortedBinding,
 }
 
 quenchant_shape::reason_enum! {
@@ -209,10 +218,12 @@ fn located(
 ///   foreign result or `var` sort, a sort polarity disagreeing with the
 ///   declaration's, an ordinary or undeclared π⁺ domain, a face named twice, a
 ///   face past its shape, an out-of-signature face, a fresh right-hand-side
-///   variable, a non-composing arity, a reserved-derived attribute, a circuit
-///   rule whose wiring derives a boundary its sphere does not fix, a cyclic
-///   wiring, and a redex applying a rewrite the rule's telescope does not
-///   declare each surface exactly their diagnostic.
+///   variable, a variable a binding port binds used where no port binds the
+///   same variables or instantiated at the wrong count, a non-composing arity,
+///   a reserved-derived attribute, a circuit rule whose wiring derives a
+///   boundary its sphere does not fix, a cyclic wiring, and a redex applying a
+///   rewrite the rule's telescope does not declare each surface exactly their
+///   diagnostic.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
@@ -230,12 +241,13 @@ fn located(
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
 /// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
+/// - witness: `wellformed::tests::a_bound_variable_is_used_under_its_binders_or_instantiated`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
     WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
-    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs => matches!(diagnostic.span, Maybe::Present(_)),
+    | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding => matches!(diagnostic.span, Maybe::Present(_)),
     WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
     | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement
     | WfKind::NonRepresentableBinder | WfKind::DuplicateFaceName
@@ -309,10 +321,17 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
         );
     }
 
-    // Rule faces: in-signature symbols and no fresh right-hand-side variable.
+    // Rule faces: in-signature symbols, no fresh right-hand-side variable,
+    // and every variable a binding port binds sorted at its binders.
     let signature = signature_names(desc);
+    let operations: BTreeMap<&Name, &OperDesc> = desc
+        .opers
+        .iter()
+        .map(|operation| (&operation.name, operation))
+        .collect();
     for rule in &desc.rules {
         check_rule_face(rule, &signature, &mut diagnostics);
+        check_rule_binders(rule, &operations, &mut diagnostics);
     }
 
     // Bridge arities: the three maps compose.
@@ -789,6 +808,146 @@ fn check_rule_face(
             ),
             cell.provenance,
         ));
+    }
+}
+
+/// Where a rule term node stands: under the input port of an operation the
+/// description declares, or anywhere else.
+#[derive(Clone, Copy, Debug)]
+enum Site<'desc>
+{
+    /// The argument at a declared operation's input port.
+    Port(&'desc SortRef),
+    /// The root, or an argument of a constructor, a results tuple, an
+    /// instantiation or an undeclared operation.
+    Elsewhere,
+}
+
+/// Check that `cell` sorts each variable a binding port of its left side binds
+/// at that port's binders.
+///
+/// # Specification
+/// - ensures: a variable the left side passes at an input port of a declared
+///   operation whose telescope binds variables is bound there, at that port,
+///   the first such occurrence deciding. One `UnsortedBinding` diagnostic at
+///   the face's span, naming the variable, per right-hand-side occurrence of a
+///   bound variable not at a declared input port whose telescope's sorts and
+///   own sort are its binding port's, per instantiation of a variable no
+///   binding port binds, and per instantiation whose argument count is not the
+///   count of variables its binding port binds; in pre-order.
+/// - panics: none.
+/// - intension: one walk of the left side collecting the bound variables, one
+///   of the right side carrying each node's site.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `let`'s body instantiated once per bound variable and β
+///   over `lam` pass; `lam`'s body passed bare to `app`, which binds nothing
+///   there, an instantiation at two arguments of a one-variable binding and an
+///   instantiation of a variable no port binds each refuse naming the variable;
+///   reading the site from the parent's constructor, or comparing the count of
+///   binders and not their sorts, changes a verdict.
+/// - witness: `wellformed::tests::a_bound_variable_is_used_under_its_binders_or_instantiated`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
+        && diagnostic.kind == WfKind::UnsortedBinding)),
+)]
+fn check_rule_binders(
+    cell: &RuleFace,
+    operations: &BTreeMap<&Name, &OperDesc>,
+    diagnostics: &mut Vec<WfDiagnostic>,
+)
+{
+    let mut bound: BTreeMap<&Name, &SortRef> = BTreeMap::new();
+    let mut pending = vec![cell.lhs.to_node()];
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            TermView::Op { name, args } => {
+                let ports = operations
+                    .get(name)
+                    .map_or(&[][..], |operation| &*operation.arity.inputs);
+                for (place, arg) in args.enumerate() {
+                    if let (Some(port), TermView::Var(variable)) = (ports.get(place), arg.view())
+                        && !port.bindings.is_empty()
+                    {
+                        let _first = bound.entry(variable).or_insert(port);
+                    }
+                    pending.push(arg);
+                }
+            },
+            TermView::Ctor { args, .. }
+            | TermView::Results { args }
+            | TermView::Inst { args, .. } => {
+                pending.extend(args);
+            },
+            TermView::Var(_) => {},
+        }
+    }
+    let same_binders = |port: &SortRef, binding: &SortRef| {
+        port.sort == binding.sort
+            && port.bindings.len() == binding.bindings.len()
+            && port
+                .bindings
+                .iter()
+                .zip(&binding.bindings)
+                .all(|(one, other)| one.sort == other.sort)
+    };
+    let mut sited = vec![(cell.rhs.to_node(), Site::Elsewhere)];
+    while let Some((node, site)) = sited.pop() {
+        match node.view() {
+            TermView::Var(variable) => {
+                let Some(&binding) = bound.get(variable)
+                else {
+                    continue;
+                };
+                if !matches!(site, Site::Port(port) if same_binders(port, binding)) {
+                    diagnostics.push(located(
+                        WfKind::UnsortedBinding,
+                        format!(
+                            "rule uses `{variable}`, which a binding port of its left side binds, \
+                             where no port binds the same variables over the same sort: write it \
+                             where one does, or apply it to one argument per variable it binds"
+                        ),
+                        cell.provenance,
+                    ));
+                }
+            },
+            TermView::Inst { name, args } => {
+                match bound.get(name) {
+                    Some(binding) if binding.bindings.len() == args.len() => {},
+                    Some(binding) => diagnostics.push(located(
+                        WfKind::UnsortedBinding,
+                        format!(
+                            "rule applies `{name}` to {} arguments, but its binding port binds {} \
+                             variables: an instantiation takes one argument per variable",
+                            args.len(),
+                            binding.bindings.len()
+                        ),
+                        cell.provenance,
+                    )),
+                    None => diagnostics.push(located(
+                        WfKind::UnsortedBinding,
+                        format!(
+                            "rule applies `{name}`, which no binding port of its left side binds: \
+                             only a variable a port binds variables over takes arguments"
+                        ),
+                        cell.provenance,
+                    )),
+                }
+                sited.extend(args.map(|arg| (arg, Site::Elsewhere)));
+            },
+            TermView::Op { name, args } => {
+                let ports = operations
+                    .get(name)
+                    .map_or(&[][..], |operation| &*operation.arity.inputs);
+                sited.extend(args.enumerate().map(|(place, arg)| {
+                    (arg, ports.get(place).map_or(Site::Elsewhere, Site::Port))
+                }));
+            },
+            TermView::Ctor { args, .. } | TermView::Results { args } => {
+                sited.extend(args.map(|arg| (arg, Site::Elsewhere)));
+            },
+        }
     }
 }
 
@@ -1295,6 +1454,101 @@ mod tests
                     && diag.message.as_ref().contains('y')),
             "a fresh right-hand-side variable is declined"
         );
+    }
+
+    #[test]
+    fn a_bound_variable_is_used_under_its_binders_or_instantiated()
+    {
+        let op = |name: &str, inputs: Vec<SortRef>| {
+            OperDesc::new(
+                name,
+                BridgeArity::single_output(inputs, SortRef::new("r", "Nat")),
+                Attrs::empty(),
+            )
+        };
+        let over = |binder: &str| SortRef::new("t", "Nat").pi_plus([SortIndex::new("x", binder)]);
+        let ops = || {
+            vec![
+                op("let", vec![SortRef::new("u", "Nat"), over("Nat")]),
+                op("lam", vec![over("Nat")]),
+                op("lamZ", vec![over("Zed")]),
+                op("app", vec![
+                    SortRef::new("f", "Nat"),
+                    SortRef::new("u", "Nat"),
+                ]),
+            ]
+        };
+        let var = FreeTerm::var;
+        let bind = || FreeTerm::op("let", [var("u"), var("t")]);
+        let redex = || FreeTerm::op("app", [FreeTerm::op("lam", [var("t")]), var("u")]);
+        let refusals = |lhs: FreeTerm, rhs: FreeTerm| {
+            check_desc(&nat_with(
+                vec![RuleFace::new(lhs, rhs, Vec::new(), span())],
+                ops(),
+                Attrs::empty(),
+            ))
+            .into_iter()
+            .filter(|diagnostic| diagnostic.kind == WfKind::UnsortedBinding)
+            .map(|diagnostic| String::from(diagnostic.message.as_ref()))
+            .collect::<Vec<_>>()
+        };
+        for (lhs, rhs, what) in [
+            (
+                bind(),
+                FreeTerm::inst("t", [var("u")]),
+                "ζ instantiates `let`'s body",
+            ),
+            (
+                redex(),
+                FreeTerm::inst("t", [var("u")]),
+                "β instantiates `lam`'s body",
+            ),
+            (
+                redex(),
+                FreeTerm::op("lam", [var("t")]),
+                "`lam`'s body stands where `lam` binds it again",
+            ),
+        ] {
+            assert_eq!(refusals(lhs, rhs), Vec::<String>::new(), "{what}");
+        }
+        for (lhs, rhs, named, what) in [
+            (
+                redex(),
+                FreeTerm::op("app", [var("t"), var("u")]),
+                "`t`",
+                "`app` binds nothing at its first port",
+            ),
+            (
+                bind(),
+                FreeTerm::ctor("Succ", [var("t")]),
+                "`t`",
+                "a constructor's field binds nothing",
+            ),
+            (
+                redex(),
+                FreeTerm::op("lamZ", [var("t")]),
+                "`t`",
+                "`lamZ` binds as many variables over another sort",
+            ),
+            (
+                bind(),
+                FreeTerm::inst("t", [var("u"), var("u")]),
+                "`t` to 2 arguments",
+                "one variable bound, two arguments",
+            ),
+            (
+                bind(),
+                FreeTerm::inst("u", [var("u")]),
+                "`u`, which no binding port",
+                "no port binds over `u`",
+            ),
+        ] {
+            let messages = refusals(lhs, rhs);
+            assert!(
+                messages.len() == 1 && messages.iter().all(|message| message.contains(named)),
+                "{what}: {messages:?}"
+            );
+        }
     }
 
     #[test]

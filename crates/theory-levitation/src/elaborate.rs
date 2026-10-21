@@ -805,17 +805,18 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
 }
 
 /// The arguments of an application node, left to right, with its head; an
-/// error for a variable.
+/// error for a variable or a metavariable's instantiation.
 ///
 /// # Specification
 /// - ensures: the head in its alphabet and the arguments in order for an
 ///   application, the results head and the components for a results tuple; the
-///   off-boundary error for a variable, which addresses no argument.
-/// - fails: `off_boundary()` for a variable.
+///   off-boundary error for a variable or an instantiation, which addresses no
+///   frame.
+/// - fails: `off_boundary()` for a variable or an instantiation.
 /// - panics: none of its own; a panic in `off_boundary` propagates.
 ///
 /// # Errors
-/// Returns `off_boundary()` when `node` is a variable.
+/// Returns `off_boundary()` when `node` is a variable or an instantiation.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — variables, constructor and operation applications,
@@ -829,9 +830,9 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
         | TermView::Ctor { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Ctor(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Op { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Op(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Results { args: expected } => matches!(*head, WhiskerHead::Results) && args.iter().copied().eq(expected),
-        | TermView::Var(_) => false,
+        | TermView::Var(_) | TermView::Inst { .. } => false,
     },
-    | Err(_) => matches!(node.view(), TermView::Var(_)),
+    | Err(_) => matches!(node.view(), TermView::Var(_) | TermView::Inst { .. }),
 })]
 fn application<E, O>(
     node: TermNode<'_>,
@@ -850,7 +851,7 @@ where
             args.collect(),
         )),
         TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
-        TermView::Var(_) => Err(off_boundary()),
+        TermView::Var(_) | TermView::Inst { .. } => Err(off_boundary()),
     }
 }
 
@@ -1114,7 +1115,8 @@ pub fn redex_occurrences(body: &CircuitBody)
                 TermView::Var(name) => stack.push(Walk::Port(name)),
                 TermView::Ctor { args, .. }
                 | TermView::Op { args, .. }
-                | TermView::Results { args } => {
+                | TermView::Results { args }
+                | TermView::Inst { args, .. } => {
                     push_args(&mut stack, args);
                 },
             },
