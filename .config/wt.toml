@@ -7,7 +7,9 @@ hooks = "mise exec -- prek install"
 # worktree — the build directory, the code index, the extension's modules —
 # is copied in (a reflink where the filesystem clones). Existing files are
 # never overwritten, so the step is safe to re-run; a mutation run's output
-# stays with the worktree that produced it.
+# stays with the worktree that produced it. The copy is stamped after the
+# checkout, so cargo judges freshness by source content, not mtime
+# (`.cargo/config.toml`): an artifact of another revision is rebuilt.
 [post-start]
 copy = "wt step copy-ignored"
 
