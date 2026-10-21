@@ -381,9 +381,8 @@ impl Band
     ) -> Self
     {
         match (rule.0, position) {
-            ("u_type" | "f_type" | "f_type.row" | "at_type" | "binary_expression.then", _) => {
-                Self::Atom
-            },
+            ("u_type" | "f_type" | "f_type.row" | "at_type" | "binary_expression.then", _)
+            | ("send_session_type" | "receive_session_type", Position::First) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
             ("lazy_product_type", _) => Self::Sum,
@@ -2036,7 +2035,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 25] = [
+const RULES: [MoldName; 27] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2062,6 +2061,8 @@ const RULES: [MoldName; 25] = [
     MoldName("call_expression"),
     MoldName("path_type"),
     MoldName("binary_expression.then"),
+    MoldName("send_session_type"),
+    MoldName("receive_session_type"),
 ];
 
 /// `#{`.
