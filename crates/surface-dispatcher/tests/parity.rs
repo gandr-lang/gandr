@@ -524,7 +524,9 @@ enum Held
     /// for the declaration, lower to different core (#808).
     Apart,
     /// A declaration holding a `run` statement the sugared form writes at
-    /// its read, which the printer prints as its bind (#1416).
+    /// its read, which the printer prints as its bind (#1416) — as written,
+    /// or only as the printer spells it: a tail `become` it writes bare
+    /// makes the last statement such a run (#1460).
     Linear,
     /// A declaration the sugared form writes without a thunk the checker
     /// inserts, which the printer prints (#1457): the formatter's tokens are
@@ -966,7 +968,9 @@ fn substituted(
 
 /// The declarations of `variant`, a source standing at `written`'s path,
 /// that the printer spells in `form` as `printed` spells them: those whose
-/// printing reads back to itself.
+/// printing reads back to itself, and beside them each of `printed` the
+/// reading of `variant` holds out, by why — a printing the parity cannot
+/// hold as written, as a linear run printed as its bind (#1460).
 ///
 /// # Specification
 /// trivial.
@@ -975,13 +979,13 @@ fn reading_back(
     variant: Written<'_>,
     printed: &[&Printed],
     form: Form,
-) -> BTreeSet<String>
+) -> (BTreeSet<String>, BTreeMap<String, Held>)
 {
     let Some(again) = read(grammar, variant)
     else {
-        return BTreeSet::new();
+        return (BTreeSet::new(), BTreeMap::new());
     };
-    printed
+    let reads = printed
         .iter()
         .filter(|declaration| {
             again.printed.iter().any(|back| {
@@ -989,7 +993,17 @@ fn reading_back(
             })
         })
         .map(|declaration| declaration.name.clone())
-        .collect()
+        .collect();
+    let held = printed
+        .iter()
+        .filter_map(|declaration| {
+            again
+                .held
+                .get(&declaration.name)
+                .map(|&held| (declaration.name.clone(), held))
+        })
+        .collect();
+    (reads, held)
 }
 
 /// The declarations of `printed` whose sugared and explicit spellings,
@@ -1201,9 +1215,10 @@ fn bodies(
         .collect();
     let all: Vec<&Printed> = read.printed.iter().collect();
     let mut back: Option<BTreeSet<String>> = None;
+    let mut held_again: BTreeMap<String, Held> = BTreeMap::new();
     for form in [Form::Sugared, Form::Explicit] {
         let variant = substituted(written.text, &all, form);
-        let reads = reading_back(
+        let (reads, held) = reading_back(
             grammar,
             Written {
                 path: written.path,
@@ -1212,6 +1227,9 @@ fn bodies(
             &all,
             form,
         );
+        for (declaration, why) in held {
+            let _first = held_again.entry(declaration).or_insert(why);
+        }
         back = Some(match back {
             Some(before) => before.intersection(&reads).cloned().collect(),
             None => reads,
@@ -1221,11 +1239,16 @@ fn bodies(
     let (read_back, unread): (Vec<&Printed>, Vec<&Printed>) = all
         .into_iter()
         .partition(|declaration| back.contains(&declaration.name));
+    // A printing the reading of the variant holds out is held as that
+    // reading holds it: the parity cannot read it back as written.
     for declaration in unread {
-        found.misses.push(format!(
-            "{name}: `{}` does not lower back to itself",
-            declaration.name
-        ));
+        match held_again.get(&declaration.name) {
+            Some(&why) => holding.push((why, declaration.name.as_str())),
+            None => found.misses.push(format!(
+                "{name}: `{}` does not lower back to itself",
+                declaration.name
+            )),
+        }
     }
     let parted = apart(grammar, written, &read_back);
     let (held, parted): (Vec<&Printed>, Vec<&Printed>) = read_back

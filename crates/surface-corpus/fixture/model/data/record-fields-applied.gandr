@@ -1,0 +1,26 @@
+// A record whose fields are functions, split by a match and each field
+// applied: one once, the other twice, the second application reading the
+// first's answer.
+
+/// A field bound once and applied twice.
+@[ checks ]
+def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> -F Integer {
+  case m {
+    #{.start = s, .step = t} => {
+      run zero <- s();
+      run one <- t(zero);
+      become t(one)
+    }
+  }
+}
+
+/// A field bound once and applied once.
+@[ checks ]
+def oneStep(m : #{start : () => Integer, step : Integer => Integer}) -> -F Integer {
+  case m {
+    #{.start = s, .step = t} => {
+      run zero <- s();
+      become t(zero)
+    }
+  }
+}
