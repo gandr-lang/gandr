@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 
 import { IMPORT_DROP, ImportDrop } from "./drop";
 import { GandrLanguageClient } from "./lsp/client";
+import { COPIED_SOURCES, IMPORT_PASTE, ImportPaste } from "./paste";
 
 export async function activate(context: vscode.ExtensionContext) {
   const languageClient = GandrLanguageClient.create();
@@ -26,6 +27,17 @@ export async function activate(context: vscode.ExtensionContext) {
       { language: "gandr" },
       new ImportDrop(languageClient),
       { dropMimeTypes: ["text/uri-list"], providedDropEditKinds: [IMPORT_DROP] },
+    ),
+  );
+  context.subscriptions.push(
+    vscode.languages.registerDocumentPasteEditProvider(
+      { language: "gandr" },
+      new ImportPaste(languageClient),
+      {
+        copyMimeTypes: [COPIED_SOURCES],
+        pasteMimeTypes: [COPIED_SOURCES],
+        providedPasteEditKinds: [IMPORT_PASTE],
+      },
     ),
   );
   await languageClient.start();

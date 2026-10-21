@@ -108,6 +108,7 @@ use crate::hover::hovering_laid;
 use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::markup::Markup;
+use crate::paste::copied;
 use crate::position::Position;
 use crate::position::Range;
 use crate::proposal::Proposal;
@@ -135,6 +136,7 @@ use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
 use crate::protocol::ContentParams;
 use crate::protocol::ContentResult;
+use crate::protocol::CopiedSourcesParams;
 use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
@@ -3336,6 +3338,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "gandr/copiedSources") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Sources(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "workspace/textDocumentContent") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Content(_), .. } => true,
@@ -3707,6 +3715,19 @@ impl Server
                             ),
                         )
                     },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "gandr/copiedSources") => {
+                match serde_json::from_value::<CopiedSourcesParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        workspace.copied_sources(
+                            &params.text_document.uri,
+                            self.peer,
+                            &params.ranges,
+                        ),
+                    ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -4595,7 +4616,8 @@ impl Workspace
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Sources(_) => false,
     })]
     fn tokens(
         &self,
@@ -4665,7 +4687,7 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_) => false,
     })]
     fn inlay_hints(
         &self,
@@ -4698,6 +4720,51 @@ impl Workspace
             ),
             (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
         })
+    }
+
+    /// The sources declaring what `ranges` of the copy of the document at
+    /// `uri` that `peer` is answered from name.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any ranges are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document whose
+    ///   session did not build yields none; otherwise the sources [`copied`]
+    ///   answers over the ranges, off what the copy keeps for its hovers, made
+    ///   now when no request has asked since the text last changed.
+    /// - provides: the answer to `gandr/copiedSources`, which a copy asks.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`copied`], and an unknown document answers
+    ///   `null`.
+    /// - witness: `server::tests::a_copy_answers_the_sources_its_names_are_declared_in`
+    #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Sources(_))
+        && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
+    fn copied_sources(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        ranges: &[Range],
+    ) -> Answer
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Answer::Nothing;
+        };
+        let index = LineIndex::new(<&str>::from(document.text.source()).into());
+        Answer::Sources(document.session.as_ref().map_or_else(
+            |_| Vec::new(),
+            |session| {
+                copied(
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    (uri, &index),
+                    ranges,
+                )
+            },
+        ))
     }
 
     /// The inline completion of the copy of the document at `uri` that `peer`
@@ -4733,7 +4800,8 @@ impl Workspace
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
-            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_) => false,
+            | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Sources(_) => false,
     })]
     fn inline(
         &self,
@@ -9940,6 +10008,112 @@ mod tests
             "a source imported already, or the document itself, adds nothing"
         );
         let _cleared = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_copy_answers_the_sources_its_names_are_declared_in()
+    {
+        let directory = std::fs::canonicalize(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data"),
+        )
+        .expect("the data subject is checked out");
+        let written = std::fs::read_to_string(directory.join("following.gandr"))
+            .expect("the corpus source reads");
+        let text = written.as_str();
+        let following = DocumentUri::of_path(&directory.join("following.gandr"))
+            .expect("an absolute path names a file URI");
+        let base = DocumentUri::of_path(&directory.join("data-base.gandr"))
+            .expect("an absolute path names a file URI");
+        let mut server = initialized();
+        let notification = format!(
+            r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":
+                {{"uri":"{following}","languageId":"gandr","version":1,"text":{}}}}}}}"#,
+            serde_json::to_string(text).expect("the text serializes")
+        );
+        drop(send(&mut server, Json(&notification)));
+        let position = |offset: usize| {
+            let before = text.get(.. offset).unwrap_or_default();
+            let line = before.matches('\n').count();
+            let character = before.rsplit('\n').next().map_or(0, str::len);
+            format!(r#"{{"line":{line},"character":{character}}}"#)
+        };
+        let copied = |server: &mut Connected, uri: &DocumentUri, needles: &[(&str, &str)]| {
+            let ranges = needles
+                .iter()
+                .map(|&(after, needle)| {
+                    let start = text
+                        .find(after)
+                        .map(|at| at.saturating_add(after.len()))
+                        .and_then(|from| {
+                            text.get(from ..)?
+                                .find(needle)
+                                .map(|at| at.saturating_add(from))
+                        })
+                        .expect("the needle occurs");
+                    format!(
+                        r#"{{"start":{},"end":{}}}"#,
+                        position(start),
+                        position(start.saturating_add(needle.len()))
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":9,"method":"gandr/copiedSources","params":{{
+                    "textDocument":{{"uri":"{uri}"}},"ranges":[{ranges}]}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        let answered = |uris: &[&DocumentUri]| {
+            let uris = uris
+                .iter()
+                .map(|uri| format!("\"{uri}\""))
+                .collect::<Vec<_>>()
+                .join(",");
+            wire(Json(&format!(
+                r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
+            )))
+        };
+        let minus = "def rec minus(n : Nat, k : Nat) -> -F Nat {\n  case k {\n    Zero => n,\n    \
+                     Succ(j) => case n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
+                     }\n  }\n}";
+        assert_eq!(
+            copied(&mut server, &following, &[(
+                "def difference = ",
+                "minus(three, Succ(Zero))"
+            )]),
+            answered(&[&base, &following]),
+            "a call of the document's own declaration, of a sibling's numeral and constructors"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[("", minus)]),
+            answered(&[&base]),
+            "a declaration copied whole answers the sibling its types and constructors come \
+             from, and not itself"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[
+                ("", minus),
+                ("def difference = ", "minus(three, Succ(Zero))")
+            ]),
+            answered(&[&base]),
+            "a call of a declaration the copy holds answers nothing for it"
+        );
+        assert_eq!(
+            copied(&mut server, &following, &[("  case ", "k")]),
+            answered(&[]),
+            "a parameter's use answers nothing"
+        );
+        assert_eq!(
+            copied(
+                &mut server,
+                &DocumentUri::from("file:///tmp/unknown.gandr"),
+                &[("", "def")]
+            ),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
+            "an unknown document answers null"
+        );
     }
 
     #[test]
