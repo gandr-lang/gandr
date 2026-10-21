@@ -389,7 +389,7 @@ impl<'source> Collector<'_, 'source>
                             | Ok(ModelForm::Sort { .. }) => {
                                 component.form == ComponentForm::Family(FamilyForm::Derived)
                             },
-                            | Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => {
+                            | Ok(ModelForm::Operation { .. } | ModelForm::Constant(_) | ModelForm::Law { .. }) | Err(_) => {
                                 component.form == ComponentForm::Derived
                             },
                         }
@@ -506,9 +506,12 @@ impl<'source> Collector<'_, 'source>
                         ComponentForm::Abstract(Maybe::Absent(component_kind::Absent::Derived))
                     },
                     Ok(ModelForm::Sort { .. }) => ComponentForm::Family(FamilyForm::Derived),
-                    Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => {
-                        ComponentForm::Derived
-                    },
+                    Ok(
+                        ModelForm::Operation { .. }
+                        | ModelForm::Constant(_)
+                        | ModelForm::Law { .. },
+                    )
+                    | Err(_) => ComponentForm::Derived,
                 },
                 mark: crate::module::Mark::Unmarked,
             })
@@ -828,7 +831,12 @@ impl<'source> Collector<'_, 'source>
                 .and_then(|signature| signature.components.get(place.0))
                 .map_or(0_usize, |component| match component.form {
                     Ok(ModelForm::Sort { ref indices }) => indices.len(),
-                    Ok(ModelForm::Operation { .. } | ModelForm::Law { .. }) | Err(_) => 0_usize,
+                    Ok(
+                        ModelForm::Operation { .. }
+                        | ModelForm::Constant(_)
+                        | ModelForm::Law { .. },
+                    )
+                    | Err(_) => 0_usize,
                 }),
         )
     }

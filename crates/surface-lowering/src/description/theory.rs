@@ -980,7 +980,9 @@ impl Reader<'_, '_>
     /// - ensures: admitted operations retain every input and every output, in
     ///   order, as `Theory` codes them — each port's sort read as a sort over
     ///   index terms, an unnamed port at the empty name — beside the
-    ///   operation's name tile and where its name and each port are written.
+    ///   operation's name tile and where its name and each port are written; an
+    ///   `oper` written as a type alone, with no port group and no arrow, is a
+    ///   constant of that type.
     /// - fails: a filler is an explicit decline; a port name written twice on
     ///   the boundary is two ports, not one wire, and is refused by name.
     /// - panics: none.
@@ -1000,6 +1002,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::a_port_name_on_both_sides_is_two_ports`
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `description::theory::tests::a_rule_bearing_theory_defines_its_presentation_with_its_laws`
     fn signature_operation(
         &self,
         run: &mut Run<'_>,
@@ -1011,6 +1014,14 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.signature_fault(SignatureFault::MissingJudgment));
         }
+        // `oper zero : T`, a type alone with no arrow and no port group, is a
+        // constant of `T`; `oper zero : () --> T` an operation of no inputs.
+        let kind = match kind {
+            OperationKind::Operation if !run.at(Spelling("(")).0 && !run.has_arrow().0 => {
+                OperationKind::Constant
+            },
+            OperationKind::Operation | OperationKind::Observation | OperationKind::Constant => kind,
+        };
         let boundary = self.boundary(run, sorts, ArrowRow::Mapping)?;
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));

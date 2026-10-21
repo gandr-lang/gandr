@@ -16,6 +16,7 @@ use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
+use super::ConstantType;
 use super::ModelFault;
 use super::ModelForm;
 use super::ModelSignature;
@@ -131,6 +132,8 @@ where
             let results: Vec<String> = results.iter().map(sort).collect();
             format!("{name} : {} => {}", telescope(binders), results.join(" * "))
         },
+        Ok(ModelForm::Constant(ConstantType::Sort(ref of))) => format!("{name} : {}", sort(of)),
+        Ok(ModelForm::Constant(ConstantType::Ambient(ref of))) => format!("{name} : {of}"),
         Ok(ModelForm::Law {
             telescope: ref binders,
             ref carrier,
@@ -169,6 +172,40 @@ fn the_cat_shape_sorts_are_a_type_and_a_family()
         spelled(&model, "Hom"),
         "type Hom : (dom : Ob, cod : Ob) => Type",
         "an indexed sort is a family over its index telescope"
+    );
+}
+
+/// A constant, `oper zero : T`, derives a value of its type alone, a sort of
+/// the theory or a builtin type; `oper one : () --> T`, an operation of no
+/// inputs, derives a function of none; and a constant whose type leaves a
+/// variable free binds it as an operation does.
+#[test]
+fn a_constant_derives_its_type_alone()
+{
+    let model = derived(
+        r"theory Pointed {
+  sort Ob : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+  oper zero : Ob;
+  oper one : () --> Ob;
+  oper base : Integer;
+  oper loop : Hom(a, a);
+}",
+    );
+
+    assert_eq!(
+        [
+            spelled(&model, "zero"),
+            spelled(&model, "one"),
+            spelled(&model, "base"),
+            spelled(&model, "loop"),
+        ],
+        [
+            "zero : Ob",
+            "one : () => Ob",
+            "base : Integer",
+            "loop : (a : Ob) => Hom(a, a)",
+        ],
     );
 }
 

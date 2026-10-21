@@ -1,0 +1,67 @@
+// A theory's constant: `oper z : T` states a value of the type after the
+// colon, a sort of the theory or a builtin type, and a model gives it by a
+// value definition, as `phase.gandr`'s record signature gives `z : T` and
+// `module-signature-matching.gandr`'s gives `base : Integer`. An operation of
+// no inputs, `oper zero : () --> M` (`../include/monoid.gandr`), stays a
+// function of none. A law applies a constant as it applies an operation,
+// `e()`, and the model's law reads the constant's value there.
+
+/// A pointed carrier, the theory of `phase.gandr`'s `#{ type T, z : T }`.
+theory Pointed {
+  sort T : Type;
+  oper z : T;
+}
+
+/// The integers pointed at zero.
+module ZeroPointed : Model(Pointed) {
+  type T = Integer;
+  /// The point.
+  @[ runs("0") ]
+  def z = 0;
+}
+
+/// Two constants at a builtin type, the theory of
+/// `module-signature-matching.gandr`'s `#{ base: Integer, double: Integer }`.
+theory Based {
+  oper base : Integer;
+  oper double : Integer;
+}
+
+/// Seven and its double.
+module Sevens : Model(Based) {
+  /// The base.
+  @[ checks ]
+  def base = 7;
+  /// Its double.
+  @[ checks ]
+  def double = 14;
+}
+
+/// A model's constant, read from outside the model.
+@[ runs("7") ]
+def seven : () => Integer ;
+def seven = thunk { return Sevens.base } ;
+
+/// A unital carrier: a constant, an operation, and a law over both.
+theory Unital {
+  sort M : Type;
+  oper e : M;
+  oper mul : (x : M, y : M) --> M;
+  rule unitL : mul(e(), x) ==> x;
+}
+
+/// The integers under addition. The law holds by arithmetic, which conversion
+/// leaves to the runtime, so it is owed; its type reads the constant `e` as
+/// the value the model gives it.
+module Additive : Model(Unital) {
+  type M = Integer;
+  /// The unit.
+  @[ runs("0") ]
+  def e = 0;
+  /// The sum.
+  @[ checks ]
+  def mul(x : Integer, y : Integer) -> -F Integer { become x + y }
+  /// Zero is a left unit.
+  @[ owes(1) ]
+  def unitL : (x : Integer) => Path(Integer, mul(e, x), x) ;
+}

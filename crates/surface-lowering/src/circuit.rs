@@ -113,8 +113,8 @@ pub enum ExtensionFault
     /// The extended type is not an unindexed sort of the block, or is the
     /// cell sort itself.
     Carrier(Name),
-    /// The boundary is not an operation of no inputs and one output at the
-    /// extended type.
+    /// The boundary is neither a constant nor an operation of no inputs, of one
+    /// output at the extended type.
     Boundary(Name),
 }
 

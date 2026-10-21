@@ -202,6 +202,41 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
     );
 }
 
+/// `oper z : T` is a constant: a model gives it by a value of the carrier, and
+/// a function of no inputs, what `oper z : () --> T` derives, is mismatched at
+/// the constant's witness.
+#[test]
+fn a_constant_is_a_value_of_its_type_1226()
+{
+    let pointed = |member: &str| {
+        format!(
+            "theory Pointed {{\n  sort T : Type;\n  oper z : T;\n}}\nmodule Zero : \
+             Model(Pointed) {{\n  type T = Integer;\n  {member}\n}}\n"
+        )
+    };
+
+    let given = pointed("def z = 0;");
+    let mut value = lower(given.as_str());
+    let stated = super::declaration(&value, "Zero.z", Role::Declared).constant();
+    let judgements = verdicts(&mut value);
+    assert!(
+        judgements.contains(&(stated, Judgement::Checked))
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "a value of the carrier gives the constant: {judgements:?}"
+    );
+
+    let called = pointed("def z() -> -F Integer { return 0 }");
+    let mut function = lower(called.as_str());
+    let stated = super::declaration(&function, "Zero.z", Role::Witness).constant();
+    let judgements = verdicts(&mut function);
+    assert!(
+        judgements.contains(&(stated, Judgement::Mismatched)),
+        "a function of no inputs does not give a constant: {judgements:?}"
+    );
+}
+
 #[test]
 fn a_family_of_the_wrong_telescope_is_refused()
 {

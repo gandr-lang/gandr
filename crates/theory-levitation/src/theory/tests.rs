@@ -184,7 +184,7 @@ fn cat_like() -> TheoryParts
 }
 
 #[test]
-fn the_code_is_one_data_sort_of_nineteen_constructors()
+fn the_code_is_one_data_sort_of_twenty_constructors()
 {
     let desc = theory_desc(Grade::One);
     assert_eq!(
@@ -248,6 +248,7 @@ fn the_code_is_one_data_sort_of_nineteen_constructors()
             "String", "String", "String", "Theory", "Theory", "Theory"
         ]),
         ("Rank", vec!["String", "String", "Theory"]),
+        ("Const", vec!["String", "Theory", "Theory", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()

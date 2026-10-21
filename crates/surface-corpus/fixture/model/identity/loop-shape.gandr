@@ -43,14 +43,15 @@ def law_count(presented : Theory) -> -F Integer {
 def shape_laws : () => Integer ;
 def shape_laws = thunk { become law_count(CircleShape) } ;
 
-/// The presented integers as a model of the shape: `turn` the successor and
-/// `unturn` the predecessor. Each law is proved by `here`: conversion reads
-/// the inner call under the constructor the outer one builds, and the
-/// integers' rules cancel the pair.
+/// The presented integers as a model of the shape: `base` zero, a value, as
+/// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
+/// the predecessor. Each law is proved by `here`: conversion reads the inner
+/// call under the constructor the outer one builds, and the integers' rules
+/// cancel the pair.
 module Winding : Model(CircleShape) {
   type Pt = Int;
 
-  def base() -> -F Int { return Z }
+  def base = Z ;
 
   def turn(n : Int) -> -F Int { return S(n) }
 
@@ -68,8 +69,7 @@ module Winding : Model(CircleShape) {
 
   @[ runs("S(S(Z))") ]
   def wound() -> -F Int {
-    run b <- base() ;
-    run n <- turn(b) ;
+    run n <- turn(base) ;
     become turn(n)
   }
 }
@@ -80,7 +80,7 @@ module Winding : Model(CircleShape) {
 module NativeWinding : Model(CircleShape) {
   type Pt = Integer;
 
-  def base() -> -F Integer { return 0 }
+  def base = 0 ;
 
   def turn(n : Integer) -> -F Integer { return n + 1 }
 
@@ -94,8 +94,7 @@ module NativeWinding : Model(CircleShape) {
 
   @[ runs("2") ]
   def wound() -> -F Integer {
-    run b <- base() ;
-    run n <- turn(b) ;
+    run n <- turn(base) ;
     become turn(n)
   }
 }
