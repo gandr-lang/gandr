@@ -355,7 +355,9 @@ pub fn lenses(
 /// - hypothesis: L3 — the lens's arguments find the kept fill; after the
 ///   document's next edit withdraws it, they find none.
 /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
-#[spec(ensures: |ret| ret.as_ref().is_none_or(|edit| edit.changes.len() == 1))]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|edit| {
+    edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)
+}))]
 #[must_use]
 pub fn applied(
     uri: &DocumentUri,
@@ -368,9 +370,7 @@ pub fn applied(
         .any(|proposal| {
             (proposal.range, proposal.text.as_str()) == (named.range, named.new_text.as_str())
         })
-        .then(|| WorkspaceEdit {
-            changes: BTreeMap::from([(uri.clone(), Vec::from([named]))]),
-        })
+        .then(|| WorkspaceEdit::of(BTreeMap::from([(uri.clone(), Vec::from([named]))])))
 }
 
 /// One action per proposal of the document at `uri` whose range meets
@@ -390,7 +390,8 @@ pub fn applied(
 ///   elsewhere offers nothing.
 /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
 #[spec(ensures: |ret| ret.len() <= proposals.len()
-    && ret.iter().all(|action| action.kind == "quickfix" && action.edit.changes.len() == 1))]
+    && ret.iter().all(|action| action.kind == "quickfix"
+        && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
 pub fn actions(
     uri: &DocumentUri,
@@ -407,15 +408,13 @@ pub fn actions(
                 proposal.text.lines().next().unwrap_or_default()
             ),
             kind: "quickfix",
-            edit: WorkspaceEdit {
-                changes: BTreeMap::from([(
-                    uri.clone(),
-                    Vec::from([TextEdit {
-                        range: proposal.range,
-                        new_text: proposal.text.clone(),
-                    }]),
-                )]),
-            },
+            edit: WorkspaceEdit::of(BTreeMap::from([(
+                uri.clone(),
+                Vec::from([TextEdit {
+                    range: proposal.range,
+                    new_text: proposal.text.clone(),
+                }]),
+            )])),
         })
         .collect()
 }

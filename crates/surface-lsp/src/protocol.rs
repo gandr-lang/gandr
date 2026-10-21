@@ -751,6 +751,29 @@ impl InitializeParams
                 .is_some_and(|workspace| workspace.text_document_content.is_some()),
         )
     }
+
+    /// How this client takes a workspace edit: versioned when it declares
+    /// `workspace.workspaceEdit.documentChanges`, and annotated as well when it
+    /// also declares `workspace.workspaceEdit.changeAnnotationSupport`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn edits_shaped(&self) -> EditsShaped
+    {
+        let taken = self
+            .capabilities
+            .as_ref()
+            .and_then(|capabilities| capabilities.workspace)
+            .and_then(|workspace| workspace.workspace_edit)
+            .unwrap_or_default();
+        let versioned = taken.document_changes.unwrap_or(false);
+        EditsShaped {
+            versioned,
+            annotated: versioned && taken.change_annotation_support.is_some(),
+        }
+    }
 }
 
 /// The paths of `folders`, each a `file` URI's path, in order.
@@ -782,6 +805,27 @@ pub struct ListsFolders(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ViewsContent(pub bool);
+
+/// How a client takes a workspace edit.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EditsShaped
+{
+    /// Each document's edits with the version of the copy they were made
+    /// against.
+    pub versioned: bool,
+    /// Among versioned edits, each to a document the client holds no copy of
+    /// annotated for its user to confirm.
+    pub annotated: bool,
+}
+
+impl EditsShaped
+{
+    /// A client that takes edits by URI alone.
+    pub const BY_URI: Self = Self {
+        versioned: false,
+        annotated: false,
+    };
+}
 
 /// Whether a client answers a pull of its settings.
 #[repr(transparent)]
@@ -1001,6 +1045,35 @@ pub struct WorkspaceCapabilities
     /// virtual document the server serves.
     #[serde(default)]
     pub text_document_content: Option<ContentCapabilities>,
+    /// `workspace.workspaceEdit`.
+    #[serde(default)]
+    pub workspace_edit: Option<WorkspaceEditCapabilities>,
+}
+
+/// What a client takes of a workspace edit.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEditCapabilities
+{
+    /// `documentChanges`: whether it takes each document's edits with the
+    /// version they were made against.
+    #[serde(default)]
+    pub document_changes: Option<bool>,
+    /// `changeAnnotationSupport`: present when it takes edits annotated for
+    /// its user to confirm.
+    #[serde(default)]
+    pub change_annotation_support: Option<AnnotationCapabilities>,
+}
+
+/// What a client offers of annotated edits.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct AnnotationCapabilities
+{
+    /// `groupsOnLabel`: whether it groups edits by their annotations' labels.
+    #[serde(default)]
+    pub groups_on_label: Option<bool>,
 }
 
 /// What a client offers of showing a virtual document's text.
@@ -2993,13 +3066,161 @@ pub struct CodeAction
     pub edit: WorkspaceEdit,
 }
 
-/// Edits to several documents, by URI.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
+/// Edits to several documents: by URI, or, for a client that takes them so,
+/// as each document's edits with the version of its copy they were made
+/// against and the annotations they name.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceEdit
 {
-    /// Each document's edits, in document order.
-    pub changes: BTreeMap<DocumentUri, Vec<TextEdit>>,
+    /// Each document's edits, in document order, by URI; none once versioned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes: Option<BTreeMap<DocumentUri, Vec<TextEdit>>>,
+    /// Each document's edits with the version they were made against, in URI
+    /// order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub document_changes: Vec<TextDocumentEdit>,
+    /// The annotations the edits name, by identifier.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub change_annotations: BTreeMap<&'static str, ChangeAnnotation>,
+}
+
+impl WorkspaceEdit
+{
+    /// Edits by URI, as every client takes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn of(changes: BTreeMap<DocumentUri, Vec<TextEdit>>) -> Self
+    {
+        Self {
+            changes: Some(changes),
+            document_changes: Vec::new(),
+            change_annotations: BTreeMap::new(),
+        }
+    }
+
+    /// These edits as a client taking edits as `shaped` reads them, where
+    /// `held` is the version of the client's copy of a document, none when it
+    /// holds none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: unchanged unless `shaped.versioned` and the edits are by URI;
+    ///   then the same edits as one document change per document, in URI order,
+    ///   each naming the version `held` gives it, and none by URI. When
+    ///   `shaped.annotated`, each edit to a document `held` gives no version
+    ///   names [`UNHELD`], whose annotation asks the user to confirm, described
+    ///   once when any edit names it.
+    /// - provides: a rename's, a file move's, a quick fix's and an applied
+    ///   fill's edit, as the client asking takes it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rename across a document the client holds and an
+    ///   importer it does not is answered by URI to a client that declares
+    ///   nothing, versioned to one that declares document changes, and
+    ///   annotated as well to one that also declares annotations.
+    /// - witness: `server::tests::a_rename_is_versioned_and_annotated_as_its_client_takes_edits`
+    #[spec(ensures: |ret| (!shaped.versioned || ret.changes.is_none())
+        && (shaped.annotated || ret.change_annotations.is_empty()))]
+    #[must_use]
+    pub fn shaped<Held>(
+        mut self,
+        shaped: EditsShaped,
+        held: Held,
+    ) -> Self
+    where
+        Held: Fn(&DocumentUri) -> Option<DocumentVersion>,
+    {
+        let Some(changes) = self.changes.take_if(|_| shaped.versioned)
+        else {
+            return self;
+        };
+        for (uri, edits) in changes {
+            let version = held(&uri);
+            let annotation = (shaped.annotated && version.is_none()).then_some(UNHELD);
+            if annotation.is_some() {
+                self.change_annotations
+                    .insert(UNHELD, ChangeAnnotation::UNHELD);
+            }
+            self.document_changes.push(TextDocumentEdit {
+                text_document: EditedDocument { uri, version },
+                edits: edits
+                    .into_iter()
+                    .map(|edit| AnnotatedEdit {
+                        range: edit.range,
+                        new_text: edit.new_text,
+                        annotation_id: annotation,
+                    })
+                    .collect(),
+            });
+        }
+        self
+    }
+}
+
+/// The annotation an edit to a document the client holds no copy of names.
+pub const UNHELD: &str = "unheld";
+
+/// One document's edits, with the version of the copy they were made against.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextDocumentEdit
+{
+    /// The document and its version.
+    pub text_document: EditedDocument,
+    /// Its edits, in document order.
+    pub edits: Vec<AnnotatedEdit>,
+}
+
+/// A document and the version of the client's copy, null when it holds none.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EditedDocument
+{
+    /// The document.
+    pub uri: DocumentUri,
+    /// The version of the client's copy.
+    pub version: Option<DocumentVersion>,
+}
+
+/// One edit, with the annotation it names, if any.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotatedEdit
+{
+    /// The range replaced.
+    pub range: Range,
+    /// The text replacing it.
+    pub new_text: String,
+    /// The annotation it names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotation_id: Option<&'static str>,
+}
+
+/// What an annotated edit tells its user, and whether it asks them to confirm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeAnnotation
+{
+    /// The text shown with the edit.
+    pub label: &'static str,
+    /// Whether the user confirms the edit before it is applied.
+    pub needs_confirmation: bool,
+    /// What the edit does, shown less prominently.
+    pub description: &'static str,
+}
+
+impl ChangeAnnotation
+{
+    /// The annotation [`UNHELD`] names.
+    pub const UNHELD: Self = Self {
+        label: "Edit a file this editor has not opened",
+        needs_confirmation: true,
+        description: "The edit changes the file on disk; this editor holds no copy of it.",
+    };
 }
 
 /// The name a rename at a position renames, as `textDocument/prepareRename`

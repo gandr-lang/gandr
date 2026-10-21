@@ -111,6 +111,7 @@ use crate::protocol::AppliesEdits;
 use crate::protocol::ApplyEditParams;
 use crate::protocol::CancelProgressParams;
 use crate::protocol::ChoiceParams;
+use crate::protocol::CodeAction;
 use crate::protocol::CompletionItem;
 use crate::protocol::ConfigurationParams;
 use crate::protocol::ContentChange;
@@ -123,6 +124,7 @@ use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::EditsShaped;
 use crate::protocol::ExecuteCommandParams;
 use crate::protocol::FORM_CLOSER;
 use crate::protocol::FileEvent;
@@ -1065,6 +1067,23 @@ impl Workspace
             .map(|(uri, held)| (uri, held.document.version))
     }
 
+    /// The version of the copy `peer` holds of the document at `uri`, none
+    /// when it holds none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held_by(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+    ) -> Option<DocumentVersion>
+    {
+        match self.documents.get(uri).map(|held| held.own(peer)) {
+            Some(Maybe::Present(document)) => Some(document.version),
+            Some(Maybe::Absent(_)) | None => None,
+        }
+    }
+
     /// The diagnostics last published for the document at `uri`, and the
     /// version they were published at.
     ///
@@ -1327,6 +1346,7 @@ impl Workspace
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             applying: AppliesEdits(false),
+            editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
             listing: ListsFolders(false),
             viewer: ViewsContent(false),
@@ -1578,6 +1598,9 @@ pub struct Server
     /// `initialize`: a lens over one checked fill then runs the command
     /// applying it.
     applying: AppliesEdits,
+    /// How its client takes a workspace edit, read at `initialize`: every
+    /// edit the server sends it is shaped so.
+    editing: EditsShaped,
     /// Whether its client shows a document the server asks it to, read at
     /// `initialize`: a fill kept elsewhere is then offered to its user.
     showing: ShowsDocuments,
@@ -1680,6 +1703,7 @@ impl Server
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
             applying: AppliesEdits(false),
+            editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
             listing: ListsFolders(false),
             viewer: ViewsContent(false),
@@ -2237,10 +2261,11 @@ impl Server
     /// # Specification
     /// - requires: nothing; any parameters are admissible input.
     /// - ensures: for [`APPLY_FILL`] naming a fill the document at its URI
-    ///   still keeps, a `workspace/applyEdit` request carrying the fill's edit
-    ///   under a fresh numbered identifier, then the answer `null`; for one
-    ///   naming a fill the document does not keep, `ContentModified`; for any
-    ///   other command, or arguments that do not read, `InvalidParams`.
+    ///   still keeps, a `workspace/applyEdit` request carrying the fill's edit,
+    ///   shaped as the client takes edits ([`WorkspaceEdit::shaped`]), under a
+    ///   fresh numbered identifier, then the answer `null`; for one naming a
+    ///   fill the document does not keep, `ContentModified`; for any other
+    ///   command, or arguments that do not read, `InvalidParams`.
     /// - fails: never; every refusal is an answer.
     /// - panics: none.
     ///
@@ -2305,7 +2330,7 @@ impl Server
                 apply_edit(
                     ApplyEditParams {
                         label: "Apply the checked fill",
-                        edit,
+                        edit: edit.shaped(self.editing, |uri| workspace.held_by(uri, self.peer)),
                     },
                     sent,
                 ),
@@ -2314,6 +2339,37 @@ impl Server
             log: Vec::new(),
             flow: Flow::Continue,
         }
+    }
+
+    /// `answer` with each edit it carries shaped as this connection's client
+    /// takes edits ([`WorkspaceEdit::shaped`]), each version its own copy's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edited(
+        &self,
+        workspace: &Workspace,
+        answer: Answer,
+    ) -> Answer
+    {
+        let shape = |edit: WorkspaceEdit| {
+            edit.shaped(self.editing, |uri| workspace.held_by(uri, self.peer))
+        };
+        if let Answer::Renamed(edit) = answer {
+            return Answer::Renamed(shape(edit));
+        }
+        if let Answer::Actions(actions) = answer {
+            return Answer::Actions(
+                actions
+                    .into_iter()
+                    .map(|action| CodeAction {
+                        edit: shape(action.edit),
+                        ..action
+                    })
+                    .collect(),
+            );
+        }
+        answer
     }
 
     /// How the session ends if the stream closes now.
@@ -3049,6 +3105,7 @@ impl Server
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
                 self.applying = initial_applying(&params);
+                self.editing = initial_editing(&params);
                 self.showing = initial_showing(&params);
                 self.listing = initial_listing(&params);
                 self.viewer = initial_viewer(&params);
@@ -3252,7 +3309,7 @@ impl Server
                         params.position,
                         NewName(&params.new_name),
                     ) {
-                        Ok(answer) => success(id, answer),
+                        Ok(answer) => success(id, self.edited(workspace, answer)),
                         Err(refused) => failure(id, ErrorCode::REQUEST_FAILED, refused),
                     },
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
@@ -3262,7 +3319,10 @@ impl Server
                 match serde_json::from_value::<RenameFilesParams>(params) {
                     Ok(params) => success(
                         id,
-                        workspace.will_rename(self.peer, &Moves::of(&params.files)),
+                        self.edited(
+                            workspace,
+                            workspace.will_rename(self.peer, &Moves::of(&params.files)),
+                        ),
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -3427,11 +3487,14 @@ impl Server
                     Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            Maybe::Present(document) => Answer::Actions(actions(
-                                &params.text_document.uri,
-                                &document.proposals,
-                                params.range,
-                            )),
+                            Maybe::Present(document) => self.edited(
+                                workspace,
+                                Answer::Actions(actions(
+                                    &params.text_document.uri,
+                                    &document.proposals,
+                                    params.range,
+                                )),
+                            ),
                             Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
@@ -5104,7 +5167,7 @@ impl Workspace
                 &shadows,
             )?;
         }
-        Ok(Answer::Renamed(WorkspaceEdit { changes }))
+        Ok(Answer::Renamed(WorkspaceEdit::of(changes)))
     }
 
     /// What a `workspace/willRenameFiles` request moving files and folders
@@ -5186,7 +5249,7 @@ impl Workspace
             Answer::Nothing
         }
         else {
-            Answer::Renamed(WorkspaceEdit { changes })
+            Answer::Renamed(WorkspaceEdit::of(changes))
         }
     }
 
@@ -5489,6 +5552,18 @@ fn initial_applying(params: &Value) -> AppliesEdits
 {
     InitializeParams::deserialize(params)
         .map(|params| params.applies_edits())
+        .unwrap_or_default()
+}
+
+/// How the client `initialize` names in `params` takes a workspace edit; by
+/// URI when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_editing(params: &Value) -> EditsShaped
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.edits_shaped())
         .unwrap_or_default()
 }
 
@@ -6768,6 +6843,88 @@ mod tests
             )["result"],
             Value::Null,
             "a document the server does not hold answers null"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_rename_is_versioned_and_annotated_as_its_client_takes_edits()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-versioned-rename-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let disk = [
+            ("base.gandr", "data Nat : Type {\n  Zero : Nat;\n}\n"),
+            (
+                "first.gandr",
+                "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
+            ),
+        ];
+        for (file, text) in disk {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let renamed = |capabilities: Value| {
+            let mut server = Connected::default();
+            let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+                "params": {"capabilities": capabilities, "rootUri": format!("file://{}", directory.display())}});
+            let _answered = send(&mut server, Json(&initialize.to_string()));
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri("first.gandr"), "languageId": "gandr", "version": 7_i32,
+                    "text": disk[1].1}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+            let rename = serde_json::json!({"jsonrpc": "2.0", "id": 2_i32, "method": "textDocument/rename",
+                "params": {"textDocument": {"uri": uri("first.gandr")},
+                    "position": at(Line::from(2_u32), Character::from(14_u32)), "newName": "Nought"}});
+            send(&mut server, Json(&rename.to_string()))[0]["result"].clone()
+        };
+        let edit = |line: u32, start: u32, end: u32| {
+            serde_json::json!({"range": {
+                "start": at(Line::from(line), Character::from(start)),
+                "end": at(Line::from(line), Character::from(end))}, "newText": "Nought"})
+        };
+        let annotated = |line: u32, start: u32, end: u32| {
+            let mut edit = edit(line, start, end);
+            edit["annotationId"] = serde_json::json!("unheld");
+            edit
+        };
+        assert_eq!(
+            renamed(serde_json::json!({})),
+            serde_json::json!({"changes": {
+                uri("base.gandr"): [edit(1, 2, 6)],
+                uri("first.gandr"): [edit(2, 13, 17)],
+            }}),
+            "a client that declares nothing takes the edits by URI"
+        );
+        assert_eq!(
+            renamed(serde_json::json!({"workspace": {"workspaceEdit": {"documentChanges": true}}})),
+            serde_json::json!({"documentChanges": [
+                {"textDocument": {"uri": uri("base.gandr"), "version": null}, "edits": [edit(1, 2, 6)]},
+                {"textDocument": {"uri": uri("first.gandr"), "version": 7_i32}, "edits": [edit(2, 13, 17)]},
+            ]}),
+            "a client that takes document changes gets its copy's version, and null for a file it \
+             holds no copy of"
+        );
+        assert_eq!(
+            renamed(serde_json::json!({"workspace": {"workspaceEdit": {
+                "documentChanges": true, "changeAnnotationSupport": {}}}})),
+            serde_json::json!({
+                "documentChanges": [
+                    {"textDocument": {"uri": uri("base.gandr"), "version": null},
+                        "edits": [annotated(1, 2, 6)]},
+                    {"textDocument": {"uri": uri("first.gandr"), "version": 7_i32},
+                        "edits": [edit(2, 13, 17)]},
+                ],
+                "changeAnnotations": {"unheld": {
+                    "label": "Edit a file this editor has not opened",
+                    "needsConfirmation": true,
+                    "description": "The edit changes the file on disk; this editor holds no copy of it."}},
+            }),
+            "a client that also takes annotations is asked to confirm the edit to the file it holds \
+             no copy of"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
