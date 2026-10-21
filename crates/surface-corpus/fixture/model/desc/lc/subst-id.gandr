@@ -32,7 +32,7 @@ def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n
 ) {
   case t {
     Ix(n) => h(n),
-    Lam(b) => cong(lamOf, substId[<](b, Lift(s), thunk { fn (n) { substIdLift(s, h, n) } })),
+    Lam(b) => cong(lamOf, substId[<](b, Lift(s), fn (n) { substIdLift(s, h, n) })),
     Ap(f, x) => transport(
       \z. Path(Term, Ap(subst(f, s), subst(x, s)), Ap(z, x)),
       substId[<](f, s, h),

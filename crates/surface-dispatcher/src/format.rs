@@ -865,4 +865,82 @@ mod tests
             "without a checker no run statement is written away"
         );
     }
+
+    #[test]
+    fn a_thunk_the_checker_inserts_is_left_to_it_1327()
+    {
+        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+        let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                      \n\
+                      def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                      \n\
+                      def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                      \n\
+                      def bump : Nat => Nat ;\n\
+                      def bump = thunk { fn (n) { Succ(n) } } ;\n\
+                      \n\
+                      def counted : () => Nat ;\n\
+                      def counted = thunk { twice(Zero) } ;\n\
+                      \n\
+                      def tailed : () => Nat ;\n\
+                      def tailed = thunk { become twice(Zero) } ;\n\
+                      \n\
+                      def none : () => Nat ;\n\
+                      def none = thunk { Zero } ;\n";
+        let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                       \n\
+                       def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                       \n\
+                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                       \n\
+                       def bump : Nat => Nat ;\n\
+                       def bump = fn (n) { Succ(n) } ;\n\
+                       \n\
+                       def counted : () => Nat ;\n\
+                       def counted = twice(Zero) ;\n\
+                       \n\
+                       def tailed : () => Nat ;\n\
+                       def tailed = thunk { become twice(Zero) } ;\n\
+                       \n\
+                       def none : () => Nat ;\n\
+                       def none = thunk { Zero } ;\n";
+        let options = FormatOptions {
+            form: gandr_surface_format::Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let format = |text: &str, checker: Option<&dyn gandr_surface_format::Elaborate>| {
+            let parsed = gandr_surface_parser::parse(&grammar, SourceText::from(text))
+                .expect("the source parses");
+            let formatted = gandr_surface_format::format_beside(
+                &grammar,
+                &parsed,
+                options,
+                (gandr_surface_format::Beside::Alone, checker),
+            )
+            .expect("the source formats");
+            let withdrawn: Vec<String> = formatted
+                .withdrawn()
+                .iter()
+                .map(|withdrawal| withdrawal.declaration.clone())
+                .collect();
+            (formatted.into_text(), withdrawn)
+        };
+        assert_eq!(
+            format(source, Some(&crate::compose::Elaborating)),
+            (String::from(sugared), Vec::new()),
+            "beside the checker a thunk of one computation checked against a thunk type is left \
+             for the checker to insert; a `become` keeps its thunk, and so do a returned thunk \
+             and one around a value, which the checker would not insert, with nothing withdrawn"
+        );
+        assert_eq!(
+            format(sugared, Some(&crate::compose::Elaborating)),
+            (String::from(sugared), Vec::new()),
+            "a second pass leaves out nothing more"
+        );
+        assert_eq!(
+            format(source, None),
+            (String::from(source), Vec::new()),
+            "without a checker every thunk is kept"
+        );
+    }
 }

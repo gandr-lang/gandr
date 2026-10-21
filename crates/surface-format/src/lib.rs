@@ -76,13 +76,15 @@
 //! `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared to its
 //! shortest, `A => B`. The `run x <- c ;` statements ending a block whose
 //! binders its tail reads once each, first and in order, are written away,
-//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`). Each
-//! moves its form on the concrete syntax tree: its operands and their
-//! comments are kept, its own tiles are the other spelling's, each comment it
-//! owns goes before the operand it preceded, and an operand is parenthesised
-//! or unwrapped as its new position's binding needs, as the printer writes
-//! it. [`Selection`] narrows the rewrites by [`RewriteName`]; there is no
-//! other knob.
+//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`). A
+//! `thunk { e }` of one computation, no grade and no statement written, is
+//! written `e` where the checker would insert the thunk: where it checks `e`
+//! against a thunk type. Each moves its form on the concrete syntax tree: its
+//! operands and their comments are kept, its own tiles are the other
+//! spelling's, each comment it owns goes before the operand it preceded, and
+//! an operand is parenthesised or unwrapped as its new position's binding
+//! needs, as the printer writes it. [`Selection`] narrows the rewrites by
+//! [`RewriteName`]; there is no other knob.
 //!
 //! | rewrite          | explicit                | sugared         |
 //! | ---------------- | ----------------------- | --------------- |
@@ -98,6 +100,7 @@
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
 //! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
+//! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
@@ -137,23 +140,34 @@
 //! - Reversal: a printer that carries the source's comments and names, at which
 //!   point one printing serves both and this table retires.
 //!
-//! A linear run is the one rewrite whose two spellings lower to different
-//! cores: a bind, and a nested call the checker elaborates to that bind. Its
+//! A linear run and an inserted thunk are the rewrites whose two spellings
+//! lower to different cores: a bind, and a nested call the checker elaborates
+//! to that bind; a thunk, and the computation the checker wraps in one. Their
 //! meaning check is the checker's, through [`Elaborate`], which a caller that
 //! judges modules supplies to [`format_beside`] (the crate depends on no
 //! checker): where the lowerings differ, a declaration agrees when the
-//! checker elaborates both to equal bodies. The source is elaborated once,
-//! and only when the lowering lists a run; without a checker, and in a
-//! declaration the checker refuses as written, no statement is written away.
-//! A nested call the checker would suspend rather than run, at a thunk-typed
-//! parameter, elaborates otherwise and is withdrawn as any rewrite is.
+//! checker elaborates both to equal bodies. The source is elaborated at most
+//! once: up front when the lowering lists a run, and otherwise only when a
+//! rewritten source first lowers otherwise. Without a checker no statement
+//! is written away and no thunk left out, and in a declaration the checker
+//! refuses as written no statement is written away; a thunk left out there
+//! elaborates to nothing on either side, so the declaration keeps it. A
+//! nested call the checker would suspend rather than run, at a thunk-typed
+//! parameter, elaborates otherwise and is withdrawn as any rewrite is. A
+//! declaration that elaborates otherwise with its thunks left out keeps them
+//! and is formatted again, unreported: there the checker inserts no thunk —
+//! a returned one, one around a value — so the rewrite does not apply, as a
+//! `return` the lowering would not infer stays.
 //!
 //! - Choice: the checker's elaboration as the oracle, so the sugar is written
-//!   exactly where the checker reads the nested call as the run it replaces.
+//!   exactly where the checker reads the nested call as the run it replaces,
+//!   and the bare computation as the thunk it leaves out.
 //! - Alternative: a syntactic rule in the lowering alone, which cannot see the
-//!   expected type that decides whether a nested call runs or is suspended.
-//! - Reversal: a lowering that writes the bind for a nested call itself, so the
-//!   two spellings lower alike and the core comparison suffices.
+//!   expected type that decides whether a nested call runs or is suspended, or
+//!   whether a computation is checked against a thunk type.
+//! - Reversal: a lowering that writes the bind for a nested call and the thunk
+//!   around a checked computation itself, so the two spellings lower alike and
+//!   the core comparison suffices.
 //!
 //! A source that imports a sibling is lowered beside it: alone, every
 //! declaration that reads an imported name is refused and none could be
@@ -233,6 +247,8 @@ mod meaning;
 mod rewrite;
 
 mod tail;
+
+mod thunk;
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -785,23 +801,36 @@ pub fn format_beside(
         (Some(_), Some(module)) => tail::Tails::of(module, base),
         (Some(_) | None, _) => tail::Tails::default(),
     };
-    // A linear run lowers otherwise than the call written at its read, so it
-    // is written away only where a checker can compare the two: in a
-    // declaration the checker elaborates as written. The source is elaborated
-    // once, here, and only when the lowering lists a run.
-    let checked = match (chosen, lowered.as_ref(), checker) {
-        (Some(_), Some(module), Some(checker)) if !module.linear_runs().is_empty() => {
-            let elaborations = checker.definitions(&mut arena, module);
-            Some((checker, elaborations))
+    // A linear run lowers otherwise than the call written at its read, and a
+    // thunk otherwise than the computation the checker wraps in it, so each is
+    // written away only where a checker can compare the two. The source is
+    // elaborated at most once: here when the lowering lists a run, which is
+    // written only in a declaration the checker elaborates as written, and
+    // otherwise only once a rewritten source lowers otherwise — a thunk left
+    // out of a declaration the checker refuses elaborates to nothing on
+    // either side, and that declaration keeps its thunks.
+    let checker = chosen.and(lowered.as_ref()).and(checker);
+    let mut elaborations: Option<Vec<Option<ValueId>>> = match (lowered.as_ref(), checker) {
+        (Some(module), Some(checker)) if !module.linear_runs().is_empty() => {
+            Some(checker.definitions(&mut arena, module))
         },
-        (Some(_) | None, ..) => None,
+        (Some(_) | None, _) => None,
     };
-    let runs = match (lowered.as_ref(), checked.as_ref()) {
-        (Some(module), Some(&(_, ref elaborations))) => {
-            let unchecked = forms_of(tree, &meaning::unelaborated(module, elaborations));
-            linear::Runs::of(module, base, unchecked)
+    let unchecked = match (lowered.as_ref(), elaborations.as_ref()) {
+        (Some(module), Some(elaborations)) => {
+            forms_of(tree, &meaning::unelaborated(module, elaborations))
         },
+        (Some(_) | None, _) => Vec::new(),
+    };
+    let runs = match (lowered.as_ref(), elaborations.as_ref()) {
+        (Some(module), Some(_)) => linear::Runs::of(module, base, unchecked.clone()),
         (Some(_) | None, _) => linear::Runs::default(),
+    };
+    let mut thunks = match checker {
+        Some(_) if thunk::thunked(&flat.leaves, None) == thunk::Thunked::Written => {
+            thunk::Thunks::outside(unchecked)
+        },
+        Some(_) | None => thunk::Thunks::default(),
     };
     let ending = Ending::of(source);
     let layout = LayoutOptions::try_new(
@@ -816,6 +845,7 @@ pub fn format_beside(
         // A refused declaration has no lowering to list its linear runs from,
         // so none is reported for one.
         let unlisted = linear::Runs::default();
+        let unthunked = thunk::Thunks::default();
         let unchecked = write(
             grammar,
             tree,
@@ -826,6 +856,7 @@ pub fn format_beside(
                 motives: &any,
                 tails: &every,
                 runs: &unlisted,
+                thunks: &unthunked,
             }),
             &layout,
             ending,
@@ -842,6 +873,7 @@ pub fn format_beside(
     }
     let mut stuck = Vec::new();
     let mut fresh: Vec<NodeKey> = Vec::new();
+    let mut retried: Vec<ByteSpan> = Vec::new();
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -851,6 +883,7 @@ pub fn format_beside(
                 motives: &motives,
                 tails: &tails,
                 runs: &runs,
+                thunks: &thunks,
             }),
             (Some(_) | None, _) => None,
         };
@@ -871,9 +904,7 @@ pub fn format_beside(
             (parsed, &laid.leaves, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
-            checked
-                .as_ref()
-                .map(|&(checker, ref source)| (checker, source.as_slice())),
+            checker.map(|checker| (checker, &mut elaborations)),
         )?;
         match agreement {
             Agreement::Same => {
@@ -882,8 +913,20 @@ pub fn format_beside(
             },
             Agreement::Declarations(differing) => {
                 let before = withdrawn.len();
+                // A declaration elaborating otherwise with its thunks left out
+                // keeps them, unreported, and is tried again: there the checker
+                // inserts none.
+                retried.clear();
                 stuck.clear();
                 for declaration in differing {
+                    let forms = forms_of(tree, &declaration.keys);
+                    if checker.is_some()
+                        && thunk::thunked(&flat.leaves, Some(&forms)) == thunk::Thunked::Written
+                        && thunks.kept(&forms) == thunk::Thunk::Inserted
+                    {
+                        retried.extend(forms);
+                        continue;
+                    }
                     fresh.clear();
                     fresh.extend(
                         declaration
@@ -900,6 +943,10 @@ pub fn format_beside(
                         withdrawn.append(&mut fresh);
                         reports.push(declaration.withdrawal);
                     }
+                }
+                if !retried.is_empty() {
+                    thunks.keep(&retried);
+                    continue;
                 }
                 if withdrawn.len() == before {
                     for callee in read(
@@ -1380,12 +1427,17 @@ fn verify(
     Ok(())
 }
 
+/// The checker's elaborations of a source, by declaration in the lowering's
+/// order, once made: none until a rewritten source lowers otherwise.
+type Elaborations = Option<Vec<Option<ValueId>>>;
+
 /// Check that `text`, the source rewritten, spells the tokens and comments of
 /// `written`, the leaves it was laid out from, in order, and keeps each
 /// comment in its role; then lower it after `before` in `unit` into `arena`
 /// beside `lowered`, the source's lowering, and say which declarations
-/// lowered otherwise — where some did and `checked` gives a checker beside
-/// its elaborations of the source, those it does not elaborate alike.
+/// lowered otherwise — where some did and `checked` gives a checker, those it
+/// does not elaborate alike, the source elaborated into `checked`'s slot the
+/// first time one does.
 ///
 /// # Specification
 /// trivial.
@@ -1394,7 +1446,7 @@ fn verify_rewritten(
     (parsed, written, text): (&ParseResult<'_>, &[Leaf<'_>], SourceText<'_>),
     (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
-    checked: Option<(&dyn Elaborate, &[Option<ValueId>])>,
+    checked: Option<(&dyn Elaborate, &mut Elaborations)>,
 ) -> Result<Agreement, FormatError>
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
@@ -1432,6 +1484,7 @@ fn verify_rewritten(
     else {
         return Ok(agreement);
     };
+    let source = source.get_or_insert_with(|| checker.definitions(arena, lowered));
     let elaborated = meaning::Elaborated {
         before: source,
         after: checker.definitions(arena, &respelled),

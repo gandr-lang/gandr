@@ -38,12 +38,12 @@ def subWeakenSingle(
     Cons(a, Shift(Z)),
     Shift(Z),
     Shift(Z),
-    thunk { fn (n) { weakenSingleAgree(a, n) } }
+    fn (n) { weakenSingleAgree(a, n) }
   )
     then (substCong(
       Shift(Z),
       subst(b, Shift(Z)),
       b,
-      substId(b, Shift(Z), thunk { fn (n) { shiftZeroIsId(n) } })
-    ) then substId(b, Shift(Z), thunk { fn (n) { shiftZeroIsId(n) } }))
+      substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) })
+    ) then substId(b, Shift(Z), fn (n) { shiftZeroIsId(n) }))
 }

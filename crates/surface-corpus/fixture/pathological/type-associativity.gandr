@@ -10,4 +10,4 @@ def sum_chain = +{.2 = 2};
 /// product and one sum.
 @[ checks ]
 def lazy_chain : +U (-F Integer & -F Unit & -F Integer & -F String);
-def lazy_chain = thunk { &{.0 => pure 1, .1 => pure unit, .2 => pure 2, .3 => pure "text"} };
+def lazy_chain = &{.0 => pure 1, .1 => pure unit, .2 => pure 2, .3 => pure "text"};

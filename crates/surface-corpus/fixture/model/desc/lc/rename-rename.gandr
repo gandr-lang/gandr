@@ -46,7 +46,7 @@ def rec renameRename(
         RLift(a1),
         RLift(a2),
         RLift(a3),
-        thunk { fn (n) { renameRenameLift(a1, a2, a3, h, n) } }
+        fn (n) { renameRenameLift(a1, a2, a3, h, n) }
       )
     ),
     Ap(f, x) => transport(
@@ -106,7 +106,7 @@ def rec renameSquare(
         RLift(a2),
         RLift(a3),
         RLift(a4),
-        thunk { fn (n) { renameSquareLift(a1, a2, a3, a4, h, n) } }
+        fn (n) { renameSquareLift(a1, a2, a3, a4, h, n) }
       )
     ),
     Ap(f, x) => transport(

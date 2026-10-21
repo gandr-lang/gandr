@@ -27,6 +27,6 @@ def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> -F Path
 @[ runs("S(S(S(Z)))") ]
 def funRun : () => Int ;
 def funRun = thunk {
-  run g <- transport(\X. X => X, loopsAreIntegers, thunk { fn (l) { loopOn(l) } }) ;
+  run g <- transport(\X. X => X, loopsAreIntegers, fn (l) { loopOn(l) }) ;
   g(S(S(Z)))
 } ;

@@ -79,7 +79,7 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> -F ((w : b) => Path(
     p,
     here(a),
     here(p),
-    thunk { fn (w) { here(w) } }
+    fn (w) { here(w) }
   )
 }
 

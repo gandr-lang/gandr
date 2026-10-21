@@ -3795,9 +3795,11 @@ fn an_observation_of_a_parameter_prints_by_position_941()
 }
 
 /// A data case writes its motive where nothing states its type — the
-/// computation a bind runs, a body in a thunk a constructor holds — and
-/// leaves it where the body's type is stated or the motive names the
-/// scrutinee its binder stands for (#815).
+/// computation a bind runs, a body in a thunk a constructor holds, a lambda
+/// nested where a value is read — and leaves it where the body's type is
+/// stated or the motive names the scrutinee its binder stands for (#815). A
+/// body ending in a nested computation it returns keeps its `pure`, as the
+/// lowering keeps the `return` of a computation written (#1327).
 #[test]
 fn a_case_nothing_types_writes_its_motive_815()
 {
@@ -3819,6 +3821,14 @@ fn a_case_nothing_types_writes_its_motive_815()
     let held = core.value_thunk(matched);
     let succ = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![held]);
     let holding = core.computation_return(succ);
+    // `Succ(fn (a) { case a -> -F Nat { … } })`: nor does a lambda nested
+    // where a value is read, which the checker wraps in its thunk.
+    let nested = core.value_nested(matched);
+    let nesting = core.value_constructor(nat, ConstructorTag::from(1_usize), vec![nested]);
+    let holding_nested = core.computation_return(nesting);
+    // `pure (pure Zero)`: the nested computation returned, its `pure` kept.
+    let nested_zero = core.value_nested(returns_zero);
+    let returns_nested = core.computation_return(nested_zero);
     // A motive naming the scrutinee's binder is left, as is one where the
     // body's type is stated.
     let point = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -3847,6 +3857,11 @@ fn a_case_nothing_types_writes_its_motive_815()
             "Succ(thunk { fn (a) { case a -> -F Nat { Zero => Zero, Succ(b) => b } } })",
         ),
         (matched, "fn (a) { case a { Zero => Zero, Succ(b) => b } }"),
+        (
+            holding_nested,
+            "Succ(fn (a) { case a -> -F Nat { Zero => Zero, Succ(b) => b } })",
+        ),
+        (returns_nested, "pure (pure Zero)"),
         (
             depending,
             "fn (a) { run b <- case a { Zero => pure Zero, Succ(b) => pure b } ; b }",

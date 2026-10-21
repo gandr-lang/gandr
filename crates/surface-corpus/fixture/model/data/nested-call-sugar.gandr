@@ -30,9 +30,9 @@ def rec neg(n : Int) -> -F Int {
 /// Two doubled.
 @[ runs("S(S(S(S(Z))))") ]
 def doubled : () => Int ;
-def doubled = thunk { dbl(S(S(Z))) } ;
+def doubled = dbl(S(S(Z))) ;
 
 /// Two negated.
 @[ runs("P(P(Z))") ]
 def negated : () => Int ;
-def negated = thunk { neg(S(S(Z))) } ;
+def negated = neg(S(S(Z))) ;

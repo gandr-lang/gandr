@@ -40,6 +40,8 @@ use crate::leaf::copied;
 use crate::linear::Runs;
 use crate::tail::Exit;
 use crate::tail::Tails;
+use crate::thunk::Thunk;
+use crate::thunk::Thunks;
 
 #[cfg(test)]
 mod tests;
@@ -91,6 +93,10 @@ pub enum RewriteName
     /// `f(c)`, where the lowering finds the binder read once, first; only the
     /// sugared form moves it, and only beside a checker that elaborates both.
     LinearRun,
+    /// A thunk the checker inserts: `thunk { e }` and `e`, where the checker
+    /// checks `e` against a thunk type; only the sugared form moves it, and
+    /// only beside a checker that elaborates both.
+    InsertedThunk,
 }
 
 impl fmt::Display for RewriteName
@@ -118,6 +124,7 @@ impl fmt::Display for RewriteName
             Self::TailReturn => "tail-return",
             Self::ShortAlias => "short-alias",
             Self::LinearRun => "linear-run",
+            Self::InsertedThunk => "inserted-thunk",
         })
     }
 }
@@ -161,7 +168,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 21] = [
+pub const REWRITES: [Rewrite; 22] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -328,6 +335,14 @@ pub const REWRITES: [Rewrite; 21] = [
         mold: MoldName("block"),
         from: Spelling("run x <- c ; f(x)"),
         to: Spelling("f(c)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedThunk,
+        direction: Direction::Sugar,
+        mold: MoldName("thunk_expression"),
+        from: Spelling("thunk { e }"),
+        to: Spelling("e"),
         enabled: Enabled::On,
     },
 ];
@@ -653,6 +668,8 @@ struct Respelling<'run, 'source>
     tails: &'source Tails,
     /// The `run` statements written away, each call at its binder's read.
     runs: &'source Runs,
+    /// Where a thunk is left to the checker.
+    thunks: &'source Thunks,
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -724,8 +741,8 @@ enum Visit
 
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
 /// do not enter, the motives of the path composites the lowering derived, the
-/// tails whose `return` it would infer and the `run` statements that only
-/// sequence a call.
+/// tails whose `return` it would infer, the `run` statements that only
+/// sequence a call and where a thunk is left to the checker.
 #[derive(Clone, Copy, Debug)]
 pub struct Rewrites<'run, 'source>
 {
@@ -740,6 +757,8 @@ pub struct Rewrites<'run, 'source>
     pub tails: &'source Tails,
     /// The `run` statements written away, each call at its binder's read.
     pub runs: &'source Runs,
+    /// Where a thunk is left to the checker.
+    pub thunks: &'source Thunks,
 }
 
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
@@ -788,6 +807,7 @@ pub fn respell<'source>(
         motives: rewrites.motives,
         tails: rewrites.tails,
         runs: rewrites.runs,
+        thunks: rewrites.thunks,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
@@ -1665,13 +1685,22 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.unreturned(&mut out, parts)?
             },
+            (RewriteName::InsertedThunk, Direction::Sugar) => {
+                if self.thunks.thunk(extent) != Thunk::Inserted {
+                    return None;
+                }
+                self.unthunked(&mut out, parts)?
+            },
             (RewriteName::ShortAlias, Direction::Sugar) => {
                 self.shortened(&mut out, parts, self.context(at))?;
                 Band::Loose
             },
             // The linear run moves a form opening a block in `kept`, whatever
             // its rule.
-            (RewriteName::TailReturn | RewriteName::ShortAlias, Direction::Desugar)
+            (
+                RewriteName::TailReturn | RewriteName::ShortAlias | RewriteName::InsertedThunk,
+                Direction::Desugar,
+            )
             | (RewriteName::LinearRun, Direction::Sugar | Direction::Desugar) => return None,
         };
         self.changed = Changed::Yes;
@@ -2075,6 +2104,45 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// Write the `thunk` whose parts are `parts` as the one expression its
+    /// block holds, answering the expression's band, or nothing when a grade
+    /// is written, a statement or a comment stands among its parts, or the
+    /// expression is a `become`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unthunked(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[keyword, open, close], &[body]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if (
+            <&str>::from(keyword),
+            <&str>::from(open),
+            <&str>::from(close),
+        ) != ("thunk", "{", "}")
+        {
+            return None;
+        }
+        if let Child::Node(at) = body
+            && self.rule(at) == Some(MoldName("become_expression"))
+        {
+            return None;
+        }
+        let operand = self.operand(body);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
     /// Write the thunk of arrows the value-function alias whose parts are
     /// `parts` stands for: a domain that binds a name as `(x : A) ->`, every
     /// other bare.
@@ -2439,7 +2507,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 28] = [
+const RULES: [MoldName; 30] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2468,6 +2536,8 @@ const RULES: [MoldName; 28] = [
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
     MoldName("return_expression"),
+    MoldName("thunk_expression"),
+    MoldName("become_expression"),
 ];
 
 /// `#{`.

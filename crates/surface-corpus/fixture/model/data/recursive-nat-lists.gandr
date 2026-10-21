@@ -98,12 +98,12 @@ def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat))
 /// The successor, returned.
 @[ runs("fn (a) { Succ(a) }") ]
 def bump : Nat => Nat ;
-def bump = thunk { fn (n) { Succ(n) } } ;
+def bump = fn (n) { Succ(n) } ;
 
 /// The successor, the `return` elided.
 @[ runs("fn (a) { Succ(a) }") ]
 def bump_elided : Nat => Nat ;
-def bump_elided = thunk { fn (n) { Succ(n) } } ;
+def bump_elided = fn (n) { Succ(n) } ;
 
 /// The length of `small`.
 @[ runs("Succ(Succ(Zero))") ]
@@ -113,7 +113,7 @@ def counted = thunk { become length_nat(small) } ;
 /// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
 def counted_elided : () => Nat ;
-def counted_elided = thunk { length_nat_elided(small) } ;
+def counted_elided = length_nat_elided(small) ;
 
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
@@ -123,9 +123,7 @@ def joined = thunk { become append_nat(small, (Cons(three, (Nil : List(Nat))) : 
 /// The same append, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined_elided : () => List(Nat) ;
-def joined_elided = thunk {
-  append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
-} ;
+def joined_elided = append_nat_elided(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) ;
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
@@ -135,17 +133,17 @@ def bumped = thunk { become map_nat(bump, small) } ;
 /// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_elided : () => List(Nat) ;
-def bumped_elided = thunk { map_nat_elided(bump_elided, small) } ;
+def bumped_elided = map_nat_elided(bump_elided, small) ;
 
 /// The same map, the calls nested.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_nested : () => List(Nat) ;
-def bumped_nested = thunk { map_nat_nested(bump, small) } ;
+def bumped_nested = map_nat_nested(bump, small) ;
 
 /// The same map, the calls run in the fields.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
 def bumped_run : () => List(Nat) ;
-def bumped_run = thunk { map_nat_run(bump, small) } ;
+def bumped_run = map_nat_run(bump, small) ;
 
 /// The length of `small` at its element type, returned.
 @[ checks ]
@@ -155,4 +153,4 @@ def lengthened = thunk { become length(Nat, small) } ;
 /// The same length, the `return`s elided.
 @[ checks ]
 def lengthened_elided : () => Nat ;
-def lengthened_elided = thunk { length_elided(Nat, small) } ;
+def lengthened_elided = length_elided(Nat, small) ;

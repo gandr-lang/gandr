@@ -104,7 +104,7 @@ def rec substSquare(
         Lift(s2),
         Lift(u1),
         Lift(u2),
-        thunk { fn (n) { substSquareLift(s1, s2, u1, u2, h, n) } }
+        fn (n) { substSquareLift(s1, s2, u1, u2, h, n) }
       )
     ),
     Ap(f, x) => transport(

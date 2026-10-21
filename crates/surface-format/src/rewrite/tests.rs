@@ -32,6 +32,7 @@ use crate::meaning;
 use crate::meaning::Agreement;
 use crate::meaning::Differing;
 use crate::tail::Tails;
+use crate::thunk::Thunks;
 use crate::verify_rewritten;
 
 /// A source whose product's operands differ, so swapping them changes what
@@ -67,12 +68,14 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     let motives = Motives::default();
     let tails = Tails::default();
     let runs = Runs::default();
+    let thunks = Thunks::default();
     let rewrites = Rewrites {
         chosen,
         withdrawn: &[],
         motives: &motives,
         tails: &tails,
         runs: &runs,
+        thunks: &thunks,
     };
     let (Respelled::Changed(sugared), _) = respell(&grammar, tree, form, &flat.leaves, rewrites)
     else {

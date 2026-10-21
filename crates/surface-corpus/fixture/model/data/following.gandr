@@ -56,19 +56,19 @@ def rec digits(n : Nat) -> -F Nat {
 /// Three less one: two.
 @[ runs("Succ(Succ(Zero))") ]
 def difference : () => Nat ;
-def difference = thunk { minus(three, Succ(Zero)) } ;
+def difference = minus(three, Succ(Zero)) ;
 
 /// Four divided by two: two.
 @[ runs("Succ(Succ(Zero))") ]
 def quotient : () => Nat ;
-def quotient = thunk { divided(Succ(three), Succ(Zero)) } ;
+def quotient = divided(Succ(three), Succ(Zero)) ;
 
 /// Half of three, rounded up: two.
 @[ runs("Succ(Succ(Zero))") ]
 def halvedThree : () => Nat ;
-def halvedThree = thunk { halvedUp(three) } ;
+def halvedThree = halvedUp(three) ;
 
 /// Four is `100` in binary: three digits.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def digitsOfFour : () => Nat ;
-def digitsOfFour = thunk { digits(Succ(three)) } ;
+def digitsOfFour = digits(Succ(three)) ;

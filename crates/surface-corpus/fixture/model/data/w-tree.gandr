@@ -35,7 +35,7 @@ def rec size(t : Tree) -> -F Nat {
 /// Every branch a leaf.
 @[ checks ]
 def leaves : Two => Tree ;
-def leaves = thunk { fn (x) { Leaf } } ;
+def leaves = fn (x) { Leaf } ;
 
 /// A node over two leaves.
 @[ checks ]
@@ -45,14 +45,14 @@ def cherry = Node(leaves) ;
 /// A node whose left branch is a cherry and whose right is a leaf.
 @[ checks ]
 def lopsided : Tree ;
-def lopsided = Node(thunk { fn (x) { case x -> -F Tree { L => cherry, R => Leaf } } }) ;
+def lopsided = Node(fn (x) { case x -> -F Tree { L => cherry, R => Leaf } }) ;
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]
 def cherry_leaves : () => Nat ;
-def cherry_leaves = thunk { size(cherry) } ;
+def cherry_leaves = size(cherry) ;
 
 /// Three leaves, the left two reached through two functions.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def deeper : () => Nat ;
-def deeper = thunk { size(lopsided) } ;
+def deeper = size(lopsided) ;
