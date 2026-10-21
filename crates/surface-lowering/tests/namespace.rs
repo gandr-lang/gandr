@@ -2080,7 +2080,8 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
         "the closure's own declarations lead the importer's"
     );
     let mut onto = alone_arena.clone();
-    let Ok(Onto::Resumed(resumed)) = closure.resume_onto(&joined, &unit, &mut onto, &[], &[])
+    let uncarried = closure.carrying(&[], &[]);
+    let Ok(Onto::Resumed(resumed)) = closure.resume_onto(&joined, &unit, &mut onto, &uncarried)
     else {
         panic!("the document resumes onto its closure's arena");
     };
@@ -2114,8 +2115,7 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
         &joined,
         &unit,
         &mut checked,
-        &[Carried::Value(source, elaborated)],
-        &[],
+        &closure.carrying(&[Carried::Value(source, elaborated)], &[]),
     )
     else {
         panic!("the document resumes onto the checked arena");
@@ -2178,7 +2178,7 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     let mut untouched = alone_arena.clone();
     assert!(
         matches!(
-            closure.resume_onto(&tree, &unit, &mut untouched, &[], &[]),
+            closure.resume_onto(&tree, &unit, &mut untouched, &uncarried),
             Ok(Onto::Whole)
         ),
         "a tree that does not extend the closure's is left to the whole lowering"

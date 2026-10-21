@@ -10,7 +10,9 @@
 //! answers over the same tree and unit. [`ClosureLowering::alone`] answers the
 //! closure's own module, which a checker can judge once, and
 //! [`ClosureLowering::resume_onto`] lowers a document after the arena that
-//! judgement minted into, so the document's nodes follow the checker's.
+//! judgement minted into, so the document's nodes follow the checker's, on
+//! the closure's origin table carrying the checker's nodes once
+//! ([`ClosureLowering::carrying`]).
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
@@ -191,6 +193,18 @@ pub enum Onto<'held>
     /// own.
     Whole,
 }
+
+/// A closure lowering's origin table, carrying a judgement's nodes.
+///
+/// The nodes a judgement of the closure's declarations minted are located
+/// once ([`ClosureLowering::carrying`]), and every document lowered onto that
+/// judgement's arena starts from the table ([`ClosureLowering::resume_onto`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct CarriedOrigins(OriginTable);
 
 /// The self-referential cells a closure's lowering is held in: the closure's
 /// text with its parse, and that parse with its lowering.
@@ -434,7 +448,7 @@ impl ClosureLowering
                     (tree, unit),
                     (described, pieces),
                     arena,
-                    (&[], &[]),
+                    &state.origins,
                 )
             },
         }
@@ -476,25 +490,64 @@ impl ClosureLowering
             .map(|module| (module, arena))
     }
 
+    /// The closure lowering's origin table carrying `carried` and `binds`,
+    /// the nodes a judgement of the closure's declarations minted after its
+    /// arena's: built once per judgement, and read by every
+    /// [`Self::resume_onto`] after it.
+    ///
+    /// # Specification
+    /// - requires: every node `carried` and `binds` name as minted follows the
+    ///   nodes of the closure's arena ([`Self::alone`]), as
+    ///   [`OriginTable::carry`] requires of the closure's table.
+    /// - ensures: the closure's suspended table with `carried` and `binds`
+    ///   recorded as [`OriginTable::carry`] records them; an empty table when
+    ///   the closure's lowering stopped before its end, which
+    ///   [`Self::resume_onto`] never reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses compare with a carry over a copy of a
+    ///   table no argument carries; the witness locates a carried node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::resume_onto`].
+    /// - witness: `tests::namespace::a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776`
+    #[inline]
+    #[must_use]
+    pub fn carrying(
+        &self,
+        carried: &[Carried],
+        binds: &[(ValueId, ComputationId)],
+    ) -> CarriedOrigins
+    {
+        let Prefix::Suspended { ref state, .. } = *self.0.borrow_dependent()
+        else {
+            return CarriedOrigins(OriginTable::new());
+        };
+        let mut origins = state.origins.clone();
+        origins.carry(carried, binds);
+        CarriedOrigins(origins)
+    }
+
     /// Lower `tree`, the closure's tree with a document's laid after it, as
     /// `unit` lays it out, after the nodes of `arena`, which holds the
     /// closure's arena with more nodes minted after it: the closure's
-    /// lowering resumed, `carried` and `binds` located first, only the sources
-    /// after the closure's lowered.
+    /// lowering resumed on a copy of `origins`, which locates those nodes
+    /// ([`Self::carrying`]), only the sources after the closure's lowered.
     ///
     /// # Specification
     /// - requires: `arena` is [`Self::alone`]'s arena with any nodes minted
-    ///   after its own; every node `carried` and `binds` name as minted is one
-    ///   of those, as [`OriginTable::carry`] requires of the closure's table.
+    ///   after its own; `origins` is [`Self::carrying`]'s table of the nodes
+    ///   minted after them.
     /// - ensures: [`Onto::Whole`], `arena` untouched, when `tree` is not one
     ///   [`Self::resume`] would continue the closure's lowering over; otherwise
     ///   the module [`Self::resume`] answers, the closure's declarations and
-    ///   its arena rows unchanged, its origin table carrying `carried` and
-    ///   `binds` before the later sources' nodes, which are minted after
-    ///   `arena`'s; or the refusal it answers.
+    ///   its arena rows unchanged, its origin table a copy of `origins` with
+    ///   the later sources' nodes, which are minted after `arena`'s; or the
+    ///   refusal it answers.
     /// - provides: a document's lowering that a judgement of the closure's
     ///   declarations over `arena` continues, the nodes that judgement's
-    ///   elaborations minted located where their sources are written.
+    ///   elaborations minted located where their sources are written, without
+    ///   locating them again.
     /// - fails: as [`Self::resume`].
     /// - panics: none.
     /// - executable: none — as [`Self::resume`].
@@ -514,8 +567,7 @@ impl ClosureLowering
         tree: &SyntaxTree<'held>,
         unit: &Unit,
         arena: &mut CoreArena,
-        carried: &[Carried],
-        binds: &[(ValueId, ComputationId)],
+        origins: &CarriedOrigins,
     ) -> Result<Onto<'held>, LoweringRefusal<'held>>
     {
         match self.route(tree, unit, Base::Closure)? {
@@ -529,7 +581,7 @@ impl ClosureLowering
                 (tree, unit),
                 (described, pieces),
                 arena,
-                (carried, binds),
+                &origins.0,
             )
             .map(Onto::Resumed),
         }
@@ -641,17 +693,18 @@ impl ClosureLowering
 
 /// Continue `state`, the suspended lowering of the closure whose sources
 /// `closure` lays out, over `tree` laid out as `unit`, the added roots read as
-/// `described` and `pieces`, minting after `arena`'s nodes, `carried` and
-/// `binds` located first.
+/// `described` and `pieces`, minting after `arena`'s nodes on a copy of
+/// `origins`.
 ///
 /// # Specification
 /// - requires: `arena` holds `state`'s arena with any nodes minted after its
-///   own, among them every node `carried` and `binds` name as minted; `tree`
+///   own, and `origins` is `state`'s table locating them
+///   ([`ClosureLowering::carrying`]), or `state`'s own when none were; `tree`
 ///   and `unit` extend the closure's, and `described` and `pieces` are the
 ///   added roots' readings ([`ClosureLowering::route`]).
-/// - ensures: on a copy of the lowering's state, its origin table carrying
-///   `carried` and `binds` ([`OriginTable::carry`]), the sources after the
-///   closure's lowered into `arena` after its nodes, and the module finished.
+/// - ensures: on a copy of the lowering's state and of `origins`, the sources
+///   after the closure's lowered into `arena` after its nodes, and the module
+///   finished.
 /// - fails: as [`super::lower_unit`], raised by a source after the closure's.
 /// - panics: none.
 /// - executable: none — the clauses compare the module with the whole
@@ -670,13 +723,12 @@ fn continue_from<'held>(
     (tree, unit): (&SyntaxTree<'held>, &Unit),
     (described, pieces): (DescriptionReport, Vec<Piece>),
     arena: &mut CoreArena,
-    (carried, binds): (&[Carried], &[(ValueId, ComputationId)]),
+    origins: &OriginTable,
 ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
 {
     let lowered = closure.sources().len();
     let mut lowerer: Lowerer<'_, 'held> = state.lowerer.clone();
-    let mut origins = state.origins.clone();
-    origins.carry(carried, binds);
+    let mut origins = origins.clone();
     lowerer.widen(tree, unit, described);
     let mut sink = Sink::new(arena, &mut origins, state.tables.clone());
     for (source, own) in source_pieces(unit, pieces)

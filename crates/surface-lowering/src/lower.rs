@@ -659,6 +659,7 @@ mod capability;
 
 mod closure;
 
+pub use closure::CarriedOrigins;
 pub use closure::ClosureLowering;
 pub use closure::Onto;
 
