@@ -500,6 +500,26 @@ impl Referents
         for &(span, family, tag) in patterns {
             keep(span, constructed(family, tag), false);
         }
+        // A constructor's result names its family at its head, and each
+        // argument repeating a parameter names that parameter's binder; the
+        // lowering mints neither, the family being the constructor's own.
+        for declaration in module.declarations() {
+            let Some(constructors) = written.get(&declaration.named())
+            else {
+                continue;
+            };
+            for constructor in *constructors {
+                keep(constructor.head, declared(declaration.constant()), true);
+                for repeated in &constructor.parameters {
+                    let binder = placed(unit, repeated.named).map(|(source, named)| Referent {
+                        source,
+                        named,
+                        extent: named,
+                    });
+                    keep(repeated.span, binder, false);
+                }
+            }
+        }
         // A name the lowering resolved keeps its use though the declaration
         // holding it was refused and emitted no origin for it.
         for &(span, resolution) in module.resolutions() {

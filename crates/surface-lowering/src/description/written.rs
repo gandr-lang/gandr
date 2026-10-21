@@ -395,6 +395,11 @@ pub struct WrittenConstructor
     pub fields: Vec<WrittenPort>,
     /// The result the constructor returns.
     pub result: ByteSpan,
+    /// The family's name tile at the result's head.
+    pub head: ByteSpan,
+    /// Each argument of the result that repeats a family parameter, with the
+    /// parameter's name tile.
+    pub parameters: Vec<WrittenUse>,
     /// Each argument of the result, the family's parameters then its
     /// indices, in written order.
     pub arguments: Vec<ByteSpan>,
