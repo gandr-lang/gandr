@@ -100,3 +100,135 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
   "${files[@]}" --re "( in |: replace )(.*::)?($functions)( -> .*| with .*)?\$"
 {% endraw %}
 '''
+
+# Each mutant under the tests that name its function (#1456). The whole-crate
+# run tests every mutant against the crate's whole suite, so a mutant an
+# unrelated corpus sweep catches reads caught and costs the sweep's time; here
+# a mutant is caught only when a witness of its function fails. The index is
+# the obligations report's: each function's `- witness:` bullets in the
+# crate's rustdoc JSON (`.config/mutants/items.jq`). The mutants group by
+# function (`.config/mutants/groups.jq`), and each group runs as one
+# cargo-mutants invocation selecting exactly its mutants, with the nextest
+# filterset of the function's witnesses. A function no witness names runs
+# nothing: its mutants read missed at once and are listed again in
+# `unwitnessed.txt`, the gap the coverage lane fills.
+#
+# The witnesses run under nextest's `mutants` profile, which ends none of
+# them, so a slow witness on a loaded machine reads timeout, never caught.
+# The groups run across `--lanes` detached worktrees of the repository, with
+# the working tree laid over each, in place, each lane keeping its own target
+# directory warm from one group to the next. The witnesses run once
+# unmutated first, in a lane, so a witness that fails there stops the run
+# instead of reading every mutant caught.
+# The run holds the host's mutants lock as `mutants` does, and each group's
+# cargo-mutants runs in its own capped scope (`.config/mise/mutants.bash`).
+# Outcomes land in `mutants.out/<crate>/witnessed` (or `MUTANTS_OUTPUT`):
+# cargo-mutants' `caught`, `missed`, `timeout` and `unviable` lists, merged,
+# `unwitnessed.txt`, each group's log under `logs/`, and a summary line with
+# the wall time. The whole-suite `mutants` stays the way to map a crate first.
+["mutants:witnessed"]
+description = "Mutation-test one crate, each mutant under the witnesses of its function"
+depends = ["evidence:rustdoc"]
+tools."cargo:cargo-mutants" = "27.1.0"
+tools.jq = "1.8.1"
+env.NEXTEST_TEST_THREADS = "2"
+env.NEXTEST_PROFILE = "mutants"
+usage = '''
+flag "-p --package <crate>" required=#true help="the crate to mutate"
+flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
+flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+crate=${usage_package:?}
+lanes=${usage_lanes:-4}
+timeout=${usage_timeout:-300}
+[[ "$lanes" =~ ^[1-9][0-9]*$ ]] || { echo '--lanes takes a positive count' >&2; exit 2; }
+[[ "$timeout" =~ ^[1-9][0-9]*$ ]] || { echo '--timeout takes a positive count of seconds' >&2; exit 2; }
+package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
+if [[ -z "$package" ]]; then
+  printf 'no workspace crate named %s\n' "$crate" >&2
+  exit 2
+fi
+documented=$(jq -r '[.targets[] | select(.kind | index("lib") or index("bin"))] | first | .name // empty | gsub("-"; "_")' <<< "$package")
+targets=$(jq -c '[.targets[] | select(.kind | index("test")) | .name]' <<< "$package")
+doc=target/evidence/doc/$documented.json
+[[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; exit 2; }
+host=$(rustc -vV | sed -n 's/^host: //p')
+triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
+export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native"
+output=${MUTANTS_OUTPUT:-mutants.out/$crate/witnessed}
+source .config/mise/mutants.bash
+hold_mutants_lock "mise run mutants:witnessed -- -p $crate"
+scope=${mutants_scope[0]}
+rm -rf "$output"
+mkdir -p "$output/logs"
+started=$SECONDS
+"$scope" cargo mutants --list --json --package "$crate" > "$output/list.json"
+jq -f .config/mutants/items.jq "$doc" > "$output/items.json"
+jq -n --slurpfile mutants "$output/list.json" --slurpfile items "$output/items.json" \
+  --arg package "$crate" --argjson targets "$targets" \
+  '{mutants: $mutants[0], items: $items[0], package: $package, targets: $targets}' \
+  | jq -f .config/mutants/groups.jq > "$output/groups.json"
+jq -r '.[] | select(.filter == null) | .names[]' "$output/groups.json" > "$output/unwitnessed.txt"
+witnessed=$(jq -c '[.[] | select(.filter != null)]' "$output/groups.json")
+if [[ $(jq length <<< "$witnessed") != 0 ]]; then
+  # Each lane is a detached worktree of this repository at HEAD with the
+  # working tree's files laid over it: some witnesses read the history
+  # (`git merge-base origin/main HEAD`), which a bare copy has not got.
+  scratch=$(mktemp -d)
+  trap 'for lane in "$scratch"/[0-9]*; do git worktree remove --force "$lane" 2> /dev/null || true; done; rm -rf "$scratch"; git worktree prune' EXIT
+  for (( lane = 0; lane < lanes; lane++ )); do
+    git worktree add --quiet --detach "$scratch/$lane" HEAD
+    git ls-files -z --cached --others --exclude-standard | tar --null --ignore-failed-read -T - -cf - | tar -xf - -C "$scratch/$lane"
+  done
+  # One unmutated run of every witness, in a lane as the mutants will run:
+  # a witness that fails there, or names no test, would read each of its
+  # function's mutants caught.
+  union=$(jq -r '[.[].filter | sub("^package\\(=[^)]*\\) & "; "")] | unique | join(" | ")' <<< "$witnessed")
+  (cd "$scratch/0" && "$scope" cargo nextest run --locked --package "$crate" --no-tests=fail -E "package(=$crate) & ($union)") > "$output/logs/witnesses.log" 2>&1 \
+    || { printf 'the witnesses fail unmutated; see %s\n' "$output/logs/witnesses.log" >&2; exit 1; }
+  run_lane() {
+    local lane=$1 index=0 group file re filter out
+    while IFS= read -r group; do
+      if (( index % lanes == lane )); then
+        file=$(jq -r .file <<< "$group")
+        re=$(jq -r .re <<< "$group")
+        filter=$(jq -r .filter <<< "$group")
+        out=$scratch/out/$index
+        mkdir -p "$out"
+        jq -r '.names[]' <<< "$group" > "$out/names.txt"
+        (cd "$scratch/$lane" && "${mutants_scope[@]}" cargo mutants --in-place --baseline skip --timeout "$timeout" \
+          --test-tool nextest --jobserver-tasks 2 --package "$crate" --file "$file" --re "$re" \
+          --output "$out" -- -E "$filter") > "$output/logs/$index.log" 2>&1 || true
+        if [[ ! -f "$out/mutants.out/outcomes.json" ]]; then
+          printf 'group %s (%s) left no outcomes; see %s\n' "$index" "$(jq -r .item <<< "$group")" "$output/logs/$index.log" >&2
+          touch "$scratch/failed"
+        fi
+      fi
+      index=$((index + 1))
+    done < <(jq -c '.[]' <<< "$witnessed")
+  }
+  for (( lane = 0; lane < lanes; lane++ )); do run_lane "$lane" & done
+  wait
+  [[ ! -e "$scratch/failed" ]] || exit 1
+  # cargo-mutants 27.1.0 skips `--re` for a struct literal's field deletions,
+  # so every group in their file runs them too: each group keeps only the
+  # outcomes of its own mutants.
+  for outcome in caught missed timeout unviable; do
+    for out in "$scratch"/out/*; do
+      [[ ! -f "$out/mutants.out/$outcome.txt" ]] || grep -Fx -f "$out/names.txt" "$out/mutants.out/$outcome.txt" || true
+    done | sort > "$output/$outcome.txt"
+  done
+else
+  for outcome in caught missed timeout unviable; do : > "$output/$outcome.txt"; done
+fi
+sort -o "$output/missed.txt" "$output/missed.txt" "$output/unwitnessed.txt"
+count() { wc -l < "$output/$1.txt" | tr -d ' '; }
+printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, missed %s (%s unwitnessed), timeout %s, unviable %s; %ss\n' \
+  "$crate" "$(jq length "$output/list.json")" "$(jq length "$output/groups.json")" "$(jq length <<< "$witnessed")" \
+  "$(count caught)" "$(count missed)" "$(count unwitnessed)" "$(count timeout)" "$(count unviable)" "$((SECONDS - started))" \
+  | tee "$output/summary.txt"
+{% endraw %}
+'''

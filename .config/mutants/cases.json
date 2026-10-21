@@ -1,0 +1,103 @@
+[
+  {
+    "name": "a function's witness bullets are its witnesses, in order, and an item that is no function is left out",
+    "program": "items.jq",
+    "input": {
+      "index": {
+        "1": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [10, 1], "end": [20, 2] },
+          "inner": { "function": {} },
+          "docs": "Solve.\n\n# Adequacy\n- hypothesis: L3 — both.\n- witness: `tests::solve::first`\n- witness: `solve::tests::second`\nnot a bullet - witness: `tests::nope`"
+        },
+        "2": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [22, 1], "end": [24, 2] },
+          "inner": { "function": {} },
+          "docs": null
+        },
+        "3": {
+          "span": { "filename": "crates/a/src/lib.rs", "begin": [1, 1], "end": [8, 2] },
+          "inner": { "struct": {} },
+          "docs": "- witness: `tests::a_struct`"
+        },
+        "4": { "span": null, "inner": { "function": {} }, "docs": "- witness: `tests::external`" }
+      }
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"begin\":10,\"end\":20,\"witnesses\":[\"tests::solve::first\",\"solve::tests::second\"]},{\"file\":\"crates/a/src/lib.rs\",\"begin\":22,\"end\":24,\"witnesses\":[]}]"
+  },
+  {
+    "name": "a mutant sits in the function ending on its function's last line, an inner function's mutant in the inner one, and a mutant in no function in the innermost spanning it",
+    "program": "groups.jq",
+    "input": {
+      "package": "gandr-a",
+      "targets": ["tests"],
+      "items": [
+        { "file": "crates/a/src/lib.rs", "begin": 10, "end": 40, "witnesses": ["tests::outer"] },
+        {
+          "file": "crates/a/src/lib.rs",
+          "begin": 20,
+          "end": 30,
+          "witnesses": ["inner::tests::unit"]
+        },
+        { "file": "crates/a/src/lib.rs", "begin": 50, "end": 60, "witnesses": [] }
+      ],
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:12:5: replace outer -> u8 with 0",
+          "function": { "span": { "start": { "line": 6 }, "end": { "line": 40 } } },
+          "span": { "start": { "line": 12 }, "end": { "line": 12 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:25:9: replace == with != in inner",
+          "function": { "span": { "start": { "line": 18 }, "end": { "line": 30 } } },
+          "span": { "start": { "line": 25 }, "end": { "line": 25 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:55:1: delete match arm",
+          "function": null,
+          "span": { "start": { "line": 55 }, "end": { "line": 55 } }
+        }
+      ]
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace outer -> u8 with 0\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace outer -> u8 with 0)$\",\"filter\":\"package(=gandr-a) & ((binary(=tests) & test(=outer)))\"},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:20\",\"names\":[\"crates/a/src/lib.rs:25:9: replace == with != in inner\"],\"re\":\"^(crates/a/src/lib\\\\.rs:25:9: replace == with != in inner)$\",\"filter\":\"package(=gandr-a) & (test(=inner::tests::unit))\"},{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:50\",\"names\":[\"crates/a/src/lib.rs:55:1: delete match arm\"],\"re\":\"^(crates/a/src/lib\\\\.rs:55:1: delete match arm)$\",\"filter\":null}]"
+  },
+  {
+    "name": "a function's mutants form one group whose regex escapes each name, and a mutant in no documented function is unwitnessed",
+    "program": "groups.jq",
+    "input": {
+      "package": "gandr-a",
+      "targets": [],
+      "items": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "begin": 10,
+          "end": 20,
+          "witnesses": ["tests::w", "tests::w"]
+        }
+      ],
+      "mutants": [
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()",
+          "function": { "span": { "start": { "line": 8 }, "end": { "line": 20 } } },
+          "span": { "start": { "line": 12 }, "end": { "line": 12 } }
+        },
+        {
+          "file": "crates/a/src/lib.rs",
+          "name": "crates/a/src/lib.rs:14:9: replace + with * in from",
+          "function": { "span": { "start": { "line": 8 }, "end": { "line": 20 } } },
+          "span": { "start": { "line": 14 }, "end": { "line": 14 } }
+        },
+        {
+          "file": "crates/a/src/other.rs",
+          "name": "crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]",
+          "function": { "span": { "start": { "line": 1 }, "end": { "line": 5 } } },
+          "span": { "start": { "line": 3 }, "end": { "line": 3 } }
+        }
+      ]
+    },
+    "output": "[{\"file\":\"crates/a/src/lib.rs\",\"item\":\"crates/a/src/lib.rs:10\",\"names\":[\"crates/a/src/lib.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default()\",\"crates/a/src/lib.rs:14:9: replace + with * in from\"],\"re\":\"^(crates/a/src/lib\\\\.rs:12:5: replace <impl From<A> for B>::from -> Self with Default::default\\\\(\\\\)|crates/a/src/lib\\\\.rs:14:9: replace \\\\+ with \\\\* in from)$\",\"filter\":\"package(=gandr-a) & (test(=tests::w))\"},{\"file\":\"crates/a/src/other.rs\",\"item\":null,\"names\":[\"crates/a/src/other.rs:3:5: replace f -> [u8; 2] with [0; 2]\"],\"re\":\"^(crates/a/src/other\\\\.rs:3:5: replace f -> \\\\[u8; 2\\\\] with \\\\[0; 2\\\\])$\",\"filter\":null}]"
+  }
+]

@@ -67,3 +67,11 @@ slow-timeout = { period = "60s", terminate-after = 8 }
 [profile.coverage]
 inherits = "ci-enforcing"
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# A witnessed mutation run (`mise run mutants:witnessed`). A witness the
+# default profile ends at thirty seconds fails, and a failed witness reads its
+# mutant caught, so on a loaded machine a slow witness would catch what it
+# misses. Nothing is ended here: cargo-mutants' own `--timeout` bounds each
+# mutant and reads an overrun as a timeout. The sweeps run their samples.
+[profile.mutants]
+slow-timeout = { period = "60s" }
