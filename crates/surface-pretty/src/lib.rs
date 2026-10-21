@@ -791,15 +791,16 @@ where
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a definition is not written as a recursive definition.
-    pub mod recursive {
-        /// The reason no `def rec` is written.
+    /// Why a definition is not written whole.
+    pub mod whole {
+        /// The reason no `def name(…) -> C { b }` is written.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// Its type is no suspended function.
             NotAFunction,
-            /// Its body is no suspended fixpoint that abstracts a parameter.
-            NotAFixpoint,
+            /// Its body is no suspended abstraction of a parameter, or its
+            /// fixpoint abstracts none.
+            NotAbstracted,
             /// No names for its parameters avoid every name the definition
             /// mentions.
             Unnamed,
@@ -807,33 +808,35 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The definition `name` of `source`, its stated type and body `(ty, body)`,
-/// laid out at `page` as the recursive definition `def rec name(x₁ : A₁, …, xₙ
-/// : Aₙ) -> C { b }` that declares it whole.
+/// The definition `name` of `source`, `(ty, body)`, laid out at `page` whole:
+/// `def name(x₁ : A₁, …, xₙ : Aₙ) -> C { b }`, or `def rec` over a fixpoint.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
-///   `body` is `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) { … fn (xₙ) { b
-///   } … } } } … } }`, `n` the abstractions the arrows run through, `k ≥ 0` of
-///   them outside the fixpoint and at least one inside: the header `def rec
-///   name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under the binders of the
-///   dependent arrows before it, then `b` as [`present_computation`] writes it
-///   at a page two columns narrower under the context binding `x₁` to `xₖ`,
-///   `name`, then `xₖ₊₁` to `xₙ`, each of its lines two columns in, then `}`.
-///   Each occurrence of the fixpoint's own binder is written with its claim:
-///   `name[<]` where the fixpoint claims structural recursion on a parameter,
-///   `name[>]` where it claims nothing; each call of it passes the uniform
-///   parameters `x₁` to `xₖ` as themselves before its own arguments. `xᵢ` is
-///   its dependent arrow's binder where the source names it and neither the
-///   definition nor an earlier parameter takes it, otherwise the next generated
-///   name that neither `name`, the definition nor an earlier parameter takes.
-///   The presentation is approximate, its unspelled reasons collected, when a
-///   header type or the body is. Absent for any other shape, and when no names
-///   for the parameters are found.
-/// - provides: the declaration a recursive definition reads back as, written
-///   whole where `def name = body` would write a fixpoint the surface spells
-///   only in its declaration.
+///   `body` is `thunk { fn (x₁) { … fn (xₙ) { b } … } }`, `n ≥ 1` the
+///   abstractions the arrows run through: the header `def name(x₁ : A₁, …, xₙ :
+///   Aₙ) -> C {`, each type under the binders of the dependent arrows before
+///   it, then `b` as [`present_computation`] writes it at a page two columns
+///   narrower under the context binding `x₁` to `xₙ`, each of its lines two
+///   columns in, then `}`. When `body` is instead `thunk { fn (x₁) { … fn (xₖ)
+///   { rec f { fn (xₖ₊₁) { … fn (xₙ) { b } … } } } … } }`, `k ≥ 0` of them
+///   outside the fixpoint and at least one inside, the header opens `def rec`
+///   and `b` stands under the context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁`
+///   to `xₙ`. Each occurrence of the fixpoint's own binder is written with its
+///   claim: `name[<]` where the fixpoint claims structural recursion on a
+///   parameter, `name[>]` where it claims nothing; each call of it passes the
+///   uniform parameters `x₁` to `xₖ` as themselves before its own arguments.
+///   `xᵢ` is its dependent arrow's binder where the source names it and neither
+///   the definition nor an earlier parameter takes it, otherwise the next
+///   generated name that neither `name`, the definition nor an earlier
+///   parameter takes. The presentation is approximate, its unspelled reasons
+///   collected, when a header type or the body is. Absent for any other shape,
+///   and when no names for the parameters are found.
+/// - provides: the declaration a function definition reads back as, written
+///   whole: a recursive one where `def name = body` would write a fixpoint the
+///   surface spells only in its declaration, and any other where its
+///   parameters' stated types are what its body's observations read.
 /// - fails: as [`present_type`].
 /// - panics: none.
 ///
@@ -847,34 +850,37 @@ quenchant_shape::reason_enum! {
 ///   and a body under the wrong context; a fixpoint under one and two uniform
 ///   parameters distinguishes a call that drops or reorders them and a body
 ///   under the wrong context; a body mentioning the first candidate name
-///   distinguishes a captured parameter, and a body that is no fixpoint and a
-///   type that is no function are absent.
+///   distinguishes a captured parameter; a function of one parameter and of two
+///   with no fixpoint distinguishes a `def rec` written for it and a body under
+///   the wrong context; and a body that abstracts nothing, a fixpoint that
+///   abstracts nothing and a type that is no function are absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+/// - witness: `tests::goldens::a_function_definition_spells_whole_941`
 #[spec(ensures: |ref ret| match *ret {
-    Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def rec ")
+    Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
         && !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
 #[inline]
-pub fn present_recursive(
+pub fn present_whole(
     source: &CoreSource<'_>,
     name: Name<'_>,
     (ty, body): (ValueTypeId, ValueId),
     page: PageWidth,
     style: Style,
-) -> Result<Maybe<Presentation, recursive::Absent>, PresentationError>
+) -> Result<Maybe<Presentation, whole::Absent>, PresentationError>
 {
     let Former::ThunkType(function) = source.read(CoreNode::ValueType(ty))
     else {
-        return Ok(Maybe::Absent(recursive::Absent::NotAFunction));
+        return Ok(Maybe::Absent(whole::Absent::NotAFunction));
     };
     let Former::Thunk(suspended) = source.read(CoreNode::Value(body))
     else {
-        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+        return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
     };
     // Each parameter: its arrow, its domain, and whether the arrow binds it
     // in what follows; then the codomain and the body under them all. The
@@ -889,7 +895,7 @@ pub fn present_recursive(
         {
             let Some(claim) = source.recursion(inner)
             else {
-                return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
+                return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
             };
             fixpoint = Some(Recursive {
                 claim,
@@ -921,17 +927,17 @@ pub fn present_recursive(
                 source.read(function),
                 Former::Arrow { .. } | Former::Pi { .. }
             ) {
-                recursive::Absent::NotAFixpoint
+                whole::Absent::NotAbstracted
             }
             else {
-                recursive::Absent::NotAFunction
+                whole::Absent::NotAFunction
             },
         ));
     }
-    let Some(recursive) = fixpoint.filter(|own| usize::from(own.uniform) < arrows.len())
-    else {
-        return Ok(Maybe::Absent(recursive::Absent::NotAFixpoint));
-    };
+    // A fixpoint abstracts at least one parameter of its own.
+    if fixpoint.is_some_and(|own| usize::from(own.uniform) >= arrows.len()) {
+        return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+    }
     let mut roots: Vec<(CoreNode, Admits)> = arrows
         .iter()
         .map(|&(_, domain, _)| (domain, Admits::Type))
@@ -951,11 +957,11 @@ pub fn present_recursive(
         .collect();
     let Some(names) = walk::parameters(source, &roots, &[name], &preferred)
     else {
-        return Ok(Maybe::Absent(recursive::Absent::Unnamed));
+        return Ok(Maybe::Absent(whole::Absent::Unnamed));
     };
     // A type stands under the binders of the dependent arrows before it;
-    // the body under the uniform parameters, the definition's own binder and
-    // the parameters its fixpoint binds.
+    // the body under the parameters, the definition's own binder among them
+    // where it recurses, after the uniform ones.
     let mut header: Vec<String> = Vec::with_capacity(arrows.len());
     let mut bound: Vec<Option<Name<'_>>> = Vec::new();
     let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
@@ -969,23 +975,24 @@ pub fn present_recursive(
     }
     let header = header.join(", ");
     let returned = present_type(&source.within(&bound), codomain, page, style)?;
-    // The definition's own binder stands among the parameters, after the
-    // uniform ones.
-    let own = usize::from(recursive.uniform);
+    let own = fixpoint.map(|recursive| usize::from(recursive.uniform));
     let context: Vec<Option<Name<'_>>> = names
         .iter()
         .enumerate()
         .flat_map(|(at, parameter)| {
-            (at == own)
+            (Some(at) == own)
                 .then_some(Some(name))
                 .into_iter()
                 .chain(core::iter::once(Some(Name::from(parameter.as_str()))))
         })
         .collect();
-    let under = source.within(&context).recursing(recursive);
+    let within = source.within(&context);
+    let (under, opener) = fixpoint.map_or((within, "def"), |recursive| {
+        (within.recursing(recursive), "def rec")
+    });
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
-    let mut text = format!("def rec {}({header}) -> {returned} {{", name.as_ref());
+    let mut text = format!("{opener} {}({header}) -> {returned} {{", name.as_ref());
     for line in spelled.as_ref().lines() {
         text.push('\n');
         if !line.is_empty() {

@@ -52,8 +52,8 @@ use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_definition;
-use gandr_surface_pretty::present_recursive;
 use gandr_surface_pretty::present_type;
+use gandr_surface_pretty::present_whole;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeKey;
@@ -562,7 +562,7 @@ enum Shape
         /// Its definition's body.
         body: Spellings,
     },
-    /// One form that declares it whole, as a `def rec` does.
+    /// One form that declares it whole, as a function definition does.
     Whole(Spellings),
 }
 
@@ -632,9 +632,9 @@ enum Spelt
 }
 
 /// The declaration `name`, its type `ty` and body `body` lowered into
-/// `arena`, as `source` spells it in `form`: a recursive definition whole as
-/// its `def rec`, otherwise a thunked body as `thunk { … }` around its
-/// computation and every other as its value.
+/// `arena`, as `source` spells it in `form`: a function definition whole as
+/// its `def name(…)` or `def rec name(…)`, otherwise a thunked body as
+/// `thunk { … }` around its computation and every other as its value.
 ///
 /// # Specification
 /// trivial.
@@ -654,7 +654,7 @@ fn spelt(
     let faithful = |printed: &Presentation| {
         printed.fidelity() == Fidelity::Faithful && printed.unspelled().is_empty()
     };
-    if let Ok(Maybe::Present(whole)) = present_recursive(source, name, (ty, body), page, style) {
+    if let Ok(Maybe::Present(whole)) = present_whole(source, name, (ty, body), page, style) {
         if faithful(&whole) {
             return Spelt::Declared(String::from(whole.as_ref()));
         }
@@ -1086,8 +1086,8 @@ fn defined(
     found
 }
 
-/// Each top-level `def rec name(…) …` of `text`: the whole form's tokens, by
-/// name.
+/// Each top-level `def name(…) …` or `def rec name(…) …` of `text`: the
+/// whole form's tokens, by name.
 ///
 /// # Specification
 /// trivial.
@@ -1113,10 +1113,12 @@ fn recursed(
             continue;
         };
         let whole = tokens(SourceFragment::from(written));
-        if let &[ref def, ref rec, ref name, ..] = whole.as_slice()
-            && def == "def"
-            && rec == "rec"
-        {
+        let named = match *whole.as_slice() {
+            [ref def, ref rec, ref name, ..] if def == "def" && rec == "rec" => Some(name),
+            [ref def, ref name, ref open, ..] if def == "def" && open == "(" => Some(name),
+            _ => None,
+        };
+        if let Some(name) = named {
             let _previous = found.insert(name.clone(), whole.clone());
         }
     }
