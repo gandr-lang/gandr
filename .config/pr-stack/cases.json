@@ -1,68 +1,307 @@
 [
   {
-    "name": "one pull request lands alone, with or without --stack",
-    "input": {
-      "stack": true,
-      "refreshed": false,
-      "server": [{ "number": 1242, "head": "triage-1167-receive" }],
-      "local": null
+    "name": "a stack is read from its middle down to main and up to its top",
+    "program": "chain.jq",
+    "args": {
+      "n": 1258,
+      "trunk": "main"
     },
-    "decision": "single"
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T03:40:00Z"
+      },
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "pending-diag-1248",
+        "created": "2026-10-21T04:30:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"},{\"number\":1264,\"head\":\"triage-1264-stack-tasks\"}]"
   },
   {
-    "name": "a local stack that names the server's open branches lands from its top",
+    "name": "a pull request alone is a stack of one",
+    "program": "chain.jq",
+    "args": {
+      "n": 1240,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1240,\"head\":\"chore-mise\"}]"
+  },
+  {
+    "name": "where two pull requests share a base the older one is the chain",
+    "program": "chain.jq",
+    "args": {
+      "n": 1262,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1270,
+        "head": "late",
+        "base": "theory-solve",
+        "created": "2026-10-21T05:00:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T04:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"}]"
+  },
+  {
+    "name": "a pull request that is not open has no stack",
+    "program": "chain.jq",
+    "args": {
+      "n": 1234,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "with nothing open a new pull request opens on main",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [],
+    "output": "null"
+  },
+  {
+    "name": "the branch being opened is left out of the reading",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "main",
+        "created": "2026-10-21T04:30:00Z"
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "the top is the end of the longest chain, over a newer pull request alone on main",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T03:40:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T04:20:00Z"
+      }
+    ],
+    "output": "{\"number\":1258,\"head\":\"pending-diag-1248\",\"depth\":2}"
+  },
+  {
+    "name": "between two chains of one the newest is the top",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
+    ],
+    "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1}"
+  },
+  {
+    "name": "one pull request lands alone, with or without --stack",
+    "program": "decide.jq",
     "input": {
       "stack": true,
       "refreshed": false,
       "server": [
-        { "number": 1232, "head": "theory-recovery-records" },
-        { "number": 1234, "head": "triage-1229-receive-parse" },
-        { "number": 1237, "head": "theory-include" }
+        {
+          "number": 1242,
+          "head": "triage-1167-receive"
+        }
+      ],
+      "local": null
+    },
+    "output": "single"
+  },
+  {
+    "name": "a local stack that names the server's open branches lands from its top",
+    "program": "decide.jq",
+    "input": {
+      "stack": true,
+      "refreshed": false,
+      "server": [
+        {
+          "number": 1232,
+          "head": "theory-recovery-records"
+        },
+        {
+          "number": 1234,
+          "head": "triage-1229-receive-parse"
+        },
+        {
+          "number": 1237,
+          "head": "theory-include"
+        }
       ],
       "local": {
         "trunk": "main",
         "currentBranch": "theory-include",
         "branches": [
-          { "name": "surface-1171", "isMerged": true, "pr": { "number": 1211, "state": "MERGED" } },
+          {
+            "name": "surface-1171",
+            "isMerged": true,
+            "pr": {
+              "number": 1211,
+              "state": "MERGED"
+            }
+          },
           {
             "name": "theory-recovery-records",
             "isMerged": false,
-            "pr": { "number": 1232, "state": "OPEN" }
+            "pr": {
+              "number": 1232,
+              "state": "OPEN"
+            }
           },
           {
             "name": "triage-1229-receive-parse",
             "isMerged": false,
-            "pr": { "number": 1234, "state": "OPEN" }
+            "pr": {
+              "number": 1234,
+              "state": "OPEN"
+            }
           },
-          { "name": "theory-include", "isMerged": false, "pr": { "number": 1237, "state": "OPEN" } }
+          {
+            "name": "theory-include",
+            "isMerged": false,
+            "pr": {
+              "number": 1237,
+              "state": "OPEN"
+            }
+          }
         ]
       }
     },
-    "decision": "stack\t1237"
+    "output": "stack\t1237"
   },
   {
     "name": "a stack linked on the server with no local record is refreshed",
+    "program": "decide.jq",
     "input": {
       "stack": true,
       "refreshed": false,
       "server": [
-        { "number": 1232, "head": "theory-recovery-records" },
-        { "number": 1234, "head": "triage-1229-receive-parse" },
-        { "number": 1237, "head": "theory-include" }
+        {
+          "number": 1232,
+          "head": "theory-recovery-records"
+        },
+        {
+          "number": 1234,
+          "head": "triage-1229-receive-parse"
+        },
+        {
+          "number": 1237,
+          "head": "theory-include"
+        }
       ],
       "local": null
     },
-    "decision": "refresh"
+    "output": "refresh"
   },
   {
     "name": "a reused branch name's record of an earlier landing is refreshed",
+    "program": "decide.jq",
     "input": {
       "stack": true,
       "refreshed": false,
       "server": [
-        { "number": 1232, "head": "theory-recovery-records" },
-        { "number": 1234, "head": "triage-1229-receive-parse" },
-        { "number": 1237, "head": "theory-include" }
+        {
+          "number": 1232,
+          "head": "theory-recovery-records"
+        },
+        {
+          "number": 1234,
+          "head": "triage-1229-receive-parse"
+        },
+        {
+          "number": 1237,
+          "head": "theory-include"
+        }
       ],
       "local": {
         "trunk": "main",
@@ -71,22 +310,35 @@
           {
             "name": "theory-include",
             "isMerged": true,
-            "pr": { "number": 1094, "state": "MERGED" }
+            "pr": {
+              "number": 1094,
+              "state": "MERGED"
+            }
           }
         ]
       }
     },
-    "decision": "refresh"
+    "output": "refresh"
   },
   {
     "name": "a record that still disagrees after the refresh is refused by name",
+    "program": "decide.jq",
     "input": {
       "stack": true,
       "refreshed": true,
       "server": [
-        { "number": 1232, "head": "theory-recovery-records" },
-        { "number": 1234, "head": "triage-1229-receive-parse" },
-        { "number": 1237, "head": "theory-include" }
+        {
+          "number": 1232,
+          "head": "theory-recovery-records"
+        },
+        {
+          "number": 1234,
+          "head": "triage-1229-receive-parse"
+        },
+        {
+          "number": 1237,
+          "head": "theory-include"
+        }
       ],
       "local": {
         "trunk": "main",
@@ -95,25 +347,38 @@
           {
             "name": "theory-include",
             "isMerged": true,
-            "pr": { "number": 1094, "state": "MERGED" }
+            "pr": {
+              "number": 1094,
+              "state": "MERGED"
+            }
           }
         ]
       }
     },
-    "decision": "refuse\tlocal gh-stack record maps theory-include to merged #1094; the open PR is #1237 in the server stack #1232 ← #1234 ← #1237; refresh it with `gh stack unstack --local` and `gh stack checkout 1237`"
+    "output": "refuse\tlocal gh-stack record maps theory-include to merged #1094; the open PR is #1237 in the server stack #1232 ← #1234 ← #1237; refresh it with `gh stack unstack --local` and `gh stack checkout 1237`"
   },
   {
     "name": "the bottom of a server stack without --stack is refused, never auto-merged",
+    "program": "decide.jq",
     "input": {
       "stack": false,
       "refreshed": false,
       "server": [
-        { "number": 1232, "head": "theory-recovery-records" },
-        { "number": 1234, "head": "triage-1229-receive-parse" },
-        { "number": 1237, "head": "theory-include" }
+        {
+          "number": 1232,
+          "head": "theory-recovery-records"
+        },
+        {
+          "number": 1234,
+          "head": "triage-1229-receive-parse"
+        },
+        {
+          "number": 1237,
+          "head": "theory-include"
+        }
       ],
       "local": null
     },
-    "decision": "refuse\tPR #1232 is in a stack of 3 on the server (#1232 ← #1234 ← #1237); land it with `pr:land --stack` from #1237's branch"
+    "output": "refuse\tPR #1232 is in a stack of 3 on the server (#1232 ← #1234 ← #1237); land it with `pr:land --stack` from #1237's branch"
   }
 ]

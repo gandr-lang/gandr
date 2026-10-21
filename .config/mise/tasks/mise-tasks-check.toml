@@ -531,14 +531,13 @@ fi
 echo 'workflow hashing check OK: no hashFiles over a tarball'
 """
 
-# `pr:land` decides a landing's shape from the stack on the server
-# (`.config/pr-stack/decide.jq`, #1238). Each case in
-# `.config/pr-stack/cases.json` holds an input and the decision it must give:
-# a pull request alone, a local stack matching the server, a stack linked on
-# the server with no local record, a reused branch name's stale record before
-# and after the refresh, and the bottom of a server stack without `--stack`.
+# The stacking rule's readings (#1264): `chain.jq` reads a pull request's
+# stack from the open pull requests, `top.jq` the top a new one stacks on, and
+# `decide.jq` how `pr:land` lands. Each case in `.config/pr-stack/cases.json`
+# names its program, its arguments and input, and the output it must give;
+# `decide.jq`'s output is its raw line, the others' compact JSON.
 ["check:pr-stack"]
-description = "pr:land's stack decision gives each recorded case its decision"
+description = "The stacking rule's readings give each recorded case its output"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -546,15 +545,19 @@ set -euo pipefail
 failed=0
 while IFS= read -r case; do
   name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -f .config/pr-stack/decide.jq)
-  want=$(jq -r .decision <<< "$case")
+  program=$(jq -r .program <<< "$case")
+  mapfile -t args < <(jq -r '(.args // {}) | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
+  mode=-c
+  if [[ "$program" == decide.jq ]]; then mode=-r; fi
+  got=$(jq .input <<< "$case" | jq "$mode" "${args[@]}" -f ".config/pr-stack/$program")
+  want=$(jq -r .output <<< "$case")
   if [[ "$got" != "$want" ]]; then
-    printf 'pr-stack case FAILED: %s\n  decided: %s\n  wanted:  %s\n' "$name" "$got" "$want" >&2
+    printf 'pr-stack case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
     failed=1
   fi
 done < <(jq -c '.[]' .config/pr-stack/cases.json)
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases decided as recorded"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded"
 '''
 
 # A clone may wire a merge driver for Rust sources. A driver that merges a
