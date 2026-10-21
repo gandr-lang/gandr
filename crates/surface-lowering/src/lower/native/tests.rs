@@ -2791,6 +2791,50 @@ fn a_pattern_at_a_dependent_record_splits_it_under_its_motive()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A call written as a scrutinee splits the record its function's result
+/// states, as a `run` binder of the call does: a dependent record under a
+/// motive over the scrutinee, so the checker reads the second component at
+/// the first.
+#[test]
+fn a_call_as_the_scrutinee_splits_the_record_it_returns_1141()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def tagged(n : Integer) -> -F #{m : Integer, v : Path(Integer, m, m)} { return #{n, here(n)} }\n",
+            "def tag() -> -F Integer { case tagged(5) { #{m, w} => return m } }\n",
+            "def bound() -> -F Integer { run t <- tagged(5); case t { #{m, w} => return m } }\n",
+        )),
+        &mut arena,
+    );
+    let splits = |name: &str| -> Vec<(usize, bool)> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter_map(|at| match arena.computation(at) {
+            Some(&Computation::Split { arity, motive, .. }) => Some((
+                usize::from(arity),
+                matches!(motive, gandr_core_term::SplitMotive::Scrutinee(_)),
+            )),
+            _ => None,
+        })
+        .collect()
+    };
+    assert_eq!(
+        splits("tag"),
+        splits("bound"),
+        "the call written as the scrutinee splits as the bound call does"
+    );
+    assert_eq!(
+        splits("tag"),
+        [(2_usize, true)],
+        "under a motive over the scrutinee"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A case over a variable whose answer names it answers its motive at each
 /// constructor: the data case's motive reads its scrutinee, a leaf reads the
 /// scrutinee as its branch's constructor over the branch's fields, and a

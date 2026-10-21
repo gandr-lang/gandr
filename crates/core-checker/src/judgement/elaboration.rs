@@ -561,10 +561,11 @@ pub fn elaborate_comp(
 /// - ensures: the binders stand where they stood; the run anchors and recovers
 ///   as [`elaborate_value`]'s does, and keeps one entry each time a value or
 ///   computation judgement finishes — recovered or not — in the order finished,
-///   with the type it was checked against or the type it synthesised; `value`'s
-///   own judgement is the last entry when the run reaches its end. The marks
-///   are the total run's. An engine fault ends the run with what it kept so
-///   far.
+///   with the type it was checked against or the type it synthesised, and one
+///   for a computation nested where no thunk stands, which is no judgement of
+///   its own, at what it returns, when its run ends; `value`'s own judgement is
+///   the last entry when the run reaches its end. The marks are the total
+///   run's. An engine fault ends the run with what it kept so far.
 /// - provides: the type of every term a declaration's body judges, for a face
 ///   answering a position inside it.
 /// - fails: never; an engine fault cuts the record short.
@@ -576,6 +577,7 @@ pub fn elaborate_comp(
 ///   checked types, the inner-first order, the recovered judgement and the type
 ///   a variable occurrence reads.
 /// - witness: `judgement::elaboration::tests::a_typed_run_keeps_the_type_of_every_term_it_judged`
+/// - witness: `module::tests::a_computation_written_as_a_scrutinee_runs_1141`
 #[spec(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth

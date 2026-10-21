@@ -1339,6 +1339,19 @@ enum ListPhase
     Cons,
 }
 
+/// How a run's value was reached: as the goal of a judgement of its own, or
+/// read without one.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Read
+{
+    /// A written run, or a nested computation checked against a value type:
+    /// the value's own goal keeps its typing when it ascends.
+    Goal,
+    /// A nested computation read where no thunk stands
+    /// ([`Machine::unsuspended`]): the run keeps the value's typing.
+    Unsuspended,
+}
+
 /// A rule waiting on the judgement of one of its subterms.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Frame
@@ -1745,6 +1758,8 @@ enum Frame
     {
         /// The nested computation or written run.
         at: ValueId,
+        /// Whether `at` is the goal of a judgement of its own.
+        read: Read,
     },
     /// Await the element path's classifier; the motive is then formed under a
     /// binder of its carrier.
@@ -4521,7 +4536,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 form: CheckingForm::Nested(term),
             }),
             Value::Run(computation) => {
-                self.wait(Frame::Ran { at: term });
+                self.wait(Frame::Ran {
+                    at: term,
+                    read: Read::Goal,
+                });
                 Ok(Step::Descend(Goal::Computation {
                     term: computation,
                     direction: Direction::Synthesise,
@@ -4791,7 +4809,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             at: term,
                             expected: entered,
                         });
-                        self.wait(Frame::Ran { at: term });
+                        self.wait(Frame::Ran {
+                            at: term,
+                            read: Read::Goal,
+                        });
                         Ok(Step::Descend(Goal::Computation {
                             term: computation,
                             direction: Direction::Synthesise,
@@ -5218,15 +5239,64 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
+    /// Read `value` where no thunk stands: a case's, a split's or a list
+    /// case's scrutinee, or the path an element transport follows. A
+    /// computation written there runs, and its type is the one it returns; any
+    /// other value synthesises.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a nested computation, [`Frame::Ran`] waits on `value`,
+    ///   read as [`Read::Unsuspended`] so the run keeps `value`'s typing at
+    ///   what it returns, and the step descends to synthesise the computation;
+    ///   for any other value, the step descends to synthesise it.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a value the arena does not
+    ///   hold.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a comparison written as a case's scrutinee runs and
+    ///   the case reads its answer, as a path written as a call does; the
+    ///   scrutinee's typing is kept once, at what it returns.
+    /// - witness: `module::tests::a_computation_written_as_a_scrutinee_runs_1141`
+    #[spec(
+        captures: [
+            before = self.frames.len(),
+            nested = matches!(self.context.arena().value(value), Some(&Value::Nested(_))),
+        ],
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && before.checked_add(usize::from(nested)) == Some(self.frames.len())),
+    )]
+    fn unsuspended(
+        &mut self,
+        value: ValueId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        if let Value::Nested(computation) = *self.value(value)? {
+            self.wait(Frame::Ran {
+                at: value,
+                read: Read::Unsuspended,
+            });
+            return Ok(Step::Descend(Goal::Computation {
+                term: computation,
+                direction: Direction::Synthesise,
+            }));
+        }
+        Ok(Step::Descend(Goal::Value {
+            term: value,
+            direction: Direction::Synthesise,
+        }))
+    }
+
     /// The synthesis rules over computations.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a force awaits its value's synthesised type; a return awaits
     ///   its value's; an application awaits its head's; a bind awaits its bound
-    ///   computation's; a transport awaits its path's, running a computation
-    ///   nested at the path first, so it alone waits a second frame, the run's;
-    ///   an ascription forms its stated type, checks its body against it and
+    ///   computation's; a transport awaits its path's and a data case or a
+    ///   split its scrutinee's, each read by [`Self::unsuspended`], so a
+    ///   computation nested there waits a second frame, the run's; an
+    ///   ascription forms its stated type, checks its body against it and
     ///   synthesises it; a hole and a mark have the unknown computation type,
     ///   minted, and ascend.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a fixpoint;
@@ -5257,10 +5327,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         match *self.computation(term)? {
             Computation::DataCase { scrutinee, .. } => {
                 self.wait(Frame::NativeCase(term));
-                Ok(Step::Descend(Goal::Value {
-                    term: scrutinee,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(scrutinee)
             },
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
                 self.wait(Frame::NativeProjection(term));
@@ -5420,19 +5487,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     motive,
                     value,
                 });
-                // A path is never a thunk, so a computation written where the
-                // path is read runs, and its type is the one it returns.
-                if let Value::Nested(computation) = *self.value(path)? {
-                    self.wait(Frame::Ran { at: path });
-                    return Ok(Step::Descend(Goal::Computation {
-                        term: computation,
-                        direction: Direction::Synthesise,
-                    }));
-                }
-                Ok(Step::Descend(Goal::Value {
-                    term: path,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(path)
             },
             Computation::Ride {
                 motive,
@@ -5504,10 +5559,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 ..
             } => {
                 self.wait(Frame::SigmaSplitScrutinee(term));
-                Ok(Step::Descend(Goal::Value {
-                    term: scrutinee,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(scrutinee)
             },
             Computation::Split {
                 scrutinee,
@@ -5519,10 +5571,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     scrutinee,
                     direction: Direction::Synthesise,
                 });
-                Ok(Step::Descend(Goal::Value {
-                    term: scrutinee,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(scrutinee)
             },
             Computation::Session(_) => self.session(term, Direction::Synthesise),
             Computation::Memory(_) => self.memory(term, Direction::Synthesise),
@@ -5611,10 +5660,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             self.wait(Frame::CompBridge { at: term, expected });
             self.staged_motives.push((term, read));
             self.wait(Frame::NativeCase(term));
-            return Ok(Step::Descend(Goal::Value {
-                term: scrutinee,
-                direction: Direction::Synthesise,
-            }));
+            return self.unsuspended(scrutinee);
         }
         match *self.computation(term)? {
             Computation::Handle { .. } => self.handle(term, expected),
@@ -5774,10 +5820,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     scrutinee,
                     direction: Direction::Check(expected),
                 });
-                Ok(Step::Descend(Goal::Value {
-                    term: scrutinee,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(scrutinee)
             },
             Computation::Case { scrutinee, .. } => {
                 self.wait(Frame::CaseScrutinee {
@@ -5785,10 +5828,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     scrutinee,
                     expected,
                 });
-                Ok(Step::Descend(Goal::Value {
-                    term: scrutinee,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(scrutinee)
             },
             Computation::ListCase { list, .. } => {
                 self.wait(Frame::ListCaseScrutinee {
@@ -5796,10 +5836,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     scrutinee: list,
                     expected,
                 });
-                Ok(Step::Descend(Goal::Value {
-                    term: list,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(list)
             },
             Computation::Session(
                 SessionAction::Receive { .. }
@@ -7791,7 +7828,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let identity = universal.identity(self.context.arena_mut());
                 Ok(Step::Ascend(Produced::ValueType(identity.into())))
             },
-            (Frame::Ran { at }, Produced::CompType(synthesised)) => {
+            (Frame::Ran { at, read }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
                 let (result, purity) = match comp_type_view(self.context.arena(), head)? {
                     CompTypeView::Returner { result, effects } => (result, effects.purity()),
@@ -7828,6 +7865,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     ) => Nesting::Ran(purity),
                 };
                 self.context.record_nesting(at, decided);
+                // A value read without a goal of its own keeps its typing here,
+                // at what it returns: the patterns of a case on it are read at
+                // that type.
+                if read == Read::Unsuspended
+                    && self.context.recording() == crate::context::Recording::On
+                {
+                    self.context.keep_typing(Typing {
+                        term: TermNode::Value(at),
+                        ty: TypeNode::Value(result),
+                        depth: self.context.depth(Zone::Intuitionistic),
+                    });
+                }
                 Ok(Step::Ascend(Produced::ValueType(result.into())))
             },
             (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
