@@ -827,7 +827,13 @@ impl Runtime
     {
         let header = object.to_pointer::<Word>();
         // SAFETY: the caller's object addresses its header.
-        let Some(Words(size)) = Header::from_word(unsafe { *header }).block()
+        let read = Header::from_word(unsafe { *header });
+        // SAFETY: as above; a freed header names no kind, so a value read
+        // after its release is refused by name rather than read as data.
+        unsafe {
+            *header = layout::FREED;
+        }
+        let Some(Words(size)) = read.block()
         else {
             return;
         };

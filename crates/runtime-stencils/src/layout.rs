@@ -32,16 +32,21 @@
 //! Every object is preceded by its count word, so a value addresses its
 //! header and every field offset is the same whether or not a count is read.
 //! A fresh object's count is one; a constant the function lays out in its
-//! data carries [`COUNT_IMMORTAL`], zero, which `dup` and `drop` leave alone.
-//! A `drop` that finds a count of one calls the host's [`RELEASE`] entry,
-//! which frees the object's block and drops what it holds through a
-//! worklist. A freed block joins the runtime record's free list for its size
-//! ([`Header::block`]), its count word holding the next block, and the next
-//! allocation of that size takes it before the bump pointer moves. A block of
-//! [`FREE_CLASSES`] words or more, and a stack, whose size its header does
-//! not hold, are never reused; a window is allocated by the bump pointer
-//! alone and holds no count. The alternative, a count inside the header,
-//! needs bits the header has none of: its four fields fill the word.
+//! data carries [`COUNT_IMMORTAL`], zero, which `dup` and `drop` leave alone,
+//! and so does a transparent constant's value once its unfolding writes it.
+//! `dup` and `drop` act on a window slot and leave the value in hand, so the
+//! lowering places them anywhere between instructions. A `drop` that finds a
+//! count of one calls the host's [`RELEASE`] entry, which frees the object's
+//! block and drops what it holds through a worklist. A freed object's header
+//! reads [`FREED`], naming no kind, so a value read after its release matches
+//! no arm and reads back as no value. A freed block joins the runtime
+//! record's free list for its size ([`Header::block`]), its count word
+//! holding the next block, and the next allocation of that size takes it
+//! before the bump pointer moves. A block of [`FREE_CLASSES`] words or more,
+//! and a stack, whose size its header does not hold, are never reused; a
+//! window is allocated by the bump pointer alone and holds no count. The
+//! alternative, a count inside the header, needs bits the header has none of:
+//! its four fields fill the word.
 
 use crate::Word;
 
@@ -87,15 +92,18 @@ const KIND_INTEGER: usize = 0;
 /// The header bits of [`Kind::Tuple`].
 pub const KIND_TUPLE: usize = 1;
 /// The header bits of [`Kind::Injection`].
-const KIND_INJECTION: usize = 2;
+pub const KIND_INJECTION: usize = 2;
 /// The header bits of [`Kind::Data`].
 pub const KIND_DATA: usize = 3;
 /// The header bits of [`Kind::Closure`].
 pub const KIND_CLOSURE: usize = 4;
 /// The header bits of [`Kind::Head`].
-const KIND_HEAD: usize = 5;
+pub const KIND_HEAD: usize = 5;
 /// The header bits of [`Kind::Literal`].
 const KIND_LITERAL: usize = 6;
+/// The header a freed object's block holds until an allocation takes it:
+/// kind bits no [`Kind`] names.
+pub const FREED: Word = Word(KIND_MASK);
 /// The header bits of [`Kind::Opaque`].
 const KIND_OPAQUE: usize = 7;
 /// The header bits of [`Kind::Capability`].

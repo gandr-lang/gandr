@@ -180,6 +180,8 @@ stencils! {
     Call => stencil_call,
     /// `stencil_dup`.
     Dup => stencil_dup,
+    /// `stencil_dup_fields`.
+    DupFields => stencil_dup_fields,
     /// `stencil_drop`.
     Drop => stencil_drop,
     /// `stencil_answer_frame`: the aborted accesses' answer frames' shared

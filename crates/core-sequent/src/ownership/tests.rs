@@ -1,4 +1,5 @@
 use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use gandr_theory_cell_complexes::Polarity;
@@ -104,9 +105,23 @@ fn cut(
 fn entry(
     ownership: &Ownership,
     node: NodeAddress,
-) -> &Entry
+) -> Entry<'_>
 {
     ownership.entry(node).expect("the node was reached")
+}
+
+/// The ownership of `roots`, read over their walk.
+///
+/// # Specification
+/// trivial.
+fn read(
+    arena: &CommandArena,
+    roots: &[NodeAddress],
+) -> Ownership
+{
+    let mut reached = Vec::new();
+    reach(arena, roots, &mut BTreeSet::new(), &mut reached).expect("held");
+    Ownership::of(arena, roots, &reached).expect("held")
 }
 
 /// A tuple naming `x0` twice and `x1` once duplicates `x0` once and `x1`
@@ -121,10 +136,10 @@ fn a_name_two_children_use_is_duplicated_once()
     let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
     let root = cut(&mut arena, pair, top);
 
-    let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
     assert_eq!(
-        &*entry(&ownership, NodeAddress::Producer(pair)).dups,
+        entry(&ownership, NodeAddress::Producer(pair)).dups,
         [x0()].as_slice()
     );
     assert!(
@@ -150,11 +165,10 @@ fn an_ignored_binder_is_dropped_on_entry()
             .expect("the body resolves");
         let root = cut(&mut arena, unit, binder);
 
-        let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
-        let children = &entry(&ownership, NodeAddress::Consumer(binder)).children;
         assert_eq!(
-            &*children.first().expect("one body").drops,
+            entry(&ownership, NodeAddress::Command(body)).drops,
             dropped.as_slice()
         );
     }
@@ -189,11 +203,11 @@ fn an_arm_drops_what_its_sibling_uses()
     let scrutinee = variable(&mut arena, Zone::Intuitionistic, x1());
     let root = cut(&mut arena, scrutinee, matched);
 
-    let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
     let reading = entry(&ownership, NodeAddress::Consumer(matched));
     assert!(reading.dups.is_empty());
-    let drops: Vec<&[DeBruijnIndex]> = reading.children.iter().map(|child| &*child.drops).collect();
+    let drops = [names, ignores].map(|arm| entry(&ownership, NodeAddress::Command(arm)).drops);
     let none: &[DeBruijnIndex] = &[];
     assert_eq!(drops, [none, [x0(), x1(), x2()].as_slice()]);
 }
@@ -231,7 +245,7 @@ fn a_kept_body_duplicates_its_captures_on_entry()
             NodeAddress::Producer(thunk)
         };
 
-        let ownership = Ownership::of(&arena, &[root]).expect("held");
+        let ownership = read(&arena, &[root]);
 
         let (runs, entered) = if forced {
             (Runs::Once, Vec::new())
@@ -240,9 +254,8 @@ fn a_kept_body_duplicates_its_captures_on_entry()
             (Runs::Many, Vec::from([x0()]))
         };
         assert_eq!(ownership.runs(thunk), runs);
-        let children = &entry(&ownership, NodeAddress::Producer(thunk)).children;
         assert_eq!(
-            &*children.first().expect("one body").entry,
+            entry(&ownership, NodeAddress::Command(body)).entered,
             entered.as_slice()
         );
     }
@@ -268,7 +281,7 @@ fn a_nullary_match_reuses_nothing()
     let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
     let root = cut(&mut arena, scrutinee, matched);
 
-    let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
     assert!(ownership.reuses().is_empty());
 }
@@ -283,7 +296,7 @@ fn a_linear_name_is_never_counted()
     let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
     let root = cut(&mut arena, pair, top);
 
-    let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+    let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
     assert!(
         entry(&ownership, NodeAddress::Producer(pair))
@@ -355,7 +368,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
         let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
         let root = cut(&mut arena, scrutinee, matched);
 
-        let ownership = Ownership::of(&arena, &[NodeAddress::Command(root)]).expect("held");
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
         assert_eq!(ownership.runs(branch), Runs::Once, "{case}");
         let expected = match case {

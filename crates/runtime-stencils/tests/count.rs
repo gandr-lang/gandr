@@ -62,6 +62,18 @@ fn bare(stencil: StencilId) -> Instruction
     instruction(stencil, Word::ZERO, Word::ZERO)
 }
 
+/// The stencil `stencil` over window slot `slot`.
+///
+/// # Specification
+/// trivial.
+fn slotted(
+    stencil: StencilId,
+    slot: Words,
+) -> Instruction
+{
+    instruction(stencil, Word::from(slot.0), Word::ZERO)
+}
+
 /// The fields of the tuple `object`: what a tuple owns.
 ///
 /// # Specification
@@ -135,7 +147,7 @@ fn run(program: &[Instruction]) -> Ran
 {
     let mut heap = vec![Word::ZERO; HEAP];
     let mut frames = vec![Word::ZERO; 18];
-    let mut window = [Word::ZERO; 1];
+    let mut window = [Word::ZERO; 4];
     let halt = program.last().expect("a program ends in its halt");
     frames[0] = Word::from_pointer(core::ptr::from_ref(halt));
     let start = heap.as_mut_ptr();
@@ -182,7 +194,8 @@ fn a_freed_block_is_the_next_of_its_size()
 {
     let ran = run(&[
         tuple(Words(0)),
-        bare(StencilId::Drop),
+        slotted(StencilId::Bind, Words(0)),
+        slotted(StencilId::Drop, Words(0)),
         tuple(Words(0)),
         bare(StencilId::Halt),
     ]);
@@ -205,8 +218,9 @@ fn a_dup_keeps_an_object_through_one_drop()
 {
     let ran = run(&[
         tuple(Words(0)),
-        bare(StencilId::Dup),
-        bare(StencilId::Drop),
+        slotted(StencilId::Bind, Words(0)),
+        slotted(StencilId::Dup, Words(0)),
+        slotted(StencilId::Drop, Words(0)),
         tuple(Words(0)),
         bare(StencilId::Halt),
     ]);
@@ -237,9 +251,10 @@ fn an_immortal_constant_is_never_freed()
     let object = Word::from_pointer((&raw const constant).cast::<Word>().wrapping_add(1));
     let ran = run(&[
         instruction(StencilId::Const, object, Word::ZERO),
-        bare(StencilId::Dup),
-        bare(StencilId::Drop),
-        bare(StencilId::Drop),
+        slotted(StencilId::Bind, Words(0)),
+        slotted(StencilId::Dup, Words(0)),
+        slotted(StencilId::Drop, Words(0)),
+        slotted(StencilId::Drop, Words(0)),
         tuple(Words(0)),
         bare(StencilId::Halt),
     ]);
@@ -260,12 +275,15 @@ fn a_released_object_drops_what_it_holds()
 {
     let ran = run(&[
         tuple(Words(0)),
+        slotted(StencilId::Bind, Words(0)),
         bare(StencilId::Push),
         tuple(Words(0)),
-        bare(StencilId::Dup),
+        slotted(StencilId::Bind, Words(1)),
+        slotted(StencilId::Dup, Words(1)),
         bare(StencilId::Push),
         tuple(Words(2)),
-        bare(StencilId::Drop),
+        slotted(StencilId::Bind, Words(2)),
+        slotted(StencilId::Drop, Words(2)),
         tuple(Words(0)),
         bare(StencilId::Halt),
     ]);

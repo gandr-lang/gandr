@@ -226,6 +226,9 @@ pub struct Calls<'run, 'host>
     literals: Vec<Literal>,
     /// Why the host last refused a call, when it named a reason.
     refused: Option<Refused>,
+    /// Whether the function counts owners, so a primitive gives up the
+    /// operands it was handed.
+    counted: bool,
 }
 
 impl core::fmt::Debug for Calls<'_, '_>
@@ -350,6 +353,7 @@ impl<'run, 'host> Calls<'run, 'host>
             offer,
             literals: lowered.literals.clone(),
             refused: None,
+            counted: lowered.uncounted.is_none(),
         }
     }
 
@@ -611,7 +615,7 @@ impl<'run, 'host> Calls<'run, 'host>
             },
         };
         let width = |_overflow| Refusal::Operands;
-        match answer {
+        let made = match answer {
             Scalar::Integer(integer) => {
                 if let Some(bits) = integer_word(&integer) {
                     let header = Header::new(
@@ -651,7 +655,18 @@ impl<'run, 'host> Calls<'run, 'host>
                 let held = allocate(runtime, &[unit.word()])?;
                 allocate(runtime, &[injection.word(), held])
             },
+        }?;
+        if self.counted {
+            let sites = self.sites;
+            for &argument in arguments {
+                // SAFETY: a counted call owns its operands, values of the
+                // run's heap or immortal constants, and reads them no more.
+                unsafe {
+                    give_up(runtime, argument, |object| owned(object, sites));
+                }
+            }
         }
+        Ok(made)
     }
 
     /// The handler whose frame resumes at `code`, when one does.
@@ -1822,6 +1837,49 @@ pub unsafe fn release<Owned>(
         // SAFETY: the object's last owner is gone and its fields were read.
         unsafe {
             runtime.reclaim(dead);
+        }
+    }
+}
+
+/// Give up one owner of `value`: its count shrinks by one, and at its last
+/// owner it is released as [`release`] does. An immortal value is left alone.
+///
+/// # Specification
+/// - requires: `value` addresses a heap object or an immortal constant, and
+///   `owned` names values an object holds, each one owner's worth.
+/// - ensures: `value` counts one owner fewer, or is released when it counted
+///   one, or is unchanged when immortal.
+/// - executable: none — the counts are words of the run's heap.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the agreement differential over the named programs,
+///   counted, calling primitives on values that die there: an operand given up
+///   twice is freed while still held and read after.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+///
+/// # Safety
+/// - unsafe invariants: as [`release`], for `value` in place of the object.
+#[inline]
+pub unsafe fn give_up<Owned>(
+    runtime: &mut Runtime,
+    value: Word,
+    owned: Owned,
+) where
+    Owned: FnMut(Word) -> Vec<Word>,
+{
+    let count = count_word(value);
+    // SAFETY: the caller's value is preceded by its count word.
+    let word = unsafe { *count };
+    if word == COUNT_ONE {
+        // SAFETY: the value's last owner is the caller's, given up.
+        unsafe {
+            release(runtime, value, owned);
+        }
+    }
+    else if word != COUNT_IMMORTAL {
+        // SAFETY: as above.
+        unsafe {
+            *count = Word::from(usize::from(word).wrapping_sub(1));
         }
     }
 }
