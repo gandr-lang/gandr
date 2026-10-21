@@ -155,6 +155,8 @@ use crate::protocol::InitializeParams;
 use crate::protocol::InitializeResult;
 use crate::protocol::InlineCompletionItem;
 use crate::protocol::InlineCompletionList;
+use crate::protocol::InlineParams;
+use crate::protocol::InlineTriggerKind;
 use crate::protocol::LabelOffsets;
 use crate::protocol::LabelsDetailed;
 use crate::protocol::LensData;
@@ -195,6 +197,7 @@ use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
+use crate::protocol::TriggerSetting;
 use crate::protocol::TypedParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
@@ -1513,6 +1516,7 @@ impl Workspace
             offsets: LabelOffsets(true),
             detailing: LabelsDetailed(true),
             snipping: TakesSnippets(true),
+            inline_trigger: TriggerSetting::Automatic,
             collapsing: FoldsCollapsed(true),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -1749,6 +1753,9 @@ pub struct Server
     /// Whether its client takes a completion's text as a snippet, read at
     /// `initialize`.
     snipping: TakesSnippets,
+    /// Which inline completion requests its client's
+    /// `gandr.inlineCompletion.trigger` answers, read as the verbosity is.
+    inline_trigger: TriggerSetting,
     /// Whether its client shows the text a fold names, read at `initialize`.
     collapsing: FoldsCollapsed,
     /// Whether its client watches files for it once asked, read at
@@ -1875,6 +1882,7 @@ impl Server
             offsets: LabelOffsets(false),
             detailing: LabelsDetailed(false),
             snipping: TakesSnippets(false),
+            inline_trigger: TriggerSetting::Invoked,
             collapsing: FoldsCollapsed(false),
             watching: WatchesFiles(false),
             progress: ShowsProgress(false),
@@ -3355,6 +3363,7 @@ impl Server
                 self.watching = initial_watching(&params);
                 self.progress = initial_progress(&params);
                 self.refreshing = initial_refreshing(&params);
+                self.inline_trigger = settings.trigger().unwrap_or_default();
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
                 self.applying = initial_applying(&params);
@@ -3479,10 +3488,19 @@ impl Server
                 }
             },
             (Phase::Running, "textDocument/inlineCompletion") => {
-                match serde_json::from_value::<PositionParams>(params) {
+                match serde_json::from_value::<InlineParams>(params) {
                     Ok(params) => success(
                         id,
-                        workspace.inline(&params.text_document.uri, self.peer, params.position),
+                        if self.inline_trigger == TriggerSetting::Invoked
+                            && params.context.is_some_and(|context| {
+                                context.trigger_kind == InlineTriggerKind::AUTOMATIC
+                            })
+                        {
+                            Answer::Inline(InlineCompletionList { items: Vec::new() })
+                        }
+                        else {
+                            workspace.inline(&params.text_document.uri, self.peer, params.position)
+                        },
                     ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
@@ -4205,8 +4223,9 @@ impl Server
     }
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
-    /// pulled: the quiet interval and the form at once, and the verbosity and
-    /// spelling by republishing every copy it holds when either changed.
+    /// pulled: the quiet interval, the inline completion trigger and the form
+    /// at once, and the verbosity and spelling by republishing every copy it
+    /// holds when either changed.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -4232,6 +4251,9 @@ impl Server
     {
         if let Some(quiet) = settings.quiet() {
             self.quiet = quiet;
+        }
+        if let Some(trigger) = settings.trigger() {
+            self.inline_trigger = trigger;
         }
         if let Some(form) = settings.form() {
             self.style.form = form;
@@ -9425,7 +9447,7 @@ mod tests
                 r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
                     "textDocument":{{"uri":"{uri}"}},
                     "position":{{"line":0,"character":{character}}},
-                    "context":{{"triggerKind":2}}}}}}"#
+                    "context":{{"triggerKind":1}}}}}}"#
             );
             send(server, Json(&request))
         };
@@ -9483,7 +9505,7 @@ mod tests
                 r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
                     "textDocument":{{"uri":"file:///tmp/open.gandr"}},
                     "position":{{"line":{line},"character":{character}}},
-                    "context":{{"triggerKind":2}}}}}}"#
+                    "context":{{"triggerKind":1}}}}}}"#
             );
             send(server, Json(&request))
         };
@@ -9497,6 +9519,55 @@ mod tests
             block.pointer("/0/result/items/0/insertText/value"),
             Some(&Value::from(" */)")),
             "a block comment closes on its line, then the call: {block}"
+        );
+    }
+
+    /// `gandr.inlineCompletion.trigger`, read from the initialization options:
+    /// by default a request the client makes as the author types is answered
+    /// with no item and one the author invokes with the ghost text; set to
+    /// `automatic`, both are answered. The author's own request is the
+    /// keystroke the box asks for, and the setting keeps a client with no way
+    /// to invoke one reachable.
+    #[test]
+    fn inline_completion_answers_the_requests_its_trigger_names()
+    {
+        let answers = |options: &str| {
+            let mut server = Connected::default();
+            let _answered = send(
+                &mut server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":{{}}{options}}}}}"#
+                )),
+            );
+            let _published = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                        {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                         "text":"def x = f(1"}}}"#,
+                ),
+            );
+            [2_u8, 1_u8].map(|kind| {
+                let request = format!(
+                    r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                        "textDocument":{{"uri":"file:///tmp/open.gandr"}},
+                        "position":{{"line":0,"character":11}},
+                        "context":{{"triggerKind":{kind}}}}}}}"#
+                );
+                send(&mut server, Json(&request))
+                    .pointer("/0/result/items/0/insertText/value")
+                    .cloned()
+            })
+        };
+        assert_eq!(
+            answers(""),
+            [None, Some(Value::from(")"))],
+            "by default, typing is answered with nothing and an invoked request with the closer"
+        );
+        assert_eq!(
+            answers(r#","initializationOptions":{"inlineCompletion":{"trigger":"automatic"}}"#),
+            [Some(Value::from(")")), Some(Value::from(")"))],
+            "set to automatic, both are answered"
         );
     }
 

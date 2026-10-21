@@ -1577,6 +1577,35 @@ pub struct Settings
     /// `gandr.presentation`.
     #[serde(default)]
     pub presentation: Option<PresentationSettings>,
+    /// `gandr.inlineCompletion`.
+    #[serde(default, rename = "inlineCompletion")]
+    pub inline_completion: Option<InlineCompletionSettings>,
+}
+
+/// The `gandr.inlineCompletion` settings.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct InlineCompletionSettings
+{
+    /// `gandr.inlineCompletion.trigger`: which requests the parser's ghost
+    /// text answers.
+    #[serde(default)]
+    pub trigger: Option<TriggerSetting>,
+}
+
+/// A `gandr.inlineCompletion.trigger` value: which inline completion requests
+/// are answered.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerSetting
+{
+    /// Only a request the author invoked, as VS Code's
+    /// `editor.action.inlineSuggest.trigger` does; one the client makes as
+    /// the author types is answered with no item.
+    #[default]
+    Invoked,
+    /// Every request, invoked or made as the author types.
+    Automatic,
 }
 
 /// The `gandr.presentation` settings.
@@ -1787,6 +1816,17 @@ impl Settings
             .and_then(|presentation| presentation.spelling)
             .map(Spelling::from)
     }
+
+    /// The inline completion trigger these settings name, when they name one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn trigger(self) -> Option<TriggerSetting>
+    {
+        self.inline_completion?.trigger
+    }
 }
 
 /// The parameters of `textDocument/semanticTokens/range`.
@@ -1837,7 +1877,7 @@ pub struct RangesParams
 }
 
 /// The parameters of a request about one position of a document:
-/// `textDocument/inlineCompletion` and `textDocument/hover`.
+/// `textDocument/hover`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionParams
@@ -1846,6 +1886,45 @@ pub struct PositionParams
     pub text_document: DocumentIdentifier,
     /// The cursor the request is about.
     pub position: Position,
+}
+
+/// The parameters of `textDocument/inlineCompletion`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InlineParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The cursor the request is about.
+    pub position: Position,
+    /// Why the client asked, read as invoked when absent.
+    #[serde(default)]
+    pub context: Option<InlineContext>,
+}
+
+/// `InlineCompletionContext`, of which the server reads why the request was
+/// made.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct InlineContext
+{
+    /// `triggerKind`.
+    pub trigger_kind: InlineTriggerKind,
+}
+
+/// `InlineCompletionTriggerKind`, as the protocol numbers it: `1` when the
+/// author asked, by a command or a key, and `2` when the client asked as the
+/// author typed.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct InlineTriggerKind(u8);
+
+impl InlineTriggerKind
+{
+    /// The client asked as the author typed.
+    pub const AUTOMATIC: Self = Self(2);
 }
 
 /// The parameters of `textDocument/onTypeFormatting`.
