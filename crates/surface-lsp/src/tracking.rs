@@ -2,12 +2,13 @@
 //! the issue whose landing closes it.
 //!
 //! Every tile of a read document answers a hover. Where the engine holds
-//! nothing for the position, the answer is a stub: the tile as written, a
-//! sentence naming what is missing, and the closing line rust-analyzer writes
-//! for an unstable feature, `The tracking issue for this is: [#N]` with its
-//! link. [`Gap`] lists the gaps in the order a position is tried; together
-//! they cover every tile, so the corpus sweep in [`crate::hover`]'s tests
-//! refuses any tile that hovers nothing.
+//! nothing for the position and has not refused it, the answer is a stub:
+//! the tile as written, a sentence naming what is missing, and the closing
+//! line rust-analyzer writes for an unstable feature, `The tracking issue for
+//! this is: [#N]` with its link. [`Gap`] lists the gaps in the order a
+//! position is tried; with the refusals [`crate::hover`] answers before them,
+//! they cover every tile, so the corpus sweep in its tests refuses any tile
+//! that hovers nothing.
 
 use alloc::format;
 use alloc::string::String;
@@ -32,8 +33,6 @@ impl TrackingIssue
     /// A tile of a root form that declares nothing, which the lowering reads
     /// as no run target yet.
     pub const RUN_TARGET: Self = Self(1105);
-    /// A tile inside a refused declaration or a source never judged.
-    pub const UNJUDGED: Self = Self(1201);
 
     /// The issue's page.
     ///
@@ -66,11 +65,6 @@ impl fmt::Display for TrackingIssue
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Gap
 {
-    /// Inside a declaration the lowering or the checker refused: the engine
-    /// typed nothing in it.
-    Refused,
-    /// In a source the engine refused as a whole: it typed nothing in it.
-    Unjudged,
     /// An import whose address has a scheme, which nothing resolves.
     Foreign,
     /// The documentation of the module a path import reads.
@@ -93,7 +87,6 @@ impl Gap
     pub fn issue(self) -> TrackingIssue
     {
         match self {
-            Self::Refused | Self::Unjudged => TrackingIssue::UNJUDGED,
             Self::Foreign => TrackingIssue::SCHEME,
             Self::Undocumented => TrackingIssue::DOCUMENTATION,
             Self::Owned(_) => TrackingIssue::OWN_TILE,
@@ -111,8 +104,6 @@ impl Gap
     pub fn closing(self) -> String
     {
         let what = match self {
-            Self::Refused => String::from("A form inside a refused declaration has no hover yet."),
-            Self::Unjudged => String::from("A source the engine has not judged has no hover yet."),
             Self::Foreign => String::from("An address with a scheme resolves to nothing yet."),
             Self::Undocumented => String::from("Its module documentation is not shown yet."),
             Self::Owned(rule) => format!("A tile a `{rule}` writes itself has no hover yet."),

@@ -88,6 +88,7 @@ use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
@@ -134,7 +135,10 @@ use gandr_kernel_term::Side;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::PATHLESS;
+use gandr_surface_diagnostics::Subject as DiagnosedSubject;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_diagnostics::diagnose;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::InScope;
@@ -229,6 +233,18 @@ quenchant_shape::reason_enum! {
             Typed,
             /// No declaration has the key.
             Undeclared,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the table holds no refusal of the source as a whole.
+    pub mod wholly {
+        /// The reason no such refusal is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lowering read the source.
+            Lowered,
         }
     }
 }
@@ -666,6 +682,9 @@ pub struct TypeTable
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
+    /// The lowering's refusal of the source as a whole, as it reads, when the
+    /// lowering refused it: the table then holds nothing else.
+    refused: Option<String>,
 }
 
 /// The printer's root for `node`.
@@ -962,9 +981,21 @@ impl TypeTable
         base: ByteOffset,
     ) -> Self
     {
+        let refused = lowering.refused().map(|&refusal| {
+            diagnose(
+                Path::new(PATHLESS),
+                source,
+                DiagnosedSubject::Source(refusal),
+            )
+            .message
+            .text
+        });
         let Lowered::Module { module, mut arena } = lowering.into_lowered()
         else {
-            return Self::default();
+            return Self {
+                refused,
+                ..Self::default()
+            };
         };
         let declarations = adapt(&module);
         let origins = module.origins();
@@ -1625,6 +1656,7 @@ impl TypeTable
             opened,
             referents,
             in_scope: module.into_in_scope(),
+            refused: None,
         }
     }
 
@@ -2227,6 +2259,37 @@ impl TypeTable
             Some(&Held::Typed(_)) => Maybe::Absent(unrefused::Absent::Typed),
             None => Maybe::Absent(unrefused::Absent::Undeclared),
         }
+    }
+
+    /// The lowering's refusal of the source as a whole, as it reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the refusal's message when the lowering refused the source as
+    ///   a whole — its root not a list of declarations, an engine fault
+    ///   excepted — and absent as [`wholly::Absent::Lowered`] when it read it.
+    /// - provides: a face's account of a source in which the table holds
+    ///   nothing, since nothing was lowered.
+    /// - fails: never; an absence names its reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source refused as a whole keeps the lowering's
+    ///   message, and a source of declarations keeps none.
+    /// - witness: `typed::tests::a_source_refused_whole_keeps_its_refusal_1201`
+    #[spec(ensures: |ret| match (&self.refused, &ret) {
+        (&Some(ref held), &Maybe::Present(refusal)) => held.as_str() == <&str>::from(refusal),
+        (&None, &Maybe::Absent(wholly::Absent::Lowered)) => true,
+        _ => false,
+    })]
+    #[inline]
+    pub fn refused_whole(&self) -> Maybe<SourceText<'_>, wholly::Absent>
+    {
+        self.refused
+            .as_deref()
+            .map_or(Maybe::Absent(wholly::Absent::Lowered), |refusal| {
+                Maybe::Present(SourceText::from(refusal))
+            })
     }
 
     /// Every declaration's form key with its type or refusal, a type spelled
@@ -5116,6 +5179,34 @@ mod tests
         assert!(
             read.contains(&"refused") && read.contains(&"typed"),
             "both kinds are read: {read:?}"
+        );
+    }
+
+    /// A source the lowering refuses as a whole keeps the lowering's message,
+    /// where the table holds nothing else; a source of declarations keeps none.
+    #[test]
+    fn a_source_refused_whole_keeps_its_refusal_1201()
+    {
+        let refused = table(SourceText::from("nowhere\n"));
+        let Maybe::Present(refusal) = refused.refused_whole()
+        else {
+            panic!("a source refused whole keeps its refusal");
+        };
+        assert!(
+            <&str>::from(refusal).starts_with("the source is not a list of declarations"),
+            "the refusal reads as the lowering wrote it: {refusal:?}"
+        );
+        assert!(
+            refused
+                .declarations(PageWidth::from(80_u32), Form::Explicit.into())
+                .next()
+                .is_none(),
+            "nothing else is held"
+        );
+        assert_eq!(
+            table(SourceText::from("def answer = 42 ;")).refused_whole(),
+            Maybe::Absent(super::wholly::Absent::Lowered),
+            "a source of declarations keeps no such refusal"
         );
     }
 

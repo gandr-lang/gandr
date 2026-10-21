@@ -272,6 +272,7 @@ pub use crate::typed::referred;
 pub use crate::typed::reprinted;
 pub use crate::typed::signed;
 pub use crate::typed::typing;
+pub use crate::typed::wholly;
 pub use crate::walk::Reached;
 pub use crate::walk::SourceFault;
 pub use crate::walk::Standing;
