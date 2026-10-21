@@ -15,7 +15,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **What.** `check_module` judges name-free `Declaration`s in a `CheckingContext` over a core arena. Each input carries an admission position, an echoed `OriginToken`, and either optional value signature/body halves or a complete nominal data signature. Its `Verdict` records an admitted data signature, a checked body, a synthesised type, an owed hole, a suspension or a refusal. Four public faces judge individual values and computations. The ledger collects holes; refusal classification separates malformed source, unimplemented features and engine faults. The kernel independently checks the exportable pure fragment.
 
-**Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review. Kernel readmission independently checks pure acceptances.
+**Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review.
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states the decisions that shape it, and each module the boundary it owns.
 
@@ -129,7 +129,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Support | [`support`](src/support.rs) |
 | Coverage | [`coverage`](src/coverage.rs) |
 | Nominal data | [`former`](src/former.rs) |
-| Accessibility, stage typing, derived eliminators | [`occurrence`](src/occurrence.rs), [`recursion`](src/recursion.rs), [`eliminator`](src/eliminator.rs) |
+| Accessibility, stage typing, derived eliminators, divergence | [`occurrence`](src/occurrence.rs), [`recursion`](src/recursion.rs), [`eliminator`](src/eliminator.rs), [`divergence`](src/divergence.rs) |
 | Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits and export | [`bridge`](src/bridge.rs) |
 | Staged programs and their forks | [`staging`](src/staging.rs), [`fork`](src/fork.rs), [`stage`](src/stage.rs) |
 | Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |

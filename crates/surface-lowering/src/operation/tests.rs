@@ -113,12 +113,10 @@ fn judged(
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
             };
-            Some(Declaration::new(
-                declaration.constant(),
-                declared,
-                defined,
-                origin,
-            ))
+            Some(
+                Declaration::new(declaration.constant(), declared, defined, origin)
+                    .ruled(module.operation_rules(declaration)),
+            )
         })
         .collect();
 

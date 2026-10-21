@@ -129,6 +129,12 @@ fn program() -> Program
     let unit_type = arena.value_type_unit();
     let unit_returner = arena.comp_type_returner(unit_type);
     let suspended_unit = arena.value_type_thunk(unit_returner);
+    // A loop states that it may run forever: `U (F^⟨Div⟩ 1)`.
+    let diverging = arena.comp_type_returner_with_effects(
+        unit_type,
+        gandr_core_term::effect::EffectRow::singleton(gandr_core_term::effect::host::divergence()),
+    );
+    let suspended_diverging = arena.value_type_thunk(diverging);
     let looping = |arena: &mut CoreArena, evidence| {
         let recursive = var(arena, DeBruijnIndex::from(0));
         let forced = arena.computation_force(recursive);
@@ -228,7 +234,7 @@ fn program() -> Program
         Item::new(ItemKey::from("Nat"), nat_data),
         Item::new(
             ItemKey::from("loop"),
-            definition(ConstantIndex::from(1_usize), suspended_unit, partial),
+            definition(ConstantIndex::from(1_usize), suspended_diverging, partial),
         ),
         Item::new(
             ItemKey::from("claimed"),

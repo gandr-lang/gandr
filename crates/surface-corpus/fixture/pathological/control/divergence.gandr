@@ -1,0 +1,51 @@
+// What divergence as a row entry refuses (#1481): a loop at a row without
+// `Div`, a call of a diverging function from one, and a handler of `Div`. Each would let a
+// computation that never returns stand where one that returns is expected,
+// and an unread call of it be dropped. What checks is in
+// `../../model/control/divergence.gandr`.
+
+/// A diverging loop's function, typed as if it returned: the loop's fixpoint
+/// is refused, its type named with `Div` in the row (#1481).
+@[ refuses("TypeMismatch") ]
+def spinPure(x : Bool) -> -F Bool {
+  run y <- loop {
+    run below <- 1 < 0;
+    case below {
+      true => break(x),
+      false => continue,
+    }
+  };
+  y
+}
+
+/// The loop at the row it needs.
+@[ checks ]
+def spin(x : Bool) -> -F [Div] Bool {
+  run y <- loop {
+    run below <- 1 < 0;
+    case below {
+      true => break(x),
+      false => continue,
+    }
+  };
+  y
+}
+
+/// A caller at the empty row of a function whose row holds `Div`: the call
+/// synthesises the row, which the caller's does not include (#1481).
+@[ refuses("TypeMismatch") ]
+def spinFirst(x : Bool) -> -F Bool {
+  spin(x)
+}
+
+/// A handler of `Div` has no operation to answer and runs its subject, which
+/// may still run forever: it leaves `Div` in its row, which the empty row
+/// does not include (#1481).
+@[ refuses("TypeMismatch") ]
+def tamed(x : Bool) -> -F Bool {
+  handle c : Div {
+    spin(x)
+  } with {
+    pure(v) => pure v
+  }
+}

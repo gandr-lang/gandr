@@ -3,12 +3,13 @@
 // before left there, and what follows the loop reads the value the last pass
 // left. The loop is a fold whose accumulator is the slot (Hutton, "A tutorial
 // on the universality and expressiveness of fold", _Journal of Functional
-// Programming_ 9(4), 1999).
+// Programming_ 9(4), 1999). A loop may run forever, so each function states
+// `Div` in its row (#1481).
 
 /// A count held at three and taken down by one on each pass: the condition
 /// reads the value the pass before wrote back, so the loop stops at zero.
 @[ runs("0") ]
-def countdown() -> -F Integer {
+def countdown() -> -F [Div] Integer {
   hold n = 3;
   while n > 0 { access n as v { resume(v, v - 1) } };
   pure n
@@ -17,7 +18,7 @@ def countdown() -> -F Integer {
 /// Two slots carried together, each keeping its own: the first counts down
 /// while the second counts up.
 @[ runs("704") ]
-def opposed() -> -F Integer {
+def opposed() -> -F [Div] Integer {
   hold a = 10;
   hold b = 1;
   while b < 4 {
@@ -30,7 +31,7 @@ def opposed() -> -F Integer {
 /// An accumulator: each pass adds the count to the total before taking the
 /// count down, so the total ends as three plus two plus one.
 @[ runs("6") ]
-def sum() -> -F Integer {
+def sum() -> -F [Div] Integer {
   hold i = 3;
   hold total = 0;
   while i > 0 {
@@ -43,7 +44,7 @@ def sum() -> -F Integer {
 /// A slot the loop never names but what follows it reads is carried as well,
 /// unchanged.
 @[ runs("7") ]
-def beside() -> -F Integer {
+def beside() -> -F [Div] Integer {
   hold a = 4;
   hold b = 3;
   while b > 0 { access b as v { resume(v, v - 1) } };
@@ -52,7 +53,7 @@ def beside() -> -F Integer {
 
 /// A pass ending in `continue` hands the next pass the slot as it left it.
 @[ runs("0") ]
-def skipping() -> -F Integer {
+def skipping() -> -F [Div] Integer {
   hold n = 3;
   while n > 0 {
     access n as v { resume(v, v - 1) };
@@ -64,7 +65,7 @@ def skipping() -> -F Integer {
 /// A `loop` left by a `break`: the break's value reads the slot the pass
 /// wrote, and the statement binds it.
 @[ runs("5") ]
-def climb() -> -F Integer {
+def climb() -> -F [Div] Integer {
   hold n = 0;
   run m <- loop {
     access n as v { resume(v, v + 1) };
@@ -79,7 +80,7 @@ def climb() -> -F Integer {
 
 /// A bare `break`: what follows the loop reads the slot the last pass left.
 @[ runs("4") ]
-def stride() -> -F Integer {
+def stride() -> -F [Div] Integer {
   hold n = 0;
   loop {
     access n as v { resume(v, v + 2) };

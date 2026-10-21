@@ -10,6 +10,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Mismatch;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
 use gandr_core_checker::OriginToken;
@@ -1417,7 +1418,7 @@ fn a_field_naming_its_own_or_a_later_position_is_refused_by_name()
 fn a_fixpoint_checks_at_every_computation_type()
 {
     // `fix rec. force rec` at `F 1`: a loop, which only a partial
-    // fixpoint may write.
+    // fixpoint may write, and only at a row stating `Div`.
     let looping = |evidence: FixpointEvidence| {
         let mut arena = CoreArena::new();
         let unit_type = arena.value_type_unit();
@@ -1448,9 +1449,15 @@ fn a_fixpoint_checks_at_every_computation_type()
             crossed.readmitted()[1].outcome().clone(),
         )
     };
-    let ((checked, _), applied, crossed, crossed_applied) = looping(FixpointEvidence::Partial);
-    assert!(matches!(checked, Verdict::Checked { .. }), "{checked:?}");
-    assert!(matches!(crossed, Outcome::Defined { .. }), "{crossed:?}");
+    let ((refused, fixpoint), applied, _, crossed_applied) = looping(FixpointEvidence::Partial);
+    assert!(
+        matches!(
+            refused,
+            Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Computation { at, .. }))
+                if at == fixpoint
+        ),
+        "a loop at the empty row is refused at the fixpoint: {refused:?}"
+    );
     assert!(matches!(applied, Verdict::Checked { .. }), "{applied:?}");
     assert!(
         matches!(crossed_applied, Outcome::Defined { .. }),

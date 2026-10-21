@@ -13,6 +13,12 @@
 //! clause resumes with and reclaims each one its `free` clause receives, so a
 //! closed program serves its own buffers.
 //!
+//! `Div` is divergence: an interface with no operation, which a computation's
+//! row holds when the computation may run forever. A partial fixpoint other
+//! than a ruled operation's introduces it; no handler eliminates it, and a row
+//! is subsumed into one holding it as into one holding any other interface.
+//! The empty row is the row of a computation that returns.
+//!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
@@ -43,8 +49,10 @@ pub const PROC: &str = "Proc";
 pub const ENV: &str = "Env";
 /// The completion ring's buffer interface.
 pub const RING: &str = "Ring";
+/// The divergence interface, with no operation.
+pub const DIV: &str = "Div";
 
-/// The five interfaces, sharing their arena-owned payload and reply types.
+/// The six interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -58,6 +66,8 @@ pub struct HostSignatures
     pub env: EffectSig,
     /// Allocate a buffer the ring fills, and free one back.
     pub ring: EffectSig,
+    /// Run forever: no operation, and no handler.
+    pub div: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -85,6 +95,28 @@ pub enum AuthorityError
     Conflict(EffectConflict),
 }
 
+/// The divergence interface's signature. It has no operation, so it names no
+/// type and needs no arena.
+///
+/// # Specification
+/// - ensures: the signature named [`DIV`] with no operation, equal to the host
+///   table's.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the host table's divergence interface is this one.
+/// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
+#[spec(ensures: |ret| ret.name().as_ref() == DIV && ret.operations().len() == 0_usize)]
+#[inline]
+#[must_use]
+pub fn divergence() -> EffectSig
+{
+    EffectSig(alloc::sync::Arc::new(super::Signature {
+        name: DIV.into(),
+        operations: alloc::collections::BTreeMap::new(),
+    }))
+}
+
 impl HostSignatures
 {
     /// Mint the host interfaces over shared native value types.
@@ -106,10 +138,11 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
-                    && arena.value_type(operation.reply).is_some()))) || ret.is_err())]
+                    && arena.value_type(operation.reply).is_some()))
+            && host.div.operations().len() == 0_usize) || ret.is_err())]
     #[inline]
     pub fn new(arena: &mut CoreArena) -> Result<Self, EffectConflict>
     {
@@ -200,24 +233,28 @@ impl HostSignatures
                 reply: unit,
             },
         ])?;
+        let div = divergence();
         Ok(Self {
             exec,
             fs,
             proc,
             env,
             ring,
+            div,
         })
     }
 
-    /// The five interfaces, in the order the host declares them.
+    /// The six interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 5]
+    pub const fn interfaces(&self) -> [&EffectSig; 6]
     {
-        [&self.exec, &self.fs, &self.proc, &self.env, &self.ring]
+        [
+            &self.exec, &self.fs, &self.proc, &self.env, &self.ring, &self.div,
+        ]
     }
 
     /// The interface named `name`.

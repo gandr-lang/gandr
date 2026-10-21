@@ -1,0 +1,47 @@
+// Divergence as a row entry (#1481). A loop the checker cannot see out of may
+// run forever, so the function holding it states `Div` in its row: the host
+// interface with no operation, which no handler eliminates. A caller of such a
+// function holds `Div` in its own row, as it holds any interface its callee
+// performs, so a function at the empty row returns. What refuses is in
+// `../../pathological/control/divergence.gandr`.
+
+/// A loop that breaks only when one is below zero: it never returns, and its
+/// row says it may not.
+@[ checks ]
+def spin(x : Bool) -> -F [Div] Bool {
+  run y <- loop {
+    run below <- 1 < 0;
+    case below {
+      true => break(x),
+      false => continue,
+    }
+  };
+  y
+}
+
+/// A caller of `spin` holds `Div` in its own row.
+@[ checks ]
+def spinOn(x : Bool) -> -F [Div] Bool {
+  spin(x)
+}
+
+/// A loop that breaks at once states `Div` all the same: the row records what
+/// the loop may do, not what one run of it does.
+@[ checks ]
+def once(x : Integer) -> -F [Div] Integer {
+  run y <- loop { break(x) };
+  y
+}
+
+/// It runs, at a row holding `Div`.
+@[ runs("3") ]
+def onceThree() -> -F [Div] Integer {
+  once(3)
+}
+
+/// A recursive function that never calls itself runs its body once, so it
+/// returns at the empty row.
+@[ checks ]
+def rec unused(x : Bool) -> -F Bool {
+  x
+}

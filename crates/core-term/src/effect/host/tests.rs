@@ -2,6 +2,7 @@ use gandr_kernel_term::BaseType;
 use quenchant_shape::shape::Maybe;
 
 use super::AuthorityError;
+use super::DIV;
 use super::ENV;
 use super::EXEC;
 use super::FS;
@@ -95,6 +96,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("get", string, string),
             ("path", unit, strings)
         ]),
+        (&host.div, DIV, alloc::vec![]),
     ];
     for (signature, name, operations) in expected {
         assert_eq!(signature.name().as_ref(), name);
@@ -110,4 +112,9 @@ fn host_interfaces_pin_names_payloads_and_replies()
             }
         }
     }
+    assert_eq!(
+        host.div,
+        super::divergence(),
+        "the divergence interface needs no arena"
+    );
 }

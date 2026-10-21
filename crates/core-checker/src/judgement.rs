@@ -3183,14 +3183,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// Check a handler's residual row and open its return clause.
     ///
     /// # Specification
-    /// - ensures: only this handler's interface is discharged; success binds
-    ///   the subject's returned payload, not the handler's answer payload.
+    /// - ensures: only this handler's interface is discharged, and never
+    ///   [`gandr_core_term::effect::host::DIV`], which no handler eliminates: a
+    ///   handler of it leaves it in the residual row; success binds the
+    ///   subject's returned payload, not the handler's answer payload.
     /// - fails: conflicting signatures, a non-returner or leaked effects.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unrelated effect and distinct payload types expose
-    ///   loss.
+    ///   loss; a handler of `Div` over a diverging call leaks it.
     /// - witness: `judgement::tests::handlers_discharge_only_their_own_interface`
+    /// - witness: `divergence::tests::no_handler_discharges_div`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == depth.saturating_add(1))]
     fn handle_subject(
         &mut self,
@@ -3230,7 +3233,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 second: interface,
             });
         }
-        let residual = effects.without(signature.name());
+        // Divergence has no operation to answer: a handler of it runs its
+        // subject, which may still run forever.
+        let residual = if signature.name().as_ref() == gandr_core_term::effect::host::DIV {
+            effects.clone()
+        }
+        else {
+            effects.without(signature.name())
+        };
         let on_return = *on_return;
         let natural = self
             .context
@@ -3543,7 +3553,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - ensures: the subject's type `F^⟨I | ε⟩ A` is formed next, where `I` is
     ///   the handled interface and `F^ε A` the answer, with the scope waiting
-    ///   on it.
+    ///   on it; a scope of [`gandr_core_term::effect::host::DIV`], which no
+    ///   handler eliminates, checks its subject at `F^ε A` itself.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for an answer that is no
     ///   returner; [`CheckRefusal::HandlerCoverage`] for clauses that do not
     ///   cover the interface exactly once; [`CheckRefusal::CapabilityEscaped`]
@@ -3557,8 +3568,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a scope whose subject exercises its own capability
     ///   checks; an answer mentioning the scope's region, a missing clause and
-    ///   a conflicting answer row are each refused by name.
+    ///   a conflicting answer row are each refused by name; a scope of `Div`
+    ///   over a diverging call leaves the call's row to the answer.
     /// - witness: `capability::tests::a_scope_handles_the_capability_it_introduces`
+    /// - witness: `divergence::tests::no_handler_discharges_div`
     /// - witness: `capability::tests::a_scoped_capability_never_leaves_its_scope`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(self.frames.last(), Some(Waiting { frame: Frame::ScopeForm { at: site, .. }, .. }) if *site == at)))]
@@ -3620,8 +3633,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | CompTypeView::With(..)
             | CompTypeView::Codata { .. } => return Err(CheckRefusal::MachineInvariant),
         };
+        // Divergence has no operation to answer: its scope runs the subject
+        // in the answer's own row.
+        let divergence = signature.name().as_ref() == gandr_core_term::effect::host::DIV;
         let handled = gandr_core_term::effect::EffectRow::singleton(signature);
-        let Ok(row) = ambient.union(&handled, self.context.arena())
+        let widened = if divergence {
+            Ok(ambient)
+        }
+        else {
+            ambient.union(&handled, self.context.arena())
+        };
+        let Ok(row) = widened
         else {
             let interface = self
                 .context
@@ -5602,9 +5624,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   and leaves one goal per component, each checked against its own; a
     ///   hole and a mark check against any type at once; a fixpoint opens a
     ///   binder of `U expected` and checks its body against `expected` shifted
-    ///   past it, except that a structural one opens its stage
-    ///   ([`crate::recursion::open_fixpoint`]): the self binder takes the
-    ///   recursed-on parameter below the stage and the body takes it at the
+    ///   past it, a partial one only at a type stating that it may diverge
+    ///   ([`crate::divergence::require`]), except that a structural one opens
+    ///   its stage ([`crate::recursion::open_fixpoint`]): the self binder takes
+    ///   the recursed-on parameter below the stage and the body takes it at the
     ///   stage; a list case synthesises its list's type, opens one stage below
     ///   it ([`crate::recursion::open_case`]), checks its empty branch against
     ///   `expected` and its cell branch, under a binder of the element and one
@@ -5618,7 +5641,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow,
     ///   a return against no returner, or a structural fixpoint against a type
     ///   with no arrow to recurse on; [`CheckRefusal::OutOfFragment`] for a
-    ///   case.
+    ///   case; as [`crate::divergence::require`] for a partial fixpoint.
     ///
     /// # Judgement
     /// - expected: `expected`
@@ -5733,7 +5756,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     FixpointEvidence::Staged { position } => Some(position),
                 };
                 let (own, inside) = match position {
-                    None => (expected, expected),
+                    None => {
+                        crate::divergence::require(self.context, term, body, expected)?;
+                        (expected, expected)
+                    },
                     Some(position) => {
                         self.root = self.fold_root(term, (expected, position), body)?;
                         match crate::recursion::open_fixpoint(

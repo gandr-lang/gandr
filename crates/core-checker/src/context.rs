@@ -2848,6 +2848,23 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
     }
 
+    /// The rules of the operation the declaration under judgement lowered
+    /// from: none before any is admitted, and none for a declaration no
+    /// operation's rules wrote.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn admitted_rules(&self) -> &[gandr_kernel_term::OperationRule]
+    {
+        match self.admitted {
+            Maybe::Present(constant) => self
+                .operation_rules
+                .get(&constant)
+                .map_or(&[], gandr_kernel_term::OperationRules::rules),
+            Maybe::Absent(_) => &[],
+        }
+    }
+
     /// The rules of the operation each ruled declaration lowered from, by
     /// position.
     ///
