@@ -357,6 +357,7 @@ fn every_node_former_round_trips_under_its_own_frame()
                 value: a,
             },
             MemoryForm::Abort { view: slot },
+            MemoryForm::Consume { held: slot },
         ]
         .map(ContentNode::Memory),
     );
@@ -2677,6 +2678,7 @@ fn every_refusal() -> Vec<Refusal>
             AccessDefect::Moved,
             AccessDefect::Kept,
             AccessDefect::KeptEscaped,
+            AccessDefect::Consumed,
         ]
         .map(|defect| Refusal::Access { at, defect }),
     );

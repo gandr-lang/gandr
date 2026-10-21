@@ -360,6 +360,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::Moved => "an abort after the value was moved out",
             AccessDefect::Kept => "a write to a value a live region keeps a view of",
             AccessDefect::KeptEscaped => "a value kept in the scope's own region",
+            AccessDefect::Consumed => "a held value a consumed receiver already took",
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",

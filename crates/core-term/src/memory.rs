@@ -1,5 +1,6 @@
 //! Temporary access: a held value, the access that lends a place of it to a
-//! view in a mode, and the view's two eliminators.
+//! view in a mode, the view's two eliminators, and the hold's end at a
+//! consuming read.
 //!
 //! # The forms
 //!
@@ -12,6 +13,7 @@
 //! |access at a place|`access x[i] as w { t } unwind { u }`, `access shared x[i] as w { t }`|the view `w`, a linear slot, over `t`|
 //! |resume|`resume(w, v)`|nothing; writes `v` back through `w`|
 //! |abort|`abort(w)`|nothing; ends `w` with nothing written|
+//! |consume|`s.f(a)`, `f`'s receiver consumed|nothing; moves the value `x` holds out|
 //!
 //! [`MemoryForm::Hold`] opens a slot of the linear zone `Σ` holding a value at
 //! a [`HoldGrade`]: at grade `ω` a read of the slot copies the value it holds
@@ -28,10 +30,14 @@
 //! held slot stays readable and is frozen for the body, the view reads the
 //! same value, and the view ends with the body: a shared mode has no unwind,
 //! and neither eliminator ends a shared view. An index in the linear zone is
-//! lent with the place, never consumed by the access. The rules and the
+//! lent with the place, never consumed by the access. [`MemoryForm::Consume`]
+//! moves the value out of a held slot no access lends and returns it: the
+//! hold ends there, so the slot is read or lent no more, and the hold's scope
+//! closes over a spent slot. A method whose receiver is consumed is called on
+//! the value it returns; no other source form writes it. The rules and the
 //! refusals are `gandr-core-checker`'s `access` module.
 //!
-//! One computation former has the four forms as its cases, and every
+//! One computation former has the five forms as its cases, and every
 //! resident is named by its linear de Bruijn index, so an access of something
 //! that is not held, or an eliminator of something that is not a view,
 //! cannot be written as a value. The unwind is a child of the exclusive mode
@@ -191,10 +197,12 @@ pub enum MemoryKind
     Resume,
     /// `abort(w)`.
     Abort,
+    /// The hold's end at a consuming read.
+    Consume,
 }
 
 /// A memory form: one computation former whose cases hold a value, access a
-/// held value through a view, or end a view.
+/// held value through a view, end a view, or move a held value out.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MemoryForm<V = ValueId, C = ComputationId>
 {
@@ -240,6 +248,13 @@ pub enum MemoryForm<V = ValueId, C = ComputationId>
         /// The view, a linear index.
         view: DeBruijnIndex,
     },
+    /// The receiver of a consumed method call: move the value the held slot
+    /// `held` holds out, ending the hold, and return it.
+    Consume
+    {
+        /// The held slot, a linear index.
+        held: DeBruijnIndex,
+    },
 }
 
 /// The computation children of a form beside the binders each sits under,
@@ -260,7 +275,8 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     /// - witness: `memory::tests::forms_name_their_resident_and_children`
     #[spec(ensures: |ret| matches!((self, ret),
         (&Self::Hold { .. }, MemoryKind::Hold) | (&Self::Access { .. }, MemoryKind::Access)
-        | (&Self::Resume { .. }, MemoryKind::Resume) | (&Self::Abort { .. }, MemoryKind::Abort)))]
+        | (&Self::Resume { .. }, MemoryKind::Resume) | (&Self::Abort { .. }, MemoryKind::Abort)
+        | (&Self::Consume { .. }, MemoryKind::Consume)))]
     #[inline]
     #[must_use]
     pub const fn kind(&self) -> MemoryKind
@@ -270,11 +286,12 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
             Self::Access { .. } => MemoryKind::Access,
             Self::Resume { .. } => MemoryKind::Resume,
             Self::Abort { .. } => MemoryKind::Abort,
+            Self::Consume { .. } => MemoryKind::Consume,
         }
     }
 
     /// The linear slot the form names where it stands: the held slot an
-    /// access lends, the view an eliminator ends.
+    /// access lends or a consuming read ends, the view an eliminator ends.
     ///
     /// # Specification
     /// - ensures: the linear index every case but a hold names.
@@ -291,6 +308,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     {
         match *self {
             Self::Access { held: index, .. }
+            | Self::Consume { held: index }
             | Self::Resume { view: index, .. }
             | Self::Abort { view: index } => Maybe::Present(index),
             Self::Hold { .. } => Maybe::Absent(resident::Absent::Hold),
@@ -316,7 +334,8 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
                 place: Place::Whole,
                 ..
             }
-            | Self::Abort { .. } => None,
+            | Self::Abort { .. }
+            | Self::Consume { .. } => None,
         }
         .into_iter()
     }
@@ -328,7 +347,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     /// # Specification
     /// - ensures: a hold yields its body under one binder; an access its body
     ///   under one, then, when exclusive, its unwind under none; an eliminator
-    ///   nothing.
+    ///   and a consuming read nothing.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -339,7 +358,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
     #[spec(ensures: |ret| ret.clone().count() == match *self {
         | Self::Hold { .. } | Self::Access { mode: AccessMode::Shared, .. } => 1_usize,
         | Self::Access { mode: AccessMode::Exclusive { .. }, .. } => 2_usize,
-        | Self::Resume { .. } | Self::Abort { .. } => 0_usize,
+        | Self::Resume { .. } | Self::Abort { .. } | Self::Consume { .. } => 0_usize,
     })]
     #[inline]
     pub fn scoped(&self) -> Scoped<C>
@@ -356,7 +375,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
                 body,
                 ..
             } => (Some((body, Binders::ONE)), Some((unwind, Binders::NONE))),
-            Self::Resume { .. } | Self::Abort { .. } => (None, None),
+            Self::Resume { .. } | Self::Abort { .. } | Self::Consume { .. } => (None, None),
         };
         first.into_iter().chain(second)
     }
@@ -430,7 +449,8 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
         | (&Self::Access { held: a, mode: ref before, place: ref was, .. }, &MemoryForm::Access { held: b, mode: ref after, place: ref now, .. }) =>
             a == b && before.mode() == after.mode() && was.shape() == now.shape(),
         | (&Self::Resume { view: a, .. }, &MemoryForm::Resume { view: b, .. })
-        | (&Self::Abort { view: a }, &MemoryForm::Abort { view: b }) => a == b,
+        | (&Self::Abort { view: a }, &MemoryForm::Abort { view: b })
+        | (&Self::Consume { held: a }, &MemoryForm::Consume { held: b }) => a == b,
         | (&Self::Hold { grade: a, .. }, &MemoryForm::Hold { grade: b, .. }) => a == b,
         | _ => false,
     }))]
@@ -526,6 +546,7 @@ impl<V: Copy, C: Copy> MemoryForm<V, C>
                 value: value(state, written)?,
             },
             Self::Abort { view } => MemoryForm::Abort { view },
+            Self::Consume { held } => MemoryForm::Consume { held },
         })
     }
 }

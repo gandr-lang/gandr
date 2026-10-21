@@ -1497,6 +1497,9 @@ impl fmt::Display for Checked
                 | AccessDefect::KeptEscaped => f.write_str(
                     "the scope's answer names a value kept in its own region, which ends with the scope",
                 ),
+                | AccessDefect::Consumed => f.write_str(
+                    "a call whose receiver is consumed ended this hold, so the held value is gone here",
+                ),
             },
             | CheckRefusal::Codata { fault, .. } => f.write_str(match fault {
                 | CodataFault::Undeclared => "the codata application names no admitted codata declaration",

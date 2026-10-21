@@ -1422,7 +1422,8 @@ impl<'arena> CoreSource<'arena>
                 },
             | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
                 view == actual && written == CoreNode::Value(value),
-            | (&MemoryForm::Abort { view }, Former::AbortView(actual)) => view == actual,
+            | (&MemoryForm::Abort { view }, Former::AbortView(actual))
+            | (&MemoryForm::Consume { held: view }, Former::ConsumeHeld(actual)) => view == actual,
             | _ => false,
         },
         | (Some(&Computation::World(ref form)), _) => match (form, ret) {
@@ -1702,6 +1703,7 @@ impl<'arena> CoreSource<'arena>
                     value: value(written),
                 },
                 MemoryForm::Abort { view } => Former::AbortView(view),
+                MemoryForm::Consume { held } => Former::ConsumeHeld(held),
             },
             Computation::World(ref form) => match *form {
                 WorldForm::Hold { value: held } => Former::WorldHold(value(held)),

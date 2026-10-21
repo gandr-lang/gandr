@@ -13,7 +13,10 @@
 //! through the quoted type too, a dependent arrow's codomain binding one
 //! variable. A session fork binds one linear variable in its child and one in
 //! its parent, and every other session action reads its endpoint as a linear
-//! occurrence; every other binder leaves a linear index unchanged.
+//! occurrence; every other binder leaves a linear index unchanged. A consume
+//! reads its held slot as a linear occurrence and as a consumed one, the
+//! linear indices a term moves out of a hold, which lower as the linear ones
+//! do.
 //!
 //! # A set is a sorted vector
 //!
@@ -268,7 +271,7 @@ pub enum CoreTerm
 }
 
 /// The free indices of one core term, per zone, each counted from where the
-/// term stands.
+/// term stands, and the free linear ones it consumes.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Free
 {
@@ -276,6 +279,8 @@ pub struct Free
     intuitionistic: Outward<DeBruijnIndex>,
     /// The free linear indices.
     linear: Outward<DeBruijnIndex>,
+    /// The free linear indices a consume names, each among `linear`.
+    consumed: Outward<DeBruijnIndex>,
 }
 
 impl Free
@@ -310,12 +315,26 @@ impl Free
         match zone {
             Zone::Intuitionistic => Self {
                 intuitionistic: Outward::single(index),
-                linear: Outward::default(),
+                ..Self::default()
             },
             Zone::Linear => Self {
-                intuitionistic: Outward::default(),
                 linear: Outward::single(index),
+                ..Self::default()
             },
+        }
+    }
+
+    /// The free indices of a consume of the held slot `held`: one linear
+    /// occurrence, consumed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn consume(held: DeBruijnIndex) -> Self
+    {
+        Self {
+            linear: Outward::single(held),
+            consumed: Outward::single(held),
+            ..Self::default()
         }
     }
 
@@ -325,7 +344,8 @@ impl Free
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each zone's indices gain the child's lowered by that zone's
-    ///   binders, its bound ones dropped.
+    ///   binders, its bound ones dropped, and the consumed ones as the linear
+    ///   ones.
     /// - provides: the one step a node's answer is assembled from its
     ///   children's.
     /// - fails: never.
@@ -355,6 +375,7 @@ impl Free
         self.intuitionistic
             .join_lowered(&child.intuitionistic, binders);
         self.linear.join_lowered(&child.linear, linear);
+        self.consumed.join_lowered(&child.consumed, linear);
     }
 }
 
@@ -558,6 +579,37 @@ impl FreeIndices
         Ok(self.of(core, term)?.intuitionistic.counts())
     }
 
+    /// The free linear indices `term` consumes, ascending: the held slots a
+    /// consume in it moves out of without binding them, counted from where it
+    /// stands.
+    ///
+    /// # Specification
+    /// - requires: as [`FreeIndices::of`].
+    /// - ensures: on success, the consumed part of [`FreeIndices::of`]'s
+    ///   answer, ascending, each once and each among [`FreeIndices::linear`]'s.
+    /// - provides: the reading a checker finds a hold a branch consumes with.
+    /// - fails: as [`FreeIndices::of`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`FreeIndices::of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a consume under a hold of its own reads none, and a
+    ///   consume of an outer slot beside a read of another reads the consumed
+    ///   one alone, one binder lower.
+    /// - witness: `free::tests::a_consume_reads_its_held_slot_as_consumed`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|counts| counts.windows(2).all(|pair| matches!(pair, [left, right] if left < right))))]
+    #[inline]
+    pub fn consumed(
+        &mut self,
+        core: &CoreArena,
+        term: CoreTerm,
+    ) -> Result<&[DeBruijnIndex], FreeFault>
+    {
+        Ok(self.of(core, term)?.consumed.counts())
+    }
+
     /// Answer `term` and everything beneath it not yet answered.
     ///
     /// # Specification
@@ -680,6 +732,7 @@ impl FreeIndices
                 }
                 if let Computation::Memory(ref form) = *held {
                     match *form {
+                        MemoryForm::Consume { held } => free = Free::consume(held),
                         MemoryForm::Access { held: index, .. }
                         | MemoryForm::Resume { view: index, .. }
                         | MemoryForm::Abort { view: index } => {
@@ -1337,7 +1390,9 @@ Err(_) => false,
                         MemoryForm::Resume { value: written, .. } => {
                             one(value(written), Lowering::NONE)
                         },
-                        MemoryForm::Abort { .. } => [None, None, None, None, None],
+                        MemoryForm::Abort { .. } | MemoryForm::Consume { .. } => {
+                            [None, None, None, None, None]
+                        },
                     },
                     // A `leta`'s body stands under the one intuitionistic
                     // binder it opens.

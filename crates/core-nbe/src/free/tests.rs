@@ -103,6 +103,47 @@ fn a_fork_binds_one_endpoint_in_each_half()
 }
 
 #[test]
+fn a_consume_reads_its_held_slot_as_consumed()
+{
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    // Under the hold its own slot is 0, and the outer slots 1 and 2.
+    let own = core.computation_memory(MemoryForm::Consume {
+        held: DeBruijnIndex::from(0_u32),
+    });
+    let outer = core.computation_memory(MemoryForm::Consume {
+        held: DeBruijnIndex::from(2_u32),
+    });
+    let read = core.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+    let returned = core.computation_return(read);
+    let rest = core.computation_bind(outer, returned);
+    let body = core.computation_bind(own, rest);
+    let held = core.computation_memory(MemoryForm::Hold {
+        value: unit,
+        body,
+        grade: HoldGrade::Many,
+    });
+    let mut analysis = FreeIndices::default();
+    assert_eq!(
+        Ok([DeBruijnIndex::from(0_u32), DeBruijnIndex::from(2_u32)].as_slice()),
+        analysis.consumed(&core, CoreTerm::Computation(body)),
+        "the body consumes the hold's own slot and an outer one"
+    );
+    assert_eq!(
+        Ok([DeBruijnIndex::from(1_u32)].as_slice()),
+        analysis.consumed(&core, CoreTerm::Computation(held)),
+        "the hold binds its own slot and consumes the outer one one lower"
+    );
+    assert_eq!(
+        Ok([DeBruijnIndex::from(0_u32), DeBruijnIndex::from(1_u32)].as_slice()),
+        analysis.linear(&core, CoreTerm::Computation(held)),
+        "the read of the other outer slot is linear and not consumed"
+    );
+}
+
+#[test]
 fn binders_lower_only_their_own_intuitionistic_occurrences()
 {
     let mut core = CoreArena::new();

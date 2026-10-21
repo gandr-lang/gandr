@@ -482,6 +482,7 @@ fn command(
                     Piece::Producer(value, depth),
                 ],
                 MemoryForm::Abort { view } => alloc::vec![text!("abort("), linear(view)],
+                MemoryForm::Consume { held } => alloc::vec![text!("consume("), linear(held)],
             };
             pieces.extend([
                 text!("; "),

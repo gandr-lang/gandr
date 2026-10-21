@@ -1146,3 +1146,140 @@ fn a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221()
          kept in no region is refused"
     );
 }
+
+/// `consume(lN)`.
+///
+/// # Specification
+/// trivial.
+fn consume(
+    arena: &mut CoreArena,
+    held: DeBruijnIndex,
+) -> ComputationId
+{
+    arena.computation_memory(MemoryForm::Consume { held })
+}
+
+#[test]
+fn a_consume_ends_its_hold_and_answers_the_held_value()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    // hold c = 0; consume(c)
+    let taken = consume(&mut arena, l0());
+    let ended = hold(&mut arena, taken);
+    assert_eq!(
+        both(&mut arena, ended, integers),
+        [Ok(()), Ok(())],
+        "a consume answers the held value at the slot's type"
+    );
+    // hold[1] c = 0; consume(c): the one holder hands the value on.
+    let taken = consume(&mut arena, l0());
+    let unique = hold_one(&mut arena, taken);
+    assert_eq!(
+        both(&mut arena, unique, integers),
+        [Ok(()), Ok(())],
+        "a consume moves a value held at grade one without copying it"
+    );
+    // hold c = 0; x <- consume(c); return x
+    let taken = consume(&mut arena, l0());
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(x);
+    let bound = arena.computation_bind(taken, returned);
+    let rest = hold(&mut arena, bound);
+    assert_eq!(
+        both(&mut arena, rest, integers),
+        [Ok(()), Ok(())],
+        "the rest of the hold runs with the slot spent"
+    );
+}
+
+#[test]
+fn a_consumed_hold_is_read_lent_or_consumed_no_more()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    // hold c = 0; _ <- consume(c); (c,).0
+    let taken = consume(&mut arena, l0());
+    let (read, reading) = copied(&mut arena, l0());
+    let bound = arena.computation_bind(taken, reading);
+    let reread = hold(&mut arena, bound);
+    assert_eq!(
+        both(&mut arena, reread, integers),
+        [Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(read)),
+            defect: AccessDefect::Consumed,
+        }); 2],
+        "a read after the consume finds the value gone"
+    );
+    // hold c = 0; _ <- consume(c); consume(c)
+    let taken = consume(&mut arena, l0());
+    let again = consume(&mut arena, l0());
+    let bound = arena.computation_bind(taken, again);
+    let twice = hold(&mut arena, bound);
+    assert_eq!(
+        both(&mut arena, twice, integers),
+        [Err(at(again, AccessDefect::Consumed)); 2],
+        "a second consume finds the value gone"
+    );
+    // hold c = 0; _ <- consume(c); access shared c as v { (v,).0 }
+    let taken = consume(&mut arena, l0());
+    let (_viewed, viewing) = copied(&mut arena, l0());
+    let lent = shared(&mut arena, l0(), viewing);
+    let bound = arena.computation_bind(taken, lent);
+    let relent = hold(&mut arena, bound);
+    assert_eq!(
+        both(&mut arena, relent, integers),
+        [Err(at(lent, AccessDefect::Consumed)); 2],
+        "an access after the consume finds the value gone"
+    );
+    // hold c = 0; access shared c as v { consume(c) }
+    let inner = consume(&mut arena, l1());
+    let lent = shared(&mut arena, l0(), inner);
+    let frozen = hold(&mut arena, lent);
+    assert_eq!(
+        both(&mut arena, frozen, integers),
+        [Err(at(inner, AccessDefect::Lent)); 2],
+        "a value lent shared is frozen, so nothing takes it"
+    );
+}
+
+#[test]
+fn a_branch_reads_a_hold_but_consumes_none()
+{
+    let mut arena = CoreArena::new();
+    let integers = integers(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let list = arena.value_type_list(integer);
+    let lists = arena.comp_type_returner(list);
+    let branched = |arena: &mut CoreArena, on_nil, on_cons| {
+        // hold c = 0; xs <- (return [0] : F (List Integer)); case xs { … }
+        let zero = arena.value_literal(integer_literal());
+        let nil = arena.value_list_nil();
+        let cons = arena.value_list_cons(zero, nil);
+        let returned = arena.computation_return(cons);
+        let ascribed = arena.computation_ascribe(returned, lists);
+        let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_list_case(xs, on_nil, on_cons);
+        let bound = arena.computation_bind(ascribed, case);
+        (case, hold(arena, bound))
+    };
+    let (_read, on_nil) = copied(&mut arena, l0());
+    let (_read, on_cons) = copied(&mut arena, l0());
+    let (_case, reads) = branched(&mut arena, on_nil, on_cons);
+    // A case on a list only checks.
+    assert_eq!(
+        checked(&mut arena, reads, integers),
+        Ok(()),
+        "each branch reads the held value by copy"
+    );
+    let on_nil = consume(&mut arena, l0());
+    let on_cons = consume(&mut arena, l0());
+    let (case, consumes) = branched(&mut arena, on_nil, on_cons);
+    assert_eq!(
+        checked(&mut arena, consumes, integers),
+        Err(at(case, AccessDefect::HeldCaptured {
+            by: Capture::Branch
+        })),
+        "a branch would end the hold on its own paths alone"
+    );
+}

@@ -964,6 +964,11 @@ fn checked(
                 "a value kept `at c` lives only as long as the scope binding `c`; the scope \
                  cannot answer it",
             ),
+            AccessDefect::Consumed => f.write_str(
+                "a method whose receiver is `consumed` takes the held value and ends its hold; \
+                 the value cannot be read, accessed or consumed after that call, nor taken on \
+                 one branch alone",
+            ),
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => f.write_str("this names no codata declaration"),
@@ -1723,6 +1728,10 @@ mod tests
             CheckRefusal::Access {
                 at: node,
                 defect: AccessDefect::KeptEscaped,
+            },
+            CheckRefusal::Access {
+                at: node,
+                defect: AccessDefect::Consumed,
             },
             CheckRefusal::Codata {
                 at: node,

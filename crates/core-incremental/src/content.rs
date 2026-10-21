@@ -1693,7 +1693,7 @@ impl ContentNode
                     ..
                 } => Children::of(&[(index, V), (body, M)]).binding(ChildSlot(1), linear),
                 MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
-                MemoryForm::Abort { .. } => Children::default(),
+                MemoryForm::Abort { .. } | MemoryForm::Consume { .. } => Children::default(),
             },
             Self::SessionType(ref session) => {
                 Children::default().followed_by(session.payloads(), A)
@@ -2093,7 +2093,8 @@ impl ContentNode
                 | MemoryForm::Resume {
                     view: ref mut held, ..
                 }
-                | MemoryForm::Abort { view: ref mut held } => *held = index,
+                | MemoryForm::Abort { view: ref mut held }
+                | MemoryForm::Consume { ref mut held } => *held = index,
                 MemoryForm::Hold { .. } => {},
             }
         }

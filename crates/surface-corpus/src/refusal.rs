@@ -646,6 +646,9 @@ pub enum RefusalName
     HeldKept,
     /// A capability scope's answer naming a value kept in the scope's region.
     KeptEscaped,
+    /// A held slot read, accessed or consumed after a consumed receiver ended
+    /// its hold, or consumed on one branch and not on another.
+    HeldConsumed,
     /// A codata application whose head names no admitted codata declaration.
     CodataUndeclared,
     /// A codata declaration whose kind is not a computation universe.
@@ -703,7 +706,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 190_usize] = [
+    pub const VOCABULARY: [Self; 191_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -876,6 +879,7 @@ impl RefusalName
         Self::ViewMoved,
         Self::HeldKept,
         Self::KeptEscaped,
+        Self::HeldConsumed,
         Self::CodataUndeclared,
         Self::CodataKindNotUniverse,
         Self::CodataWithoutObservations,
@@ -1056,6 +1060,7 @@ impl RefusalName
         | (Self::ViewMoved, b"ViewMoved")
         | (Self::HeldKept, b"HeldKept")
         | (Self::KeptEscaped, b"KeptEscaped")
+        | (Self::HeldConsumed, b"HeldConsumed")
         | (Self::CodataUndeclared, b"CodataUndeclared")
         | (Self::CodataKindNotUniverse, b"CodataKindNotUniverse")
         | (Self::CodataWithoutObservations, b"CodataWithoutObservations")
@@ -1192,6 +1197,7 @@ impl RefusalName
             Self::ViewMoved => "ViewMoved",
             Self::HeldKept => "HeldKept",
             Self::KeptEscaped => "KeptEscaped",
+            Self::HeldConsumed => "HeldConsumed",
             Self::CodataUndeclared => "CodataUndeclared",
             Self::CodataKindNotUniverse => "CodataKindNotUniverse",
             Self::CodataWithoutObservations => "CodataWithoutObservations",
@@ -1575,7 +1581,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
-        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped)
+        | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
         | (Self::Checking(CheckRefusal::Codata { .. }), RefusalName::CodataUndeclared | RefusalName::CodataKindNotUniverse | RefusalName::CodataWithoutObservations | RefusalName::CodataOccurrence | RefusalName::CodataObservationLevel | RefusalName::CodataArity)
         | (Self::Checking(CheckRefusal::Located { .. }), RefusalName::Immobile | RefusalName::CapabilityMissing | RefusalName::CapabilityCaptured | RefusalName::Elsewhere | RefusalName::HoldElsewhere | RefusalName::Unlocated | RefusalName::UndeclaredWorld | RefusalName::HostWorldUndeclared | RefusalName::MarkUnfounded | RefusalName::EntryNamed | RefusalName::EntryUngranted | RefusalName::NotAHandle)
         | (Self::Checking(CheckRefusal::CapabilityForged { .. }), RefusalName::CapabilityForged)
@@ -1900,6 +1906,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::Access { defect: AccessDefect::Moved, .. }, RefusalName::ViewMoved)
         | (CheckRefusal::Access { defect: AccessDefect::Kept, .. }, RefusalName::HeldKept)
         | (CheckRefusal::Access { defect: AccessDefect::KeptEscaped, .. }, RefusalName::KeptEscaped)
+        | (CheckRefusal::Access { defect: AccessDefect::Consumed, .. }, RefusalName::HeldConsumed)
         | (CheckRefusal::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
         | (CheckRefusal::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
         | (CheckRefusal::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
@@ -2029,6 +2036,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::Moved => RefusalName::ViewMoved,
             AccessDefect::Kept => RefusalName::HeldKept,
             AccessDefect::KeptEscaped => RefusalName::KeptEscaped,
+            AccessDefect::Consumed => RefusalName::HeldConsumed,
         },
         CheckRefusal::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => RefusalName::CodataUndeclared,
