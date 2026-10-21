@@ -14,7 +14,9 @@ use gandr_core_session::PayloadDigest;
 use gandr_core_session::Refusal;
 use gandr_core_session::Relation;
 use gandr_core_session::RelationResult;
+use gandr_core_session::ReplayError;
 use gandr_core_session::Session;
+use gandr_core_session::TypeError;
 use gandr_core_session::certified::PayloadCodes;
 use gandr_core_session::certified::Protocol;
 use gandr_core_session::certified::TransportError;
@@ -607,5 +609,241 @@ fn a_choice_advances_only_onto_a_choice_of_its_own_kind()
                 reason: Refusal::WrongDirection
             })
         ));
+    }
+}
+
+#[test]
+fn every_transport_refusal_reads_as_its_boundary()
+{
+    let wrong_labels = || {
+        SessionError::WrongLabels(StatePair {
+            source: State(2),
+            target: State(2),
+        })
+    };
+    let missing = TypeError::MissingNode(NodeId(3));
+    let unreadable = ReplayError::InvalidType(missing);
+    let moved = |at, reason| TransportError::Move {
+        at: MoveIndex(at),
+        reason,
+    };
+    for (error, reads) in [
+        (
+            TransportError::MissingPayload(DISPATCH),
+            "recorded payload identity has no native code".to_owned(),
+        ),
+        (
+            TransportError::CodeBinding,
+            "monitor protocol and native session code disagree".to_owned(),
+        ),
+        (
+            TransportError::Direction,
+            "session Flow direction mismatch".to_owned(),
+        ),
+        (
+            TransportError::ExpectedSessionFlow,
+            "recorded run requires a session Flow introduction".to_owned(),
+        ),
+        (
+            TransportError::Flow(KernelError::Session(wrong_labels())),
+            KernelError::Session(wrong_labels()).to_string(),
+        ),
+        (TransportError::Type(missing), missing.to_string()),
+        (
+            TransportError::Session(wrong_labels()),
+            wrong_labels().to_string(),
+        ),
+        (
+            TransportError::Replay(unreadable.clone()),
+            unreadable.to_string(),
+        ),
+        (
+            moved(4, Refusal::ResumeAfterEnd),
+            "unmapped session move 4: resume after end".to_owned(),
+        ),
+        (
+            moved(0, Refusal::WrongLabel),
+            "unmapped session move 0: wrong label".to_owned(),
+        ),
+        (
+            moved(1, Refusal::WrongDirection),
+            "unmapped session move 1: wrong direction".to_owned(),
+        ),
+        (
+            moved(2, Refusal::WrongPayloadIdentity),
+            "unmapped session move 2: wrong payload identity".to_owned(),
+        ),
+    ] {
+        assert_eq!(error.to_string(), reads, "{error:?}");
+    }
+}
+
+#[test]
+fn a_stay_relates_no_recorded_run()
+{
+    let old = seat();
+    let mut arena = TermArena::new();
+    let payloads = codes(&mut arena);
+    let code = encode(&mut arena, &old, &payloads).expect("seat code");
+    let stay = arena.value_stay(code);
+    let protocol = Protocol {
+        session: &old,
+        code,
+        payloads: &payloads,
+    };
+    let run = [
+        Move::Receive(payload(DISPATCH)),
+        Move::Select("handoff".into()),
+        Move::Send(payload(HANDOFF)),
+        Move::End,
+    ];
+    let before = arena.watermark();
+    assert!(matches!(
+        transport(
+            &mut arena,
+            stay,
+            (protocol, protocol),
+            &run,
+            ReplayBudget::DEFAULT
+        ),
+        Err(TransportError::ExpectedSessionFlow)
+    ));
+    assert_eq!(
+        arena.watermark(),
+        before,
+        "the refusal leaves the arena as it was"
+    );
+}
+
+#[test]
+fn a_protocol_binds_only_a_quoted_code_with_every_payload_coded()
+{
+    let old = seat();
+    let mut arena = TermArena::new();
+    let payloads = codes(&mut arena);
+    let code = encode(&mut arena, &old, &payloads).expect("seat code");
+    let flow = native_flow(
+        &mut arena,
+        (code, code),
+        evidence(&old, &old, Relation::Subtype),
+    );
+    let honest = Protocol {
+        session: &old,
+        code,
+        payloads: &payloads,
+    };
+    let run = [
+        Move::Receive(payload(DISPATCH)),
+        Move::Select("handoff".into()),
+        Move::Send(payload(HANDOFF)),
+        Move::End,
+    ];
+    let unquoted = arena.value_unit();
+    let mut uncoded = payloads.clone();
+    uncoded.0.remove(&DISPATCH);
+    // The seat with its first receipt read as a send: the node count, root
+    // and payload agree with the code, the first node's direction does not.
+    let reversed = session(vec![
+        Node::Send(DISPATCH, NodeId(1)),
+        Node::Mu(NodeId(2)),
+        Node::Select([("report".into(), NodeId(3)), ("handoff".into(), NodeId(7))].into()),
+        Node::Send(REPORT, NodeId(4)),
+        Node::Offer([("next".into(), NodeId(5)), ("retire".into(), NodeId(6))].into()),
+        Node::Var(NodeId(1)),
+        Node::End,
+        Node::Send(HANDOFF, NodeId(8)),
+        Node::End,
+    ]);
+    for (protocol, refusal) in [
+        (
+            Protocol {
+                code: unquoted,
+                ..honest
+            },
+            "a value that is no quoted code",
+        ),
+        (
+            Protocol {
+                session: &reversed,
+                ..honest
+            },
+            "a receipt read as a send",
+        ),
+    ] {
+        assert!(
+            matches!(
+                transport(
+                    &mut arena,
+                    flow,
+                    (protocol, honest),
+                    &run,
+                    ReplayBudget::DEFAULT
+                ),
+                Err(TransportError::CodeBinding)
+            ),
+            "{refusal} does not bind"
+        );
+    }
+    assert!(matches!(
+        transport(
+            &mut arena,
+            flow,
+            (
+                Protocol {
+                    payloads: &uncoded,
+                    ..honest
+                },
+                honest
+            ),
+            &run,
+            ReplayBudget::DEFAULT
+        ),
+        Err(TransportError::MissingPayload(DISPATCH))
+    ));
+}
+
+#[test]
+fn a_move_advances_only_along_a_related_pair_of_its_own_kind()
+{
+    let sending = session(vec![Node::Send(REPORT, NodeId(1)), Node::End]);
+    let receiving = session(vec![Node::Receive(REPORT, NodeId(1)), Node::End]);
+    let run = [Move::Send(payload(REPORT)), Move::End];
+    let paired = |pairs: &[(usize, usize)]| Evidence {
+        pairs: pairs
+            .iter()
+            .map(|&(source, target)| StatePair {
+                source: State(source),
+                target: State(target),
+            })
+            .collect(),
+        payloads: Vec::new(),
+    };
+    let Ok(moved) = gandr_core_session::certified::advance(
+        (&sending, &sending),
+        &paired(&[(0, 0), (1, 1)]),
+        &run,
+    )
+    else {
+        panic!("a related send advances");
+    };
+    assert_eq!(moved, run);
+    for (target, evidence, what) in [
+        (&sending, paired(&[(1, 1)]), "a pair the evidence omits"),
+        (
+            &receiving,
+            paired(&[(0, 0), (1, 1)]),
+            "a send paired with a receipt",
+        ),
+    ] {
+        assert!(
+            matches!(
+                gandr_core_session::certified::advance((&sending, target), &evidence, &run),
+                Err(TransportError::Move {
+                    at: MoveIndex(0),
+                    reason: Refusal::WrongDirection
+                })
+            ),
+            "{what} refuses the first move"
+        );
     }
 }
