@@ -289,6 +289,7 @@ use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::unused::removals;
 use crate::unused::unreached;
 use crate::unused::unused;
 use crate::uses::Written;
@@ -3898,6 +3899,11 @@ impl Server
                                     (params.range, &params.context.diagnostics),
                                     self.style.printed(),
                                 ));
+                                offered.extend(workspace.import_removals(
+                                    &params.text_document.uri,
+                                    self.peer,
+                                    (params.range, &params.context.diagnostics),
+                                ));
                                 self.edited(workspace, Answer::Actions(offered))
                             },
                             Maybe::Absent(_) => Answer::Nothing,
@@ -5194,6 +5200,46 @@ impl Workspace
             })
             .flat_map(|placed| fills(uri, placed, &tried, (published, diagnostics)))
             .collect()
+    }
+
+    /// The quick fixes removing each unused import `asked` meets in the copy of
+    /// the document at `uri` that `peer` is answered from.
+    ///
+    /// # Specification
+    /// - requires: `diagnostics` are the request's, each as the client sent it.
+    /// - ensures: nothing for an unknown document or a copy that is not the
+    ///   latest; otherwise [`removals`] over the latest copy's text and the
+    ///   diagnostics last published for it.
+    /// - provides: the import removals of `textDocument/codeAction`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`removals`], through the request.
+    /// - witness: `server::tests::an_unused_import_is_offered_its_removal_1116`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
+    fn import_removals(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (asked, diagnostics): (Range, &[Value]),
+    ) -> Vec<CodeAction>
+    {
+        let (Maybe::Present(document), Some((version, published))) =
+            (self.view(uri, peer), self.published(uri))
+        else {
+            return Vec::new();
+        };
+        if version != document.version {
+            return Vec::new();
+        }
+        let text = document.text.source();
+        removals(
+            uri,
+            published,
+            (text, &LineIndex::new(<&str>::from(text).into())),
+            (asked, diagnostics),
+        )
     }
 
     /// `item`, offered by a completion request, resolved off the copy of the
@@ -11190,6 +11236,141 @@ mod tests
             opened(&mut server, "model/modules/model-manifest-type.gandr"),
             [""; 0],
             "a model type reads its theory through the import declaring it"
+        );
+    }
+
+    /// `answered.gandr` reads nothing through its import: a code action
+    /// request over the import is offered its removal, preferred, deleting the
+    /// import's line, and the document without it still checks; a request
+    /// elsewhere is offered none. `methods.gandr` reads nothing through two of
+    /// its imports: a request over the first is offered its removal and then
+    /// the removal of both at once, which leaves a document that still checks.
+    #[test]
+    fn an_unused_import_is_offered_its_removal_1116()
+    {
+        let mut server = initialized();
+        let opened = |server: &mut Connected, file: &str| {
+            let path = std::fs::canonicalize(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../surface-corpus/fixture")
+                    .join(file),
+            )
+            .expect("the corpus source is checked out");
+            let text = std::fs::read_to_string(&path).expect("the corpus source reads");
+            let uri = format!("file://{}", path.display());
+            let notification = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32,
+                "text": text}}});
+            let published = send(server, Json(&notification.to_string()));
+            (uri, text, published[0]["params"]["diagnostics"].clone())
+        };
+        let ask = |server: &mut Connected, uri: &str, line: u32, judged: &Value| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 2_i32,
+                "method": "textDocument/codeAction", "params": {"textDocument": {"uri": uri},
+                "range": {"start": {"line": line, "character": 3_u32},
+                "end": {"line": line, "character": 3_u32}},
+                "context": {"diagnostics": judged}}});
+            send(server, Json(&request.to_string()))
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|message| message["id"] == 2_i32)
+                .and_then(|answer| answer["result"].as_array().cloned())
+                .map(|actions| {
+                    actions
+                        .into_iter()
+                        .filter(|action| {
+                            action["title"]
+                                .as_str()
+                                .is_some_and(|title| title.starts_with("Remove"))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let lines = |from: u32, to: u32| {
+            serde_json::json!({"range": {"start": {"line": from, "character": 0_u32},
+                "end": {"line": to, "character": 0_u32}}, "newText": ""})
+        };
+        let hinted = |judged: &Value| {
+            Value::Array(
+                judged
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|diagnostic| diagnostic["code"] == "UnusedImport")
+                    .cloned()
+                    .collect(),
+            )
+        };
+        let without = |text: &str, removed: &alloc::collections::BTreeSet<usize>| -> String {
+            text.split_inclusive('\n')
+                .enumerate()
+                .filter(|&(line, _)| !removed.contains(&line))
+                .map(|(_, written)| written)
+                .collect()
+        };
+        let refusals = |server: &mut Connected, uri: &str, text: String| {
+            let notification = serde_json::json!({"jsonrpc": "2.0",
+                "method": "textDocument/didChange", "params": {"textDocument": {"uri": uri,
+                "version": 2_i32}, "contentChanges": [{"text": text}]}});
+            send(server, Json(&notification.to_string()))[0]["params"]["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|diagnostic| diagnostic["severity"] == 1_i32)
+                .count()
+        };
+        let (uri, text, judged) = opened(&mut server, "model/cancellation/answered.gandr");
+        assert_eq!(
+            ask(&mut server, &uri, 4, &judged),
+            [
+                serde_json::json!({"title": "Remove the unused import `./cancel-base.gandr`",
+                "kind": "quickfix", "diagnostics": hinted(&judged), "isPreferred": true,
+                "edit": {"changes": {&uri: [lines(4, 5)]}}})
+            ],
+            "the import alone on its line is removed with its line break"
+        );
+        assert_eq!(
+            ask(&mut server, &uri, 9, &judged),
+            [Value::Null; 0],
+            "a range elsewhere is offered no removal"
+        );
+        assert_eq!(
+            refusals(&mut server, &uri, without(&text, &[4_usize].into())),
+            0,
+            "the scope checks without its import"
+        );
+        let (uri, text, judged) = opened(&mut server, "model/strings/methods.gandr");
+        let offered = ask(&mut server, &uri, 11, &judged);
+        assert_eq!(
+            offered
+                .iter()
+                .map(|action| (
+                    action["title"].clone(),
+                    action["edit"]["changes"][&uri].clone()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Value::from("Remove the unused import `./nul-terminated.gandr`"),
+                    serde_json::json!([lines(11, 12)])
+                ),
+                (
+                    Value::from("Remove all unused imports"),
+                    serde_json::json!([lines(11, 12), lines(12, 13)])
+                ),
+            ],
+            "the first import is offered its own removal, then both unused ones at once"
+        );
+        assert_eq!(
+            refusals(
+                &mut server,
+                &uri,
+                without(&text, &[11_usize, 12_usize].into())
+            ),
+            0,
+            "the methods check without both"
         );
     }
 
