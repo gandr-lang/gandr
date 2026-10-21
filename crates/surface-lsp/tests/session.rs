@@ -927,14 +927,16 @@ fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
     messages.extend(closing());
     let (served, written) = session(&messages);
     assert_eq!(served, Served::Clean, "the session ends cleanly");
-    // An unused binder's hint is the editor's own, read off the type table;
-    // the walk reports the model's diagnostics alone.
+    // An unused binder's and an unused import's hints are the editor's own,
+    // read off the composition; the walk reports the model's diagnostics alone.
     let mut publications = BTreeMap::new();
     for message in &written {
         if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
             let modelled = published(message)
                 .into_iter()
-                .filter(|diagnostic| diagnostic["code"] != "UnusedBinder")
+                .filter(|diagnostic| {
+                    diagnostic["code"] != "UnusedBinder" && diagnostic["code"] != "UnusedImport"
+                })
                 .collect::<Vec<_>>();
             let _prior = publications.insert(uri.to_owned(), modelled);
         }

@@ -1830,7 +1830,7 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Absent(_) => true,
     })]
     pub(super) fn constructor_named(
-        &self,
+        &mut self,
         site: Site,
         name: SurfaceName<'source>,
     ) -> Maybe<Constructor, constructed::Absent>
@@ -1840,21 +1840,22 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(constructed::Absent::Unnamed);
         };
         let source = self.collected.unit.source_at(site.at.span.start());
-        let found = match self.collected.constructors.get(&(source, name)) {
-            Some(&found) => found,
+        let (found, import) = match self.collected.constructors.get(&(source, name)) {
+            Some(&found) => (found, None),
             None => match self.collected.imported_constructor(source, name) {
-                Ok(Maybe::Present((found, _import))) => found,
+                Ok(Maybe::Present((found, import))) => (found, Some(import)),
                 Ok(Maybe::Absent(_)) | Err(_) => {
                     return Maybe::Absent(constructed::Absent::Unnamed);
                 },
             },
         };
-        if found.family < own {
-            Maybe::Present(found)
+        if found.family >= own {
+            return Maybe::Absent(constructed::Absent::Unnamed);
         }
-        else {
-            Maybe::Absent(constructed::Absent::Unnamed)
+        if let Some(import) = import {
+            self.collected.reach(import);
         }
+        Maybe::Present(found)
     }
 
     /// The constructor `head`, the head of a call written at `site`, names.
@@ -1876,7 +1877,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn constructor_head(
-        &self,
+        &mut self,
         site: Site,
         head: Placed,
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
@@ -3640,10 +3641,16 @@ impl<'source> Lowerer<'_, 'source>
             let module = match container {
                 crate::module::Container::Module(module) => module,
                 crate::module::Container::TopLevel(source) => {
-                    return Ok(match self.collected.imported_slot(source, name) {
-                        Ok(Maybe::Present((target, _import))) if is_loop(target) => Declared::Loop,
-                        Ok(_) | Err(_) => Declared::Binder,
-                    });
+                    let Ok(Maybe::Present((target, import))) =
+                        self.collected.imported_slot(source, name)
+                    else {
+                        return Ok(Declared::Binder);
+                    };
+                    if !is_loop(target) {
+                        return Ok(Declared::Binder);
+                    }
+                    self.collected.reach(import);
+                    return Ok(Declared::Loop);
                 },
             };
             container = self
@@ -4040,7 +4047,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
     #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(fields.len()))]
     fn constructor_pattern(
-        &self,
+        &mut self,
         site: Site,
         here: Site,
         head: Placed,

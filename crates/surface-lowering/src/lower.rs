@@ -4158,6 +4158,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             None => (nested, resolutions),
         };
+        // A model's theory and a block's include, resolved while collecting,
+        // reach the imports of the source declaring what they name.
+        let mut collected = collected;
+        let crossed: Vec<(SourceIndex, SourceIndex)> = collected
+            .declared_uses
+            .iter()
+            .filter_map(|&(span, slot)| {
+                let declared = collected.slots.get(usize::from(slot))?.named.span.start();
+                Some((
+                    collected.unit.source_at(span.start()),
+                    collected.unit.source_at(declared),
+                ))
+            })
+            .filter(|&(using, declaring)| using != declaring)
+            .collect();
+        for (using, declaring) in crossed {
+            collected.reach_source(using, declaring);
+        }
+        let reached: Vec<ByteSpan> = collected.reached.iter().copied().collect();
         let operation_rules = collected
             .operations
             .iter()
@@ -4190,6 +4209,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_nested_sites(nested)
         .with_in_scope(in_scope)
         .with_resolutions(resolutions)
+        .with_reached_imports(reached)
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
         .with_supplies(supplies))
@@ -6287,10 +6307,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && name.as_ref() == THEORY_CODE
                     && let Maybe::Present(code) = self.collected.theory_in(source)
                     && code < own
-                    && let Some(entry) = self.collected.slots.get(usize::from(code))
+                    && let Some(constant) = self
+                        .collected
+                        .slots
+                        .get(usize::from(code))
+                        .map(|entry| entry.constant)
                 {
+                    if let Some(import) = self.collected.theory_import(source) {
+                        self.collected.reach(import);
+                    }
                     return Ok(Maybe::Present(Resolved::Declaration {
-                        constant: entry.constant,
+                        constant,
                         declared: Maybe::Absent(binder_type::Absent::Untyped),
                     }));
                 }
@@ -6340,13 +6367,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Err(_) => false,
     })]
     fn imported(
-        &self,
+        &mut self,
         site: Site,
         source: SourceIndex,
         name: SurfaceName<'source>,
     ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
     {
-        let (target, _import) = match self.collected.imported_slot(source, name) {
+        let (target, import) = match self.collected.imported_slot(source, name) {
             Ok(Maybe::Present(found)) => found,
             Ok(Maybe::Absent(_)) => return Ok(Maybe::Absent(named::Absent::Unresolved)),
             Err(ambiguity) => {
@@ -6358,6 +6385,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 });
             },
         };
+        self.collected.reach(import);
         self.exported(site, name, target)
     }
 
@@ -6453,7 +6481,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. })
     ))]
     fn aliased_member(
-        &self,
+        &mut self,
         site: Site,
         alias: Placed,
         selected: Placed,
@@ -6482,6 +6510,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(unknown);
         };
+        self.collected.reach(import.span());
         let read = Site {
             at: selected,
             ..site
@@ -9102,6 +9131,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             segments.push(Segment::from(self.text_at(selected).as_ref()));
         }
         let path = NamePath::from(segments);
+        self.collected.reach_declaring(
+            self.collected.unit.source_at(site.at.span.start()),
+            self.name_at(head),
+        );
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
                 self.plan(site, Plan::Primitive(primitive));
@@ -9721,6 +9754,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             segments.push(Segment::from(self.text_at(selected).as_ref()));
         }
         let path = NamePath::from(segments);
+        self.collected.reach_declaring(
+            self.collected.unit.source_at(site.at.span.start()),
+            self.name_at(head),
+        );
         match self.recognition.resolve_path(&path) {
             PathResolution::Complete(Recognized::ModuleType) => {
                 self.module_type(site, &path, member)

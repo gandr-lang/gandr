@@ -3628,3 +3628,91 @@ fn a_rejection_reason_reads_as_the_text_it_was_given()
         assert_eq!(reason.to_string(), given, "and displays it");
     }
 }
+
+/// Each importer reads its base by one route, and the last reads nothing: the
+/// imports read through are the reached ones, the last alone is not.
+#[test]
+fn each_import_a_name_is_read_through_is_reached()
+{
+    let pbg = grammar();
+    let on = |source: usize| [ImportTarget::Source(SourceIndex::from(source))];
+    let (first, fourth) = (on(0_usize), on(4_usize));
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "data Point : Type { One : Point; }\nmodule Cancel :> #{\n  notes : String\n} \
+                 {\n  def notes = \"notes\";\n}\nmodule Str { def len(self : shared Integer) \
+                 -> -F Integer { pure self } }\ndef seven : Integer ;\ndef seven = 7 ;",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef value : Integer ;\ndef value = seven ;",
+            ),
+            &first,
+        ),
+        (
+            SourceText::from("import \"./base.gandr\" ;\ndef made = One ;"),
+            &first,
+        ),
+        (
+            SourceText::from("import \"./base.gandr\" ;\ndef kept(p : Point) -> -F Point { p }"),
+            &first,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef member : String ;\ndef member = Cancel.notes ;",
+            ),
+            &first,
+        ),
+        (
+            SourceText::from(
+                "import \"./member.gandr\" ;\ndef far : String ;\ndef far = Cancel.notes ;",
+            ),
+            &fourth,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" as base ;\ndef aliased : Integer ;\ndef aliased = \
+                 base.seven ;",
+            ),
+            &first,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef measured() -> -F Integer { hold s = 1; s.len() }",
+            ),
+            &first,
+        ),
+        (
+            SourceText::from("import \"./base.gandr\" ;\ndef idle : Integer ;\ndef idle = 1 ;"),
+            &first,
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let refused: Vec<String> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| matches!(declaration.outcome(), DeclarationOutcome::Refused(_)))
+        .map(|declaration| String::from(declaration.name().as_ref()))
+        .collect();
+    assert_eq!(refused, Vec::<String>::new(), "every importer lowers");
+    let imports: Vec<ByteSpan> = module
+        .imports()
+        .iter()
+        .map(ImportDeclaration::span)
+        .collect();
+    let (idle, read) = imports.split_last().expect("the importers import");
+    assert_eq!(
+        module.reached_imports(),
+        read,
+        "a value, a constructor, a type head, a module member, one through an import of an \
+         import, an aliased member and a method each reach the import they are read through"
+    );
+    assert!(
+        !module.reached_imports().contains(idle),
+        "an import nothing is read through is not reached"
+    );
+}

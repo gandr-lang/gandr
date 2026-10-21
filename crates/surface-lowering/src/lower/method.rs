@@ -1219,6 +1219,9 @@ impl<'source> Lowerer<'_, 'source>
                 && let Some(named) = self.collected.structures.get(usize::from(module))
             {
                 found.push((slot, mode, named.name));
+                if let Some(source) = declared_in {
+                    self.collected.reach_source(here, source);
+                }
             }
         }
 

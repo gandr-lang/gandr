@@ -210,6 +210,9 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::CarriedOrigins;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::ImportDeclaration;
+use gandr_surface_lowering::ImportResolution;
+use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -411,6 +414,11 @@ pub enum Composed<'source>
         /// hint the editor fades. An unused consumable capability is the
         /// checker's refusal, so every such binder may be dropped.
         unused: Vec<ByteSpan>,
+        /// Every path import the source writes that no use written in it
+        /// reaches, ascending: each a hint the editor fades. An import brings
+        /// in its target's own declarations, so one whose target holds no
+        /// declaration or constructor a use names may be dropped.
+        unreached: Vec<ByteSpan>,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -480,6 +488,7 @@ impl Composed<'_>
                 inferred,
                 runs,
                 unused,
+                unreached,
                 program,
                 ..
             } => Self::Settled {
@@ -493,6 +502,7 @@ impl Composed<'_>
                 inferred,
                 runs,
                 unused,
+                unreached,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -2101,6 +2111,8 @@ struct Share<'source>
     runs: Vec<InferredRun>,
     /// The binders its accepted declarations write and never read.
     unused: Vec<ByteSpan>,
+    /// The path imports it writes that no use of its own reaches.
+    unreached: Vec<ByteSpan>,
 }
 
 /// Judge and settle one lowered unit once, and project the composition onto
@@ -2389,7 +2401,8 @@ fn owned<'source>(
 /// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 #[spec(ensures: |ref ret| ret.shadowed.iter().all(|shadow| member.start <= shadow.span.start() && shadow.span.start() <= member.end)
     && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end)
-    && ret.unused.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
+    && ret.unused.iter().all(|span| member.start <= span.start() && span.start() <= member.end)
+    && ret.unreached.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
 fn share<'source>(
     member: Member,
     (report, spellings): (SettleReport<'source>, TypeSpellings),
@@ -2411,6 +2424,7 @@ fn share<'source>(
     let mut runs = unit.runs.clone();
     runs.retain(|run| own(run.span));
     let unused = unused_binders(arena, module, &report, own);
+    let unreached = unreached_imports(module, member);
     Share {
         report,
         exercised,
@@ -2420,6 +2434,7 @@ fn share<'source>(
         inferred,
         runs,
         unused,
+        unreached,
     }
 }
 
@@ -2534,6 +2549,60 @@ fn unused_binders(
     unused
 }
 
+/// The bytes of each path import written in `member` that no name lookup was
+/// answered through, ascending and once each.
+///
+/// A name after a refusal in its declaration is never looked up, so a source
+/// holding a declaration the lowering refused answers none.
+///
+/// # Specification
+/// - requires: `member` is a source's own bytes in the unit `module` lowered.
+/// - ensures: every span returned is the bytes of an import of `module`
+///   starting in `member` whose address resolved to a source of the unit and
+///   that [`LoweredModule::reached_imports`] does not hold; none when a
+///   declaration starting in `member` was refused; the spans ascend without
+///   repeats.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer reading a sibling's value, its constructor,
+///   its family only in a type, a module member, through an alias, and nothing;
+///   an unresolved import; a refused declaration.
+/// - witness: `compose::tests::an_import_no_lookup_reaches_is_unreached`
+#[spec(ensures: |ref ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first < second)))]
+fn unreached_imports(
+    module: &LoweredModule<'_>,
+    member: Member,
+) -> Vec<ByteSpan>
+{
+    let own = |offset: ByteOffset| member.start <= offset && offset <= member.end;
+    let refused = module.declarations().iter().any(|declaration| {
+        own(declaration.span().start())
+            && matches!(declaration.outcome(), DeclarationOutcome::Refused(_))
+    });
+    if refused {
+        return Vec::new();
+    }
+    let reached = module.reached_imports();
+    let mut unreached: Vec<ByteSpan> = module
+        .imports()
+        .iter()
+        .filter(|import| own(import.span().start()))
+        .filter(|import| {
+            matches!(
+                import.resolution(),
+                ImportResolution::Path(ImportTarget::Source(_))
+            )
+        })
+        .map(ImportDeclaration::span)
+        .filter(|span| reached.binary_search(span).is_err())
+        .collect();
+    unreached.sort_unstable();
+    unreached.dedup();
+    unreached
+}
+
 /// The settled composition of one source's `share`, joined by the unit-wide
 /// origins, failures and program, its kernel artifact pending.
 ///
@@ -2554,6 +2623,7 @@ fn settled<'source>(
         shadowed: share.shadowed,
         inferred: share.inferred,
         unused: share.unused,
+        unreached: share.unreached,
         runs: share.runs,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         program,
@@ -4412,6 +4482,7 @@ def h = 1 ;"#,
                 inferred,
                 runs,
                 unused,
+                unreached: Vec::new(),
                 kernel: Maybe::Present(kernel),
                 program,
             };
@@ -5649,6 +5720,96 @@ def h = 1 ;"#,
                 ),
             ],
             "each source reports its own declarations, debts and shadowed builtins"
+        );
+    }
+
+    /// An importer reading one base and not another reports the other's
+    /// import alone; an importer whose own declaration the lowering refused
+    /// reports none, its names past the refusal never read.
+    #[test]
+    fn an_import_no_lookup_reaches_is_unreached()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::SpellingCount;
+        use super::judge_component;
+        use super::lower_parsed_unit;
+        use crate::component::Member;
+
+        let grammar = grammar();
+        let sources = [
+            "def seven : Integer ;\ndef seven = 7 ;",
+            "def eight : Integer ;\ndef eight = 8 ;",
+            "import \"./seven.gandr\" ;\nimport \"./eight.gandr\" ;\ndef value : Integer ;\ndef \
+             value = seven ;",
+            "import \"./eight.gandr\" ;\ndef broken : Integer ;\ndef broken = nowhere ;",
+        ];
+        // A component joins its sources with a newline, as the walk lays them.
+        let text = sources.join("\n");
+        let mut members = Vec::new();
+        let mut start = 0_usize;
+        for source in sources {
+            let end = start.saturating_add(source.len());
+            members.push(Member {
+                start: ByteOffset::from(start),
+                end: ByteOffset::from(end),
+            });
+            start = end.saturating_add(1_usize);
+        }
+        let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+        let unit = Unit::new(
+            members
+                .iter()
+                .zip([
+                    Vec::new(),
+                    Vec::new(),
+                    vec![on(0_usize), on(1_usize)],
+                    vec![on(1_usize)],
+                ])
+                .map(|(member, imports)| UnitSource::new(member.start, imports))
+                .collect(),
+        )
+        .expect("four sources make a unit");
+        let lowering = lower_parsed_unit(
+            &grammar,
+            parse(&grammar, SourceText::from(text.as_str())).expect("the component parses"),
+            &unit,
+            &mut LoweringCount::default(),
+        )
+        .expect("the component lowers");
+        let unreached: Vec<Vec<&str>> = judge_component(
+            CorpusRoot::Fixture,
+            (lowering, SourceText::from(text.as_str())),
+            &HostGrant::UNBOUNDED,
+            &members,
+            &mut SpellingCount::default(),
+        )
+        .into_iter()
+        .map(|composed| match composed {
+            Ok(Composed::Settled { unreached, .. }) => unreached
+                .iter()
+                .map(|span| {
+                    text.get(usize::from(span.start()) .. usize::from(span.end()))
+                        .unwrap_or_default()
+                })
+                .collect(),
+            Ok(Composed::Refused(refusal)) => panic!("refused whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
+        })
+        .collect();
+        assert_eq!(
+            unreached,
+            [
+                Vec::new(),
+                Vec::new(),
+                Vec::from(["import \"./eight.gandr\" ;"]),
+                Vec::new()
+            ],
+            "the importer reports the import it reads nothing through; the refused one none"
         );
     }
 }

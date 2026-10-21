@@ -1074,6 +1074,7 @@ def broken = missing ;"#,
             inferred: Vec::new(),
             runs: Vec::new(),
             unused: Vec::new(),
+            unreached: Vec::new(),
             program,
         };
         let mut engine = RunReport::default();
