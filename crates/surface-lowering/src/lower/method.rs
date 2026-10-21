@@ -1,7 +1,8 @@
 //! Method calls in the lowering: a call `s.f(a, …)` whose `f` is a method of
 //! a module in scope reads, writes or takes its receiver `s` as the method's
-//! receiver mode says, and a method that writes its receiver through holds it
-//! over its body.
+//! receiver mode says, a method that writes its receiver through holds it
+//! over its body, and a method whose mode is deduced answers a place of its
+//! receiver that each call lends at the mode its block asks.
 //!
 //! # A call is the access its receiver lends
 //!
@@ -32,6 +33,29 @@
 //! f(self : T, …) -> -F R` lowers as `hold self = self ; r <- b ; pure (self,
 //! r)`, and its declared result is `-F (T, R)`. Every exit of `b` ends `b`
 //! inside the hold, so its value is the answer paired.
+//!
+//! # A deduced mode lends the place the method answers
+//!
+//! A method whose receiver is written at a mode its telescope binds, `def
+//! f @[m : Mode] (self : m T, …) -> -F View[m](a) { self[e] }`, answers the
+//! place `self[e]` of its receiver: never a value, and never a lens. It lowers
+//! to the function answering the place's index, which lends its receiver's
+//! place shared to judge the element there at `a`: `hold p = self ; access
+//! shared p[e] as v { run _ : a <- pure v ; pure e }`, declared `-F Integer`.
+//! Its body is that place alone; any other body, or a result other than
+//! `-F View[m](a)` over the receiver's own mode, is
+//! [`LoweringRefusal::ViewNotPlace`]. A call lends the place of a held
+//! receiver at that index, the index computed reading the receiver shared:
+//!
+//! | call | lowers to |
+//! |---|---|
+//! | `s.f(a) as w { b }` | `i <- access shared s as v { f(v, a) } ; access[m] s[i] as w { b }` |
+//! | `s.f(a)` | `i <- access shared s as v { f(v, a) } ; access shared s[i] as w { pure w }` |
+//!
+//! where `m` is exclusive when `b` ends `w` by `resume` or `abort` and shared
+//! otherwise; an exclusive lend unwinds by `pure unit`. A receiver that is
+//! no held slot has no place to lend, [`FragmentBoundary::Held`], and a block
+//! after a call of any other method is [`LoweringRefusal::ViewOfNoPlace`].
 
 use alloc::vec::Vec;
 
@@ -53,6 +77,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Block;
 use super::Lowered;
 use super::Lowerer;
 use super::Parameter;
@@ -65,10 +90,12 @@ use super::Site;
 use super::Stretch;
 use super::arguments;
 use super::arity::Planned;
+use super::closed;
 use super::lowered;
 use super::stretch;
 use crate::CandidateCount;
 use crate::SurfaceName;
+use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::form::Cursor;
@@ -76,6 +103,7 @@ use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
+use crate::form::Placed;
 use crate::form::Run;
 use crate::form::TileName;
 use crate::form::read_pieces;
@@ -90,6 +118,7 @@ use crate::namespace::Segment;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
+use crate::resolve::ScopeId;
 use crate::resolve::binder_site;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
@@ -132,6 +161,69 @@ pub(super) enum Receiving
     /// A receiver that is no held slot, read as a value where the call stands
     /// and passed as the first argument.
     Passed,
+    /// The held slot's place the method answers, its index read through a
+    /// shared view, lent to the call's block or read without one.
+    Viewed
+    {
+        /// The slot, a linear index.
+        held: DeBruijnIndex,
+        /// The block the place is lent to.
+        view: Maybe<ViewBlock, unviewed::Absent>,
+    },
+}
+
+/// The block a call of a method answering a place lends the place to, `s.f(a)
+/// as w { b }`.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `body` reads under `binder`, the view `w`'s linear binder over
+///   the index's; `call` is the call `s.f(a)` the block follows.
+/// - executable: none — the plan holds no scope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block that ends its view and one that reads it.
+/// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct ViewBlock
+{
+    /// The view's binder, which a `resume` or `abort` in the block ends.
+    binder: ScopeId,
+    /// The block.
+    body: Block,
+    /// The call the block follows, whose own application stands there.
+    call: NodeIndex,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a call of a method answering a place lends it to no block.
+    pub mod unviewed {
+        /// The call has no block.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The call stands alone, reading its place.
+            Read,
+        }
+    }
+}
+
+/// The place a method answering a view ends in, `self[e]`.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `element` is the view's element type `a` of the method's result
+///   `-F View[m](a)`, read as a value type past every parameter.
+/// - executable: none — the plan holds no scope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a method answering its receiver's first element.
+/// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub(super) struct ViewPlace
+{
+    /// The view's element type.
+    element: NodeIndex,
 }
 
 /// A method call, as the classification read it.
@@ -221,16 +313,18 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Refuse a mode word written on a parameter of the function at
-    /// `function` that is no receiver.
+    /// Refuse a mode word or a mode variable written on a parameter of the
+    /// function at `function` that is no receiver.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the parameter list's `(`;
     ///   `receiver` is the function's receiver mode.
     /// - ensures: `Ok` when every mode word stands on the first parameter of a
-    ///   method, named `self`.
+    ///   method, named `self`, and every moded type, `m T`, on that of a method
+    ///   whose mode is deduced.
     /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the first mode word
-    ///   that does not.
+    ///   or mode variable that does not; [`LoweringRefusal::UnknownMold`]
+    ///   reading a parameter's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -238,9 +332,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a mode word on a top-level function's parameter and
-    ///   on a method's second parameter, each refused at the word.
+    ///   on a method's second parameter, and a mode variable on a top-level
+    ///   function's parameter, each refused at the word.
     /// - witness: `lower::method::tests::a_mode_word_off_a_receiver_is_refused`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. })))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn stray_modes(
         &self,
         cursor: &Cursor<'_>,
@@ -252,34 +347,126 @@ impl<'source> Lowerer<'_, 'source>
         let mut named = SurfaceName::from("");
         let mut after_colon = false;
         while let Maybe::Present(piece) = ahead.read() {
-            match piece {
+            let receiving = position == 0_usize && named.as_ref() == "self";
+            let stray = match piece {
                 Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => break,
                 Piece::Tile { label, at } if label == TileName::IDENTIFIER && !after_colon => {
                     named = self.name_at(at);
+                    None
                 },
-                Piece::Tile { label, .. } if label == TileName::COLON => after_colon = true,
+                Piece::Tile { label, .. } if label == TileName::COLON => {
+                    after_colon = true;
+                    None
+                },
                 Piece::Tile { label, at }
                     if after_colon
                         && (label == TileName::SHARED || label == TileName::CONSUMED) =>
                 {
                     let receives =
-                        position == 0_usize && named.as_ref() == "self" && receiver.is_some();
-                    if !receives {
-                        return Err(LoweringRefusal::StrayReceiverMode {
-                            span: at.span,
-                            mode: self.name_at(at),
-                        });
-                    }
+                        receiving && receiver.is_some_and(|mode| mode != ReceiverMode::Deduced);
+                    (!receives).then_some(at)
+                },
+                Piece::Operand(declared) if after_colon => match self.moded(declared)? {
+                    Some((written, _)) => {
+                        let receives = receiving && receiver == Some(ReceiverMode::Deduced);
+                        (!receives).then_some(written)
+                    },
+                    None => None,
                 },
                 Piece::Tile { label, .. } if label == TileName::COMMA => {
                     position = position.saturating_add(1_usize);
                     after_colon = false;
+                    None
                 },
-                Piece::Tile { .. } | Piece::Operand(_) => {},
+                Piece::Tile { .. } | Piece::Operand(_) => None,
+            };
+            if let Some(at) = stray {
+                return Err(LoweringRefusal::StrayReceiverMode {
+                    span: at.span,
+                    mode: self.name_at(at),
+                });
             }
         }
 
         Ok(())
+    }
+
+    /// The mode variable and the type a moded type `m T` at `declared` writes,
+    /// when `declared` is one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the variable's tile and the type after it for a moded type;
+    ///   nothing for any other form.
+    /// - fails: [`LoweringRefusal::UnknownMold`] reading the form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a receiver at a mode variable, and a parameter whose
+    ///   type is a type variable alone, `x : t`.
+    /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
+    /// - witness: `lower::method::tests::a_mode_word_off_a_receiver_is_refused`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn moded(
+        &self,
+        declared: Placed,
+    ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::ModedType)) = self.form_at(declared)?
+        else {
+            return Ok(None);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, declared.node, &mut pieces)?;
+
+        Ok(match *pieces.pieces.as_slice() {
+            [
+                Piece::Tile {
+                    label: TileName::TYPE_VARIABLE,
+                    at: written,
+                },
+                Piece::Operand(typed),
+            ] => Some((written, typed)),
+            _ => None,
+        })
+    }
+
+    /// Refuse a moded type `m T` read as a type: a mode variable stands only
+    /// on a method's receiver, whose parameter reads it before its type.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the form's first piece.
+    /// - ensures: never `Ok`.
+    /// - fails: [`LoweringRefusal::StrayReceiverMode`] at the variable; a
+    ///   misplaced tile when the form opens on none.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a moded type inside a parameter's type, refused at
+    ///   its variable.
+    /// - witness: `lower::method::tests::a_mode_word_off_a_receiver_is_refused`
+    #[spec(ensures: |ret| ret.is_err())]
+    pub(super) fn moded_type(
+        &self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Maybe::Present(written) = cursor.tile(TileName::TYPE_VARIABLE)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+
+        Err(LoweringRefusal::StrayReceiverMode {
+            span: written.span,
+            mode: self.name_at(written),
+        })
     }
 
     /// Hold the receiver of a written-through method over its body: bind
@@ -339,20 +526,94 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands at the call's head.
+    /// - ensures: as [`Self::method_at`] with no view block.
+    /// - fails: as [`Self::method_at`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::method_at`].
+    /// - witness: `lower::method::tests::each_mode_lowers_to_its_access`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
+    pub(super) fn method(
+        &mut self,
+        site: Site,
+        cursor: &Cursor<'_>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        self.method_at(site, cursor, None)
+    }
+
+    /// Classify the view block `e as w { b }` at `site`: `e` a call of a
+    /// method answering a place, which the block's view lends.
+    ///
+    /// # Specification
+    /// - requires: `site` is a view block and `pieces` its own.
+    /// - ensures: the block stands as the call [`Self::method_at`] plans of
+    ///   `e`, lending the place to `b` under `w`.
+    /// - fails: [`LoweringRefusal::ViewOfNoPlace`] at `e` when it is no call of
+    ///   a method, or one of a method answering no place; the call's own
+    ///   refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The block's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block after a call of a method answering a place,
+    ///   and after one of a method that reads its receiver.
+    /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    /// - witness: `lower::method::tests::a_view_block_after_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
+    pub(super) fn view_call(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        let call = site.one(cursor.operands())?;
+        let refused = LoweringRefusal::ViewOfNoPlace { span: call.span };
+        let Some((_, Former::Call)) = self.form_at(call)?
+        else {
+            return Err(refused);
+        };
+        let mut called = Pieces::new();
+        read_pieces(self.pbg, self.tree, call.node, &mut called)?;
+        let head = Cursor::new(&called.pieces, call.span);
+        match self.method_at(site, &head, Some((call.node, &mut cursor)))? {
+            Planned(true) => Ok(()),
+            Planned(false) => Err(refused),
+        }
+    }
+
+    /// Classify the call `cursor` reads, at `site`, as a method call when its
+    /// head selects a method off a name, lending a view block the place a
+    /// method answering one answers.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the call's head; `view`, when given,
+    ///   names the call's node and stands at the `as` of the view block the
+    ///   call heads.
     /// - ensures: a head `s.f` whose `s` is a name a binder or a declaration
     ///   answers and whose `f` one module in scope declares as a method stands
     ///   as a computation, planned as the call its receiver mode makes of a
     ///   receiver held in a slot, or of one passed as a value, as the module
     ///   documentation tabulates; each argument reads as a value under the
-    ///   binder that call opens; any other call is left unplanned.
+    ///   binder that call opens, and a view block's body under its view's
+    ///   linear binder over the index's; any other call is left unplanned.
     /// - fails: [`LoweringRefusal::AmbiguousMethod`] at `f` for a method more
     ///   than one module in scope declares; the forward-member refusal for a
     ///   method declared at or after the call's declaration;
     ///   [`LoweringRefusal::ImplicitUnsupplied`] for a method with an implicit
     ///   telescope, which a call off its receiver supplies nothing;
-    ///   [`FragmentBoundary::Held`] at `s` for a written-through call on a
-    ///   receiver that is no held slot; the wrong-sort refusal where no
-    ///   computation is read; the name's and the argument list's refusals.
+    ///   [`FragmentBoundary::Held`] at `s` for a written-through call, or one
+    ///   of a method answering a place, on a receiver that is no held slot;
+    ///   [`LoweringRefusal::ViewOfNoPlace`] at `f` for a view block after a
+    ///   method answering no place; the wrong-sort refusal where no computation
+    ///   is read; the name's, the argument list's and the block's refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -361,16 +622,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a call at each mode, a call on a receiver that is not
     ///   held, an ambiguous method, a forward one and one with an implicit
-    ///   telescope.
+    ///   telescope; a call of a method answering a place with a block and
+    ///   without one.
     /// - witness: `lower::method::tests::each_mode_lowers_to_its_access`
     /// - witness: `lower::method::tests::a_receiver_not_held_is_passed_or_refused`
     /// - witness: `lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `lower::method::tests::a_receiver_is_a_typed_first_self`
+    /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Method(_))))]
-    pub(super) fn method(
+    fn method_at(
         &mut self,
         site: Site,
         cursor: &Cursor<'_>,
+        view: Option<(NodeIndex, &mut Cursor<'_>)>,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
         let mut ahead = cursor.clone();
@@ -457,6 +721,11 @@ impl<'source> Lowerer<'_, 'source>
             Resolved::Binder(_) | Resolved::Declaration { .. } => None,
         };
         let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
+        if view.is_some() && mode != ReceiverMode::Deduced {
+            return Err(LoweringRefusal::ViewOfNoPlace {
+                span: selected.span,
+            });
+        }
         let (receiving, inner) = match (mode, held) {
             (ReceiverMode::Shared, Some(held)) => (
                 Receiving::Read { held },
@@ -476,11 +745,44 @@ impl<'source> Lowerer<'_, 'source>
                 Receiving::Taken { held },
                 Frame::Inner(self.scope.extend(frame, SurfaceName::from(""), unwritten())),
             ),
+            (ReceiverMode::Deduced, Some(held)) => {
+                let view = match view {
+                    Some((call, block)) => {
+                        closed(site, block, TileName::AS)?;
+                        let Maybe::Present(viewer) = block.tile(TileName::IDENTIFIER)
+                        else {
+                            return Err(site.fault(block.here(), FormFault::MisplacedTile));
+                        };
+                        let name = self.name_at(viewer);
+                        self.note_binder(viewer, name)?;
+                        let index = self.scope.extend(frame, SurfaceName::from(""), unwritten());
+                        let binder = self.scope.extend_linear(
+                            Frame::Inner(index),
+                            name,
+                            Maybe::Present(viewer.span),
+                        );
+                        let body = self.block(site, block, Frame::Inner(binder))?;
+                        let _result = self.results.insert(body.last);
+                        Maybe::Present(ViewBlock { binder, body, call })
+                    },
+                    None => Maybe::Absent(unviewed::Absent::Read),
+                };
+                (
+                    Receiving::Viewed { held, view },
+                    Frame::Inner(self.scope.extend_linear(
+                        frame,
+                        SurfaceName::from(""),
+                        unwritten(),
+                    )),
+                )
+            },
             (ReceiverMode::Shared | ReceiverMode::Consumed, None) => {
                 self.read(target.node, Reading::Value(frame));
                 (Receiving::Passed, frame)
             },
-            (ReceiverMode::Exclusive, None) => return Err(receiver.out(FragmentBoundary::Held)),
+            (ReceiverMode::Exclusive | ReceiverMode::Deduced, None) => {
+                return Err(receiver.out(FragmentBoundary::Held));
+            },
         };
         let start = self.operands.len();
         arguments(site, &mut ahead, &mut self.operands)?;
@@ -506,6 +808,331 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(Planned(true))
+    }
+
+    /// The mode variable written at `written` on the receiver of the method
+    /// at `site`, when the method's telescope binds it as a mode.
+    ///
+    /// # Specification
+    /// - requires: `written` is the variable of the receiver's moded type,
+    ///   `self : m T`.
+    /// - ensures: the name `written` spells.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] at `written` when the
+    ///   method's telescope binds no mode of that name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mode variable its telescope binds, and one it does
+    ///   not.
+    /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnresolvedName { .. })))]
+    pub(super) fn mode_variable(
+        &self,
+        site: Site,
+        written: Placed,
+    ) -> Result<SurfaceName<'source>, LoweringRefusal<'source>>
+    {
+        let name = self.name_at(written);
+        let bound = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(slot) => self
+                .mode_binders
+                .get(&slot)
+                .is_some_and(|modes| modes.contains(&name)),
+            Maybe::Absent(_) => false,
+        };
+        if !bound {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: written.span,
+                name,
+            });
+        }
+
+        Ok(name)
+    }
+
+    /// The element type `a` of the result `-F View[m](a)` a method whose
+    /// receiver is at the mode `mode` declares, read as a value type under
+    /// `frame`.
+    ///
+    /// # Specification
+    /// - requires: `result` is the method's written result; `frame` is the
+    ///   frame past every parameter.
+    /// - ensures: the element's node, read as a value type under `frame`, and
+    ///   the view type recorded as one a method's result declares.
+    /// - fails: [`LoweringRefusal::ViewNotPlace`] at the result when it is no
+    ///   `-F View[m](a)`, and at its `m` when that names a mode other than the
+    ///   receiver's; a fault reading the result's pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method answering its receiver's first element, and
+    ///   one declaring a result of another shape.
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || !self.view_types.is_empty())]
+    pub(super) fn view_result(
+        &mut self,
+        result: Placed,
+        mode: SurfaceName<'source>,
+        frame: Frame,
+    ) -> Result<NodeIndex, LoweringRefusal<'source>>
+    {
+        let refused = LoweringRefusal::ViewNotPlace { span: result.span };
+        let Some((_, Former::ReturnerType)) = self.form_at(result)?
+        else {
+            return Err(refused);
+        };
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
+        let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
+        else {
+            return Err(refused);
+        };
+        let Some((_, Former::StagedType)) = self.form_at(view)?
+        else {
+            return Err(refused);
+        };
+        read_pieces(self.pbg, self.tree, view.node, &mut pieces)?;
+        let &[
+            Piece::Operand(head),
+            Piece::Tile {
+                label: TileName::BRACKET_OPEN,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::IDENTIFIER,
+                at: written,
+            },
+            Piece::Tile {
+                label: TileName::BRACKET_CLOSE,
+                ..
+            },
+            Piece::Tile {
+                label: TileName::PAREN_OPEN,
+                ..
+            },
+            Piece::Operand(element),
+            Piece::Tile {
+                label: TileName::PAREN_CLOSE,
+                ..
+            },
+        ] = pieces.pieces.as_slice()
+        else {
+            return Err(refused);
+        };
+        let viewed = matches!(self.form_at(head)?, Some((_, Former::TypeHead)))
+            && self.name_at(head).as_ref() == "View";
+        if !viewed {
+            return Err(refused);
+        }
+        if self.name_at(written) != mode {
+            return Err(LoweringRefusal::ViewNotPlace { span: written.span });
+        }
+        let _fresh = self.view_types.insert(view.node);
+        self.read(element.node, Reading::ValueType(frame));
+
+        Ok(element.node)
+    }
+
+    /// Classify an index `s[e]` at `site`, its pieces under `cursor`.
+    ///
+    /// # Specification
+    /// - requires: `site` is an index; `cursor` stands at its head.
+    /// - ensures: the body of a method answering a view stands as its place, as
+    ///   [`Self::view_place`] plans it.
+    /// - fails: [`FragmentBoundary::Unadmitted`] for an index anywhere else;
+    ///   the place's refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method answering the element at a parameter's
+    ///   index, and an index outside a method's body.
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || self.view_places.contains_key(&site.at.node))]
+    pub(super) fn index_form(
+        &mut self,
+        site: Site,
+        cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        match self.view_places.get(&site.at.node) {
+            Some(&place) => self.view_place(site, cursor, place),
+            None => Err(site.out(FragmentBoundary::Unadmitted)),
+        }
+    }
+
+    /// Record the body `block` of a method answering a view of element type
+    /// `element` as the place it answers.
+    ///
+    /// # Specification
+    /// - requires: `block` is the method's body, read past every parameter.
+    /// - ensures: the block's last computation is recorded as the place, with
+    ///   `element`.
+    /// - fails: [`LoweringRefusal::ViewNotPlace`] at the block's last
+    ///   computation when the block has statements before it or it is no place
+    ///   `s[e]`; a fault reading its form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method answering its receiver's first element, and
+    ///   one whose body is a value.
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || self.view_places.get(&block.last) == Some(&ViewPlace { element }))]
+    pub(super) fn view_body(
+        &mut self,
+        function: Site,
+        block: Block,
+        element: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(block.last)
+        else {
+            return Err(LoweringRefusal::ViewNotPlace {
+                span: function.at.span,
+            });
+        };
+        let last = Placed::of(block.last, node);
+        let shaped = match self.form_at(last)? {
+            Some((_, Former::Instantiation)) => true,
+            Some((_, Former::Access)) => {
+                let mut pieces = Pieces::new();
+                read_pieces(self.pbg, self.tree, last.node, &mut pieces)?;
+                indexed(&pieces).is_some()
+            },
+            _ => false,
+        };
+        if block.statements.start != block.statements.end || !shaped {
+            return Err(LoweringRefusal::ViewNotPlace { span: last.span });
+        }
+        let _first = self.view_places.insert(block.last, ViewPlace { element });
+
+        Ok(())
+    }
+
+    /// Classify the body `self[e]` at `site` of a method answering a view
+    /// whose element type `place` names.
+    ///
+    /// # Specification
+    /// - requires: `site` is the place a method answering a view ends in,
+    ///   recorded as its place: an index `self[e]`, or the instantiation a
+    ///   number in the bracket molds as, `self[0]`; `cursor` stands at its
+    ///   head.
+    /// - ensures: the place stands as a computation, planned as the receiver
+    ///   `self` resolves to, lent shared at `e`, which reads as a value under
+    ///   the place's frame; an instantiation's number is planned as its
+    ///   literal.
+    /// - fails: [`LoweringRefusal::ViewNotPlace`] at the head when it is no
+    ///   name `self` of an intuitionistic binder, and at the place when its
+    ///   bracket holds anything but one index; a malformed-literal refusal for
+    ///   an instantiation's number out of shape; the wrong-sort refusal where
+    ///   no computation is read; a fault naming the place for a tile out of
+    ///   place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The place's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method answering its receiver's first element, one
+    ///   answering the element at a parameter's index, and one answering a
+    ///   place of another name.
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Place { .. }))))]
+    pub(super) fn view_place(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+        place: ViewPlace,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let refused = LoweringRefusal::ViewNotPlace { span: site.at.span };
+        let indexed = matches!(self.form_at(site.at)?, Some((_, Former::Access)));
+        let head = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        let resident = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        if let Maybe::Present(_) = cursor.peek() {
+            return Err(refused);
+        }
+        let named = matches!(self.form_at(head)?, Some((_, Former::Name)))
+            && self.name_at(head).as_ref() == "self";
+        let receiver = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let resolved = if named {
+            self.resolve_name(receiver, frame, self.name_at(head))?
+        }
+        else {
+            return Err(LoweringRefusal::ViewNotPlace { span: head.span });
+        };
+        let Maybe::Present(Resolved::Binder(bound)) = resolved
+        else {
+            return Err(LoweringRefusal::ViewNotPlace { span: head.span });
+        };
+        if bound.zone != Zone::Intuitionistic {
+            return Err(LoweringRefusal::ViewNotPlace { span: head.span });
+        }
+        self.resolved(head.span, Resolved::Binder(bound));
+        if indexed {
+            self.read(resident.node, Reading::Value(frame));
+        }
+        else {
+            // A number in the bracket molds as an instantiation's type literal,
+            // which no value reading takes: it is planned as its literal here.
+            let mut pieces = Pieces::new();
+            read_pieces(self.pbg, self.tree, resident.node, &mut pieces)?;
+            let &[
+                Piece::Tile {
+                    label: TileName::NUMBER,
+                    at: number,
+                },
+            ] = pieces.pieces.as_slice()
+            else {
+                return Err(refused);
+            };
+            let Maybe::Present(literal) =
+                super::parse_literal(Former::Number, self.text_at(number))
+            else {
+                return Err(LoweringRefusal::MalformedLiteral {
+                    span: number.span,
+                    form: FormName::NUMBER,
+                });
+            };
+            let numbered = Site {
+                at: resident,
+                name: FormName::NUMBER,
+                reading: Reading::Value(frame),
+            };
+            self.plan(numbered, Plan::Literal(literal));
+        }
+        self.plan(
+            site,
+            Plan::Access(super::access::Accessed::Place {
+                receiver: bound.index,
+                index: resident.node,
+                element: place.element,
+            }),
+        );
+
+        Ok(())
     }
 
     /// Every method named `method` that a module in scope in the source `here`
@@ -606,8 +1233,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   receiving, the method forced and applied to the receiver or its view
     ///   and then to each argument, the outermost node at `origin`, the method
     ///   at its head's origin, the value it receives at its receiver's origin,
-    ///   and every other node below it marked as inserted for the method; the
-    ///   first absence among the receiver and the arguments otherwise.
+    ///   a view block's call applied at that call's origin, and every other
+    ///   node below it marked as inserted for the method; the first absence
+    ///   among the receiver and the arguments otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -722,6 +1350,63 @@ impl<'source> Lowerer<'_, 'source>
                 sink.origins.record_value(value, receiver);
                 let call = applied(sink, called.method, (value, &passed), [head, inner, inner]);
                 sink.arena.computation_bind(taken, call)
+            },
+            Receiving::Viewed { held, view: block } => {
+                let last = match block {
+                    Maybe::Present(viewed) => match self.origin_at(viewed.call) {
+                        Maybe::Present(origin) => origin,
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                    Maybe::Absent(_) => inner,
+                };
+                let read = view(sink);
+                let call = applied(sink, called.method, (read, &passed), [head, inner, last]);
+                let index = sink.arena.computation_memory(MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held,
+                    place: Place::Whole,
+                    body: call,
+                });
+                sink.origins.record_computation(index, inner);
+                // Past the index's binder the held slot keeps its linear
+                // index, and the index is the innermost intuitionistic one.
+                let at = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(at, inner);
+                let (mode, body) = match block {
+                    Maybe::Present(block) => {
+                        let body = match self.mint_block(block.body, sink) {
+                            Maybe::Present(body) => body,
+                            Maybe::Absent(reason) => return Maybe::Absent(reason),
+                        };
+                        let mode = if self.ended_views.contains(&block.binder) {
+                            let unit = sink.arena.value_unit();
+                            sink.origins.record_value(unit, inner);
+                            let unwind = sink.arena.computation_return(unit);
+                            sink.origins.record_computation(unwind, inner);
+                            AccessMode::Exclusive { unwind }
+                        }
+                        else {
+                            AccessMode::Shared
+                        };
+                        (mode, body)
+                    },
+                    Maybe::Absent(unviewed::Absent::Read) => {
+                        let lent = view(sink);
+                        let read = sink.arena.computation_return(lent);
+                        sink.origins.record_computation(read, inner);
+                        (AccessMode::Shared, read)
+                    },
+                };
+                let lent = sink.arena.computation_memory(MemoryForm::Access {
+                    mode,
+                    held,
+                    place: Place::At { index: at },
+                    body,
+                });
+                sink.origins.record_computation(lent, inner);
+                sink.arena.computation_bind(index, lent)
             },
         };
 
@@ -886,4 +1571,24 @@ fn applied(
     }
 
     applied
+}
+
+/// The operand `pieces` index when they read an index `s[e]`: an operand, then
+/// its bracket.
+///
+/// # Specification
+/// trivial.
+pub(super) fn indexed(pieces: &Pieces) -> Option<Placed>
+{
+    match *pieces.pieces.as_slice() {
+        [
+            Piece::Operand(indexed),
+            Piece::Tile {
+                label: TileName::BRACKET_OPEN,
+                ..
+            },
+            ..,
+        ] => Some(indexed),
+        _ => None,
+    }
 }

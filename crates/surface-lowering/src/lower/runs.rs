@@ -824,6 +824,7 @@ fn operand_of(
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ModedType
         | Former::LabelledSumType
         | Former::LazyRecordType
         | Former::ValueFunctionType

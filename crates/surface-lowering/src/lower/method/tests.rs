@@ -9,6 +9,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 
@@ -170,19 +171,30 @@ fn a_mode_word_off_a_receiver_is_refused()
 {
     let source = "def top(x : shared Integer) -> -F Integer { pure x }\n\
                   module M { def second(self : shared Integer, y : consumed Integer) -> -F \
-                  Integer { pure y } }\n";
+                  Integer { pure y } }\n\
+                  def deduced @[m : Mode] (x : m Integer) -> -F Integer { pure 0 }\n\
+                  def nested(xs : List(m Integer)) -> -F Integer { pure 0 }\n\
+                  def pick(t : Type, x : t) -> -F t { pure x }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
-    for (name, mode) in [("top", "shared"), ("second", "consumed")] {
+    for (name, mode) in [
+        ("top", "shared"),
+        ("second", "consumed"),
+        ("deduced", "m"),
+        ("nested", "m"),
+    ] {
         assert!(
             matches!(
                 refusal_of(&module, SurfaceName::from(name)),
                 LoweringRefusal::StrayReceiverMode { mode: written, .. }
                     if written == SurfaceName::from(mode)
             ),
-            "`{name}` writes `{mode}` on a parameter that is no receiver"
+            "`{name}` writes `{mode}` on a parameter that is no receiver: {:?}",
+            refusal_of(&module, SurfaceName::from(name))
         );
     }
+    // A type variable alone is a parameter's type, never its mode.
+    let _picked = body_named(&module, SurfaceName::from("pick"));
 }
 
 #[test]
@@ -217,4 +229,184 @@ fn a_receiver_is_a_typed_first_self()
         "a receiver behind an implicit telescope is a method, called with no implicit: {:?}",
         refusal_of(&module, SurfaceName::from("third"))
     );
+}
+
+/// A held list's places: a method answering the first element, one answering
+/// the element at an index, and calls lending each to a block that reads it and
+/// to one that writes it back.
+const PLACES: &str = r"def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+module Places {
+  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i] }
+}
+def head() -> -F Integer { hold xs = pair; run h <- xs.first(); pure h }
+def doubled() -> -F Integer { hold xs = pair; xs.first() as w { pure w + w } }
+def raised() -> -F Integer { hold xs = pair; xs.nth(1) as w { resume(w, w + 3) }; pure 0 }
+def untouched() -> -F Integer { hold xs = pair; xs.first() as w { abort(w) }; pure 0 }
+";
+
+#[test]
+fn a_deduced_mode_is_erased_from_the_telescope()
+{
+    let source = format!(
+        "{PLACES}module Unbound {{\n  def lost @[m : Mode] (self : k List(Integer)) -> -F \
+         View[m](Integer) {{ self[0] }}\n}}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("nth"))
+    else {
+        panic!("`nth` is declared")
+    };
+    let DeclarationOutcome::Completed { declared_type, .. } = declaration.outcome()
+    else {
+        panic!("`nth` states its type: {:?}", declaration.outcome())
+    };
+    let mut current = match arena.value_type(declared_type) {
+        Some(&ValueType::Thunk(computation)) => computation,
+        other => panic!("a thunk type: {other:?}"),
+    };
+    let mut domains = Vec::new();
+    while let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(current) {
+        domains.push(arena.value_type(domain).cloned());
+        current = codomain;
+    }
+    assert_eq!(
+        domains.len(),
+        2_usize,
+        "the mode binds nothing: the receiver and the index are the only parameters"
+    );
+    assert!(
+        matches!(
+            arena.comp_type(current),
+            Some(&CompType::Returner { result, .. })
+                if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer))
+        ),
+        "the view stands as the place's index: {:?}",
+        arena.comp_type(current)
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("lost")),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("k")
+        ),
+        "a receiver's mode variable names a mode its telescope binds: {:?}",
+        refusal_of(&module, SurfaceName::from("lost"))
+    );
+}
+
+#[test]
+fn a_view_method_answers_its_place_index()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(PLACES), &mut arena);
+    for (name, place) in [("first", "literal"), ("nth", "%0")] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            ["hold", &format!("access shared @0[{place}]")],
+            "`{name}` holds its receiver and lends it shared at the place it answers"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_view_method_answering_no_place_is_refused()
+{
+    let source = format!(
+        "{PLACES}module Misplaced {{\n  def valued @[m : Mode] (self : m List(Integer)) -> -F \
+         Integer {{ self[0] }}\n  def computed @[m : Mode] (self : m List(Integer)) -> -F \
+         View[m](Integer) {{ pure 0 }}\n  def crossed @[m : Mode, n : Mode] (self : m \
+         List(Integer)) -> -F View[n](Integer) {{ self[0] }}\n}}\ndef stray(v : \
+         View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(i : Integer) -> -F Integer {{ \
+         hold xs = pair; run y <- xs[i]; pure y }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["valued", "computed", "crossed", "stray"] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::ViewNotPlace { .. }
+            ),
+            "`{name}` answers no place of its receiver: {:?}",
+            refusal_of(&module, SurfaceName::from(name))
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bare")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }
+        ),
+        "an index outside a method's body is not yet a read of its place: {:?}",
+        refusal_of(&module, SurfaceName::from("bare"))
+    );
+}
+
+#[test]
+fn a_view_block_lends_at_the_mode_it_asks()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(PLACES), &mut arena);
+    for (name, lent) in [
+        (
+            "head",
+            Vec::from([
+                "hold",
+                "access shared @0",
+                "access shared @0[%0]",
+                "read @0",
+            ]),
+        ),
+        (
+            "doubled",
+            Vec::from(["hold", "access shared @0", "access shared @0[%0]"]),
+        ),
+        (
+            "raised",
+            Vec::from(["hold", "access shared @0", "access @0[%0]", "resume @0"]),
+        ),
+        (
+            "untouched",
+            Vec::from(["hold", "access shared @0", "access @0[%0]", "abort @0"]),
+        ),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            lent,
+            "`{name}` asks its place's index shared, then lends the place exclusively only \
+             where its block ends the view"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_view_block_after_no_place_is_refused()
+{
+    let source = format!(
+        "{COUNTER}def viewed() -> -F Integer {{ hold s = 1; s.read() as w {{ pure w }} }}\n\
+         def called() -> -F Integer {{ hold s = 1; s as w {{ pure w }} }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["viewed", "called"] {
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from(name)),
+                LoweringRefusal::ViewOfNoPlace { .. }
+            ),
+            "`{name}` lends a view of no method's place: {:?}",
+            refusal_of(&module, SurfaceName::from(name))
+        );
+    }
 }

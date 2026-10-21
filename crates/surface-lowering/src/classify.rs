@@ -205,6 +205,8 @@ impl LoweringRefusal<'_>
             | Self::RegionAsValue { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
+            | Self::ViewNotPlace { .. }
+            | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -255,6 +257,8 @@ impl LoweringRefusal<'_>
             | Self::RegionAsValue { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
+            | Self::ViewNotPlace { .. }
+            | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -392,6 +396,7 @@ fn tracked_form(
 {
     match form {
         FormName::PROJECTION => TrackingIssue::PROJECTION,
+        FormName::INDEX => TrackingIssue::INDEX,
         FormName::PACK
         | FormName::PACK_MODEL
         | FormName::PACKAGE_TYPE
@@ -580,7 +585,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 55_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 57_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -816,6 +821,8 @@ mod tests
                 span: empty,
                 fault: crate::description::MemberFault::HigherCell,
             },
+            LoweringRefusal::ViewNotPlace { span: empty },
+            LoweringRefusal::ViewOfNoPlace { span: empty },
         ]
     }
 
@@ -878,6 +885,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {
@@ -901,6 +910,12 @@ mod tests
                 FragmentSort::Computation,
                 FragmentBoundary::Unadmitted,
                 FailureClass::Unimplemented(TrackingIssue::PROJECTION),
+            ),
+            (
+                "index_expression",
+                FragmentSort::Computation,
+                FragmentBoundary::Unadmitted,
+                FailureClass::Unimplemented(TrackingIssue::INDEX),
             ),
             (
                 "unpack_statement",

@@ -119,6 +119,8 @@ impl TrackingIssue
     pub const MODEL_CIRCUIT: Self = Self(1323);
     /// A model signature's binding operation.
     pub const MODEL_BINDING: Self = Self(1324);
+    /// An index `xs[i]` outside a view-answering method's body.
+    pub const INDEX: Self = Self(1536);
     /// A recursive call's claim naming a measure, a stage or a cost.
     pub const RECURSIVE_CLAIM: Self = Self(1497);
     /// A function passed as a value with only some of its implicits supplied.

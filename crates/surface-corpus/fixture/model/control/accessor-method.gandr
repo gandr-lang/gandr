@@ -1,0 +1,66 @@
+// A method that answers a place. A method whose receiver's mode is a variable
+// of its implicit block, `self : m T` under `@[m : Mode]`, answers a place of
+// its receiver at that mode, `-F View[m](a)`: its body is the place,
+// `self[i]`, and a call is the access to it. A call with a block,
+// `xs.first() as w { … }`, lends the place at the mode the block asks — a
+// resume or an abort through `w` asks an exclusive lend, a read alone a shared
+// one — and a call without one reads the place. One body serves every mode,
+// as an explicit object parameter deduces its receiver's qualifiers (Ažman,
+// Brand, Deane and Revzin, "Deducing this", C++ proposal P0847R7, 2021).
+
+// The list each call below holds.
+import "./accessor-place.gandr" ;
+
+/// A list's places, each at the mode its call asks.
+module Places {
+  /// The first element.
+  @[ checks ]
+  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+  /// The element at an index.
+  @[ checks ]
+  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i] }
+  /// The element after an index: the index is any value, here a sum.
+  @[ checks ]
+  def after @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i + 1] }
+}
+
+/// The first element, read by a call without a block.
+@[ runs("1") ]
+def head() -> -F Integer {
+  hold xs = pair;
+  run h <- xs.first();
+  pure h
+}
+
+/// The element after the first, read through a sum as its index.
+@[ runs("2") ]
+def later() -> -F Integer {
+  hold xs = pair;
+  run y <- xs.after(0);
+  pure y
+}
+
+/// The first element read through a view the block lends shared: the block
+/// only reads it.
+@[ runs("2") ]
+def readTwice() -> -F Integer {
+  hold xs = pair;
+  xs.first() as w { pure w + w }
+}
+
+/// The element at an index written back through a view the block lends
+/// exclusively: the resume asks it, and only that element moved.
+@[ runs("cons(1, cons(5, nil))") ]
+def raised() -> -F List(Integer) {
+  hold xs = pair;
+  xs.nth(1) as w { resume(w, w + 3) };
+  pure xs
+}
+
+/// An abort asks an exclusive lend as well and writes nothing back.
+@[ runs("cons(1, cons(2, nil))") ]
+def abandonedView() -> -F List(Integer) {
+  hold xs = pair;
+  xs.first() as w { abort(w) };
+  pure xs
+}

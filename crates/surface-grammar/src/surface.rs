@@ -450,6 +450,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "handle_expression",
     "hold_statement",
     "import_declaration",
+    "index_expression",
     "isomorphism_type",
     "circuit_declaration",
     "labelled_sum_expression",
@@ -460,6 +461,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "loop_expression",
     "manifest_sort",
     "manifest_type",
+    "moded_type",
     "operator_declaration",
     "pack_expression",
     "pack_model_expression",
@@ -483,6 +485,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "universe_type",
     "universe_flow_type",
     "value_function_type",
+    "view_expression",
     "while_expression",
     "world_declaration",
     // reserved / folded / diverged member surfaces (adaptation surfaces)

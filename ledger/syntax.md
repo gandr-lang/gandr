@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x2d0b04cf367eaec8`
-- Rules: 155 — 154 committed, 1 internal
-- Molds: 2976
+- Grammar fingerprint: `0x61e2fe3d659b50ed`
+- Rules: 158 — 157 committed, 1 internal
+- Molds: 3044
 - Attributes: 11
 
 ## Reading a form
@@ -61,7 +61,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](exemplars/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | Variable |
 | [`unit.pattern`](exemplars/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | Keyword |
 
-## `expression` — 80 rules
+## `expression` — 82 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
@@ -91,6 +91,8 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`call_expression`](exemplars/syntax/call_expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | Other |
 | [`instantiation_expression`](exemplars/syntax/instantiation_expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | Other |
 | [`projection_expression`](exemplars/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | Other, Member, Constructor, Number |
+| [`view_expression`](exemplars/syntax/view_expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | Keyword, VariableDef, Other, Operator, Number, VariableParam |
+| [`index_expression`](exemplars/syntax/index_expression.gandr) | `EXPRESSION [ EXPRESSION ]` | `expression.postfix` | `index_expression` * | Other |
 | [`hole`](exemplars/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | Hole, Label |
 | [`parenthesized_expression`](exemplars/syntax/parenthesized_expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | Other |
 | [`type_quote_expression`](exemplars/syntax/type_quote_expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | Keyword, Other |
@@ -146,7 +148,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`file_descriptor`](exemplars/syntax/file_descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | Number |
 | [`redirection_operator`](exemplars/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | Operator |
 
-## `type` — 39 rules
+## `type` — 40 rules
 
 | Rule | Form | Group | Kind | Roles |
 | ---- | ---- | ----- | ---- | ----- |
@@ -174,7 +176,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`path_type`](exemplars/syntax/path_type.gandr) | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | TypeBuiltin, Other, Operator, Number |
 | [`type_application`](exemplars/syntax/type_application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | Type, TypeVariable, Other, Operator |
 | [`type_path`](exemplars/syntax/type_path.gandr) | `TYPE . ‹type_identifier›` | `type.path` | `type_path` * | Other, Type |
-| [`staged_type`](exemplars/syntax/staged_type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ]` | `type.path` | `staged_type` * | Other, Operator, VariableParam |
+| [`staged_type`](exemplars/syntax/staged_type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | Other, Operator, VariableParam |
 | [`parenthesized_type`](exemplars/syntax/parenthesized_type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | Other |
 | [`telescope_type`](exemplars/syntax/telescope_type.gandr) | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | Other |
 | [`send_session_type`](exemplars/syntax/send_session_type.gandr) | `! TYPE . TYPE` | `type.arrow` | `send_session_type` | Operator, Other |
@@ -187,6 +189,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`unknown_type`](exemplars/syntax/unknown_type.gandr) | `?` | `type.atom` | `unknown_type` * | TypeBuiltin |
 | [`type_identifier`](exemplars/syntax/type_identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | Type |
 | [`type_variable`](exemplars/syntax/type_variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | TypeVariable |
+| [`moded_type`](exemplars/syntax/moded_type.gandr) | `‹type_variable› TYPE` | `type.application` | `moded_type` * | TypeVariable |
 | [`capability_type`](exemplars/syntax/capability_type.gandr) | `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` or `Cap ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? { ‹identifier› ⦅ , ‹identifier› ⦆* ⦅ , ⦆? }` | `type.atom` | `capability_type` * | TypeBuiltin, Other, Number, Member |
 | [`number.type`](exemplars/syntax/number.type.gandr) | `‹number›` | `type.atom` | `number` | Number |
 

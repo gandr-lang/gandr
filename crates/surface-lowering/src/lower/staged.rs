@@ -55,6 +55,7 @@
 //!   places only data types.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -90,6 +91,7 @@ use crate::form::read_pieces;
 use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::resolve::TypeAtom;
 
 #[cfg(test)]
 mod tests;
@@ -136,10 +138,10 @@ enum Placement
 
 impl<'source> Lowerer<'_, 'source>
 {
-    /// Read the telescope `@[i : Size, j < i, r : Region]` a function's name
-    /// is followed by, when it is: file its stage binders' bounds and its
-    /// region binders, and mark each staged type its parameter and result
-    /// types write.
+    /// Read the telescope `@[i : Size, j < i, r : Region, m : Mode]` a
+    /// function's name is followed by, when it is: file its stage binders'
+    /// bounds, its region binders and its mode binders, and mark each staged
+    /// type its parameter and result types write.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the function's name; `site` is the
@@ -149,7 +151,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   key, one per binder in written order, and every staged type under the
     ///   parameter and result types is marked with the stage its binder's
     ///   ordinal names; when it binds a region, its region binders are filed
-    ///   under the key by name, each at its ordinal among them; an entry `a :
+    ///   under the key by name, each at its ordinal among them; when it binds a
+    ///   mode, its mode binders are filed under the key by name; an entry `a :
     ///   T` of another sort is passed over, the function's merged telescope
     ///   binding it; without a telescope nothing changes.
     /// - fails: [`LoweringRefusal::ImplicitTelescope`] at the declaration for
@@ -168,11 +171,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   its bounds and marks its staged types; a bound on a later binder and a
     ///   stage naming no binder are refused, each exactly; a stage beside an
     ///   implicit is filed as alone; a region binder is filed by its ordinal
-    ///   and its kept types bound to it.
+    ///   and its kept types bound to it; a mode binder is filed by its name.
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `lower::staged::tests::a_bound_or_stage_naming_no_binder_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
     #[spec(captures: before = self.stage_bounds.len(), ensures: |ret| ret.is_err() || self.stage_bounds.len() >= before)]
     pub(super) fn stage_telescope(
         &mut self,
@@ -188,6 +192,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut names: BTreeMap<SurfaceName<'source>, StageBinder> = BTreeMap::new();
         let mut bounds: Vec<StageBound> = Vec::new();
         let mut regions: BTreeMap<SurfaceName<'source>, RegionBinder> = BTreeMap::new();
+        let mut modes: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
         loop {
             if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
                 break;
@@ -207,6 +212,9 @@ impl<'source> Lowerer<'_, 'source>
                 else if head && self.name_at(sort).as_ref() == "Region" {
                     let ordinal = u32::try_from(regions.len()).map_err(|_wide| implicit)?;
                     let _shadowed = regions.insert(name, RegionBinder::from(ordinal));
+                }
+                else if head && self.name_at(sort).as_ref() == "Mode" {
+                    let _fresh = modes.insert(name);
                 }
                 else if let Maybe::Absent(_) = self.merged_at(site.at.node) {
                     return Err(implicit);
@@ -253,10 +261,13 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             }
         }
-        if !regions.is_empty()
-            && let Maybe::Present(slot) = self.collected.owner_of(site.at.node)
-        {
-            let _first = self.region_binders.insert(slot, regions);
+        if let Maybe::Present(slot) = self.collected.owner_of(site.at.node) {
+            if !regions.is_empty() {
+                let _first = self.region_binders.insert(slot, regions);
+            }
+            if !modes.is_empty() {
+                let _first = self.mode_binders.insert(slot, modes);
+            }
         }
         if bounds.is_empty() {
             return Ok(());
@@ -510,16 +521,20 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[<i]`.
+    /// Classify a staged type, `Nat[i]` or `Nat[<i]`, or the view type
+    /// `View[m](a)` a method answering a place declares its result at.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.
     /// - ensures: the type stands as its operand at the stage its function's
     ///   telescope marked it with, the operand read where the staged type
-    ///   stands.
+    ///   stands; a view type its function recorded stands as its place's index,
+    ///   the atom `Integer`, its element read by the function.
     /// - fails: the wrong-sort refusal where no value type is read; a fault
     ///   naming the form for a tile out of place; the out-of-fragment refusal
-    ///   for a staged type no quantified function's signature marked.
+    ///   for a staged type no quantified function's signature marked;
+    ///   [`LoweringRefusal::ViewNotPlace`] for a view type no method answering
+    ///   a place declares its result at.
     /// - panics: none.
     ///
     /// # Errors
@@ -527,10 +542,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a marked staged type plans its stage, and one in a
-    ///   body is refused.
+    ///   body is refused; a view type at a method's result plans the index, and
+    ///   one at a parameter is refused.
     /// - witness: `lower::staged::tests::a_telescope_files_its_bounds_and_marks_its_stages`
     /// - witness: `lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Staged(..))))]
+    /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Atom(TypeAtom::Integer)))))]
     pub(super) fn staged_type(
         &mut self,
         site: Site,
@@ -546,6 +564,13 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        if let Maybe::Present(_) = cursor.at(TileName::PAREN_OPEN) {
+            if !self.view_types.contains(&site.at.node) {
+                return Err(LoweringRefusal::ViewNotPlace { span: site.at.span });
+            }
+            self.plan(site, Plan::Atom(TypeAtom::Integer));
+            return Ok(());
+        }
         exhausted(site, &cursor)?;
         let Some(&stage) = self.stage_marks.get(&site.at.node)
         else {

@@ -1,0 +1,4 @@
+/// `index_expression`: the place a method's body answers, its receiver at an index.
+module Places {
+  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i] }
+}

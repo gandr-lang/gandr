@@ -8372,13 +8372,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::an_unapplied_claim_lowers_to_the_self_binder`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::Application(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::Application(..) | Plan::Access(_)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if let Some(&place) = self.view_places.get(&site.at.node) {
+            return self.view_place(site, cursor, place);
+        }
         if self.supplied_value(site)? == arity::Planned(true) {
             return Ok(());
         }
