@@ -5288,6 +5288,47 @@ impl Walk<'_, '_>
         Some((body, result))
     }
 
+    /// The value and the value type of the annotated return `node` is, when
+    /// it is one: `node` the ascription of a return of a value to a returner
+    /// `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the returned value and `A` when `node` reads as an ascription
+    ///   to a pure returner of a return; none when any link is anything else or
+    ///   the walk's remaining visits run out first. Every link read is one
+    ///   visit spent, so a recognised return spends exactly three.
+    /// - provides: the shape the lowering gives `return (v : A)`, `pure (v :
+    ///   A)` and a tail `(v : A)`, which the printer spells back as written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an annotated return at a body's end and one under a
+    ///   `pure` each spell as written.
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(3_u32) == Some(entry)),
+    )]
+    fn ascribed_return<S>(
+        &mut self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        let (body, result) = self.typed_bind(source, node)?;
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Return(value) = source.read(body)
+        else {
+            return None;
+        };
+        Some((value, result))
+    }
+
     /// Whether `node` is written with a head no expression reads as the type:
     /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
@@ -5718,18 +5759,21 @@ impl Walk<'_, '_>
     ///   scheduled just before its entry and each child between the opening and
     ///   the closing of the binders it stands under; a former spelled by parts
     ///   pushes its parts as [`Self::form`] builds them, a `for` loop's
-    ///   application and a threading loop's among them; a static application
-    ///   schedules its spine as [`Self::spine`] does and any other application
-    ///   its call as [`Self::call`] does, under `become` where it ends a loop's
-    ///   pass; a decode, a quote, a returner where the body ends, a nested
-    ///   computation, a returned value and a reset where a body ends push their
-    ///   child's visit alone, so the child's piece is theirs, the reset's child
-    ///   inside the body it delimits; there, in a handler's subject, a shift
-    ///   over a returner where a body or a pass ends is `return v`, the stack's
-    ///   binder unwritten; the loop's own binder forced at the end of a pass,
-    ///   or applied to what the pass hands on, finishes as `continue`, a
-    ///   returner ending a pass is `break(v)` or `return v` and a loop ending a
-    ///   pass is written with its rest, as [`Self::pass_end`] reads them, and a
+    ///   application and a threading loop's among them, and so does a return
+    ///   ascribed its returner where no pass ends, over its value and type; any
+    ///   other ascription outside a typed bind pushes its body's visit alone,
+    ///   noted as elided; a static application schedules its spine as
+    ///   [`Self::spine`] does and any other application its call as
+    ///   [`Self::call`] does, under `become` where it ends a loop's pass; a
+    ///   decode, a quote, a returner where the body ends, a nested computation,
+    ///   a returned value and a reset where a body ends push their child's
+    ///   visit alone, so the child's piece is theirs, the reset's child inside
+    ///   the body it delimits; there, in a handler's subject, a shift over a
+    ///   returner where a body or a pass ends is `return v`, the stack's binder
+    ///   unwritten; the loop's own binder forced at the end of a pass, or
+    ///   applied to what the pass hands on, finishes as `continue`, a returner
+    ///   ending a pass is `break(v)` or `return v` and a loop ending a pass is
+    ///   written with its rest, as [`Self::pass_end`] reads them, and a
     ///   computation the end of a pass cannot write is noted as the fixpoint's
     ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
     ///   projection out of a forced variable naming a context binder is the
@@ -5759,6 +5803,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
     /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
     /// - witness: `tests::goldens::an_observation_of_a_parameter_prints_by_position_941`
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -6565,20 +6610,32 @@ impl Walk<'_, '_>
                 })]));
                 None
             },
-            // An ascription outside a typed bind has no spelling of its own:
-            // it stands as its body, its type unwritten.
+            // A returned value ascribed its returner, `(return v : -F T)`, is
+            // the annotated value the source wrote, `(v : T)`, under the
+            // return its position writes. Any other ascription outside a
+            // typed bind has no spelling of its own: it stands as its body,
+            // its type unwritten.
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "the surface writes an ascription only in a typed bind: elsewhere \
-                              it stands as its body"
+                    reason = "the surface writes an ascription only in a typed bind and over a \
+                              returned value: elsewhere it stands as its body"
                 )
             )]
-            Former::Ascription { body, .. } => {
-                self.note(Unspelled::Elided(Elided::Ascription));
-                shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
-                None
+            Former::Ascription { body, .. } => match self.ascribed_return(source, node) {
+                Some((value, result)) if admits != Admits::Computation(Tail::Passes) => {
+                    shaped = Some(Vec::from([
+                        Slot::of(value, Admits::Value, Binds::NONE),
+                        Slot::of(result, Admits::ValueType, Binds::NONE),
+                    ]));
+                    Some(self.form(source, node, &former, admits))
+                },
+                Some(_) | None => {
+                    self.note(Unspelled::Elided(Elided::Ascription));
+                    shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
+                    None
+                },
             },
             Former::Lambda(_) => Some(writes(Production("lambda_expression"), Join::Lambda)),
             // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
@@ -7563,11 +7620,13 @@ impl Walk<'_, '_>
     ///   `handle c : I`; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
     ///   `offer(e) { l => c }`, `close(e)` and `fork (a : S) { t } as a ; u`,
     ///   each endpoint named by its binder; a resumption of a continuation
-    ///   binder with a returned value as the continuation's call, `k(v)`. The
-    ///   forms the grammar does not write — native transport, a fixpoint `rec f
-    ///   { c }`, a fold, any other resumption `resume(k, c)`, `reset { c }`,
-    ///   `shift k { c }`, a lazy product `&{c, …}` and its observation `c.0` —
-    ///   make the presentation approximate.
+    ///   binder with a returned value as the continuation's call, `k(v)`; a
+    ///   return ascribed its returner as the annotated value `(v : T)`, under a
+    ///   `pure` unless a body ends there, its two pieces the value and the type
+    ///   the visit shaped. The forms the grammar does not write — native
+    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
+    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
+    ///   …}` and its observation `c.0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -7581,6 +7640,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
     /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -8306,6 +8366,27 @@ impl Walk<'_, '_>
                 let _ = parts.text("migrate [").text(world).text("] {").body();
                 writes(Production("migrate_expression"), Binding::Prefix)
             },
+            // `(return v : -F T)`, its value and type shaped by the visit:
+            // bare where a body ends, which takes the return, and under a
+            // `pure` anywhere else.
+            Former::Ascription { .. } => {
+                let returned = !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated));
+                if returned {
+                    let _ = parts.text("pure ");
+                }
+                let _ = parts
+                    .text("(")
+                    .piece(Binding::Arrow)
+                    .text(" : ")
+                    .piece(Binding::Arrow)
+                    .text(")");
+                if returned {
+                    writes(Production("pure_expression"), Binding::Prefix)
+                }
+                else {
+                    writes(Production("parenthesized_expression"), Binding::Atom)
+                }
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -8317,7 +8398,6 @@ impl Walk<'_, '_>
             Former::Reify
             | Former::Stack(..)
             | Former::With(..)
-            | Former::Ascription { .. }
             | Former::Place { .. }
             | Former::ListNil
             | Former::ListCons(..)

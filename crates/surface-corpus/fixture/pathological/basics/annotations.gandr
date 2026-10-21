@@ -1,0 +1,22 @@
+// What an annotation states is checked, not trusted, and an annotation no
+// ascription carries is refused by name.
+
+/// A text its annotation calls an integer.
+@[ refuses("TypeMismatch") ]
+def misstated = ("three" : Integer);
+
+/// A returned value its annotation misstates.
+@[ refuses("TypeMismatch") ]
+def misreturned() -> -F Integer {
+  ("three" : Integer)
+}
+
+/// A lambda whose parameter states a type the arrow it answers does not take.
+@[ refuses("TypeMismatch") ]
+def mistyped : Integer => Integer;
+def mistyped = thunk { fn (x : String) { 1 } };
+
+/// An annotation inside a pair, where no ascription carries it; the lowering
+/// admits none there yet (#1543).
+@[ refuses("OutOfFragment") ]
+def inner = ((3 : Integer), 1);

@@ -1,0 +1,23 @@
+// A lambda's parameter written with its type, `fn (x : A) { … }`, is read at
+// `A`: the argument the lambda binds is returned at `A` and bound as the
+// parameter, so the arrow the lambda answers must take an `A` (#1310).
+
+/// Doubles its argument, the parameter typed where the lambda binds it.
+@[ checks ]
+def double : Integer => Integer;
+def double = fn (x : Integer) { return (x + x) };
+
+/// A function of a lazy record, handed its argument.
+@[ checks ]
+def lend(
+  f : +U &{get : -F Integer, put : -F String} => Integer,
+  m : +U &{get : -F Integer, put : -F String}
+) -> -F Integer {
+  f(m)
+}
+
+/// Lends `lend` a lambda whose parameter states the record it observes.
+@[ checks ]
+def lent(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+  lend(fn (n : +U &{get : -F Integer, put : -F String}) { become n.get }, m)
+}

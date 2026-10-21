@@ -2881,6 +2881,17 @@ struct Lowerer<'run, 'source>
     /// Each constructor written under an annotation, with the annotation's
     /// type.
     classifiers: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each annotation `(e : T)` over the whole value of a definition no
+    /// signature types, with the `T` that signs it.
+    annotated_definitions: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each annotation `(e : T)` an ascription carries, with its `T`: the
+    /// whole operand of a `return`, or a tail, each returning at `-F T`. An
+    /// annotated constructor or injection is not among them: `T` is already
+    /// its classifier.
+    ascribed: BTreeMap<NodeIndex, NodeIndex>,
+    /// Each lambda's binder written with a type, `x` in `fn (x : A) { … }`,
+    /// with `A`, read under the frame of the argument the lambda binds apart.
+    typed_parameters: BTreeMap<NodeIndex, (NodeIndex, Frame)>,
     /// Each value argument of a data family's application, with its place.
     argued: BTreeMap<NodeIndex, native::Argued>,
     /// Each constructor classified by its place in a data family's
@@ -4334,6 +4345,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             pieces: Pieces::new(),
             scratch: Pieces::new(),
             classifiers: BTreeMap::new(),
+            annotated_definitions: BTreeMap::new(),
+            ascribed: BTreeMap::new(),
+            typed_parameters: BTreeMap::new(),
             argued: BTreeMap::new(),
             awaiting: BTreeSet::new(),
             thunked: BTreeMap::new(),
@@ -7230,7 +7244,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a lambda, `fn (x) { … }`.
+    /// Classify a lambda, `fn (x) { … }` or `fn (x : A) { … }`.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
@@ -7239,13 +7253,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   a path runs through, and is planned over it. Where its position
     ///   answers a written arrow `A -> C`, parentheses stripped, the binder is
     ///   typed `A` as a parameter's written type types it, and the body answers
-    ///   `C`, each under the frame the arrow was read under.
+    ///   `C`, each under the frame the arrow was read under. A parameter
+    ///   written with its type `A` binds the argument apart, unnamed, reads `A`
+    ///   as a value type under that argument's frame, and binds the parameter
+    ///   typed `A` in a frame extending it, recorded with `A` for the mint to
+    ///   ascribe the argument at.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal where no bridge reaches a
-    ///   computation; the unadmitted refusal for a type abstraction or a typed
-    ///   parameter; the arity refusal for any parameter count but one; the
-    ///   block's own refusal; and the unreachable refusal for statements after
-    ///   one every path of which exits.
+    ///   computation; the unadmitted refusal for a type abstraction; the arity
+    ///   refusal for any parameter count but one; the block's own refusal; and
+    ///   the unreachable refusal for statements after one every path of which
+    ///   exits.
     /// - panics: none.
     ///
     /// # Errors
@@ -7253,9 +7271,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda body uses its newly introduced binder and a
-    ///   lambda offered directly in value position is nested.
+    ///   lambda offered directly in value position is nested; a typed parameter
+    ///   is the argument returned at its written type and bound.
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
     /// - witness: `lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
+    /// - witness: `lower::tests::a_typed_parameter_binds_its_argument_ascribed_1310`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7273,14 +7293,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
             return Err(site.folded(FormName::TYPE_ABSTRACTION, FragmentBoundary::Unadmitted));
         }
-        let binder = parameter(site, &mut cursor)?;
+        let (binder, declared) = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
         self.note_binder(binder, name)?;
         let arrow = self.answered_arrow(site)?;
-        let extended = match arrow {
-            Some((domain, _)) => {
+        let unnamed = Maybe::Absent(binder_site::Absent::Unwritten);
+        let (frame, typed) = match declared {
+            Some(declared) => {
+                let argument = match arrow {
+                    Some((domain, _)) => {
+                        self.scope
+                            .extend_typed(frame, SurfaceName::from(""), domain, unnamed)
+                    },
+                    None => self.scope.extend(frame, SurfaceName::from(""), unnamed),
+                };
+                let argument = Frame::Inner(argument);
+                self.read(declared.node, Reading::ValueType(argument));
+                let _first = self
+                    .typed_parameters
+                    .insert(binder.node, (declared.node, argument));
+                (argument, Some(declared.node))
+            },
+            None => (frame, arrow.map(|(domain, _)| domain)),
+        };
+        let extended = match typed {
+            Some(declared) => {
                 self.scope
-                    .extend_typed(frame, name, domain, Maybe::Present(binder.span))
+                    .extend_typed(frame, name, declared, Maybe::Present(binder.span))
             },
             None => self.scope.extend(frame, name, Maybe::Present(binder.span)),
         };
@@ -8222,7 +8261,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   frames, and the body around the scope as delimited: it leaves that
     ///   body past every frame, no return clause run. The operand of a `pure`
     ///   where a body ends, and of a return, is classified by the type the body
-    ///   answers.
+    ///   answers. A returner whose whole operand is an annotation `(e : T)`
+    ///   records `T` as that operand's ascription, which the mint returns at.
     /// - provides: the computation formers over a value, and the exit that
     ///   leaves a function with a value.
     /// - fails: yields the wrong-sort refusal outside computation position, the
@@ -8238,11 +8278,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — force and return plan their own former over a value
     ///   operand, and an author-written force is not marked as inserted; a
     ///   return on a path lowers as the returner and one in a call's head is
-    ///   refused.
+    ///   refused; an annotated operand is returned ascribed.
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8289,6 +8330,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _keyword = cursor.tile(keyword);
         let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
+        if keyword != TileName::FORCE
+            && let Some((_, classifier)) = self.annotation(operand.node)?
+        {
+            let _first = self.ascribed.insert(operand.node, classifier);
+        }
         self.read(operand.node, Reading::Value(frame));
         // The value a tail's `pure` or a `return` returns is the one the body
         // answers.
@@ -11988,6 +12034,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (_, minted, _) => sink.bridge(minted, bridge, origin),
         };
+        // A tail's annotation `(e : T)` returns `e` ascribed `-F T`, as the
+        // written `return (e : T)` does.
+        let bridged = match (bridge, bridged, self.ascribed.get(&position)) {
+            (
+                Bridge::Inserted(Insertion::Return),
+                Maybe::Present(Lowered::Computation(returned)),
+                Some(&classifier),
+            ) => {
+                let inserted = origin.inserted(Insertion::Return);
+                self.ascribed_return(returned, classifier, sink, inserted)
+                    .map(|ascribed| sink.computation(ascribed, inserted))
+            },
+            (_, bridged, _) => bridged,
+        };
         let bridged = match bridged {
             Maybe::Present(Lowered::Computation(returned)) if self.crossing.contains(&position) => {
                 Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
@@ -13283,9 +13343,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_thunk(suspended);
                 sink.value(id, origin)
             }),
-            Plan::Return(value) => self.value_at(value).map(|returned| {
+            Plan::Return(value) => self.value_at(value).and_then(|returned| {
                 let id = sink.arena.computation_return(returned);
-                sink.computation(id, origin)
+                let Some(&classifier) = self.ascribed.get(&value)
+                else {
+                    return Maybe::Present(sink.computation(id, origin));
+                };
+                sink.origins.record_computation(id, origin);
+                self.ascribed_return(id, classifier, sink, origin)
+                    .map(|ascribed| sink.computation(ascribed, origin))
             }),
             Plan::Force(value) => self.value_at(value).map(|forced| {
                 let id = sink.arena.computation_force(forced);
@@ -13337,14 +13403,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.value(id, origin)
                 })
             }),
-            Plan::Lambda(body, binder) => self.mint_body(body, sink, origin).map(|under| {
-                let id = sink.arena.computation_lambda(under);
-                let lowered = sink.computation(id, origin);
-                if let Maybe::Present(name) = self.origin_at(binder) {
-                    sink.origins.record_binder(id, name);
-                }
-                lowered
-            }),
+            Plan::Lambda(body, binder) => self
+                .mint_body(body, sink, origin)
+                .and_then(|under| self.typed_parameter(binder, under, sink, origin))
+                .map(|under| {
+                    let id = sink.arena.computation_lambda(under);
+                    let lowered = sink.computation(id, origin);
+                    if !self.typed_parameters.contains_key(&binder)
+                        && let Maybe::Present(name) = self.origin_at(binder)
+                    {
+                        sink.origins.record_binder(id, name);
+                    }
+                    lowered
+                }),
             Plan::Unplanned
             | Plan::ValueHole(_)
             | Plan::CompHole(_)
@@ -13413,6 +13484,107 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Bundle(_)
             | Plan::Packed(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
+    }
+
+    /// `returned`, the return of an annotation's value, ascribed the returner
+    /// of the annotation's type `classifier`.
+    ///
+    /// # Specification
+    /// - requires: `classifier` was read as a value type under the frame the
+    ///   return stands in, and is minted.
+    /// - ensures: `(returned : -F T)`, `T` carried from the signature's
+    ///   telescope into the term context of that frame, as a typed bind's
+    ///   annotation is, and its returner minted at `origin`; the ascription
+    ///   itself is left for the caller to record.
+    /// - fails: the type's absence where it was not minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written return and a tail's inferred one, each
+    ///   ascribed alike.
+    /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
+    /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => matches!(sink.arena.computation(id), Some(&Computation::Ascribe { body, .. }) if body == returned),
+        | Maybe::Absent(_) => true,
+    })]
+    fn ascribed_return(
+        &self,
+        returned: ComputationId,
+        classifier: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        self.value_type_at(classifier).map(|written| {
+            let frame = self.reading(classifier).frame();
+            let result =
+                self.relocate_value_type(written, frame, Telescope::Signature, sink, origin);
+            let returner = sink.arena.comp_type_returner(result);
+            sink.origins.record_comp_type(returner, origin);
+            sink.arena.computation_ascribe(returned, returner)
+        })
+    }
+
+    /// `under`, the body of the lambda whose parameter is `binder`, with the
+    /// argument the lambda binds bound as the parameter: where the parameter
+    /// is written with its type `A`, `(return #0 : -F A) to x. under`.
+    ///
+    /// # Specification
+    /// - requires: `under` is minted under the parameter's frame; a typed
+    ///   parameter's frame extends the argument's, under which its `A` was read
+    ///   as a value type.
+    /// - ensures: `under` itself for a parameter written without a type;
+    ///   otherwise the bind of the argument, returned and ascribed the returner
+    ///   of `A` carried into the term context of the argument's frame, over
+    ///   `under`, every node minted at `origin` marked as the parameter's
+    ///   insertion, and the bind recorded as binding the parameter's name.
+    /// - fails: the written type's absence where it was not minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::lambda`].
+    /// - witness: `lower::tests::a_typed_parameter_binds_its_argument_ascribed_1310`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) if self.typed_parameters.contains_key(&binder) => {
+            matches!(sink.arena.computation(id), Some(&Computation::Bind(_, rest)) if rest == under)
+        },
+        | Maybe::Present(id) => id == under,
+        | Maybe::Absent(_) => self.typed_parameters.contains_key(&binder),
+    })]
+    fn typed_parameter(
+        &self,
+        binder: NodeIndex,
+        under: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        let Some(&(declared, argument)) = self.typed_parameters.get(&binder)
+        else {
+            return Maybe::Present(under);
+        };
+        self.value_type_at(declared).map(|written| {
+            let inserted = origin.inserted(Insertion::Parameter);
+            let declared =
+                self.relocate_value_type(written, argument, Telescope::Signature, sink, inserted);
+            let returner = sink.arena.comp_type_returner(declared);
+            sink.origins.record_comp_type(returner, inserted);
+            let passed = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            sink.origins.record_value(passed, inserted);
+            let returned = sink.arena.computation_return(passed);
+            sink.origins.record_computation(returned, inserted);
+            let ascribed = sink.arena.computation_ascribe(returned, returner);
+            sink.origins.record_computation(ascribed, inserted);
+            let bound = sink.arena.computation_bind(ascribed, under);
+            sink.origins.record_computation(bound, inserted);
+            if let Maybe::Present(name) = self.origin_at(binder) {
+                sink.origins.record_binder(bound, name);
+            }
+            bound
+        })
     }
 
     /// Mint a block: its statements bound over its last computation.
@@ -15493,8 +15665,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `theory` block's definition, is the type and body minted for it; an
     ///   abstract slot is the abstract type it lowered to, and a kind witness
     ///   the check of its type member's code at the kind; otherwise the
-    ///   available signature — written, a function tail's, or the type a model
-    ///   derives — and body select Completed, Uncompleted or Bodied.
+    ///   available signature — written, a function tail's, the type a model
+    ///   derives, or the annotation an unsigned definition's whole value is
+    ///   written under — and body select Completed, Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -15513,6 +15686,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::an_abstract_component_kinds_at_a_universe`
+    /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present((_at, refusal)) = slot.refusal {
@@ -15563,7 +15737,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                         | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
-                    | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+                    | Maybe::Absent(_) => self.annotated_type(slot),
                 };
                 let body = match slot.definition {
                     | Maybe::Present(half) => match half.operand {
@@ -15734,7 +15908,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Code
                 | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
             },
-            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            Maybe::Absent(_) => self.annotated_type(slot),
         };
         let body = match slot.definition {
             Maybe::Present(half) => match half.operand {
@@ -15772,6 +15946,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             (Maybe::Absent(reason), Maybe::Absent(_)) => Maybe::Absent(reason),
         }
+    }
+
+    /// The type an unsigned definition's whole value is annotated with, `T`
+    /// of `def x = (e : T)`.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has minted the annotation's type, if it
+    ///   could.
+    /// - ensures: `T` as minted, where `slot`'s definition is written and
+    ///   [`Self::sign_definitions`] recorded its annotation; the unminted
+    ///   absence otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::own_outcome`].
+    /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(slot.definition, Maybe::Present(Half { operand: Operand::Written(written), .. }) if self.annotated_definitions.contains_key(&written.node)))]
+    fn annotated_type(
+        &self,
+        slot: &DeclarationSlot<'source>,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Maybe::Present(Half {
+            operand: Operand::Written(written),
+            ..
+        }) = slot.definition
+        else {
+            return unminted;
+        };
+        self.annotated_definitions
+            .get(&written.node)
+            .map_or(unminted, |&classifier| self.value_type_at(classifier))
     }
 
     /// Carry each refused manifest type component's refusal to every
@@ -16241,7 +16449,8 @@ impl Sink<'_>
                 | Insertion::Model
                 | Insertion::Relation
                 | Insertion::Words
-                | Insertion::Method,
+                | Insertion::Method
+                | Insertion::Parameter,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -16397,16 +16606,17 @@ pub fn atom_type(
     }
 }
 
-/// The parameter of a lambda: exactly one identifier between parentheses.
+/// The parameter of a lambda: exactly one identifier between parentheses,
+/// with the type written after its `:`, if one is.
 ///
 /// # Specification
 /// - requires: `cursor` stands just past the lambda's `fn`.
-/// - ensures: the one parameter's tile, with the cursor past the closing
-///   parenthesis.
+/// - ensures: the one parameter's tile and the one operand its `:` writes, with
+///   the cursor past the closing parenthesis.
 /// - provides: the binder reading of the lambda.
-/// - fails: yields the unadmitted refusal for a typed parameter, the arity
-///   refusal for any parameter count but one, and a misplaced-tile refusal for
-///   a parameter list out of shape.
+/// - fails: yields the arity refusal for any parameter count but one, the
+///   extra-operand refusal for a `:` over more than one type, and a
+///   misplaced-tile refusal for a parameter list out of shape or a second `:`.
 /// - panics: none.
 ///
 /// # Errors
@@ -16414,39 +16624,47 @@ pub fn atom_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — zero, one and multiple binders select the documented
-///   arity boundary; a successful header consumes its closing parenthesis but
-///   not the following body, while typed binders remain outside this fragment.
+///   arity boundary; a successful header, typed or not, consumes its closing
+///   parenthesis but not the following body.
 /// - witness: `lower::tests::parameter_headers_preserve_the_body_and_locate_refusals`
 /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
 #[spec(
     captures: input = cursor.clone(),
     ensures: |ret| {
-        ret.as_ref().map_or(true, |binder| {
+        ret.as_ref().map_or(true, |&(binder, declared)| {
             let mut input = input.clone();
             if matches!(input.tile(TileName::PAREN_OPEN), Maybe::Absent(_)) {
                 return false;
             }
             let mut seen = false;
+            let mut typed = None;
             loop {
                 match input.read() {
                     | Maybe::Present(Piece::Tile {
                         label: TileName::IDENTIFIER,
                         at,
                     }) => {
-                        if seen || at != *binder {
+                        if seen || at != binder {
                             return false;
                         }
                         seen = true;
                     },
                     | Maybe::Present(Piece::Tile {
-                        label: TileName::COMMA,
+                        label: TileName::COMMA | TileName::COLON,
                         ..
                     }) => {},
+                    | Maybe::Present(Piece::Operand(operand)) => {
+                        if typed.is_some() {
+                            return false;
+                        }
+                        typed = Some(operand);
+                    },
                     | Maybe::Present(Piece::Tile {
                         label: TileName::PAREN_CLOSE,
                         ..
                     }) => {
                         return seen
+                            && typed == declared
                             && cursor.peek() == input.peek()
                             && cursor.here() == input.here();
                     },
@@ -16459,12 +16677,13 @@ pub fn atom_type(
 fn parameter<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
-) -> Result<Placed, LoweringRefusal<'source>>
+) -> Result<(Placed, Option<Placed>), LoweringRefusal<'source>>
 {
     if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
     let mut first: Option<Placed> = None;
+    let mut declared: Option<Placed> = None;
     let mut count = 0_usize;
     loop {
         if let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER) {
@@ -16475,8 +16694,11 @@ fn parameter<'source>(
         if let Maybe::Present(_) = cursor.tile(TileName::COMMA) {
             continue;
         }
-        if let Maybe::Present(_) = cursor.at(TileName::COLON) {
-            return Err(site.folded(FormName::PARAMETER, FragmentBoundary::Unadmitted));
+        if declared.is_none()
+            && let Maybe::Present(_) = cursor.tile(TileName::COLON)
+        {
+            declared = Some(site.one(cursor.operands())?);
+            continue;
         }
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE) {
             break;
@@ -16484,7 +16706,7 @@ fn parameter<'source>(
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
     match first {
-        Some(binder) if count == 1_usize => Ok(binder),
+        Some(binder) if count == 1_usize => Ok((binder, declared)),
         Some(_) | None => Err(site.out(FragmentBoundary::Arity(OperandCount::from(count)))),
     }
 }
@@ -18709,6 +18931,78 @@ mod tests
         );
     }
 
+    /// A lambda's parameter written with its type binds the argument apart,
+    /// returns it ascribed that type, and binds the parameter over the body:
+    /// the checker holds the arrow's domain to the written type, and the
+    /// body's use resolves to the parameter as written (#1310).
+    #[test]
+    fn a_typed_parameter_binds_its_argument_ascribed_1310()
+    {
+        let source = "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fn (y : Integer) { return y } } ;";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        let body = body_of(outcomes(&module)[0]);
+        let Some(&Value::Thunk(suspended)) = arena.value(body)
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Lambda(under)) = arena.computation(suspended)
+        else {
+            panic!("the lambda lowers to a lambda");
+        };
+        let Some(&Computation::Bind(bound, rest)) = arena.computation(under)
+        else {
+            panic!("the typed parameter is bound over the body");
+        };
+        let Some(&Computation::Ascribe { body: passed, ty }) = arena.computation(bound)
+        else {
+            panic!("the argument is ascribed the written type");
+        };
+        let innermost = Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        };
+        assert!(
+            matches!(arena.computation(passed), Some(&Computation::Return(argument)) if arena.value(argument) == Some(&innermost)),
+            "the argument the lambda binds is the one returned"
+        );
+        assert!(matches!(
+            arena.comp_type(ty),
+            Some(&CompType::Returner { result, .. })
+                if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer))
+        ));
+        assert!(
+            matches!(arena.computation(rest), Some(&Computation::Return(returned)) if arena.value(returned) == Some(&innermost)),
+            "the body reads the parameter as the bind's binder"
+        );
+        let at = source.find("y :").unwrap();
+        assert!(
+            module.origins().bindings().iter().all(|&(_, binder)| binder
+                == span(ByteOffset::from(at), ByteOffset::from(at.saturating_add(1)))),
+            "the use is bound at the written parameter: {:?}",
+            module.origins().bindings()
+        );
+        crate::lower::native::tests::assert_accepted(&crate::lower::native::tests::judged(
+            &module, &mut arena,
+        ));
+
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def x : +U (Integer -> -F Integer) ;\ndef x = thunk { fn (y : Unit) { return 1 } } ;",
+            ),
+            &mut arena,
+        );
+        let report = crate::lower::native::tests::judged(&module, &mut arena);
+        assert!(
+            report
+                .judged()
+                .iter()
+                .any(|judged| matches!(judged.verdict(), gandr_core_checker::Verdict::Refused(_))),
+            "a written type the arrow's domain does not convert to is refused: {report:?}"
+        );
+    }
+
     #[test]
     fn a_variable_keeps_its_binder()
     {
@@ -20739,8 +21033,8 @@ mod tests
                 ),
             ),
             (
-                "def a = (3 : Integer) ;",
-                unadmitted(8_usize, 21_usize, FormName::ANNOTATION, FragmentSort::Value),
+                "def a = ((3 : Integer), 1) ;",
+                unadmitted(9_usize, 22_usize, FormName::ANNOTATION, FragmentSort::Value),
             ),
             (
                 "def a = \"a${b}\" ;",
@@ -22545,7 +22839,8 @@ mod tests
         );
     }
 
-    /// Parameter arities consume the header but preserve the following body.
+    /// Parameter arities consume the header, its written type included, but
+    /// preserve the following body.
     #[test]
     fn parameter_headers_preserve_the_body_and_locate_refusals()
     {
@@ -22583,6 +22878,8 @@ mod tests
             label: super::TileName::COLON,
             at: placed(4_usize, 5_usize, 6_usize),
         };
+        let declared = placed(8_usize, 6_usize, 7_usize);
+        let typed = super::Piece::Operand(declared);
         let form = FormName::from(NamedKind("lambda_expression"));
         let site = super::Site {
             at: placed(0_usize, 0_usize, 12_usize),
@@ -22592,7 +22889,7 @@ mod tests
         for (pieces, expected, next) in [
             (
                 [lead, open, identifier, close, body].as_slice(),
-                Ok(first),
+                Ok((first, None)),
                 body,
             ),
             (
@@ -22616,14 +22913,9 @@ mod tests
                 body,
             ),
             (
-                [lead, open, identifier, colon, body].as_slice(),
-                Err(LoweringRefusal::OutOfFragment {
-                    span: site.at.span,
-                    form: FormName::PARAMETER,
-                    sort: FragmentSort::Computation,
-                    boundary: FragmentBoundary::Unadmitted,
-                }),
-                colon,
+                [lead, open, identifier, colon, typed, close, body].as_slice(),
+                Ok((first, Some(declared))),
+                body,
             ),
             (
                 [lead, identifier, close, body].as_slice(),

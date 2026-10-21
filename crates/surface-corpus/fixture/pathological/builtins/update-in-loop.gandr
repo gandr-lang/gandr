@@ -1,8 +1,8 @@
 // Pushing in a fold copies the accumulated list at each step, so the fold's
 // cost is the square of the list's length.
 
-/// Four integers, annotated as a list of them; the lowering admits no
-/// annotation expression as a definition's value yet (#1107).
+/// Four integers, annotated as a list of them; the lowering admits no list
+/// literal yet (#1544).
 @[ refuses("OutOfFragment") ]
 def steps = ([1, 2, 3, 4] : List(Integer));
 

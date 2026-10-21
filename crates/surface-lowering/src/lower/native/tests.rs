@@ -22,6 +22,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::pattern::Pattern;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
@@ -1687,7 +1688,7 @@ fn a_parameterized_constructor_needs_its_classifier()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{MAYBE}def bare = None;\ndef some = (Some(3) : Maybe(Integer));\ndef none = (None : Maybe(Integer));\ndef three = (3 : Integer);\n"
+        "{MAYBE}def bare = None;\ndef some = (Some(3) : Maybe(Integer));\ndef none = (None : Maybe(Integer));\ndef three = (Some((3 : Integer)) : Maybe(Integer));\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(matches!(
@@ -1721,6 +1722,114 @@ fn a_parameterized_constructor_needs_its_classifier()
     assert_eq!(arguments.len(), 1_usize);
     let report = judged(&module, &mut arena);
     assert_accepted(&report);
+}
+
+/// An unsigned definition whose whole value is an annotation is declared at
+/// the annotation's type and checked against it, a value the annotation
+/// misstates refused by the checker rather than by the lowering (#1107).
+#[test]
+fn an_annotated_definition_value_is_signed_by_its_annotation_1107()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def three = (3 : Integer);\ndef some = ((Some(3)) : Maybe(Integer));\ndef grouped = (3);\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed {
+        declared_type,
+        body,
+    } = outcome_of(&module, SurfaceName::from("three"))
+    else {
+        panic!(
+            "the annotation signs the definition: {:?}",
+            outcome_of(&module, SurfaceName::from("three"))
+        );
+    };
+    assert_eq!(
+        arena.value_type(declared_type),
+        Some(&ValueType::Base(BaseType::Integer))
+    );
+    assert!(matches!(arena.value(body), Some(&Value::Literal(_))));
+    assert!(matches!(
+        outcome_of(&module, SurfaceName::from("some")),
+        DeclarationOutcome::Completed { .. }
+    ));
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("grouped")),
+            DeclarationOutcome::Bodied { .. }
+        ),
+        "a grouping is no annotation, and its definition stays unsigned"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = alloc::format!("{MAYBE}def wrong = (3 : Maybe(Integer));\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "the checker refuses a value its annotation misstates: {report:?}"
+    );
+}
+
+/// A `return` or a `pure` whose whole operand is an annotation returns the
+/// value ascribed the returner of the annotation's type, which checks where
+/// a type no signature states is expected; a tail's annotation takes the
+/// same ascribed return, so a written `return` leaves the core unchanged
+/// (#1107).
+#[test]
+fn an_annotated_return_is_ascribed_its_returner_1107()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def ran() -> -F Integer {{\n  run n <- pure (3 : Integer);\n  return (n : Integer)\n}}\n\
+         def tailed() -> -F Integer {{ (3 : Integer) }}\n\
+         def tailed_by_hand() -> -F Integer {{ return (3 : Integer) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let DeclarationOutcome::Completed { body, .. } = outcome_of(&module, SurfaceName::from("ran"))
+    else {
+        panic!("the function lowers both halves");
+    };
+    let Some(&Value::Thunk(mut at)) = arena.value(body)
+    else {
+        panic!("a function's body is thunked");
+    };
+    let mut ascribed = Vec::new();
+    while let Some(&Computation::Bind(bound, rest)) = arena.computation(at) {
+        ascribed.push(bound);
+        at = rest;
+    }
+    ascribed.push(at);
+    let returners: Vec<_> = ascribed
+        .iter()
+        .filter_map(|&node| match arena.computation(node) {
+            Some(&Computation::Ascribe { body, ty })
+                if matches!(arena.computation(body), Some(&Computation::Return(_))) =>
+            {
+                arena.comp_type(ty).cloned()
+            },
+            Some(_) | None => None,
+        })
+        .collect();
+    assert_eq!(
+        returners.len(),
+        2_usize,
+        "the bound `pure` and the tail `return` are each ascribed: {returners:?}"
+    );
+    crate::lower::exits::tests::assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("tailed"),
+            SurfaceName::from("tailed_by_hand"),
+        ),
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]

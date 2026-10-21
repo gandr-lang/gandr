@@ -4301,8 +4301,9 @@ fn a_prelude_operator_is_written_as_its_operator()
 
 /// A bind of a computation ascribed a pure returner spells as the typed
 /// bind it lowered from, its value type written after the binder; an
-/// ascription anywhere else stands as its body, approximately, for the
-/// surface writes it nowhere else.
+/// ascription of anything but a bound computation or a returned value
+/// stands as its body, approximately, for the surface writes it nowhere
+/// else.
 #[test]
 fn a_typed_bind_spells_as_written()
 {
@@ -4315,6 +4316,8 @@ fn a_typed_bind_spells_as_written()
     let ascribed = core.computation_ascribe(pure_one, returns_integer);
     let returned = core.computation_return(bound);
     let typed = core.computation_bind(ascribed, returned);
+    let abstraction = core.computation_lambda(pure_one);
+    let lone = core.computation_ascribe(abstraction, returns_integer);
     let body = |id| Root::Computation(CoreNode::Computation(id));
     let source = CoreSource::new(&core, &[]);
     assert_eq!(
@@ -4326,10 +4329,36 @@ fn a_typed_bind_spells_as_written()
         "the typed bind spells its annotation"
     );
     assert_eq!(
-        spelled(&source, body(ascribed)),
-        ("1".to_owned(), Fidelity::Approximate),
+        spelled(&source, body(lone)),
+        ("fn (a) { 1 }".to_owned(), Fidelity::Approximate),
         "a lone ascription stands as its body"
     );
+}
+
+/// An annotated return spells as the annotated value it lowered from, `(v :
+/// T)`, where a body ends, alone and as a lambda's body (#1107).
+#[test]
+fn an_annotated_return_spells_as_written_1107()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(integer_type);
+    let pure_one = core.computation_return(one);
+    let ascribed = core.computation_ascribe(pure_one, returns_integer);
+    let abstraction = core.computation_lambda(ascribed);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    let source = CoreSource::new(&core, &[]);
+    for (root, expected) in [
+        (ascribed, "(1 : Integer)"),
+        (abstraction, "fn (a) { (1 : Integer) }"),
+    ] {
+        assert_eq!(
+            spelled(&source, body(root)),
+            (expected.to_owned(), Fidelity::Faithful),
+            "{expected}"
+        );
+    }
 }
 
 /// An approximate printing names why it is approximate (#820): a fixpoint
@@ -4347,7 +4376,7 @@ fn an_approximate_printing_names_its_reason_820()
         core.computation_fixpoint(abstraction, gandr_kernel_term::FixpointEvidence::Partial);
     let integer_type = core.value_type_base(BaseType::Integer);
     let returns_integer = core.comp_type_returner(integer_type);
-    let ascribed = core.computation_ascribe(pure_one, returns_integer);
+    let ascribed = core.computation_ascribe(abstraction, returns_integer);
     let suspended = core.value_thunk(pure_one);
     let source = CoreSource::new(&core, &[]);
     let body = |id| Root::Computation(CoreNode::Computation(id));
@@ -4357,7 +4386,11 @@ fn an_approximate_printing_names_its_reason_820()
             "rec a { fn (b) { 1 } }",
             Unspelled::Notation(Notation::Fixpoint),
         ),
-        (body(ascribed), "1", Unspelled::Elided(Elided::Ascription)),
+        (
+            body(ascribed),
+            "fn (a) { 1 }",
+            Unspelled::Elided(Elided::Ascription),
+        ),
         (
             Root::Value(CoreNode::Value(suspended)),
             "<thunk>",

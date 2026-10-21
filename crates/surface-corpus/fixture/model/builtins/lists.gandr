@@ -1,7 +1,7 @@
 // A list literal at a stated element type, and a list extended at its front.
 
-/// Three integers, annotated as a list of them; the lowering admits no
-/// annotation expression as a definition's value yet (#1107).
+/// Three integers, annotated as a list of them; the lowering admits no list
+/// literal yet (#1544).
 @[ refuses("OutOfFragment") ]
 def xs = ([1, 2, 3] : List(Integer));
 

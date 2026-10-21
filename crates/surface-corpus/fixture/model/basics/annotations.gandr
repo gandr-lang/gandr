@@ -1,0 +1,25 @@
+// An annotation `(e : T)` states the type a value is read at: the whole
+// value of a definition no signature types is declared at `T`, and a value a
+// body returns is returned at `-F T`, whether the `return` is written or the
+// tail takes it (#1107).
+
+/// Three, declared an integer by its annotation alone.
+@[ checks ]
+def three = (3 : Integer);
+
+/// A pair the annotation states the product of.
+@[ checks ]
+def paired = ((3, "three") : Integer * String);
+
+/// A value run as an annotated `pure`, then annotated where the body ends.
+@[ checks ]
+def ran() -> -F Integer {
+  run n <- pure (3 : Integer);
+  (n : Integer)
+}
+
+/// The annotated value a tail takes the `return` of.
+@[ checks ]
+def tailed(n: Integer) -> -F Integer {
+  (n + 1 : Integer)
+}

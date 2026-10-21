@@ -75,8 +75,6 @@ impl TrackingIssue
     pub const RUN_TARGET: Self = Self(1105);
     /// A projection, `e.1` or `e.field`, where the fragment reads none.
     pub const PROJECTION: Self = Self(1106);
-    /// An annotation, `(e : T)`, read as a value.
-    pub const ANNOTATION_VALUE: Self = Self(1107);
     /// Packages: `pack`, `unpack` and the package type.
     pub const PACKAGES: Self = Self(1108);
     /// A number literal written with its type.
@@ -99,8 +97,6 @@ impl TrackingIssue
     pub const SCHEME: Self = Self(1233);
     /// A constructor field's grade other than the default `ω`.
     pub const FIELD_GRADE: Self = Self(1295);
-    /// A lambda's parameter written with its type.
-    pub const LAMBDA_PARAMETER: Self = Self(1310);
     /// A case or a form over an indexed family.
     pub const INDEXED: Self = Self(1314);
     /// Function extensionality past the first-order coverage.
@@ -151,6 +147,9 @@ impl TrackingIssue
     pub const NESTED_OPERATION: Self = Self(1510);
     /// A circuit rule rewriting two redexes at once.
     pub const PARALLEL_REDEXES: Self = Self(1511);
+    /// An annotation, `(e : T)`, read as a value where no ascription carries
+    /// it.
+    pub const ANNOTATION_VALUE: Self = Self(1543);
 
     /// The issue's page.
     ///

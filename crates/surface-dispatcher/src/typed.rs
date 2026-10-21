@@ -1390,7 +1390,9 @@ impl TypeTable
             // relation, which writes the two types and nothing the record
             // holds, or a term of the words a data declaration's loops
             // present, located at the declaration; nor does a term of the
-            // access a method call is, below the call, located at the call.
+            // access a method call is, below the call, located at the call; nor
+            // does a term of the bind a typed lambda parameter is read through,
+            // located at the lambda.
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
@@ -1399,6 +1401,7 @@ impl TypeTable
                             | Insertion::Relation
                             | Insertion::Words
                             | Insertion::Method
+                            | Insertion::Parameter
                     )
                 )
             {
