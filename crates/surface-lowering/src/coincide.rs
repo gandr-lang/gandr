@@ -23,8 +23,8 @@
 //!    the earlier. Orthogonal second-order pattern rules are confluent (Mayr
 //!    and Nipkow), so the joins below decide the rest.
 //! 2. Joinability of every critical pair over the block's own cells
-//!    (`join_critical_pairs`), completed where a pair parts. A pair whose two
-//!    normal forms are both headed by a constructor is refused as
+//!    (`PairJoining`), completed where a pair parts. A pair whose two normal
+//!    forms are both headed by a constructor is refused as
 //!    [`LoweringRefusal::RulesDiverge`] at the later rule, naming the earlier
 //!    one, the peak and both normal forms kept in the cell diagnostic
 //!    ([`CoherenceFault::Diverges`]): no rule joins two values. Any other
@@ -34,10 +34,11 @@
 //!    (`orient_rules_with`): first over the precedence the block's rules and
 //!    the ranking rules derived so far induce, and failing that as a ranking
 //!    rule itself, its calls raising its head. The rule is appended to the
-//!    reading's store and the pairs are decided again, every pair a rule makes
-//!    with the rules before it decided before any pair of a later one. A pair
-//!    no direction orients is refused as [`LoweringRefusal::RulesUncompleted`].
-//!    A pair a reduct of which reaches no normal form within [`JOIN_STEPS`]
+//!    reading's store and the joining resumed at the pair that parted: every
+//!    pair a rule makes with the rules before it is decided before any pair of
+//!    a later one, so a pair already joined is never decided again. A pair no
+//!    direction orients is refused as [`LoweringRefusal::RulesUncompleted`]. A
+//!    pair a reduct of which reaches no normal form within [`JOIN_STEPS`]
 //!    steps, or one that still parts once [`DERIVED_RULES`] rules are derived,
 //!    is refused as [`LoweringRefusal::RulesUndecided`], which reports the
 //!    budget and no verdict.
@@ -157,9 +158,9 @@ use gandr_theory_coherent_resolutions::CellApp;
 use gandr_theory_coherent_resolutions::Joinability;
 use gandr_theory_coherent_resolutions::NormalizationBudget;
 use gandr_theory_coherent_resolutions::Overlap;
+use gandr_theory_coherent_resolutions::PairJoining;
 use gandr_theory_coherent_resolutions::Tracelet;
 use gandr_theory_coherent_resolutions::TraceletReplay;
-use gandr_theory_coherent_resolutions::join_critical_pairs;
 use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
@@ -718,7 +719,8 @@ pub(crate) fn decide<G>(
     }
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
-    let (commands, derived_commands) = match join_critical_pairs(&rewriting, budget) {
+    let mut joining = PairJoining::new();
+    let (commands, derived_commands) = match joining.resume(&rewriting, budget) {
         Joinability::Joined(certificates) => (certificates, Vec::new()),
         first @ (Joinability::Diverges { .. } | Joinability::Undecided(_)) => {
             let mut completing = rewriting.into_owned();
@@ -728,13 +730,16 @@ pub(crate) fn decide<G>(
                 rule_span: &rule_span,
                 at,
             };
-            let completed =
-                reading.complete(&mut completing, first, PairTerm::Command, |command| {
-                    match read_command(command) {
-                        Maybe::Present(term) => Some(term),
-                        Maybe::Absent(_) => None,
-                    }
-                })?;
+            let completed = reading.complete(
+                &mut completing,
+                joining,
+                first,
+                PairTerm::Command,
+                |command| match read_command(command) {
+                    Maybe::Present(term) => Some(term),
+                    Maybe::Absent(_) => None,
+                },
+            )?;
             for derived in &completed.1 {
                 if let Maybe::Present(cell) = completing.get(derived.cell) {
                     let _appended = store.insert(cell.clone());
@@ -745,7 +750,8 @@ pub(crate) fn decide<G>(
     };
     let (terms, derived_terms) = match *presented {
         Maybe::Present(ref mut presented) => {
-            let first = join_critical_pairs(&presented.store, budget);
+            let mut joining = PairJoining::new();
+            let first = joining.resume(&presented.store, budget);
             let reading = Reading {
                 description,
                 faces: &presented.faces,
@@ -754,6 +760,7 @@ pub(crate) fn decide<G>(
             };
             reading.complete(
                 &mut presented.store,
+                joining,
                 first,
                 PairTerm::Term,
                 |term| match term.read() {
@@ -946,12 +953,12 @@ where
     }
 
     /// Complete one reading of a block's rules from `first`, its store's
-    /// joinability: every critical pair's certificate and every rule a
-    /// divergent pair derived, or the fault of the first pair that neither
-    /// joins nor completes.
+    /// joinability as `joining` decided it: every critical pair's certificate
+    /// and every rule a divergent pair derived, or the fault of the first pair
+    /// that neither joins nor completes.
     ///
     /// # Specification
-    /// - requires: `first` is [`join_critical_pairs`] over `store`; `read`
+    /// - requires: `first` is what `joining` last answered over `store`; `read`
     ///   writes a term of the reading as the term it denotes.
     /// - ensures: a divergent pair whose two normal forms are both headed by a
     ///   constructor or a results tuple is [`CoherenceFault::Diverges`]; one
@@ -962,12 +969,13 @@ where
     ///   [`CoherenceFault::Uncompleted`]; otherwise the oriented rule is
     ///   appended to `store` with its certificate — the pair's two paths from
     ///   the peak, the one reaching the rule's left side then firing the rule
-    ///   at the root — and the joinability decided again. A pair a reduct of
-    ///   which reaches no normal form within [`JOIN_STEPS`] steps is
-    ///   [`CoherenceFault::Undecided`], and a divergent pair met once
-    ///   [`DERIVED_RULES`] rules are derived is [`CoherenceFault::Unfinished`].
-    ///   Every fault stands at the pair's later face naming the earlier one,
-    ///   and its terms are in that order.
+    ///   at the root — and `joining` resumed at the pair that parted, so a
+    ///   round decides that pair and the ones after it and no pair already
+    ///   joined again. A pair a reduct of which reaches no normal form within
+    ///   [`JOIN_STEPS`] steps is [`CoherenceFault::Undecided`], and a divergent
+    ///   pair met once [`DERIVED_RULES`] rules are derived is
+    ///   [`CoherenceFault::Unfinished`]. Every fault stands at the pair's later
+    ///   face naming the earlier one, and its terms are in that order.
     /// - panics: none.
     ///
     /// # Errors
@@ -986,6 +994,7 @@ where
     fn complete<A, W, R>(
         &self,
         store: &mut CellStore<A>,
+        mut joining: PairJoining<A>,
         first: Joinability<A>,
         wrap: W,
         read: R,
@@ -1124,7 +1133,7 @@ where
                     joins_at: rhs,
                 },
             });
-            joinability = join_critical_pairs(store, budget);
+            joinability = joining.resume(store, budget);
         }
     }
 }

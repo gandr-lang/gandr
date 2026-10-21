@@ -27,7 +27,10 @@
 //! [`join_critical_pairs`] is completion's check with no derivation: it
 //! decides whether a store's critical pairs already join, reporting the first
 //! divergence, or the first pair the budget leaves undecided, instead of
-//! orienting it.
+//! orienting it. [`PairJoining`] is that check over a store a caller grows by
+//! appending cells: it resumes at the pair it stopped at, so a caller that
+//! derives a cell from each divergence decides no joined pair again, only the
+//! pair that parted and those after it.
 //!
 //! # Completion
 //!
@@ -122,12 +125,13 @@ use crate::boundary::CompletionStatus;
 use crate::boundary::CompletionStepBudget;
 use crate::boundary::NormalizationBudget;
 use crate::boundary::OverlapIndex;
+use crate::boundary::PairDecisions;
 use crate::overlap::Overlap;
 use crate::overlap::OverlapKind;
 use crate::overlap::OverlapSupport;
 use crate::overlap::enumerate_overlaps;
 use crate::overlap::interior_overlaps_between;
-use crate::overlap::overlaps_between;
+use crate::overlap::root_overlaps_between;
 use crate::rewrite::normalize;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
@@ -901,19 +905,18 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 /// # Specification
 /// - ensures: the pairs are taken in order of their later cell: for each cell
 ///   in store order and each cell up to it, the root confluence entries of
-///   [`overlaps_between`] with the earlier cell on the left, so a pair and its
-///   mirror are decided once, then the entries of [`interior_overlaps_between`]
-///   with the earlier cell on the left and then on the right, the diagonal
-///   once; every pair a cell makes with the cells before it is decided before
-///   any pair of a later cell, so a store growing by cells reaches each pair;
-///   each pair's two reducts are normalized under `budget`;
-///   [`Joinability::Joined`] carries one replaying certificate per pair when
-///   every pair joins; otherwise the first pair that does not, as
+///   [`overlaps_between`](crate::overlap::overlaps_between) with the earlier
+///   cell on the left, so a pair and its mirror are decided once, then the
+///   entries of [`interior_overlaps_between`] with the earlier cell on the left
+///   and then on the right, the diagonal once; every pair a cell makes with the
+///   cells before it is decided before any pair of a later cell, so a store
+///   growing by cells reaches each pair; each pair's two reducts are normalized
+///   under `budget`; [`Joinability::Joined`] carries one replaying certificate
+///   per pair when every pair joins; otherwise the first pair that does not, as
 ///   [`Joinability::Undecided`] when a reduct ran out of budget and as
 ///   [`Joinability::Diverges`] with both normal forms when they differ.
 /// - panics: none.
-/// - intension: two pair queries per ordered cell pair, stopping at the first
-///   pair that does not join.
+/// - intension: a fresh [`PairJoining`] resumed once.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — over the toy alphabet, two additions that overlap at
@@ -944,49 +947,190 @@ pub fn join_critical_pairs<A>(
 where
     A: CellAlphabet,
 {
-    let mut certificates = Vec::new();
-    for (later_id, later_cell) in store.iter() {
-        for (earlier_id, earlier_cell) in store.iter().take_while(|&(id, _)| id <= later_id) {
-            let (earlier, later) = ((earlier_id, earlier_cell), (later_id, later_cell));
-            let (root, mirrored) = if earlier_id < later_id {
-                (
-                    overlaps_between(earlier, later),
-                    interior_overlaps_between(later, earlier),
-                )
-            }
-            else {
-                (Vec::new(), Vec::new())
-            };
-            let pairs = root
-                .into_iter()
-                .filter(|overlap| overlap.kind == OverlapKind::Confluence)
-                .chain(interior_overlaps_between(earlier, later))
-                .chain(mirrored);
-            for overlap in pairs {
-                let (Ok(left_reduct), Ok(right_reduct)) =
-                    (overlap.left_reduct(store), overlap.right_reduct())
-                else {
-                    continue;
-                };
-                let left = normalize(store, &left_reduct, budget);
-                let right = normalize(store, &right_reduct, budget);
-                if bool::from(left.exhausted) || bool::from(right.exhausted) {
-                    return Joinability::Undecided(overlap);
-                }
-                if left.normal != right.normal {
-                    return Joinability::Diverges {
-                        overlap,
-                        left: left.normal,
-                        right: right.normal,
-                    };
-                }
-                if let Maybe::Present(certificate) = joined(&overlap, left, right) {
-                    certificates.push(certificate);
-                }
-            }
+    PairJoining::new().resume(store, budget)
+}
+
+/// The confluence critical pairs of a store that grows by appended cells,
+/// decided in [`join_critical_pairs`]'s order and resumed at the pair the last
+/// decision stopped at.
+///
+/// A pair decided joined stays joined as the store grows: its certificate's
+/// steps are steps of every larger store. So completion, which derives a cell
+/// from the pair that parted and appends it, resumes at that pair rather than
+/// deciding every earlier pair again: one round decides the pair that parted
+/// and the pairs after it, the new cell's among them.
+///
+/// # Specification
+/// - requires: between two [`Self::resume`]s on one joining, the store keeps
+///   its cells and their order and only gains cells after them.
+/// - ensures: the certificates of the pairs decided joined since the joining
+///   began or last answered [`Joinability::Joined`], in order; the position of
+///   the next pair to decide; the count of pairs decided.
+/// - executable: none — a datum; [`Self::resume`] carries the predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Self::resume`].
+/// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PairJoining<A: CellAlphabet = SequentAlphabet>
+{
+    /// The certificates of the pairs decided joined, in order.
+    certificates: Vec<Tracelet<A>>,
+    /// The store position of the later cell of the next cell pair.
+    later: usize,
+    /// The store position of the earlier cell of the next cell pair.
+    earlier: usize,
+    /// How many of that cell pair's critical pairs are decided joined.
+    within: usize,
+    /// How many pairs have been decided.
+    decided: usize,
+}
+
+impl<A> Default for PairJoining<A>
+where
+    A: CellAlphabet,
+{
+    /// A joining that has decided nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            certificates: Vec::new(),
+            later: 0,
+            earlier: 0,
+            within: 0,
+            decided: 0,
         }
     }
-    Joinability::Joined(certificates)
+}
+
+impl<A> PairJoining<A>
+where
+    A: CellAlphabet,
+{
+    /// A joining that has decided nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// How many pairs the joining has decided, a pair decided again after its
+    /// store grew counted again.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn decided(&self) -> PairDecisions
+    {
+        PairDecisions::from(self.decided)
+    }
+
+    /// Decide the pairs of `store` from the pair the last decision stopped at,
+    /// in [`join_critical_pairs`]'s order.
+    ///
+    /// # Specification
+    /// - requires: as [`PairJoining`]: `store` is the store of the last resume,
+    ///   grown only by cells appended after its others.
+    /// - ensures: [`Joinability::Joined`] with the certificate of every pair
+    ///   decided joined since the joining began or last answered `Joined`, when
+    ///   every pair from the stopping one on joins; otherwise the first that
+    ///   does not, as `join_critical_pairs` reports it, the joining stopped at
+    ///   it so the next resume decides it first. Each pair decided adds one to
+    ///   [`Self::decided`].
+    /// - panics: none.
+    /// - intension: the store's cells read once into positions; the overlaps of
+    ///   each cell pair enumerated once per resume that reaches it, the pairs
+    ///   already joined skipped, and the root entries read without the
+    ///   composition entries no pair is made of.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the toy alphabet, a joining stopped at a parting
+    ///   pair and resumed over the store with a cell derived from it decides
+    ///   that pair and the ones after it, fewer than a fresh joining of the
+    ///   grown store decides to the same verdict, and reaches the verdict the
+    ///   fresh joining does; deciding every pair again, or skipping the pair
+    ///   that parted, changes a count or the verdict.
+    /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
+    /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+    #[spec(
+        captures: before = self.decided,
+        ensures: |output| self.decided >= before && match output {
+            Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
+                certificate.overlap.kind == OverlapKind::Confluence && bool::from(certificate.replay(store))),
+            Joinability::Diverges { ref overlap, ref left, ref right } => overlap.kind == OverlapKind::Confluence && left != right,
+            Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
+        },
+    )]
+    #[inline]
+    pub fn resume(
+        &mut self,
+        store: &CellStore<A>,
+        budget: NormalizationBudget,
+    ) -> Joinability<A>
+    {
+        let cells: Vec<(CellId, &Cell<A>)> = store.iter().collect();
+        while let Some(&later) = cells.get(self.later) {
+            while self.earlier <= self.later {
+                let Some(&earlier) = cells.get(self.earlier)
+                else {
+                    break;
+                };
+                let (root, mirrored) = if self.earlier < self.later {
+                    (
+                        root_overlaps_between(earlier, later),
+                        interior_overlaps_between(later, earlier),
+                    )
+                }
+                else {
+                    (Vec::new(), Vec::new())
+                };
+                let pairs = root
+                    .into_iter()
+                    .chain(interior_overlaps_between(earlier, later))
+                    .chain(mirrored)
+                    .skip(self.within);
+                for overlap in pairs {
+                    self.decided = self.decided.saturating_add(1);
+                    let (Ok(left_reduct), Ok(right_reduct)) =
+                        (overlap.left_reduct(store), overlap.right_reduct())
+                    else {
+                        self.within = self.within.saturating_add(1);
+                        continue;
+                    };
+                    let left = normalize(store, &left_reduct, budget);
+                    let right = normalize(store, &right_reduct, budget);
+                    if bool::from(left.exhausted) || bool::from(right.exhausted) {
+                        return Joinability::Undecided(overlap);
+                    }
+                    if left.normal != right.normal {
+                        return Joinability::Diverges {
+                            overlap,
+                            left: left.normal,
+                            right: right.normal,
+                        };
+                    }
+                    if let Maybe::Present(certificate) = joined(&overlap, left, right) {
+                        self.certificates.push(certificate);
+                    }
+                    self.within = self.within.saturating_add(1);
+                }
+                self.earlier = self.earlier.saturating_add(1);
+                self.within = 0;
+            }
+            self.later = self.later.saturating_add(1);
+            self.earlier = 0;
+        }
+        Joinability::Joined(core::mem::take(&mut self.certificates))
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -1231,6 +1375,54 @@ mod tests
                 budget
             ),
             "cells that never overlap join with nothing to certify"
+        );
+    }
+
+    #[test]
+    fn a_resumed_joining_decides_no_joined_pair_again_1576()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let mut store = CellStore::<ToyAlphabet>::new();
+        // Two units that agree at `add(Zero, Zero)`, then a third rule that
+        // parts from the first there: `Zero` against `Succ(Zero)`.
+        for (lhs, rhs) in [
+            (Toy::add(Toy::zero(), Toy::var("y")), Toy::var("y")),
+            (Toy::add(Toy::var("x"), Toy::zero()), Toy::var("x")),
+            (
+                Toy::add(Toy::var("x"), Toy::zero()),
+                Toy::succ(Toy::var("x")),
+            ),
+        ] {
+            let _id = store.insert(toy_cell(lhs, rhs));
+        }
+        let mut joining = PairJoining::new();
+        let Joinability::Diverges { left, right, .. } = joining.resume(&store, budget)
+        else {
+            panic!("`Zero` and `Succ(Zero)` part");
+        };
+        let stopped = usize::from(joining.decided());
+        let Maybe::Present((lhs, rhs)) = orient::<ToyAlphabet>(left, right)
+        else {
+            panic!("`Succ(Zero)` is above `Zero`");
+        };
+        let _derived = store.insert(toy_cell(lhs, rhs));
+        let resumed = joining.resume(&store, budget);
+        let mut fresh = PairJoining::new();
+        assert_eq!(
+            fresh.resume(&store, budget),
+            resumed,
+            "resuming reaches the verdict a fresh joining of the grown store does"
+        );
+        // The first resume decides the units' pair and the parting one. The
+        // round decides the parting pair again, now joined through the derived
+        // cell, and the two `add(x, Zero)` rules' pair after it, which parts at
+        // `x` against `Succ(x)`; a fresh joining decides the units' pair a
+        // second time on the way.
+        let round = usize::from(joining.decided()).saturating_sub(stopped);
+        assert_eq!(
+            (stopped, round, usize::from(fresh.decided())),
+            (2, 2, 3),
+            "the round decides the pair that parted and those after it"
         );
     }
 }
