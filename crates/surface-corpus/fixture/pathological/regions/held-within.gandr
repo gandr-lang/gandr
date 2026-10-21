@@ -1,0 +1,39 @@
+// A view of a value held inside a scope, kept at the scope around its hold, as
+// Rust refuses a reference to a block's local that outlives the block: `let r;
+// { let x = 42; r = &x; } *r` (E0597, `x` does not live long enough). A shared
+// view kept in a region keeps its held value frozen until the region ends, and
+// a hold opened inside the scope ends before the scope does.
+
+/// Keeps a view of a value held inside the handler at the handler's region,
+/// which the hold does not outlive (#1494).
+@[ refuses("ViewEscaped") ]
+def keptPastHold() -> -F Integer {
+  handle inner : Proc {
+    hold l = 42;
+    run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } } ;
+    force q
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => pure 0
+  }
+}
+
+/// The same inside a handler a `run` binds within another, as #1494 reported
+/// it: where a handler is bound opens no region of its own.
+@[ refuses("ViewEscaped") ]
+def keptPastNestedHold() -> -F Integer {
+  handle outer : Proc {
+    run x : Integer <- handle inner : Proc {
+      hold l = 42;
+      run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } } ;
+      force q
+    } with {
+      pure(y) => pure y,
+      oper exit(code, k) => pure 0
+    } ;
+    pure x
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => pure 0
+  }
+}

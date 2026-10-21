@@ -1304,6 +1304,47 @@ fn a_refusal_spells_its_binders_by_name_418()
     );
 }
 
+/// A trace spells a type kept at a region by the name of the scope or hold
+/// that opened it, never `?`: a capability scope's region by its capability,
+/// a hold's by its held slot, counted outermost first (#1494).
+#[test]
+fn a_trace_spells_a_kept_region_by_its_name_1494()
+{
+    for (kept, text) in [
+        (
+            "c",
+            SourceText::from(
+                "def traced() -> -F Integer {\n  hold s = 3;\n  handle c : Proc {\n    run k : (() => \
+                 Integer) at c <- access shared s as w { pure thunk { pure thunk { pure w } } } ;\n    \
+                 force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
+            ),
+        ),
+        (
+            "l",
+            SourceText::from(
+                "def traced() -> -F Integer {\n  handle c : Proc {\n    hold l = 42;\n    run k : (() => \
+                 Integer) at l <- access shared l as w { pure thunk { pure thunk { pure w } } } ;\n    \
+                 force k\n  } with {\n    pure(x) => pure x,\n    oper exit(code, k) => pure 0\n  }\n}\n",
+            ),
+        ),
+    ] {
+        let diagnostic = only(Path::new("traced.gandr"), text);
+        let labels: Vec<String> = contexts(text, &diagnostic)
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect();
+        let spelled = format!("(() => Integer) at {kept}");
+        assert!(
+            labels.iter().any(|label| label.contains(&spelled)),
+            "the kept type names its region `{kept}`: {labels:?}"
+        );
+        assert!(
+            labels.iter().all(|label| !label.contains("at ?")),
+            "no region spells `?`: {labels:?}"
+        );
+    }
+}
+
 #[test]
 fn an_unlocated_rule_becomes_a_note()
 {

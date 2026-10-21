@@ -416,17 +416,7 @@ pub fn opened(
     text: SourceText<'_>,
 ) -> Vec<Maybe<String, binding::Absent>>
 {
-    let name = match obligation.at() {
-        CoreNode::Term(TermNode::Computation(opener)) => match origins.binder(opener) {
-            Maybe::Present(origin) => text
-                .fragment(origin.span())
-                .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
-                    Maybe::Present(String::from(fragment.as_ref()))
-                }),
-            Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
-        },
-        CoreNode::Term(_) | CoreNode::Type(_) => Maybe::Absent(binding::Absent::Unnamed),
-    };
+    let name = written_binder(obligation.at(), origins, text);
     (0_usize .. obligation.binders().len())
         .map(|at| {
             if at == 0_usize {
@@ -437,6 +427,47 @@ pub fn opened(
             }
         })
         .collect()
+}
+
+/// The name the source writes for the first binder the former at `at` opens,
+/// read through `origins` and `text`: a `run`'s binder, a function's first
+/// parameter, a scope's capability, a hold's slot.
+///
+/// # Specification
+/// - requires: as [`opened`].
+/// - ensures: for a computation opener the table records a binder for, the
+///   bytes the table locates; [`binding::Absent::Unnamed`] for every other
+///   node.
+/// - provides: the name of a binder [`opened`] reads and of a region a failure
+///   stood in ([`crate::TypeSpellings::of`]), whether the binder is among the
+///   hypotheses or, a hold's slot, linear.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`opened`]; a type kept at a hold spells the hold's
+///   slot.
+/// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
+/// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_))
+    || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
+pub fn written_binder(
+    at: CoreNode,
+    origins: &OriginTable,
+    text: SourceText<'_>,
+) -> Maybe<String, binding::Absent>
+{
+    match at {
+        CoreNode::Term(TermNode::Computation(opener)) => match origins.binder(opener) {
+            Maybe::Present(origin) => text
+                .fragment(origin.span())
+                .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
+                    Maybe::Present(String::from(fragment.as_ref()))
+                }),
+            Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
+        },
+        CoreNode::Term(_) | CoreNode::Type(_) => Maybe::Absent(binding::Absent::Unnamed),
+    }
 }
 
 /// The spelling of the value type `ty`.
