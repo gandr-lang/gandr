@@ -1356,6 +1356,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-coverage-guard"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gandr-workflow-hotpath-guard"
 version = "0.0.0"
 dependencies = [

@@ -297,6 +297,16 @@ mv "$root/coverage.merged.lcov" "$root/coverage.lcov"
 rm -f "$root/coverage-plain.lcov"
 '''
 
+# Main's coverage upload against the one before it, as Markdown; with
+# `--file-issue`, a drop over the threshold or fewer files opens or updates
+# one issue (crates/workflow-coverage-guard/README.md). The coverage
+# workflow passes codecov.yml's project threshold. Arguments pass through:
+# `--repository`, `--sha`, `--threshold`, optionally `--wait` and
+# `--file-issue`.
+["ci:coverage-guard"]
+description = "Main's coverage upload against the one before it, filed when it drops"
+run = "cargo run --locked --quiet --package gandr-workflow-coverage-guard --"
+
 # Each test's enforcing time over its plain time, from a run's enforcing JUnit
 # report and a plain baseline's; the enforcing lane reports it on every run
 # (crates/workflow-spec-cost/README.md). Flags and target directory match the

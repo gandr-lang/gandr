@@ -1,11 +1,19 @@
+# The coverage run is nightly on main and on dispatch, never per pull
+# request (.github/workflows/coverage.yml), and no Codecov status is a
+# required check, so neither status blocks the merge queue. The project
+# status fails on a fall of more than half a point from the base; the
+# Coverage workflow's guard holds main's nightly upload to the same
+# threshold and files the drop. The patch status holds changed lines to
+# the project's per-crate target.
 coverage:
   status:
     project:
       default:
-        informational: true
+        target: auto
+        threshold: 0.5%
     patch:
       default:
-        informational: true
+        target: 95%
 
 comment: false
 
