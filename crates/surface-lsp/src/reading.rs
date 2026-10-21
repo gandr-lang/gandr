@@ -127,7 +127,8 @@ pub enum Written
 }
 
 /// One tile of a read text: its bytes, the rule it is a tile of, the form it
-/// is a tile of, and whether a declaration writes it among its own tiles.
+/// is a tile of, whether a declaration writes it among its own tiles, and
+/// whether its form writes a type for it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tile
 {
@@ -140,6 +141,10 @@ pub struct Tile
     /// Whether the tile is one of a declaration's own — a top-level item's or
     /// a module member's, past an atom written as its operand.
     pub declares: bool,
+    /// Whether the next of its form's nodes, space and documentation aside,
+    /// is the tile `:`: a name whose type the form writes, as a parameter's
+    /// `(n : Nat)` and an annotated `run m : Nat <-` do.
+    pub annotated: bool,
 }
 
 /// An import of a read text, as the text writes it, with its place among the
@@ -154,8 +159,8 @@ pub struct ImportAt<'read>
     pub ordinal: Option<usize>,
 }
 
-/// Every tile of `tree`, ascending by start, each with its rule and whether a
-/// declaration holds it.
+/// Every tile of `tree`, ascending by start, each with its rule, whether a
+/// declaration holds it and whether its form writes a type for it.
 ///
 /// # Specification
 /// trivial.
@@ -183,7 +188,15 @@ fn tiles(
             | NodeLabel::Space
             | NodeLabel::Doc => None,
         };
-        for child in tree.children(position) {
+        let mut siblings = tree
+            .children(position)
+            .filter(|&child| {
+                tree.node(child).is_some_and(|sibling| {
+                    !matches!(sibling.label(), NodeLabel::Space | NodeLabel::Doc)
+                })
+            })
+            .peekable();
+        while let Some(child) = siblings.next() {
             if let Some(tile) = tree.node(child)
                 && let NodeLabel::Tile(mold) = tile.label()
                 && tile.span().start() < tile.span().end()
@@ -194,6 +207,10 @@ fn tiles(
                     rule: rule.name,
                     form: node.span(),
                     declares: declaring == Some(rule.name),
+                    annotated: siblings
+                        .peek()
+                        .and_then(|&next| tree.fragment(next))
+                        .is_some_and(|next| <&str>::from(next) == ":"),
                 });
             }
         }
@@ -288,9 +305,9 @@ impl Reading
     ///   its calls, as [`crate::outline`] and [`Calls::of`] read each off the
     ///   tree, the address of each path import as [`written_imports`] reads it,
     ///   the bytes of every import and where the last one ends, none when the
-    ///   imports do not read, every tile with its rule and whether a
-    ///   declaration holds it, ascending, and the bytes of every `//!` run the
-    ///   parser left at the root, in source order.
+    ///   imports do not read, every tile with its rule, whether a declaration
+    ///   holds it and whether its form writes a type for it, ascending, and the
+    ///   bytes of every `//!` run the parser left at the root, in source order.
     /// - provides: the one parse a held text's structural requests share.
     /// - fails: never; an unread text names its reason.
     /// - panics: none.
