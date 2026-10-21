@@ -1,0 +1,77 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+name: hotpath guard
+
+# A failed `hotpath / <benchmark>` check files one issue per pull request,
+# `perf: #<n> regresses <sites>` (`mise run ci:hotpath-guard`,
+# crates/workflow-hotpath-guard/README.md). hotpath Cloud posts its check
+# after the benchmark upload, so the check is never required and nothing
+# waits for it: the check's completion runs this workflow instead. GitHub
+# sends the event for check runs another app creates, from the default
+# branch's copy of this file; the job runs only for a failed hotpath check.
+on:
+  check_run:
+    types: [completed]
+
+permissions:
+  contents: read
+
+# Each benchmark's check completes on its own. The runs of one commit queue,
+# so a later run reads the issue an earlier one opened.
+concurrency:
+  group: hotpath-guard-${{ github.event.check_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # Must match ci.yml and the image. The image checks the list at build time.
+  MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+
+jobs:
+  file:
+    name: file the failed hotpath checks
+    if: ${{ startsWith(github.event.check_run.name, 'hotpath / ') && github.event.check_run.conclusion == 'failure' && !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
+      issues: write
+      pull-requests: read
+    steps:
+      # A check_run event's commit is the default branch's head, so the guard
+      # never runs the code of the pull request whose check failed.
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      # mise provides rustup under act, so it installs first, as in ci.yml.
+      - name: install mise-managed policy tools
+        # The setup step owns the toolchain on a hosted runner (ci.yml).
+        env:
+          MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.10.3
+          cache: true
+          cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
+          cache_save: false
+      - name: setup rust
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          cache-save: false
+      - name: file the commit's failed checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.check_run.head_sha }}
+        run: mise run ci:hotpath-guard --sha "$HEAD_SHA" --file-issue >> "$GITHUB_STEP_SUMMARY"

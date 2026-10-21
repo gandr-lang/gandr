@@ -55,6 +55,7 @@ members = [
   "crates/theory-spec-combinators",
   "crates/theory-virtual-doctrines",
   "crates/workflow-build-state",
+  "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
@@ -163,6 +164,7 @@ default-features = false
 # - theory-spec-combinators
 # - theory-virtual-doctrines
 # - workflow-build-state
+# - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-sweep
@@ -204,6 +206,7 @@ default-features = false
 # consumers:
 # - surface-driver
 # - workflow-build-state
+# - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-test-timing
@@ -1084,6 +1087,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
 # - workflow-test-timing
@@ -1205,6 +1209,7 @@ default-features = false
 # - surface-lsp
 # - surface-render-remote
 # - workflow-build-state
+# - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
 [workspace.dependencies.serde]
@@ -1230,6 +1235,7 @@ features = ["alloc", "derive"]
 # - surface-render-terminal (dev)
 # - surface-tui
 # - workflow-build-state
+# - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]

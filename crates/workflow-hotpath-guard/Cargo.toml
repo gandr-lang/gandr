@@ -1,0 +1,36 @@
+[package]
+name = "gandr-workflow-hotpath-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A commit's failing hotpath checks, filed on one issue per pull request"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "hotpath", "performance"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "hotpath-guard"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the specification attribute; the shape
+# crate the `Maybe` a commit without a pull request has for it. serde reads
+# `gh`'s answers.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
