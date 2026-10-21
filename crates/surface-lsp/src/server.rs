@@ -4552,8 +4552,10 @@ impl Workspace
     /// - ensures: an unknown document yields Nothing; a held document yields
     ///   first the ghost text of each kept proposal whose range holds the
     ///   position, replacing that range, then each ghost text [`ghost()`] ranks
-    ///   at the position's byte, best first, its snippet inserted at the empty
-    ///   range at `position`; none of those when the grammar did not build.
+    ///   at the position's byte that writes no line break, best first, its
+    ///   snippet inserted at the empty range at `position`; none of those when
+    ///   the grammar did not build. Past a line comment, whose closing is a
+    ///   line break, the parser's ghost texts yield nothing.
     /// - provides: the answer to `textDocument/inlineCompletion`.
     /// - fails: never.
     /// - panics: none.
@@ -4562,9 +4564,11 @@ impl Workspace
     /// - hypothesis: L3 — a known document after an open bracket, the same
     ///   document before written text, and an unknown document distinguish the
     ///   ranked items and null through exact wire answers; a cursor inside a
-    ///   kept proposal sees it first.
+    ///   kept proposal sees it first; a cursor past a line comment, where every
+    ///   ghost text breaks the line, is offered none.
     /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+    /// - witness: `server::tests::a_ghost_text_never_breaks_its_line`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Inline(ref list) => self.documents.get(uri).is_some_and(|held|
@@ -4591,18 +4595,21 @@ impl Workspace
         let at = position.byte(&index);
         let mut items = ghosts(&document.proposals, position);
         if let (Ok(grammar), Ok(forms)) = (grammar(), forms()) {
-            items.extend(ghost(grammar, forms, text, at).into_iter().map(|snippet| {
-                InlineCompletionItem {
-                    insert_text: StringValue {
-                        kind: "snippet",
-                        value: String::from(snippet),
-                    },
-                    range: Range {
-                        start: position,
-                        end: position,
-                    },
-                }
-            }));
+            items.extend(
+                ghost(grammar, forms, text, at)
+                    .into_iter()
+                    .filter(|snippet| !AsRef::<str>::as_ref(snippet).contains(['\n', '\r']))
+                    .map(|snippet| InlineCompletionItem {
+                        insert_text: StringValue {
+                            kind: "snippet",
+                            value: String::from(snippet),
+                        },
+                        range: Range {
+                            start: position,
+                            end: position,
+                        },
+                    }),
+            );
         }
         Answer::Inline(InlineCompletionList { items })
     }
@@ -9387,6 +9394,44 @@ mod tests
             ask(&mut server, "file:///tmp/closed.gandr", 0),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
             "a document the server does not hold answers null"
+        );
+    }
+
+    /// Past a line comment the parser's ghost texts all open with the line
+    /// break that closes the comment, so the cursor is offered none: a ghost
+    /// text that breaks its line moves the editor's view as it is shown. A
+    /// closing on the same line is still offered.
+    #[test]
+    fn a_ghost_text_never_breaks_its_line()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def x = 1; // note\ndef y = f(1 /* aside"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Connected, line: u32, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                    "textDocument":{{"uri":"file:///tmp/open.gandr"}},
+                    "position":{{"line":{line},"character":{character}}},
+                    "context":{{"triggerKind":2}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, 0, 18),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[]}}]"#)),
+            "past a line comment, no ghost text"
+        );
+        let block = ask(&mut server, 1, 20);
+        assert_eq!(
+            block.pointer("/0/result/items/0/insertText/value"),
+            Some(&Value::from(" */)")),
+            "a block comment closes on its line, then the call: {block}"
         );
     }
 
