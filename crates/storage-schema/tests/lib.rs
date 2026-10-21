@@ -17,4 +17,6 @@ mod migrate;
 #[cfg(test)]
 mod proofs;
 #[cfg(test)]
+mod render;
+#[cfg(test)]
 mod schema;

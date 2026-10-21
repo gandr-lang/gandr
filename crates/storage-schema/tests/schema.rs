@@ -135,6 +135,17 @@ fn a_path_that_does_not_compose_is_refused_by_name()
         refusal.to_string(),
         "equation `bad`: arrow `tgt` does not leave `V`, where its path is"
     );
+
+    let bad_right = graph_presentation().equation("bad_right", "V", identity, ["src"]);
+    assert_eq!(
+        Schema::present(&bad_right),
+        Err(SchemaError::NotComposable {
+            equation: "bad_right".into(),
+            arrow: "src".into(),
+            at: "V".into(),
+        }),
+        "the right side is resolved as the left is"
+    );
 }
 
 #[test]
@@ -351,5 +362,27 @@ fn an_ordinal_out_of_range_is_refused()
         small.equation_at(equation).err(),
         Some(unknown(ElementKind::Equation, usize::from(equation))),
         "an equation past the last"
+    );
+}
+
+#[test]
+fn an_attribute_type_is_found_by_name()
+{
+    let schema = keyed::schema().expect("the keyed schema presents");
+    let declared = |name: &str| {
+        schema
+            .attribute_at(schema.attribute(name).expect("a keyed attribute"))
+            .expect("the attribute is the schema's")
+            .ty()
+    };
+    assert_eq!(schema.attribute_type("Text"), Ok(declared("task_name")));
+    assert_eq!(schema.attribute_type("Bytes"), Ok(declared("move_receipt")));
+    assert_ne!(declared("task_name"), declared("move_receipt"));
+    assert_eq!(
+        schema.attribute_type("Float"),
+        Err(SchemaError::Unknown {
+            kind: ElementKind::AttributeType,
+            name: "Float".into(),
+        })
     );
 }

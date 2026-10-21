@@ -3,9 +3,11 @@
 use gandr_storage_schema::ElementKind;
 use gandr_storage_schema::Indexing;
 use gandr_storage_schema::MapError;
+use gandr_storage_schema::Ordinal;
 use gandr_storage_schema::PartKey;
 use gandr_storage_schema::Presentation;
 use gandr_storage_schema::Schema;
+use gandr_storage_schema::SchemaError;
 use gandr_storage_schema::SchemaMap;
 use gandr_storage_schema::StoreError;
 use gandr_storage_schema::keyed;
@@ -211,5 +213,124 @@ fn a_map_onto_another_attribute_type_is_refused()
     assert_eq!(
         refusal.to_string(),
         "schema map: `made_receipt` has type `Bytes` but its image has type `Number`"
+    );
+}
+
+#[test]
+fn a_map_names_what_it_leaves_unmapped_and_refuses_a_foreign_ordinal()
+{
+    let identity: [&str; 0] = [];
+    let objects = || {
+        SchemaMap::builder(view(), keyed::schema().expect("the keyed schema presents"))
+            .object("Made", "Move")
+            .object("Work", "Task")
+            .object("Named", "Naming")
+    };
+    let refusal = objects()
+        .arrow("made_work", ["move_attempt", "attempt_task"])
+        .arrow("named_made", ["naming_move"])
+        .build()
+        .expect_err("`named_work` has no image");
+    assert_eq!(refusal, MapError::Unmapped {
+        kind: ElementKind::Arrow,
+        name: "named_work".into(),
+    });
+    let refusal = objects()
+        .arrow("made_work", ["move_attempt", "attempt_task"])
+        .arrow("named_made", ["naming_move"])
+        .arrow("named_work", ["naming_task"])
+        .attribute("made_receipt", identity, "move_receipt")
+        .build()
+        .expect_err("`work_name` has no image");
+    assert_eq!(refusal, MapError::Unmapped {
+        kind: ElementKind::Attribute,
+        name: "work_name".into(),
+    });
+
+    let source = view();
+    let target = keyed::schema().expect("the keyed schema presents");
+    let map = view_map().build().expect("the view maps");
+    assert_eq!(
+        map.arrow(source.arrow("named_made").expect("a view arrow"))
+            .map(|path| path.arrows().to_vec()),
+        Ok(vec![target.arrow("naming_move").expect("a keyed arrow")])
+    );
+    let foreign_arrow = target
+        .arrows()
+        .find(|&arrow| usize::from(arrow) >= source.arrows().len())
+        .expect("the keyed schema has more arrows than the view");
+    assert_eq!(
+        map.arrow(foreign_arrow),
+        Err(SchemaError::UnknownOrdinal {
+            kind: ElementKind::Arrow,
+            ordinal: Ordinal(usize::from(foreign_arrow)),
+        })
+    );
+    let foreign_attribute = target
+        .attributes()
+        .find(|&attribute| usize::from(attribute) >= source.attributes().len())
+        .expect("the keyed schema has more attributes than the view");
+    assert_eq!(
+        map.attribute(foreign_attribute),
+        Err(SchemaError::UnknownOrdinal {
+            kind: ElementKind::Attribute,
+            ordinal: Ordinal(usize::from(foreign_attribute)),
+        })
+    );
+}
+
+/// A target where `f = g` holds at `X`, reached from `W` through `p`, beside
+/// an arrow `k` the equation says nothing of.
+///
+/// # Specification
+/// trivial.
+fn parallel() -> Schema
+{
+    let presentation = Presentation::new()
+        .object("W")
+        .object("X")
+        .object("Y")
+        .arrow("p", "W", "X", Indexing::Unindexed)
+        .arrow("f", "X", "Y", Indexing::Unindexed)
+        .arrow("g", "X", "Y", Indexing::Unindexed)
+        .arrow("k", "X", "Y", Indexing::Unindexed)
+        .equation("fg", "X", ["f"], ["g"]);
+    Schema::present(&presentation).expect("the parallel schema presents")
+}
+
+#[test]
+fn an_equation_holds_of_images_one_step_apart_in_context()
+{
+    let presentation = Presentation::new()
+        .object("A")
+        .object("B")
+        .arrow("a1", "A", "B", Indexing::Unindexed)
+        .arrow("a2", "A", "B", Indexing::Unindexed)
+        .equation("same", "A", ["a1"], ["a2"]);
+    let pair = || Schema::present(&presentation).expect("the pair schema presents");
+    let map = |first: [&str; 2], second: [&str; 2]| {
+        SchemaMap::builder(pair(), parallel())
+            .object("A", "W")
+            .object("B", "Y")
+            .arrow("a1", first)
+            .arrow("a2", second)
+            .build()
+    };
+
+    assert!(map(["p", "f"], ["p", "f"]).is_ok(), "equal images");
+    assert!(
+        map(["p", "g"], ["p", "f"]).is_ok(),
+        "one step after `p`, by the equation read right to left"
+    );
+    assert!(
+        map(["p", "f"], ["p", "g"]).is_ok(),
+        "one step after `p`, by the equation read left to right"
+    );
+    assert_eq!(
+        map(["p", "f"], ["p", "k"]),
+        Err(MapError::EquationNotPreserved {
+            equation: "same".into(),
+        }),
+        "`f` rewrites to `g`, never to `k`"
     );
 }
