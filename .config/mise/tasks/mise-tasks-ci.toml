@@ -681,6 +681,12 @@ cat "$scratch/rows"
 # the newest landing head its branch holds; `pr:land` waits for those to merge
 # (`carried_queued`).
 #
+# A pull request a `pr:land` is waiting to queue carries the `landing` label
+# (#1556), and a top carrying it is refused: stacked on, it would stop being
+# the top under the landing, which then refuses and starts again from the
+# new top, a whole checks cycle later. Once the chain is queued, the label is
+# gone and the new pull request opens on the trunk.
+#
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
 # main (`stacking_current`): a branch forked before a fix runs the rule the
@@ -722,6 +728,10 @@ if [[ -n "$unblocks" ]]; then
   top=null
 else
   top=$(stack_top "$own")
+  if [[ $(jq -r '.held // false' <<< "$top") == true ]]; then
+    echo "the stack top #$(jq -r .number <<< "$top") is being landed; wait for the queue (the coordinator pages it), then pr:open opens on $trunk" >&2
+    exit 2
+  fi
 fi
 git fetch --quiet origin "$trunk"
 if [[ "$top" == null ]]; then
@@ -920,6 +930,10 @@ conflicts() {
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own_head=$(git branch --show-current)
+# From the moment the landing is this run's until its chain is queued, the
+# chain's pull requests carry the `landing` label, so `pr:open` stacks
+# nothing on the top under it (#1556); every exit takes the label off.
+trap release_landing EXIT
 while :; do
   server=$(server_stack "$number")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$number is not open" >&2; exit 2; }
@@ -931,6 +945,7 @@ while :; do
     wait$'\t'*)
       (( SECONDS < deadline )) || { echo "timed out waiting on #${decision#*$'\t'} below" >&2; exit 2; }
       retarget_landing "$in_stack"
+      hold_landing "$(jq -c --argjson queued "$in_stack" '[.[].number | select(IN($queued[]) | not)]' <<< "$server")"
       echo "#${decision#*$'\t'} below is queued on its own; landing once it merges"
       sleep 60
       ;;
@@ -943,6 +958,7 @@ case "$decision" in
   single) stack=false ;;
   *) echo "unexpected stack decision: $decision" >&2; exit 2 ;;
 esac
+hold_landing "$(jq -c --argjson queued "$in_stack" '[.[].number | select(IN($queued[]) | not)]' <<< "$server")"
 
 # A branch behind main enters the queue only to come back UNMERGEABLE or to
 # fail on what landed ahead of it, so the stack is restacked onto
@@ -1001,6 +1017,8 @@ if [[ "$in_queue" == true ]]; then queued=true; fi
 if [[ "$state" == OPEN && "$auto" == false && "$in_queue" == false ]]; then
   queue_stack "$server"
 fi
+# Queued, the chain is landing (`open_prs`), so nothing stacks on it.
+release_landing
 # The seat's wake-up: run as a deferred job, `pr:watch` exits with one line
 # the moment the pull request needs a hand or has landed.
 printf "arm: /bin/bash -c 'mise run pr:watch %s' timer-pr-%s\n" "$number" "$number"
@@ -1116,6 +1134,8 @@ exit 2
 # stderr, and the watch goes on, up to three times. A branch the restack moved
 # is moved on the server only; its seat's checkout reads it at its next fetch.
 # A red check, or a restack that conflicts, is the event line as before.
+# A `landing` label `pr:land` left on the pull request, queued or merged, is
+# taken off (#1556).
 ["pr:watch"]
 description = "Wait for the one event that needs a hand on a pull request"
 quiet = true
@@ -1139,7 +1159,8 @@ seen_queued=false
 # repeats it, so a moment between readings is no removal.
 gone=0
 
-# State, merge state, queued, the entry's state and head, the last removal.
+# State, merge state, queued, the entry's state and head, the last removal,
+# and whether it carries the `landing` label.
 snapshot() {
   gh api graphql -f owner="$owner" -f name="$name" -F number="$number" -f query="
     query(\$owner: String!, \$name: String!, \$number: Int!) {
@@ -1150,9 +1171,10 @@ snapshot() {
           timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
             nodes { ... on RemovedFromMergeQueueEvent { reason } }
           }
+          labels(first: 50) { nodes { name } }
         }
       }
-    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end)] | @tsv'
+    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing")] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
 # default, if any.
@@ -1221,8 +1243,13 @@ red_entry() {
 while (( SECONDS < deadline )); do
   # A failed read is no event; the next poll reads again.
   if ! reading=$(snapshot) || [[ -z "$reading" ]]; then sleep 60; continue; fi
-  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed <<< "$reading"
+  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held <<< "$reading"
   if [[ "$in_queue" == true ]]; then seen_queued=true; fi
+  # A `landing` label still on a queued or merged pull request was left by a
+  # `pr:land` that never reached its exit (#1556): it would hold `pr:open`.
+  if [[ "$held" == true && ( "$in_queue" == true || "$state" == MERGED ) ]]; then
+    gh pr edit "$number" -R "$repo" --remove-label landing > /dev/null 2>&1 || true
+  fi
   case "$state" in
     MERGED) echo "pr-merged #$number"; exit 0 ;;
     CLOSED) echo "pr-closed #$number"; exit 1 ;;
