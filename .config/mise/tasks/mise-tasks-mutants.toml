@@ -4,8 +4,15 @@
 # The mutation lane: cargo-mutants over one crate with the settings its
 # campaign measured. Every mutant relinks the crate's test binaries, so the
 # host's own target rustflags, which may name a memory-hungry linker, give
-# way to `-Ctarget-cpu=native` alone for the host triple. Four mutants build
-# at once under a jobserver of eight tasks; nextest runs each one's tests.
+# way to `-Ctarget-cpu=native --cap-lints=warn` for the host triple. The
+# workspace denies `unused` and `warnings`, so without the cap a mutant that
+# leaves a parameter, an import or a helper unused fails to build and reads
+# unviable, whatever its type (#1456, lever 4). This is cargo-mutants'
+# documented answer to strict lints. The cap is set here rather than
+# through cargo-mutants' `cap_lints`, which would replace these flags
+# instead of adding to them, so every build of a run shares one set. Four
+# mutants build at once under a jobserver of eight tasks; nextest runs each
+# one's tests.
 # A whole crate takes hours, which is why a witness batch reruns only the
 # survivors it answers (`mutants:named`). Further arguments pass through to
 # cargo-mutants (`--shard k/n`, `--list`, `--timeout`). Outcomes land in
@@ -37,7 +44,7 @@ if [[ -z "$crate" ]]; then
 fi
 host=$(rustc -vV | sed -n 's/^host: //p')
 triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
-export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native"
+export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native --cap-lints=warn"
 output=${MUTANTS_OUTPUT:-mutants.out/$crate}
 mkdir -p "$output"
 source .config/mise/mutants.bash
@@ -119,7 +126,8 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # the working tree laid over each, in place, each lane keeping its own target
 # directory warm from one group to the next. The witnesses run once
 # unmutated first, in a lane, so a witness that fails there stops the run
-# instead of reading every mutant caught.
+# instead of reading every mutant caught. That run and every mutant's build
+# share `mutants`' flags, the lint cap included, so a lane builds once.
 # The run holds the host's mutants lock as `mutants` does, and each group's
 # cargo-mutants runs in its own capped scope (`.config/mise/mutants.bash`).
 # Outcomes land in `mutants.out/<crate>/witnessed` (or `MUTANTS_OUTPUT`):
@@ -191,7 +199,7 @@ doc=target/evidence/doc/$documented.json
 [[ -f "$doc" ]] || { printf 'no rustdoc JSON for %s at %s\n' "$crate" "$doc" >&2; exit 2; }
 host=$(rustc -vV | sed -n 's/^host: //p')
 triple=$(tr '[:lower:]-' '[:upper:]_' <<< "$host")
-export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native"
+export "CARGO_TARGET_${triple}_RUSTFLAGS=-Ctarget-cpu=native --cap-lints=warn"
 output=${MUTANTS_OUTPUT:-mutants.out/$crate/witnessed}
 source .config/mise/mutants.bash
 hold_mutants_lock "mise run mutants:witnessed -- -p $crate"
