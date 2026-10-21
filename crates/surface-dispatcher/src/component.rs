@@ -594,7 +594,9 @@ pub fn lay_out(
 /// laid out as one unit, each import read as `shadows` holds it.
 ///
 /// # Specification
-/// - requires: `text` is the source at `path`, classified under `root`.
+/// - requires: `text` is the source at `path`, classified under `root`; the
+///   file at `path` need not exist, the importer being named as [`named_path`]
+///   names it.
 /// - ensures: a source that writes a path import is laid out with every source
 ///   it reaches through path imports: each import's path is joined to its
 ///   importer's directory and resolves when it names a source classified under
@@ -624,6 +626,7 @@ pub fn lay_out(
 /// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
 /// - witness: `component::tests::a_source_importing_nothing_is_alone`
 /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
+/// - witness: `component::tests::an_importer_not_yet_on_disk_is_laid_after_what_it_imports_1443`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref())
         && laid.paths.len() == laid.unit.sources().len()
@@ -642,12 +645,8 @@ pub fn lay_out_shadowed(
     if !text.as_ref().contains(IMPORT) {
         return Maybe::Absent(laid::Absent::Alone);
     }
-    let Ok(canonical) = std::fs::canonicalize(path)
-    else {
-        return Maybe::Absent(laid::Absent::Alone);
-    };
     let mut graph = Graph::default();
-    let importer = graph.admit(canonical, root, String::from(text.as_ref()));
+    let importer = graph.admit(named_path(path), root, String::from(text.as_ref()));
     graph.expand(grammar, shadows);
     match graph.read.get(importer.0) {
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
@@ -2204,6 +2203,41 @@ mod tests
             "the path import names the sibling; the scheme import is no path import"
         );
         assert_eq!(laid.paths.len(), 2_usize);
+    }
+
+    /// #1443: an importer an editor holds before it is written to disk lays
+    /// out its closure as one on disk does, named where a file written there
+    /// would be.
+    #[test]
+    fn an_importer_not_yet_on_disk_is_laid_after_what_it_imports_1443()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let importer =
+            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let tree = Scratch::new(Path::new("unwritten"), &[(
+            Path::new("base.gandr"),
+            SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+        )]);
+        let Maybe::Present(laid) = lay_out(
+            &grammar,
+            &tree.0.join("main.gandr"),
+            SourceRoot::Strict,
+            importer,
+        )
+        else {
+            panic!("an importer not on disk is laid out with its sibling");
+        };
+        assert_eq!(
+            laid.unit
+                .target(SourceIndex::from(1_usize), PathImportOrdinal::from(0_usize)),
+            ImportTarget::Source(SourceIndex::from(0_usize)),
+            "the path import names the sibling beside the importer's path"
+        );
+        assert_eq!(
+            laid.paths,
+            [tree.0.join("base.gandr"), tree.0.join("main.gandr")],
+            "the importer is named by its directory's canonical path and its file name"
+        );
     }
 
     #[test]
