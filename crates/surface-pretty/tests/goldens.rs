@@ -83,10 +83,10 @@ use gandr_surface_pretty::Unspelled;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_definition;
-use gandr_surface_pretty::present_recursive;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_value;
-use gandr_surface_pretty::recursive;
+use gandr_surface_pretty::present_whole;
+use gandr_surface_pretty::whole;
 use gandr_theory_sites::Degree;
 use gandr_theory_sites::PortCount;
 use gandr_theory_sites::Profile;
@@ -3398,18 +3398,18 @@ fn two_uniform(core: &mut CoreArena) -> (gandr_core_term::ComputationId, ValueId
     (case, core.value_thunk(outer))
 }
 
-/// A definition's presentation as a `def rec`: its text and fidelity, or why
-/// it is no recursive definition.
+/// A definition's presentation whole: its text and fidelity, or why it is
+/// written in halves.
 ///
 /// # Specification
 /// trivial.
-fn recursive(
+fn declared_whole(
     source: &CoreSource<'_>,
     defined: (ValueTypeId, ValueId),
     page: PageWidth,
-) -> Maybe<(String, Fidelity), recursive::Absent>
+) -> Maybe<(String, Fidelity), whole::Absent>
 {
-    match present_recursive(
+    match present_whole(
         source,
         Name::from("down"),
         defined,
@@ -3462,21 +3462,21 @@ fn a_recursive_definition_spells_as_written_941()
     let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
     let (wide, narrow) = (PageWidth::from(100_u32), PageWidth::from(30_u32));
     assert_eq!(
-        recursive(&source, (ty, descending), wide),
+        declared_whole(&source, (ty, descending), wide),
         written(
             "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[<](b) }\n}"
         ),
         "a descending call writes its claim"
     );
     assert_eq!(
-        recursive(&source, (ty, productive), wide),
+        declared_whole(&source, (ty, productive), wide),
         written(
             "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[>](b) }\n}"
         ),
         "a fixpoint claiming nothing writes its call productive"
     );
     assert_eq!(
-        recursive(&source, (ty, descending), narrow),
+        declared_whole(&source, (ty, descending), narrow),
         written(
             "def rec down(a : Nat) -> -F Nat {\n  case a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
         ),
@@ -3484,24 +3484,24 @@ fn a_recursive_definition_spells_as_written_941()
     );
     let both = "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case a { Zero => b, Succ(c) => down[<](c, b) }\n}";
     assert_eq!(
-        recursive(&source, (ty_two, on_first), wide),
+        declared_whole(&source, (ty_two, on_first), wide),
         written(both),
         "every parameter the fixpoint abstracts stands in the header"
     );
     assert_eq!(
-        recursive(&source, (ty_two, staged), wide),
+        declared_whole(&source, (ty_two, staged), wide),
         written(both),
         "a fixpoint staged on a later parameter writes the same claim"
     );
     assert_eq!(
-        recursive(&source, (ty, zero), wide),
-        Maybe::Absent(recursive::Absent::NotAFixpoint),
-        "a constructor is no recursive definition"
+        declared_whole(&source, (ty, zero), wide),
+        Maybe::Absent(whole::Absent::NotAbstracted),
+        "a constructor is no definition written whole"
     );
     assert_eq!(
-        recursive(&source, (nat, descending), wide),
-        Maybe::Absent(recursive::Absent::NotAFunction),
-        "a definition stated at no function type is no recursive definition"
+        declared_whole(&source, (nat, descending), wide),
+        Maybe::Absent(whole::Absent::NotAFunction),
+        "a definition stated at no function type is no definition written whole"
     );
 }
 
@@ -3539,7 +3539,7 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     let wide = PageWidth::from(100_u32);
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
-        recursive(&source, (unnamed, mentioning), wide),
+        declared_whole(&source, (unnamed, mentioning), wide),
         written(
             "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
         ),
@@ -3548,7 +3548,7 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     let arrows = [(pi, Name::from("n"))];
     let named = source.naming_arrows(&arrows);
     assert_eq!(
-        recursive(&named, (dependent, quiet), wide),
+        declared_whole(&named, (dependent, quiet), wide),
         written(
             "def rec down(n : Nat) -> -F Nat {\n  case n { Zero => n, Succ(a) => down[<](a) }\n}"
         ),
@@ -3557,7 +3557,7 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     let mentioned_arrows = [(pi, Name::from("a"))];
     let shadowing = source.naming_arrows(&mentioned_arrows);
     assert_eq!(
-        recursive(&shadowing, (dependent, mentioning), wide),
+        declared_whole(&shadowing, (dependent, mentioning), wide),
         written(
             "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
         ),
@@ -3607,23 +3607,73 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
     let wide = PageWidth::from(100_u32);
     assert_eq!(
-        recursive(&source, (ty_one, one), wide),
+        declared_whole(&source, (ty_one, one), wide),
         written(
             "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](a, c) }\n}"
         ),
         "a call passes the uniform parameter before its argument"
     );
     assert_eq!(
-        recursive(&source, (ty_two, two), wide),
+        declared_whole(&source, (ty_two, two), wide),
         written(
             "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> -F Nat {\n  case c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
     assert_eq!(
-        recursive(&source, (ty_one, exhausted), wide),
-        Maybe::Absent(recursive::Absent::NotAFixpoint),
-        "a fixpoint binding no parameter is no recursive definition"
+        declared_whole(&source, (ty_one, exhausted), wide),
+        Maybe::Absent(whole::Absent::NotAbstracted),
+        "a fixpoint binding no parameter is no definition written whole"
+    );
+}
+
+/// A function definition with no fixpoint spells whole as the `def` that
+/// declares it, every parameter its body abstracts in the header with its
+/// stated type and the body under them, so an observation of a parameter
+/// reads the type its binder states; a body that abstracts nothing is no
+/// definition written whole (#941).
+#[test]
+fn a_function_definition_spells_whole_941()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let ty_one = core.value_type_thunk(function);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty_two = core.value_type_thunk(curried);
+    let parameter = |core: &mut CoreArena, index: u32| {
+        let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+        core.computation_return(read)
+    };
+    let returned = parameter(&mut core, 0_u32);
+    let lambda = core.computation_lambda(returned);
+    let one = core.value_thunk(lambda);
+    let first = parameter(&mut core, 1_u32);
+    let inner = core.computation_lambda(first);
+    let outer = core.computation_lambda(inner);
+    let two = core.value_thunk(outer);
+    let unit = core.value_unit();
+    let bare = core.computation_return(unit);
+    let unabstracted = core.value_thunk(bare);
+    let source = CoreSource::new(&core, &names);
+    let written = |text: &str| Maybe::Present((text.to_owned(), Fidelity::Faithful));
+    let wide = PageWidth::from(100_u32);
+    assert_eq!(
+        declared_whole(&source, (ty_one, one), wide),
+        written("def down(a : Nat) -> -F Nat {\n  a\n}"),
+        "a function of one parameter is written whole, not as a `def rec`"
+    );
+    assert_eq!(
+        declared_whole(&source, (ty_two, two), wide),
+        written("def down(a : Nat, b : Nat) -> -F Nat {\n  a\n}"),
+        "the body stands under every parameter, the first the outermost"
+    );
+    assert_eq!(
+        declared_whole(&source, (ty_one, unabstracted), wide),
+        Maybe::Absent(whole::Absent::NotAbstracted),
+        "a body abstracting no parameter is written in halves"
     );
 }
 
