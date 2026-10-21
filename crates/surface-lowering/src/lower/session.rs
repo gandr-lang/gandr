@@ -423,6 +423,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Call
                 | Former::Case
                 | Former::Telescope
+                | Former::List
                 | Former::PackModel
                 | Former::Injection
                 | Former::LazyRecord
@@ -533,6 +534,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Call
                         | Former::Case
                         | Former::Telescope
+                        | Former::List
                         | Former::PackModel
                         | Former::Injection
                         | Former::LazyRecord
@@ -602,6 +604,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Call
                 | Former::Case
                 | Former::Telescope
+                | Former::List
                 | Former::PackModel
                 | Former::Injection
                 | Former::LazyRecord

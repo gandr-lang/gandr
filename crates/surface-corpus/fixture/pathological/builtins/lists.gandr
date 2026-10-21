@@ -1,0 +1,7 @@
+// A list literal refused at the element type it is stated at: the twin of
+// `model/builtins/lists.gandr`.
+
+/// A text among integers: the second element does not convert to the element
+/// type the annotation states (#1544).
+@[ refuses("TypeMismatch") ]
+def mixed = ([1, "two"] : List(Integer));

@@ -1278,7 +1278,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1306,6 +1306,7 @@ fn ending(former: Former) -> Ending
         | Former::Run
         | Former::Call
         | Former::Telescope
+        | Former::List
         | Former::PackModel
         | Former::Injection
         | Former::Binary
@@ -1372,7 +1373,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1439,6 +1440,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Projection
                     | Former::Case
                     | Former::Telescope
+                    | Former::List
                     | Former::PackModel
                     | Former::Injection
                     | Former::LazyRecord
@@ -1520,6 +1522,7 @@ const fn family_of(former: Former) -> Family
         | Former::Projection
         | Former::Case
         | Former::Telescope
+        | Former::List
         | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
@@ -2258,6 +2261,9 @@ enum Plan
     EmptyCase(NodeIndex),
     /// One tuple of the values in the lowerer's operand store, in order.
     Tuple(Stretch),
+    /// The native list of the values in the lowerer's operand store, in
+    /// order: their cons cells ending in the empty list.
+    List(Stretch),
     /// The record of the values its labels name: `#{ .l = v, … }`.
     Record(BTreeMap<FieldLabel, NodeIndex>),
     /// The injection of its value into the summand at this index.
@@ -5831,6 +5837,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Call => self.call(site, cursor),
             Former::Case => self.case(site, cursor),
             Former::Telescope => self.telescope(site, cursor),
+            Former::List => self.list(site, cursor),
             Former::PackModel => self.pack_model(site, cursor),
             Former::Injection => self.injection(site, cursor),
             Former::LazyRecord => self.copattern(site, cursor),
@@ -7210,6 +7217,109 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Classify a list literal, `[v1, …, vn]`, the empty `[]` included.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the `[` of a list literal.
+    /// - ensures: the list stands as a value, reads every element as a value
+    ///   under its own frame, and is planned over them as one native list, as
+    ///   `v1 :: … :: vn :: nil` is. Under a written classifier `List(T)` — its
+    ///   annotation, or the signature of the definition it is — its parentheses
+    ///   stripped, each element written as a constructor, a call or a list
+    ///   takes `T` as its own, as a constructor's field gives the constructor
+    ///   written in it its type.
+    /// - provides: the introduction of the native list from its elements.
+    /// - fails: yields the wrong-sort refusal where no value is read, and the
+    ///   element list's refusal for an element out of shape, both naming the
+    ///   list; the walk's refusal reading the classifier.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The list's refusal.
+    ///
+    /// # Termination
+    /// The element loop runs once per entry of the finite element stretch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty list, a list of one and a list of three,
+    ///   each asserted as the exact cons chain read back out of the arena; a
+    ///   list where a computation is read refused; and a list of a
+    ///   parameterised family's constructors, and a list of such lists, under
+    ///   their annotation, each constructor classified by the element type.
+    /// - witness: `lower::tests::a_list_literal_lowers_to_its_cons_cells_1544`
+    /// - witness: `lower::native::tests::a_listed_constructor_takes_the_element_type_1544`
+    #[spec(
+        ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::List(_))),
+    )]
+    fn list(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Value)?;
+        let start = self.operands.len();
+        if let Err(refusal) = delimited(
+            site,
+            &mut cursor,
+            &mut self.operands,
+            TileName::BRACKET_OPEN,
+            TileName::BRACKET_CLOSE,
+        ) {
+            self.operands.truncate(start);
+            return Err(refusal);
+        }
+        let elements = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        // An element type the list is written at classifies each constructor,
+        // call or list among its elements, as a field's type does the
+        // constructor written in it.
+        let written = match (
+            self.classifiers.get(&site.at.node),
+            self.inherited.get(&site.at.node),
+        ) {
+            (Some(&written), _) | (None, Some(&native::Classifier::Written(written))) => {
+                Some(written)
+            },
+            (None, Some(_) | None) => None,
+        };
+        if let Some(written) = written
+            && let Maybe::Present(typed) = self.unwrapped(written)?
+            && typed.former == Former::TypeApplication
+            && typed.keyword.is_some_and(|head| {
+                type_former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
+            })
+            && let [element_type] = typed.operands[..]
+        {
+            for position in elements.start .. elements.end {
+                if let Some(&element) = self.operands.get(position)
+                    && self.tree.node(element).is_some_and(|node| {
+                        matches!(
+                            shape_of(self.pbg, node),
+                            Ok(Shape::Form {
+                                former: Former::Constructor | Former::Call | Former::List,
+                                ..
+                            })
+                        )
+                    })
+                {
+                    let _first = self.classifiers.insert(element, element_type);
+                }
+            }
+        }
+        for position in elements.start .. elements.end {
+            if let Some(&element) = self.operands.get(position) {
+                self.read(element, Reading::Value(frame));
+            }
+        }
+
+        self.plan(site, Plan::List(elements));
+
+        Ok(())
+    }
+
     /// Classify a thunk, `thunk { … }`.
     ///
     /// # Specification
@@ -7521,22 +7631,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the frame before it and recorded on the binder; a recursive tail
     ///   stages the parameter [`Self::staged_by_body`] reads off its body and
     ///   binds its own name in one more frame, between that parameter and the
-    ///   ones before it, typed by the declaration form so no telescope counts
-    ///   it, records the parameters before it as the ones every recursive call
-    ///   passes unchanged, and records each parameter's position as the one a
-    ///   match on it scrutinises; the result, when written, is read at the
-    ///   result position under the last parameter's frame, as the block is, and
-    ///   recorded as the answer of the block's last computation and of every
-    ///   statement whose local ends continue the block; the block is read as a
-    ///   body a path runs through; the form is planned as the function's
-    ///   declared type and body.
+    ///   ones before it — after its empty list when it has none — typed by the
+    ///   declaration form so no telescope counts it, records the parameters
+    ///   before it as the ones every recursive call passes unchanged, and
+    ///   records each parameter's position as the one a match on it
+    ///   scrutinises; the result, when written, is read at the result position
+    ///   under the last parameter's frame, as the block is, and recorded as the
+    ///   answer of the block's last computation and of every statement whose
+    ///   local ends continue the block; the block is read as a body a path runs
+    ///   through; the form is planned as the function's declared type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
-    ///   or a type variable, and, as a recursive tail, for one with no
-    ///   parameter to descend on; a fault naming the function form for a
-    ///   parameter list, a type or a result out of shape; a form fault reading
-    ///   a recursive tail's body ahead; the block's own refusal; and the
+    ///   or a type variable; a fault naming the function form for a parameter
+    ///   list, a type or a result out of shape; a form fault reading a
+    ///   recursive tail's body ahead; the block's own refusal; and the
     ///   unreachable refusal for statements after one every path of which
     ///   exits.
     /// - panics: none.
@@ -7547,8 +7656,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the parameter count is separated by none and two,
     ///   each lowered tail asserted as the exact core node read back out of the
-    ///   arena, and the refusals by a type-spelled parameter and a juxtaposed
-    ///   parameter type, each asserted as the exact variant.
+    ///   arena, a recursive tail of none binding its own name, and the refusals
+    ///   by a type-spelled parameter and a juxtaposed parameter type, each
+    ///   asserted as the exact variant.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
@@ -7557,6 +7667,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+    /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
     #[spec(
         captures: parameters = self.parameters.len(),
         ensures: |ret| {
@@ -7674,20 +7785,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let (Maybe::Present(own), Some(staging)) = (named, staged)
                 && self.parameters.len().saturating_sub(start) == staging.kept.0
             {
-                let own_site = Maybe::Present(own.span);
-                let named = own.node;
-                let own = self.name_at(own);
-                let bound = self.scope.extend_typed(frame, own, site.at.node, own_site);
-                let _first = self.recursions.insert(bound, native::Recursion {
-                    parameters: Stretch { start, end: start },
-                    uniform: Stretch {
-                        start,
-                        end: self.parameters.len(),
-                    },
-                    staged: staging.staged,
-                    claimed: native::Claimed(false),
-                    named,
-                });
+                let uniform = Stretch {
+                    start,
+                    end: self.parameters.len(),
+                };
+                let bound = self.bind_own(site, own, frame, uniform, staging.staged);
                 recursion = Maybe::Present(bound);
                 frame = Frame::Inner(bound);
             }
@@ -7708,12 +7810,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
             }
         }
-        if let (Maybe::Present(_), Maybe::Absent(_)) = (recursive, recursion) {
-            let recursive = Site {
-                name: FormName::RECURSIVE,
-                ..site
+        // A tail of no parameter binds its own name after its empty list: the
+        // loop above met no parameter to bind it before.
+        if let (Maybe::Absent(_), Maybe::Present(own), Some(staging)) = (recursion, named, staged)
+            && self.parameters.len().saturating_sub(start) == staging.kept.0
+        {
+            let uniform = Stretch {
+                start,
+                end: self.parameters.len(),
             };
-            return Err(recursive.out(FragmentBoundary::Unadmitted));
+            let bound = self.bind_own(site, own, frame, uniform, staging.staged);
+            recursion = Maybe::Present(bound);
+            frame = Frame::Inner(bound);
         }
         let parameters = Stretch {
             start,
@@ -7788,6 +7896,61 @@ impl<'run, 'source> Lowerer<'run, 'source>
         );
 
         Ok(())
+    }
+
+    /// Bind a recursive tail's own name, written at `own`, in one more frame
+    /// over `frame`, and record its fixpoint: the parameters `uniform` every
+    /// recursive call passes unchanged, and the one at `staged` it stages.
+    ///
+    /// # Specification
+    /// - requires: `site` is the declaration form the tail writes; `uniform` is
+    ///   the parameters the tail read before its own name, ending at the
+    ///   store's end.
+    /// - ensures: the frame binds `own`'s name over `frame`, typed by the
+    ///   declaration form so no telescope counts it, and keys the tail's
+    ///   recursion, unclaimed, its parameters not yet read.
+    /// - provides: the one binding of a recursive tail's name, before the
+    ///   parameter after the kept ones or, for a tail of none, after its empty
+    ///   list.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::function`].
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
+    #[spec(
+        ensures: |ret| self.recursions.get(&ret).is_some_and(|held| held.uniform == uniform
+            && held.staged == staged
+            && held.parameters.start == uniform.start
+            && held.parameters.end == uniform.start),
+    )]
+    fn bind_own(
+        &mut self,
+        site: Site,
+        own: Placed,
+        frame: Frame,
+        uniform: Stretch,
+        staged: native::ParameterAt,
+    ) -> ScopeId
+    {
+        let named = own.node;
+        let name = self.name_at(own);
+        let bound = self
+            .scope
+            .extend_typed(frame, name, site.at.node, Maybe::Present(own.span));
+        let _first = self.recursions.insert(bound, native::Recursion {
+            parameters: Stretch {
+                start: uniform.start,
+                end: uniform.start,
+            },
+            uniform,
+            staged,
+            claimed: native::Claimed(false),
+            named,
+        });
+
+        bound
     }
 
     /// Read a block, `{ s… c }`, whose first statement reads under `frame`.
@@ -12204,6 +12367,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Literal(_)
                 | Plan::StaticApplication(..)
                 | Plan::Tuple(_)
+                | Plan::List(_)
                 | Plan::Record(_)
                 | Plan::Injection(..)
                 | Plan::StaticLambda(_)
@@ -12413,6 +12577,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
+            Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
             Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
             Plan::ValueFunction(domains, codomain) => {
@@ -13003,6 +13168,73 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Maybe::Present(sink.value(id, origin))
     }
 
+    /// Carry out a list literal's plan: its elements, as cons cells ending in
+    /// the empty list.
+    ///
+    /// # Specification
+    /// - requires: every element is already minted or absent.
+    /// - ensures: `[v1, …, vn]` mints as `n` cons cells over the elements in
+    ///   written order ending in one empty list, every cell and the empty list
+    ///   with the written origin, so the literal is the list `v1 :: … :: vn ::
+    ///   nil` builds; nothing is minted when an element did not lower.
+    /// - provides: the introduction of the native list from its elements.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each loop runs once per entry of the finite stretch `elements`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty list, a list of one and a list of three
+    ///   keep their elements in order as a cons chain ending in the empty list,
+    ///   whose head records the literal's origin.
+    /// - witness: `lower::tests::a_list_literal_lowers_to_its_cons_cells_1544`
+    #[spec(
+        ensures: |ret| {
+            let written = stretch(&self.operands, elements);
+            match written
+                .iter()
+                .find_map(|&element| match self.value_at(element) {
+                    | Maybe::Present(_) => None,
+                    | Maybe::Absent(reason) => Some(reason),
+                }) {
+                | Some(reason) => ret == Maybe::Absent(reason),
+                | None => {
+                    matches!(ret, Maybe::Present(Lowered::Value(id))
+                        if sink.origins.value(id) == Maybe::Present(origin)
+                            && matches!(
+                                (written.is_empty(), sink.arena.value(id)),
+                                (true, Some(&gandr_core_term::Value::ListNil))
+                                    | (false, Some(&gandr_core_term::Value::ListCons(..)))
+                            ))
+                },
+            }
+        },
+    )]
+    fn mint_list(
+        &self,
+        elements: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, elements);
+        let mut heads = Vec::with_capacity(written.len());
+        for &element in written {
+            match self.value_at(element) {
+                Maybe::Present(head) => heads.push(head),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let mut list = sink.arena.value_list_nil();
+        for &head in heads.iter().rev() {
+            sink.origins.record_value(list, origin);
+            list = sink.arena.value_list_cons(head, list);
+        }
+
+        Maybe::Present(sink.value(list, origin))
+    }
+
     /// Carry out a product's plan: its components, as one product.
     ///
     /// # Specification
@@ -13474,6 +13706,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Called(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
+            | Plan::List(_)
             | Plan::Record(_)
             | Plan::Injection(..)
             | Plan::ValueFunction(..)
@@ -14017,7 +14250,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the thunk marked as inserted at the declaration form; a recursive tail
     ///   closes its staged parameter's lambda by a fixpoint marked as inserted
     ///   at the declaration form, its binder named where the function's own
-    ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, claiming structural
+    ///   name is written, `thunk (λ … λ. fix. λ … λ. b)`, and a recursive tail
+    ///   of no parameter its body, `thunk (fix. b)`, claiming structural
     ///   descent when a call claims it and partial otherwise; a written-through
     ///   method's `b` runs under the hold of its receiver [`Self::hold_body`]
     ///   mints; its declared type is `+U (A1 -> … -> An -> C)`, one arrow per
@@ -14039,6 +14273,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
@@ -14096,19 +14331,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if position == staged
                 && let Some(evidence) = fixpoint.take()
             {
-                let closed = sink.arena.computation_fixpoint(body, evidence);
-                sink.origins
-                    .record_computation(closed, origin.inserted(Insertion::Fixpoint));
-                // The fixpoint's binder is the function's own name, which
-                // a type its identified fields read names it by.
-                if let Maybe::Present(scope) = function.recursion
-                    && let Some(recursion) = self.recursions.get(&scope)
-                    && let Maybe::Present(named) = self.origin_at(recursion.named)
-                {
-                    sink.origins.record_binder(closed, named);
-                }
-                body = closed;
+                body = self.close_fixpoint(function, body, evidence, sink, origin);
             }
+        }
+        // A tail of no parameter closes its fixpoint over its body: there is
+        // no lambda for it to stand inside.
+        if parameters.is_empty()
+            && let Some(evidence) = fixpoint.take()
+        {
+            body = self.close_fixpoint(function, body, evidence, sink, origin);
         }
         let thunk = sink.arena.value_thunk(body);
         sink.origins
@@ -14118,6 +14349,49 @@ impl<'run, 'source> Lowerer<'run, 'source>
             signature: self.mint_signature(function, parameters, sink, origin),
             body: thunk,
         })
+    }
+
+    /// Close `body` by `function`'s fixpoint, carrying `evidence`, marked as
+    /// inserted at the declaration form `origin` writes.
+    ///
+    /// # Specification
+    /// - requires: `function` recurses and `body` is minted.
+    /// - ensures: the fixpoint over `body` with `evidence`, its origin the
+    ///   inserted fixpoint's and its binder the tile writing the function's own
+    ///   name, which a type its identified fields read names it by.
+    /// - provides: the one closing of a recursive tail, under its lambdas or
+    ///   over its body alone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_function`].
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_parameterless_recursive_tail_binds_its_own_name_1499`
+    #[spec(
+        ensures: |ret| sink.origins.computation(ret) == Maybe::Present(origin.inserted(Insertion::Fixpoint))
+            && matches!(sink.arena.computation(ret), Some(&gandr_core_term::Computation::Fixpoint { .. })),
+    )]
+    fn close_fixpoint(
+        &self,
+        function: &Function,
+        body: ComputationId,
+        evidence: gandr_kernel_term::FixpointEvidence,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ComputationId
+    {
+        let closed = sink.arena.computation_fixpoint(body, evidence);
+        sink.origins
+            .record_computation(closed, origin.inserted(Insertion::Fixpoint));
+        if let Maybe::Present(scope) = function.recursion
+            && let Some(recursion) = self.recursions.get(&scope)
+            && let Maybe::Present(named) = self.origin_at(recursion.named)
+        {
+            sink.origins.record_binder(closed, named);
+        }
+
+        closed
     }
 
     /// Mint a function tail's declared type, `+U (A1 -> … -> An -> C)`.
@@ -16875,11 +17149,46 @@ fn statement_form(
 ///
 /// # Specification
 /// - requires: `cursor` stands at the list's `(`.
-/// - ensures: every argument written is appended to `written`, left to right,
-///   with the cursor past the closing `)` and nothing after it; empty
-///   parentheses append nothing, and a comma after the last argument is
-///   admitted.
+/// - ensures: [`delimited`] between `(` and `)`.
 /// - provides: the argument reading of calls and type applications.
+/// - fails: as [`delimited`].
+/// - panics: none.
+/// - executable: none — the parentheses fixed for [`delimited`], whose
+///   predicate states the reading.
+///
+/// # Errors
+/// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`delimited`], whose argument-list witnesses read
+///   through this one.
+/// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
+/// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+fn arguments<'source>(
+    site: Site,
+    cursor: &mut Cursor<'_>,
+    written: &mut Vec<NodeIndex>,
+) -> Result<(), LoweringRefusal<'source>>
+{
+    delimited(
+        site,
+        cursor,
+        written,
+        TileName::PAREN_OPEN,
+        TileName::PAREN_CLOSE,
+    )
+}
+
+/// Read a comma-separated operand list between the tiles `open` and `close`
+/// into `written`.
+///
+/// # Specification
+/// - requires: `cursor` stands at the list's `open`.
+/// - ensures: every operand written is appended to `written`, left to right,
+///   with the cursor past the `close` and nothing after it; an empty list
+///   appends nothing, and a comma after the last operand is admitted.
+/// - provides: the argument reading of calls and type applications, and the
+///   element reading of a list literal.
 /// - fails: yields the hole's own refusal for an empty or juxtaposed argument,
 ///   and a misplaced-tile refusal for a list out of shape; the arguments read
 ///   before the refusal stay appended.
@@ -16903,10 +17212,10 @@ fn statement_form(
             && ret.as_ref().map_or(true, |&()| written.get(before.0 ..).is_some_and(|appended| {
                 let mut input = before.1.clone();
                 let mut appended = appended.iter();
-                if matches!(input.tile(TileName::PAREN_OPEN), Maybe::Absent(_)) {
+                if matches!(input.tile(open), Maybe::Absent(_)) {
                     return false;
                 }
-                if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                if matches!(input.tile(close), Maybe::Present(_)) {
                     return appended.next().is_none()
                         && matches!(input.peek(), Maybe::Absent(_))
                         && cursor.peek() == input.peek();
@@ -16917,13 +17226,13 @@ fn statement_form(
                             if appended.next() == Some(&at.node) => {},
                         | _ => return false,
                     }
-                    if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                    if matches!(input.tile(close), Maybe::Present(_)) {
                         break;
                     }
                     if matches!(input.tile(TileName::COMMA), Maybe::Absent(_)) {
                         return false;
                     }
-                    if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                    if matches!(input.tile(close), Maybe::Present(_)) {
                         break;
                     }
                 }
@@ -16933,18 +17242,20 @@ fn statement_form(
             }))
     },
 )]
-fn arguments<'source>(
+fn delimited<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
     written: &mut Vec<NodeIndex>,
+    open: TileName,
+    close: TileName,
 ) -> Result<(), LoweringRefusal<'source>>
 {
-    if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+    if let Maybe::Absent(_) = cursor.tile(open) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
     loop {
         let run = cursor.operands();
-        let closing = cursor.tile(TileName::PAREN_CLOSE);
+        let closing = cursor.tile(close);
         if let (Run::Empty(_), Maybe::Present(_)) = (run, closing) {
             break;
         }
@@ -17129,11 +17440,11 @@ fn halves<'source>(
 /// - requires: nothing; the function is total over the former vocabulary.
 /// - ensures: exactly the value-producing formers answer affirmatively — a
 ///   name, a capitalised name, a number, a string, the unit, a parenthesised
-///   expression, a thunk, a telescope value and an injection — the reserved
-///   tuple among them, since a reserved form is a value the fragment declines
-///   rather than a form of another sort, and keeping the two apart is what lets
-///   an attribute payload written as a computation be reported as a non-value
-///   rather than as a sort error.
+///   expression, a thunk, a telescope value, a list literal and an injection —
+///   the reserved tuple among them, since a reserved form is a value the
+///   fragment declines rather than a form of another sort, and keeping the two
+///   apart is what lets an attribute payload written as a computation be
+///   reported as a non-value rather than as a sort error.
 /// - provides: the guard the attribute payload reading takes.
 /// - fails: never.
 /// - panics: none.
@@ -17156,6 +17467,7 @@ fn halves<'source>(
                     | Former::Unit
                     | Former::Thunk
                     | Former::Telescope
+                    | Former::List
                     | Former::PackModel
                     | Former::Injection
             )
@@ -17173,6 +17485,7 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Unit
             | Former::Thunk
             | Former::Telescope
+            | Former::List
             | Former::PackModel
             | Former::Injection
     ))
@@ -17307,6 +17620,7 @@ pub fn parse_literal(
         | Former::Call
         | Former::Case
         | Former::Telescope
+        | Former::List
         | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
@@ -20574,6 +20888,64 @@ mod tests
     }
 
     #[test]
+    fn a_list_literal_lowers_to_its_cons_cells_1544()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def e = [] ; def o = [1] ; def t = [1, \"a\", 1,] ;"),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let one = Value::Literal(integer(SourceFragment::from("1")));
+        let letter = Value::Literal(text(SourceFragment::from("a")));
+        // The heads of the cons chain `id` starts, in order, when it ends in
+        // the empty list.
+        let cells = |mut id| {
+            let mut heads = Vec::new();
+            loop {
+                match arena.value(id) {
+                    Some(&Value::ListCons(head, tail)) => {
+                        heads.push(arena.value(head));
+                        id = tail;
+                    },
+                    Some(&Value::ListNil) => return Some(heads),
+                    _ => return None,
+                }
+            }
+        };
+
+        assert_eq!(
+            cells(body_of(lowered[0])),
+            Some(Vec::new()),
+            "`[]` is the empty list"
+        );
+        assert_eq!(
+            cells(body_of(lowered[1])),
+            Some(vec![Some(&one)]),
+            "`[v]` is one cell over `v` ending in the empty list"
+        );
+        assert_eq!(
+            cells(body_of(lowered[2])),
+            Some(vec![Some(&one), Some(&letter), Some(&one)]),
+            "a list of three is three cells over its elements in written order, a comma \
+             after the last admitted"
+        );
+        assert_eq!(
+            refusal(SourceText::from(
+                "def u = thunk { run x <- [1, 2] ; return x } ;"
+            )),
+            LoweringRefusal::OutOfFragment {
+                span: at(25_usize, 31_usize),
+                form: FormName::from(NamedKind("list_expression")),
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a list is a value, not a computation"
+        );
+    }
+
+    #[test]
     fn a_static_abstraction_binds_its_name_over_a_quoted_body()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -21053,15 +21425,6 @@ mod tests
                     28_usize,
                     FormName::ANNOTATION,
                     FragmentSort::Computation,
-                ),
-            ),
-            (
-                "def rec f() { return 1 }",
-                unadmitted(
-                    0_usize,
-                    24_usize,
-                    FormName::RECURSIVE,
-                    FragmentSort::Declaration,
                 ),
             ),
             (
@@ -22658,6 +23021,7 @@ mod tests
             Former::Unit,
             Former::Thunk,
             Former::Telescope,
+            Former::List,
             Former::PackModel,
             Former::Injection,
         ];

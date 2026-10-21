@@ -4,12 +4,12 @@
 import "./data-maybe.gandr" ;
 
 /// Binds a list of optional integers, then returns. The list is annotated
-/// where it is run as a value; the lowering admits no list literal yet
-/// (#1544).
-@[ refuses("OutOfFragment") ]
+/// where it is run as a value, and each element takes the element type,
+/// `Maybe(Integer)`, from that annotation (#1544).
+@[ checks ]
 def sum_first() -> -F Integer {
   run items <- pure ([Some(1), None, Some(3)] : List(Maybe(Integer)));
-  return 7
+  7
 }
 
 /// The run target calls `sum_first`; the lowering reads no final expression

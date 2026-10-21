@@ -1,9 +1,8 @@
 // Appending to a list copies it, and setting one element of the result copies
 // it again: the cost of each is the list's length.
 
-/// Ten integers, annotated as a list of them; the lowering admits no list
-/// literal yet (#1544).
-@[ refuses("OutOfFragment") ]
+/// Ten integers, annotated as a list of them (#1544).
+@[ checks ]
 def xs = ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : List(Integer));
 
 /// Three more appended, reached by projection from the `list` namespace,

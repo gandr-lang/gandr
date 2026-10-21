@@ -43,5 +43,12 @@ def rec ahead(n : Nat) -> -F Nat {
   }
 }
 
-@[ refuses("OutOfFragment") ]
-def rec constant() -> -F Nat { return Zero }
+/// A recursive definition of no parameter binds its own name over its body,
+/// which this one never calls (#1499).
+@[ checks ]
+def rec constant() -> -F Nat { Zero }
+
+/// A descent claimed by a recursive definition of no parameter: its fixpoint
+/// stands at no arrow, so the call has nothing to descend on (#1499).
+@[ refuses("ShapeMismatch") ]
+def rec spin() -> -F Nat { become spin[<]() }

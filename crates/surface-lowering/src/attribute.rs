@@ -861,6 +861,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Call
         | Former::Case
         | Former::Telescope
+        | Former::List
         | Former::PackModel
         | Former::Injection
         | Former::LazyRecord
