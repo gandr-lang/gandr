@@ -3,6 +3,8 @@
 //! `tests::<area>::<name>`. The standing-graph differentials and the
 //! offset-regime witnesses run through the public API.
 
+extern crate alloc;
+
 #[cfg(test)]
 #[path = "support/differential.rs"]
 mod differential;
