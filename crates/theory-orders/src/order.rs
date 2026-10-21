@@ -554,8 +554,8 @@ pub struct OrderMaintenance<T>
     slots: Vec<Slot<T>>,
     /// The head of the free list (slots available for reuse), if any.
     free_head: Option<SlotIndex>,
-    /// Test-only ceiling for representable slots, used to exercise exhaustion
-    /// without allocating a `u32::MAX`-sized arena.
+    /// Test-only ceiling for representable slots, so a test can exercise
+    /// exhaustion without allocating a `u32::MAX`-sized arena.
     #[cfg(test)]
     slot_limit: Option<SlotLimit>,
     /// The first element in list order, if any.
