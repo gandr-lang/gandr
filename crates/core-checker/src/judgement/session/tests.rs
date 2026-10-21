@@ -702,7 +702,29 @@ fn exit(
 }
 
 /// `handle c : Proc { subject } with { pure(x) => pure x, exit(code, k) =>
-/// pure unit }`, its clause dropping the continuation.
+/// body }`.
+///
+/// # Specification
+/// trivial.
+fn answering(
+    arena: &mut CoreArena,
+    host: &HostSignatures,
+    subject: ComputationId,
+    body: ComputationId,
+) -> ComputationId
+{
+    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let passes = arena.computation_return(answered);
+    let clauses: Arc<[EffectClause]> = [EffectClause {
+        operation: "exit".into(),
+        body,
+    }]
+    .into();
+    arena.computation_scope(host.proc.clone(), subject, passes, clauses)
+}
+
+/// `handle c : Proc { subject } with { pure(x) => pure x, exit(code, k) =>
+/// pure unit }`, its clause dropping the continuation, and the clause's body.
 ///
 /// # Specification
 /// trivial.
@@ -710,18 +732,11 @@ fn dropping(
     arena: &mut CoreArena,
     host: &HostSignatures,
     subject: ComputationId,
-) -> ComputationId
+) -> (ComputationId, ComputationId)
 {
     let unit = arena.value_unit();
     let returned = arena.computation_return(unit);
-    let answered = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let passes = arena.computation_return(answered);
-    let clauses: Arc<[EffectClause]> = [EffectClause {
-        operation: "exit".into(),
-        body: returned,
-    }]
-    .into();
-    arena.computation_scope(host.proc.clone(), subject, passes, clauses)
+    (answering(arena, host, subject, returned), returned)
 }
 
 /// `Cap {exit}`, held by the host for the run.
@@ -769,9 +784,10 @@ fn check_held_exit(
 }
 
 /// An operation a capability scope answers hands the rest of the scope to
-/// the scope's clause, which may drop it or run it twice, so an endpoint the
-/// scope opened is refused across it; an operation the host answers runs the
-/// rest once, and the endpoint stays open across it (#1334).
+/// the scope's clause, so a clause whose operation's continuation holds an
+/// endpoint the scope opened owes that continuation, and dropping it is
+/// refused; an operation the host answers runs the rest once, and the
+/// endpoint stays open across it (#1334).
 #[test]
 fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
 {
@@ -784,20 +800,14 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
     let parent = arena.computation_bind(exited, closed);
     let child_closed = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, protocol, child_closed, parent);
-    let scoped = dropping(&mut arena, &host, exchange);
+    let (scoped, dropped) = dropping(&mut arena, &host, exchange);
     assert_eq!(
         check_unit(&mut arena, scoped),
         Err(CheckRefusal::Linearity {
-            at: CoreNode::Term(TermNode::Computation(exited)),
-            defect: LinearityDefect::Captured {
-                endpoint: Endpoint {
-                    fork: exchange,
-                    side: ForkSide::Parent,
-                },
-                by: Capture::Continuation,
-            },
+            at: CoreNode::Term(TermNode::Computation(dropped)),
+            defect: LinearityDefect::ContinuationUnspent { clause: dropped },
         }),
-        "the scope's clause may drop the close"
+        "the scope's clause drops the close"
     );
     // handle c : Proc { fork (s : end) { close(s) } as d; close(d); c.exit(1) }
     let closed = Program::new(&mut arena).close();
@@ -805,7 +815,7 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
     let parent = arena.computation_bind(closed, exited_after);
     let child_closed = Program::new(&mut arena).close();
     let exchange = fork(&mut arena, protocol, child_closed, parent);
-    let scoped = dropping(&mut arena, &host, exchange);
+    let (scoped, _) = dropping(&mut arena, &host, exchange);
     assert_eq!(
         check_unit(&mut arena, scoped),
         Ok(()),
@@ -819,6 +829,98 @@ fn an_operation_a_scope_answers_captures_what_the_scope_opened_1334()
         check_held_exit(&mut arena, &host, exchange),
         Ok(()),
         "the host answers the exit once, so the close runs once"
+    );
+}
+
+/// A clause whose operation's continuation holds an endpoint owes that
+/// continuation exactly one end: abandoning it or resuming it once checks,
+/// and resuming it twice, reading it as a value, capturing it in a thunk and
+/// handing it to a forked child are each refused by name (#1334).
+#[test]
+fn a_clause_ends_a_continuation_holding_an_obligation_once_1334()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).unwrap();
+    let protocol = end(&mut arena);
+    // fork (s : end) { close(s) } as d; c.exit(1); close(d)
+    let exited = exit(&mut arena, &host, DeBruijnIndex::from(0_u32));
+    let parent = parent_open(&mut arena, exited);
+    let child_closed = Program::new(&mut arena).close();
+    let subject = fork(&mut arena, protocol, child_closed, parent);
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unit = arena.value_unit();
+    let replied = arena.computation_return(unit);
+    // exit(code, k) => abandon(k)
+    let abandoned = arena.computation_abandon(stack);
+    let scoped = answering(&mut arena, &host, subject, abandoned);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Ok(()),
+        "abandoning the continuation ends it once"
+    );
+    // exit(code, k) => resume(k, pure ())
+    let resumed = arena.computation_resume(stack, replied);
+    let scoped = answering(&mut arena, &host, subject, resumed);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Ok(()),
+        "resuming it once runs the close once"
+    );
+    // exit(code, k) => resume(k, pure ()); resume(k, pure ())
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let again = arena.computation_resume(outer, replied);
+    let twice = arena.computation_bind(resumed, again);
+    let scoped = answering(&mut arena, &host, subject, twice);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(again)),
+            defect: LinearityDefect::ContinuationUsedTwice { clause: twice },
+        }),
+        "the second resumption would run the close twice"
+    );
+    // exit(code, k) => pure k
+    let leaked = arena.computation_return(stack);
+    let scoped = answering(&mut arena, &host, subject, leaked);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(stack)),
+            defect: LinearityDefect::ContinuationAsValue { clause: leaked },
+        }),
+        "a continuation read as a value may be ended anywhere, or never"
+    );
+    // exit(code, k) => force(thunk { abandon(k) })
+    let suspended = arena.value_thunk(abandoned);
+    let forced = arena.computation_force(suspended);
+    let scoped = answering(&mut arena, &host, subject, forced);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(suspended)),
+            defect: LinearityDefect::ContinuationCaptured {
+                clause: forced,
+                by: Capture::Thunk,
+            },
+        }),
+        "a thunk may be forced twice, or never"
+    );
+    // exit(code, k) => fork (s : end) { abandon(k); close(s) } as d; close(d)
+    let closed = Program::new(&mut arena).close();
+    let child = arena.computation_bind(abandoned, closed);
+    let parent_closed = Program::new(&mut arena).close();
+    let forked = fork(&mut arena, protocol, child, parent_closed);
+    let scoped = answering(&mut arena, &host, subject, forked);
+    assert_eq!(
+        check_unit(&mut arena, scoped),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(forked)),
+            defect: LinearityDefect::ContinuationCaptured {
+                clause: forked,
+                by: Capture::Task,
+            },
+        }),
+        "a child may end the continuation after the clause returned"
     );
 }
 
@@ -856,7 +958,7 @@ fn a_child_exercises_only_what_outlives_every_region_1334()
         "the child exits through the run's capability"
     );
     // handle c : Proc { fork (s : end) { c.exit(1); close(s) } as d; close(d) }
-    let scoped = dropping(&mut arena, &host, exchange);
+    let (scoped, _) = dropping(&mut arena, &host, exchange);
     assert!(
         matches!(
             check_unit(&mut arena, scoped),

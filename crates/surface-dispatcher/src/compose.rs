@@ -3073,6 +3073,7 @@ fn residence(former: UnadmittedFormer) -> Residence
         | UnadmittedFormer::Perform
         | UnadmittedFormer::Handle
         | UnadmittedFormer::Resume
+        | UnadmittedFormer::Abandon
         | UnadmittedFormer::Reset
         | UnadmittedFormer::Shift
         | UnadmittedFormer::Capability

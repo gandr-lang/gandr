@@ -648,7 +648,7 @@ impl Unfocusing<'_>
                 ProducerNode::Primitive { .. } | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
-                CommandNode::Perform { route: Route::Nearest, .. } => !self.values.is_empty(),
+                CommandNode::Perform { route: Route::Nearest, .. } | CommandNode::Abandon { .. } => !self.values.is_empty(),
                 CommandNode::Perform { route: Route::Capability(_), .. } => self.values.len() >= 2,
                 CommandNode::Handle { ref clauses, .. } => self.computations.len() >= clauses.len().saturating_add(2),
                 CommandNode::Resume { .. } => !self.values.is_empty() && !self.computations.is_empty(),
@@ -1120,6 +1120,10 @@ impl Unfocusing<'_>
                 let stack = self.pop_value()?;
                 self.core.computation_resume(stack, body)
             },
+            CommandNode::Abandon { .. } => {
+                let stack = self.pop_value()?;
+                self.core.computation_abandon(stack)
+            },
             CommandNode::Reset { .. } => {
                 let body = self.pop_computation()?;
                 self.core.computation_reset(body)
@@ -1216,6 +1220,14 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Control(source, depth));
                 self.tasks
                     .push(Task::Command(body, depth.under_covariable()));
+                self.tasks.push(Task::Value(stack, depth));
+            },
+            CommandNode::Abandon {
+                stack,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
                 self.tasks.push(Task::Value(stack, depth));
             },
             CommandNode::Reset { body, continuation } => {

@@ -1413,6 +1413,12 @@ enum Frame
         /// The computation fed to it.
         body: ComputationId,
     },
+    /// Read an abandoned stack's classifier.
+    Abandon
+    {
+        /// The first-class stack.
+        stack: ValueId,
+    },
     /// Select one component of a synthesized lazy product.
     Project
     {
@@ -2335,6 +2341,7 @@ impl Frame
             Self::PerformPayload { .. } => FrameRole::PerformPayload,
             Self::Next(_) => FrameRole::Next,
             Self::Resume { .. } => FrameRole::Resume,
+            Self::Abandon { .. } => FrameRole::Abandon,
             Self::Project { .. } => FrameRole::Project,
             Self::Reset { .. } => FrameRole::Reset,
             Self::HandlerForm { .. } => FrameRole::HandlerForm,
@@ -2496,6 +2503,7 @@ impl Frame
             | Self::PerformPayload { .. }
             | Self::Next(_)
             | Self::Resume { .. }
+            | Self::Abandon { .. }
             | Self::Project { .. }
             | Self::Reset { .. }
             | Self::HandlerForm { .. }
@@ -2938,6 +2946,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::PerformPayload { .. }
                 | Frame::Next(_)
                 | Frame::Resume { .. }
+                | Frame::Abandon { .. }
                 | Frame::Project { .. }
                 | Frame::HandlerForm { .. }
                 | Frame::HandlerSubject { .. }
@@ -3175,22 +3184,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Open one deep operation clause of a handler or a capability scope:
-    /// payload first, resumption second.
+    /// payload first, resumption second. A scope's clause whose operation's
+    /// continuation captured a live resident owes that continuation exactly
+    /// one end, which a linear slot opened beside the stack tracks.
     ///
     /// # Specification
     /// - ensures: the resumption consumes the operation reply with the answer's
     ///   row and delivers the answer; an unknown answer, which `handle` read
     ///   through the matched returner, contributes the empty row. Completing
-    ///   the clause list opens no binder.
+    ///   the clause list opens no binder and drops the scope's capture records.
     /// - fails: inconsistent private continuation state or existing type
     ///   faults.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — unlike payload/reply/answer types expose swapped
     ///   binders; a handler with clauses checked against the unknown answer
-    ///   exposes a reader that demands a known returner.
+    ///   exposes a reader that demands a known returner; a clause whose
+    ///   operation captured an endpoint owes its continuation.
     /// - witness: `judgement::tests::handlers_discharge_only_their_own_interface`
     /// - witness: `judgement::tests::handle_against_unknown_answer`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(captures: depth = usize::from(self.context.depth(Zone::Intuitionistic)), ensures: |ret| ret.is_err() || usize::from(self.context.depth(Zone::Intuitionistic)) == if matches!(ret, Ok(Step::Ascend(Produced::Checked))) { depth } else { depth.saturating_add(2) })]
     fn handle_clause(
         &mut self,
@@ -3214,6 +3227,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         };
         let Some(clause) = clauses.get(position.0)
         else {
+            self.sessions.owing.retain(|&(scope, _)| scope != at);
             return Ok(Step::Ascend(Produced::Checked));
         };
         let Maybe::Present(operation) = signature.operation(&clause.operation)
@@ -3221,6 +3235,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             return Err(CheckRefusal::MachineInvariant);
         };
         let (payload, reply, body) = (operation.payload, operation.reply, clause.body);
+        let owes = self
+            .sessions
+            .owing
+            .iter()
+            .any(|&(scope, ref name)| scope == at && *name == clause.operation);
         // An operation replying a buffer has the scope mint it: the clause
         // receives the payload paired with the buffer, and resumes with it.
         let minted = self.context.whnf_value_type(reply)?;
@@ -3256,6 +3275,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .settle(self.context.arena_mut());
         let position = position.next()?;
         self.context.binders().open(Zone::Intuitionistic, payload);
+        if owes {
+            self.owe(body, stack)?;
+        }
         self.context.binders().open(Zone::Intuitionistic, stack);
         self.wait(Frame::HandlerClause {
             at,
@@ -3306,7 +3328,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// synthesised `classifier`: the Exercise rule. The host answers an
     /// operation through a capability it holds exactly once; a scope's clause
     /// answers one through the scope's capability with the rest of the scope
-    /// as a continuation, which may run twice or never.
+    /// as a continuation, which the clause then owes exactly one end when it
+    /// holds a live resident.
     ///
     /// # Specification
     /// - requires: `at` is an exercise whose capability synthesised
@@ -3314,15 +3337,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: the payload is checked against the operation's payload type
     ///   next, and the exercise synthesises the returner of the operation's
     ///   reply whose row is the operation's interface alone; a capability of
-    ///   the unknown type grants every operation.
+    ///   the unknown type grants every operation; an operation a scope's clause
+    ///   answers while a resident opened in the scope's region is live is
+    ///   recorded for the clause, as [`Self::region_captured`] says.
     /// - fails: [`CheckRefusal::UnknownOperation`] for an operation outside the
     ///   carried interface; [`CheckRefusal::ShapeMismatch`] wanting
     ///   [`ExpectedShape::Capability`] for a capability of another former;
     ///   [`CheckRefusal::CapabilityOutsideAuthority`] for an operation the
     ///   capability's authority does not grant with the interface's own payload
-    ///   and reply types; as [`Self::region_captured`] for a capability living
-    ///   in a scope's region while a resident opened in that region still owes
-    ///   something, and for one of the unknown type while any does.
+    ///   and reply types; as [`Self::region_captured`] for a capability of the
+    ///   unknown type while any resident the run opened still owes something.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3331,9 +3355,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   another type in capability position and an operation outside the
     ///   interface, each asserted as the exact type or refusal; an endpoint
     ///   held across an operation the host answers checks, and one held across
-    ///   an operation its scope's clause answers is refused.
+    ///   an operation its scope's clause answers is owed by the clause.
     /// - witness: `capability::tests::an_operation_is_exercised_only_within_the_authority`
     /// - witness: `judgement::session::tests::an_operation_a_scope_answers_captures_what_the_scope_opened_1334`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(captures: depth = self.frames.len(), ensures: |ret| ret.is_err() || (self.frames.len() == depth.saturating_add(1) && matches!(ret, Ok(Step::Descend(Goal::Form(_))))))]
     fn exercise(
         &mut self,
@@ -3373,7 +3398,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
         {
             match region {
                 Region::Held => session::Answerer::Host,
-                Region::Scoped(depth) => session::Answerer::Scope(depth),
+                Region::Scoped(depth) => session::Answerer::Scope {
+                    depth,
+                    operation: &operation,
+                },
             }
         }
         else {
@@ -4233,6 +4261,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             {
                 Ok(declared) => {
                     self.located_here(term, index)?;
+                    self.mention(term, index)?;
                     // The slot's type moved to this depth as a root update:
                     // the value bridge reads it through the relocation, and
                     // every other rule settles it where it reads it.
@@ -5175,7 +5204,28 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 form: CheckingForm::Scope(term),
             }),
             Computation::Resume(stack, body) => {
+                self.ending(term, stack)?;
                 self.wait(Frame::Resume { stack, body });
+                Ok(Step::Descend(Goal::Value {
+                    term: stack,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            Computation::Abandon(stack) => {
+                // An unwind runs to completion under the empty row, which
+                // carries no abandonment.
+                if self
+                    .frames
+                    .iter()
+                    .any(|waiting| matches!(waiting.frame, Frame::AccessUnwind { .. }))
+                {
+                    return Err(CheckRefusal::Access {
+                        at: CoreNode::Term(TermNode::Computation(term)),
+                        defect: crate::access::AccessDefect::UnwindEffect,
+                    });
+                }
+                self.ending(term, stack)?;
+                self.wait(Frame::Abandon { stack });
                 Ok(Step::Descend(Goal::Value {
                     term: stack,
                     direction: Direction::Synthesise,
@@ -5565,6 +5615,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Perform { .. }
             | Computation::Exercise { .. }
             | Computation::Resume(..)
+            | Computation::Abandon(_)
             | Computation::Project(..)
             | Computation::ListFold { .. }
             | Computation::Transport(..)
@@ -7204,6 +7255,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(input),
                 }))
             },
+            // An abandoned stack runs nothing: the form returns the unit and
+            // performs no operation.
+            (Frame::Abandon { stack }, Produced::ValueType(classifier)) => {
+                let classifier = classifier.settle(self.context.arena_mut());
+                let _fed = self.stack_expected(stack, classifier)?;
+                Ok(Step::Ascend(Produced::CompType(self.unit_returner())))
+            },
             (Frame::Project { at, component }, Produced::CompType(classifier)) => {
                 Ok(Step::Ascend(Produced::CompType(
                     match self.with_parts(TermNode::Computation(at), classifier)? {
@@ -7272,6 +7330,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::Checked,
             ) => {
+                self.owed_ended()?;
                 self.close()?;
                 self.close()?;
                 self.handle_clause(at, answer, position)
@@ -8499,6 +8558,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             (
                 Frame::PathProductFirst { .. }
                 | Frame::Resume { .. }
+                | Frame::Abandon { .. }
                 | Frame::PathProductSecond { .. }
                 | Frame::TransportPath { .. }
                 | Frame::HereSynthesised { .. }

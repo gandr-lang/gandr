@@ -269,6 +269,8 @@ pub enum UnadmittedFormer
     /// The buffer type: a receive's binder lives on the checker's side, and the
     /// kernel has no buffer.
     Buffer,
+    /// Abandonment of a first-class stack.
+    Abandon,
 }
 
 /// A count of static arguments: how many a static application passes, or how

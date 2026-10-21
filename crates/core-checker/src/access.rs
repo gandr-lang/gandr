@@ -137,8 +137,9 @@
 //! runs it while the access is being torn down, where no handler may be
 //! asked for anything. An effect the unwind performs, or a call that needs
 //! one, is [`AccessDefect::UnwindEffect`] at the computation whose row
-//! exceeded the empty one. An unwind may read `x`: the machine restores the
-//! value `x` held before it runs.
+//! exceeded the empty one. An `abandon` written in an unwind is refused the
+//! same way, so no cancellation reaches an unwind already running. An unwind
+//! may read `x`: the machine restores the value `x` held before it runs.
 //!
 //! # Spelling
 //!
@@ -155,10 +156,11 @@
 //! - An `io_uring` mock: a held value lives in one machine cell for its hold's
 //!   scope; an access pushes one constant frame, `resume` records the new value
 //!   and `abort` records nothing, and the frame's pop writes back or runs the
-//!   unwind under the empty row. A hold stands at a pure returner today: an
-//!   operation inside one that a handler resumes twice would duplicate the
-//!   cell, so an effectful submission over a held buffer first needs one-shot
-//!   resumption of the handler's continuation.
+//!   unwind under the empty row. An operation a scope's clause answers inside a
+//!   hold hands the clause a continuation holding the cell, which the clause
+//!   resumes or abandons exactly once
+//!   ([`crate::session::LinearityDefect::ContinuationUsedTwice`]), so the cell
+//!   is never duplicated.
 //!
 //! # References
 //!

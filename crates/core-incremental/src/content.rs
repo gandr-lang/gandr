@@ -525,6 +525,8 @@ pub enum ContentNode
     },
     /// Feed a computation to a first-class stack.
     Resume(NodeIndex, NodeIndex),
+    /// End a first-class stack without resuming it.
+    Abandon(NodeIndex),
     /// Bind every component of a tuple in the body, component zero
     /// outermost.
     Split(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
@@ -1252,6 +1254,7 @@ impl ContentNode
         | Self::Exercise { .. }
         | Self::Scope { .. }
         | Self::Resume(..)
+        | Self::Abandon(_)
         | Self::Split(..)
         | Self::DependentSplit { .. }
         | Self::Reset(_)
@@ -1362,6 +1365,7 @@ impl ContentNode
             | Self::Exercise { .. }
             | Self::Scope { .. }
             | Self::Resume(..)
+            | Self::Abandon(_)
             | Self::Split(..)
             | Self::DependentSplit { .. }
             | Self::Reset(_)
@@ -1460,6 +1464,7 @@ impl ContentNode
             | Self::Exercise { capability, payload, ref signature, .. } => ret.iter().eq([(capability, V), (payload, V)].into_iter().chain(signature.types().map(|ty| (ty, A)))),
             | Self::Capability { ref authority, .. } => ret.iter().eq(authority.types().map(|ty| (ty, A))),
             | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
+            | Self::Abandon(stack) => actual == Some(&[(stack, V)][..]),
             | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
             | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
             | Self::With(ref components) => ret.iter().eq(components.iter().map(|&component| (component, M))),
@@ -1624,6 +1629,7 @@ impl ContentNode
                 ..Children::default()
             },
             Self::Resume(stack, body) => Children::of(&[(stack, V), (body, M)]),
+            Self::Abandon(stack) => Children::of(&[(stack, V)]),
             Self::Split(stack, arity, body) => {
                 Children::of(&[(stack, V), (body, M)]).binding(ChildSlot(1), split(arity))
             },
@@ -1873,7 +1879,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::Univalence(..) |
+        Self::Univalence(..) | Self::Abandon(_) |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -1901,6 +1907,7 @@ impl ContentNode
             | Self::Scope { .. }
             | Self::Capability { .. }
             | Self::Resume(..)
+            | Self::Abandon(_)
             | Self::Split(..)
             | Self::DependentSplit { .. }
             | Self::Reset(_)
@@ -4113,6 +4120,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 self.discover(ArenaNode::Value(stack)),
                 self.discover(ArenaNode::Computation(body)),
             ),
+            Computation::Abandon(stack) => {
+                ContentNode::Abandon(self.discover(ArenaNode::Value(stack)))
+            },
             Computation::Split {
                 scrutinee,
                 arity,
@@ -4698,6 +4708,7 @@ where
             }
         },
         ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
+        ContentNode::Abandon(stack) => ContentNode::Abandon(image(stack)),
         ContentNode::Split(scrutinee, arity, body) => {
             ContentNode::Split(image(scrutinee), arity, image(body))
         },
@@ -5540,6 +5551,7 @@ fn mint_node(
         | ContentNode::Exercise { .. }
         | ContentNode::Scope { .. }
         | ContentNode::Resume(..)
+        | ContentNode::Abandon(_)
         | ContentNode::Split(..)
         | ContentNode::DependentSplit { .. }
         | ContentNode::Reset(_)

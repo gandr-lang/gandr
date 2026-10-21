@@ -308,6 +308,10 @@ fn walked(
             Visit::Command(id, depth) => match *arena.command(id).expect("the command resolves") {
                 CommandNode::Cut {
                     producer, consumer, ..
+                }
+                | CommandNode::Abandon {
+                    stack: producer,
+                    continuation: consumer,
                 } => {
                     stack.push(Visit::Producer(producer, depth));
                     stack.push(Visit::Consumer(consumer, depth));

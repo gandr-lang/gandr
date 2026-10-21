@@ -391,6 +391,7 @@ impl Ownership
                 },
                 CommandNode::Perform { .. }
                 | CommandNode::Resume { .. }
+                | CommandNode::Abandon { .. }
                 | CommandNode::Reset { .. }
                 | CommandNode::Shift { .. }
                 | CommandNode::Cut { .. }

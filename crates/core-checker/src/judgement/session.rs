@@ -15,6 +15,7 @@ use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
+use gandr_core_term::ContextError;
 use gandr_core_term::LinearUse;
 use gandr_core_term::LinearZone;
 use gandr_core_term::Value;
@@ -64,7 +65,8 @@ use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
 /// Who bound a linear slot: a fork's or a receive's endpoint, a received
-/// value, a hold's held value, an access's view, or an entry's capability.
+/// value, a hold's held value, an access's view, an entry's capability, or an
+/// operation clause's continuation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum Resident
 {
@@ -105,6 +107,13 @@ pub(super) enum Resident
         /// The world it migrates to.
         world: gandr_core_term::world::World,
     },
+    /// The continuation the operation clause `clause` receives, which holds an
+    /// obligation: a resumption or an abandonment spends it once.
+    Continuation
+    {
+        /// The clause's body.
+        clause: ComputationId,
+    },
 }
 
 /// A linear slot the run bound: who bound it, and the intuitionistic depth
@@ -139,6 +148,19 @@ pub(super) struct Keep
     pub region: RegionDepth,
 }
 
+/// An operation clause's continuation that holds an obligation: the level its
+/// stack is bound at, the linear slot its end spends and the clause.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct Owed
+{
+    /// The intuitionistic level the stack is bound at.
+    pub stack: usize,
+    /// The linear slot's position above the run's base.
+    pub slot: usize,
+    /// The clause's body.
+    pub clause: ComputationId,
+}
+
 /// The linear state of one run: who bound each linear slot it opened, the
 /// held slots its accesses lend, the zones its offers restore and compare,
 /// and the free linear indices of the terms it read.
@@ -158,6 +180,15 @@ pub(super) struct Sessions
     /// a capability scope's subject, or a hold's scope past its held slot —
     /// outermost first: a slot below a region's mark outlives the region.
     pub regions: Vec<usize>,
+    /// Each capability scope and operation whose clause receives a
+    /// continuation holding an obligation, in the order met.
+    pub owing: Vec<(ComputationId, gandr_core_term::effect::OperationName)>,
+    /// Each open clause's continuation that holds an obligation, innermost
+    /// last.
+    pub owed: Vec<Owed>,
+    /// The level of the owed stack the resumption or abandonment being
+    /// judged ends: its one mention that reads it.
+    pub ending: Option<usize>,
     /// Each open offer's zone as the offer found it, then as its first arm
     /// left it, innermost offer last.
     zones: Vec<LinearZone>,
@@ -179,6 +210,9 @@ impl Sessions
             lent: Vec::new(),
             kept: Vec::new(),
             regions: Vec::new(),
+            owing: Vec::new(),
+            owed: Vec::new(),
+            ending: None,
             zones: Vec::new(),
             free: FreeIndices::default(),
         }
@@ -198,6 +232,10 @@ pub(super) struct Scope
     kept: usize,
     /// The regions open.
     regions: usize,
+    /// The capture records held.
+    owing: usize,
+    /// The owed continuations held.
+    owed: usize,
     /// The offers' zones held.
     zones: usize,
 }
@@ -254,13 +292,16 @@ impl Machine<'_, '_>
             lent: self.sessions.lent.len(),
             kept: self.sessions.kept.len(),
             regions: self.sessions.regions.len(),
+            owing: self.sessions.owing.len(),
+            owed: self.sessions.owed.len(),
             zones: self.sessions.zones.len(),
         }
     }
 
-    /// Drop every linear slot bound, every lending, keep and region made and
-    /// every offer zone kept since `scope`, spent or not: the linear half of
-    /// unwinding a refused or recovered judgement.
+    /// Drop every linear slot bound, every lending, keep, region, capture
+    /// record and owed continuation made and every offer zone kept since
+    /// `scope`, spent or not: the linear half of unwinding a refused or
+    /// recovered judgement.
     ///
     /// # Specification
     /// - requires: the zones stand at or above `scope`.
@@ -275,6 +316,8 @@ impl Machine<'_, '_>
         && self.sessions.lent.len() <= scope.lent
         && self.sessions.kept.len() <= scope.kept
         && self.sessions.regions.len() <= scope.regions
+        && self.sessions.owing.len() <= scope.owing
+        && self.sessions.owed.len() <= scope.owed
         && self.sessions.zones.len() <= scope.zones)]
     pub(super) fn close_sessions(
         &mut self,
@@ -287,6 +330,9 @@ impl Machine<'_, '_>
         self.sessions.lent.truncate(scope.lent);
         self.sessions.kept.truncate(scope.kept);
         self.sessions.regions.truncate(scope.regions);
+        self.sessions.owing.truncate(scope.owing);
+        self.sessions.owed.truncate(scope.owed);
+        self.sessions.ending = None;
         self.sessions.zones.truncate(scope.zones);
     }
 
@@ -323,7 +369,8 @@ impl Machine<'_, '_>
                 | Resident::Buffer { .. }
                 | Resident::Held { .. }
                 | Resident::View { .. }
-                | Resident::Capability { .. } => None,
+                | Resident::Capability { .. }
+                | Resident::Continuation { .. } => None,
             })
             .collect()
     }
@@ -445,7 +492,8 @@ impl Machine<'_, '_>
             | Resident::Buffer { .. }
             | Resident::Held { .. }
             | Resident::View { .. }
-            | Resident::Capability { .. } => match at {
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. } => match at {
                 CoreNode::Term(term) => Err(CheckRefusal::ShapeMismatch {
                     at: term,
                     wanted: ExpectedShape::Session,
@@ -593,7 +641,8 @@ impl Machine<'_, '_>
     /// region may name a shared view whose held slot outlives that region:
     /// the slot is kept, frozen until the region's scope ends. Inside a
     /// capability scope, a thunk or a stack names no variable kept in a
-    /// region deeper than the one its own type is kept in.
+    /// region deeper than the one its own type is kept in. Every former but a
+    /// branch names no continuation an operation clause owes.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -603,10 +652,11 @@ impl Machine<'_, '_>
     ///   nothing else changes.
     /// - fails: [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::Captured`] at the goal's term, with the first
-    ///   endpoint it names and what may run it; [`CheckRefusal::Access`] naming
-    ///   [`AccessDefect::Escaped`] for a view no region keeps,
-    ///   [`AccessDefect::HeldCaptured`] for a held value and
-    ///   [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
+    ///   endpoint it names and what may run it, and
+    ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
+    ///   names; [`CheckRefusal::Access`] naming [`AccessDefect::Escaped`] for a
+    ///   view no region keeps, [`AccessDefect::HeldCaptured`] for a held value
+    ///   and [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
     ///   goal; a shift names the innermost resident the run holds, which its
     ///   captured continuation may resume twice.
     /// - panics: none.
@@ -623,6 +673,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
@@ -720,6 +771,7 @@ impl Machine<'_, '_>
                     | Computation::Perform { .. }
                     | Computation::Exercise { .. }
                     | Computation::Resume(..)
+                    | Computation::Abandon(_)
                     | Computation::Reset(_)
                     | Computation::Project(..)
                     | Computation::Session(_)
@@ -734,6 +786,11 @@ impl Machine<'_, '_>
             },
             Goal::Form(_) | Goal::Stack { .. } => return Ok(()),
         };
+        // A branch runs once, and the arms' agreement checks the
+        // continuation's slot; every other captor may run it twice or never.
+        if by != Capture::Branch {
+            self.owed_named(term, node, by)?;
+        }
         let scope = match goal {
             Goal::Computation { term, .. } => {
                 matches!(*self.computation(term)?, Computation::Scope { .. })
@@ -788,13 +845,14 @@ impl Machine<'_, '_>
 
     /// What `resident` owes that a continuation run twice or never would
     /// break: an endpoint's protocol, a buffer's return, an exclusive view's
-    /// resume or abort and a capability's one migration; a held value, a
-    /// received value and a shared view, which a read copies, owe nothing.
+    /// resume or abort, a capability's one migration and a clause's
+    /// continuation's one end; a held value, a received value and a shared
+    /// view, which a read copies, owe nothing.
     ///
     /// # Specification
     /// - requires: a view's access is in the arena.
     /// - ensures: [`Owing::Something`] exactly for an endpoint, a buffer, a
-    ///   capability and a view of an exclusive access.
+    ///   capability, a continuation and a view of an exclusive access.
     /// - fails: [`CheckRefusal::DanglingNode`] for a view whose access is not
     ///   in the arena.
     /// - panics: none.
@@ -807,7 +865,7 @@ impl Machine<'_, '_>
     ///   a held value checks.
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     #[spec(ensures: |ret| match resident {
-        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } => matches!(ret, Ok(Owing::Something)),
+        | Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } | Resident::Continuation { .. } => matches!(ret, Ok(Owing::Something)),
         | Resident::Held { .. } | Resident::Received { .. } => matches!(ret, Ok(Owing::Nothing)),
         | Resident::View { .. } => true,
     })]
@@ -817,9 +875,10 @@ impl Machine<'_, '_>
     ) -> Result<Owing, CheckRefusal>
     {
         Ok(match resident {
-            Resident::Endpoint(_) | Resident::Buffer { .. } | Resident::Capability { .. } => {
-                Owing::Something
-            },
+            Resident::Endpoint(_)
+            | Resident::Buffer { .. }
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. } => Owing::Something,
             Resident::Held { .. } | Resident::Received { .. } => Owing::Nothing,
             Resident::View { at, .. } => {
                 if matches!(
@@ -1735,7 +1794,8 @@ impl Machine<'_, '_>
             | Resident::Buffer { .. }
             | Resident::Held { .. }
             | Resident::View { .. }
-            | Resident::Capability { .. } => return Err(CheckRefusal::MachineInvariant),
+            | Resident::Capability { .. }
+            | Resident::Continuation { .. } => return Err(CheckRefusal::MachineInvariant),
         }
         let _state = self
             .context
@@ -2114,16 +2174,23 @@ impl Machine<'_, '_>
                         by: Capture::Branch,
                     },
                 },
+                // One arm ended the continuation and the other did not.
+                Resident::Continuation { clause } => CheckRefusal::Linearity {
+                    at,
+                    defect: LinearityDefect::ContinuationUnspent { clause },
+                },
             });
         }
         Ok(())
     }
 
-    /// Refuse, at the operation `at` handing on `payload` that `answerer`
-    /// answers, a live resident the operation's continuation ends: the host
-    /// answers once and captures nothing, a scope's clause receives the rest
-    /// of the scope's region as a continuation it may drop or resume twice,
-    /// and an operation anyone may answer captures every slot the run opened.
+    /// Judge, at the operation `at` handing on `payload` that `answerer`
+    /// answers, the live residents the operation's
+    /// continuation ends: the host answers once and captures nothing; a
+    /// scope's clause receives the rest of the scope's region as a
+    /// continuation, which holding an obligation the clause must end exactly
+    /// once, so the capture is recorded for the clause; and an operation
+    /// anyone may answer captures every slot the run opened, which is refused.
     /// A received value, which a read copies, passes, and so does the buffer
     /// `payload` names, which the operation hands back whole. An operation an
     /// unwind performs passes: the unwind runs under the empty row, so no
@@ -2131,12 +2198,16 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// - requires: `payload` stands where `at` does.
-    /// - ensures: nothing changes.
+    /// - ensures: when a scope's clause answers and the continuation captures a
+    ///   live resident other than a received value or the buffer `payload` is,
+    ///   the scope and the operation are recorded in [`Sessions::owing`];
+    ///   nothing else changes.
     /// - fails: as [`captured`] by [`Capture::Continuation`] at `at`, for the
-    ///   outermost slot the continuation captures whose use is still available
-    ///   and whose resident is neither a received value nor the buffer
-    ///   `payload` is; [`CheckRefusal::MachineInvariant`] for a slot the
-    ///   binders do not hold; [`CheckRefusal::DanglingNode`] for a payload
+    ///   outermost slot an operation anyone may answer captures whose use is
+    ///   still available and whose resident is neither a received value nor the
+    ///   buffer `payload` is, and for one a scope captures whose region no
+    ///   waiting scope opened; [`CheckRefusal::MachineInvariant`] for a slot
+    ///   the binders do not hold; [`CheckRefusal::DanglingNode`] for a payload
     ///   outside the arena.
     /// - panics: none.
     ///
@@ -2145,22 +2216,24 @@ impl Machine<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a parent exercising its scope's capability while it
-    ///   holds an endpoint opened in the scope is refused, the same exercise
-    ///   after the endpoint closed checks, and one exercising a capability held
-    ///   for the run checks with the endpoint open.
+    ///   holds an endpoint opened in the scope has the scope's clause owe the
+    ///   continuation, the same exercise after the endpoint closed owes
+    ///   nothing, and one exercising a capability held for the run checks with
+    ///   the endpoint open.
     /// - witness: `judgement::session::tests::an_operation_a_scope_answers_captures_what_the_scope_opened_1334`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::MachineInvariant | CheckRefusal::DanglingNode { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::Access { .. } | CheckRefusal::Located { .. })))]
     pub(super) fn region_captured(
         &mut self,
         at: ComputationId,
-        answerer: Answerer,
+        answerer: Answerer<'_>,
         payload: ValueId,
     ) -> Result<(), CheckRefusal>
     {
         let mark = match answerer {
             Answerer::Host => return Ok(()),
             // A depth past the open regions reads as the outermost mark.
-            Answerer::Scope(depth) => usize::try_from(u32::from(depth))
+            Answerer::Scope { depth, .. } => usize::try_from(u32::from(depth))
                 .ok()
                 .and_then(|depth| depth.checked_sub(1))
                 .and_then(|region| self.sessions.regions.get(region))
@@ -2206,7 +2279,366 @@ impl Machine<'_, '_>
                 .resident;
             let returned = handed == Some(index) && matches!(resident, Resident::Buffer { .. });
             if !returned && !matches!(resident, Resident::Received { .. }) {
+                if let Answerer::Scope { depth, operation } = answerer
+                    && let Some(scope) = self.scope_at(depth)
+                {
+                    if !self
+                        .sessions
+                        .owing
+                        .iter()
+                        .any(|&(owing, ref name)| owing == scope && name == operation)
+                    {
+                        self.sessions.owing.push((scope, operation.clone()));
+                    }
+                    return Ok(());
+                }
                 return captured(node, resident, Capture::Continuation);
+            }
+        }
+        Ok(())
+    }
+
+    /// The capability scope whose region stands at `depth`: the waiting scope
+    /// subject that region counts, outermost first, among the waiting scope
+    /// subjects and hold bodies.
+    ///
+    /// # Specification
+    /// - ensures: the scope when the region at `depth` is a scope's; `None` for
+    ///   a hold's region or a depth past the open ones.
+    /// - panics: none.
+    /// - executable: none — the frames are the machine's private stack, which
+    ///   only a judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation of an inner scope's capability records
+    ///   the inner scope, not the outer one.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    fn scope_at(
+        &self,
+        depth: RegionDepth,
+    ) -> Option<ComputationId>
+    {
+        let region = usize::try_from(u32::from(depth)).ok()?.checked_sub(1)?;
+        let waiting = self
+            .frames
+            .iter()
+            .filter(|waiting| {
+                matches!(
+                    waiting.frame,
+                    Frame::ScopeSubject { .. } | Frame::HoldBody { .. }
+                )
+            })
+            .nth(region)?;
+        if let Frame::ScopeSubject { at, .. } = waiting.frame {
+            Some(at)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Open the linear slot the operation clause `clause` owes the
+    /// continuation it receives, which the next intuitionistic binder binds
+    /// at `stack`: the clause must resume it or abandon it exactly once.
+    ///
+    /// # Specification
+    /// - requires: the clause's payload is bound and its stack is not yet.
+    /// - ensures: one linear slot more, held by [`Resident::Continuation`], and
+    ///   one [`Owed`] entry at the next intuitionistic level.
+    /// - fails: [`CheckRefusal::MachineInvariant`] past the slots a run counts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause owing its continuation that resumes it once
+    ///   checks, and one that drops it is refused.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(
+        captures: [owed = self.sessions.owed.len(), before = self.context.depth(Zone::Linear)],
+        ensures: |ret| ret.is_err() || (self.sessions.owed.len() == owed.saturating_add(1) && self.context.depth(Zone::Linear) > before),
+    )]
+    pub(super) fn owe(
+        &mut self,
+        clause: ComputationId,
+        stack: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let depth = self.context.depth(Zone::Intuitionistic);
+        self.context.binders().open(Zone::Linear, stack);
+        self.sessions.opened.push(Opened {
+            resident: Resident::Continuation { clause },
+            depth,
+        });
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        self.sessions.owed.push(Owed {
+            stack: usize::from(depth),
+            slot,
+            clause,
+        });
+        Ok(())
+    }
+
+    /// End the operation clause whose body was judged, its payload and stack
+    /// still bound: the continuation it owes, if any, must have been ended,
+    /// and its slot closes.
+    ///
+    /// # Specification
+    /// - requires: the clause's payload and stack are the innermost
+    ///   intuitionistic binders.
+    /// - ensures: the clause's [`Owed`] entry and its slot are gone; a clause
+    ///   that owes nothing changes nothing.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationUnspent`] at the clause's body for a
+    ///   continuation neither resumed nor abandoned;
+    ///   [`CheckRefusal::MachineInvariant`] when the slot is not the innermost.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause that drops a continuation holding an
+    ///   endpoint is refused, and one that abandons it checks.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(
+        captures: owed = self.sessions.owed.len(),
+        ensures: |ret| ret.is_err() || self.sessions.owed.len() <= owed,
+    )]
+    pub(super) fn owed_ended(&mut self) -> Result<(), CheckRefusal>
+    {
+        let depth = usize::from(self.context.depth(Zone::Intuitionistic));
+        let Some(&owed) = self.sessions.owed.last()
+        else {
+            return Ok(());
+        };
+        if owed.stack.checked_add(1) != Some(depth) {
+            return Ok(());
+        }
+        if owed.slot.checked_add(1) != Some(self.sessions.opened.len()) {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let use_state = self
+            .context
+            .binders()
+            .linear_use(DeBruijnIndex::from(0_u32))
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        if use_state == LinearUse::Available {
+            return Err(CheckRefusal::Linearity {
+                at: CoreNode::Term(TermNode::Computation(owed.clause)),
+                defect: LinearityDefect::ContinuationUnspent {
+                    clause: owed.clause,
+                },
+            });
+        }
+        let _declared = self
+            .context
+            .binders()
+            .close(Zone::Linear)
+            .map_err(|_fault| CheckRefusal::MachineInvariant)?;
+        let _opened = self.sessions.opened.pop();
+        let _owed = self.sessions.owed.pop();
+        Ok(())
+    }
+
+    /// The owed continuation the intuitionistic `index` names, read here.
+    ///
+    /// # Specification
+    /// - ensures: the innermost [`Owed`] entry whose stack stands at the level
+    ///   `index` names; `None` for a variable no owed stack is.
+    /// - panics: none.
+    /// - executable: none — the level reads the context's depth, which only a
+    ///   judgement drives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the stack is found from inside a nested binder.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    fn owed_at(
+        &self,
+        index: DeBruijnIndex,
+    ) -> Option<Owed>
+    {
+        if self.sessions.owed.is_empty() {
+            return None;
+        }
+        let level = usize::from(self.context.depth(Zone::Intuitionistic))
+            .checked_sub(1)?
+            .checked_sub(usize::try_from(u32::from(index)).ok()?)?;
+        self.sessions
+            .owed
+            .iter()
+            .rev()
+            .find(|owed| owed.stack == level)
+            .copied()
+    }
+
+    /// Spend the owed continuation `stack` names, which the resumption or
+    /// abandonment `at` ends, and admit the one read of it that follows.
+    ///
+    /// # Specification
+    /// - ensures: for a stack that is an owed continuation's variable, its slot
+    ///   is spent and [`Sessions::ending`] names its level; nothing changes
+    ///   otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationUsedTwice`] at `at` for a continuation
+    ///   already ended; [`CheckRefusal::DanglingNode`] for a stack outside the
+    ///   arena; [`CheckRefusal::MachineInvariant`] for a slot the binders do
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a continuation resumed twice is refused at the second
+    ///   resumption.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_err() || self.sessions.ending.is_none() || !self.sessions.owed.is_empty())]
+    pub(super) fn ending(
+        &mut self,
+        at: ComputationId,
+        stack: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.owed.is_empty() {
+            return Ok(());
+        }
+        let Value::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = *self.value(stack)?
+        else {
+            return Ok(());
+        };
+        let Some(owed) = self.owed_at(index)
+        else {
+            return Ok(());
+        };
+        let slot = self
+            .sessions
+            .opened
+            .len()
+            .checked_sub(owed.slot)
+            .and_then(|above| above.checked_sub(1))
+            .and_then(|slot| u32::try_from(slot).ok())
+            .map(DeBruijnIndex::from)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        match self.context.binders().occurrence(Zone::Linear, slot) {
+            Ok(_) => {},
+            Err(ContextError::LinearSlotConsumed { .. }) => {
+                return Err(CheckRefusal::Linearity {
+                    at: CoreNode::Term(TermNode::Computation(at)),
+                    defect: LinearityDefect::ContinuationUsedTwice {
+                        clause: owed.clause,
+                    },
+                });
+            },
+            Err(
+                ContextError::UnboundIndex { .. }
+                | ContextError::LinearSlotUnconsumed { .. }
+                | ContextError::NoBinderToClose { .. },
+            ) => return Err(CheckRefusal::MachineInvariant),
+        }
+        self.sessions.ending = Some(owed.stack);
+        Ok(())
+    }
+
+    /// Admit the read `at` of the intuitionistic `index` only as what the
+    /// resumption or abandonment being judged ends, when it names an owed
+    /// continuation.
+    ///
+    /// # Specification
+    /// - ensures: [`Sessions::ending`] is cleared when the read is the one it
+    ///   admits; nothing changes otherwise.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationAsValue`] at `at` for any other read of
+    ///   an owed continuation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause returning its owed continuation as a value
+    ///   is refused.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ContinuationAsValue { .. }, .. })))]
+    pub(super) fn mention(
+        &mut self,
+        at: ValueId,
+        index: DeBruijnIndex,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(owed) = self.owed_at(index)
+        else {
+            return Ok(());
+        };
+        if self.sessions.ending == Some(owed.stack) {
+            self.sessions.ending = None;
+            return Ok(());
+        }
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(at)),
+            defect: LinearityDefect::ContinuationAsValue {
+                clause: owed.clause,
+            },
+        })
+    }
+
+    /// Refuse `term`, at `node`, naming an owed continuation where `by` may
+    /// run its end other than once.
+    ///
+    /// # Specification
+    /// - ensures: nothing changes.
+    /// - fails: [`CheckRefusal::Linearity`] naming
+    ///   [`LinearityDefect::ContinuationCaptured`] with `by` for the first free
+    ///   variable of `term` that is an owed continuation;
+    ///   [`CheckRefusal::DanglingNode`] and [`CheckRefusal::MachineInvariant`]
+    ///   as [`Self::free_linear`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause resuming its owed continuation inside a
+    ///   thunk is refused, and so is a child forked with it.
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Linearity { defect: LinearityDefect::ContinuationCaptured { by: captor, .. }, .. }) if captor == by) || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
+    pub(super) fn owed_named(
+        &mut self,
+        term: CoreTerm,
+        node: CoreNode,
+        by: Capture,
+    ) -> Result<(), CheckRefusal>
+    {
+        if self.sessions.owed.is_empty() {
+            return Ok(());
+        }
+        let free = self
+            .sessions
+            .free
+            .intuitionistic(self.context.arena(), term)
+            .map(<[DeBruijnIndex]>::to_vec)
+            .map_err(|fault| match fault {
+                gandr_core_nbe::FreeFault::Dangling => CheckRefusal::DanglingNode { node },
+                gandr_core_nbe::FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+            })?;
+        for index in free {
+            if let Some(owed) = self.owed_at(index) {
+                return Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::ContinuationCaptured {
+                        clause: owed.clause,
+                        by,
+                    },
+                });
             }
         }
         Ok(())
@@ -2230,7 +2662,9 @@ impl Machine<'_, '_>
     ///   child names: the child runs as a peer no region bounds, so a region
     ///   could end while it holds the value; [`CheckRefusal::Linearity`] naming
     ///   [`LinearityDefect::UsedTwice`] for an enclosing endpoint both halves
-    ///   name.
+    ///   name, and [`LinearityDefect::ContinuationCaptured`] by
+    ///   [`Capture::Task`] for a continuation an operation clause owes that the
+    ///   child names.
     /// - panics: none.
     ///
     /// # Errors
@@ -2247,6 +2681,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
     /// - witness: `judgement::session::tests::an_inner_child_takes_an_outer_endpoint_only_when_its_parent_leaves_it`
     /// - witness: `judgement::session::tests::a_fork_carries_nothing_kept_in_a_region`
+    /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
     pub(super) fn fork_formed(
         &mut self,
@@ -2298,6 +2733,8 @@ impl Machine<'_, '_>
         if !self.sessions.regions.is_empty() {
             self.unbounded(CoreTerm::Computation(child), at)?;
         }
+        // A child could end the continuation after the clause returned.
+        self.owed_named(CoreTerm::Computation(child), node, Capture::Task)?;
         let shared = self.free_linear(CoreTerm::Computation(parent))?;
         let shared: BTreeSet<DeBruijnIndex> = shared.into_iter().collect();
         for index in self.free_linear(CoreTerm::Computation(child))? {
@@ -2518,7 +2955,8 @@ impl Machine<'_, '_>
 /// - requires: nothing.
 /// - ensures: success for a held or received value named by a branch.
 /// - fails: [`CheckRefusal::Linearity`] naming [`LinearityDefect::Captured`]
-///   for an endpoint; [`CheckRefusal::Access`] naming
+///   for an endpoint and [`LinearityDefect::ContinuationCaptured`] for a
+///   clause's continuation; [`CheckRefusal::Access`] naming
 ///   [`AccessDefect::HeldCaptured`] for a held or received value and
 ///   [`AccessDefect::Escaped`] for a view, each at `node` with `by`.
 /// - panics: none.
@@ -2534,7 +2972,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
 #[spec(ensures: |ret| match (resident, ret) {
     | (Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }, Ok(())) => by == Capture::Branch,
-    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. }, Ok(())) => false,
+    | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } | Resident::Continuation { .. }, Ok(())) => false,
     | (_, Err(_)) => true,
 })]
 fn captured(
@@ -2571,6 +3009,10 @@ fn captured(
             at: node,
             defect: crate::worlds::LocatedDefect::CapabilityCaptured { world, by },
         }),
+        Resident::Continuation { clause } => Err(CheckRefusal::Linearity {
+            at: node,
+            defect: LinearityDefect::ContinuationCaptured { clause, by },
+        }),
     }
 }
 
@@ -2597,7 +3039,8 @@ pub(super) enum HandedOn
 enum Owing
 {
     /// An obligation: a protocol to finish, a buffer to return, an exclusive
-    /// view to end or a capability to migrate once.
+    /// view to end, a capability to migrate once or a continuation to end
+    /// once.
     Something,
     /// Nothing a read does not copy.
     Nothing,
@@ -2609,12 +3052,19 @@ enum Owing
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Answerer
+pub(super) enum Answerer<'operation>
 {
     /// The host, through a capability it holds for the run: it answers once.
     Host,
-    /// The clause of the capability scope whose region stands at this depth.
-    Scope(RegionDepth),
+    /// The clause of the capability scope whose region stands at `depth`,
+    /// answering `operation`.
+    Scope
+    {
+        /// The region's depth.
+        depth: RegionDepth,
+        /// The operation answered.
+        operation: &'operation gandr_core_term::effect::OperationName,
+    },
     /// Whichever handler stands nearest when the operation runs.
     Anyone,
 }

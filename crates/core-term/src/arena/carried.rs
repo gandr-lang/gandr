@@ -462,6 +462,7 @@ impl CoreArena
                 self.value_into(&mut union, stack, at);
                 self.computation_into(&mut union, body, at);
             },
+            Computation::Abandon(stack) => self.value_into(&mut union, stack, at),
             Computation::With(ref components) => {
                 for &component in components {
                     self.computation_into(&mut union, component, at);

@@ -2405,6 +2405,8 @@ enum Plan
     /// The continuation at the node resumed with the reply the values in the
     /// lowerer's operand store make.
     Resume(NodeIndex, Stretch),
+    /// The continuation at the node abandoned.
+    Abandon(NodeIndex),
     /// A session type: its protocol over the payload types in the lowerer's
     /// operand store, in slot order, standing at the protocol's root, and
     /// every site the source writes one of its states at.
@@ -8376,7 +8378,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -8432,6 +8434,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if self.resumption(site, &cursor)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.abandonment(site, &cursor)? == arity::Planned(true) {
             return Ok(());
         }
         let frame = self.require(site, Produced::Computation)?;
@@ -11939,7 +11944,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -12195,6 +12200,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Resume(continuation, reply) => {
                 self.mint_resume(continuation, reply, sink, origin)
             },
+            Plan::Abandon(continuation) => self.mint_abandon(continuation, sink, origin),
             Plan::Session(ref protocol, payloads, ref written) => {
                 self.mint_session(protocol, payloads, written, sink, origin)
             },
@@ -13215,6 +13221,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Exercise(_)
             | Plan::Scope(_)
             | Plan::Resume(..)
+            | Plan::Abandon(_)
             | Plan::Recorded(_)
             | Plan::Ride(..)
             | Plan::FlowThen(..)

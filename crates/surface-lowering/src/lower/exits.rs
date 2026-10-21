@@ -2063,6 +2063,7 @@ fn rebuild(
         | Computation::Exercise { .. }
         | Computation::Scope { .. }
         | Computation::Resume(..)
+        | Computation::Abandon(_)
         | Computation::Reset(_)
         | Computation::Shift(_)
         | Computation::With(..)

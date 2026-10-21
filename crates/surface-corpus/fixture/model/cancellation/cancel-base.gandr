@@ -1,0 +1,17 @@
+// The cancellation subject's shared declarations, written once and imported
+// by every source that reads them (`import "./cancel-base.gandr" ;`): a task
+// hands its parent what it found over its end. A cancellation point is an
+// operation a capability scope answers; its clause resumes the rest of the
+// scope once or abandons it, and an abandoned end is cancelled for its peer
+// (Fowler, Lindley, Morris and Decova, doi:10.1145/3290341).
+
+/// A task: the protocol its end carries back to the parent, and the path it
+/// reads.
+module Cancel :> #{
+  type Join = !String. end,
+  notes : String
+} {
+  /// The path a task reads.
+  @[ checks ]
+  def notes = "notes";
+}

@@ -125,6 +125,8 @@ pub enum FrameRole
     Next,
     /// A resumption waits on its stack's type.
     Resume,
+    /// An abandonment waits on its stack's type.
+    Abandon,
     /// A lazy-pair projection waits on its subject's type.
     Project,
     /// A reset's body is being checked against its answer type.
@@ -376,6 +378,7 @@ impl fmt::Display for FrameRole
             Self::PerformPayload => "PerformPayload",
             Self::Next => "Next",
             Self::Resume => "Resume",
+            Self::Abandon => "Abandon",
             Self::Project => "Project",
             Self::Reset => "Reset",
             Self::HandlerForm => "HandlerForm",

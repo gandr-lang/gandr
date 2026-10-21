@@ -68,6 +68,38 @@ fn stack_literals_preserve_binder_scope()
     );
 }
 
+#[test]
+fn an_abandoned_stack_keeps_its_binder()
+{
+    let mut arena = CoreArena::new();
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let free = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let kept = arena.computation_abandon(bound);
+    let kept = arena.computation_shift(kept);
+    let kept = arena.value_thunk(kept);
+    let unit = arena.value_unit();
+    let rewritten = instantiate_value(&mut arena, kept, unit);
+    assert_eq!(
+        equal_certificate_syntax(&arena, rewritten, kept),
+        CertificateEquality::Equal
+    );
+    let named = arena.computation_abandon(free);
+    let named = arena.computation_shift(named);
+    let named = arena.value_thunk(named);
+    assert_eq!(
+        equal_certificate_syntax(&arena, named, kept),
+        CertificateEquality::Different
+    );
+    let rewritten = instantiate_value(&mut arena, named, unit);
+    let expected = arena.computation_abandon(unit);
+    let expected = arena.computation_shift(expected);
+    let expected = arena.value_thunk(expected);
+    assert_eq!(
+        equal_certificate_syntax(&arena, rewritten, expected),
+        CertificateEquality::Equal
+    );
+}
+
 /// The index the code of a returner's element type names.
 ///
 /// # Specification

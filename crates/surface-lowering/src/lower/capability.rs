@@ -70,9 +70,13 @@
 //! clause to read, and the parser's recovery from a dropped token worsened
 //! wherever a call stood. Reversal: a recovery that never reads a form's
 //! inner tiles without the tile that opens it. Within an operation clause
-//! `k(v)` resumes the subject with `pure v`; `k` is bound in that clause
-//! alone, so a resumption written elsewhere names nothing. Coverage — one
-//! clause per operation of `I` — is the checker's.
+//! `k(v)` resumes the subject with `pure v`, and `abandon(k)` ends the
+//! subject's continuation without running it, its value the unit; `abandon`
+//! is that former only where the program binds no `abandon` of its own. `k`
+//! is bound in that clause alone, so a resumption or an abandonment written
+//! elsewhere names nothing. Coverage — one clause per operation of `I` — is
+//! the checker's, and so is the rule that a clause whose continuation holds
+//! an obligation ends `k` exactly once.
 //!
 //! # A clause that mints a buffer
 //!
@@ -192,6 +196,9 @@ use crate::resolve::binder_site;
 
 #[cfg(test)]
 mod tests;
+
+/// The name an abandonment is called by, where the program binds none.
+const ABANDON: &str = "abandon";
 
 /// What a name a selection is made off holds.
 ///
@@ -1033,6 +1040,90 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
+    /// Classify the call at `site` as an abandonment when its head is the
+    /// name `abandon`, which the program does not bind, and its one argument
+    /// a continuation an operation clause binds.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the call's head.
+    /// - ensures: such a call stands as a computation reading the continuation
+    ///   as a value under its frame, planned as the abandonment; any other call
+    ///   is left unplanned, the operand store as it was found.
+    /// - fails: the wrong-sort refusal where no computation is read; a name's
+    ///   resolution refusal; the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause abandoning its continuation lowers to the
+    ///   abandonment of the clause's stack, and a program binding its own
+    ///   `abandon` calls it.
+    /// - witness: `lower::capability::tests::a_clause_abandons_its_continuation_1334`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&super::Plan::Abandon(_))))]
+    pub(super) fn abandonment(
+        &mut self,
+        site: Site,
+        cursor: &Cursor<'_>,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let mut ahead = cursor.clone();
+        let Run::One(head) = ahead.operands()
+        else {
+            return Ok(Planned(false));
+        };
+        let Some((_, Former::Name)) = self.form_at(head)?
+        else {
+            return Ok(Planned(false));
+        };
+        let name = self.name_at(head);
+        if name.as_ref() != ABANDON {
+            return Ok(Planned(false));
+        }
+        if let Maybe::Present(_) = self
+            .scope
+            .resolve(site.reading.frame(), name, &mut self.fuel)?
+        {
+            return Ok(Planned(false));
+        }
+        let start = self.operands.len();
+        arguments(site, &mut ahead, &mut self.operands)?;
+        let argument = if let Some(&[argument]) = self.operands.get(start ..) {
+            Some(argument)
+        }
+        else {
+            None
+        };
+        self.operands.truncate(start);
+        let Some(argument) = argument
+        else {
+            return Ok(Planned(false));
+        };
+        let Some(node) = self.tree.node(argument)
+        else {
+            return Ok(Planned(false));
+        };
+        let placed = Placed::of(argument, node);
+        let Some((_, Former::Name)) = self.form_at(placed)?
+        else {
+            return Ok(Planned(false));
+        };
+        let Maybe::Present(bound) =
+            self.scope
+                .resolve(site.reading.frame(), self.name_at(placed), &mut self.fuel)?
+        else {
+            return Ok(Planned(false));
+        };
+        if !self.resumptions.contains(&bound.binder) {
+            return Ok(Planned(false));
+        }
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(argument, Reading::Value(frame));
+        self.plan(site, super::Plan::Abandon(argument));
+        Ok(Planned(true))
+    }
+
     /// Classify a capability scope,
     /// `handle c : I { M } with { pure(x) => N, oper op(p, k) => N_op, … }`.
     ///
@@ -1552,6 +1643,36 @@ impl<'source> Lowerer<'_, 'source>
             let returned = sink.arena.computation_return(replied);
             sink.origins.record_computation(returned, origin);
             let id = sink.arena.computation_resume(stack, returned);
+            sink.computation(id, origin)
+        })
+    }
+
+    /// Mint the abandonment of the continuation at `continuation`.
+    ///
+    /// # Specification
+    /// - requires: the continuation's node is already minted or absent.
+    /// - ensures: the abandonment of the continuation at `origin`; the
+    ///   continuation's absence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::abandonment`].
+    /// - witness: `lower::capability::tests::a_clause_abandons_its_continuation_1334`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn mint_abandon(
+        &self,
+        continuation: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        self.value_at(continuation).map(|stack| {
+            let id = sink.arena.computation_abandon(stack);
             sink.computation(id, origin)
         })
     }

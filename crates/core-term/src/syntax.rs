@@ -919,6 +919,10 @@ pub enum Computation
     },
     /// Feed a computation to a first-class stack.
     Resume(ValueId, ComputationId),
+    /// End a first-class stack without resuming it, `abandon(k)`: the rest of
+    /// the computation the stack captured never runs, and the form returns
+    /// unit.
+    Abandon(ValueId),
     /// Delimit a continuation capture.
     Reset(ComputationId),
     /// Capture to the nearest reset, binding one intuitionistic stack value.
@@ -2836,6 +2840,9 @@ fn equal_syntax(
                     },
                     (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
                         pending.extend([V(a, c), C(b, d)]);
+                    },
+                    (&Computation::Abandon(a), &Computation::Abandon(b)) => {
+                        pending.push(V(a, b));
                     },
                     (
                         &Computation::Split {

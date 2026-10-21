@@ -185,6 +185,8 @@ pub enum Capture
     Stack,
     /// A continuation a handler or a shift may resume any number of times.
     Continuation,
+    /// A forked task, which runs as a peer no region bounds.
+    Task,
 }
 
 /// How an endpoint escaped its one linear use.
@@ -265,6 +267,36 @@ pub enum LinearityDefect
         /// The computation that placed the buffer live, or the action that
         /// returned a buffer no slot holds.
         site: ComputationId,
+    },
+    /// An operation clause whose continuation holds an obligation finished
+    /// without resuming or abandoning it.
+    ContinuationUnspent
+    {
+        /// The clause's body.
+        clause: ComputationId,
+    },
+    /// A continuation holding an obligation was resumed or abandoned a second
+    /// time.
+    ContinuationUsedTwice
+    {
+        /// The clause's body.
+        clause: ComputationId,
+    },
+    /// A continuation holding an obligation was named where its end may run
+    /// other than once.
+    ContinuationCaptured
+    {
+        /// The clause's body.
+        clause: ComputationId,
+        /// What may run it.
+        by: Capture,
+    },
+    /// A continuation holding an obligation was read as a value, other than as
+    /// what a resumption or an abandonment ends.
+    ContinuationAsValue
+    {
+        /// The clause's body.
+        clause: ComputationId,
     },
 }
 

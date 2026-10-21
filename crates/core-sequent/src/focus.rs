@@ -213,6 +213,8 @@ pub enum FocusOrigin
     Scope,
     /// A first-class stack resumption.
     Resume,
+    /// A first-class stack abandoned.
+    Abandon,
     /// A delimited answer context.
     Reset,
     /// A delimited continuation capture.
@@ -1007,7 +1009,7 @@ impl<'run> Focusing<'run>
                 Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
-                Computation::Perform { .. } => !self.producers.is_empty(),
+                Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
                 Computation::Exercise { .. } => self.producers.len() >= 2,
                 Computation::Handle { ref clauses, .. } | Computation::Scope { ref clauses, .. } => self.commands.len() >= clauses.len().saturating_add(2),
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
@@ -1474,6 +1476,7 @@ impl<'run> Focusing<'run>
                     | Computation::Handle { .. }
                     | Computation::Exercise { .. }
                     | Computation::Resume(..)
+                    | Computation::Abandon(_)
                     | Computation::Reset(_)
                     | Computation::Shift(_)
                     | Computation::With(..)
@@ -1517,6 +1520,13 @@ impl<'run> Focusing<'run>
                     FocusOrigin::Resume,
                 )
             },
+            Computation::Abandon(_) => (
+                crate::il::CommandNode::Abandon {
+                    stack: self.pop_producer()?,
+                    continuation,
+                },
+                FocusOrigin::Abandon,
+            ),
             Computation::Reset(_) => (
                 crate::il::CommandNode::Reset {
                     body: self.pop_command()?,
@@ -2045,6 +2055,13 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Computation {
                     computation: body,
                     continuation: return_point,
+                });
+                self.tasks.push(Task::Value(stack));
+            },
+            Computation::Abandon(stack) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
                 });
                 self.tasks.push(Task::Value(stack));
             },

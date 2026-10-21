@@ -198,6 +198,7 @@ const KINDS: &[(&str, Standing)] = &[
 /// The names of the primitive formers a call can head: the call is one
 /// core node, and its head names the former rather than a term.
 const FORMERS: &[&str] = &[
+    "abandon",
     "arrow",
     "back",
     "bisim",

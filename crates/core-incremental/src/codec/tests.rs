@@ -162,6 +162,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::WithType(vec![a]),
         ContentNode::WithType(vec![a, b, c]),
         ContentNode::Resume(a, b),
+        ContentNode::Abandon(a),
         ContentNode::Split(a, ComponentCount::from(2_usize), b),
         ContentNode::DependentSplit {
             scrutinee: a,
@@ -744,6 +745,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
             region: RegionDepth::from(2_u32),
         },
         ContentNode::Resume(index(1_usize), index(2_usize)),
+        ContentNode::Abandon(index(1_usize)),
         ContentNode::Reset(index(1_usize)),
         ContentNode::Shift(index(1_usize)),
         ContentNode::With(vec![index(1_usize), index(2_usize)]),
@@ -1033,6 +1035,19 @@ fn session_refusals_round_trip_with_their_endpoints()
         },
         Linearity::BufferRead {
             site: Site::Unreached,
+        },
+        Linearity::ContinuationUnspent {
+            clause: Site::Node(NodeIndex::from(6_usize)),
+        },
+        Linearity::ContinuationUsedTwice {
+            clause: Site::Node(NodeIndex::from(6_usize)),
+        },
+        Linearity::ContinuationCaptured {
+            clause: Site::Unreached,
+            by: Capture::Thunk,
+        },
+        Linearity::ContinuationAsValue {
+            clause: Site::Node(NodeIndex::from(7_usize)),
         },
     ] {
         refusals.push(Refusal::Linearity { at, defect });

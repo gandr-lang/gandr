@@ -3762,7 +3762,7 @@ proptest! {
                     prop_assert!(false, "the free recipe mints no bind, ascription or native eliminator");
                 },
                 | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Case { .. } | Computation::Split { .. }
-                | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..)
+                | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Abandon(_)
                 | Computation::Exercise { .. } | Computation::Scope { .. }
                 | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
                 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => {

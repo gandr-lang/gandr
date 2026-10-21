@@ -1495,7 +1495,7 @@ Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
@@ -1866,7 +1866,11 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(argument), depth));
                     self.tasks.push(open(Node::Computation(head), depth));
                 },
-                Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                Some(
+                    &Computation::Return(value)
+                    | &Computation::Abandon(value)
+                    | &Computation::Force(value),
+                ) => {
                     self.tasks.push(open(Node::Value(value), depth));
                 },
                 Some(&Computation::Bind(bound, body)) => {
@@ -2744,7 +2748,7 @@ Computation::ListFold { .. } | Computation::TelescopeTransport { .. } => 5,
 Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::Split { motive: SplitMotive::Scrutinee(_), .. } => 3,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Abandon(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Resume(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Transport(..) | Computation::Split { motive: SplitMotive::Ambient, .. } => 2,
 Computation::With(ref components) => components.len(),
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
@@ -3192,6 +3196,15 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                 }
                 else {
                     self.arena.computation_return(rewritten)
+                }
+            },
+            Computation::Abandon(stack) => {
+                let rewritten = Self::value(&mut self.results, stack);
+                if rewritten == stack {
+                    id
+                }
+                else {
+                    self.arena.computation_abandon(rewritten)
                 }
             },
             Computation::Force(value) => {
@@ -5227,6 +5240,7 @@ fn survey_computation(
             Position::Value(value, region),
         ]),
         Computation::Return(value)
+        | Computation::Abandon(value)
         | Computation::Force(value)
         | Computation::RecordProjection(value, _)
         | Computation::TupleProjection(value, _)

@@ -2415,7 +2415,9 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Computation(head)), depth));
                         work.push((CoreNode::Term(TermNode::Value(argument)), depth));
                     },
-                    Computation::Return(value) | Computation::Force(value) => {
+                    Computation::Return(value)
+                    | Computation::Abandon(value)
+                    | Computation::Force(value) => {
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));
                     },
                     Computation::Bind(bound, body) => {

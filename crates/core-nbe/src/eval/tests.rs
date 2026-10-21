@@ -1529,6 +1529,7 @@ fn runtime_control_is_refused_by_former()
             core.computation_resume(stack, returned),
             ControlFormer::Resume,
         ),
+        (core.computation_abandon(stack), ControlFormer::Abandon),
         (core.computation_reset(returned), ControlFormer::Reset),
         (core.computation_shift(returned), ControlFormer::Shift),
         (

@@ -332,6 +332,14 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             LinearityDefect::BufferUnreturned { .. } => "a buffer never handed back",
             LinearityDefect::BufferReturnedTwice { .. } => "a buffer already handed back",
             LinearityDefect::BufferRead { .. } => "a buffer read other than by its return",
+            LinearityDefect::ContinuationUnspent { .. } => {
+                "a continuation never resumed or abandoned"
+            },
+            LinearityDefect::ContinuationUsedTwice { .. } => "a continuation already ended",
+            LinearityDefect::ContinuationCaptured { .. } => {
+                "a continuation that may be ended other than once"
+            },
+            LinearityDefect::ContinuationAsValue { .. } => "a continuation read as a value",
         },
         CheckRefusal::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => "no held value here",

@@ -735,6 +735,14 @@ pub enum CommandNode
         /// Where the resumed stack delivers its answer.
         continuation: ConsumerId,
     },
+    /// End a first-class stack without running it, and deliver the unit.
+    Abandon
+    {
+        /// The stack value, never resumed.
+        stack: ProducerId,
+        /// Where the unit is delivered.
+        continuation: ConsumerId,
+    },
     /// Install an answer delimiter.
     Reset
     {
@@ -2025,6 +2033,10 @@ where
         },
         CommandNode::Cut {
             producer, consumer, ..
+        }
+        | CommandNode::Abandon {
+            stack: producer,
+            continuation: consumer,
         } => {
             each(NodeAddress::Producer(producer), at)?;
             each(NodeAddress::Consumer(consumer), at)?;
@@ -2133,6 +2145,7 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
         CommandNode::Perform { .. }
         | CommandNode::Handle { .. }
         | CommandNode::Resume { .. }
+        | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. } => None,
@@ -2178,6 +2191,7 @@ pub const fn command_signature(node: &CommandNode) -> Option<&gandr_core_term::e
             Some(signature)
         },
         CommandNode::Resume { .. }
+        | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }

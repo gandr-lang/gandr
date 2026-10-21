@@ -1342,6 +1342,7 @@ where
                     &(Computation::RecordProjection(value, _)
                     | Computation::TupleProjection(value, _)
                     | Computation::Return(value)
+                    | Computation::Abandon(value)
                     | Computation::Force(value)),
                 ) => {
                     pending.push((AnyNode::Value(value), reach));

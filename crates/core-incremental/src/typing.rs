@@ -241,6 +241,35 @@ pub enum Linearity
         /// buffer no slot holds.
         site: Site,
     },
+    /// An operation clause whose continuation holds an obligation finished
+    /// without resuming or abandoning it.
+    ContinuationUnspent
+    {
+        /// The clause's body.
+        clause: Site,
+    },
+    /// A continuation holding an obligation was ended a second time.
+    ContinuationUsedTwice
+    {
+        /// The clause's body.
+        clause: Site,
+    },
+    /// A continuation holding an obligation was named where its end may run
+    /// other than once.
+    ContinuationCaptured
+    {
+        /// The clause's body.
+        clause: Site,
+        /// What may run it.
+        by: Capture,
+    },
+    /// A continuation holding an obligation was read as a value, other than as
+    /// what a resumption or an abandonment ends.
+    ContinuationAsValue
+    {
+        /// The clause's body.
+        clause: Site,
+    },
 }
 
 /// The world a located refusal names, projected: the host's, or the
@@ -1182,6 +1211,21 @@ impl Projection<'_, '_, '_, '_>
             },
             LinearityDefect::BufferRead { site } => Linearity::BufferRead {
                 site: self.site(ArenaNode::Computation(site)),
+            },
+            LinearityDefect::ContinuationUnspent { clause } => Linearity::ContinuationUnspent {
+                clause: self.site(ArenaNode::Computation(clause)),
+            },
+            LinearityDefect::ContinuationUsedTwice { clause } => Linearity::ContinuationUsedTwice {
+                clause: self.site(ArenaNode::Computation(clause)),
+            },
+            LinearityDefect::ContinuationCaptured { clause, by } => {
+                Linearity::ContinuationCaptured {
+                    clause: self.site(ArenaNode::Computation(clause)),
+                    by,
+                }
+            },
+            LinearityDefect::ContinuationAsValue { clause } => Linearity::ContinuationAsValue {
+                clause: self.site(ArenaNode::Computation(clause)),
             },
         }
     }

@@ -297,6 +297,7 @@ fn render<'arena>(
     | (Some(&CommandNode::Perform { payload, continuation, .. }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, under) if found == payload && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Resume { stack, body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, _) if found == stack)) && pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
+    | (Some(&CommandNode::Abandon { stack, continuation }), &[Piece::Text(Token("abandon(")), Piece::Producer(s, sd), Piece::Text(Token("; ")), Piece::Consumer(c, cd), Piece::Text(Token(")"))]) => stack == s && continuation == c && sd == depth && cd == depth,
     | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Memory { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.computations()) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
@@ -397,6 +398,16 @@ fn command(
             Piece::Producer(stack, depth),
             text!("; "),
             Piece::Command(body, depth),
+            text!("; "),
+            Piece::Consumer(continuation, depth),
+            text!(")")
+        ],
+        CommandNode::Abandon {
+            stack,
+            continuation,
+        } => alloc::vec![
+            text!("abandon("),
+            Piece::Producer(stack, depth),
             text!("; "),
             Piece::Consumer(continuation, depth),
             text!(")")

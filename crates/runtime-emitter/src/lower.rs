@@ -1516,6 +1516,24 @@ impl Lowering<'_>
                 self.tasks.push(Task::Producer(stack, scope));
                 self.tasks.push(Task::Load(continuation, scope));
             },
+            // The stack is never read: the frames it holds are never resumed,
+            // and the continuation receives the unit.
+            CommandNode::Abandon { continuation, .. } => {
+                let width = |_overflow| Form::HeaderWidth;
+                let unit = Header::new(
+                    Kind::Tuple,
+                    Tag::try_from(0_usize).map_err(width)?,
+                    Arity::try_from(0_usize).map_err(width)?,
+                    Family::UNNAMED,
+                );
+                let unit = self.function.constant(&[unit.word()]);
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(Task::Emit(
+                    StencilId::Const,
+                    Operand::Data(unit),
+                    Operand::Unused,
+                ));
+            },
             CommandNode::Memory {
                 ref form,
                 continuation,
@@ -1834,6 +1852,7 @@ impl Lowering<'_>
             CommandNode::Perform { .. }
             | CommandNode::Handle { .. }
             | CommandNode::Resume { .. }
+            | CommandNode::Abandon { .. }
             | CommandNode::Reset { .. }
             | CommandNode::Shift { .. }
             | CommandNode::Memory { .. } => return self.control(id, scope),

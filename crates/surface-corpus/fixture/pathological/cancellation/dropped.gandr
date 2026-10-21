@@ -1,0 +1,24 @@
+// A clause owes the rest of its scope exactly one end once that rest holds a
+// task's end. A clause that neither resumes nor abandons it would leave the
+// end open with no one left to close it, so the clause is refused.
+
+// The task's protocol.
+import "../../model/cancellation/cancel-base.gandr" ;
+
+/// A scope whose exit clause drops the rest while its task's end is open
+/// (#1334).
+@[ refuses("ContinuationUnspent") ]
+def dropped() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure unit
+  }
+}
