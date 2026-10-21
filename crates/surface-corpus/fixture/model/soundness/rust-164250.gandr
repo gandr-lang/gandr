@@ -1,0 +1,18 @@
+// The sound reading of the program rust-lang/rust 164250 names: the slot is
+// kept at the region of the handler whose scope holds the value, and forced
+// before that region ends; the pathological twin keeps the same view one
+// region out and is refused (#1492).
+
+/// A slot kept at the handler's region holds a view of a value the handler's
+/// scope holds, and is forced inside it.
+@[ checks ]
+def kept() -> -F Integer {
+  hold l = 42;
+  handle inner : Proc {
+    run q2 : (() => Integer) at inner <- access shared l as w { pure pure w } ;
+    force q2
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => pure 0
+  }
+}
