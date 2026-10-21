@@ -7,8 +7,10 @@
 // instantiates the stage from its arguments (#392); `predAt` states that its
 // result stands at its argument's stage, which a definition with no recursion
 // otherwise opens none for; `sameAt` takes both arguments at the stage itself,
-// which a call solves from the bound each argument shows (#1227). What
-// refuses is in `../../pathological/data/sized-higher-order.gandr`.
+// which a call solves from the bound each argument shows (#1227); a call may
+// supply a stage by its binder's name, `applyAt[i = j]`, which must be the
+// stage the arguments show (#1227). What refuses is in
+// `../../pathological/data/sized-higher-order.gandr`.
 
 // The naturals the recursion takes apart.
 import "./data-base.gandr" ;
@@ -129,3 +131,12 @@ def rec agreed(n : Nat) -> -F Nat {
 @[ runs("Succ(Succ(Zero))") ]
 def agreedTwo : () => Nat ;
 def agreedTwo = thunk { agreed(Succ(Succ(Zero))) } ;
+
+/// A function applied to a number below a stage `j` through `applyAt`, its
+/// stage supplied by name: the arguments show `i` at `j`, the stage the
+/// supply states. A supply the arguments do not show is refused in
+/// `../../pathological/data/sized-higher-order.gandr` (#1227).
+@[ checks ]
+def appliedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
+  applyAt[i = j](f, x)
+}

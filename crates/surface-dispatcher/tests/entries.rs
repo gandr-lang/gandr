@@ -303,7 +303,7 @@ fn kind(
 /// a run literal's move, as an inner link of a product, a sum or a lazy
 /// product chain, as
 /// the value a discarded bind drops, as an arrow of a data family's kind, or
-/// as the sort of a stage binder.
+/// as the sort of a stage binder or the binder a call supplies.
 ///
 /// # Specification
 /// trivial.
@@ -352,7 +352,9 @@ enum Placed
     /// The sort `Size` a stage binder of a function's telescope is read at,
     /// `Size` in `def predAt @[i : Size] (…)`: the lowering reads the binder
     /// as a stage of the signature and forms no type for its sort, so the
-    /// staged types naming the binder answer.
+    /// staged types naming the binder answer. Or a stage binder a call
+    /// supplies by name, `j` in `applyAt[i = j](f, x)`: the stage is erased
+    /// from the core, so no node holds it, and the call answers.
     Stage,
 }
 
@@ -375,6 +377,17 @@ fn gated(
             let name: &'static str = primitive.name().into();
             name.match_indices('.')
                 .filter_map(move |(at, _)| name.get(.. at))
+        })
+        .collect();
+    // The stage binders the source declares, `j` in `@[j : Size]`, by name.
+    let stages: BTreeSet<&str> = source
+        .match_indices(": Size")
+        .filter_map(|(at, _)| {
+            let before = source.get(.. at)?.trim_end();
+            let start = before
+                .rfind(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
+                .map_or(0_usize, |at| at.saturating_add(1));
+            before.get(start ..)
         })
         .collect();
     let mut gated = Vec::new();
@@ -545,6 +558,14 @@ fn gated(
             && def.label == "type_identifier"
             && text == "Size"
             && parent.is_some_and(|(_, label, ..)| label == "def");
+        let supplied = !melded
+            && def.label == "identifier"
+            && stages.contains(text.trim())
+            && parent.is_some_and(|(held, ..)| {
+                grammar
+                    .mold(held)
+                    .is_ok_and(|resident| resident.sort == Sort::Instantiation)
+            });
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))
@@ -553,7 +574,7 @@ fn gated(
             .or_else(|| chained.then_some(Placed::Chained))
             .or_else(|| dropped.then_some(Placed::Discarded))
             .or_else(|| kinded.then_some(Placed::Kind))
-            .or_else(|| sized.then_some(Placed::Stage));
+            .or_else(|| (sized || supplied).then_some(Placed::Stage));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated

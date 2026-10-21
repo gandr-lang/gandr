@@ -6,7 +6,9 @@
 // stage opens none for its result to follow: the model's quantified
 // signatures lift both, `applyAt` the first and `predAt` the second. A call
 // whose arguments bound one stage binder where no stage fits is refused by
-// name (#1227). Shared with `../../model/data/sized-higher-order.gandr`.
+// name, and so is a stage supplied by name, `applyAt[i = k]`, apart from the
+// one the arguments show or for a binder they do not show (#1227). Shared
+// with `../../model/data/sized-higher-order.gandr`.
 
 // The naturals the recursions take apart.
 import "../../model/data/data-base.gandr" ;
@@ -113,4 +115,19 @@ def rec disagreeing(n : Nat) -> -F Nat {
     Zero => Zero,
     Succ(p) => Succ(sameAt(disagreeing[<], n))
   }
+}
+
+/// A stage supplied apart from the one the arguments show: they show `i` at
+/// `j`, and the supply states `k` (#1227).
+@[ refuses("StagesDisagree") ]
+def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
+  applyAt[i = k](f, x)
+}
+
+/// A stage supplied for a binder no argument shows: `n` stands at no stage,
+/// so nothing holds `i` at the `j` supplied (#1227).
+@[ refuses("OutOfFragment") ]
+def suppliedUnshown @[j : Size] (n : Nat) -> -F Nat {
+  run m <- predAt[i = j](n);
+  return m
 }

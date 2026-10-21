@@ -1176,6 +1176,7 @@ fn decide(
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
             context.own_body(body);
+            context.supply(declaration.supplies());
             context.worlds_mut().enter(entry);
             let first = judge(context, body, direction);
             let decisions = context.take_nesting();

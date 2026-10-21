@@ -1378,6 +1378,10 @@ pub struct Collected<'source>
     /// which the function's lowering raises.
     pub plicities:
         BTreeMap<SlotIndex, Result<Vec<TelescopeEntry<'source>>, LoweringRefusal<'source>>>,
+    /// The stage binders of each function quantified over stages, by its
+    /// slot: each binder's name in written order, its position the ordinal of
+    /// the stage the checker mints for it.
+    pub stage_binders: BTreeMap<SlotIndex, Vec<SurfaceName<'source>>>,
     /// Each declaration's name the collection resolved where it is written,
     /// beside the slot it names: a model ascription's theory and a `theory`
     /// block's include.
@@ -2295,6 +2299,7 @@ pub fn begin_collection<'source>(
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
         plicities: BTreeMap::new(),
+        stage_binders: BTreeMap::new(),
         declared_uses: Vec::new(),
     })
 }
@@ -4221,6 +4226,11 @@ impl<'source> Collector<'_, 'source>
             };
             if let Some(merged) = merged {
                 let _first = self.collected.plicities.insert(slot, merged);
+            }
+            if let Ok(binders) = self.stage_binders(&header)
+                && !binders.is_empty()
+            {
+                let _first = self.collected.stage_binders.insert(slot, binders);
             }
             read_tail(&mut header, declaration)
         };
@@ -8245,6 +8255,9 @@ pub struct LoweredModule<'source>
     /// The bound of each stage binder of each function quantified over
     /// stages, in written order, by the function's declaration key.
     stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
+    /// declaration whose body makes the call.
+    supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -8285,6 +8298,7 @@ impl<'source> LoweredModule<'source>
             recognition,
             operation_rules: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
+            supplies: BTreeMap::new(),
         }
     }
 
@@ -8350,6 +8364,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.stage_bounds = stage_bounds;
+        self
+    }
+
+    /// This module, carrying `supplies`, the stages each declaration's calls
+    /// supply, by the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_supplies(
+        mut self,
+        supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    ) -> Self
+    {
+        self.supplies = supplies;
         self
     }
 
@@ -9016,6 +9046,36 @@ impl<'source> LoweredModule<'source>
                 Maybe::Present(key) => self.stage_bounds.get(&key).map(Vec::as_slice),
                 Maybe::Absent(_) => None,
             })
+            .unwrap_or_default()
+    }
+
+    /// The stages `declaration`'s calls supply their callees' binders at,
+    /// `f[i = s]`: what the checker's declaration carries for its judgement
+    /// to hold each call to, and the kernel never reads.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the supplies filed under the declaration's constant; the
+    ///   empty slice for a declaration whose calls supply none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the module's own map, read at the declaration's
+    ///   constant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call writing a supply files it at its head, and a
+    ///   call writing none files nothing.
+    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    #[inline]
+    #[must_use]
+    pub fn supplies(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[gandr_core_term::staged::Supply]
+    {
+        self.supplies
+            .get(&declaration.constant())
+            .map(Vec::as_slice)
             .unwrap_or_default()
     }
 

@@ -415,6 +415,9 @@ pub struct CheckingContext<'arena>
     /// The stages the recursion typing minted since the declaration under way
     /// began.
     stages: gandr_kernel_core::stage_order::StageOrder,
+    /// The stages the declaration under way's calls supply their callees'
+    /// binders at, each at the value its call forces.
+    supplies: Vec<gandr_core_term::staged::Supply>,
     /// The fixpoint the definition under way thunks as its body — its own —
     /// and, while that fixpoint is open, the depth below its self binder and
     /// that binder's type.
@@ -586,6 +589,8 @@ pub struct Checkpoint
     formations: Wanted,
     /// [`CheckingContext::stages`].
     stages: gandr_kernel_core::stage_order::StageOrder,
+    /// [`CheckingContext::supplies`].
+    supplies: Vec<gandr_core_term::staged::Supply>,
     /// [`CheckingContext::own`].
     own: (
         Maybe<ComputationId, own::Absent>,
@@ -690,6 +695,7 @@ impl<'arena> CheckingContext<'arena>
             typings: None,
             formations: Wanted::All,
             stages: gandr_kernel_core::stage_order::StageOrder::default(),
+            supplies: Vec::new(),
             own: (
                 Maybe::Absent(own::Absent::Unopened),
                 Maybe::Absent(own::Absent::Unopened),
@@ -759,6 +765,7 @@ impl<'arena> CheckingContext<'arena>
             ref typings,
             ref formations,
             ref stages,
+            ref supplies,
             own,
             result_stage,
             ref following,
@@ -803,6 +810,7 @@ impl<'arena> CheckingContext<'arena>
             typings: typings.clone(),
             formations: formations.clone(),
             stages: stages.clone(),
+            supplies: supplies.clone(),
             own,
             result_stage,
             following: following.clone(),
@@ -871,6 +879,7 @@ impl<'arena> CheckingContext<'arena>
             typings,
             formations,
             stages,
+            supplies,
             own,
             result_stage,
             following,
@@ -920,6 +929,7 @@ impl<'arena> CheckingContext<'arena>
             typings,
             formations,
             stages,
+            supplies,
             own,
             result_stage,
             following,
@@ -3494,6 +3504,29 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) const fn stages_mut(&mut self) -> &mut gandr_kernel_core::stage_order::StageOrder
     {
         &mut self.stages
+    }
+
+    /// The stages the declaration under way's calls supply their callees'
+    /// binders at.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn supplies(&self) -> &[gandr_core_term::staged::Supply]
+    {
+        &self.supplies
+    }
+
+    /// Hold the declaration under way's calls to `supplies`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn supply(
+        &mut self,
+        supplies: &[gandr_core_term::staged::Supply],
+    )
+    {
+        self.supplies.clear();
+        self.supplies.extend_from_slice(supplies);
     }
 
     /// Forget every stage minted and the fixpoint opened: a declaration's

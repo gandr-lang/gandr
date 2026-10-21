@@ -16,6 +16,7 @@
 //! - [`placed`]: a node's placeable children, in order.
 //! - [`rebuild`]: a node over replacements for its placeable children.
 //! - [`unstaged`]: a type with every placed stage erased.
+//! - [`Supply`]: a stage a call supplies its callee's binder at.
 
 use alloc::vec::Vec;
 
@@ -25,6 +26,7 @@ use crate::CompType;
 use crate::CompTypeId;
 use crate::CoreArena;
 use crate::Value;
+use crate::ValueId;
 use crate::ValueType;
 use crate::ValueTypeId;
 
@@ -48,6 +50,23 @@ pub enum Part
     Value(ValueTypeId),
     /// A computation type.
     Computation(CompTypeId),
+}
+
+/// A stage a call supplies a binder of its callee at, written `f[i = s]`.
+///
+/// It names the value the call forces, the binder by its position in the
+/// callee's signature, and the stage, one the caller's own signature mints.
+/// The kernel never reads it: it re-derives the stage from the call's
+/// arguments, so the checker holds a supply to the stage they show.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Supply
+{
+    /// The value the call forces: its callee's name.
+    pub head: ValueId,
+    /// The binder, by its position in the callee's signature.
+    pub binder: gandr_kernel_term::StageBinder,
+    /// The stage supplied.
+    pub stage: gandr_kernel_term::Stage,
 }
 
 /// Hand each child of `part` a stage may be placed under to `each`, in order:

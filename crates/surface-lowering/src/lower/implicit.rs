@@ -26,7 +26,10 @@
 //! - A call writing one argument per parameter in its parentheses, the
 //!   implicits among them, is [`LoweringRefusal::ImplicitInParentheses`].
 //! - A resident naming no implicit of the function is
-//!   [`LoweringRefusal::UnresolvedName`] at the name.
+//!   [`LoweringRefusal::UnresolvedName`] at the name, unless it names one of
+//!   the function's stage binders: that resident supplies a stage, which
+//!   crosses beside the declaration rather than as an argument
+//!   ([`super::staged`]).
 //! - Nothing is inferred: an implicit is supplied where the function is used.
 //! - A supply standing as a value takes implicits that lead the merged
 //!   telescope: an implicit the merge places after an explicit parameter, whose
@@ -292,20 +295,23 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a call read as a computation under `frame`;
     ///   `cursor` stands at its head.
     /// - ensures: [`arity::Planned`] true exactly when the head is an
-    ///   instantiation of a declaration with implicits, every resident `a = e`
-    ///   naming one, the call then planned as the declaration applied to one
-    ///   argument per merged entry, an implicit's the resident naming it and an
-    ///   explicit one's the next written argument, each read as a value under
-    ///   `frame` and the declaration's name as the head; the head is recorded
-    ///   as supplied. False, with nothing changed, for any other head but a
-    ///   bare name of a declaration with implicits.
+    ///   instantiation of a declaration with implicits or stage binders, every
+    ///   resident `a = e` naming one, the call then planned as the declaration
+    ///   applied to one argument per merged entry, an implicit's the resident
+    ///   naming it and an explicit one's the next written argument, each read
+    ///   as a value under `frame` and the declaration's name as the head; a
+    ///   resident naming a stage binder is no argument but a stage the head
+    ///   carries ([`Self::stage_supplies`]); the head is recorded as supplied.
+    ///   False, with nothing changed, for any other head but a bare name of a
+    ///   declaration with implicits.
     /// - fails: [`LoweringRefusal::ImplicitInParentheses`] for a call writing
     ///   one argument per parameter, [`LoweringRefusal::ImplicitUnsupplied`]
     ///   for one leaving an implicit unsupplied, the bare name included;
-    ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit;
-    ///   a fault at a resident written twice; the reserved refusal for a
-    ///   resident other than `a = e` beside one that is; a form fault reading
-    ///   the head.
+    ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit
+    ///   or stage binder, and at a stage supplied by a name the caller binds no
+    ///   stage to; a fault at a resident written twice; the reserved refusal
+    ///   for a resident other than `a = e` beside one that is; a form fault
+    ///   reading the head.
     /// - panics: none.
     ///
     /// # Errors
@@ -319,6 +325,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_unsupplied_implicit_is_refused_with_its_slot_spelling`
     /// - witness: `lower::implicit::tests::an_implicit_in_the_parentheses_is_refused`
     /// - witness: `lower::implicit::tests::a_resident_naming_no_implicit_is_unresolved`
+    /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
@@ -511,10 +518,30 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(arity::Planned(false));
         };
         let slot = SlotIndex::from(usize::from(constant));
-        let Some(Ok(entries)) = self.collected.plicities.get(&slot).cloned()
-        else {
-            return Ok(arity::Planned(false));
+        let staged = self.stage_supplies(site, slot, &mut supplied)?;
+        let entries = match self.collected.plicities.get(&slot).cloned() {
+            Some(Ok(entries)) => entries,
+            None if !staged.is_empty() => Vec::new(),
+            Some(Err(_)) | None => return Ok(arity::Planned(false)),
         };
+        if !staged.is_empty() {
+            if matches!(used, Use::Standing) {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            }
+            let caller = match self.collected.owner_of(site.at.node) {
+                Maybe::Present(owner) => self
+                    .collected
+                    .slots
+                    .get(usize::from(owner))
+                    .map(|slot| slot.constant),
+                Maybe::Absent(_) => None,
+            };
+            let Some(caller) = caller
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            };
+            let _first = self.planned_supplies.insert(inner.node, (caller, staged));
+        }
         let implicits: BTreeSet<SurfaceName<'source>> = entries
             .iter()
             .filter(|entry| entry.plicity == Plicity::Implicit)

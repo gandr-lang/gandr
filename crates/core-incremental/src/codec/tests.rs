@@ -1619,6 +1619,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
                 laws: Vec::new(),
                 rules: Vec::new(),
                 stages: Vec::new(),
+                supplies: Vec::new(),
             },
             &nodes,
         );
@@ -1858,6 +1859,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                 laws: Vec::new(),
                 rules: Vec::new(),
                 stages: Vec::new(),
+                supplies: Vec::new(),
             },
             &nodes,
         );
@@ -1969,6 +1971,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 laws: Vec::new(),
                 rules: Vec::new(),
                 stages: Vec::new(),
+                supplies: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2009,6 +2012,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
                 laws,
                 rules: Vec::new(),
                 stages: Vec::new(),
+                supplies: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2087,6 +2091,7 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
                 laws: Vec::new(),
                 rules,
                 stages: Vec::new(),
+                supplies: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2138,6 +2143,7 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
                 laws: Vec::new(),
                 rules: Vec::new(),
                 stages,
+                supplies: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2180,6 +2186,70 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
         bytes.as_ref(),
         plain.as_ref(),
         "and so does dropping the binders"
+    );
+}
+
+#[test]
+fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
+{
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageBinder;
+    use gandr_kernel_term::StageBound;
+    use gandr_kernel_term::StageId;
+    let checkpoints = |supplies: Vec<(NodeIndex, StageBinder, Stage)>| {
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
+                rules: Vec::new(),
+                stages: vec![StageBound::Unbounded, StageBound::Unbounded],
+                supplies,
+            },
+            &[ContentNode::Tuple(Vec::new())],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    let supply = |stage: usize| {
+        (
+            NodeIndex::from(0_usize),
+            StageBinder::from(0_usize),
+            Stage::At(StageId::from(stage)),
+        )
+    };
+    // `f[i = j]` in a body quantified `@[j : Size, k : Size]`, then
+    // `f[i = k]`.
+    let supplied = checkpoints(vec![supply(0)]);
+    let bytes = encode_checkpoints(&supplied).expect("a supplying root encodes");
+    assert_eq!(
+        decode_checkpoints(Bytes(bytes.as_ref())),
+        Ok(supplied),
+        "and decodes to itself, each supply at its head"
+    );
+    let other = encode_checkpoints(&checkpoints(vec![supply(1)])).expect("another supply encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        other.as_ref(),
+        "supplying another stage changes the content"
+    );
+    let unsupplied =
+        encode_checkpoints(&checkpoints(Vec::new())).expect("an unsupplied root encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        unsupplied.as_ref(),
+        "and so does dropping the supply"
     );
 }
 

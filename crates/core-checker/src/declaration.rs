@@ -286,6 +286,10 @@ pub struct Declaration
     /// its bound; none for every other declaration. Its declared type names
     /// each binder's stage by the binder's ordinal.
     stages: Vec<gandr_kernel_term::StageBound>,
+    /// The stages a value declaration's calls supply their callees' binders
+    /// at, `f[i = j]`, each at the value its call forces; none for every
+    /// other declaration. The kernel never reads them.
+    supplies: Vec<gandr_core_term::staged::Supply>,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
 }
@@ -328,6 +332,7 @@ impl Declaration
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
+            supplies: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -376,6 +381,7 @@ impl Declaration
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
+            supplies: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -399,6 +405,7 @@ impl Declaration
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
+            supplies: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -422,6 +429,7 @@ impl Declaration
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
+            supplies: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -444,6 +452,7 @@ impl Declaration
             laws: Vec::new(),
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
+            supplies: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -493,6 +502,18 @@ impl Declaration
     pub fn stages(&self) -> &[gandr_kernel_term::StageBound]
     {
         &self.stages
+    }
+
+    /// The stages the declaration's calls supply their callees' binders at,
+    /// each at the value its call forces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn supplies(&self) -> &[gandr_core_term::staged::Supply]
+    {
+        &self.supplies
     }
 
     /// The entry the declaration states, or why none.
@@ -618,6 +639,42 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Value { .. } => Self { stages, ..self },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration whose calls supply `supplies`, everything else
+    /// unchanged; any other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the judgement holds each supply to the stage its
+    ///   call's arguments show.
+    /// - ensures: a value declaration carries exactly `supplies`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the stages `f[i = j]` supplies.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a supply the arguments agree with checks, and one
+    ///   they do not is refused.
+    /// - witness: `quantified::tests::a_supplied_stage_is_held_to_the_arguments_1227`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.supplies.len(), supplies.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.supplies.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn supplied(
+        self,
+        supplies: Vec<gandr_core_term::staged::Supply>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self { supplies, ..self },
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)
