@@ -289,6 +289,7 @@ use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::unused::unreached;
 use crate::unused::unused;
 use crate::uses::Written;
 use crate::uses::declared;
@@ -6850,11 +6851,12 @@ fn edited(
 ///   version, with the diagnostics the document's session judges for its whole
 ///   text, each import read as `shadows` holds it, rendered at `verbosity` with
 ///   their types in `spelling`, followed by the hints [`unused`] answers off
-///   the recheck's unused binders, less those [`publishable`] holds for the
-///   form under the document's caret while `quiet` is not zero; the copy
-///   records every judged diagnostic and hint as checked. One log line names
-///   the same URI and version, its admission pending when the judgement left
-///   one, and whether the publication held any.
+///   the recheck's unused binders and those [`unreached`] answers off its
+///   imports no lookup reached, less those [`publishable`] holds for the form
+///   under the document's caret while `quiet` is not zero; the copy records
+///   every judged diagnostic and hint as checked. One log line names the same
+///   URI and version, its admission pending when the judgement left one, and
+///   whether the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -6905,6 +6907,11 @@ fn synchronised(
     rechecked
         .diagnostics
         .extend(unused(&rechecked.unused, document.text.source(), &index));
+    rechecked.diagnostics.extend(unreached(
+        &rechecked.unreached,
+        document.text.source(),
+        &index,
+    ));
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
@@ -11131,6 +11138,58 @@ mod tests
             hinted(&open(&mut server, &uri, &text)),
             ["13:`n` is never used"],
             "`tick` leaves its parameter unused, and control flow's every other binder is used"
+        );
+    }
+
+    #[test]
+    fn an_import_no_lookup_reaches_is_published_unnecessary_1116()
+    {
+        let mut server = initialized();
+        let opened = |server: &mut Connected, file: &str| {
+            let path = std::fs::canonicalize(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../surface-corpus/fixture")
+                    .join(file),
+            )
+            .expect("the corpus source is checked out");
+            let text = std::fs::read_to_string(&path).expect("the corpus source reads");
+            let notification = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": format!("file://{}", path.display()),
+                "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let published = send(server, Json(&notification.to_string()));
+            published[0]["params"]["diagnostics"]
+                .as_array()
+                .map(|diagnostics| {
+                    diagnostics
+                        .iter()
+                        .filter(|diagnostic| diagnostic["code"] == "UnusedImport")
+                        .map(|diagnostic| {
+                            format!(
+                                "{}-{}:{}:{}",
+                                diagnostic["range"]["start"]["line"],
+                                diagnostic["range"]["end"]["line"],
+                                diagnostic["message"].as_str().unwrap_or_default(),
+                                diagnostic["tags"]
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            opened(&mut server, "model/cancellation/answered.gandr"),
+            ["4-4:import `./cancel-base.gandr` is never used:[1]"],
+            "a scope reading only builtins reads nothing through its import, which fades whole"
+        );
+        assert_eq!(
+            opened(&mut server, "model/cancellation/abandoned.gandr"),
+            [""; 0],
+            "a module member read as a dotted path reads through the import declaring it"
+        );
+        assert_eq!(
+            opened(&mut server, "model/modules/model-manifest-type.gandr"),
+            [""; 0],
+            "a model type reads its theory through the import declaring it"
         );
     }
 

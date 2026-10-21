@@ -1707,12 +1707,28 @@ impl<'source> Lowerer<'_, 'source>
         )
     )]
     fn bundled(
-        &self,
+        &mut self,
         written: Site,
         (at, name): (ByteOffset, SurfaceName<'source>),
     ) -> Result<Vec<BundledTheory>, LoweringRefusal<'source>>
     {
         let span = written.at.span;
+        // The outermost theory is the one the written type names: it reaches
+        // the import of the source declaring it.
+        let crossed = match self.collected.presented_theory(at, span, name) {
+            Ok((position, _)) => self.collected.slots.get(usize::from(position)).map(|slot| {
+                (
+                    self.collected.unit.source_at(at),
+                    self.collected.unit.source_at(slot.named.span.start()),
+                )
+            }),
+            Err(_) => None,
+        };
+        if let Some((using, declaring)) = crossed
+            && using != declaring
+        {
+            self.collected.reach_source(using, declaring);
+        }
         let read = |at: ByteOffset, name: SurfaceName<'source>| {
             let (position, presentation) = self.collected.presented_theory(at, span, name)?;
             let Ok(signature) = crate::model::derive(presentation)

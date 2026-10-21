@@ -1381,6 +1381,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 inferred,
                 runs,
                 unused,
+                unreached,
                 kernel,
                 program,
                 ..
@@ -1395,6 +1396,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 inferred,
                 runs,
                 unused,
+                unreached,
                 kernel,
                 program,
             },

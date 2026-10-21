@@ -512,7 +512,8 @@ impl fmt::Display for Timing
 }
 
 /// What one recheck produced: the diagnostics to publish, the binders left
-/// unused, the form under the caret it was asked about, the paths its closure
+/// unused, the imports nothing reads, the form under the caret it was asked
+/// about, the paths its closure
 /// named, the lay-out it judged, the type table its judgement kept, and its
 /// timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -524,6 +525,9 @@ pub struct Rechecked
     /// document and never read, as the document's own text measures it,
     /// ascending.
     pub unused: Vec<ByteSpan>,
+    /// Each path import the document writes that no name lookup was answered
+    /// through, as the document's own text measures it, ascending.
+    pub unreached: Vec<ByteSpan>,
     /// The innermost form of the judged revision holding the caret, read
     /// off the tree the judgement parsed.
     pub form: Maybe<ByteSpan, formless::Absent>,
@@ -562,17 +566,18 @@ pub struct Rechecked
 ///   diagnostic locating nothing in the document, and a ledger line, at the
 ///   document's origin. A fault that keeps the document from composing, and a
 ///   grammar that did not build, is one error at the origin naming it. The
-///   unused binders are the composition's, moved back by the document's base;
-///   none when the judgement faulted or refused the document whole. The lay-out
-///   is the one judged, `named` taken out of it, and [`laid::Absent::Alone`]
-///   when the grammar did not build. The timing carries the judgement's form
-///   census, the incremental checker's census, and the wall of the whole
-///   recheck; its admission is pending when the judgement left one. The form is
-///   [`caret_form`] of the judged tree at `caret`, `caret`'s own reason when it
-///   is absent, and [`formless::Absent::Unparsed`] when the judgement faulted
-///   or the grammar did not build. A text the session last judged, submitted
-///   again, molds no form and judges no item, and its diagnostics are the ones
-///   its previous recheck produced.
+///   unused binders and the imports no lookup reached are the composition's,
+///   moved back by the document's base; none when the judgement faulted or
+///   refused the document whole. The lay-out is the one judged, `named` taken
+///   out of it, and [`laid::Absent::Alone`] when the grammar did not build. The
+///   timing carries the judgement's form census, the incremental checker's
+///   census, and the wall of the whole recheck; its admission is pending when
+///   the judgement left one. The form is [`caret_form`] of the judged tree at
+///   `caret`, `caret`'s own reason when it is absent, and
+///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
+///   did not build. A text the session last judged, submitted again, molds no
+///   form and judges no item, and its diagnostics are the ones its previous
+///   recheck produced.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -617,6 +622,7 @@ pub fn recheck(
     let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| Rechecked {
         diagnostics: vec![diagnostic],
         unused: Vec::new(),
+        unreached: Vec::new(),
         form: Maybe::Absent(formless::Absent::Unparsed),
         named,
         laid,
@@ -701,10 +707,21 @@ pub fn recheck(
             .collect(),
         Composed::Refused(_) => Vec::new(),
     };
+    let unreached = match *submission.composed() {
+        Composed::Settled { ref unreached, .. } => unreached
+            .iter()
+            .filter_map(|&span| match own(span, base) {
+                Maybe::Present(span) => Some(span),
+                Maybe::Absent(_) => None,
+            })
+            .collect(),
+        Composed::Refused(_) => Vec::new(),
+    };
     let diagnostics = diagnostics_of(submission, (uri, placed), text, verbosity, spelling);
     Rechecked {
         diagnostics,
         unused,
+        unreached,
         form,
         named,
         laid,

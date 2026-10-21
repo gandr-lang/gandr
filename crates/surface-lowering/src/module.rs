@@ -1405,6 +1405,8 @@ pub struct Collected<'source>
     /// beside the slot it names: a model ascription's theory and a `theory`
     /// block's include.
     pub declared_uses: Vec<(ByteSpan, SlotIndex)>,
+    /// The bytes of each import a name lookup was answered through.
+    pub reached: BTreeSet<ByteSpan>,
 }
 
 quenchant_shape::reason_enum! {
@@ -1782,8 +1784,152 @@ impl<'source> Collected<'source>
                 Maybe::Absent(_) => answered = Maybe::Present((found, import.span())),
             }
         }
-
         Ok(answered)
+    }
+
+    /// The import of `source` that makes the unit's theory code visible to
+    /// it, when [`Self::theory_in`] answers through one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the bytes of the first unqualified import of `source`
+    ///   resolving to a source among [`Self::theory_sources`]; none when
+    ///   `source` stands among them itself or no import reaches one.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the receiver's imports.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LoweredModule::reached_imports`].
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    #[must_use]
+    pub fn theory_import(
+        &self,
+        source: SourceIndex,
+    ) -> Option<ByteSpan>
+    {
+        if self.theory_sources.contains(&source) {
+            return None;
+        }
+        self.imports
+            .of(source)
+            .find(|import| {
+                matches!(
+                    (import.binding(), import.resolution()),
+                    (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target)))
+                        if self.theory_sources.contains(&target)
+                )
+            })
+            .map(ImportDeclaration::span)
+    }
+
+    /// Record that a name lookup was answered through the import written at
+    /// `import`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `import` is among the reached imports.
+    /// - provides: the record [`LoweredModule::reached_imports`] answers.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`LoweredModule::reached_imports`].
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    pub fn reach(
+        &mut self,
+        import: ByteSpan,
+    )
+    {
+        let _fresh = self.reached.insert(import);
+    }
+
+    /// Record every import of `source` whose target, or a source the target
+    /// imports in turn, declares a module named `head` at its top level.
+    ///
+    /// A dotted path is read in the unit's one outermost scope, so its head
+    /// may be a module of a source `source` reaches only through another: the
+    /// import that brought it into the unit is the one the path needs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each import of `source` resolving to a source whose import
+    ///   closure, itself included, holds a top-level module `head` is among the
+    ///   reached imports.
+    /// - provides: the reach of a path read in the outermost scope.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module member read through a direct import and
+    ///   through an import of an import.
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    pub fn reach_declaring(
+        &mut self,
+        source: SourceIndex,
+        head: SurfaceName<'source>,
+    )
+    {
+        let mut reached = Vec::new();
+        for import in self.imports.of(source) {
+            let ImportResolution::Path(ImportTarget::Source(target)) = import.resolution()
+            else {
+                continue;
+            };
+            let mut seen: BTreeSet<SourceIndex> = BTreeSet::new();
+            let mut pending = Vec::from([target]);
+            while let Some(at) = pending.pop() {
+                if !seen.insert(at) {
+                    continue;
+                }
+                if self.modules.contains_key(&(Container::TopLevel(at), head)) {
+                    reached.push(import.span());
+                    break;
+                }
+                pending.extend(self.imports.of(at).filter_map(
+                    |further| match further.resolution() {
+                        ImportResolution::Path(ImportTarget::Source(next)) => Some(next),
+                        ImportResolution::Path(ImportTarget::Unresolved | ImportTarget::Cycle)
+                        | ImportResolution::Foreign => None,
+                    },
+                ));
+            }
+        }
+        self.reached.extend(reached);
+    }
+
+    /// Record every import of `source` resolving to `target`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each import of `source` whose address resolved to `target` is
+    ///   among the reached imports.
+    /// - provides: the reach of a method or an included theory a sibling source
+    ///   declares.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method an imported source declares, called.
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    pub fn reach_source(
+        &mut self,
+        source: SourceIndex,
+        target: SourceIndex,
+    )
+    {
+        let reached: Vec<ByteSpan> = self
+            .imports
+            .of(source)
+            .filter(|import| {
+                import.resolution() == ImportResolution::Path(ImportTarget::Source(target))
+            })
+            .map(ImportDeclaration::span)
+            .collect();
+        self.reached.extend(reached);
     }
 
     /// Give `position` to `slot`.
@@ -2322,6 +2468,7 @@ pub fn begin_collection<'source>(
         stage_binders: BTreeMap::new(),
         receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
+        reached: BTreeSet::new(),
     })
 }
 
@@ -8419,6 +8566,9 @@ pub struct LoweredModule<'source>
     /// Each written name the lowering resolved, with what it names, ascending
     /// by span.
     resolutions: Vec<(ByteSpan, Resolution)>,
+    /// The bytes of each import a name lookup was answered through,
+    /// ascending.
+    reached_imports: Vec<ByteSpan>,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
     /// The imports, in source order, with their aliases bound.
@@ -8472,6 +8622,7 @@ impl<'source> LoweredModule<'source>
             nested: BTreeMap::new(),
             in_scope: InScope::default(),
             resolutions: Vec::new(),
+            reached_imports: Vec::new(),
             origins,
             imports,
             recognition,
@@ -8779,6 +8930,49 @@ impl<'source> LoweredModule<'source>
     pub fn resolutions(&self) -> &[(ByteSpan, Resolution)]
     {
         &self.resolutions
+    }
+
+    /// This module, carrying the bytes of each import a name lookup was
+    /// answered through.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_reached_imports(
+        mut self,
+        reached: Vec<ByteSpan>,
+    ) -> Self
+    {
+        self.reached_imports = reached;
+        self
+    }
+
+    /// The bytes of each import a name lookup was answered through,
+    /// ascending: an unqualified import that declared a name read, an aliased
+    /// one whose member was read, and one reaching a source that holds the
+    /// theory code where `Theory` is read. A name after a refusal in its
+    /// declaration is never looked up.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the spans ascend without repeats, each the bytes of an import
+    ///   of [`Self::imports`].
+    /// - provides: what an importer's unused imports are read against.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an import a value, a type, a constructor, a module
+    ///   member and an aliased member are each read through is reached; an
+    ///   import nothing is read through is not.
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first < second)))]
+    #[inline]
+    #[must_use]
+    pub fn reached_imports(&self) -> &[ByteSpan]
+    {
+        &self.reached_imports
     }
 
     /// The runs the checker inferred, of the nested values `ran` it decided

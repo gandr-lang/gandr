@@ -326,7 +326,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::namespace::a_univalence_statement_reads_only_the_blocks_its_source_sees_1078`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |description| !description.name.as_ref().is_empty()))]
     fn description(
-        &self,
+        &mut self,
         site: Site,
         operand: NodeIndex,
     ) -> Result<Description, LoweringRefusal<'source>>
@@ -357,7 +357,10 @@ impl<'source> Lowerer<'_, 'source>
                     .collected
                     .imported_slot(self.collected.unit.source_at(at.span.start()), name)
                 {
-                    Ok(Maybe::Present((position, _import))) => Some(position),
+                    Ok(Maybe::Present((position, import))) => {
+                        self.collected.reach(import);
+                        Some(position)
+                    },
                     Ok(Maybe::Absent(_)) => None,
                     Err(ambiguity) => {
                         return Err(LoweringRefusal::ImportShadows {
