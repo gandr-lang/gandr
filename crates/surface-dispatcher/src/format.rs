@@ -34,12 +34,12 @@
 //! source the formatter refuses, or the parse cannot commit, is a `FormatFault`
 //! and stays as written; the formatting continues past it.
 //!
-//! `Formatting::visit` forks by source as `Walk::visit` does, on scoped
-//! threads of its own rather than the driver's pool: at a width above one it
-//! reaches every path first, then lays the sources out on those threads,
-//! largest first, and hands the steps over in walk order, so every byte the
-//! driver prints, every source rewritten and the exit are the serial
-//! formatting's. A source's text lives only on the thread laying it out; what
+//! `Formatting::visit` forks by source on the driver's [`Pool`], as
+//! `Walk::visit` does: at a width above one it reaches every path first, then
+//! lays the sources out on the pool's threads and the calling thread, largest
+//! first, and hands the steps over in walk order, so every byte the driver
+//! prints, every source rewritten and the exit are the serial formatting's. A
+//! source's text lives only on the thread laying it out; what
 //! the calling thread holds is each path and whether its layout changed. The
 //! serial formatting costs a parse, a layout and the formatter's own reparse
 //! per source; forked, `fmt --check` takes what `check` takes at the default
@@ -76,6 +76,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::component;
+use crate::pool::Pool;
 use crate::root;
 use crate::walk::Reached;
 use crate::walk::Traversal;
@@ -352,26 +353,26 @@ impl Formatting
     }
 
     /// Hand every step of the formatting to `visitor`, in walk order, laying
-    /// the sources out on the formatting's width, and answer the first
-    /// `Break` `visitor` returns.
+    /// the sources out on `pool`, and answer the first `Break` `visitor`
+    /// returns.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `pool` is the driver's, at the formatting's width.
     /// - ensures: `visitor` receives exactly the steps [`Formatting::step`]
     ///   yields, in its order, and every source is read, laid out and written
     ///   as [`Formatting::step`] does. [`Width::SERIAL`], or a grammar that did
     ///   not build, steps the formatting itself, so a `Break` stops it before
     ///   the next source is read. Any other width first reaches every path;
-    ///   then as many threads as the width answers, never more than the
-    ///   sources, the calling thread among them, lay the sources out, each
-    ///   taking the largest source by bytes no thread has taken, and only then
-    ///   are the steps handed over in walk order, so a `Break` stops the
-    ///   handing over and every source has already been laid out. A thread the
-    ///   host refuses to start leaves its sources to the others.
+    ///   then the calling thread and the helpers [`Pool`] gives the fork, never
+    ///   more than the sources, lay the sources out, each taking the largest
+    ///   source by bytes none has taken, and only then are the steps handed
+    ///   over in walk order, so a `Break` stops the handing over and every
+    ///   source has already been laid out. A pool the host refused lays every
+    ///   source out on the calling thread.
     /// - provides: the pass `gandr fmt` runs, at the width the driver chose.
     /// - fails: never; every fault is a step.
     /// - panics: only by propagating a panic of `visitor` or of a pool thread,
-    ///   once every thread has stopped.
+    ///   once every helper has stopped.
     /// - executable: none — the steps are handed to an opaque visitor and the
     ///   effect is on files; the witnesses compare both against the serial
     ///   formatting.
@@ -390,6 +391,7 @@ impl Formatting
     #[inline]
     pub fn visit<Stop, Visitor>(
         mut self,
+        pool: &Pool,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop>
     where
@@ -423,10 +425,6 @@ impl Formatting
             })
             .collect();
         order.sort_unstable();
-        let threads = match order.len() {
-            0 | 1 => 1,
-            sources => usize::from(NonZeroUsize::from(self.width.threads())).min(sources),
-        };
         let cursor = AtomicUsize::new(0);
         let (options, rewrite) = (self.options, self.rewrite);
         // Lay out the largest source no thread has taken, until none is left.
@@ -437,12 +435,15 @@ impl Formatting
                 }
             }
         };
-        std::thread::scope(|scope| {
-            for _ in 1 .. threads {
-                let _started = std::thread::Builder::new().spawn_scoped(scope, work);
-            }
-            work();
-        });
+        match pool.helpers(&order) {
+            Maybe::Present((threads, helpers)) => threads.in_place_scope(|scope| {
+                for _ in 0 .. NonZeroUsize::from(helpers).get() {
+                    scope.spawn(|_| work());
+                }
+                work();
+            }),
+            Maybe::Absent(_) => work(),
+        }
         for ((path, reached), slot) in paths.iter().zip(found).zip(laid) {
             let step = step_of(path, reached, || {
                 slot.into_inner()
@@ -567,6 +568,7 @@ mod tests
     use super::FormatStep;
     use super::Formatting;
     use super::Rewrite;
+    use crate::pool::Pool;
     use crate::walk::tests::Scratch;
     use crate::width::Threads;
     use crate::width::Width;
@@ -610,7 +612,7 @@ mod tests
     {
         let formatting = Formatting::new(paths, FormatOptions::default(), rewrite, width);
         let mut seen = Vec::new();
-        let visited = formatting.visit(|step| {
+        let visited = formatting.visit(&Pool::new(width), |step| {
             let (path, row) = match step {
                 FormatStep::Unchanged { path, .. } => (path, Seen::Unchanged),
                 FormatStep::Changed { path, .. } => (path, Seen::Changed),

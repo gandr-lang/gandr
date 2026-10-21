@@ -17,7 +17,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
-**How.** `dispatch` is a total match over the closed `Invocation` enum. `compose` is `lower_source` then `judge_module`, two short functions, and `judge_module` is `judge` then `Judged::admit`; the only call into the lowering sits in a private module that counts each source it lowers. The walk lists directories with an explicit stack, classifies each source by its canonical path and reads every source before judging any; it forks parse and lower by component onto scoped threads that share one atomic cursor. A staging builds its programs and hands each to `gandr-core-checker`'s `staging::check` with a `rayon` pool as the checker's fork.
+**How.** `dispatch` is a total match over the closed `Invocation` enum. `compose` is `lower_source` then `judge_module`, two short functions, and `judge_module` is `judge` then `Judged::admit`; the only call into the lowering sits in a private module that counts each source it lowers. The walk lists directories with an explicit stack, classifies each source by its canonical path and reads every source through its reader before judging any; it forks parse and lower by component onto the driver's pool, sharing one atomic cursor. A staging builds its programs and hands each to `gandr-core-checker`'s `staging::check` with the pool as the checker's fork.
 
 ## Provided features
 
@@ -58,7 +58,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 
 - **A renderer.** The caller renders each `Outcome`, and each diagnostic `entries` yields from a `Step`: `gandr-surface-render-terminal` lays one out for a terminal, `gandr-surface-lsp` publishes it to an editor. A diagnostic carries the lines of source it covers, its loci and the types its refusal names, so a face renders it without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
 - **A file system.** `Walk::visit` lists directories and reads sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
-- **Threads.** `Walk::visit` and `Staging::run` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process; its default width is the host's physical performance cores ([width](src/width.rs)).
+- **Threads.** `Walk::visit`, `Staging::run` and `Formatting::visit` fork on the driver's [`Pool`](src/pool.rs), whose `rayon` threads start once per process; its default width is the host's physical performance cores ([width](src/width.rs)).
 
 ## Examples
 
@@ -106,6 +106,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The run stage, native universe-path boundaries | [`evaluate`](src/evaluate.rs) |
 | What each verb prints of a step | [`entry`](src/entry.rs) |
 | Reading before judging, forking by component, judgement in walk order | [`walk`](src/walk.rs) |
+| The driver's pool, the reader | [`pool`](src/pool.rs), [`reader`](src/reader.rs) |
 | The default width | [`width`](src/width.rs) |
 | Membership, the pending set | [`root`](src/root.rs) |
 | Faults, unsettled declarations and goals | [`report`](src/report.rs) |

@@ -44,9 +44,10 @@
 //! **A mapped file is one no gandr verb writes.** A mapping's bytes change if
 //! the file under it is rewritten in place, and a truncated file faults the
 //! reader that touches the lost pages. No verb that writes a source reads it
-//! through a reader: the formatter reads its own until its rung brings it here
-//! and writes through a replacement then. Another process rewriting a mapped
-//! file in place is the hazard every mapped reader accepts.
+//! through a reader: the formatter, which rewrites a source in place, reads its
+//! own, and the rung that brings it onto the reader settles how a mapped
+//! source is rewritten. Another process rewriting a mapped file in place is the
+//! hazard every mapped reader accepts.
 
 use alloc::sync::Arc;
 use std::collections::HashMap;
