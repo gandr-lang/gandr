@@ -20,11 +20,13 @@
 //! [`TypeTable::half`]: gandr_surface_dispatcher::TypeTable::half
 //! [`TypeTable::type_referents`]: gandr_surface_dispatcher::TypeTable::type_referents
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_dispatcher::DeclaredHalf;
 use gandr_surface_dispatcher::Referent;
+use gandr_surface_lowering::SourceIndex;
 use gandr_surface_render_remote::ByteOffset as RenderOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::ByteOffset;
@@ -71,6 +73,108 @@ pub fn ranged(
         RenderOffset::from(usize::from(span.end())),
     )
     .ok()
+}
+
+/// Where a referent is declared: the document holding it, the whole binder
+/// or declaring form, and its name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Placed
+{
+    /// The document: the request's own, or a sibling's path as a `file` URI.
+    pub uri: DocumentUri,
+    /// The binder or declaring form, whole.
+    pub whole: Range,
+    /// Its name.
+    pub named: Range,
+}
+
+/// The places of the referents one document's table answers, each sibling's
+/// text indexed once however many referents it declares.
+pub struct Locator<'held, 'text>
+{
+    /// What the document's copy keeps for its hovers.
+    hovering: &'held Hovering,
+    /// The document.
+    uri: &'held DocumentUri,
+    /// The document's text, indexed.
+    index: &'held LineIndex<'text>,
+    /// Each sibling asked about: its URI and its text indexed, or none when
+    /// its source names no path or keeps no text.
+    siblings: BTreeMap<SourceIndex, Option<(DocumentUri, LineIndex<'held>)>>,
+}
+
+impl<'held, 'text> Locator<'held, 'text>
+{
+    /// A locator over the document at `uri`, whose text `index` indexes and
+    /// whose copy keeps `hovering`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn new(
+        hovering: &'held Hovering,
+        uri: &'held DocumentUri,
+        index: &'held LineIndex<'text>,
+    ) -> Self
+    {
+        Self {
+            hovering,
+            uri,
+            index,
+            siblings: BTreeMap::new(),
+        }
+    }
+
+    /// Where `referent` is declared.
+    ///
+    /// # Specification
+    /// - requires: `referent` was answered by the table `hovering` keeps.
+    /// - ensures: a referent of the document itself is placed in it, its ranges
+    ///   counted in its text; one of a sibling is placed at the sibling's path
+    ///   as a `file` URI, its ranges counted in the sibling's text as the
+    ///   closure laid it out, that text indexed on the first referent asked of
+    ///   it; none when the sibling names no path or keeps no text, or a span
+    ///   falls outside its text.
+    /// - provides: the targets of a definition request and the locations of an
+    ///   inlay hint's label.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the ranges are counted in texts the predicate would
+    ///   have to index again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name declared in the document and one a sibling
+    ///   declares are each placed at their declaring form.
+    /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
+    /// - witness: `tests::session::a_definition_in_a_sibling_answers_the_sibling_s_path_795`
+    pub fn place(
+        &mut self,
+        referent: &Referent,
+    ) -> Option<Placed>
+    {
+        let table = self.hovering.table();
+        let (uri, index) = if referent.source() == table.own_source() {
+            (self.uri, self.index)
+        }
+        else {
+            let hovering = self.hovering;
+            let sibling = self
+                .siblings
+                .entry(referent.source())
+                .or_insert_with(|| {
+                    let uri = hovering.path(referent).and_then(DocumentUri::of_path)?;
+                    let text = hovering.table().source_text(referent.source())?;
+                    Some((uri, LineIndex::new(<&str>::from(text).into())))
+                })
+                .as_ref()?;
+            (&sibling.0, &sibling.1)
+        };
+        Some(Placed {
+            uri: uri.clone(),
+            whole: ranged(index, referent.extent())?,
+            named: ranged(index, referent.named())?,
+        })
+    }
 }
 
 /// What a `goto` request at `position` of `text`, the document at `uri` whose
@@ -158,36 +262,15 @@ pub fn targets(
         },
     };
     let origin = origin.and_then(|span| ranged(&index, span));
-    let own = table.own_source();
+    let mut locator = Locator::new(hovering, uri, &index);
     let mut links = Vec::with_capacity(referents.len());
     for referent in referents {
-        let (target, ranges) = if referent.source() == own {
-            (
-                uri.clone(),
-                ranged(&index, referent.extent()).zip(ranged(&index, referent.named())),
-            )
-        }
-        else {
-            let Some(target) = hovering.path(&referent).and_then(DocumentUri::of_path)
-            else {
-                continue;
-            };
-            let Some(sibling) = table.source_text(referent.source())
-            else {
-                continue;
-            };
-            let sibling = LineIndex::new(<&str>::from(sibling).into());
-            (
-                target,
-                ranged(&sibling, referent.extent()).zip(ranged(&sibling, referent.named())),
-            )
-        };
-        if let (Some(origin), Some((whole, named))) = (origin, ranges) {
+        if let (Some(origin), Some(placed)) = (origin, locator.place(&referent)) {
             links.push(LocationLink {
                 origin_selection_range: origin,
-                target_uri: target,
-                target_range: whole,
-                target_selection_range: named,
+                target_uri: placed.uri,
+                target_range: placed.whole,
+                target_selection_range: placed.named,
             });
         }
     }

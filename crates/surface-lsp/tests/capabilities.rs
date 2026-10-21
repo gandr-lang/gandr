@@ -39,7 +39,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "documentSymbolProvider": true,
                 "executeCommandProvider": {"commands": ["gandr.applyFill"]},
                 "foldingRangeProvider": true,
-                "inlayHintProvider": true,
+                "inlayHintProvider": {"resolveProvider": true},
                 "selectionRangeProvider": true,
                 "hoverProvider": true,
                 "signatureHelpProvider": {"triggerCharacters": ["(", ","], "retriggerCharacters": [")"]},
