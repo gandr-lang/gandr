@@ -154,6 +154,8 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
             | Self::RegionAsValue { .. }
+            | Self::StrayReceiverMode { .. }
+            | Self::AmbiguousMethod { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -202,6 +204,8 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
             | Self::RegionAsValue { .. }
+            | Self::StrayReceiverMode { .. }
+            | Self::AmbiguousMethod { .. }
             | Self::NonExhaustiveMatch { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
@@ -450,7 +454,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 52_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 54_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -671,6 +675,17 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("r"),
             },
+            LoweringRefusal::StrayReceiverMode {
+                span: empty,
+                mode: SurfaceName::from("consumed"),
+            },
+            LoweringRefusal::AmbiguousMethod {
+                span: empty,
+                method: SurfaceName::from("len"),
+                first: SurfaceName::from("Str"),
+                second: SurfaceName::from("Bytes"),
+                more: crate::CandidateCount::from(1_usize),
+            },
         ]
     }
 
@@ -726,6 +741,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNSPLIT),
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

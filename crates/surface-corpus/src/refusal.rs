@@ -488,6 +488,10 @@ pub enum RefusalName
     ImplicitInParentheses,
     /// A definition's region binder named as a value.
     RegionAsValue,
+    /// A receiver mode word on a parameter that is no method's receiver.
+    StrayReceiverMode,
+    /// A method call whose name more than one module's receivers declare.
+    AmbiguousMethod,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
     /// A recursive definition's own name written without a descent claim.
@@ -706,7 +710,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 191_usize] = [
+    pub const VOCABULARY: [Self; 193_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -804,6 +808,8 @@ impl RefusalName
         Self::ImplicitUnsupplied,
         Self::ImplicitInParentheses,
         Self::RegionAsValue,
+        Self::StrayReceiverMode,
+        Self::AmbiguousMethod,
         Self::NonExhaustiveMatch,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
@@ -947,6 +953,8 @@ impl RefusalName
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
         (Self::RegionAsValue, b"RegionAsValue") |
+        (Self::StrayReceiverMode, b"StrayReceiverMode") |
+        (Self::AmbiguousMethod, b"AmbiguousMethod") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
@@ -1255,6 +1263,8 @@ impl RefusalName
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
             Self::ImplicitInParentheses => "ImplicitInParentheses",
             Self::RegionAsValue => "RegionAsValue",
+            Self::StrayReceiverMode => "StrayReceiverMode",
+            Self::AmbiguousMethod => "AmbiguousMethod",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
@@ -1475,6 +1485,10 @@ impl Refusal<'_>
         RefusalName::ImplicitInParentheses) |
         (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
         RefusalName::RegionAsValue) |
+        (Self::Lowering(LoweringRefusal::StrayReceiverMode { .. }),
+        RefusalName::StrayReceiverMode) |
+        (Self::Lowering(LoweringRefusal::AmbiguousMethod { .. }),
+        RefusalName::AmbiguousMethod) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
@@ -1700,7 +1714,9 @@ impl Refusal<'_>
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
         RefusalName::ImplicitInParentheses) | (LoweringRefusal::RegionAsValue { .. },
-        RefusalName::RegionAsValue) | (LoweringRefusal::NonExhaustiveMatch { .. },
+        RefusalName::RegionAsValue) | (LoweringRefusal::StrayReceiverMode { .. },
+        RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
+        RefusalName::AmbiguousMethod) | (LoweringRefusal::NonExhaustiveMatch { .. },
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
@@ -1762,6 +1778,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
         LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
+        LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,
+        LoweringRefusal::AmbiguousMethod { .. } => RefusalName::AmbiguousMethod,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,

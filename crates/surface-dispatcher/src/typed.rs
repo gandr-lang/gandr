@@ -1234,11 +1234,17 @@ impl TypeTable
             // the record a relation between types abbreviates, located at the
             // relation, which writes the two types and nothing the record
             // holds, or a term of the words a data declaration's loops
-            // present, located at the declaration.
+            // present, located at the declaration; nor does a term of the
+            // access a method call is, below the call, located at the call.
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
-                    Provenance::Inserted(Insertion::Model | Insertion::Relation | Insertion::Words)
+                    Provenance::Inserted(
+                        Insertion::Model
+                            | Insertion::Relation
+                            | Insertion::Words
+                            | Insertion::Method
+                    )
                 )
             {
                 let (subject, last) = term_subject(&arena, (first, last));

@@ -456,6 +456,33 @@ fn lowered(
             "`{name}` is a region, never a value; name it only where a type keeps a value in it, \
              `A at {name}`"
         ),
+        LoweringRefusal::StrayReceiverMode { mode, .. } => write!(
+            f,
+            "`{mode}` is a receiver's mode: only a module member's first parameter is written \
+             with it, `self : {mode} T`"
+        ),
+        LoweringRefusal::AmbiguousMethod {
+            method,
+            first,
+            second,
+            more,
+            ..
+        } => {
+            if usize::from(more) == 0_usize {
+                write!(
+                    f,
+                    "`{method}` is a method of both `{first}` and `{second}`; a call selects \
+                     exactly one"
+                )
+            }
+            else {
+                write!(
+                    f,
+                    "`{method}` is a method of `{first}`, `{second}` and {more} more modules; a \
+                     call selects exactly one"
+                )
+            }
+        },
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")
         },
@@ -1100,6 +1127,7 @@ mod tests
     use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::AttributeRegistry;
     use gandr_surface_lowering::AttributeSchema;
+    use gandr_surface_lowering::CandidateCount;
     use gandr_surface_lowering::CrossedExit;
     use gandr_surface_lowering::FormFault;
     use gandr_surface_lowering::FormName;
@@ -1286,6 +1314,14 @@ mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span, name },
+            LoweringRefusal::StrayReceiverMode { span, mode: name },
+            LoweringRefusal::AmbiguousMethod {
+                span,
+                method: name,
+                first: name,
+                second: name,
+                more: CandidateCount::from(0_usize),
+            },
             LoweringRefusal::NonExhaustiveMatch { span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::UnguardedCorecursion { span, name },

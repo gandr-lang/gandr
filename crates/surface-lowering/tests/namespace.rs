@@ -1441,6 +1441,67 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
 }
 
 #[test]
+fn a_method_of_a_source_not_imported_is_out_of_scope()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "module Str { def len(self : shared Integer) -> -F Integer { pure self } }",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "module Bytes { def len(self : shared Integer) -> -F Integer { pure 0 } }",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./str.gandr\" ;\ndef measured() -> -F Integer { hold s = 1; s.len() }",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+        (
+            SourceText::from(
+                "import \"./str.gandr\" ;\nimport \"./bytes.gandr\" ;\ndef both() -> -F Integer \
+                 { hold s = 1; s.len() }",
+            ),
+            &[
+                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
+            ],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let outcome = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(gandr_surface_lowering::LoweredDeclaration::outcome)
+    };
+
+    assert!(
+        !matches!(outcome("measured"), Some(DeclarationOutcome::Refused(_))),
+        "a source importing `Str` alone calls its `len`, though the unit recognises `Bytes`: \
+         {:?}",
+        outcome("measured")
+    );
+    assert!(
+        matches!(
+            outcome("both"),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::AmbiguousMethod { first, second, .. }))
+                if first == SurfaceName::from("Str") && second == SurfaceName::from("Bytes")
+        ),
+        "a source importing both sees both: {:?}",
+        outcome("both")
+    );
+}
+
+#[test]
 fn two_imports_binding_one_name_refuse_its_use()
 {
     let pbg = grammar();

@@ -48,7 +48,7 @@ const COUNTER: &str = r"def counter(n : Integer) -> -F Integer {
 ///
 /// # Specification
 /// trivial.
-fn forms(
+pub(in crate::lower) fn forms(
     arena: &CoreArena,
     tail: ComputationId,
 ) -> Vec<String>

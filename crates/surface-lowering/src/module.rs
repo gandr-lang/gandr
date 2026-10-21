@@ -329,6 +329,8 @@ mod model;
 
 mod plicity;
 
+mod receiver;
+
 mod sealing;
 
 mod world;
@@ -363,6 +365,8 @@ pub use self::model::ungrouped;
 pub use self::plicity::Plicity;
 pub use self::plicity::TelescopeEntry;
 pub use self::plicity::merged;
+pub use self::receiver::ReceiverMode;
+use self::receiver::receiver_of;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
@@ -1393,6 +1397,10 @@ pub struct Collected<'source>
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
     pub stage_binders: BTreeMap<SlotIndex, Vec<SurfaceName<'source>>>,
+    /// Each method, by its slot: a module member whose first parameter is
+    /// `self`, written with its type, with the mode that parameter is written
+    /// at. A call `s.f(…)` selects one off its receiver `s`.
+    pub receivers: BTreeMap<SlotIndex, ReceiverMode>,
     /// Each declaration's name the collection resolved where it is written,
     /// beside the slot it names: a model ascription's theory and a `theory`
     /// block's include.
@@ -2312,6 +2320,7 @@ pub fn begin_collection<'source>(
         recursive: BTreeSet::new(),
         plicities: BTreeMap::new(),
         stage_binders: BTreeMap::new(),
+        receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
     })
 }
@@ -4248,6 +4257,11 @@ impl<'source> Collector<'_, 'source>
                 && !binders.is_empty()
             {
                 let _first = self.collected.stage_binders.insert(slot, binders);
+            }
+            if let Container::Module(_) = container
+                && let Some(mode) = receiver_of(&header, |tile| self.name_of(tile))
+            {
+                let _first = self.collected.receivers.insert(slot, mode);
             }
             read_tail(&mut header, declaration)
         };
