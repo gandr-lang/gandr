@@ -1,5 +1,6 @@
 //! The comparison, the issue filing and the exit codes, observed by spawning
-//! the binary with a fake `curl` and a fake `gh` first on the path.
+//! the binary with the fake `curl` and the fake `gh` of `tests/fakes` first on
+//! the path.
 //!
 //! The fake Codecov lists `main`'s uploads as the head `bbbb…`, an upload
 //! `cccc…` still pending, and `aaaa…`, the baseline. `aaaa…` covers crates
@@ -12,58 +13,16 @@
 //! invocation to `FAKE_GH_LOG` and the last body it was fed to
 //! `FAKE_GH_BODY`, and fails every invocation under `FAKE_GH=fail`.
 //!
+//! The fakes are files of the tree, never written per case: macOS assesses an
+//! executable the first time it runs, one at a time across the machine, so a
+//! fake written fresh for every case queued behind every other first run of a
+//! whole-workspace test run and passed the 30-second limit (#1574). A file of
+//! the checkout is assessed once.
+//!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
 use std::process::Command;
-
-/// The fake `curl`: the address is its last argument.
-const FAKE_CURL: &str = r#"#!/bin/sh
-for url; do :; done
-if [ "$FAKE_CURL" = fail ]; then echo 'curl: (22) The requested URL returned error: 404' >&2; exit 22; fi
-A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-C=cccccccccccccccccccccccccccccccccccccccc
-if [ "$FAKE_COVERAGE" = drop ]; then HITS=879; else HITS=946; fi
-case "$url" in
-  https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/$B/)
-    if [ "$FAKE_HEAD" = pending ]; then
-      printf '{"commitid":"%s","state":"pending","totals":null}' "$B"
-    else
-      printf '{"commitid":"%s","state":"complete","totals":{"files":3,"lines":1000,"hits":%s,"misses":1}}' "$B" "$HITS"
-    fi ;;
-  'https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/commits/?branch=main&page_size=50')
-    head="{\"commitid\":\"$B\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":$HITS}}"
-    pending="{\"commitid\":\"$C\",\"state\":\"pending\",\"totals\":null}"
-    base="{\"commitid\":\"$A\",\"state\":\"complete\",\"totals\":{\"files\":3,\"lines\":1000,\"hits\":945}}"
-    case "$FAKE_LISTING" in
-      unlisted) printf '{"count":2,"results":[%s,%s]}' "$pending" "$base" ;;
-      nobase) printf '{"count":2,"results":[%s,%s]}' "$head" "$pending" ;;
-      *) printf '{"count":3,"results":[%s,%s,%s]}' "$head" "$pending" "$base" ;;
-    esac ;;
-  "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$A")
-    printf '{"totals":{},"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":380}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}' ;;
-  "https://api.codecov.io/api/v2/github/gandr-lang/repos/gandr/report/?sha=$B")
-    if [ "$FAKE_COVERAGE" = drop ]; then
-      printf '{"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":300}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":290}},{"name":"crates/new/src/lib.rs","totals":{"lines":300,"hits":289}}]}'
-    else
-      printf '{"files":[{"name":"crates/a/src/lib.rs","totals":{"lines":400,"hits":381}},{"name":"crates/b/src/lib.rs","totals":{"lines":300,"hits":285}},{"name":"crates/gone/src/lib.rs","totals":{"lines":300,"hits":280}}]}'
-    fi ;;
-  *) echo "unexpected address: $url" >&2; exit 2 ;;
-esac
-"#;
-
-/// The fake `gh`.
-const FAKE_GH: &str = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_LOG"
-if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
-case "$1 $2" in
-  'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
-  'issue create') cat > "$FAKE_GH_BODY"; echo 'https://example.invalid/issues/7' ;;
-  'issue edit') cat > "$FAKE_GH_BODY" ;;
-  *) echo "unexpected: $*" >&2; exit 2 ;;
-esac
-"#;
 
 /// The head's full name.
 const HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -93,7 +52,7 @@ Steady: within the threshold, no file lost.
 | a | 95.00 % | 95.25 % | +0.25 | 20 | 19 |
 ";
 
-/// A fresh scratch directory for the case `$name` holding the fakes.
+/// A fresh scratch directory for the case `$name`, holding the fake `gh`'s log.
 macro_rules! scratch {
     ($name:literal) => {{
         let root =
@@ -102,28 +61,19 @@ macro_rules! scratch {
             std::fs::remove_dir_all(&root).unwrap();
         }
         std::fs::create_dir_all(&root).unwrap();
-        for (name, script) in [("curl", FAKE_CURL), ("gh", FAKE_GH)] {
-            let path = root.join(name);
-            std::fs::write(&path, script).unwrap();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt as _;
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-            }
-        }
         std::fs::write(root.join("log"), "").unwrap();
         root
     }};
 }
 
 /// Runs the binary over the head with `$args` after the repository and the
-/// commit, the fakes in `$root` first on the path, and each `($key,
-/// $value)` of `$env` set.
+/// commit, the fakes first on the path, the `gh` log and body in `$root`, and
+/// each `($key, $value)` of `$env` set.
 macro_rules! run {
     ($root:expr, $args:expr, $env:expr) => {{
         let root: &std::path::Path = &$root;
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![root.to_path_buf()];
+        let mut paths = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes")];
         paths.extend(std::env::split_paths(&path));
         let mut command = Command::new(env!("CARGO_BIN_EXE_coverage-guard"));
         command

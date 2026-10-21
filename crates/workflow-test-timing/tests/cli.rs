@@ -1,34 +1,21 @@
 //! The report, the store and the exit codes, observed by spawning the binary.
 //!
 //! Each case builds a store and a configuration in its own scratch directory.
-//! The fetching cases put a fake `gh` first on the path: it logs every
-//! invocation, lists runs 9 and 7, and writes one enforcing report per
-//! downloaded run whose test took twenty seconds per unit of the run's
+//! The fetching cases put the fake `gh` of `tests/fakes` first on the path: it
+//! logs every invocation, lists runs 9 and 7, and writes one enforcing report
+//! per downloaded run whose test took twenty seconds per unit of the run's
 //! identifier.
+//!
+//! The fake is a file of the tree, never written per case: macOS assesses an
+//! executable the first time it runs, one at a time across the machine, and a
+//! fresh fake per case queued past the 30-second limit in a whole-workspace
+//! test run (#1574).
 //!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
 use std::path::PathBuf;
 use std::process::Command;
-
-/// The fake `gh`: logs its arguments to `FAKE_GH_LOG`, fails or prints
-/// garbage as `FAKE_GH_MODE` says, and otherwise lists and downloads.
-const FAKE_GH: &str = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_LOG"
-case "$FAKE_GH_MODE" in
-  fail) echo 'HTTP 401: Bad credentials' >&2; exit 1 ;;
-  garbage) echo 'abc'; exit 0 ;;
-esac
-case "$1 $2" in
-  'run list') printf '9\n7\n' ;;
-  'run download')
-    for dir; do :; done
-    mkdir -p "$dir/junit-cargo-test-enforcing/ci-enforcing"
-    printf '<testsuites><testsuite name="s"><testcase classname="gandr-a" name="slow::t" time="%s"/></testsuite></testsuites>\n' "$(( $3 * 20 ))" > "$dir/junit-cargo-test-enforcing/ci-enforcing/junit.xml" ;;
-  *) echo "unexpected: $*" >&2; exit 2 ;;
-esac
-"#;
 
 /// One report holding `slow::t`, `parse::was_slow` and `fast::t`, with
 /// `slow::t` taking the placeholder's seconds.
@@ -162,7 +149,8 @@ fn a_malformed_invocation_exits_two()
     );
 }
 
-/// A scratch directory holding the fake `gh`, its log and a store.
+/// A scratch directory holding the fake `gh`'s log, a configuration and a
+/// store.
 #[cfg(unix)]
 #[repr(transparent)]
 #[derive(Debug)]
@@ -175,35 +163,30 @@ struct Fake
 #[cfg(unix)]
 impl Fake
 {
-    /// Installs the fake `gh` in a fresh scratch directory.
+    /// Prepares a fresh scratch directory holding the configuration.
     ///
     /// # Specification
     /// - requires: a single-component `case` unique to the calling test.
-    /// - ensures: `root/bin/gh` is the executable fake and `root` holds nothing
-    ///   else.
-    /// - provides: an isolated fake for one case.
+    /// - ensures: `root` holds the configuration and nothing else.
+    /// - provides: an isolated scratch directory for one case.
     /// - fails: never.
     /// - panics: when the scratch directory cannot be prepared.
     /// - executable: none — the outcome is the filesystem, read back by the
     ///   cases that run the fake.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a case that runs the fake observes its log; a missing
-    ///   or non-executable fake fails that case's first run.
+    /// - hypothesis: L3 — a case that runs the fake observes its log in `root`;
+    ///   a missing configuration fails that case's first run.
     /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
     fn new(case: &std::path::Path) -> Self
     {
-        use std::os::unix::fs::PermissionsExt as _;
         let root = std::env::temp_dir()
             .join(format!("test-timing-{}", std::process::id()))
             .join(case);
         if root.exists() {
             std::fs::remove_dir_all(&root).unwrap();
         }
-        std::fs::create_dir_all(root.join("bin")).unwrap();
-        let gh = root.join("bin").join("gh");
-        std::fs::write(&gh, FAKE_GH).unwrap();
-        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("nextest.toml"), CONFIG).unwrap();
         Self { root }
     }
@@ -226,9 +209,12 @@ impl Fake
     /// - witness: `tests::cli::fetched_runs_are_stored_and_read_back`
     fn command(&self) -> Command
     {
-        let path = std::env::join_paths(core::iter::once(self.root.join("bin")).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
+        let path = std::env::join_paths(
+            core::iter::once(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes"))
+                .chain(std::env::split_paths(
+                    &std::env::var_os("PATH").unwrap_or_default(),
+                )),
+        )
         .unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_test-timing"));
         command

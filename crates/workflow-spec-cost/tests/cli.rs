@@ -3,10 +3,15 @@
 //!
 //! Each case builds a workspace in its own scratch directory: one crate whose
 //! check on line 2 calls a helper whose check is on line 6, and a `target`
-//! directory holding a file the parser would reject. A fake `cargo` lists one
-//! binary with a test and an ignored test; a fake `perf` records its
-//! invocations and prints four samples, one nested, one in a body, two in the
-//! helper's check. Both log every invocation.
+//! directory holding a file the parser would reject. The fake `cargo` of
+//! `tests/fakes` lists one binary with a test and an ignored test; the fake
+//! `perf` records its invocations and prints four samples, one nested, one in
+//! a body, two in the helper's check. Both log every invocation.
+//!
+//! The fakes are files of the tree, never written per case: macOS assesses an
+//! executable the first time it runs, one at a time across the machine, and a
+//! fresh fake per case queued past the 30-second limit in a whole-workspace
+//! test run (#1574).
 //!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
@@ -24,30 +29,6 @@ const SOURCE: &str = "\n\
         #[spec(ensures: |ret| ret)]\n\
         fn helper(_: u8) -> bool { true }\n";
 
-/// The fake `cargo`: logs its arguments and build flags, then lists one
-/// binary.
-const FAKE_CARGO: &str = r#"#!/bin/sh
-printf 'cargo %s | %s | %s | %s\n' "$*" "$RUSTFLAGS" "$CARGO_TARGET_DIR" "$CARGO_PROFILE_TEST_DEBUG" >> "$FAKE_LOG"
-printf '{"rust-build-meta":{},"rust-suites":{"gandr-a::tests":{"binary-id":"gandr-a::tests","binary-path":"%s/bin/test-binary","cwd":"%s/crates/a","testcases":{"pick::first":{"ignored":false},"skip::me":{"ignored":true}}}}}\n' "$FAKE_ROOT" "$FAKE_ROOT"
-"#;
-
-/// The fake `perf`: records log their invocation and directory and create
-/// the data file; scripts print four samples.
-const FAKE_PERF: &str = r#"#!/bin/sh
-printf 'perf %s | %s\n' "$*" "$(pwd)" >> "$FAKE_LOG"
-case "$1" in
-  record)
-    [ "$FAKE_PERF_MODE" = fail ] && exit 1
-    while [ "$1" != -o ]; do shift; done
-    : > "$2" ;;
-  script)
-    printf '\n\t    1 helper\n  crates/a/src/lib.rs:6 (inlined)\n\t    1 {closure#0}\n  crates/a/src/lib.rs:2\n\t    2 outer\n  crates/a/src/lib.rs:3\n'
-    printf '\n\t    3 work\n  crates/a/src/lib.rs:9\n\t    3 anodized::__::eval_once::<u8, outer::{closure#1}>\n  ??:0\n\t    4 outer\n  crates/a/src/lib.rs:2\n'
-    printf '\n\t    5 helper\n  crates/a/src/lib.rs:6\n'
-    printf '\n\t    5 helper\n  crates/a/src/lib.rs:6\n\t    6 main\n  /rust/library/std/src/rt.rs:120\n' ;;
-esac
-"#;
-
 /// A scratch workspace with the fakes first on the path.
 #[derive(Debug)]
 #[repr(transparent)]
@@ -64,8 +45,8 @@ impl Workspace
     ///
     /// # Specification
     /// - requires: a single-component `case` unique to the calling test.
-    /// - ensures: the crate, the rejected file under `target` and the
-    ///   executable fakes exist under a fresh root.
+    /// - ensures: the crate and the rejected file under `target` exist under a
+    ///   fresh root.
     /// - provides: an isolated workspace for one case.
     /// - fails: never.
     /// - panics: when the scratch directory cannot be prepared.
@@ -73,12 +54,11 @@ impl Workspace
     ///   cases that run the binary.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every case runs the binary in it; a missing crate or
-    ///   fake changes that case's output.
+    /// - hypothesis: L3 — every case runs the binary in it; a missing crate
+    ///   changes that case's output.
     /// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
     fn new(case: &std::path::Path) -> Self
     {
-        use std::os::unix::fs::PermissionsExt as _;
         let scratch = std::env::temp_dir()
             .join(format!("spec-cost-{}", std::process::id()))
             .join(case);
@@ -87,15 +67,9 @@ impl Workspace
         }
         std::fs::create_dir_all(scratch.join("crates/a/src")).unwrap();
         std::fs::create_dir_all(scratch.join("crates/a/target")).unwrap();
-        std::fs::create_dir_all(scratch.join("bin")).unwrap();
         let root = std::fs::canonicalize(&scratch).unwrap();
         std::fs::write(root.join("crates/a/src/lib.rs"), SOURCE).unwrap();
         std::fs::write(root.join("crates/a/target/broken.rs"), "fn (").unwrap();
-        for (name, script) in [("cargo", FAKE_CARGO), ("perf", FAKE_PERF)] {
-            let path = root.join("bin").join(name);
-            std::fs::write(&path, script).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
         Self { root }
     }
 
@@ -115,9 +89,12 @@ impl Workspace
     /// - witness: `tests::cli::a_profile_is_charged_to_its_outermost_specification`
     fn command(&self) -> Command
     {
-        let path = std::env::join_paths(core::iter::once(self.root.join("bin")).chain(
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
-        ))
+        let path = std::env::join_paths(
+            core::iter::once(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes"))
+                .chain(std::env::split_paths(
+                    &std::env::var_os("PATH").unwrap_or_default(),
+                )),
+        )
         .unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_spec-cost"));
         command

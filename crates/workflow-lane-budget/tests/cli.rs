@@ -1,5 +1,5 @@
 //! The report, the issue filing and the exit codes, observed by spawning the
-//! binary with a fake `gh` first on the path.
+//! binary with the fake `gh` of `tests/fakes` first on the path.
 //!
 //! The fake lists runs 3, 2 and 1; run `N` holds a Clippy job of `N`00
 //! seconds and a five-second detection job. Run 3's base is deep (its
@@ -7,39 +7,15 @@
 //! `FAKE_GH_ISSUES`; it logs every invocation to `FAKE_GH_LOG` and the last
 //! body it was fed to `FAKE_GH_BODY`.
 //!
+//! The fake is a file of the tree, never written per case: macOS assesses an
+//! executable the first time it runs, one at a time across the machine, and a
+//! fresh fake per case queued past the 30-second limit in a whole-workspace
+//! test run (#1574).
+//!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
 use std::process::Command;
-
-/// The fake `gh`.
-const FAKE_GH: &str = r#"#!/bin/sh
-printf '%s\n' "$*" >> "$FAKE_GH_LOG"
-if [ "$FAKE_GH_MODE" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
-case "$1 $2" in
-  'api --method')
-    case "$4" in
-      */workflows/ci.yml/runs) printf '3\n2\n1\n' ;;
-      */runs/*/jobs) run=${4%/jobs}; run=${run##*/}; printf '%s00\tcheck Clippy wall\n5\tdetect changed-file categories\n' "$run" ;;
-      */actions/runs/3) printf 'merge_group\t3333333333333333333333333333333333333333\t\tgh-readonly-queue/main/pr-9-1111111111111111111111111111111111111111' ;;
-      */actions/runs/2) printf 'merge_group\t4444444444444444444444444444444444444444\t\tgh-readonly-queue/main/pr-10-2222222222222222222222222222222222222222' ;;
-      */actions/runs/1) printf 'merge_group\t5555555555555555555555555555555555555555\t\tgh-readonly-queue/main/pr-11-3333333333333333333333333333333333333333' ;;
-      *compare/*)
-        base=${4##*compare/}; base=$(printf '%s' "$base" | cut -c1-40)
-        if [ "$FAKE_GH_CONE" = mixed ] && [ "$base" = 1111111111111111111111111111111111111111 ]; then
-          printf 'crates/kernel-core/src/lib.rs\n'
-        else
-          printf 'README.md\n'
-        fi ;;
-      *) echo "unexpected route: $4" >&2; exit 2 ;;
-    esac ;;
-  'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
-  'issue create') cat > "$FAKE_GH_BODY"; echo 'https://example.invalid/issues/7' ;;
-  'issue edit') cat > "$FAKE_GH_BODY" ;;
-  'issue reopen'|'issue close') ;;
-  *) echo "unexpected: $*" >&2; exit 2 ;;
-esac
-"#;
 
 /// The report over runs 3 and 2 with Clippy's budget `BUDGET` and
 /// standing `STANDING`.
@@ -51,7 +27,7 @@ const REPORT: &str = "Median job time over the last 2 merge-queue and pull-reque
                           | check Clippy wall | surface | 3m 20s | BUDGET | 2 | STANDING |\n\
                           \nRuns: 3, 2.\n";
 
-/// A fresh scratch directory for the case `$name` holding the fake `gh`.
+/// A fresh scratch directory for the case `$name`, for the fake's log and body.
 macro_rules! scratch {
     ($name:literal) => {{
         let root =
@@ -60,25 +36,18 @@ macro_rules! scratch {
             std::fs::remove_dir_all(&root).unwrap();
         }
         std::fs::create_dir_all(&root).unwrap();
-        let gh = root.join("gh");
-        std::fs::write(&gh, FAKE_GH).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
         root
     }};
 }
 
-/// Runs the binary with `$args`, the fake in `$root` first on the path,
-/// the issue listing `$issues`, the fake's mode `$mode` and its cone
-/// `$cone`, after clearing the fake's log.
+/// Runs the binary with `$args`, the fake first on the path, its log and body
+/// in `$root`, the issue listing `$issues`, the fake's mode `$mode` and its
+/// cone `$cone`, after clearing the fake's log.
 macro_rules! run {
     ($root:expr, $args:expr, $issues:expr, $mode:expr, $cone:expr) => {{
         let root: &std::path::Path = &$root;
         let path = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![root.to_path_buf()];
+        let mut paths = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fakes")];
         paths.extend(std::env::split_paths(&path));
         std::fs::write(root.join("log"), "").unwrap();
         Command::new(env!("CARGO_BIN_EXE_lane-budget"))
