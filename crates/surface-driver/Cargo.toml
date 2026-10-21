@@ -61,6 +61,10 @@ toml.workspace = true
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
+# The tests give a child one terminal stream through a pseudo-terminal pair.
+[target."cfg(unix)".dev-dependencies]
+nix.workspace = true
+
 [features]
 default = []
 # The `hotpath` bench: the checker's judgement and readmission and the

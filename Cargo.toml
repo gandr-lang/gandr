@@ -911,6 +911,22 @@ default-features = false
 version = "0.9.11"
 default-features = false
 
+# A pseudo-terminal pair for the driver's tests: a child given a terminal on
+# one standard stream and a pipe on the other, as the faces that choose by
+# both streams must refuse. The build already carries nix 0.31 with `term`
+# through rustyline, so the tests add no crate. rustix's `pty` would enable a
+# feature no crate here builds; portable-pty brings a pty layer and its
+# dependencies for one `openpty`. Reversal: rustyline leaving nix, or an
+# advisory against it.
+# features:
+# - term: `pty::openpty`; every other module stays off
+# consumers:
+# - surface-driver (dev)
+[workspace.dependencies.nix]
+version = "0.31.3"
+default-features = false
+features = ["term"]
+
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the
 # terminal REPL's watch over the files it loaded.

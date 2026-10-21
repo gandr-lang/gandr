@@ -761,6 +761,7 @@ dependencies = [
  "gandr-surface-repl",
  "gandr-surface-tui",
  "hotpath",
+ "nix",
  "quenchant-anodized",
  "quenchant-shape",
  "serde_json",
