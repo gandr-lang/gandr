@@ -52,11 +52,14 @@
 //!   whose imports lead back, or one that does not parse. An address with a
 //!   scheme names its tracking issue, as a read file's module documentation
 //!   does.
-//! - **Any other tile** answers a stub, about the tile: the tile as written —
-//!   or, inside a refused declaration, that declaration's hover — then the gap
-//!   named and its tracking issue's line, by the families [`crate::tracking`]
-//!   lists. The corpus sweep refuses a tile that hovers nothing and a stub that
-//!   names no issue.
+//! - **A tile of a refused declaration or a refused source** answers what the
+//!   lowering kept — a resolved use the line declaring what it refers to, a
+//!   name what it names, any other tile its grammar rule — then the refusal:
+//!   the declaration's hover, or the source's own.
+//! - **Any other tile** answers a stub, about the tile: the tile as written,
+//!   then the gap named and its tracking issue's line, by the families
+//!   [`crate::tracking`] lists. The corpus sweep refuses a tile that hovers
+//!   nothing and a stub that names no issue.
 //!
 //! Layout and comments hover nothing, and so does a document whose grammar
 //! did not build. Every type is spelled through the shared printer at 80
@@ -147,6 +150,8 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
+use gandr_surface_dispatcher::DeclaredHalf;
+use gandr_surface_dispatcher::NameKind;
 use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Subject;
@@ -167,6 +172,7 @@ use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -473,8 +479,8 @@ impl Style
 ///   Else, in the head of a declaration — from its form's start to the brace
 ///   opening its own body, a member's keyword to its name — as on its name,
 ///   about the head, and in the attributes before the head, about them. Else,
-///   on a tile, [`stubbed`]'s stub about the tile. Absent in layout and
-///   comments. Every type is spelled in `style`'s form, and every block is
+///   on a tile, [`stubbed`]'s answer, about what it is about. Absent in layout
+///   and comments. Every type is spelled in `style`'s form, and every block is
 ///   written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
@@ -740,7 +746,7 @@ pub fn hover<Store, Blocks>(
             Written::Member => member(enclosing, about, &quoted, style),
         });
     }
-    stubbed(session, table, reading, found, &quoted, offset, style)
+    stubbed(session, hovering, reading, found, &quoted, offset, style)
         .map_or(Maybe::Absent(hovered::Absent::Untyped), Maybe::Present)
 }
 
@@ -832,31 +838,46 @@ fn imported(
     })
 }
 
-/// Where a hover has nothing to show: the gap at a position, the tile holding
-/// it, and the refused declaration holding it, when one does.
+/// How a tile the table types nothing at stands: inside a refused
+/// declaration, in a source the lowering refused as a whole, in a source the
+/// table holds nothing for, or in a gap a tracking issue names.
+#[derive(Clone, Copy, Debug)]
+enum Standing<'found>
+{
+    /// Inside this declaration, the innermost refused one holding the tile.
+    Refused(&'found Declaration),
+    /// In a source the lowering refused as a whole.
+    Whole,
+    /// In a source the table holds nothing for, refused by no lowering.
+    Empty,
+    /// In this gap.
+    Gap(Gap),
+}
+
+/// Where a hover has nothing typed to show: the tile holding a position and
+/// how it stands.
 #[derive(Clone, Copy, Debug)]
 struct Stub<'found>
 {
-    /// The gap.
-    gap: Gap,
     /// The tile holding the position.
     tile: Tile,
-    /// The innermost refused declaration holding the position.
-    refused: Option<&'found Declaration>,
+    /// How the tile stands.
+    standing: Standing<'found>,
 }
 
-/// The stub at `offset`, by the first family that holds it: inside a refused
-/// declaration, in a source never judged, a tile a declaration writes itself,
-/// in a root form that declares nothing, else inside a declaration where the
-/// engine typed nothing. An import answers before any stub, by [`imported`].
+/// The stub at `offset`, by the first standing that holds it: inside a
+/// refused declaration, in a source refused as a whole, in a source the table
+/// holds nothing for, a tile a declaration writes itself, in a root form that
+/// declares nothing, else inside a declaration where the engine typed
+/// nothing. An import answers before any stub, by [`imported`].
 ///
 /// # Specification
 /// - requires: `found` and `quoted` are of the text `reading` read, and `table`
 ///   was typed over it.
 /// - ensures: none when no tile holds `offset` — in layout or a comment;
-///   otherwise the tile holding it with the first family of
-///   [`crate::tracking`]'s order that holds it.
-/// - provides: what [`hover`] answers where the engine holds nothing.
+///   otherwise the tile holding it with the first standing that holds it, the
+///   gaps in [`crate::tracking`]'s order.
+/// - provides: what [`hover`] answers where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -892,46 +913,57 @@ fn stub<'found>(
                 .key
                 .is_some_and(|key| matches!(table.refusal(key), Maybe::Present(_)))
         });
-    let gap = if refused.is_some() {
-        Gap::Refused
-    }
-    else if table.entries(page, printed).next().is_none()
-        && table.declarations(page, printed).next().is_none()
-    {
-        Gap::Unjudged
-    }
-    else if tile.declares {
-        Gap::Owned(tile.rule)
-    }
-    else if found.iter().any(|declaration| holds(&declaration)) {
-        Gap::Untyped
-    }
-    else {
-        Gap::Undeclared
-    };
-    Some(Stub { gap, tile, refused })
+    let standing = refused.map_or_else(
+        || {
+            if matches!(table.refused_whole(), Maybe::Present(_)) {
+                Standing::Whole
+            }
+            else if table.entries(page, printed).next().is_none()
+                && table.declarations(page, printed).next().is_none()
+            {
+                Standing::Empty
+            }
+            else if tile.declares {
+                Standing::Gap(Gap::Owned(tile.rule))
+            }
+            else if found.iter().any(|declaration| holds(&declaration)) {
+                Standing::Gap(Gap::Untyped)
+            }
+            else {
+                Standing::Gap(Gap::Undeclared)
+            }
+        },
+        Standing::Refused,
+    );
+    Some(Stub { tile, standing })
 }
 
-/// The hover of the stub at `offset`, about the tile holding it.
+/// The hover of the stub at `offset`.
 ///
 /// # Specification
 /// - requires: as [`stub`].
-/// - ensures: none where [`stub`] finds none; otherwise, about the tile's
-///   range, the refused declaration's hover as [`declared`] writes it when one
-///   holds the tile, else the tile as written in a block; then the gap named
-///   and its tracking issue's line, as [`Gap::closing`] writes them.
-/// - provides: the stub half of [`hover`].
+/// - ensures: none where [`stub`] finds none. Inside a refused declaration,
+///   [`kept`]'s answer, then the declaration's hover as [`declared`] writes it,
+///   its refusal among it. In a source refused as a whole, [`kept`]'s answer,
+///   then the lowering's refusal. In a source the table holds nothing for,
+///   [`kept`]'s answer and that the engine holds nothing for it. In a gap,
+///   about the tile, the tile as written in a block, then the gap named and its
+///   tracking issue's line as [`Gap::closing`] writes them.
+/// - provides: the half of [`hover`] where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — as [`stub`].
+/// - hypothesis: L2 — as [`stub`]; L3 — a binder's use, a declaration's use and
+///   a keyword inside a refused declaration, and a tile of a source refused
+///   whole, are asserted at their exact answers.
 /// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
+/// - witness: `hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|hover| hover.contents.value.starts_with(style.markup.opener().0)))]
 fn stubbed<Store, Blocks>(
     session: &Session<Store, Blocks>,
-    table: &TypeTable,
+    hovering: &Hovering,
     reading: &Reading,
     found: &[Declaration],
     quoted: &Quoted<'_>,
@@ -939,31 +971,48 @@ fn stubbed<Store, Blocks>(
     style: Style,
 ) -> Option<Hover>
 {
-    let Stub { gap, tile, refused } = stub(table, reading, found, quoted, offset, style)?;
-    let start = RenderOffset::from(usize::from(tile.span.start()));
-    let range = Range::of_bytes(
-        quoted.index,
-        start,
-        RenderOffset::from(usize::from(tile.span.end())),
-    )
-    .ok()?;
-    let mut value = refused.map_or_else(
-        || {
+    let table = &hovering.table;
+    let Stub { tile, standing } = stub(table, reading, found, quoted, offset, style)?;
+    let (about, mut value) = match standing {
+        Standing::Gap(gap) => {
             let mut code = Code::new(style.markup);
+            let start = RenderOffset::from(usize::from(tile.span.start()));
             let text = <&str>::from(quoted.text)
                 .get(usize::from(start) .. usize::from(tile.span.end()))
                 .unwrap_or_default();
             quoted.quote(&mut code, SourceText::from(text), start);
-            code.block()
+            (tile.span, format!("{}\n\n{}", code.block(), gap.closing()))
         },
-        |refused| {
-            declared(session, table, refused, range, quoted, style)
-                .contents
-                .value
+        Standing::Refused(_) | Standing::Whole | Standing::Empty => {
+            kept(hovering, quoted, tile, offset, style)
         },
-    );
-    value.push_str("\n\n");
-    value.push_str(&gap.closing());
+    };
+    let range = Range::of_bytes(
+        quoted.index,
+        RenderOffset::from(usize::from(about.start())),
+        RenderOffset::from(usize::from(about.end())),
+    )
+    .ok()?;
+    match standing {
+        Standing::Refused(refused) => {
+            value.push_str("\n\n");
+            value.push_str(
+                &declared(session, table, refused, range, quoted, style)
+                    .contents
+                    .value,
+            );
+        },
+        Standing::Whole => {
+            if let Maybe::Present(refusal) = table.refused_whole() {
+                value.push_str("\n\nThe engine refuses this source as a whole: ");
+                value.push_str(<&str>::from(refusal));
+            }
+        },
+        Standing::Empty => {
+            value.push_str("\n\nThe engine holds nothing for this source.");
+        },
+        Standing::Gap(_) => {},
+    }
     Some(Hover {
         contents: MarkupContent {
             kind: "markdown",
@@ -971,6 +1020,120 @@ fn stubbed<Store, Blocks>(
         },
         range,
     })
+}
+
+/// What a tile answers from what the lowering kept where nothing is typed,
+/// and the bytes it is about.
+///
+/// # Specification
+/// - requires: `quoted` is the document `hovering` was built for, and `tile`
+///   one of its tiles holding `offset`.
+/// - ensures: on a use the lowering resolved, about the use, the line that
+///   writes the name of what it refers to, trimmed, in a block — a
+///   declaration's signature, a constructor's own line, a binder's — then what
+///   that is and the line it is written at, and the file when another source
+///   writes it. On a name a declaration, a constructor or a binder is written
+///   by, about the name, the name in a block and what it names here. Else,
+///   about the tile, the tile in a block and the grammar's rule it is a tile
+///   of.
+/// - provides: the answer a refused declaration and a refused source give.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`stubbed`].
+/// - witness: `hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
+#[spec(ensures: |ref ret| ret.1.starts_with(style.markup.opener().0) && usize::from(ret.0.end()) <= <&str>::from(quoted.text).len())]
+fn kept(
+    hovering: &Hovering,
+    quoted: &Quoted<'_>,
+    tile: Tile,
+    offset: ByteOffset,
+    style: Style,
+) -> (ByteSpan, String)
+{
+    let table = &hovering.table;
+    let own = table.own_source();
+    let kind = |referent: Referent| {
+        table
+            .declared_names()
+            .iter()
+            .find(|&&(named, _)| named == referent)
+            .map_or("A binder", |&(_, kind)| match kind {
+                NameKind::Family => "A family",
+                NameKind::Constructor => "A constructor",
+                NameKind::Value => "A declaration",
+            })
+    };
+    let mut code = Code::new(style.markup);
+    let quote = |code: &mut Code, span: ByteSpan| {
+        let start = RenderOffset::from(usize::from(span.start()));
+        let text = <&str>::from(quoted.text)
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .unwrap_or_default();
+        quoted.quote(code, SourceText::from(text), start);
+    };
+    if let Maybe::Present((span, referent)) = table.referent(offset) {
+        let site = table.half(referent, DeclaredHalf::Signature);
+        let written = table
+            .source_text(site.source())
+            .map(<&str>::from)
+            .unwrap_or_default();
+        let named = usize::from(site.named().start());
+        let before = written.get(.. named).unwrap_or_default();
+        let from = before
+            .rfind('\n')
+            .map_or(0, |newline| newline.saturating_add(1));
+        let to = written
+            .get(named ..)
+            .and_then(|after| after.find('\n'))
+            .map_or(written.len(), |newline| named.saturating_add(newline));
+        let holding = written.get(from .. to).unwrap_or_default();
+        let indent = holding.len().saturating_sub(holding.trim_start().len());
+        let shown = holding.trim();
+        let start = from.saturating_add(indent);
+        if site.source() == own {
+            quote(
+                &mut code,
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(shown.len())),
+                )
+                .unwrap_or_else(|_| site.named()),
+            );
+        }
+        else {
+            code.plain(SourceText::from(shown));
+        }
+        let line = before.matches('\n').count().saturating_add(1);
+        let place = if site.source() == own {
+            format!("written at line {line}.")
+        }
+        else {
+            hovering.paths.get(usize::from(site.source())).map_or_else(
+                || format!("written at line {line} of an imported source."),
+                |path| format!("written at line {line} of `{}`.", path.display()),
+            )
+        };
+        return (
+            span,
+            format!("{}\n\n{}, {place}", code.block(), kind(referent)),
+        );
+    }
+    if let Maybe::Present(referent) = table.named_at(offset)
+        && referent.source() == own
+    {
+        quote(&mut code, referent.named());
+        return (
+            referent.named(),
+            format!("{}\n\n{}, written here.", code.block(), kind(referent)),
+        );
+    }
+    quote(&mut code, tile.span);
+    (
+        tile.span,
+        format!("{}\n\nA tile of `{}`.", code.block(), tile.rule),
+    )
 }
 
 /// The document a hover quotes from: its text, its line index and the
@@ -2107,6 +2270,56 @@ mod tests
         }
     }
 
+    /// Inside a declaration the lowering refused, a tile answers what the
+    /// lowering kept — a constructor's use the line declaring it, a keyword
+    /// and a use left unresolved their rule — followed by the declaration's
+    /// hover with its refusal; a tile of a source refused as a whole answers
+    /// its rule and that refusal. None names a tracking issue.
+    #[test]
+    fn a_refused_declaration_hovers_what_the_lowering_kept_1201()
+    {
+        let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef bad(x \
+                      : Nat) -> -F Nat {\n  return Succ(x, x)\n}\n";
+        let refused = "```gandr\nbad\n```\n\nrefused: `call_expression`, read as a value, does not take 2 \
+             operands";
+        let rows = [
+            (
+                "a constructor's use",
+                (5, 9),
+                format!(
+                    "```gandr\nSucc : (n : Nat) --> Nat;\n```\n\nA constructor, written at line \
+                     3.\n\n{refused}"
+                ),
+            ),
+            (
+                "a keyword",
+                (5, 2),
+                format!("```gandr\nreturn\n```\n\nA tile of `return_expression`.\n\n{refused}"),
+            ),
+            (
+                "a use the refusal left unresolved",
+                (5, 14),
+                format!("```gandr\nx\n```\n\nA tile of `identifier.expression`.\n\n{refused}"),
+            ),
+        ];
+        for (position, (line, character), expected) in rows {
+            assert_eq!(
+                shown(SourceText::from(source), (line.into(), character.into())),
+                Ok(expected),
+                "{position}"
+            );
+        }
+        assert_eq!(
+            shown(SourceText::from("nowhere\n"), (0.into(), 0.into())),
+            Ok(String::from(
+                "```gandr\nnowhere\n```\n\nA tile of `identifier.expression`.\n\nThe engine \
+                 refuses this source as a whole: the source is not a list of declarations: an \
+                 identifier cannot stand where a declaration is expected"
+            )),
+            "a tile of a source refused whole answers its rule and the refusal"
+        );
+    }
+
     /// An import answers the file it reads, or why it reads none: a path the
     /// closure reads, a path naming no file, and an address with a scheme.
     #[test]
@@ -2192,6 +2405,7 @@ mod tests
         use quenchant_shape::shape::Maybe;
 
         use super::super::Quoted;
+        use super::super::Standing;
         use super::super::hover;
         use super::super::hovering;
         use super::super::stub;
@@ -2272,7 +2486,14 @@ mod tests
                                 PLAIN,
                             )
                             .is_some_and(|stubbed| {
-                                shown.contents.value.ends_with(&stubbed.gap.closing())
+                                match stubbed.standing {
+                                    Standing::Gap(gap) => {
+                                        shown.contents.value.ends_with(&gap.closing())
+                                    },
+                                    Standing::Refused(_) | Standing::Whole | Standing::Empty => {
+                                        true
+                                    },
+                                }
                             });
                             if !named {
                                 misnamed.push(at);
