@@ -1352,15 +1352,68 @@ fn mcp_reads_what_an_editor_holds_open()
     );
 }
 
+/// A pseudo-terminal pair, or none where this host can allocate none: the test
+/// is then skipped, the reason written to standard error.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn pseudo_terminal() -> Option<nix::pty::OpenptyResult>
+{
+    match nix::pty::openpty(None, None) {
+        Ok(pair) => Some(pair),
+        Err(error) => {
+            writeln!(
+                std::io::stderr(),
+                "skipped: no pseudo-terminal can be allocated here: {error}"
+            )
+            .expect("standard error is writable");
+            None
+        },
+    }
+}
+
+/// A piped view prints the report of what an editor holds open, then the next
+/// one after the editor's edit.
 #[test]
 fn a_view_follows_what_an_editor_holds_open()
+{
+    view_follows_an_editor(Stdio::null(), Path::new("view"));
+}
+
+/// A view whose standard input alone is a terminal still prints plain
+/// reports: the terminal follower takes both standard streams being
+/// terminals, as the terminal face does.
+#[cfg(unix)]
+#[test]
+fn a_terminal_on_standard_input_alone_leaves_the_view_plain()
+{
+    let Some(terminal) = pseudo_terminal()
+    else {
+        return;
+    };
+    view_follows_an_editor(Stdio::from(terminal.slave), Path::new("viewtty"));
+    drop(terminal.master);
+}
+
+/// An editor holds a refused document open through a hub, and a view started
+/// with `input` on standard input and its output piped prints the plain report
+/// of it, then the next one after the editor's edit; the hub lingers out once
+/// both have left. The scratch directory is named `name`.
+///
+/// # Specification
+/// trivial.
+fn view_follows_an_editor(
+    input: Stdio,
+    name: &Path,
+)
 {
     use std::ffi::OsStr;
     use std::io::BufRead as _;
     use std::io::BufReader;
 
     // The name is short: a socket path must fit the platform's limit.
-    let scratch = Scratch::new(Path::new("view"));
+    let scratch = Scratch::new(name);
     let socket = scratch.0.join("hub.sock");
     let mut editor = gandr(&[
         OsStr::new("lsp"),
@@ -1404,12 +1457,17 @@ fn a_view_follows_what_an_editor_holds_open()
         OsStr::new("--socket"),
         socket.as_os_str(),
     ])
-    .stdin(Stdio::null())
+    .stdin(input)
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
     .expect("the view starts");
     let mut from_view = BufReader::new(view.stdout.take().expect("standard output is piped"));
+    let opening = from_view.fill_buf().expect("the view prints");
+    assert!(
+        !opening.contains(&0x1b_u8),
+        "the view prints plain reports, not terminal commands: {opening:?}"
+    );
     let mut row = String::new();
     let mut report = || {
         let mut rows = Vec::new();
@@ -1473,7 +1531,9 @@ fn a_view_follows_what_an_editor_holds_open()
     std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
     let ended = editor.wait_with_output().expect("the editor's server runs");
     assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
-    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+    let deadline = std::time::Instant::now()
+        .checked_add(core::time::Duration::from_secs(20))
+        .expect("the deadline is representable");
     while socket.exists() && std::time::Instant::now() < deadline {
         std::thread::sleep(core::time::Duration::from_millis(50));
     }
@@ -1717,6 +1777,78 @@ fn smoke_is_terminal_free_but_interactive_tui_refuses_pipes()
         "a refused terminal face paints nothing"
     );
     assert!(stderr(&interactive).starts_with("gandr:"));
+}
+
+/// The terminal face takes both standard streams being terminals: with a
+/// terminal on standard input alone it is refused as with two pipes, at once,
+/// and paints nothing.
+#[cfg(unix)]
+#[test]
+fn a_terminal_on_standard_input_alone_is_refused_the_terminal_face()
+{
+    let Some(terminal) = pseudo_terminal()
+    else {
+        return;
+    };
+    let mut command = gandr(&["tui"]);
+    let mut face = command
+        .stdin(Stdio::from(terminal.slave))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the driver starts");
+    // A face that took the terminal would wait on its keys; the master stays
+    // open, so the slave is a terminal throughout, and the wait is bounded.
+    let deadline = std::time::Instant::now() + core::time::Duration::from_secs(10);
+    while face.try_wait().expect("the driver is polled").is_none()
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(core::time::Duration::from_millis(20));
+    }
+    let running = face.try_wait().expect("the driver is polled").is_none();
+    if running {
+        face.kill().expect("the face stops");
+    }
+    let refused = face.wait_with_output().expect("the driver is reaped");
+    drop(terminal.master);
+    assert!(!running, "the face took a terminal it was not given whole");
+    assert_eq!(code(&refused), Code(2));
+    assert!(
+        refused.stdout.is_empty(),
+        "a refused terminal face paints nothing"
+    );
+    assert_eq!(
+        stderr(&refused),
+        stderr(&ran(gandr(&["tui"]))),
+        "refused as two pipes are"
+    );
+}
+
+/// A client whose hub never comes up keeps trying for five seconds before it
+/// gives up: the hub it starts cannot bind under a socket directory that is a
+/// file, and the client exits `2`, the hub named.
+#[cfg(unix)]
+#[test]
+fn a_client_tries_five_seconds_for_a_hub_that_never_answers()
+{
+    use std::ffi::OsStr;
+
+    let scratch = Scratch::new(Path::new("unreached"));
+    let blocker = scratch.file(Path::new("blocker"), Text::from(""));
+    let socket = blocker.join("hub.sock");
+    let started = std::time::Instant::now();
+    let unreached = ran(gandr(&[
+        OsStr::new("view"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ]));
+    let waited = started.elapsed();
+    assert_eq!(code(&unreached), Code(2), "{}", stderr(&unreached));
+    assert!(
+        waited >= core::time::Duration::from_secs(5),
+        "the client gave up after {waited:?}"
+    );
+    assert!(stderr(&unreached).starts_with("gandr:"));
 }
 
 /// A script of `text`, written to `name` in `scratch`, run by the driver.
