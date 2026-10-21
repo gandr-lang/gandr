@@ -2860,8 +2860,10 @@ quenchant_shape::reason_enum! {
 /// - ensures: the import the tiles `import " … " (as name)? ;` spell, in that
 ///   order with nothing after them, its address read between the quotes.
 /// - provides: the reading the collection and [`written_imports`] share.
-/// - fails: [`LoweringRefusal::MalformedForm`] naming `form` for a repair or a
-///   tile out of place.
+/// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
+///   inside the import that holds it or else `form`, as
+///   [`Repaired::refusal`](crate::form::Repaired::refusal) names it; and naming
+///   `form` for a tile out of place.
 /// - panics: none.
 ///
 /// # Errors
@@ -2872,13 +2874,15 @@ quenchant_shape::reason_enum! {
 ///   tile out of place, distinguish reading from binding refusal.
 /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
+/// - witness: `tests::namespace::an_import_repaired_inside_a_nested_form_is_refused_by_that_form`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref entry) => entry.span == import.span && {
             let (outer, inner) = (import.span, entry.addressed);
             outer.start() <= inner.start() && inner.end() <= outer.end()
         },
-        | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form,
+        | Err(LoweringRefusal::MalformedForm { form: found, .. }) => found == form
+            || matches!(pieces.repair, Maybe::Present(crate::form::Repaired { nested: Maybe::Present(inner), .. }) if inner == found),
         | Err(_) => false,
     },
 )]
