@@ -296,24 +296,20 @@ impl Withdrawn
         later: &[Classified],
     ) -> Option<Self>
     {
-        let notified = |name: &'static str| {
-            later.iter().filter_map(move |message| match *message {
-                Ok(Incoming::Notification {
-                    ref method,
-                    ref params,
-                }) if method.as_ref() == name => Some(params),
-                Ok(_) | Err(_) => None,
-            })
-        };
-        if notified("$/cancelRequest").any(|cancel| cancel.get("id") == Some(&id.0)) {
+        let cancelled = later.iter().any(|message| match *message {
+            Ok(Incoming::Notification {
+                ref method,
+                ref params,
+            }) => method.as_ref() == "$/cancelRequest" && params.get("id") == Some(&id.0),
+            Ok(_) | Err(_) => false,
+        });
+        if cancelled {
             return Some(Self::Cancelled);
         }
-        let uri = params
-            .pointer("/textDocument/uri")
-            .and_then(Value::as_str)?;
-        notified("textDocument/didChange")
-            .any(|change| change.pointer("/textDocument/uri").and_then(Value::as_str) == Some(uri))
-            .then_some(Self::Modified)
+        match Superseded::of(params, later) {
+            Superseded::Changed => Some(Self::Modified),
+            Superseded::Current => None,
+        }
     }
 
     /// The response refusing the request `id` for this reason.
@@ -338,6 +334,70 @@ impl Withdrawn
                 ErrorCode::CONTENT_MODIFIED,
                 "the document changed before the request was read".to_owned(),
             ),
+        }
+    }
+}
+
+/// Whether the client changed a document again after a message naming it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Superseded
+{
+    /// A `textDocument/didChange` of the document was read after the message.
+    Changed,
+    /// None was: the message names the document's latest text, or names no
+    /// document.
+    Current,
+}
+
+impl Superseded
+{
+    /// Whether the document a message carrying `params` names was changed
+    /// again by the messages `later` read after it.
+    ///
+    /// # Specification
+    /// - requires: `later` is what the client sent after the message, in order.
+    /// - ensures: [`Superseded::Changed`] exactly when `params` names a
+    ///   `textDocument.uri` that a `textDocument/didChange` in `later` names
+    ///   too.
+    /// - provides: what a request and a change both owe a newer change of their
+    ///   document, read off messages the server has in hand, never by waiting
+    ///   for more.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change of the message's document and one of
+    ///   another, read after a request and after a change, are each asserted at
+    ///   their answer.
+    /// - witness: `rpc::tests::a_request_is_withdrawn_by_what_the_client_sent_after_it`
+    /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
+    #[spec(ensures: |ret| matches!(ret, Self::Current) || !later.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        params: &Value,
+        later: &[Classified],
+    ) -> Self
+    {
+        let Some(uri) = params.pointer("/textDocument/uri").and_then(Value::as_str)
+        else {
+            return Self::Current;
+        };
+        let changed = later.iter().any(|message| match *message {
+            Ok(Incoming::Notification {
+                ref method,
+                ref params,
+            }) => {
+                method.as_ref() == "textDocument/didChange"
+                    && params.pointer("/textDocument/uri").and_then(Value::as_str) == Some(uri)
+            },
+            Ok(_) | Err(_) => false,
+        });
+        if changed {
+            Self::Changed
+        }
+        else {
+            Self::Current
         }
     }
 }
