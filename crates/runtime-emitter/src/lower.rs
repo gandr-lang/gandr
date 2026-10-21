@@ -696,6 +696,10 @@ pub enum Callee
     Shift(CommandId),
     /// Push a stack's frames back, each window copied afresh.
     Replay(CommandId),
+    /// End a stack without resuming it: push one frame per access it
+    /// captured, innermost on top, each entering that access's unwind in the
+    /// window its frame held; answers the unit.
+    Abandon(CommandId),
     /// Hold the argument in a fresh cell; answers the cell.
     Hold,
     /// Lend a held cell's value through a fresh view; answers the view.
@@ -810,6 +814,9 @@ pub struct Lowered
     /// Each label a frame resumes at in a window, with the window's slot
     /// count: what a capture copies.
     pub windows: Vec<(Label, Slots)>,
+    /// Each access's frame label with its unwind's label: what an abandoned
+    /// stack runs for each access it captured.
+    pub unwinds: Vec<(Label, Label)>,
     /// The case, selection or fold of each unmatched exit, by the site its
     /// operand names.
     pub unmatched: Vec<ConsumerId>,
@@ -967,6 +974,8 @@ struct Lowering<'run>
     windows: Vec<(Label, Slots)>,
     /// The frame labels of the current window, its slot count still open.
     pending: Vec<Label>,
+    /// Each access's frame label with its unwind's label.
+    unwinds: Vec<(Label, Label)>,
     /// The consumer of each unmatched exit so far.
     unmatched: Vec<ConsumerId>,
 }
@@ -1710,23 +1719,22 @@ impl Lowering<'_>
                 self.tasks.push(Task::Producer(stack, scope));
                 self.tasks.push(Task::Load(continuation, scope));
             },
-            // The stack is never read: the frames it holds are never resumed,
-            // and the continuation receives the unit.
-            CommandNode::Abandon { continuation, .. } => {
-                let width = |_overflow| Form::HeaderWidth;
-                let unit = Header::new(
-                    Kind::Tuple,
-                    Tag::try_from(0_usize).map_err(width)?,
-                    Arity::try_from(0_usize).map_err(width)?,
-                    Family::UNNAMED,
-                );
-                let unit = self.function.object(&[unit.word()]);
-                self.tasks.push(Task::Deliver(continuation, scope));
-                self.tasks.push(Task::Emit(
-                    StencilId::Const,
-                    Operand::Data(unit),
-                    Operand::Unused,
-                ));
+            // An abandoned stack's frames are never resumed. Its continuation
+            // is loaded first; above it the abandonment pushes a frame per
+            // access the stack captured, and the unit returned to the top runs
+            // each access's unwind in turn, innermost first, before the
+            // continuation receives it.
+            CommandNode::Abandon {
+                stack,
+                continuation,
+            } => {
+                let call = self.call(&Callee::Abandon(id), Immediate::from(1_u32))?;
+                self.tasks
+                    .push(Task::Emit(StencilId::Pop, Operand::Unused, Operand::Unused));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(stack, scope));
+                self.tasks.push(Task::Load(continuation, scope));
             },
             CommandNode::Memory {
                 ref form,
@@ -1812,7 +1820,8 @@ impl Lowering<'_>
                 let (viewed, view) = self.bind(scope, Binding::Linear);
                 let (inner, _) = self.bind(viewed, Binding::FallThrough);
                 let ended = self.frame_label();
-                let unwinding = self.function.label();
+                let unwinding = self.frame_label();
+                self.unwinds.push((ended, unwinding));
                 let (unwound, _) = self.bind(scope, Binding::FallThrough);
                 self.blocks.push((ended, Task::Ended(view, unwinding, id)));
                 self.blocks
@@ -2705,6 +2714,7 @@ fn lower_pass(
         handlers: Vec::new(),
         windows: Vec::new(),
         pending: Vec::new(),
+        unwinds: Vec::new(),
     };
     let mut entry: Option<Position> = None;
     loop {
@@ -2767,6 +2777,7 @@ fn lower_pass(
         callees: lowering.callees,
         handlers: lowering.handlers,
         windows: lowering.windows,
+        unwinds: lowering.unwinds,
         unmatched: lowering.unmatched,
         globals: lowering
             .globals

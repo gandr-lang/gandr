@@ -45,6 +45,22 @@
 //! fork binds into `Σ`; the tests exercise both refusals against a context
 //! opened with `Zone::Linear` directly.
 //!
+//! # Lifecycle letters
+//!
+//! A slot of `Σ` is a name in `gandr-theory-nominal-automata`'s sense, and
+//! its use states are that crate's letters over it. Opening the slot — a
+//! hold, an access's view, a fork's two ends, the continuation of a clause
+//! whose stack captured a resident — is `Open`; an occurrence that rebinds it
+//! ([`Context::advance`]) or moves its value out ([`LinearUse::Moved`]) is a
+//! `Free` use; the one occurrence that consumes it ([`LinearUse::Consumed`])
+//! — a write-back, a resume, an abort, `close`, an abandonment — is `Close`.
+//! An abandoned stack's run closes the names its frames hold, innermost
+//! first, each by its access's unwind. `LinearSlotConsumed` refuses a second
+//! `Close`, and `LinearSlotUnconsumed` a scope that ends with its name open.
+//! The context decides this over a derivation, whose case arms, handler
+//! clauses and branches make a tree; the crate's automata decide it over one
+//! word.
+//!
 //! # Failure state
 //!
 //! A failing context operation leaves the context at the failure point: a

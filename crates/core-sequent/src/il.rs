@@ -735,7 +735,8 @@ pub enum CommandNode
         /// Where the resumed stack delivers its answer.
         continuation: ConsumerId,
     },
-    /// End a first-class stack without running it, and deliver the unit.
+    /// End a first-class stack without resuming it: the unwind of each access
+    /// it captured runs, innermost first, and the unit is delivered.
     Abandon
     {
         /// The stack value, never resumed.
