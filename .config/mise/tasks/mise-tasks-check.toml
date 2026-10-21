@@ -298,13 +298,23 @@ run = "cargo doc --workspace --locked --no-deps --document-private-items"
 # holds while the clause and the items it names are unchanged. `--previous`
 # reads the ticks from a file it leaves alone. `--require-acknowledged` exits 2
 # while any prose obligation is unticked.
+#
+# A performance fix owes one more line: whether a lint could have refused the
+# pattern it fixes (#1370). The body names the issues it works
+# (`.config/claims/targets.jq`); when one of them, or the pull request named
+# by `--pr`, carries `kind:performance` or `fix:performance`, the section
+# gains a `lint assessment` box whose verdict reads `could: yes — <lint>,
+# <reference>` or `could: no — <one sentence>`, open until ticked in one of
+# those shapes. The labels are read through `gh` whenever a body is given.
 ["evidence:obligations"]
 description = "List the specifications a change obliges to re-verify"
 depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
+tools.jq = "1.8.1"
 usage = '''
 arg "[base]" help="the revision the change is measured against; defaults to the merge base with origin/main"
 flag "--previous <file>" help="a pull-request body whose acknowledgements carry over, left unchanged"
 flag "--body <file>" help="a pull-request body whose acknowledgements carry over, rewritten with its re-verification section"
+flag "--pr <number>" help="the pull request whose own labels join its targets' for the lint assessment"
 flag "--require-acknowledged" help="exit 2 while any prose obligation is unticked"
 '''
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
@@ -316,6 +326,16 @@ extra=()
 if [[ -n ${usage_previous:-} ]]; then extra+=(--previous "$usage_previous"); fi
 if [[ -n ${usage_body:-} ]]; then extra+=(--body "$usage_body"); fi
 if [[ ${usage_require_acknowledged:-false} == true ]]; then extra+=(--require-acknowledged); fi
+text=${usage_body:-${usage_previous:-}}
+if [[ -n $text ]]; then
+  numbers=$(jq -Rrs -L .config/claims 'include "targets"; targets(working) | unique[]' "$text")
+  if [[ -n ${usage_pr:-} ]]; then numbers+=$'\n'$usage_pr; fi
+  labels=()
+  for number in $numbers; do
+    labels+=("$(gh api "repos/{owner}/{repo}/issues/$number" --jq '[.labels[].name] | join(",")')")
+  done
+  extra+=(--labels "$(IFS=,; printf '%s' "${labels[*]}")")
+fi
 quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
   --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
   --comment target/evidence/comment.md --selection target/evidence/selection
@@ -567,7 +587,7 @@ set -euo pipefail
 failed=0
 while IFS= read -r case; do
   name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -f .config/claims/decide.jq)
+  got=$(jq .input <<< "$case" | jq -r -L .config/claims -f .config/claims/decide.jq)
   want=$(jq -r .output <<< "$case")
   if [[ "$got" != "$want" ]]; then
     printf 'claims case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2

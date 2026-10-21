@@ -1507,7 +1507,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "57a315138121034543f9db6d07d124f308a75e8a"
+rev = "e691b5b5beb19fbf04d7a2a059a66c371673b75d"
 pattern = "crates/quenchant-dylints"
 
 # The everyday optimized build. Size-optimized and nothing else, so each crate

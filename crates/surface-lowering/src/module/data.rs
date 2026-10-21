@@ -274,8 +274,8 @@ pub struct CellForm
     /// The point the cell loops at, over the declaration's generators.
     pub point: Box<[RuleNode]>,
     /// Each written node of the cell's two sides, in pre-order, the source's
-    /// first: no core node holds them, so each answers at the family.
-    pub sides: Vec<ByteSpan>,
+    /// first: each spells the point's subterm at that node.
+    pub sides: Vec<Placed>,
 }
 
 /// The words of the loops a data declaration declares at one point: the
@@ -1056,7 +1056,7 @@ impl<'source> Collector<'_, 'source>
                     .written
                     .iter()
                     .chain(&target.written)
-                    .map(|written| written.span)
+                    .copied()
                     .collect(),
                 point: source.nodes,
             });

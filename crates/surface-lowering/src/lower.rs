@@ -15957,7 +15957,8 @@ impl Sink<'_>
                 | Insertion::Nested
                 | Insertion::Unwind
                 | Insertion::Model
-                | Insertion::Relation,
+                | Insertion::Relation
+                | Insertion::Words,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }

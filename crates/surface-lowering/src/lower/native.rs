@@ -5551,6 +5551,8 @@ impl<'source> Lowerer<'_, 'source>
         sink: &mut Sink<'_>,
     )
     {
+        let mut spelled = Vec::new();
+        let mut arities = Vec::new();
         for (index, words) in self
             .collected
             .words
@@ -5582,6 +5584,10 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
+            // The source writes the loops, never what their words mint: each
+            // node is located at the declaration as an insertion, so no
+            // reader takes it for a name written across the whole form.
+            let origin = origin.inserted(Insertion::Words);
             let word = sink.arena.value_type_data(own, Vec::new());
             sink.origins.record_value_type(word, origin);
             let mut constructors =
@@ -5637,8 +5643,29 @@ impl<'source> Lowerer<'_, 'source>
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, carrier));
             let at_point = || form.cells.iter().filter(|cell| cell.point == words.point);
+            // Each side of a loop spells the point: its nodes are minted apart
+            // as the point's terms, each recorded once, written at its node.
+            // A side's nodes stand in pre-order, the reverse of mint order.
+            arities.clear();
+            arities.extend(
+                form.generators
+                    .iter()
+                    .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len())),
+            );
+            for cell in at_point() {
+                for side in cell.sides.chunks(words.point.len().max(1)) {
+                    spelled.clear();
+                    let _point =
+                        spelled_point(sink.arena, carrier, (&words.point, &arities), &mut spelled);
+                    for (&value, written) in spelled.iter().zip(side.iter().rev()) {
+                        sink.origins
+                            .record_value(value, Origin::new(written.node, written.span));
+                    }
+                }
+            }
             let named = at_point().map(|cell| (cell.named.span, path));
-            let sides = at_point().flat_map(|cell| cell.sides.iter().map(|&span| (span, carrier)));
+            let sides =
+                at_point().flat_map(|cell| cell.sides.iter().map(|side| (side.span, carrier)));
             for (span, ty) in lettered.chain(pointed).chain(named).chain(sides) {
                 sink.origins.record_label(crate::origin::Label {
                     span,
@@ -5735,7 +5762,6 @@ impl<'source> Lowerer<'_, 'source>
             .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
             .collect();
         let mut minted = Vec::new();
-
         spelled_point(arena, carrier, (&words.point, &arities), &mut minted)
             .map(|point| (carrier, point))
     }

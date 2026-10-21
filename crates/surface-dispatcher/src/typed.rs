@@ -1226,11 +1226,12 @@ impl TypeTable
             // term in it answers for those bytes (#477); nor does a term of
             // the record a relation between types abbreviates, located at the
             // relation, which writes the two types and nothing the record
-            // holds.
+            // holds, or a term of the words a data declaration's loops
+            // present, located at the declaration.
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
-                    Provenance::Inserted(Insertion::Model | Insertion::Relation)
+                    Provenance::Inserted(Insertion::Model | Insertion::Relation | Insertion::Words)
                 )
             {
                 let (subject, last) = term_subject(&arena, (first, last));
@@ -4147,6 +4148,56 @@ mod tests
         );
         assert_eq!(at("case"), None, "a keyword refers to nothing");
         assert_eq!(at("m : Nat)"), None, "a binder is no use of itself");
+    }
+
+    /// #1371: the words a loop presents are minted at its data declaration
+    /// and written nowhere in it, so no name the declaration writes refers to
+    /// the loop's point; each side of the loop writes the point, and refers to
+    /// it.
+    #[test]
+    fn a_loop_s_words_are_written_nowhere_in_its_declaration_1371()
+    {
+        let source = SourceText::from(
+            "data Circle : Type {\n  Base : Circle;\n  loop : Base <-> Base;\n}\ndef wound(p : \
+             Path(Circle, Base, Base)) -> -F Circle {\n  return Base\n}\n",
+        );
+        let table = table(source);
+        let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
+        let named = |needle: &'static str, name: &'static str| {
+            Some(site(
+                source,
+                SourceText::from(needle),
+                SourceText::from(name),
+            ))
+        };
+        for declared in ["Circle : Type", "Base : Circle", "loop : Base"] {
+            assert_eq!(at(declared), None, "a declared name `{declared}` is no use");
+        }
+        assert_eq!(
+            at("Circle;"),
+            named("Circle : Type", "Circle"),
+            "the point's result, its family"
+        );
+        assert_eq!(
+            at("Base <-> Base"),
+            named("Base : Circle", "Base"),
+            "the loop's source, the point it writes"
+        );
+        assert_eq!(
+            at("Base;\n}"),
+            named("Base : Circle", "Base"),
+            "the loop's target, the point it writes"
+        );
+        assert_eq!(
+            at("Circle, Base"),
+            named("Circle : Type", "Circle"),
+            "a use of the family outside its declaration"
+        );
+        assert_eq!(
+            at("Base\n}"),
+            named("Base : Circle", "Base"),
+            "a use of the point outside its declaration"
+        );
     }
 
     /// #1360: a constructor's result names its family, and each of the
