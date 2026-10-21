@@ -773,8 +773,10 @@ impl InitializeParams
     }
 
     /// How this client takes a workspace edit: versioned when it declares
-    /// `workspace.workspaceEdit.documentChanges`, and annotated as well when it
-    /// also declares `workspace.workspaceEdit.changeAnnotationSupport`.
+    /// `workspace.workspaceEdit.documentChanges`; annotated as well when it
+    /// also declares `workspace.workspaceEdit.changeAnnotationSupport`; and
+    /// taking snippet edits when it also declares
+    /// `workspace.workspaceEdit.snippetEditSupport` (3.18).
     ///
     /// # Specification
     /// trivial.
@@ -792,6 +794,7 @@ impl InitializeParams
         EditsShaped {
             versioned,
             annotated: versioned && taken.change_annotation_support.is_some(),
+            snippets: versioned && taken.snippet_edit_support.unwrap_or(false),
         }
     }
 }
@@ -836,6 +839,9 @@ pub struct EditsShaped
     /// Among versioned edits, each to a document the client holds no copy of
     /// annotated for its user to confirm.
     pub annotated: bool,
+    /// Among versioned edits, an edit may be a snippet, its tab stops for the
+    /// user to fill.
+    pub snippets: bool,
 }
 
 impl EditsShaped
@@ -844,6 +850,7 @@ impl EditsShaped
     pub const BY_URI: Self = Self {
         versioned: false,
         annotated: false,
+        snippets: false,
     };
 }
 
@@ -1088,6 +1095,10 @@ pub struct WorkspaceEditCapabilities
     /// its user to confirm.
     #[serde(default)]
     pub change_annotation_support: Option<AnnotationCapabilities>,
+    /// `snippetEditSupport` (3.18): whether it takes an edit whose text is a
+    /// snippet.
+    #[serde(default)]
+    pub snippet_edit_support: Option<bool>,
 }
 
 /// What a client offers of annotated edits.
@@ -2509,7 +2520,7 @@ pub struct FullOptions
 pub struct Legend
 {
     /// The token types, in the order a token's type integer indexes.
-    pub token_types: [&'static str; 14],
+    pub token_types: [&'static str; 15],
     /// The token modifiers, in the order a token's modifier bits index.
     pub token_modifiers: [&'static str; 2],
 }
@@ -3266,10 +3277,12 @@ impl WorkspaceEdit
                 text_document: EditedDocument { uri, version },
                 edits: edits
                     .into_iter()
-                    .map(|edit| AnnotatedEdit {
-                        range: edit.range,
-                        new_text: edit.new_text,
-                        annotation_id: annotation,
+                    .map(|edit| {
+                        DocumentEdit::Text(AnnotatedEdit {
+                            range: edit.range,
+                            new_text: edit.new_text,
+                            annotation_id: annotation,
+                        })
                     })
                     .collect(),
             });
@@ -3289,7 +3302,7 @@ pub struct TextDocumentEdit
     /// The document and its version.
     pub text_document: EditedDocument,
     /// Its edits, in document order.
-    pub edits: Vec<AnnotatedEdit>,
+    pub edits: Vec<DocumentEdit>,
 }
 
 /// A document and the version of the client's copy, null when it holds none.
@@ -3300,6 +3313,28 @@ pub struct EditedDocument
     pub uri: DocumentUri,
     /// The version of the client's copy.
     pub version: Option<DocumentVersion>,
+}
+
+/// One edit of a document's: its text, or, to a client that takes them, a
+/// snippet whose tab stops the user fills.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum DocumentEdit
+{
+    /// Text, with the annotation it names, if any.
+    Text(AnnotatedEdit),
+    /// A snippet.
+    Snippet(SnippetEdit),
+}
+
+/// An edit whose text is a snippet (3.18 `SnippetTextEdit`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SnippetEdit
+{
+    /// The range replaced.
+    pub range: Range,
+    /// The snippet replacing it.
+    pub snippet: StringValue,
 }
 
 /// One edit, with the annotation it names, if any.
@@ -3418,6 +3453,10 @@ pub struct Diagnostic
     /// The loci that explain it, each with what it explains.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub related_information: Vec<RelatedInformation>,
+    /// How the editor marks the range besides its severity: faded, for
+    /// what is unnecessary.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<DiagnosticTag>,
 }
 
 impl Diagnostic
@@ -3439,7 +3478,7 @@ impl Diagnostic
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
         && ret.code_description.is_none()
-        && ret.source == SOURCE && ret.related_information.is_empty())]
+        && ret.source == SOURCE && ret.related_information.is_empty() && ret.tags.is_empty())]
     #[inline]
     #[must_use]
     pub fn at_origin(message: String) -> Self
@@ -3452,6 +3491,7 @@ impl Diagnostic
             source: SOURCE,
             message,
             related_information: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -3475,6 +3515,7 @@ impl Diagnostic
             source: SOURCE,
             message,
             related_information: Vec::new(),
+            tags: Vec::new(),
         }
     }
 }
@@ -3496,6 +3537,19 @@ impl Severity
     /// A hint: a declaration a refusal elsewhere in the document leaves
     /// unsettled, reported beside that refusal rather than as an error.
     pub const HINT: Self = Self(4);
+}
+
+/// How a diagnostic's range is marked besides its severity, as the protocol
+/// numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct DiagnosticTag(u8);
+
+impl DiagnosticTag
+{
+    /// Unnecessary: a binder no use refers to, which the editor fades.
+    pub const UNNECESSARY: Self = Self(1);
 }
 
 /// Where a diagnostic's code is described.

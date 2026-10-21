@@ -73,6 +73,7 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::RenderFrame;
+use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -84,6 +85,9 @@ use serde_json::Value;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
+use crate::fix::fills;
+use crate::fix::holes;
+use crate::fix::repairs;
 use crate::format::Scope;
 use crate::format::edits;
 use crate::goto::Goto;
@@ -250,13 +254,16 @@ use crate::rpc::unregister;
 use crate::search::FOUND_HELD;
 use crate::signature::help;
 use crate::syntax::printed;
+use crate::tokens::Resolved;
 use crate::tokens::ResultId;
 use crate::tokens::TokenStream;
+use crate::tokens::classified;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
+use crate::unused::unused;
 use crate::uses::Written;
 use crate::uses::declared;
 use crate::uses::highlights;
@@ -1822,9 +1829,10 @@ impl Server
     /// The requests asking this connection's client for its semantic tokens
     /// and folding ranges again, once something other than a document's own
     /// text changed what they answer: one for each its client requests again
-    /// when asked, none when the connection is not running. Every token and
-    /// fold this server answers is read off the document's own text, so
-    /// nothing in this crate calls it.
+    /// when asked, none when the connection is not running. Every fold this
+    /// server answers is read off the document's own text, and a recheck of a
+    /// copy whose closure changed asks for its tokens itself
+    /// ([`Server::resynchronise`]), so nothing in this crate calls it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -2819,7 +2827,7 @@ impl Server
     /// # Specification
     /// trivial.
     fn reclosed(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         path: &Path,
         outcome: &mut Outcome,
@@ -2833,12 +2841,14 @@ impl Server
 
     /// Recheck the copies this connection holds that `picks` picks,
     /// republishing each to this connection alone, each import read as the
-    /// editors hold it.
+    /// editors hold it, and, when a copy was rechecked because its closure
+    /// changed, ask a client that refreshes its semantic tokens for them
+    /// again: each use is classified by what the new judgement resolved it to.
     ///
     /// # Specification
     /// trivial.
     fn resynchronise(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         picks: Picks<'_>,
     ) -> Outcome
@@ -2883,6 +2893,10 @@ impl Server
         }
         for message in &outcome.messages {
             workspace.published_by(peer, message);
+        }
+        if !matches!(picks, Picks::Every) && self.phase == Phase::Running && self.refreshing.tokens
+        {
+            outcome.messages.push(self.asked(Refreshed::Tokens));
         }
         outcome
     }
@@ -3508,15 +3522,30 @@ impl Server
                     Ok(params) => success(
                         id,
                         match workspace.view(&params.text_document.uri, self.peer) {
-                            Maybe::Present(document) => self.edited(
-                                workspace,
-                                Answer::Actions(actions(
+                            Maybe::Present(document) => {
+                                let mut offered = actions(
                                     &params.text_document.uri,
                                     &document.proposals,
                                     params.range,
                                     &params.context.diagnostics,
-                                )),
-                            ),
+                                );
+                                if let (Ok(grammar), Ok(forms)) = (grammar(), forms()) {
+                                    offered.extend(repairs(
+                                        (grammar, forms),
+                                        (&params.text_document.uri, document.version),
+                                        document.text.source(),
+                                        (params.range, &params.context.diagnostics),
+                                        self.editing,
+                                    ));
+                                }
+                                offered.extend(workspace.hole_fills(
+                                    &params.text_document.uri,
+                                    self.peer,
+                                    (params.range, &params.context.diagnostics),
+                                    self.style.printed(),
+                                ));
+                                self.edited(workspace, Answer::Actions(offered))
+                            },
                             Maybe::Absent(_) => Answer::Nothing,
                         },
                     ),
@@ -3642,7 +3671,9 @@ impl Server
     ///   after an open, a change or a close of a copy whose file some copy's
     ///   closure names, every copy this connection holds whose closure names it
     ///   is rechecked and republished after the copy's own publication, and
-    ///   every other hub connection whose copies name it hears it changed.
+    ///   every other hub connection whose copies name it hears it changed. When
+    ///   that rechecks a copy for what its closure names, a client that
+    ///   refreshes its semantic tokens is then asked for them again, once.
     ///   Unknown, malformed and out-of-phase notifications leave documents
     ///   alone.
     /// - provides: document synchronization, configuration, file watching, the
@@ -3677,7 +3708,10 @@ impl Server
     /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
-        ensures: |ret| self.phase == phase
+        ensures: |ret| {
+            let published = ret.messages.iter().filter(|message| matches!(**message,
+                Outgoing::Notification { params: Notified::Published(_), .. })).count();
+            self.phase == phase
             && (ret.messages.len() <= 1
                 || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
                     | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"
@@ -3685,9 +3719,9 @@ impl Server
             && match method.as_ref() {
                 "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles"
                 | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles" =>
-                    ret.log.len() == ret.messages.len(),
-                "textDocument/didClose" => ret.log.len() == ret.messages.len().saturating_sub(1),
-                "workspace/didChangeConfiguration" => ret.log.len() <= ret.messages.len(),
+                    ret.log.len() == published,
+                "textDocument/didClose" => ret.log.len() == published.saturating_sub(1),
+                "workspace/didChangeConfiguration" => ret.log.len() <= published,
                 _ => ret.log.is_empty(),
             }
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
@@ -3715,12 +3749,18 @@ impl Server
                         "workspace/didChangeWorkspaceFolders" => {
                             called == "workspace/workspaceFolders" && self.listing.0
                         },
+                        "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
+                        | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles"
+                        | "workspace/didDeleteFiles" | "workspace/didRenameFiles" => {
+                            called == "workspace/semanticTokens/refresh" && self.refreshing.tokens
+                        },
                         _ => false,
                     },
                     Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
                     | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
                 })
-            },
+            }
+        },
     )]
     fn notification(
         &mut self,
@@ -4259,7 +4299,8 @@ impl Workspace
     }
 
     /// The tokens of the copy of the document at `uri` that `peer` is
-    /// answered from, in `window`.
+    /// answered from, in `window`, each written use classified by what its
+    /// judgement resolved it to.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI and any range are admitted.
@@ -4267,6 +4308,9 @@ impl Workspace
     ///   token stream, restricted to overlapping whole spans for a range
     ///   request. Empty and inverted ranges yield an empty stream, not Nothing.
     ///   A whole-document stream carries its result id; a range's carries none.
+    ///   A copy with a session sends its spans as [`classified`] classifies
+    ///   them over its type table, a name the table records as unresolved sent
+    ///   as such; one without sends the highlighter's spans.
     /// - provides: full and range token answers in document coordinates.
     /// - fails: never.
     /// - panics: none.
@@ -4280,6 +4324,7 @@ impl Workspace
     /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
     /// - witness: `server::tests::an_empty_range_yields_no_tokens`
     /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
+    /// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
@@ -4303,14 +4348,31 @@ impl Workspace
             return Answer::Nothing;
         };
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        let spans = document.text.reading().spans();
-        let spans = match window {
-            Window::Whole => spans.to_vec(),
-            Window::Within(range) => {
-                overlapping(spans, range.start.byte(&index), range.end.byte(&index))
+        let written = document.text.reading().spans();
+        let judged = document.session.as_ref().map_or_else(
+            |_| Resolved {
+                spans: written.to_vec(),
+                unresolved: Vec::new(),
             },
+            |session| {
+                classified(
+                    written,
+                    document
+                        .text
+                        .hovering(&uri.path(), session, &self.shadowing(peer))
+                        .table(),
+                )
+            },
+        );
+        let spans = match window {
+            Window::Whole => judged.spans,
+            Window::Within(range) => overlapping(
+                &judged.spans,
+                range.start.byte(&index),
+                range.end.byte(&index),
+            ),
         };
-        let data = encode(&index, &spans);
+        let data = encode(&index, &spans, &judged.unresolved);
         Answer::Tokens(SemanticTokens {
             result_id: matches!(window, Window::Whole).then(|| data.result_id()),
             data,
@@ -4526,6 +4588,90 @@ impl Workspace
             (uri, position),
             presented,
         ))
+    }
+
+    /// The quick fixes that fill each written hole `asked` meets in the copy of
+    /// the document at `uri` that `peer` is answered from, its candidates'
+    /// types spelled in `printer`'s style.
+    ///
+    /// # Specification
+    /// - requires: `diagnostics` are the request's, each as the client sent it.
+    /// - ensures: nothing for an unknown document, one whose session or grammar
+    ///   did not build, or a copy that is not the latest the trial judges;
+    ///   otherwise, for each of the copy's [`holes`] in text order, the
+    ///   [`fills`] its names answer in one trial of every hole's names, made as
+    ///   [`Self::trial`] makes it, against the latest copy's published
+    ///   diagnostics. Every copy, its session and its published diagnostics are
+    ///   unchanged.
+    /// - provides: the hole fills of `textDocument/codeAction`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one trial of the names of every hole the range meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`fills`], through the request.
+    /// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
+    fn hole_fills(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (asked, diagnostics): (Range, &[Value]),
+        printer: gandr_surface_pretty::Style,
+    ) -> Vec<CodeAction>
+    {
+        let Maybe::Present(document) = self.view(uri, peer)
+        else {
+            return Vec::new();
+        };
+        let (Ok(session), Ok(grammar), Ok(forms), Some((version, published))) = (
+            document.session.as_ref(),
+            grammar(),
+            forms(),
+            self.published(uri),
+        )
+        else {
+            return Vec::new();
+        };
+        if version != document.version {
+            return Vec::new();
+        }
+        let found = holes(
+            (grammar, forms),
+            (document.text.source(), document.text.reading().spans()),
+            (
+                document
+                    .text
+                    .hovering(&uri.path(), session, &self.shadowing(peer)),
+                printer,
+            ),
+            (uri, asked),
+        );
+        let changes: Vec<ContentChange> = found
+            .iter()
+            .flat_map(|hole| {
+                hole.names.iter().map(|name| ContentChange {
+                    range: Some(hole.range),
+                    text: name.clone(),
+                })
+            })
+            .collect();
+        let Some((judged, tried)) = self.trial(uri, &changes)
+        else {
+            return Vec::new();
+        };
+        if judged != version {
+            return Vec::new();
+        }
+        found
+            .iter()
+            .scan(0_usize, |next, hole| {
+                let first = CandidateIndex::from(*next);
+                *next = next.saturating_add(hole.names.len());
+                Some((hole, first))
+            })
+            .flat_map(|placed| fills(uri, placed, &tried, (published, diagnostics)))
+            .collect()
     }
 
     /// `item`, offered by a completion request, resolved off the copy of the
@@ -5938,11 +6084,12 @@ fn caret_range(
 /// - ensures: one diagnostic notification naming the supplied URI and held
 ///   version, with the diagnostics the document's session judges for its whole
 ///   text, each import read as `shadows` holds it, rendered at `verbosity` with
-///   their types in `spelling`, less those [`publishable`] holds for the form
-///   under the document's caret while `quiet` is not zero; the copy records
-///   every judged diagnostic as checked. One log line names the same URI and
-///   version, its admission pending when the judgement left one, and whether
-///   the publication held any.
+///   their types in `spelling`, followed by the hints [`unused`] answers off
+///   the recheck's unused binders, less those [`publishable`] holds for the
+///   form under the document's caret while `quiet` is not zero; the copy
+///   records every judged diagnostic and hint as checked. One log line names
+///   the same URI and version, its admission pending when the judgement left
+///   one, and whether the publication held any.
 /// - provides: the publication shared by open, change and configuration
 ///   notifications.
 /// - fails: never.
@@ -5977,7 +6124,7 @@ fn synchronised(
         Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
         Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
     };
-    let rechecked = recheck(
+    let mut rechecked = recheck(
         uri,
         &mut document.session,
         document.text.source(),
@@ -5986,6 +6133,10 @@ fn synchronised(
         spelling,
         caret,
     );
+    let index = LineIndex::new(<&str>::from(document.text.source()).into());
+    rechecked
+        .diagnostics
+        .extend(unused(&rechecked.unused, document.text.source(), &index));
     let form = caret_range(document, rechecked.form);
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
@@ -6403,7 +6554,8 @@ mod tests
                             "legend":{
                                 "tokenTypes":["keyword","operator","function","variable",
                                     "parameter","property","enumMember","type","typeParameter",
-                                    "number","string","comment","macro","label"],
+                                    "number","string","comment","macro","label",
+                                    "unresolvedReference"],
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":{"delta":true},
                             "range":true},
@@ -6470,6 +6622,122 @@ mod tests
                         "resultId":"ac2c5e81f4c6deef122878dc6eb03960e2099f34556da16b15af990a3828c90c"}}]"#
             )),
             "the known document's tokens: `def`, `f` a declared function, `42`"
+        );
+    }
+
+    /// Over two corpus sources, judged, each use whose referent the
+    /// highlighter's guess misnames is sent as what it refers to, and each
+    /// name the lowering refused as naming nothing is sent as
+    /// `unresolvedReference`; every other token is the highlighter's, at the
+    /// same range. The golden lists exactly the tokens whose type the
+    /// judgement changed, as `line:column `text` before→after`.
+    #[test]
+    fn a_use_is_sent_as_what_it_refers_to()
+    {
+        let changed = |name: &str| -> Vec<String> {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/fixture/model/data")
+                .join(name);
+            let text = std::fs::read_to_string(&path).expect("the source is read");
+            let mut server = initialized();
+            let opened = format!(
+                r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///tmp/judged.gandr","languageId":"gandr","version":1,"text":{}}}}}}}"#,
+                serde_json::to_string(&text).expect("the text serialises")
+            );
+            let _published = send(&mut server, Json(&opened));
+            let answered = send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full",
+                        "params":{"textDocument":{"uri":"file:///tmp/judged.gandr"}}}"#,
+                ),
+            )[0]["result"]["data"]
+                .clone();
+            let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
+            let index = gandr_surface_render_remote::LineIndex::new(text.as_str().into());
+            let written = crate::tokens::encode(
+                &index,
+                crate::reading::Reading::of(gandr_surface_syntax::SourceText::from(text.as_str()))
+                    .spans(),
+                &[],
+            );
+            let absolute = |stream: &[u32]| {
+                let (mut line, mut column) = (0_u32, 0_u32);
+                stream
+                    .as_chunks::<5>()
+                    .0
+                    .iter()
+                    .map(|&[down, across, length, kind, _]| {
+                        column = if down == 0 {
+                            column.saturating_add(across)
+                        }
+                        else {
+                            across
+                        };
+                        line = line.saturating_add(down);
+                        (line, column, length, kind)
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let (after, before) = (absolute(&judged), absolute(written.as_ref()));
+            assert_eq!(
+                after.len(),
+                before.len(),
+                "the judgement keeps every token's range"
+            );
+            let named = |kind: u32| {
+                usize::try_from(kind)
+                    .ok()
+                    .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
+                    .copied()
+                    .unwrap_or("?")
+            };
+            after
+                .iter()
+                .zip(&before)
+                .filter(|&(&(.., judged_kind), &(.., written_kind))| judged_kind != written_kind)
+                .map(
+                    |(&(line, column, length, judged_kind), &(.., written_kind))| {
+                        let spelled = text
+                            .lines()
+                            .nth(usize::try_from(line).unwrap_or(usize::MAX))
+                            .and_then(|row| {
+                                let start = usize::try_from(column).unwrap_or(usize::MAX);
+                                row.get(
+                                    start
+                                        .. start
+                                            .saturating_add(usize::try_from(length).unwrap_or(0)),
+                                )
+                            })
+                            .unwrap_or("?");
+                        format!(
+                            "{}:{column} `{spelled}` {}→{}",
+                            line.saturating_add(1),
+                            named(written_kind),
+                            named(judged_kind)
+                        )
+                    },
+                )
+                .collect()
+        };
+        assert_eq!(
+            changed("data-maybe.gandr"),
+            [
+                "25:56 `m` variable→parameter",
+                "25:59 `m` variable→parameter",
+                "26:7 `m` variable→parameter",
+                "27:17 `m` variable→parameter",
+                "28:20 `m` variable→parameter",
+            ],
+            "each use of the parameter `m` is a parameter; the family and its constructors \
+             the highlighter already names"
+        );
+        assert_eq!(
+            changed("sums-and-case.gandr"),
+            ["8:4 `Inl` enumMember→unresolvedReference"],
+            "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
+             the lowering stops at a declaration's first refusal, so its other names keep \
+             their guess"
         );
     }
 
@@ -8503,6 +8771,107 @@ mod tests
         let _removed = std::fs::remove_dir_all(&directory);
     }
 
+    /// An importer rechecked because its base changed is classified anew:
+    /// a client that refreshes its semantic tokens is asked for them again,
+    /// and the importer's use of a name the base now declares is sent as
+    /// what it refers to where it was unresolved before; a client that does
+    /// not refresh is asked nothing.
+    #[test]
+    fn an_importer_rechecked_for_its_base_asks_for_its_tokens_again()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-retokened-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let declares_one = "def one : Integer ;\ndef one = 1 ;\n";
+        let declares_uno = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        std::fs::write(directory.join("base.gandr"), declares_uno).expect("the base is written");
+        std::fs::write(directory.join("importer.gandr"), importer)
+            .expect("the importer is written");
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let started = |workspace: &str| {
+            let mut server = Connected::default();
+            let initialize = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"capabilities":
+                {{"workspace":{workspace}}}}}}}"#
+            );
+            let _answered = send(&mut server, Json(&initialize));
+            let _initialized = send(
+                &mut server,
+                Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+            );
+            server
+        };
+        let open = |server: &mut Connected, file: &str, text: &str| {
+            let message = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri(file), "languageId": "gandr",
+                "version": 1_i32, "text": text}}});
+            send(server, Json(&message.to_string()))
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .filter_map(|message| message["method"].as_str().map(String::from))
+                        .filter(|method| method.ends_with("/refresh"))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let type_of_one = |server: &mut Connected| {
+            let asked = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32,
+                "method": "textDocument/semanticTokens/full",
+                "params": {"textDocument": {"uri": uri("importer.gandr")}}});
+            let data: Vec<u32> = serde_json::from_value(
+                send(server, Json(&asked.to_string()))[0]["result"]["data"].clone(),
+            )
+            .expect("a token stream");
+            let (mut line, mut column) = (0_u32, 0_u32);
+            data.as_chunks::<5>()
+                .0
+                .iter()
+                .find_map(|&[down, across, _, kind, _]| {
+                    column = if down == 0 {
+                        column.saturating_add(across)
+                    }
+                    else {
+                        across
+                    };
+                    line = line.saturating_add(down);
+                    ((line, column) == (2, 10)).then_some(kind)
+                })
+        };
+        let mut refreshing = started(r#"{"semanticTokens":{"refreshSupport":true}}"#);
+        assert_eq!(
+            open(&mut refreshing, "importer.gandr", importer),
+            Vec::<String>::new(),
+            "opening the importer itself asks for nothing"
+        );
+        assert_eq!(
+            type_of_one(&mut refreshing),
+            Some(14),
+            "`one`, which the base on disk does not declare, is unresolved"
+        );
+        assert_eq!(
+            open(&mut refreshing, "base.gandr", declares_one),
+            ["workspace/semanticTokens/refresh"],
+            "the base opened with `one` rechecks the importer and asks for its tokens again"
+        );
+        assert_eq!(
+            type_of_one(&mut refreshing),
+            Some(2),
+            "`one` is now a function the base declares"
+        );
+        let mut quiet = started("{}");
+        let _importing = open(&mut quiet, "importer.gandr", importer);
+        assert_eq!(
+            open(&mut quiet, "base.gandr", declares_one),
+            Vec::<String>::new(),
+            "a client that does not refresh its tokens is asked nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
     #[test]
     fn progress_is_reported_around_the_work_a_message_starts()
     {
@@ -9018,6 +9387,120 @@ mod tests
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),
             "a document in layout answers no edit"
+        );
+    }
+
+    #[test]
+    fn the_client_s_formatting_options_are_not_read()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
+                     "text":"def plus(n : Nat) -> -F Nat {   \ncase n {\nZero => n\n}\n}\n\n\n"}}}"#,
+            ),
+        );
+        let format = |server: &mut Connected, options: &str| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/formatting","params":{{
+                    "textDocument":{{"uri":"file:///tmp/untidy.gandr"}},"options":{options}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        // The edit keeps the text's last newline, after `}`, and drops the two
+        // blank lines before it.
+        let canonical = wire(Json(
+            r#"[{"jsonrpc":"2.0","id":7,"result":[{
+                "range":{"start":{"line":0,"character":29},"end":{"line":6,"character":0}},
+                "newText":"\n  case n {\n    Zero => n\n  }\n}"}]}]"#,
+        ));
+        assert_eq!(
+            format(
+                &mut server,
+                r#"{"tabSize":8,"insertSpaces":false,"trimTrailingWhitespace":false,
+                    "insertFinalNewline":false,"trimFinalNewlines":false}"#
+            ),
+            canonical,
+            "options asking for tabs and for the whitespace kept: the canonical layout, two \
+             spaces a level, no trailing whitespace, one final newline"
+        );
+        assert_eq!(
+            format(
+                &mut server,
+                r#"{"tabSize":2,"insertSpaces":true,"trimTrailingWhitespace":true,
+                    "insertFinalNewline":true,"trimFinalNewlines":true}"#
+            ),
+            canonical,
+            "options asking for what the layout writes: the same edit"
+        );
+    }
+
+    #[test]
+    fn a_binder_no_use_refers_to_is_published_unnecessary()
+    {
+        let mut server = initialized();
+        let open = |server: &mut Connected, uri: &str, text: &str| {
+            let notification = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen",
+                "params": {"textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}});
+            send(server, Json(&notification.to_string()))
+        };
+        assert_eq!(
+            open(
+                &mut server,
+                "file:///tmp/unused.gandr",
+                "def f(n : Integer, m : Integer, _k : Integer) -> -F Integer { return n }\n"
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{
+                    "uri":"file:///tmp/unused.gandr","version":1,"diagnostics":[{
+                    "range":{"start":{"line":0,"character":19},"end":{"line":0,"character":20}},
+                    "severity":4,"code":"UnusedBinder","source":"gandr",
+                    "message":"`m` is never used","tags":[1]}]}}]"#
+            )),
+            "the unused parameter is a faded hint; the used one and the one written with `_` are \
+             not"
+        );
+        let corpus = |file: &str| {
+            let path = std::fs::canonicalize(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../surface-corpus/fixture")
+                    .join(file),
+            )
+            .expect("the corpus source is checked out");
+            let text = std::fs::read_to_string(&path).expect("the corpus source reads");
+            (format!("file://{}", path.display()), text)
+        };
+        let hinted = |published: &Value| {
+            published[0]["params"]["diagnostics"]
+                .as_array()
+                .map(|diagnostics| {
+                    diagnostics
+                        .iter()
+                        .filter(|diagnostic| diagnostic["code"] == "UnusedBinder")
+                        .map(|diagnostic| {
+                            format!(
+                                "{}:{}",
+                                diagnostic["range"]["start"]["line"],
+                                diagnostic["message"].as_str().unwrap_or_default()
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let (uri, text) = corpus("pathological/control/capability-drop.gandr");
+        assert_eq!(
+            hinted(&open(&mut server, &uri, &text)),
+            [""; 0],
+            "an unused consumable capability is the checker's refusal, never a hint"
+        );
+        let (uri, text) = corpus("surface/control-flow.gandr");
+        assert_eq!(
+            hinted(&open(&mut server, &uri, &text)),
+            ["7:`n` is never used"],
+            "`tick` leaves its parameter unused, and control flow's every other binder is used"
         );
     }
 
@@ -10874,6 +11357,131 @@ mod tests
             actions.pointer("/1/isPreferred"),
             Some(&serde_json::json!(true)),
             "a fill that settles the document is preferred"
+        );
+    }
+
+    /// The recovery fixture of #1391, open in the editor, is refused for the
+    /// brace its definition never closes; the diagnostic the server judged,
+    /// sent back with a code action request, is offered the brace past
+    /// `return n + 1` as a preferred fix naming it.
+    #[test]
+    fn a_repaired_form_is_offered_its_closing()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-parser/tests/fixtures/unclosed-body.gandr");
+        let written = std::fs::read_to_string(&path).expect("the fixture is read");
+        let opened = format!(
+            r#","version":1,"text":{}}}"#,
+            serde_json::to_string(&written).expect("the text serialises")
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didOpen"), Json(&opened)),
+        ));
+        let judged = workspace
+            .documents
+            .get(&uri)
+            .map(|held| serde_json::to_value(&held.document.checked))
+            .expect("the document is held")
+            .expect("the diagnostics serialise");
+        let refusal = judged
+            .as_array()
+            .and_then(|all| {
+                all.iter().find(|diagnostic| {
+                    diagnostic.get("code") == Some(&serde_json::json!("MalformedForm"))
+                })
+            })
+            .cloned()
+            .expect("the open body is refused");
+        let end = at(Line::from(4_u32), Character::from(14_u32));
+        assert_eq!(
+            refusal.pointer("/range/start"),
+            Some(&serde_json::json!(end)),
+            "the refusal stands past the body, where #1391 placed it"
+        );
+        let actions = asked(
+            &workspace,
+            Json("textDocument/codeAction"),
+            Json(&format!(
+                r#","range":{{"start":{{"line":4,"character":14}},"end":{{"line":4,"character":14}}}},"context":{{"diagnostics":[{refusal}]}}"#
+            )),
+        );
+        assert_eq!(
+            actions,
+            serde_json::json!([{
+                "title": "Insert `}`",
+                "kind": "quickfix",
+                "diagnostics": [refusal],
+                "isPreferred": true,
+                "edit": {"changes": {"file:///tmp/shared.gandr": [
+                    {"range": {"start": end, "end": end}, "newText": " }"}
+                ]}},
+            }]),
+            "the brace the parser expects, inserted where the refusal stands"
+        );
+    }
+
+    /// The identity subject's base source, its `loopOn` body's path left a
+    /// hole, open in the editor: a code action request at the hole is offered
+    /// the two names in scope the trial judges without a refusal at the hole,
+    /// `p`, which also settles `sect` downstream, before `loop`, which does
+    /// not; neither is preferred. A request where no hole stands is offered
+    /// no fill.
+    #[test]
+    fn a_hole_is_offered_the_names_that_settle_it()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+        let written = std::fs::read_to_string(&path)
+            .expect("the fixture is read")
+            .replacen("  loop ∷ p\n", "  loop ∷ ?\n", 1);
+        let opened = format!(
+            r#","version":1,"text":{}}}"#,
+            serde_json::to_string(&written).expect("the text serialises")
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didOpen"), Json(&opened)),
+        ));
+        let judged = workspace
+            .documents
+            .get(&uri)
+            .map(|held| serde_json::to_value(&held.document.checked))
+            .expect("the document is held")
+            .expect("the diagnostics serialise");
+        let ask = |line: u32, character: u32| {
+            asked(
+                &workspace,
+                Json("textDocument/codeAction"),
+                Json(&format!(
+                    r#","range":{{"start":{{"line":{line},"character":{character}}},"end":{{"line":{line},"character":{character}}}}},"context":{{"diagnostics":{judged}}}"#
+                )),
+            )
+        };
+        let hole = serde_json::json!({"start": {"line": 78_u32, "character": 9_u32},
+            "end": {"line": 78_u32, "character": 10_u32}});
+        let fill = |name: &str| {
+            serde_json::json!({
+                "title": format!("Fill the hole with `{name}`"),
+                "kind": "quickfix",
+                "edit": {"changes": {"file:///tmp/shared.gandr": [
+                    {"range": hole, "newText": name}
+                ]}},
+            })
+        };
+        assert_eq!(
+            ask(78, 9),
+            serde_json::json!([fill("p"), fill("loop")]),
+            "the parameter, which settles the source, before the loop, which checks here"
+        );
+        assert_eq!(
+            ask(78, 2),
+            serde_json::json!([]),
+            "where no hole stands, no fill"
         );
     }
 

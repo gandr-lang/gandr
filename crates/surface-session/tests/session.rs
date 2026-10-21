@@ -1359,6 +1359,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 shadowed,
                 inferred,
                 runs,
+                unused,
                 kernel,
                 program,
                 ..
@@ -1372,6 +1373,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 shadowed,
                 inferred,
                 runs,
+                unused,
                 kernel,
                 program,
             },

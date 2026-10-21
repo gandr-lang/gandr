@@ -2108,6 +2108,33 @@ impl TypeTable
         self.referents.offered()
     }
 
+    /// The span, in the table's own text, of each name its source writes
+    /// that nothing declares or binds: where the lowering refused a
+    /// declaration as `UnresolvedName` or `UnresolvedTypeHead`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one span per such refusal of a declaration the table's own
+    ///   source writes, ascending, as `Referents::of` states; none when the
+    ///   lowering resolved every name.
+    /// - provides: the names the editor marks as unresolved, an expected
+    ///   refusal's included.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unknown term name and an unknown type head are
+    ///   each kept at their own spelling, and a declaration that resolves keeps
+    ///   nothing.
+    /// - witness: `typed::tests::a_name_nothing_declares_is_kept_where_it_is_written`
+    #[spec(ensures: |ret| ret.is_sorted())]
+    #[inline]
+    #[must_use]
+    pub fn unresolved(&self) -> &[ByteSpan]
+    {
+        self.referents.unresolved()
+    }
+
     /// The binders in scope at `offset` of the source's own text, innermost
     /// first, a shadowed binder included: each one's written name, and where
     /// the source's own text writes it.
@@ -4600,6 +4627,29 @@ mod tests
                 ),
             ],
             "each declared name once, in the order the unit writes them, with its kind"
+        );
+    }
+
+    /// A term name and a type head that nothing declares are each kept where
+    /// they are written, and a declaration whose names resolve keeps nothing.
+    #[test]
+    fn a_name_nothing_declares_is_kept_where_it_is_written()
+    {
+        let source = SourceText::from(
+            "def a : Integer ;\ndef a = nope ;\ndef b : Natural ;\ndef c : Integer ;\ndef c = 1 ;",
+        );
+        let table = table(source);
+        let spelled: Vec<&str> = table
+            .unresolved()
+            .iter()
+            .filter_map(|span| {
+                <&str>::from(source).get(usize::from(span.start()) .. usize::from(span.end()))
+            })
+            .collect();
+        assert_eq!(
+            spelled,
+            ["nope", "Natural"],
+            "each name nothing answers, at its own spelling, in order"
         );
     }
 
