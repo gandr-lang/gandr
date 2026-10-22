@@ -1,7 +1,7 @@
 /// A list whose cons cell holds its head once: the field's grade `1` is
 /// refused, the default grade `ω` the only one a constructor field reads
 /// (#1295).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.grade.declaration") ]
 data Vec(a : Type) : Type {
   Nil : Vec(a);
   Cons : (1 x : a, xs : Vec(a)) --> Vec(a);

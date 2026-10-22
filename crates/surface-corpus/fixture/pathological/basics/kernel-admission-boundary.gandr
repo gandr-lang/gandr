@@ -17,10 +17,10 @@ def identity(x: Integer) -> -F Integer {
 
 /// A number at a stated width; the lowering admits no typed number yet
 /// (#1109).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.typed_number") ]
 def wide = 1u32;
 
 /// The run target returns the string; the lowering reads no final expression
 /// as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 pure greeting

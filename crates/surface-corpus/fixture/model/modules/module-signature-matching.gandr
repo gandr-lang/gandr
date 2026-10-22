@@ -27,5 +27,5 @@ def visible = Metrics.base + Metrics.double + Metrics.scale;
 
 /// The run target returns the sum in a record; the lowering reads no final
 /// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{visible = visible}

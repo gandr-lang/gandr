@@ -16,5 +16,5 @@ data Fahrenheit : Type {
 }
 
 /// A list of one Celsius value, annotated as Fahrenheit (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 ([Cel(20)] : List(Fahrenheit))

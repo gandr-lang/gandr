@@ -1952,7 +1952,11 @@ mod tests
         else {
             panic!("one unsupported annotation");
         };
-        assert_eq!(diagnostic.code.as_deref(), Some("OutOfFragment"));
+        assert_eq!(
+            diagnostic.code.as_deref(),
+            Some("OutOfFragment.annotation_expression"),
+            "the code names the one feature refused"
+        );
         assert_eq!(
             diagnostic.code_description,
             Some(CodeDescription {

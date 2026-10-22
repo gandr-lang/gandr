@@ -3,21 +3,21 @@
 // the lowering admits for no builtin yet (#1106).
 
 /// The stem and extension of a file name, captured by name.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def caps = regex.extract("^(?<stem>.*)\\.(?<ext>gandr)$", "examples/demo.gandr");
 
 /// A directory and a file name, joined.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def demo_path = path.join("examples", "demo.gandr");
 
 /// The joined path's last component.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def leaf = path.basename(demo_path);
 
 /// The joined path's extension.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def suffix = path.extension(demo_path);
 
 /// The run target gathers the three in a record (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ capture = caps, leaf = leaf, path_ext = suffix }

@@ -1,4 +1,4 @@
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.LhsNotOperation") ]
 theory Shared {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);

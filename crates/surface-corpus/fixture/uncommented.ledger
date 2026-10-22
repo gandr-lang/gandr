@@ -551,8 +551,6 @@ surface/def-rec-and-copatterns.gandr:measured:3a42e6cd86213803
 surface/def-rec-and-copatterns.gandr:nats:df4862bbfe29b89d
 surface/def-rec-and-copatterns.gandr:sized:152e66a9f70a6515
 surface/def-rec-and-copatterns.gandr:tailing:7448adad8198366d
-surface/higher-cells/cat-shape.gandr:<file>
-surface/higher-cells/cat-shape.gandr:CatShape:ca0435f7ab248396
 surface/kinded-type-component.gandr:<file>
 surface/kinded-type-component.gandr:Indexed:05da9bf78e253e73
 surface/kinded-type-component.gandr:Manifest:06d00c902a373acf

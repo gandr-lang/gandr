@@ -31,6 +31,25 @@
 //! if two producers' same-named refusals come to mean different things, at
 //! which point the names split.
 //!
+//! # A refusal that names several features is qualified by one
+//!
+//! Three variants each cover several features, so their name carries the
+//! one it refuses after a dot: a form out of the fragment the feature its
+//! producer classifies it by — `OutOfFragment.projection_expression`, a form
+//! at the sort that decides its issue as
+//! `OutOfFragment.instantiation_expression.computation`, the run target as
+//! `OutOfFragment.WrongSort.declaration`, another boundary by its name
+//! (`OutOfFragment.Arity`, without the operand count), a checker former by
+//! its name (`OutOfFragment.Stage`) — and an unstated model component and an
+//! undescribed member their fault (`UndescribedMember.HigherCell`). The
+//! lowering's key is `FragmentFeature`, whose witness checks that one key
+//! classifies alike, so a name covers one feature and one issue. A payload
+//! is still read byte for byte: a qualifier no refusal carries — a misspelt
+//! form, a sort that decides nothing, the bare variant — names nothing.
+//! **Choice.** The qualifier on the one refusal; the alternative, a variant
+//! per feature, multiplied the vocabulary for the distinction the qualifier
+//! makes. **Reversal.** A feature whose refusals need their own payload or
+//! message becomes its own variant.
 //! # The vocabulary follows the producers
 //!
 //! The maps from each producer's refusals to their names are exhaustive,
@@ -53,11 +72,14 @@
 //! bridge, higher-field, funext, Flow and List rule-language witnesses remain
 //! at their owning boundaries.
 
+use alloc::string::ToString as _;
+use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
@@ -67,7 +89,17 @@ use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
+use gandr_surface_grammar::NamedKind;
+use gandr_surface_grammar::PBG_ONLY_KINDS;
+use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
+use gandr_surface_lowering::FormName;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::FragmentFeature;
+use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::OperandCount;
+use gandr_surface_lowering::description::MemberFault;
+use gandr_surface_lowering::model::ModelFault;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -189,7 +221,82 @@ impl Error for CorpusRefusal
 {
 }
 
-/// The spelling of a refusal name, as a `refuses` payload writes it.
+/// The text of one reading a qualifier names: a boundary, the run target, a
+/// sort, a checker former, a member's or a model component's fault.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Tag(&'static str);
+
+impl fmt::Display for Tag
+{
+    /// Writes the tag's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.0)
+    }
+}
+
+/// What a refusal named by the feature it refuses is qualified by, after its
+/// variant and a dot: the key its producer classifies the refusal by, so the
+/// name covers one feature.
+///
+/// # Specification
+/// - requires: built from a producer's key ([`RefusalName`]'s maps) or read
+///   from a payload ([`RefusalName::named_by`]).
+/// - ensures: a form is written as the grammar names it, a form at a sort as
+///   the form, a dot and the sort, a tag as its text.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the maps and the
+///   reader carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every qualified name a fixture writes settles against the
+///   refusal its declaration reaches; a qualifier for another feature leaves
+///   the fixture unsettled.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Qualifier
+{
+    /// A form out of the fragment named by itself: `projection_expression`.
+    Form(FormName),
+    /// A form out of the fragment at the sort that decides its issue:
+    /// `instantiation_expression.value`.
+    FormAt(FormName, Tag),
+    /// A named reading: a boundary, the run target, or a checker former.
+    Named(Tag),
+}
+
+impl fmt::Display for Qualifier
+{
+    /// Writes the qualifier as a payload writes it after the variant's dot.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Form(form) => f.write_str(form.as_ref()),
+            Self::FormAt(form, sort) => write!(f, "{}.{sort}", form.as_ref()),
+            Self::Named(tag) => fmt::Display::fmt(&tag, f),
+        }
+    }
+}
+
+/// The spelling of a refusal name, as a `refuses` payload writes it: the
+/// refusal's variant, then, for a refusal named by the feature it refuses, a
+/// dot and the qualifier.
 ///
 /// # Specification
 /// - requires: the producer establishes correspondence with the source or
@@ -206,21 +313,13 @@ impl Error for CorpusRefusal
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 /// - witness: `refusal::tests::a_near_miss_names_no_refusal`
 /// - witness: `refusal::tests::every_refusal_spelling_reads_as_the_text_that_names_it`
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RefusalSpelling(&'static str);
-
-impl AsRef<str> for RefusalSpelling
+pub struct RefusalSpelling
 {
-    /// The spelling's text.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn as_ref(&self) -> &str
-    {
-        self.0
-    }
+    /// The refusal's variant.
+    head: &'static str,
+    /// The feature, for a refusal named by the feature it refuses.
+    qualifier: Option<Qualifier>,
 }
 
 impl fmt::Display for RefusalSpelling
@@ -229,7 +328,8 @@ impl fmt::Display for RefusalSpelling
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes the canonical refusal spelling unchanged.
+    /// - ensures: writes the variant, then a dot and the qualifier when there
+    ///   is one.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -244,13 +344,16 @@ impl fmt::Display for RefusalSpelling
     ///   expectations under their producing stage, without fixing report
     ///   sentence wording.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+    /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
     #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(self.0)
+        f.write_str(self.head)?;
+        self.qualifier
+            .map_or(Ok(()), |qualifier| write!(f, ".{qualifier}"))
     }
 }
 
@@ -438,8 +541,9 @@ pub enum RefusalName
     /// A declared name or binder over a builtin, under the reject policy; a
     /// family named as a builtin type the grammar spells as a tile, always.
     ShadowedBuiltin,
-    /// A form the fragment does not admit, from the lowering or the checker.
-    OutOfFragment,
+    /// A form the fragment does not admit, from the lowering or the checker,
+    /// qualified by the feature it refuses.
+    OutOfFragment(Qualifier),
     /// A circuit rule's fed-back port read under no observation.
     BareFeedback,
     /// A description the description check refuses: its sorts, ports, shape
@@ -473,11 +577,12 @@ pub enum RefusalName
     ProjectionFromApplication,
     /// A module ascription form the fragment does not read yet.
     UnreadAscription,
-    /// A model signature component the derivation cannot state.
-    UnstatedComponent,
+    /// A model signature component the derivation cannot state, qualified by
+    /// the fault.
+    UnstatedComponent(Tag),
     /// A member of a description declaration the description route or its
-    /// cell layer does not read.
-    UndescribedMember,
+    /// cell layer does not read, qualified by the fault.
+    UndescribedMember(Tag),
     /// A type family whose parameters disagree with the indices its kind
     /// states.
     FamilyTelescope,
@@ -710,11 +815,13 @@ pub enum RefusalName
 
 impl RefusalName
 {
-    /// Every name of the vocabulary, in declaration order.
+    /// Every name of the vocabulary a variant spells alone, in declaration
+    /// order; the names a qualifier completes are read by
+    /// [`Self::named_by`].
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: contains each closed refusal name exactly once.
+    /// - ensures: contains each unqualified refusal name exactly once.
     /// - panics: none.
     ///
     /// The constant has no invocation for a specification attribute; its
@@ -725,7 +832,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 198_usize] = [
+    pub const VOCABULARY: [Self; 195_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -799,7 +906,6 @@ impl RefusalName
         Self::ImportShadows,
         Self::UnexportedName,
         Self::ShadowedBuiltin,
-        Self::OutOfFragment,
         Self::BareFeedback,
         Self::IllFormedDescription,
         Self::GradedBridge,
@@ -816,8 +922,6 @@ impl RefusalName
         Self::NotAFunctor,
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
-        Self::UnstatedComponent,
-        Self::UndescribedMember,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
         Self::ImplicitTelescope,
@@ -927,12 +1031,13 @@ impl RefusalName
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
-    /// names.
+    /// names, and the qualifier of one named by the feature it refuses.
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: each name's spelling is its own variant's identifier, and no
-    ///   two names share one.
+    /// - ensures: each name's spelling is its own variant's identifier, with
+    ///   the qualifier exactly when the variant carries one, and no two names
+    ///   share one.
     /// - provides: the one spelling a payload is matched against and a report
     ///   writes.
     /// - fails: never.
@@ -946,14 +1051,14 @@ impl RefusalName
     #[spec(
         ensures: |ret| {
     matches!(
-        (self, ret.0.as_bytes()), (Self::UnresolvedName, b"UnresolvedName") |
+        (self, ret.head.as_bytes()), (Self::UnresolvedName, b"UnresolvedName") |
         (Self::UnresolvedDocLink, b"UnresolvedDocLink") |
         (Self::UnresolvedTypeHead, b"UnresolvedTypeHead") | (Self::DuplicateSignature,
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
-        b"ShadowedBuiltin") | (Self::OutOfFragment, b"OutOfFragment") |
+        b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
         (Self::IllFormedDescription, b"IllFormedDescription") |
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
@@ -966,8 +1071,8 @@ impl RefusalName
         (Self::UnknownMember, b"UnknownMember") | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
-        b"UnreadAscription") | (Self::UnstatedComponent, b"UnstatedComponent") |
-        (Self::UndescribedMember, b"UndescribedMember") |
+        b"UnreadAscription") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
+        (Self::UndescribedMember(_), b"UndescribedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
@@ -1126,14 +1231,15 @@ impl RefusalName
         | (Self::RunNotAdmitted, b"RunNotAdmitted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    )
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_))
+        == ret.qualifier.is_some()
 },
     )]
     #[inline]
     #[must_use]
     pub const fn spelling(self) -> RefusalSpelling
     {
-        RefusalSpelling(match self {
+        let head = match self {
             Self::NotADataType => "NotADataType",
             Self::DataKindNotUniverse => "DataKindNotUniverse",
             Self::DataFieldLevel => "DataFieldLevel",
@@ -1264,7 +1370,7 @@ impl RefusalName
             Self::ForwardUnsupported => "ForwardUnsupported",
             Self::Boundary => "Boundary",
             Self::ShadowedBuiltin => "ShadowedBuiltin",
-            Self::OutOfFragment => "OutOfFragment",
+            Self::OutOfFragment(_) => "OutOfFragment",
             Self::BareFeedback => "BareFeedback",
             Self::IllFormedDescription => "IllFormedDescription",
             Self::GradedBridge => "GradedBridge",
@@ -1281,8 +1387,8 @@ impl RefusalName
             Self::NotAFunctor => "NotAFunctor",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
             Self::UnreadAscription => "UnreadAscription",
-            Self::UnstatedComponent => "UnstatedComponent",
-            Self::UndescribedMember => "UndescribedMember",
+            Self::UnstatedComponent(_) => "UnstatedComponent",
+            Self::UndescribedMember(_) => "UndescribedMember",
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::ImplicitTelescope => "ImplicitTelescope",
@@ -1332,7 +1438,17 @@ impl RefusalName
             Self::StaticLambdaArgument => "StaticLambdaArgument",
             Self::StaticClassifierExpected => "StaticClassifierExpected",
             Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
-        })
+        };
+        let qualifier = if let Self::OutOfFragment(qualifier) = self {
+            Some(qualifier)
+        }
+        else if let Self::UnstatedComponent(fault) | Self::UndescribedMember(fault) = self {
+            Some(Qualifier::Named(fault))
+        }
+        else {
+            None
+        };
+        RefusalSpelling { head, qualifier }
     }
 
     /// The name `literal` spells, when the vocabulary holds it.
@@ -1340,7 +1456,11 @@ impl RefusalName
     /// # Specification
     /// - requires: nothing — any text is admissible input.
     /// - ensures: the name whose spelling equals the literal's content byte for
-    ///   byte; no case folding, trimming or prefix match.
+    ///   byte; no case folding, trimming or prefix match. A qualified name is
+    ///   read only with a qualifier some refusal carries: a form the grammar
+    ///   names, at a sort only where the sort decides its issue; a boundary
+    ///   other than reserved and unadmitted; the run target; a checker former;
+    ///   a model component's or a member's fault.
     /// - provides: the reading of a `refuses` payload.
     /// - fails: never; text naming nothing is the [`refusal_name::Absent`]
     ///   absence, which the expectation reader turns into a fixture failure.
@@ -1348,16 +1468,18 @@ impl RefusalName
     ///
     /// # Adequacy
     /// - hypothesis: L3 — changed case, dropped letters, surrounding
-    ///   whitespace, suffixes and empty text are refused rather than matched
+    ///   whitespace, suffixes, empty text, a bare qualified variant and a
+    ///   qualifier no refusal carries are refused rather than matched
     ///   permissively. Source fixtures exercise the corresponding exact
     ///   identifiers.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
     /// - witness: `refusal::tests::a_near_miss_names_no_refusal`
+    /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
     #[spec(
         ensures: |ret| match ret {
-    Maybe::Present(name) => name.spelling().0 == literal.as_ref(),
+    Maybe::Present(name) => name.spelling().to_string() == literal.as_ref(),
     Maybe::Absent(refusal_name::Absent::Unnamed) => {
-        Self::VOCABULARY.iter().all(|name| name.spelling().0 != literal.as_ref())
+        Self::VOCABULARY.iter().all(|name| name.spelling().to_string() != literal.as_ref())
     }
 },
     )]
@@ -1365,11 +1487,332 @@ impl RefusalName
     pub fn named_by(literal: &StringLiteral) -> Maybe<Self, refusal_name::Absent>
     {
         let written: &str = literal.as_ref();
-        Self::VOCABULARY
+        let unqualified = Self::VOCABULARY
             .into_iter()
-            .find(|name| name.spelling().0 == written)
+            .find(|name| name.spelling().head == written);
+        let qualified = || {
+            let (head, rest) = written.split_once('.')?;
+            let tagged = |tags: &[Tag]| tags.iter().copied().find(|tag| tag.0 == rest);
+            match head {
+                "OutOfFragment" => tagged(
+                    &crossed()
+                        .into_iter()
+                        .map(boundary_tag)
+                        .chain([RUN_TARGET])
+                        .chain(FORMERS.into_iter().map(former_tag))
+                        .collect::<Vec<Tag>>(),
+                )
+                .map(Qualifier::Named)
+                .or_else(|| {
+                    let (form, at) = rest
+                        .split_once('.')
+                        .map_or((rest, None), |(form, at)| (form, Some(at)));
+                    let form = TREE_SITTER_NAMED_KINDS
+                        .iter()
+                        .chain(PBG_ONLY_KINDS)
+                        .find(|&&kind| kind == form)
+                        .map(|&kind| FormName::from(NamedKind(kind)))?;
+                    at.map_or_else(
+                        || {
+                            (FragmentFeature::of(
+                                form,
+                                FragmentSort::Value,
+                                FragmentBoundary::Unadmitted,
+                            ) == FragmentFeature::Form(form))
+                            .then_some(Qualifier::Form(form))
+                        },
+                        |at| {
+                            SORTS
+                                .into_iter()
+                                .find(|&sort| {
+                                    sort_tag(sort).0 == at
+                                        && FragmentFeature::of(
+                                            form,
+                                            sort,
+                                            FragmentBoundary::Unadmitted,
+                                        ) == FragmentFeature::FormAt(form, sort)
+                                })
+                                .map(|sort| Qualifier::FormAt(form, sort_tag(sort)))
+                        },
+                    )
+                })
+                .map(Self::OutOfFragment),
+                "UnstatedComponent" => {
+                    tagged(&MODEL_FAULTS.map(model_tag)).map(Self::UnstatedComponent)
+                },
+                "UndescribedMember" => {
+                    tagged(&MEMBER_FAULTS.map(member_tag)).map(Self::UndescribedMember)
+                },
+                _ => None,
+            }
+        };
+        unqualified
+            .or_else(qualified)
             .map_or(Maybe::Absent(refusal_name::Absent::Unnamed), Maybe::Present)
     }
+}
+
+/// The tag the run target is qualified by: a form of the wrong sort where a
+/// declaration is read.
+const RUN_TARGET: Tag = Tag("WrongSort.declaration");
+
+/// Every sort a form out of the fragment is read at.
+const SORTS: [FragmentSort; 8_usize] = [
+    FragmentSort::Module,
+    FragmentSort::Declaration,
+    FragmentSort::ValueType,
+    FragmentSort::CompType,
+    FragmentSort::Value,
+    FragmentSort::Computation,
+    FragmentSort::Pattern,
+    FragmentSort::Continuation,
+];
+
+/// Every former the checker's judgement has no rule for.
+const FORMERS: [UnadmittedFormer; 25_usize] = [
+    UnadmittedFormer::ValueLift,
+    UnadmittedFormer::NumericLiteral,
+    UnadmittedFormer::NumericAtom,
+    UnadmittedFormer::TypeLift,
+    UnadmittedFormer::Abstract,
+    UnadmittedFormer::SortParameter,
+    UnadmittedFormer::TopUniverse,
+    UnadmittedFormer::StaticLambda,
+    UnadmittedFormer::EffectRow,
+    UnadmittedFormer::Reify,
+    UnadmittedFormer::Stack,
+    UnadmittedFormer::Perform,
+    UnadmittedFormer::Handle,
+    UnadmittedFormer::Resume,
+    UnadmittedFormer::Reset,
+    UnadmittedFormer::Shift,
+    UnadmittedFormer::Capability,
+    UnadmittedFormer::Exercise,
+    UnadmittedFormer::Scope,
+    UnadmittedFormer::Run,
+    UnadmittedFormer::HigherFlow,
+    UnadmittedFormer::Memory,
+    UnadmittedFormer::Stage,
+    UnadmittedFormer::Buffer,
+    UnadmittedFormer::Abandon,
+];
+
+/// Every fault a model component the derivation cannot state carries.
+const MODEL_FAULTS: [ModelFault; 10_usize] = [
+    ModelFault::UnknownHead,
+    ModelFault::Arity,
+    ModelFault::IllSorted,
+    ModelFault::Unsorted,
+    ModelFault::ManyOut,
+    ModelFault::Circuit,
+    ModelFault::Constructor,
+    ModelFault::Inherited,
+    ModelFault::Binding,
+    ModelFault::Abstraction,
+];
+
+/// Every fault a member the description does not read carries.
+const MEMBER_FAULTS: [MemberFault; 18_usize] = [
+    MemberFault::HigherOrderField,
+    MemberFault::DependentField,
+    MemberFault::TypeShape,
+    MemberFault::NativeDecode,
+    MemberFault::OperationFiller,
+    MemberFault::HigherCell,
+    MemberFault::Reversible,
+    MemberFault::NoOutput,
+    MemberFault::AggregatedOutput,
+    MemberFault::LhsNotOperation,
+    MemberFault::EmptyOperation,
+    MemberFault::NestedOperation,
+    MemberFault::UnrepresentableOperation,
+    MemberFault::ResultArity,
+    MemberFault::MixedPolarity,
+    MemberFault::UnderivedWiring,
+    MemberFault::ParallelRedexes,
+    MemberFault::OffBoundary,
+];
+
+/// Every boundary a form out of the fragment crosses and is named by: every
+/// boundary but reserved and unadmitted, which name the form instead, an
+/// arity standing for every operand count.
+///
+/// # Specification
+/// trivial.
+fn crossed() -> [FragmentBoundary; 14_usize]
+{
+    [
+        FragmentBoundary::WrongSort,
+        FragmentBoundary::Arity(OperandCount::from(0_usize)),
+        FragmentBoundary::Indexed,
+        FragmentBoundary::Unannotated,
+        FragmentBoundary::NonUniform,
+        FragmentBoundary::ForeignClaim,
+        FragmentBoundary::NotAFunction,
+        FragmentBoundary::NotInTail,
+        FragmentBoundary::JoinsBlock,
+        FragmentBoundary::EmptyList,
+        FragmentBoundary::Endpoint,
+        FragmentBoundary::NonContractive,
+        FragmentBoundary::Held,
+        FragmentBoundary::View,
+    ]
+}
+
+/// The qualifier of the feature a form out of the fragment refuses.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a form is the form; a form at a sort the form and the sort's tag;
+///   the run target [`RUN_TARGET`]; a crossing the boundary's tag.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`RefusalName::named_by`]: each qualifier a source
+///   reaches reads back as the name it spells.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+#[spec(ensures: |ret| match feature {
+    | FragmentFeature::Form(form) => ret == Qualifier::Form(form),
+    | FragmentFeature::FormAt(form, sort) => ret == Qualifier::FormAt(form, sort_tag(sort)),
+    | FragmentFeature::RunTarget => ret == Qualifier::Named(RUN_TARGET),
+    | FragmentFeature::Crossed(boundary) => ret == Qualifier::Named(boundary_tag(boundary)),
+})]
+fn fragment(feature: FragmentFeature) -> Qualifier
+{
+    match feature {
+        FragmentFeature::Form(form) => Qualifier::Form(form),
+        FragmentFeature::FormAt(form, sort) => Qualifier::FormAt(form, sort_tag(sort)),
+        FragmentFeature::RunTarget => Qualifier::Named(RUN_TARGET),
+        FragmentFeature::Crossed(boundary) => Qualifier::Named(boundary_tag(boundary)),
+    }
+}
+
+/// The tag a boundary is named by: its variant, an arity's without the
+/// operand count.
+///
+/// # Specification
+/// trivial.
+const fn boundary_tag(boundary: FragmentBoundary) -> Tag
+{
+    Tag(match boundary {
+        FragmentBoundary::Reserved => "Reserved",
+        FragmentBoundary::Unadmitted => "Unadmitted",
+        FragmentBoundary::WrongSort => "WrongSort",
+        FragmentBoundary::Arity(_) => "Arity",
+        FragmentBoundary::Indexed => "Indexed",
+        FragmentBoundary::Unannotated => "Unannotated",
+        FragmentBoundary::NonUniform => "NonUniform",
+        FragmentBoundary::ForeignClaim => "ForeignClaim",
+        FragmentBoundary::NotAFunction => "NotAFunction",
+        FragmentBoundary::NotInTail => "NotInTail",
+        FragmentBoundary::JoinsBlock => "JoinsBlock",
+        FragmentBoundary::EmptyList => "EmptyList",
+        FragmentBoundary::Endpoint => "Endpoint",
+        FragmentBoundary::NonContractive => "NonContractive",
+        FragmentBoundary::Held => "Held",
+        FragmentBoundary::View => "View",
+    })
+}
+
+/// The tag a sort is named by, snake case as a form is.
+///
+/// # Specification
+/// trivial.
+const fn sort_tag(sort: FragmentSort) -> Tag
+{
+    Tag(match sort {
+        FragmentSort::Module => "module",
+        FragmentSort::Declaration => "declaration",
+        FragmentSort::ValueType => "value_type",
+        FragmentSort::CompType => "comp_type",
+        FragmentSort::Value => "value",
+        FragmentSort::Computation => "computation",
+        FragmentSort::Pattern => "pattern",
+        FragmentSort::Continuation => "continuation",
+    })
+}
+
+/// The tag a checker former is named by: its variant.
+///
+/// # Specification
+/// trivial.
+const fn former_tag(former: UnadmittedFormer) -> Tag
+{
+    Tag(match former {
+        UnadmittedFormer::ValueLift => "ValueLift",
+        UnadmittedFormer::NumericLiteral => "NumericLiteral",
+        UnadmittedFormer::NumericAtom => "NumericAtom",
+        UnadmittedFormer::TypeLift => "TypeLift",
+        UnadmittedFormer::Abstract => "Abstract",
+        UnadmittedFormer::SortParameter => "SortParameter",
+        UnadmittedFormer::TopUniverse => "TopUniverse",
+        UnadmittedFormer::StaticLambda => "StaticLambda",
+        UnadmittedFormer::EffectRow => "EffectRow",
+        UnadmittedFormer::Reify => "Reify",
+        UnadmittedFormer::Stack => "Stack",
+        UnadmittedFormer::Perform => "Perform",
+        UnadmittedFormer::Handle => "Handle",
+        UnadmittedFormer::Resume => "Resume",
+        UnadmittedFormer::Reset => "Reset",
+        UnadmittedFormer::Shift => "Shift",
+        UnadmittedFormer::Capability => "Capability",
+        UnadmittedFormer::Exercise => "Exercise",
+        UnadmittedFormer::Scope => "Scope",
+        UnadmittedFormer::Run => "Run",
+        UnadmittedFormer::HigherFlow => "HigherFlow",
+        UnadmittedFormer::Memory => "Memory",
+        UnadmittedFormer::Stage => "Stage",
+        UnadmittedFormer::Buffer => "Buffer",
+        UnadmittedFormer::Abandon => "Abandon",
+    })
+}
+
+/// The tag a model component's fault is named by: its variant.
+///
+/// # Specification
+/// trivial.
+const fn model_tag(fault: ModelFault) -> Tag
+{
+    Tag(match fault {
+        ModelFault::UnknownHead => "UnknownHead",
+        ModelFault::Arity => "Arity",
+        ModelFault::IllSorted => "IllSorted",
+        ModelFault::Unsorted => "Unsorted",
+        ModelFault::ManyOut => "ManyOut",
+        ModelFault::Circuit => "Circuit",
+        ModelFault::Constructor => "Constructor",
+        ModelFault::Inherited => "Inherited",
+        ModelFault::Binding => "Binding",
+        ModelFault::Abstraction => "Abstraction",
+    })
+}
+
+/// The tag a description member's fault is named by: its variant.
+///
+/// # Specification
+/// trivial.
+const fn member_tag(fault: MemberFault) -> Tag
+{
+    Tag(match fault {
+        MemberFault::HigherOrderField => "HigherOrderField",
+        MemberFault::DependentField => "DependentField",
+        MemberFault::TypeShape => "TypeShape",
+        MemberFault::NativeDecode => "NativeDecode",
+        MemberFault::OperationFiller => "OperationFiller",
+        MemberFault::HigherCell => "HigherCell",
+        MemberFault::Reversible => "Reversible",
+        MemberFault::NoOutput => "NoOutput",
+        MemberFault::AggregatedOutput => "AggregatedOutput",
+        MemberFault::LhsNotOperation => "LhsNotOperation",
+        MemberFault::EmptyOperation => "EmptyOperation",
+        MemberFault::NestedOperation => "NestedOperation",
+        MemberFault::UnrepresentableOperation => "UnrepresentableOperation",
+        MemberFault::ResultArity => "ResultArity",
+        MemberFault::MixedPolarity => "MixedPolarity",
+        MemberFault::UnderivedWiring => "UnderivedWiring",
+        MemberFault::ParallelRedexes => "ParallelRedexes",
+        MemberFault::OffBoundary => "OffBoundary",
+    })
 }
 
 impl fmt::Display for RefusalName
@@ -1473,7 +1916,7 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::ShadowedBuiltin { .. }),
         RefusalName::ShadowedBuiltin) | (Self::Lowering(LoweringRefusal::OutOfFragment {
         .. }) | Self::Checking(CheckRefusal::OutOfFragment { .. }),
-        RefusalName::OutOfFragment) | (Self::Lowering(LoweringRefusal::BareFeedback { .. }),
+        RefusalName::OutOfFragment(_)) | (Self::Lowering(LoweringRefusal::BareFeedback { .. }),
         RefusalName::BareFeedback) |
         (Self::Lowering(LoweringRefusal::IllFormedDescription { .. }),
         RefusalName::IllFormedDescription) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
@@ -1502,9 +1945,9 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::UnreadAscription {
         .. }), RefusalName::UnreadAscription) |
         (Self::Lowering(LoweringRefusal::UnstatedComponent { .. }),
-        RefusalName::UnstatedComponent) |
+        RefusalName::UnstatedComponent(_)) |
         (Self::Lowering(LoweringRefusal::UndescribedMember { .. }),
-        RefusalName::UndescribedMember) |
+        RefusalName::UndescribedMember(_)) |
         (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
         RefusalName::FamilyTelescope) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
@@ -1657,7 +2100,7 @@ impl Refusal<'_>
     )]
     #[inline]
     #[must_use]
-    pub const fn name(&self) -> RefusalName
+    pub fn name(&self) -> RefusalName
     {
         match *self {
             Self::Lowering(refusal) => lowering_name(refusal),
@@ -1709,7 +2152,10 @@ impl Refusal<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: returns the vocabulary name of the producer variant,
-///   independently of its payload.
+///   independently of its payload, except that a form out of the fragment is
+///   qualified by the feature [`FragmentFeature::of`] reads off its form, sort
+///   and boundary, and an unstated component and an undescribed member by their
+///   fault.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1731,7 +2177,7 @@ impl Refusal<'_>
         RefusalName::ImportShadows) | (LoweringRefusal::UnexportedName { .. },
         RefusalName::UnexportedName) | (LoweringRefusal::ShadowedBuiltin { .. },
         RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
-        RefusalName::OutOfFragment) | (LoweringRefusal::BareFeedback { .. },
+        RefusalName::OutOfFragment(_)) | (LoweringRefusal::BareFeedback { .. },
         RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription { .. },
         RefusalName::IllFormedDescription) | (LoweringRefusal::GradedBridge { .. },
         RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
@@ -1748,8 +2194,8 @@ impl Refusal<'_>
         RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
-        RefusalName::UnstatedComponent) | (LoweringRefusal::UndescribedMember { .. },
-        RefusalName::UndescribedMember) | (LoweringRefusal::FamilyTelescope { .. },
+        RefusalName::UnstatedComponent(_)) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
@@ -1782,10 +2228,18 @@ impl Refusal<'_>
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
         RefusalName::Unminted)
-    )
+    ) && if let LoweringRefusal::OutOfFragment { form, sort, boundary, .. } = refusal {
+        ret == RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary)))
+    } else if let LoweringRefusal::UnstatedComponent { fault, .. } = refusal {
+        ret == RefusalName::UnstatedComponent(model_tag(fault))
+    } else if let LoweringRefusal::UndescribedMember { fault, .. } = refusal {
+        ret == RefusalName::UndescribedMember(member_tag(fault))
+    } else {
+        true
+    }
 },
 )]
-const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
+fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 {
     match refusal {
         LoweringRefusal::UnresolvedName { .. } => RefusalName::UnresolvedName,
@@ -1799,7 +2253,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ImportShadows { .. } => RefusalName::ImportShadows,
         LoweringRefusal::UnexportedName { .. } => RefusalName::UnexportedName,
         LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,
-        LoweringRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
+        LoweringRefusal::OutOfFragment {
+            form,
+            sort,
+            boundary,
+            ..
+        } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
@@ -1816,8 +2275,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
         LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
-        LoweringRefusal::UnstatedComponent { .. } => RefusalName::UnstatedComponent,
-        LoweringRefusal::UndescribedMember { .. } => RefusalName::UndescribedMember,
+        LoweringRefusal::UnstatedComponent { fault, .. } => {
+            RefusalName::UnstatedComponent(model_tag(fault))
+        },
+        LoweringRefusal::UndescribedMember { fault, .. } => {
+            RefusalName::UndescribedMember(member_tag(fault))
+        },
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
@@ -1860,7 +2323,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 /// # Specification
 /// - ensures: returns the vocabulary name of the producer variant,
 ///   independently of its payload, except that univalence at a stratum is named
-///   by the defect it carries.
+///   by the defect it carries and a former out of the fragment is qualified by
+///   the former.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1874,7 +2338,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         (CheckRefusal::ShapeMismatch { .. }, RefusalName::ShapeMismatch) |
         (CheckRefusal::NotSynthesisable { .. }, RefusalName::NotSynthesisable) |
         (CheckRefusal::UnknownConstant { .. }, RefusalName::UnknownConstant) |
-        (CheckRefusal::OutOfFragment { .. }, RefusalName::OutOfFragment) |
+        (CheckRefusal::OutOfFragment { .. }, RefusalName::OutOfFragment(_)) |
         (CheckRefusal::UnboundIndex { .. }, RefusalName::UnboundIndex) |
         (CheckRefusal::BudgetExceeded { .. }, RefusalName::BudgetExceeded) |
         (CheckRefusal::DanglingNode { .. }, RefusalName::DanglingNode) |
@@ -2007,10 +2471,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
         | (CheckRefusal::ForwardUnsupported { .. }, RefusalName::ForwardUnsupported)
         | (CheckRefusal::Boundary { .. }, RefusalName::Boundary)
-    )
+    ) && (!matches!(refusal, CheckRefusal::OutOfFragment { .. })
+        || matches!((refusal, ret), (CheckRefusal::OutOfFragment { former, .. },
+            RefusalName::OutOfFragment(Qualifier::Named(tag))) if tag.0 == former_tag(former).0))
 },
 )]
-const fn checking_name(refusal: CheckRefusal) -> RefusalName
+fn checking_name(refusal: CheckRefusal) -> RefusalName
 {
     match refusal {
         CheckRefusal::NotADataType(_) => RefusalName::NotADataType,
@@ -2143,7 +2609,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
         CheckRefusal::UnknownConstant { .. } => RefusalName::UnknownConstant,
-        CheckRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
+        CheckRefusal::OutOfFragment { former, .. } => {
+            RefusalName::OutOfFragment(Qualifier::Named(former_tag(former)))
+        },
         CheckRefusal::UnboundIndex { .. } => RefusalName::UnboundIndex,
         CheckRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         CheckRefusal::DanglingNode { .. } => RefusalName::DanglingNode,
@@ -2224,6 +2692,19 @@ mod tests
             "TypeMismatch ",
             "TypeMismatches",
             "",
+            "TypeMismatch.WrongSort",
+            "OutOfFragment",
+            "OutOfFragment.",
+            "OutOfFragment.projection_expressions",
+            "OutOfFragment.projection_expression.value",
+            "OutOfFragment.instantiation_expression",
+            "OutOfFragment.instantiation_expression.nowhere",
+            "OutOfFragment.Reserved",
+            "OutOfFragment.Arity(2)",
+            "OutOfFragment.wrongsort",
+            "UndescribedMember",
+            "UndescribedMember.Bogus",
+            "UnstatedComponent.HigherCell",
         ] {
             assert_eq!(
                 RefusalName::named_by(&StringLiteral::new(String::from(written))),
@@ -2237,13 +2718,97 @@ mod tests
     fn every_refusal_spelling_reads_as_the_text_that_names_it()
     {
         for name in RefusalName::VOCABULARY {
-            let spelling = name.spelling();
-            let text: &str = spelling.as_ref();
+            let text = name.spelling().to_string();
             assert_eq!(text, name.to_string(), "{name:?} spells as it prints");
             assert_eq!(
-                RefusalName::named_by(&StringLiteral::new(String::from(text))),
+                RefusalName::named_by(&StringLiteral::new(text.clone())),
                 Maybe::Present(name),
                 "`{text}` names {name:?}"
+            );
+        }
+    }
+
+    /// Every qualified name a producer mints reads back as itself, and the
+    /// spellings are the variant, a dot and the feature (#1200).
+    #[test]
+    fn every_qualified_spelling_reads_as_the_text_that_names_it()
+    {
+        use gandr_surface_grammar::NamedKind;
+        use gandr_surface_grammar::PBG_ONLY_KINDS;
+        use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
+        use gandr_surface_lowering::FormName;
+        use gandr_surface_lowering::FragmentBoundary;
+        use gandr_surface_lowering::LoweringRefusal;
+        use gandr_surface_lowering::OperandCount;
+
+        use super::FORMERS;
+        use super::MEMBER_FAULTS;
+        use super::MODEL_FAULTS;
+        use super::Qualifier;
+        use super::Refusal;
+        use super::SORTS;
+        use super::crossed;
+        use super::former_tag;
+        use super::member_tag;
+        use super::model_tag;
+
+        let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
+        let boundaries = [
+            FragmentBoundary::Reserved,
+            FragmentBoundary::Unadmitted,
+            FragmentBoundary::Arity(OperandCount::from(3_usize)),
+        ]
+        .into_iter()
+        .chain(crossed());
+        let mut minted: alloc::vec::Vec<RefusalName> = alloc::vec::Vec::new();
+        for boundary in boundaries {
+            for &kind in TREE_SITTER_NAMED_KINDS.iter().chain(PBG_ONLY_KINDS) {
+                for sort in SORTS {
+                    minted.push(
+                        Refusal::Lowering(LoweringRefusal::OutOfFragment {
+                            span: empty,
+                            form: FormName::from(NamedKind(kind)),
+                            sort,
+                            boundary,
+                        })
+                        .name(),
+                    );
+                }
+            }
+        }
+        minted.extend(
+            FORMERS.map(|former| RefusalName::OutOfFragment(Qualifier::Named(former_tag(former)))),
+        );
+        minted.extend(MODEL_FAULTS.map(|fault| RefusalName::UnstatedComponent(model_tag(fault))));
+        minted.extend(MEMBER_FAULTS.map(|fault| RefusalName::UndescribedMember(member_tag(fault))));
+        let literals: alloc::vec::Vec<StringLiteral> = minted
+            .iter()
+            .map(|name| StringLiteral::new(name.to_string()))
+            .collect();
+        for (name, literal) in minted.iter().zip(&literals) {
+            assert_eq!(
+                RefusalName::named_by(literal),
+                Maybe::Present(*name),
+                "`{}` names {name:?}",
+                literal.as_ref()
+            );
+        }
+        for text in [
+            "OutOfFragment.projection_expression",
+            "OutOfFragment.instantiation_expression.value",
+            "OutOfFragment.grade.declaration",
+            "OutOfFragment.operator_declaration",
+            "OutOfFragment.WrongSort.declaration",
+            "OutOfFragment.WrongSort",
+            "OutOfFragment.Arity",
+            "OutOfFragment.Endpoint",
+            "OutOfFragment.Perform",
+            "UnstatedComponent.ManyOut",
+            "UndescribedMember.HigherCell",
+        ] {
+            assert!(
+                literals.iter().any(|literal| literal.as_ref() == text),
+                "a producer mints `{text}`"
             );
         }
     }

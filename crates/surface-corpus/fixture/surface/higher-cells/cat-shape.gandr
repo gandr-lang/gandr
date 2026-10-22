@@ -1,4 +1,11 @@
-@[ refuses("UndescribedMember") ]
+// The shape of a category, after the HoTT book's Definition 9.1.1 (a
+// precategory): objects, a hom-type between two of them, identities and
+// composition with the unit and associativity laws as rules. Its coherence
+// cells are in `coherence.gandr`.
+
+/// The category shape. Its laws over the dependent sort nest an operation
+/// the cell layer does not read there (#1510).
+@[ refuses("UndescribedMember.NestedOperation") ]
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
@@ -9,9 +16,4 @@ theory CatShape {
   rule unitL : comp(id(a), f) ==> f;
   rule unitR : comp(f, id(b)) ==> f;
   rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
-
-  rule triangle : (assoc(f, id(b), g) then comp(f, unitL(g)))
-    ==> comp(unitR(f), g);
-  rule pentagon : (assoc(comp(f, g), h, k) then assoc(f, g, comp(h, k)))
-    ==> (comp(assoc(f, g, h), k) then assoc(f, comp(g, h), k) then comp(f, assoc(g, h, k)));
 }

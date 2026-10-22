@@ -1,14 +1,14 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.string_interpolation") ]
 def greet(name: String) -> -F String {
   return "hello ${ name }!"
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.string_interpolation") ]
 def describe(user: String, count: Integer) -> -F String {
   return "user=${ user }\trow=${ #{ n = count } }\n"
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.string_interpolation") ]
 def price() -> -F String {
   return "total: $5.00 for ${ count } items"
 }

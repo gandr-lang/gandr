@@ -19,5 +19,5 @@ def describe(m : Maybe) -> -F Integer {
 
 /// The run target describes `Just(3)`; the lowering reads no final
 /// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 describe(Just(3))

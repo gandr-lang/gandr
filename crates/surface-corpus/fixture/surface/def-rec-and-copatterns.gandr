@@ -15,13 +15,13 @@ def rec loopy(n: Integer) -> Stream(Integer) {
   _ => nats(n)
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec measured(n: Integer) -> -F Integer { return measured[n <](n) }
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec explicit(n: Integer) -> -F Integer { return explicit[n = 1](n) }
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec sized(n: Integer) -> -F Integer { return sized[size = 1](n) }
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec bounded(n: Integer) -> -F Integer { return bounded[cost = 1](n) }
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec tailing(n: Integer) -> -F Integer { return tailing[tail](n) }

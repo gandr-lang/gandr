@@ -4,7 +4,7 @@
 // front of the leak.
 
 /// Opens a package and returns its seed as an integer (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.unpack_statement") ]
 def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
   unpack m : package [ T ] +U[ω] (-F #{ seed: T }) = p;
   run r <- force m;
@@ -12,10 +12,10 @@ def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
 }
 
 /// A counter over integers, packed (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.package_type") ]
 def counter : package [ T ] +U[ω] (-F #{ seed: T });
 def counter = pack [ Integer ] thunk { return #{ seed = 7 } };
 
 /// The run target leaks the counter's seed (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 leak(counter)

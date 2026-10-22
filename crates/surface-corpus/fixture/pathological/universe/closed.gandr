@@ -53,5 +53,5 @@ def miscoded = Pack(NatC, NatC) ;
 /// The decoder named bare where a type is read: `el` computes a code only once
 /// applied, so the head is refused at the arity it was offered, not read as a
 /// path endpoint (#690).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Arity") ]
 def unapplied(c : U) -> -F el { return c }

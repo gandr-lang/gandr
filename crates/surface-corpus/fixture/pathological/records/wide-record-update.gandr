@@ -8,5 +8,5 @@
 def wide = #{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 };
 
 /// One field updated (#1105, #1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ wide | e = 99 }

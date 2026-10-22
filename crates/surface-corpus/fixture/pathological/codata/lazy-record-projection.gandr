@@ -32,7 +32,7 @@ def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
   become m.1
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort") ]
 def not_a_record(m : +U (-F Integer)) -> -F Integer {
   become m.get
 }

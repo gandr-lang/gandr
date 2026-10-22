@@ -23,6 +23,6 @@ module Hidden :> Model(Counter) {
 }
 
 /// The sealed counter packed at its models (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.pack_model_expression") ]
 def hidden : Model(Counter) ;
 def hidden = pack Hidden at Model(Counter) ;

@@ -152,7 +152,7 @@ def handed_on() -> -F Integer {
 }
 
 /// A continuation runs from a computation, never from a value type.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort") ]
 def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer {
   return 9
 }

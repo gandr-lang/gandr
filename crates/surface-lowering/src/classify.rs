@@ -38,6 +38,16 @@
 //! protocol recursing before any action, a lent or ended name that is no linear
 //! slot — is a boundary the language draws, and malformed source.
 //!
+//! A refusal's name in a fixture's `refuses` expectation is keyed by the same
+//! reading, [`FragmentFeature`]: the form, with the sort where the sort decides
+//! the issue; the run target; or the boundary, without the operand count an
+//! arity offers. One name then covers one feature, and the witness checks that
+//! every form, sort and boundary one feature names classifies alike.
+//! **Choice.** The name carries the key as a qualifier on the one refusal,
+//! `OutOfFragment.projection_expression`; the alternative, a refusal variant
+//! per feature, multiplied the vocabulary for a distinction the qualifier
+//! already makes.
+//!
 //! # A description member names its issue by its fault
 //!
 //! A member of a `data`, `codata` or `theory` block that the description route
@@ -372,6 +382,107 @@ fn out_of_fragment(
         | FragmentBoundary::NonContractive
         | FragmentBoundary::Held
         | FragmentBoundary::View => FailureClass::MalformedSource,
+    }
+}
+
+/// The one feature a form out of the fragment refuses: the key its name in a
+/// fixture's `refuses` expectation carries, so no name covers two features.
+///
+/// # Specification
+/// - requires: built by [`FragmentFeature::of`].
+/// - ensures: two refusals [`FragmentFeature::of`] gives one feature classify
+///   alike.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`FragmentFeature::of`] carries the predicate, and the witness checks the
+///   ensures clause over every form, sort and boundary.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every form the lowering spells, at every sort and
+///   boundary, against every other of its feature: a feature covering two
+///   classes or two issues is found.
+/// - witness: `classify::tests::one_feature_names_one_class`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FragmentFeature
+{
+    /// A form named by itself: one the fragment reserves or does not admit
+    /// and that one issue tracks at every sort, and the operator declaration
+    /// wherever it stands.
+    Form(FormName),
+    /// A form the fragment reserves or does not admit and whose issue the
+    /// sort its position demands decides: an instantiation, a grade.
+    FormAt(FormName, FragmentSort),
+    /// A form of the wrong sort where a declaration is read: an expression
+    /// at a module's root, a run target.
+    RunTarget,
+    /// A form crossing any other boundary, named by the boundary alone: the
+    /// operand count an arity offers is no part of the feature.
+    Crossed(FragmentBoundary),
+}
+
+impl FragmentFeature
+{
+    /// The feature a form out of the fragment refuses, read off the form,
+    /// the sort its position demands and the boundary it crossed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a reserved or unadmitted form is its form, with the sort
+    ///   where the sort decides its issue; an operator declaration of the wrong
+    ///   sort where a declaration is read is its form, and any other form so is
+    ///   the run target; every other crossing is its boundary.
+    /// - provides: the qualifier a refusal name of `OutOfFragment` carries.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`FragmentFeature`].
+    /// - witness: `classify::tests::one_feature_names_one_class`
+    #[spec(ensures: |ret| match boundary {
+        | FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => matches!(ret,
+            Self::Form(named) | Self::FormAt(named, _) if named == form),
+        | FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => matches!(ret,
+            Self::RunTarget) || matches!(ret, Self::Form(named) if named == form),
+        | _ => ret == Self::Crossed(boundary),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        form: FormName,
+        sort: FragmentSort,
+        boundary: FragmentBoundary,
+    ) -> Self
+    {
+        match boundary {
+            FragmentBoundary::Reserved | FragmentBoundary::Unadmitted
+                if form == FormName::INSTANTIATION || form == FormName::GRADE =>
+            {
+                Self::FormAt(form, sort)
+            },
+            FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => Self::Form(form),
+            FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => {
+                if form == FormName::OPERATOR_DECLARATION {
+                    Self::Form(form)
+                }
+                else {
+                    Self::RunTarget
+                }
+            },
+            FragmentBoundary::WrongSort
+            | FragmentBoundary::Arity(_)
+            | FragmentBoundary::Indexed
+            | FragmentBoundary::Unannotated
+            | FragmentBoundary::NonUniform
+            | FragmentBoundary::ForeignClaim
+            | FragmentBoundary::NotAFunction
+            | FragmentBoundary::NotInTail
+            | FragmentBoundary::JoinsBlock
+            | FragmentBoundary::EmptyList
+            | FragmentBoundary::Endpoint
+            | FragmentBoundary::NonContractive
+            | FragmentBoundary::Held
+            | FragmentBoundary::View => Self::Crossed(boundary),
+        }
     }
 }
 
@@ -1072,6 +1183,73 @@ mod tests
                 class,
                 "`{form}` read as {sort} with the {boundary:?} boundary"
             );
+        }
+    }
+
+    /// Every form the grammar names, at every sort and boundary: the forms
+    /// one feature names classify alike, so a refusal name keyed by the
+    /// feature covers one class and one issue (#1200).
+    #[test]
+    fn one_feature_names_one_class()
+    {
+        use alloc::collections::BTreeMap;
+
+        use gandr_surface_grammar::PBG_ONLY_KINDS;
+        use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
+
+        use super::FragmentFeature;
+
+        let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
+        let sorts = [
+            FragmentSort::Module,
+            FragmentSort::Declaration,
+            FragmentSort::ValueType,
+            FragmentSort::CompType,
+            FragmentSort::Value,
+            FragmentSort::Computation,
+            FragmentSort::Pattern,
+            FragmentSort::Continuation,
+        ];
+        let boundaries = [
+            FragmentBoundary::Reserved,
+            FragmentBoundary::Unadmitted,
+            FragmentBoundary::WrongSort,
+            FragmentBoundary::Arity(OperandCount::from(0_usize)),
+            FragmentBoundary::Arity(OperandCount::from(2_usize)),
+            FragmentBoundary::Indexed,
+            FragmentBoundary::Unannotated,
+            FragmentBoundary::NonUniform,
+            FragmentBoundary::ForeignClaim,
+            FragmentBoundary::NotAFunction,
+            FragmentBoundary::NotInTail,
+            FragmentBoundary::JoinsBlock,
+            FragmentBoundary::EmptyList,
+            FragmentBoundary::Endpoint,
+            FragmentBoundary::NonContractive,
+            FragmentBoundary::Held,
+            FragmentBoundary::View,
+        ];
+        let mut classes: BTreeMap<FragmentFeature, FailureClass> = BTreeMap::new();
+        for &kind in TREE_SITTER_NAMED_KINDS.iter().chain(PBG_ONLY_KINDS) {
+            let form = FormName::from(NamedKind(kind));
+            for sort in sorts {
+                for boundary in boundaries {
+                    let class = LoweringRefusal::OutOfFragment {
+                        span: empty,
+                        form,
+                        sort,
+                        boundary,
+                    }
+                    .classify();
+                    let feature = FragmentFeature::of(form, sort, boundary);
+                    let first = *classes.entry(feature).or_insert(class);
+                    assert_eq!(
+                        first, class,
+                        "{feature:?} names `{kind}` read as {sort} with the {boundary:?} \
+                         boundary, of another class than a form before it"
+                    );
+                }
+            }
         }
     }
 

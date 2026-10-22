@@ -6,5 +6,5 @@
 def steps = ([1, 2, 3, 4] : List(Integer));
 
 /// The run target pushes each element in a fold (#1105, #1106).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 list.reduce(thunk { fn(acc, n) { return list.push(acc, n) } }, [], steps)

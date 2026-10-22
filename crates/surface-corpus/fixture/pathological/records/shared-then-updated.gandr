@@ -15,10 +15,10 @@ def b = r;
 
 /// The record updated at `x`; the lowering admits no record update yet
 /// (#1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.record_update_expression") ]
 def updated = #{ r | x = 99 };
 
 /// The run target returns the first name, its `x` still one; the lowering
 /// reads no final expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 a

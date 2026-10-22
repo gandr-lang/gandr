@@ -7,5 +7,5 @@ def list = #{each = 7};
 
 /// The run target reads the field; the lowering reads no final expression as
 /// a run target yet (#1105), and admits no field projection (#1106).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 list.each

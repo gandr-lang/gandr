@@ -29,7 +29,7 @@ import "../model-in-source.gandr" ;
 /// substitution laws. Its laws over the indexed sorts nest an operation the
 /// cell layer does not read there (#1510); `Model(LC)` derives from it all the
 /// same.
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.NestedOperation") ]
 theory LC {
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;

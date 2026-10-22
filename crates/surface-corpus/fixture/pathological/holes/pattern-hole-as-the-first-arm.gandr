@@ -20,5 +20,5 @@ def classify(c : Color) -> -F Integer {
 
 /// The run target names the function; the lowering reads no final expression
 /// as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 classify

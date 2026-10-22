@@ -39,5 +39,5 @@ def weigh(m : Option) -> -F Integer {
 
 /// The run target weighs nothing; the lowering reads no final expression as
 /// a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 weigh(NoValue)

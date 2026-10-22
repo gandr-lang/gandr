@@ -7,7 +7,7 @@
 /// The category shape: a sort of morphisms dependent on the objects. Its
 /// laws over the dependent sort nest an operation the cell layer does not read
 /// there (#1510).
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.NestedOperation") ]
 theory CatShape {
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;

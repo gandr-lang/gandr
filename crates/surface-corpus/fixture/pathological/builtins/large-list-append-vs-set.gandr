@@ -7,9 +7,9 @@ def xs = ([0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : List(Integer));
 
 /// Three more appended, reached by projection from the `list` namespace,
 /// which the lowering admits for no builtin yet (#1106).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def grown = list.append(xs, [10, 11, 12]);
 
 /// The run target sets the twelfth element (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 list.set(grown, 11, 99)

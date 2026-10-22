@@ -8,33 +8,33 @@
 def tens = ([10, 20, 30] : List(Integer));
 
 /// The element at position one, replaced.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def replaced = list.set(tens, 1, 99);
 
 /// The element at position zero, incremented.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def bumped = list.update_at(tens, 0, thunk { fn(n) { return n + 1 } });
 
 /// An element inserted at position one.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def inserted = list.insert_at(tens, 1, 15);
 
 /// The element at position zero, removed.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def removed = list.remove_at(tens, 0);
 
 /// An element pushed at the end.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def grown = list.push(tens, 40);
 
 /// A second list appended.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def appended = list.append(tens, [40, 50]);
 
 /// A list of lists, concatenated.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def concatenated = list.concat([tens, [40, 50]]);
 
 /// The run target doubles every element over fifteen (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 list.update_where(thunk { fn(n) { return n > 15 } }, thunk { fn(n) { return n * 2 } }, tens)

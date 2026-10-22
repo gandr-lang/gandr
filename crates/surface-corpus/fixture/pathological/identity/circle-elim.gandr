@@ -90,6 +90,6 @@ def elsewhereComputed = here(Mark) ;
 
 /// `cong` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.NotAFunction") ]
 def cong_at_point : Path(Circle, Base, Base) ;
 def cong_at_point = cong(Base, loop) ;

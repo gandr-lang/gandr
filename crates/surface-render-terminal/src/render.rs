@@ -131,7 +131,7 @@ pub fn render(
     };
     let title = level.primary_title(diagnostic.message.text.as_str());
     let title = match diagnostic.identifier {
-        Maybe::Present(ref spelling) => title.id(spelling.as_ref()),
+        Maybe::Present(ref spelling) => title.id(alloc::format!("{spelling}")),
         Maybe::Absent(_) => title,
     };
     let labels: Vec<String> = diagnostic

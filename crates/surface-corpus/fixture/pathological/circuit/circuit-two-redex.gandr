@@ -1,4 +1,4 @@
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.ParallelRedexes") ]
 theory Nat {
   sort Nat : Type;
   oper add : (Nat, Nat) --> Nat;

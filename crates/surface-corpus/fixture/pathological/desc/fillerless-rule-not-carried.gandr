@@ -1,4 +1,4 @@
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.HigherCell") ]
 theory Invertible {
   sort Bit : Type;
   oper flip : (b : Bit) --> (c : Bit);

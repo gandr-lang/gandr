@@ -19,5 +19,5 @@ def rec scaled(n: Integer) -> Scaled {
 
 /// The run target observes the doubled value; the lowering reads no final
 /// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 scaled(21).doubled

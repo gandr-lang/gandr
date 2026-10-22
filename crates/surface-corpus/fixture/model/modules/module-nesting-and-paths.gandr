@@ -40,5 +40,5 @@ def soft_limit = Config.limits.soft;
 
 /// The run target gathers the three in a record; the lowering reads no
 /// final expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{hard = hard_limit, soft = soft_limit, note = note}

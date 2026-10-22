@@ -18,5 +18,5 @@ def mistyped = thunk { fn (x : String) { 1 } };
 
 /// An annotation inside a pair, where no ascription carries it; the lowering
 /// admits none there yet (#1543).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.annotation_expression") ]
 def inner = ((3 : Integer), 1);

@@ -1,23 +1,23 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.fork_shared_statement") ]
 def shared_fork() -> -F Unit {
   fork !(seat : end) { close(seat) };
   return unit
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.dup_expression") ]
 def duplicated() -> -F Unit {
   fork (seat : end) { close(seat) } as desk;
   dup(desk);
   close(desk)
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.acquire_statement") ]
 def acquired(rounds : Integer) -> -F Unit {
   acquire(rounds) as seat;
   return unit
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.release_statement") ]
 def released(rounds : Integer) -> -F Unit {
   release(rounds) as seat;
   return unit

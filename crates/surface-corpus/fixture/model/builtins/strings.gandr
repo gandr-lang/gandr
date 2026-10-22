@@ -8,25 +8,25 @@ def slogan = "types are machines";
 
 /// A statement before a named item: the lowering reads no root expression yet
 /// (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.contains(slogan, "machine");
 
 /// A second statement, equality (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.eq(slogan, "types are machines");
 
 /// Whether the string starts with a word.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def has_prefix = string.starts_with(slogan, "types");
 
 /// Whether the string ends with a word.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def has_suffix = string.ends_with(slogan, "machines");
 
 /// A path with its special characters escaped.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def escaped = string.escape("a+b.txt");
 
 /// The run target splits at a comma (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.split("alpha,beta", ",")

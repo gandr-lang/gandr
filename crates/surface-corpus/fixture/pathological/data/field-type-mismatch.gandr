@@ -11,5 +11,5 @@ data Maybe(a : Type) : Type {
 }
 
 /// A string where an integer is expected (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 (Some("hello") : Maybe(Integer))

@@ -3,12 +3,12 @@ def absurd(x: Void) -> -F Integer {
   case x {}
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.case_with_view") ]
 def classify(xs: List(Integer)) -> -F Integer {
   case xs with len(xs) { 0 => return 0, _ => return 1 }
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.case_with_view") ]
 def classify_annotated(xs: List(Integer)) -> -F Integer {
   case xs with len(xs) -> -F Integer { 0 => return 0, _ => return 1 }
 }

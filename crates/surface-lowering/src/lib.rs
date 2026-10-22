@@ -386,6 +386,7 @@ pub use crate::attribute::RegisteredAttribute;
 pub use crate::attribute::payload_form;
 pub use crate::attribute::payload_verdict;
 pub use crate::classify::FailureClass;
+pub use crate::classify::FragmentFeature;
 pub use crate::classify::TrackingIssue;
 pub use crate::doc::DocLink;
 pub use crate::doc::Documentation;

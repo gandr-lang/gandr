@@ -8,5 +8,5 @@
 def n = 5;
 
 /// The integer updated as if a record (#1105, #1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ n | x = 1 }

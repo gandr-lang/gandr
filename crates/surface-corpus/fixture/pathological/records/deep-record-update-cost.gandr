@@ -8,5 +8,5 @@
 def d = #{ a = #{ b = #{ c = 1 } } };
 
 /// `d.a.b.c` updated, each level rebuilt (#1105, #1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ d | a = #{ d.a | b = #{ d.a.b | c = 9 } } }

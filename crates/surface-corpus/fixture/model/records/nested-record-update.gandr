@@ -7,5 +7,5 @@ def outer = #{ tag = "t", inner = #{ x = 1, y = 2 } };
 
 /// The run target updates `inner.y`; the lowering reads no final expression
 /// as a run target yet (#1105), and admits no record update (#1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ outer | inner = #{ outer.inner | y = 9 } }

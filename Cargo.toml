@@ -522,7 +522,7 @@ path = "crates/surface-format"
 # DAG, the built-in surface the melder pushes over, and the table pairing
 # each glyph with its ASCII spelling.
 # consumers:
-# - surface-corpus (dev)
+# - surface-corpus
 # - surface-diagnostics (dev)
 # - surface-dispatcher
 # - surface-driver
