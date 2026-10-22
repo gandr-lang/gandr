@@ -1,4 +1,5 @@
 /// `binary_expression.or`: a disjunction.
-/// The checker does not reach this form yet; #1207 tracks it.
-@[ refuses("OutOfFragment.boolean") ]
-def either = true || false ;
+@[ checks ]
+def either() -> -F Bool {
+  return true || false
+}

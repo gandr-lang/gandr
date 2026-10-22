@@ -3481,6 +3481,7 @@ impl<'source> Collector<'_, 'source>
                 | Former::TypeQuote
                 | Former::Parenthesized
                 | Former::Unit
+                | Former::Boolean
                 | Former::Thunk
                 | Former::Lambda
                 | Former::Block

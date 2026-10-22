@@ -723,6 +723,9 @@ pub enum Former
     Hole,
     /// A number literal.
     Number,
+    /// A boolean literal, `true` or `false`: the left or the right unit of
+    /// `Bool`, the binary sum of units.
+    Boolean,
     /// A string literal.
     Text,
     /// The parenthesised expression: a grouping, the reserved tuple or an
@@ -921,11 +924,12 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 68_usize] = [
+    pub const ALL: [Self; 69_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
         Self::Number,
+        Self::Boolean,
         Self::Text,
         Self::Parenthesized,
         Self::Unit,
@@ -1012,11 +1016,12 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 84_usize] = [
+pub const FORMERS: [(&str, Former); 85_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
     ("number", Former::Number),
+    ("boolean", Former::Boolean),
     ("string", Former::Text),
     ("parenthesized_expression", Former::Parenthesized),
     ("type_quote_expression", Former::TypeQuote),

@@ -128,7 +128,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`shell_block`](exemplars/syntax/shell_block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
 | [`identifier.expression`](exemplars/syntax/identifier.expression.gandr) | `‹identifier›` | `expression.atom` | `identifier` | admitted | Variable |
 | [`constructor.expression`](exemplars/syntax/constructor.expression.gandr) | `‹constructor›` | `expression.atom` | `constructor` | unadmitted | Constructor |
-| [`boolean.expression`](exemplars/syntax/boolean.expression.gandr) | `true ‖ false` | `expression.atom` | `boolean` | unadmitted | Boolean |
+| [`boolean.expression`](exemplars/syntax/boolean.expression.gandr) | `true ‖ false` | `expression.atom` | `boolean` | admitted | Boolean |
 | [`unit.expression`](exemplars/syntax/unit.expression.gandr) | `unit` | `expression.atom` | `unit` | admitted | Keyword |
 | [`number.expression`](exemplars/syntax/number.expression.gandr) | `‹number›` | `expression.atom` | `number` | admitted | Number |
 | [`typed_number.expression`](exemplars/syntax/typed_number.expression.gandr) | `‹typed_number›` | `expression.atom` | `typed_number` | unadmitted | Number |

@@ -1,4 +1,4 @@
 /// `boolean.expression`: a boolean.
-/// The checker does not reach this form yet; #1207 tracks it.
-@[ refuses("OutOfFragment.boolean") ]
+@[ checks ]
+def yes : Bool ;
 def yes = true ;

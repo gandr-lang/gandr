@@ -539,6 +539,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Text
             | Former::TypeQuote
             | Former::Unit
+            | Former::Boolean
             | Former::Return
             | Former::Force
             | Former::Run
