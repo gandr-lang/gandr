@@ -130,7 +130,7 @@ fn each_candidate_is_judged_as_a_fresh_session_judges_it()
             [1, 4, 2, 0, 3],
             "settled first, in the candidates' order; then owed; then refused; then refused whole"
         );
-        for trial in &trials {
+        for trial in trials {
             let index = usize::from(trial.candidate());
             let Ok(ref tried) = *trial.outcome()
             else {
@@ -145,8 +145,11 @@ fn each_candidate_is_judged_as_a_fresh_session_judges_it()
             let judged = fresh
                 .judge(candidates[index])
                 .expect("a fresh session judges the candidate");
+            let handed = trial
+                .into_outcome()
+                .expect("the candidate's submission is handed on");
             assert_eq!(
-                shown(tried),
+                shown(&handed),
                 shown(&judged),
                 "candidate {index} is judged as a fresh session judges it"
             );
