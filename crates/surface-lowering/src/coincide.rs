@@ -335,8 +335,10 @@ pub enum Coincidence
     /// The rules terminate and no two of them overlap.
     Orthogonal,
     /// The rules terminate and every critical pair joins, with the rules
-    /// completion derived among them: one certificate per pair and one per
-    /// derived rule, in the reading each was decided in.
+    /// completion derived among them: one certificate per prime pair and one
+    /// per derived rule, in the reading each was decided in. A composite pair,
+    /// whose peak reduces below its seam, joins with the others and carries
+    /// none.
     Joined(Certificates),
     /// The rules' two readings part, or the check could not tell: the report's
     /// diagnostic at this index says why.
@@ -744,7 +746,7 @@ impl fmt::Display for Spelled<'_>
 ///   first, as [`Reading::complete`] completes it, its first fault at the later
 ///   rule's span naming the earlier one's; else [`Coincidence::Orthogonal`]
 ///   when no two cells overlap in either reading and [`Coincidence::Joined`]
-///   with every pair's certificate and every derived rule otherwise. Each
+///   with every prime pair's certificate and every derived rule otherwise. Each
 ///   derived rule's cell is appended to `store` or to the presented reading's
 ///   store, in derivation order, so the store a reading rewrites with ends with
 ///   them.
@@ -945,8 +947,8 @@ fn second_order_overlap(rules: &[RuleFace]) -> Option<(RuleIndex, RuleIndex)>
     None
 }
 
-/// A completed reading: one certificate per critical pair, then the rules it
-/// derived with theirs.
+/// A completed reading: one certificate per prime critical pair, then the
+/// rules it derived with theirs.
 type Completed<A> = (Vec<Tracelet<A>>, Vec<DerivedRule<A>>);
 
 /// Rules a completion derived, each as its left and right sides.
@@ -1052,7 +1054,7 @@ where
     }
 
     /// Complete one reading of a block's rules from `first`, its store's
-    /// joinability as `joining` decided it: every critical pair's certificate
+    /// joinability as `joining` decided it: every prime pair's certificate
     /// and every rule a divergent pair derived, or the fault of the first pair
     /// that neither joins nor completes.
     ///

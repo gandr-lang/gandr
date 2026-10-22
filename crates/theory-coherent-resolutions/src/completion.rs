@@ -134,6 +134,7 @@ use crate::overlap::interior_overlaps_between;
 use crate::overlap::root_overlaps_between;
 use crate::rewrite::CellApp;
 use crate::rewrite::normalize;
+use crate::rewrite::redex_below;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
 
@@ -905,7 +906,11 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///
 /// A store whose rewriting terminates and whose critical pairs all join is
 /// confluent, so every strategy reaches one normal form from every term; a
-/// caller that has the termination half asks this for the other.
+/// caller that has the termination half asks this for the other. Only the
+/// prime pairs are decided: a pair whose peak a cell rewrites strictly below
+/// the seam is composite, and when the rewriting terminates it joins once
+/// every prime pair does (Kapur, Musser and Narendran), so it is passed over
+/// and carries no certificate.
 ///
 /// # Specification
 /// - ensures: the pairs are taken in order of their later cell: for each cell
@@ -915,12 +920,13 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   entries of [`interior_overlaps_between`] with the earlier cell on the left
 ///   and then on the right, the diagonal once; every pair a cell makes with the
 ///   cells before it is decided before any pair of a later cell, so a store
-///   growing by cells reaches each pair; each pair's two reducts are normalized
-///   under `budget`; [`Joinability::Joined`] carries one replaying certificate
-///   per pair when every pair joins; otherwise the first pair that does not, as
-///   [`Joinability::Undecided`] when a reduct ran out of budget and as
-///   [`Joinability::Diverges`] with both normal forms, and the steps that
-///   reached each, when they differ.
+///   growing by cells reaches each pair; a pair whose peak holds a redex
+///   strictly below its seam ([`redex_below`]) is passed over, and each other
+///   pair's two reducts are normalized under `budget`; [`Joinability::Joined`]
+///   carries one replaying certificate per pair decided when every one of them
+///   joins; otherwise the first that does not, as [`Joinability::Undecided`]
+///   when a reduct ran out of budget and as [`Joinability::Diverges`] with both
+///   normal forms, and the steps that reached each, when they differ.
 /// - panics: none.
 /// - intension: a fresh [`PairJoining`] resumed once.
 ///
@@ -931,10 +937,13 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   reduct needing a step under a zero budget is undecided, and a store with
 ///   no overlap joins with no certificate; a rule overlapping a successor below
 ///   an addition diverges at that interior seam and a rule overlapping itself
-///   one position down joins with a certificate stepping at the seam; deciding
-///   a mirrored root pair twice, skipping an interior pair, reporting a starved
-///   pair as divergent or dropping a certificate changes one of them.
+///   one position down joins with a certificate stepping at the seam; a peak
+///   that reduces below its seam is passed over while the deeper pair of the
+///   same peak is decided; deciding a mirrored root pair twice, skipping an
+///   interior pair, deciding a composite pair, reporting a starved pair as
+///   divergent or dropping a certificate changes one of them.
 /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+/// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
 #[spec(ensures: |output| match output {
     Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
@@ -966,7 +975,9 @@ where
 /// steps are steps of every larger store. So completion, which derives a cell
 /// from the pair that parted and appends it, resumes at that pair rather than
 /// deciding every earlier pair again: one round decides the pair that parted
-/// and the pairs after it, the new cell's among them.
+/// and the pairs after it, the new cell's among them. A composite pair, whose
+/// peak reduces below its seam, stays composite as the store grows, so it is
+/// passed over in every round.
 ///
 /// # Specification
 /// - requires: between two [`Self::resume`]s on one joining, the store keeps
@@ -1050,15 +1061,17 @@ where
     ///   grown only by cells appended after its others.
     /// - ensures: [`Joinability::Joined`] with the certificate of every pair
     ///   decided joined since the joining began or last answered `Joined`, when
-    ///   every pair from the stopping one on joins; otherwise the first that
-    ///   does not, as `join_critical_pairs` reports it, the joining stopped at
-    ///   it so the next resume decides it first. Each pair decided adds one to
+    ///   every pair from the stopping one on joins or is passed over as
+    ///   composite; otherwise the first that does not, as `join_critical_pairs`
+    ///   reports it, the joining stopped at it so the next resume decides it
+    ///   first. Each pair reached, composite or not, adds one to
     ///   [`Self::decided`].
     /// - panics: none.
     /// - intension: the store's cells read once into positions; the overlaps of
     ///   each cell pair enumerated once per resume that reaches it, the pairs
     ///   already joined skipped, and the root entries read without the
-    ///   composition entries no pair is made of.
+    ///   composition entries no pair is made of; a composite pair costs the
+    ///   search below its seam, never a normalization.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over the toy alphabet, a joining stopped at a parting
@@ -1069,6 +1082,7 @@ where
     ///   that parted, changes a count or the verdict.
     /// - witness: `completion::tests::a_resumed_joining_decides_no_joined_pair_again_1576`
     /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
+    /// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
     #[spec(
         captures: before = self.decided,
         ensures: |output| self.decided >= before && match output {
@@ -1110,6 +1124,10 @@ where
                     .skip(self.within);
                 for overlap in pairs {
                     self.decided = self.decided.saturating_add(1);
+                    if let Maybe::Present(_) = redex_below(store, &overlap.peak, &overlap.seam) {
+                        self.within = self.within.saturating_add(1);
+                        continue;
+                    }
                     let (Ok(left_reduct), Ok(right_reduct)) =
                         (overlap.left_reduct(store), overlap.right_reduct())
                     else {
@@ -1198,6 +1216,7 @@ mod tests
 {
     use gandr_theory_cell_complexes_tools::Toy;
     use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::ToyPos;
     use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
@@ -1435,6 +1454,62 @@ mod tests
             (stopped, round, usize::from(fresh.decided())),
             (2, 2, 3),
             "the round decides the pair that parted and those after it"
+        );
+    }
+
+    #[test]
+    fn a_pair_whose_peak_reduces_below_its_seam_is_not_decided()
+    {
+        let budget = NormalizationBudget::from(8_usize);
+        let mut store = CellStore::<ToyAlphabet>::new();
+        // The second rule meets the first's addition at the addition's root,
+        // instantiating `x` to `add(Zero, Zero)`, which the second rule
+        // rewrites again one position down: that pair is composite. The same
+        // rule meets the inner `add(Zero, Zero)` itself, with nothing below
+        // it to rewrite: that pair is prime, and the third rule joins both.
+        let peak = Toy::succ(Toy::add(Toy::add(Toy::zero(), Toy::zero()), Toy::zero()));
+        let first = toy_cell(peak.clone(), Toy::zero());
+        let second = toy_cell(Toy::add(Toy::var("x"), Toy::zero()), Toy::var("x"));
+        let first_id = store.insert(first.clone());
+        let second_id = store.insert(second.clone());
+        let _third = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let at = |steps: &[usize]| {
+            let steps: Vec<gandr_theory_cell_complexes::PositionStep> =
+                steps.iter().copied().map(Into::into).collect();
+            ToyAlphabet::position_at_path(&steps)
+        };
+        let (addition, inner) = (at(&[0]), at(&[0, 0]));
+        let seams: Vec<ToyPos> =
+            interior_overlaps_between((first_id, &first), (second_id, &second))
+                .into_iter()
+                .filter(|overlap| overlap.peak == peak)
+                .map(|overlap| overlap.seam)
+                .collect();
+        assert!(
+            seams.len() == 2 && seams.contains(&addition) && seams.contains(&inner),
+            "the first rule's peak is overlapped at its addition and at the addition inside it: {seams:?}"
+        );
+        assert!(matches!(
+            redex_below(&store, &peak, &addition),
+            Maybe::Present(ref step) if step.at == inner
+        ));
+        assert_eq!(
+            redex_below(&store, &peak, &inner),
+            Maybe::Absent(crate::rewrite::below_search::Absent::NormalBelow)
+        );
+        let mut joining = PairJoining::new();
+        let Joinability::Joined(certificates) = joining.resume(&store, budget)
+        else {
+            panic!("both pairs reach `Zero`");
+        };
+        let decided: Vec<ToyPos> = certificates
+            .iter()
+            .map(|certificate| certificate.overlap.seam.clone())
+            .collect();
+        assert_eq!(
+            (decided, usize::from(joining.decided())),
+            (alloc::vec![inner], 2),
+            "both pairs are counted and only the prime one is normalized"
         );
     }
 }
