@@ -1282,7 +1282,10 @@ impl DomainArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — as [`Self::value_tuple`].
+    /// - hypothesis: L1 — a pair whose components differ, the unit, a
+    ///   reflexivity over a pair and an empty list separate the tuple arm, its
+    ///   field order and every other former.
+    /// - witness: `arena::tests::a_tuple_s_components_are_its_fields_in_order_and_no_other_former_has_any`
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
