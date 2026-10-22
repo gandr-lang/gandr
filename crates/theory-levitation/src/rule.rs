@@ -47,6 +47,9 @@ enum TermHead
     Inst(Name, ArgumentCount),
     /// An atom abstracted over its one body, `bind a . t`.
     Abs(Name),
+    /// An atom named inside an abstraction that binds it, at a port of its
+    /// atom sort.
+    Atom(Name),
 }
 
 impl Head for TermHead
@@ -59,7 +62,7 @@ impl Head for TermHead
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            Self::Var(_) => ArgumentCount::from(0_usize),
+            Self::Var(_) | Self::Atom(_) => ArgumentCount::from(0_usize),
             Self::Abs(_) => ArgumentCount::from(1_usize),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
@@ -204,6 +207,19 @@ impl FreeTerm
         Self(Tree::node(TermHead::Abs(atom.into()), alloc::vec![body.0]))
     }
 
+    /// The atom `a` named inside an abstraction `bind a . t` that binds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn atom<N>(name: N) -> Self
+    where
+        N: Into<Name>,
+    {
+        Self(Tree::leaf(TermHead::Atom(name.into())))
+    }
+
     /// The canonical name of the atom an abstraction `depth` abstractions deep
     /// abstracts: `a0` at the outermost, `a1` under it, and so on.
     ///
@@ -218,63 +234,80 @@ impl FreeTerm
 
     /// The term with every abstraction's atom re-minted canonically: an
     /// abstraction under `n` others abstracts the canonical atom of depth `n`
-    /// ([`Self::canonical_atom`]). Two terms that differ only in the atoms
-    /// their abstractions name re-mint to one term, since no term names an
-    /// atom an abstraction binds.
+    /// ([`Self::canonical_atom`]), and an atom named inside it is renamed
+    /// with it. Two terms that differ only in the atoms their abstractions
+    /// name re-mint to one term.
     ///
     /// # Specification
     /// - ensures: the term's shape, heads and variables kept, each
     ///   abstraction's atom replaced by the canonical atom of its depth among
-    ///   the abstractions above it; the executable predicate checks the root,
-    ///   whose head is kept unless it is an abstraction.
+    ///   the abstractions above it, and each atom named inside an abstraction
+    ///   of it replaced by the innermost such abstraction's canonical atom; an
+    ///   atom no abstraction above it binds is kept. The executable predicate
+    ///   checks the root, whose head is kept unless it is an abstraction or an
+    ///   atom.
     /// - panics: none.
     /// - intension: one worklist pass, each node read once and rebuilt from its
-    ///   rebuilt arguments.
+    ///   rebuilt arguments; the abstractions in scope form a tree of links,
+    ///   each node naming its innermost, so an atom looks its binder up along
+    ///   the abstractions above it alone.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two terms whose nested abstractions name different
-    ///   atoms re-mint to one term, and an abstraction beside another, rather
-    ///   than under it, takes the same level.
+    ///   atoms re-mint to one term, an abstraction beside another, rather than
+    ///   under it, takes the same level, and an atom named under two
+    ///   abstractions takes its own binder's level, not the innermost's.
     /// - witness: `rule::tests::atoms_are_reminted_by_their_depth`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref minted| matches!(*self.0.to_ref().head(), TermHead::Abs(_))
+    #[spec(ensures: |ref minted| matches!(*self.0.to_ref().head(), TermHead::Abs(_) | TermHead::Atom(_))
         || minted.0.to_ref().head() == self.0.to_ref().head())]
     pub fn canonical_atoms(&self) -> Self
     {
-        /// A step of the rebuild: a node to read at a depth, or a head to
-        /// apply to the arguments rebuilt last.
+        /// A step of the rebuild: a node to read at a depth under the
+        /// innermost abstraction in scope, or a head to apply to the
+        /// arguments rebuilt last.
         enum Mint<'term>
         {
             /// Read a node `usize` abstractions deep.
-            Read(TermNode<'term>, usize),
+            Read(TermNode<'term>, usize, Option<usize>),
             /// Rebuild the application of this node's head to its rebuilt
             /// arguments, `usize` abstractions deep.
-            Build(TermNode<'term>, usize),
+            Build(TermNode<'term>, usize, Option<usize>),
         }
-        let mut pending = alloc::vec![Mint::Read(self.to_node(), 0)];
+        // Each abstraction read: its atom, its depth and the link to the
+        // abstraction enclosing it.
+        let mut scopes: Vec<(&Name, usize, Option<usize>)> = Vec::new();
+        let mut pending = alloc::vec![Mint::Read(self.to_node(), 0, None)];
         let mut built: Vec<Self> = Vec::new();
         while let Some(step) = pending.pop() {
             match step {
-                Mint::Read(node, depth) => {
-                    pending.push(Mint::Build(node, depth));
-                    let (args, below) = match node.view() {
-                        TermView::Var(_) => continue,
-                        TermView::Abs { args, .. } => (args, depth.saturating_add(1)),
+                Mint::Read(node, depth, scope) => {
+                    pending.push(Mint::Build(node, depth, scope));
+                    let (args, below, inner) = match node.view() {
+                        TermView::Var(_) | TermView::Atom(_) => continue,
+                        TermView::Abs { atom, args } => {
+                            scopes.push((atom, depth, scope));
+                            (
+                                args,
+                                depth.saturating_add(1),
+                                Some(scopes.len().saturating_sub(1)),
+                            )
+                        },
                         TermView::Ctor { args, .. }
                         | TermView::Op { args, .. }
                         | TermView::Results { args }
-                        | TermView::Inst { args, .. } => (args, depth),
+                        | TermView::Inst { args, .. } => (args, depth, scope),
                     };
                     let mark = pending.len();
-                    pending.extend(args.map(|arg| Mint::Read(arg, below)));
+                    pending.extend(args.map(|arg| Mint::Read(arg, below, inner)));
                     if let Some(children) = pending.get_mut(mark ..) {
                         children.reverse();
                     }
                 },
-                Mint::Build(node, depth) => {
+                Mint::Build(node, depth, scope) => {
                     let count = match node.view() {
-                        TermView::Var(_) => 0,
+                        TermView::Var(_) | TermView::Atom(_) => 0,
                         TermView::Ctor { args, .. }
                         | TermView::Op { args, .. }
                         | TermView::Results { args }
@@ -284,6 +317,21 @@ impl FreeTerm
                     let args = built.split_off(built.len().saturating_sub(count));
                     built.push(match node.view() {
                         TermView::Var(name) => Self::var(name.clone()),
+                        TermView::Atom(name) => {
+                            let mut link = scope;
+                            let mut minted = None;
+                            while let Some(&(atom, level, outer)) =
+                                link.and_then(|at| scopes.get(at))
+                            {
+                                if atom == name {
+                                    minted =
+                                        Some(Self::canonical_atom(AbstractionDepth::from(level)));
+                                    break;
+                                }
+                                link = outer;
+                            }
+                            Self::atom(minted.unwrap_or_else(|| name.clone()))
+                        },
                         TermView::Ctor { name, .. } => Self::ctor(name.clone(), args),
                         TermView::Op { name, .. } => Self::op(name.clone(), args),
                         TermView::Results { .. } => Self::results(args),
@@ -368,7 +416,11 @@ impl FreeTerm
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            TermHead::Var(_) | TermHead::Results(_) | TermHead::Inst(..) | TermHead::Abs(_) => None,
+            TermHead::Var(_)
+            | TermHead::Results(_)
+            | TermHead::Inst(..)
+            | TermHead::Abs(_)
+            | TermHead::Atom(_) => None,
             TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
         })
     }
@@ -415,7 +467,8 @@ impl FreeTerm
             | TermHead::Ctor(..)
             | TermHead::Op(..)
             | TermHead::Inst(..)
-            | TermHead::Abs(_) => None,
+            | TermHead::Abs(_)
+            | TermHead::Atom(_) => None,
         })
     }
 
@@ -451,7 +504,8 @@ impl FreeTerm
             | TermHead::Op(..)
             | TermHead::Results(_)
             | TermHead::Inst(..)
-            | TermHead::Abs(_) => Maybe::Absent(leaf_image::Absent::Kept),
+            | TermHead::Abs(_)
+            | TermHead::Atom(_) => Maybe::Absent(leaf_image::Absent::Kept),
         }))
     }
 }
@@ -494,7 +548,7 @@ impl fmt::Display for FreeTerm
         let mut args: Vec<String> = Vec::new();
         for head in self.0.heads() {
             let (name, arity) = match *head {
-                TermHead::Var(ref name) => (Some(name), 0_usize),
+                TermHead::Var(ref name) | TermHead::Atom(ref name) => (Some(name), 0_usize),
                 TermHead::Abs(ref atom) => {
                     let body = rendered.pop().unwrap_or_default();
                     rendered.push(format!("bind {atom} . {body}"));
@@ -556,6 +610,7 @@ impl<'term> TermNode<'term>
                 atom,
                 args: TermArgs(self.0.children()),
             },
+            TermHead::Atom(ref name) => TermView::Atom(name),
         }
     }
 
@@ -582,7 +637,8 @@ impl<'term> TermNode<'term>
             | TermHead::Op(..)
             | TermHead::Results(_)
             | TermHead::Inst(..)
-            | TermHead::Abs(_) => None,
+            | TermHead::Abs(_)
+            | TermHead::Atom(_) => None,
         })
     }
 
@@ -646,6 +702,9 @@ pub enum TermView<'term>
         /// The body, the one argument.
         args: TermArgs<'term>,
     },
+    /// The atom `a` named inside an abstraction `bind a . t` that binds it,
+    /// at a port of its atom sort.
+    Atom(&'term Name),
 }
 
 /// The arguments of a free-term application, left to right.
@@ -915,6 +974,27 @@ mod tests
             written("x", "y", "z"),
             written("b", "c", "b"),
             "as written the two differ"
+        );
+        // An occurrence re-mints with the abstraction that binds it: the
+        // innermost of its name, and a name no abstraction binds is kept.
+        let named = |outer: &str, inner: &str, first: &str, second: &str| {
+            FreeTerm::abs(
+                outer,
+                FreeTerm::abs(
+                    inner,
+                    FreeTerm::op("out", [FreeTerm::atom(first), FreeTerm::atom(second)]),
+                ),
+            )
+        };
+        assert_eq!(
+            named("x", "y", "x", "y").canonical_atoms(),
+            named("a0", "a1", "a0", "a1"),
+            "each occurrence takes its binder's depth"
+        );
+        assert_eq!(
+            named("x", "x", "x", "z").canonical_atoms(),
+            named("a0", "a1", "a1", "z"),
+            "the inner abstraction shadows the outer, and a free atom is kept"
         );
     }
 

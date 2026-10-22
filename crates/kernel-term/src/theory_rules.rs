@@ -36,19 +36,27 @@
 //! in step 4 or is refused by name in step 3.
 //!
 //! The terms are first order but for instantiations. A symbol is an
-//! operation application, a constructor application, a results tuple or an
-//! atom's abstraction, interned by its kind, its name and its argument count;
-//! two symbols are one exactly when all three agree. An abstraction is
-//! interned without the atom it names, so its symbol is the canonical
-//! re-minting the checker admits it under: a rule that renames the atom is the
-//! same rule. The order and matching read it as a constructor of one field.
-//! A left side may repeat a variable, so matching compares the subterms a
-//! repeated variable binds and the critical pairs come from unification with
-//! an occurs check. A rule that instantiates a variable — a second-order rule,
-//! `let(u, t) ==> t(u)` — substitutes under a binder no first-order term
-//! marks, so it rewrites no term the decision normalizes; the orthogonality
-//! step 4 asks of it is what keeps the critical pair lemma in reach for
-//! patterns (Mayr and Nipkow).
+//! operation application, a constructor application, a results tuple, an
+//! atom's abstraction or an atom named inside one, interned by its kind, its
+//! name and its argument count; two symbols are one exactly when all three
+//! agree. An abstraction is interned without the atom it names, and an
+//! occurrence by the number of abstractions between it and the one binding
+//! it, so both are the canonical re-minting the checker admits them under: a
+//! rule that renames the atom is the same rule. The order and matching read an
+//! abstraction as a constructor of one field and an occurrence as a constant.
+//! No substitution shifts that number, as no rule needs it to: where some
+//! operation's input port takes an atom, so a term can name one, a rule that
+//! states a freshness condition, or whose variable stands under other
+//! abstractions at one occurrence than at another, is refused, and every
+//! instance then keeps the abstractions its occurrences count past. Where no
+//! port takes an atom no term names one, and a condition holds of every
+//! instance. A left side may repeat a variable, so matching compares the
+//! subterms a repeated variable binds and the critical pairs come from
+//! unification with an occurs check. A rule that instantiates a variable — a
+//! second-order rule, `let(u, t) ==> t(u)` — substitutes under a binder no
+//! first-order term marks, so it rewrites no term the decision normalizes; the
+//! orthogonality step 4 asks of it is what keeps the critical pair lemma in
+//! reach for patterns (Mayr and Nipkow).
 //!
 //! # References
 //!
@@ -66,6 +74,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -94,7 +103,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 26] = [
+pub const PRESENTATION_CODE: [(usize, usize); 27] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -121,6 +130,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 26] = [
     (2, 4),
     (1, 1),
     (2, 1),
+    (1, 0),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -130,6 +140,12 @@ mod tag
     pub(super) const PRESENTS: usize = 0;
     /// The end of a chain.
     pub(super) const END: usize = 1;
+    /// An ordinary sort.
+    pub(super) const SORT: usize = 2;
+    /// An operation.
+    pub(super) const OPER: usize = 3;
+    /// A port that binds nothing.
+    pub(super) const PORT: usize = 4;
     /// A rule oriented as written.
     pub(super) const RULE: usize = 5;
     /// A variable.
@@ -142,18 +158,36 @@ mod tag
     pub(super) const TUPLE: usize = 9;
     /// An argument and the rest of the arguments.
     pub(super) const ARG: usize = 10;
+    /// A representable sort.
+    pub(super) const REPRESENTABLE: usize = 11;
+    /// A port under its binders.
+    pub(super) const BOUND: usize = 12;
+    /// The shape parameter.
+    pub(super) const SHAPE: usize = 13;
+    /// An observation.
+    pub(super) const OBS: usize = 15;
     /// A rule oriented right to left.
     pub(super) const TURNED: usize = 16;
     /// A derived rule and the critical pair it joins.
     pub(super) const DERIVED: usize = 17;
     /// An operation's rank.
     pub(super) const RANK: usize = 18;
+    /// A constant operation.
+    pub(super) const CONST: usize = 19;
+    /// A nested operation.
+    pub(super) const NESTED: usize = 20;
     /// A variable's instantiation.
     pub(super) const INST: usize = 21;
+    /// An atom sort.
+    pub(super) const ATOM: usize = 22;
+    /// A port abstracting atoms.
+    pub(super) const ABSTRACTED: usize = 23;
     /// An atom's abstraction over its body.
     pub(super) const ABS: usize = 24;
     /// A freshness condition on the written rule before it.
     pub(super) const FRESH: usize = 25;
+    /// An atom named inside an abstraction of it.
+    pub(super) const OCC: usize = 26;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -482,6 +516,11 @@ pub enum TheoryRuleFault
     Overlaps(RuleIndex),
     /// The decision's fuel ran out at the rule.
     Exhausted,
+    /// The rule states a freshness condition, or its variable stands under
+    /// other abstractions at one occurrence than at another, where some
+    /// operation's input port takes an atom: an instance may then name the
+    /// atom, and no rewriting step decides the condition of one yet.
+    UndecidedCondition,
 }
 
 /// The first rule a presentation's rules are refused at, and why. Rules are
@@ -591,18 +630,26 @@ impl TheoryRules
     ///   each followed by its freshness conditions (`Fresh`, an atom's and a
     ///   variable's names), then derived rules (`Derived`, its peak's three
     ///   numerals), then ranks (`Rank`, an operation's name and a numeral),
-    ///   then `End`. Each term is a `Var`, or an `App`, `Con` or `Tuple` over
-    ///   its `Arg` chain; a symbol is interned by kind, name and argument
-    ///   count, an `App` symbol taking the rank its name is given and every
-    ///   other symbol a constructor's place. A rule's variables are numbered by
-    ///   first occurrence on its left side, then on its right. A condition
-    ///   holds of every instance, since no term names an atom, so the rules
-    ///   read are the rules decided.
+    ///   then `End`. Each term is a `Var`, or an `App`, `Con`, `Tuple`, `Inst`
+    ///   or `Abs` over its `Arg` chain, or an `Occ` naming an atom an enclosing
+    ///   `Abs` abstracts; a symbol is interned by kind, name and argument
+    ///   count, an `Abs` without its atom's name and an `Occ` by the number of
+    ///   `Abs` between it and the innermost naming its atom, an `App` symbol
+    ///   taking the rank its name is given and every other symbol a
+    ///   constructor's place. A rule's variables are numbered by first
+    ///   occurrence on its left side, then on its right. A condition holds of
+    ///   every instance where no operation's input port is at a sort the sort
+    ///   chain states an atom sort (`Atom`), since no term then names an atom,
+    ///   so the rules read are the rules decided.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
     ///   every written rule, a term position holding no term, a field that is
     ///   no string where a name or numeral stands, a numeral not in its one
-    ///   decimal spelling, or a second rank for one name.
+    ///   decimal spelling, an `Occ` no enclosing `Abs` binds, or a second rank
+    ///   for one name; [`TheoryRuleFault::UndecidedCondition`] at the first
+    ///   rule stating a condition, or whose variable stands under other `Abs`
+    ///   at one occurrence than at another, when some input port is at an atom
+    ///   sort.
     /// - panics: none.
     /// - intension: the chain walked in a loop and each term read from a
     ///   worklist, so no step recurses.
@@ -615,8 +662,13 @@ impl TheoryRules
     ///   rule and two ranks reads as its oriented rules, its peak and its
     ///   ranked operations; a rank before a rule, a derived rule before a
     ///   written one, a padded numeral and a second rank for one name are
-    ///   unreadable at the rule they stand at.
+    ///   unreadable at the rule they stand at. A rule naming the channel its
+    ///   restriction abstracts reads it as one constant whatever the atom's
+    ///   name; a condition, or a variable moved out of the abstraction, is
+    ///   refused undecided where a port takes the channel and read where none
+    ///   does; an occurrence no abstraction binds is unreadable.
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
+    /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.peaks.len() <= rules.rules.len()))]
     #[inline]
     pub fn read(
@@ -2161,6 +2213,10 @@ enum Class
     /// An atom's abstraction, its atom's name not part of its key, so two
     /// abstractions that differ only in the atom they name are one symbol.
     Abstraction,
+    /// An atom named inside an abstraction of it, keyed by the number of
+    /// abstractions between the two, so it too is one symbol whatever the
+    /// atom's name.
+    Occurrence(usize),
 }
 
 /// What a term node over an argument chain applies.
@@ -2191,8 +2247,21 @@ enum Stage
     Ranks,
 }
 
+/// Whether a term of a presentation can name one of its atoms.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Naming
+{
+    /// Some operation's input port stands at an atom sort.
+    Named,
+    /// No operation's input port stands at an atom sort.
+    Unnamed,
+}
+
 /// A symbol's interning key: its class, its name, and its argument count.
-type SymbolKey<'arena> = (Class, Option<&'arena StringLiteral>, usize);
+type SymbolKey<'arena> = (Class, Option<&'arena StringLiteral>, FieldCount);
 
 /// The buffers a rule's terms are read through, reused across rules.
 ///
@@ -2203,10 +2272,20 @@ struct ReadBuffers<'arena>
 {
     /// The rule's variables, each by its place in first-occurrence order.
     variables: BTreeMap<&'arena StringLiteral, Ordinal>,
-    /// The nodes still to read.
-    stack: Vec<ValueId>,
+    /// The nodes still to read, each with the number of abstractions above it.
+    stack: Vec<(ValueId, usize)>,
     /// One node's arguments.
     arguments: Vec<ValueId>,
+    /// The atoms the abstractions above the node being read abstract,
+    /// outermost first.
+    atoms: Vec<&'arena StringLiteral>,
+    /// Each variable's atoms at its first occurrence, as a range of `above`.
+    scopes: BTreeMap<&'arena StringLiteral, (usize, usize)>,
+    /// The atoms of every variable's first occurrence, end to end.
+    above: Vec<&'arena StringLiteral>,
+    /// Whether some variable of the rule stands under other abstractions at
+    /// one occurrence than at another.
+    moved: bool,
 }
 
 /// A reading of a presentation value's rule chain.
@@ -2227,6 +2306,9 @@ struct Reader<'arena>
     peaks: Vec<CriticalPeak>,
     /// Each ranked operation's rank, by its name.
     ranks: BTreeMap<&'arena StringLiteral, OperationRank>,
+    /// The first rule stating a freshness condition or moving a variable
+    /// across an abstraction.
+    conditioned: Option<RuleIndex>,
 }
 
 impl<'arena> Reader<'arena>
@@ -2244,6 +2326,7 @@ impl<'arena> Reader<'arena>
             rules: Vec::new(),
             peaks: Vec::new(),
             ranks: BTreeMap::new(),
+            conditioned: None,
         }
     }
 
@@ -2268,7 +2351,8 @@ impl<'arena> Reader<'arena>
         let tagged = |found: Option<(ConstructorTag, &'arena [ValueId])>| {
             found.map(|(tag, fields)| (usize::from(tag), fields))
         };
-        let Some((tag::PRESENTS, &[_, _, rules])) = tagged(self.constructor(presentation))
+        let Some((tag::PRESENTS, &[sorts, operations, rules])) =
+            tagged(self.constructor(presentation))
         else {
             return Err(self.unreadable());
         };
@@ -2287,6 +2371,8 @@ impl<'arena> Reader<'arena>
                 Some((tag::FRESH, &[atom, term, rest]))
                     if stage == Stage::Written && !self.rules.is_empty() =>
                 {
+                    let stated = RuleIndex::from(self.rules.len().saturating_sub(1));
+                    let _first = self.conditioned.get_or_insert(stated);
                     self.text(atom).and_then(|_| self.text(term)).map(|_| rest)
                 },
                 Some((tag::DERIVED, &[outer, position, inner, left, right, rest]))
@@ -2330,6 +2416,18 @@ impl<'arena> Reader<'arena>
             };
             at = read.ok_or_else(|| self.unreadable())?;
         }
+        if let Some(rule) = self.conditioned {
+            match self.nameable(sorts, operations) {
+                Some(Naming::Unnamed) => {},
+                Some(Naming::Named) => {
+                    return Err(TheoryRuleRefusal {
+                        rule,
+                        fault: TheoryRuleFault::UndecidedCondition,
+                    });
+                },
+                None => return Err(self.unreadable()),
+            }
+        }
         let symbols = self
             .keys
             .iter()
@@ -2339,11 +2437,15 @@ impl<'arena> Reader<'arena>
                         SymbolKind::Operation(self.ranks.get(name).copied().unwrap_or_default())
                     },
                     (Class::Operation, None)
-                    | (Class::Constructor | Class::Tuple | Class::Abstraction, _) => {
-                        SymbolKind::Constructor
-                    },
+                    | (
+                        Class::Constructor
+                        | Class::Tuple
+                        | Class::Abstraction
+                        | Class::Occurrence(_),
+                        _,
+                    ) => SymbolKind::Constructor,
                 };
-                (kind, FieldCount::from(arity))
+                (kind, arity)
             })
             .collect();
         Ok(TheoryRules {
@@ -2351,6 +2453,78 @@ impl<'arena> Reader<'arena>
             rules: self.rules,
             peaks: self.peaks,
         })
+    }
+
+    /// Whether a term of the presentation can name an atom: some operation's
+    /// input port stands at a sort the sort chain states an atom sort.
+    ///
+    /// # Specification
+    /// - ensures: [`Naming::Named`] when an `Oper`, `Obs`, `Const` or `Nested`
+    ///   of the chain `operations` has a `Port`, `Bound` or `Abstracted` input
+    ///   whose sort an `Atom` of the chain `sorts` names, [`Naming::Unnamed`]
+    ///   otherwise; [`None`] when either chain, or a port chain, holds a member
+    ///   the code does not write there.
+    /// - panics: none.
+    /// - executable: none — the answer is the walk of the two chains, which a
+    ///   predicate would walk again.
+    /// - intension: one walk of each chain, the atom sorts kept as they are
+    ///   read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TheoryRules::read`]: one input port taking the
+    ///   channel decides a condition refused, and its absence decides it read.
+    /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
+    fn nameable(
+        &self,
+        sorts: ValueId,
+        operations: ValueId,
+    ) -> Option<Naming>
+    {
+        let tagged = |id: ValueId| {
+            self.constructor(id)
+                .map(|(tag, fields)| (usize::from(tag), fields))
+        };
+        let mut atoms: BTreeSet<&StringLiteral> = BTreeSet::new();
+        let mut at = sorts;
+        loop {
+            at = match tagged(at)? {
+                (tag::END, &[]) => break,
+                (tag::ATOM, &[name, _, rest]) => {
+                    let _new = atoms.insert(self.text(name)?);
+                    rest
+                },
+                (tag::SORT | tag::REPRESENTABLE, &[_, _, rest])
+                | (tag::SHAPE, &[_, _, _, rest]) => rest,
+                _ => return None,
+            };
+        }
+        if atoms.is_empty() {
+            return Some(Naming::Unnamed);
+        }
+        let mut at = operations;
+        loop {
+            let (mut port, rest) = match tagged(at)? {
+                (tag::END, &[]) => return Some(Naming::Unnamed),
+                (tag::OPER | tag::OBS | tag::CONST | tag::NESTED, &[_, inputs, _, rest]) => {
+                    (inputs, rest)
+                },
+                _ => return None,
+            };
+            loop {
+                let (sort, next) = match tagged(port)? {
+                    (tag::END, &[]) => break,
+                    (tag::PORT, &[_, sort, _, next])
+                    | (tag::BOUND, &[_, sort, _, _, next])
+                    | (tag::ABSTRACTED, &[_, sort, _, _, _, next]) => (sort, next),
+                    _ => return None,
+                };
+                if atoms.contains(&self.text(sort)?) {
+                    return Some(Naming::Named);
+                }
+                port = next;
+            }
+            at = rest;
+        }
     }
 
     /// The refusal at the rule the reading has reached.
@@ -2426,8 +2600,10 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] with the rule appended, its variables numbered by
-    ///   first occurrence on `left`, then on `right`; [`None`] when either term
-    ///   is not one the code writes.
+    ///   first occurrence on `left`, then on `right`, and, when a variable
+    ///   stands under other abstractions at one occurrence than at its first,
+    ///   the rule recorded as conditioned unless one is; [`None`] when either
+    ///   term is not one the code writes.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     ///
@@ -2442,9 +2618,18 @@ impl<'arena> Reader<'arena>
     ) -> Option<()>
     {
         buffers.variables.clear();
+        buffers.scopes.clear();
+        buffers.above.clear();
+        buffers.moved = false;
         let mut sides = (Vec::new(), Vec::new());
         self.term(left, buffers, &mut sides.0)?;
         self.term(right, buffers, &mut sides.1)?;
+        if buffers.moved {
+            let rules = self.rules.len();
+            let _first = self
+                .conditioned
+                .get_or_insert_with(|| RuleIndex::from(rules));
+        }
         self.rules
             .push(TheoryRule::new(sides.0.into(), sides.1.into()));
         Some(())
@@ -2453,17 +2638,25 @@ impl<'arena> Reader<'arena>
     /// Read the term `root` in pre-order into `out`.
     ///
     /// # Specification
-    /// - ensures: [`Some`] when every node reached is a `Var`, or an `App`,
-    ///   `Con`, `Tuple`, `Inst` or `Abs` whose arguments are an `Arg` chain
-    ///   ended by `End`; a variable, instantiated or not, takes its place among
-    ///   `buffers.variables`, appended when new.
+    /// - ensures: [`Some`] when every node reached is a `Var`, an `Occ` naming
+    ///   an atom some enclosing `Abs` abstracts, or an `App`, `Con`, `Tuple`,
+    ///   `Inst` or `Abs` whose arguments are an `Arg` chain ended by `End`; a
+    ///   variable, instantiated or not, takes its place among
+    ///   `buffers.variables`, appended when new, and the atoms of the `Abs`
+    ///   above it, outermost first, are kept at its first occurrence and
+    ///   compared at every other, `buffers.moved` set when they differ; an
+    ///   `Occ` is the occurrence symbol of the number of `Abs` between it and
+    ///   the innermost abstracting its atom.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
-    /// - intension: a worklist of the nodes still to read, so no step recurses.
+    /// - intension: a worklist of the nodes still to read, each with the number
+    ///   of abstractions above it, so no step recurses; the atoms in scope are
+    ///   one stack cut back to a node's number as it is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
+    /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
     fn term(
         &mut self,
         root: ValueId,
@@ -2475,31 +2668,51 @@ impl<'arena> Reader<'arena>
             found.map(|(tag, fields)| (usize::from(tag), fields))
         };
         buffers.stack.clear();
-        buffers.stack.push(root);
-        while let Some(node) = buffers.stack.pop() {
-            let (applied, chain) = match tagged(self.constructor(node))? {
+        buffers.atoms.clear();
+        buffers.stack.push((root, 0));
+        while let Some((node, depth)) = buffers.stack.pop() {
+            buffers.atoms.truncate(depth);
+            let (applied, chain, below) = match tagged(self.constructor(node))? {
                 (tag::VAR, &[name]) => {
-                    let variable = variable(self.text(name)?, buffers)?;
+                    let name = self.text(name)?;
+                    let variable = variable(name, buffers)?;
+                    scoped(name, buffers);
                     out.push(TheoryNode::Variable(variable));
+                    continue;
+                },
+                (tag::OCC, &[name]) => {
+                    let name = self.text(name)?;
+                    let between = buffers.atoms.iter().rev().position(|&atom| atom == name)?;
+                    let symbol =
+                        self.intern((Class::Occurrence(between), None, FieldCount::default()));
+                    out.push(TheoryNode::Symbol(symbol));
                     continue;
                 },
                 (tag::APP, &[name, chain]) => (
                     Applied::Symbol(Class::Operation, Some(self.text(name)?)),
                     chain,
+                    depth,
                 ),
                 (tag::CON, &[name, chain]) => (
                     Applied::Symbol(Class::Constructor, Some(self.text(name)?)),
                     chain,
+                    depth,
                 ),
-                (tag::TUPLE, &[chain]) => (Applied::Symbol(Class::Tuple, None), chain),
+                (tag::TUPLE, &[chain]) => (Applied::Symbol(Class::Tuple, None), chain, depth),
                 (tag::ABS, &[name, chain]) => {
-                    self.text(name)?;
-                    (Applied::Symbol(Class::Abstraction, None), chain)
+                    buffers.atoms.push(self.text(name)?);
+                    (
+                        Applied::Symbol(Class::Abstraction, None),
+                        chain,
+                        depth.saturating_add(1),
+                    )
                 },
-                (tag::INST, &[name, chain]) => (
-                    Applied::Instance(variable(self.text(name)?, buffers)?),
-                    chain,
-                ),
+                (tag::INST, &[name, chain]) => {
+                    let name = self.text(name)?;
+                    let variable = variable(name, buffers)?;
+                    scoped(name, buffers);
+                    (Applied::Instance(variable), chain, depth)
+                },
                 _ => return None,
             };
             buffers.arguments.clear();
@@ -2516,12 +2729,8 @@ impl<'arena> Reader<'arena>
             }
             match applied {
                 Applied::Symbol(class, name) => {
-                    let key = (class, name, buffers.arguments.len());
-                    let fresh = TheorySymbol(self.keys.len());
-                    let symbol = *self.interned.entry(key).or_insert_with(|| {
-                        self.keys.push(key);
-                        fresh
-                    });
+                    let symbol =
+                        self.intern((class, name, FieldCount::from(buffers.arguments.len())));
                     out.push(TheoryNode::Symbol(symbol));
                 },
                 Applied::Instance(variable) => out.push(TheoryNode::Instance(
@@ -2529,9 +2738,31 @@ impl<'arena> Reader<'arena>
                     FieldCount::from(buffers.arguments.len()),
                 )),
             }
-            buffers.stack.extend(buffers.arguments.iter().rev());
+            buffers.stack.extend(
+                buffers
+                    .arguments
+                    .iter()
+                    .rev()
+                    .map(|&argument| (argument, below)),
+            );
         }
         Some(())
+    }
+
+    /// The symbol of `key`, interned when new.
+    ///
+    /// # Specification
+    /// trivial.
+    fn intern(
+        &mut self,
+        key: SymbolKey<'arena>,
+    ) -> TheorySymbol
+    {
+        let fresh = TheorySymbol(self.keys.len());
+        *self.interned.entry(key).or_insert_with(|| {
+            self.keys.push(key);
+            fresh
+        })
     }
 }
 
@@ -2547,6 +2778,27 @@ fn variable<'arena>(
     let count = Ordinal(buffers.variables.len());
     let Ordinal(place) = *buffers.variables.entry(name).or_insert(count);
     u32::try_from(place).ok().map(RuleVariable::from)
+}
+
+/// Keep the atoms in scope at `name`'s first occurrence, or compare them with
+/// those at a later one, setting `buffers.moved` when they differ.
+///
+/// # Specification
+/// trivial.
+fn scoped<'arena>(
+    name: &'arena StringLiteral,
+    buffers: &mut ReadBuffers<'arena>,
+)
+{
+    if let Some(&(start, end)) = buffers.scopes.get(name) {
+        if buffers.above.get(start .. end) != Some(buffers.atoms.as_slice()) {
+            buffers.moved = true;
+        }
+        return;
+    }
+    let start = buffers.above.len();
+    buffers.above.extend_from_slice(&buffers.atoms);
+    let _new = buffers.scopes.insert(name, (start, buffers.above.len()));
 }
 
 #[cfg(test)]

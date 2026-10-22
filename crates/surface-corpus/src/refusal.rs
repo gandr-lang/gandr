@@ -1683,7 +1683,7 @@ const MODEL_FAULTS: [ModelFault; 10_usize] = [
 ];
 
 /// Every fault a member the description does not read carries.
-const MEMBER_FAULTS: [MemberFault; 19_usize] = [
+const MEMBER_FAULTS: [MemberFault; 18_usize] = [
     MemberFault::HigherOrderField,
     MemberFault::DependentField,
     MemberFault::TypeShape,
@@ -1702,7 +1702,6 @@ const MEMBER_FAULTS: [MemberFault; 19_usize] = [
     MemberFault::UnderivedWiring,
     MemberFault::ParallelRedexes,
     MemberFault::OffBoundary,
-    MemberFault::AtomOccurrence,
 ];
 
 /// Every boundary a form out of the fragment crosses and is named by: every
@@ -1962,7 +1961,6 @@ const fn member_tag(fault: MemberFault) -> Tag
         MemberFault::UnderivedWiring => "UnderivedWiring",
         MemberFault::ParallelRedexes => "ParallelRedexes",
         MemberFault::OffBoundary => "OffBoundary",
-        MemberFault::AtomOccurrence => "AtomOccurrence",
     })
 }
 

@@ -141,9 +141,6 @@ pub enum DescriptionFault
 {
     /// The written shape is incomplete.
     Malformed,
-    /// A rule term names an atom an enclosing `bind` abstracts: a term reads
-    /// no atom yet.
-    AtomOccurrence,
     /// The parser repaired the declaration's form: the declaration's one
     /// refusal, whatever its reading would add.
     Repaired
@@ -238,9 +235,6 @@ pub enum MemberFault
     ParallelRedexes,
     /// A circuit rule whose redex lies off the boundary its wiring derives.
     OffBoundary,
-    /// A rule term naming the atom an enclosing abstraction binds, which a
-    /// term does not read yet.
-    AtomOccurrence,
 }
 
 impl fmt::Display for MemberFault
@@ -296,10 +290,6 @@ impl fmt::Display for MemberFault
             },
             Self::OffBoundary => {
                 "is a circuit whose redex lies off the boundary its wiring derives"
-            },
-            Self::AtomOccurrence => {
-                "names, inside an abstraction, the atom it binds, which a rule term does not \
-                 read yet"
             },
         })
     }
@@ -424,7 +414,6 @@ impl DescriptionDiagnostic
                     spelled(reason.subjects.get(1_usize), written),
                 ],
             },
-            DescriptionFault::AtomOccurrence => undescribed(MemberFault::AtomOccurrence),
             DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
             | DescriptionFault::NonUniformResult

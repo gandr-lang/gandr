@@ -842,6 +842,66 @@ fn abstractions_naming_different_atoms_are_one_term()
 }
 
 #[test]
+fn an_atom_counts_the_abstractions_to_its_binder()
+{
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out =
+        |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), FreeTerm::op("nil", [])]);
+    let heads = |between: usize| {
+        Term(alloc::vec![
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs,
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs,
+            Head::Op(Name::from("out"), Count(2)),
+            Head::Occ(Count(between)),
+            Head::Op(Name::from("nil"), Count(0)),
+        ])
+    };
+    let outer = Term::from(&nu("a", nu("b", out("a"))));
+    assert_eq!(
+        (heads(1), heads(0)),
+        (outer.clone(), Term::from(&nu("a", nu("b", out("b"))))),
+        "an occurrence counts the abstractions between it and its own binder"
+    );
+    assert_eq!(
+        outer,
+        Term::from(&nu("x", nu("y", out("x")))),
+        "the names an occurrence and its binder share are no part of the term"
+    );
+    assert_eq!(
+        heads(0),
+        Term::from(&nu("a", nu("a", out("a")))),
+        "an inner abstraction of the same name shadows the outer"
+    );
+    assert_eq!(
+        Maybe::Present(nu("a0", nu("a1", out("a0")))),
+        outer.read(),
+        "it reads back naming the atom of its binder's depth"
+    );
+    let beside = FreeTerm::op("par", [nu("a", out("a")), nu("b", out("b"))]);
+    assert_eq!(
+        Maybe::Present(FreeTerm::op("par", [
+            nu("a0", out("a0")),
+            nu("a0", out("a0"))
+        ])),
+        Term::from(&beside).read(),
+        "an occurrence beside an abstraction rather than under it counts from its own"
+    );
+    assert_eq!(
+        (
+            Term(alloc::vec![Head::Free(Name::from("c"))]),
+            Maybe::Present(FreeTerm::atom("^1")),
+        ),
+        (
+            Term::from(&FreeTerm::atom("c")),
+            Term(alloc::vec![Head::Occ(Count(1))]).read(),
+        ),
+        "an atom no abstraction binds stays named, and a dangling occurrence reads as how far it reaches past the root"
+    );
+}
+
+#[test]
 fn the_circles_rules_fire_below_the_root()
 {
     let base = || ctor("Base", []);

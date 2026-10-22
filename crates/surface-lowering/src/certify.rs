@@ -177,6 +177,9 @@ enum Class
     Tuple,
     /// An atom's abstraction, keyed without its atom's name.
     Abstraction,
+    /// An atom's occurrence, keyed by the number of abstractions between it
+    /// and the one binding it.
+    Occurrence(usize),
 }
 
 impl<'term> Symbols<'term>
@@ -204,7 +207,9 @@ impl<'term> Symbols<'term>
             .iter()
             .filter_map(|&(class, name, _)| match class {
                 Class::Operation => name.cloned(),
-                Class::Constructor | Class::Tuple | Class::Abstraction => None,
+                Class::Constructor | Class::Tuple | Class::Abstraction | Class::Occurrence(_) => {
+                    None
+                },
             })
             .collect()
     }
@@ -226,9 +231,13 @@ impl<'term> Symbols<'term>
                         ))
                     },
                     (Class::Operation, None)
-                    | (Class::Constructor | Class::Tuple | Class::Abstraction, _) => {
-                        SymbolKind::Constructor
-                    },
+                    | (
+                        Class::Constructor
+                        | Class::Tuple
+                        | Class::Abstraction
+                        | Class::Occurrence(_),
+                        _,
+                    ) => SymbolKind::Constructor,
                 };
                 (kind, FieldCount::from(arity))
             })
@@ -254,7 +263,8 @@ impl<'term> Symbols<'term>
 
     /// `term` in pre-order, interning its symbols and numbering its
     /// variables among `variables`, an instantiated one as an instantiated
-    /// variable is.
+    /// variable is, and an occurrence by the number of abstractions between
+    /// it and the innermost abstracting its atom.
     ///
     /// # Specification
     /// trivial.
@@ -265,10 +275,14 @@ impl<'term> Symbols<'term>
     ) -> Vec<TheoryNode>
     {
         let mut nodes = Vec::new();
-        let mut pending: Vec<TermNode<'term>> = Vec::from([term.to_node()]);
+        // Each node still to read, with the number of abstractions above it.
+        let mut pending: Vec<(TermNode<'term>, usize)> = Vec::from([(term.to_node(), 0)]);
         let mut arguments: Vec<TermNode<'term>> = Vec::new();
-        while let Some(node) = pending.pop() {
+        // The atoms the abstractions above the node read abstract.
+        let mut atoms: Vec<&'term Name> = Vec::new();
+        while let Some((node, depth)) = pending.pop() {
             arguments.clear();
+            atoms.truncate(depth);
             let (class, name) = match node.view() {
                 TermView::Var(name) => {
                     nodes.push(TheoryNode::Variable(Self::variable(variables, name)));
@@ -280,7 +294,7 @@ impl<'term> Symbols<'term>
                         Self::variable(variables, name),
                         FieldCount::from(arguments.len()),
                     ));
-                    pending.extend(arguments.iter().rev());
+                    pending.extend(arguments.iter().rev().map(|&argument| (argument, depth)));
                     continue;
                 },
                 TermView::Op { name, args } => {
@@ -295,9 +309,18 @@ impl<'term> Symbols<'term>
                     arguments.extend(args);
                     (Class::Tuple, None)
                 },
-                TermView::Abs { args, .. } => {
+                TermView::Abs { atom, args } => {
                     arguments.extend(args);
+                    atoms.push(atom);
                     (Class::Abstraction, None)
+                },
+                TermView::Atom(name) => {
+                    let between = atoms
+                        .iter()
+                        .rev()
+                        .position(|&atom| atom == name)
+                        .unwrap_or(atoms.len());
+                    (Class::Occurrence(between), None)
                 },
             };
             let key = (class, name, arguments.len());
@@ -307,7 +330,13 @@ impl<'term> Symbols<'term>
                 fresh
             });
             nodes.push(TheoryNode::Symbol(symbol));
-            pending.extend(arguments.iter().rev());
+            let below = if class == Class::Abstraction {
+                depth.saturating_add(1)
+            }
+            else {
+                depth
+            };
+            pending.extend(arguments.iter().rev().map(|&argument| (argument, below)));
         }
         nodes
     }

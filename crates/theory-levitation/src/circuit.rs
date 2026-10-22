@@ -897,6 +897,10 @@ pub fn derive_boundary_within(
                         stack.push(Step::Port(name));
                         continue;
                     },
+                    TermView::Atom(name) => {
+                        results.push(FreeTerm::atom(name.clone()));
+                        continue;
+                    },
                     TermView::Ctor { name, args } => (Step::FinishCtor(name, args.len()), args),
                     TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
                     TermView::Results { args } => (Step::FinishResults(args.len()), args),

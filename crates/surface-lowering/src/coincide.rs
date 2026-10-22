@@ -1343,7 +1343,8 @@ fn orient_derived<G>(
                 TermView::Op { .. }
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
-                | TermView::Abs { .. } => {
+                | TermView::Abs { .. }
+                | TermView::Atom(_) => {
                     return false;
                 },
             }
@@ -1692,18 +1693,22 @@ where
 }
 
 /// Read `text` as a term of the inspection notation over `description`'s
-/// symbols: a name, or a name applied to terms in parentheses separated by
-/// commas, each name a constructor or an operation the description declares.
+/// symbols: a name, a name applied to terms in parentheses separated by
+/// commas, each name a constructor or an operation the description declares,
+/// or `bind a . t`, the atom `a` abstracted over `t`, inside which the name
+/// `a` is that atom's occurrence.
 ///
 /// # Specification
 /// - ensures: the term whose every application is the declared symbol of its
-///   name, constructors and operations told apart by the declaration.
+///   name, constructors and operations told apart by the declaration, every
+///   abstraction the atom it names over its body, and every name an enclosing
+///   abstraction names that atom's occurrence.
 /// - fails: [`NormalFormFault::Unread`] when the text is not a whole term of
 ///   the notation; [`NormalFormFault::UnknownSymbol`] when a name is declared
-///   as neither.
+///   as neither and no enclosing abstraction names it.
 /// - panics: none.
 /// - intension: one pass over the text with an explicit stack of open
-///   applications, so nesting costs no call stack.
+///   applications and abstractions, so nesting costs no call stack.
 ///
 /// # Errors
 /// As the failure clause states.
@@ -1711,7 +1716,8 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — nested and many-argument calls read to the terms whose
 ///   display they are, and a missing parenthesis, trailing text and an
-///   undeclared name are refused apart.
+///   undeclared name are refused apart; the channel a restriction abstracts
+///   reads as its occurrence inside the abstraction and is unknown beside it.
 /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
 #[spec(ensures: |ret| ret.as_ref().is_err() || text.0.split_whitespace().collect::<String>()
     == ret.as_ref().map(|term| term.to_string().split_whitespace().collect::<String>()).unwrap_or_default())]
@@ -1720,51 +1726,81 @@ fn read_call<G>(
     text: CallText<'_>,
 ) -> Result<FreeTerm, NormalFormFault>
 {
-    let mut open: Vec<(Symbol<'_>, Vec<FreeTerm>)> = Vec::new();
+    let word = |rest: &str| -> usize {
+        rest.find(|character: char| !(character.is_alphanumeric() || "_'′".contains(character)))
+            .unwrap_or(rest.len())
+    };
+    let mut open: Vec<Open<'_, '_>> = Vec::new();
     let mut rest = text.0.trim_start();
     loop {
-        let length = rest
-            .find(|character: char| !(character.is_alphanumeric() || "_'′".contains(character)))
-            .unwrap_or(rest.len());
-        let (name, after) = rest.split_at(length);
+        let (name, after) = rest.split_at(word(rest));
         if name.is_empty() {
             return Err(NormalFormFault::Unread);
         }
-        let symbol = Symbol::of(description, CallText(name))?;
         rest = after.trim_start();
-        if let Some(after) = rest.strip_prefix('(') {
-            open.push((symbol, Vec::new()));
-            rest = after.trim_start();
-            continue;
-        }
-        let mut done = symbol.apply(Vec::new());
-        loop {
-            let Some(&mut (_, ref mut arguments)) = open.last_mut()
-            else {
-                return if rest.is_empty() {
-                    Ok(done)
-                }
-                else {
-                    Err(NormalFormFault::Unread)
-                };
-            };
-            arguments.push(done);
-            if let Some(after) = rest.strip_prefix(',') {
-                rest = after.trim_start();
-                break;
+        if name == "bind" {
+            let (atom, after) = rest.split_at(word(rest));
+            if let Some(body) = after.trim_start().strip_prefix('.')
+                && !atom.is_empty()
+            {
+                open.push(Open::Abstraction(atom));
+                rest = body.trim_start();
+                continue;
             }
-            let Some(after) = rest.strip_prefix(')')
-            else {
-                return Err(NormalFormFault::Unread);
-            };
-            rest = after.trim_start();
-            let Some((symbol, arguments)) = open.pop()
-            else {
-                return Err(NormalFormFault::Unread);
-            };
-            done = symbol.apply(arguments);
+        }
+        let bound = open
+            .iter()
+            .any(|frame| matches!(*frame, Open::Abstraction(atom) if atom == name));
+        let mut done = if bound && !rest.starts_with('(') {
+            FreeTerm::atom(name)
+        }
+        else {
+            let symbol = Symbol::of(description, CallText(name))?;
+            if let Some(after) = rest.strip_prefix('(') {
+                open.push(Open::Application(symbol, Vec::new()));
+                rest = after.trim_start();
+                continue;
+            }
+            symbol.apply(Vec::new())
+        };
+        loop {
+            match open.pop() {
+                None => {
+                    return if rest.is_empty() {
+                        Ok(done)
+                    }
+                    else {
+                        Err(NormalFormFault::Unread)
+                    };
+                },
+                Some(Open::Abstraction(atom)) => done = FreeTerm::abs(atom, done),
+                Some(Open::Application(symbol, mut arguments)) => {
+                    arguments.push(done);
+                    if let Some(after) = rest.strip_prefix(',') {
+                        open.push(Open::Application(symbol, arguments));
+                        rest = after.trim_start();
+                        break;
+                    }
+                    let Some(after) = rest.strip_prefix(')')
+                    else {
+                        return Err(NormalFormFault::Unread);
+                    };
+                    rest = after.trim_start();
+                    done = symbol.apply(arguments);
+                },
+            }
         }
     }
+}
+
+/// A term an inspection call has opened and not yet closed.
+#[derive(Debug)]
+enum Open<'desc, 'text>
+{
+    /// A symbol applied to the arguments read so far.
+    Application(Symbol<'desc>, Vec<FreeTerm>),
+    /// The abstraction of an atom, its body still to read.
+    Abstraction(&'text str),
 }
 
 /// A declared symbol a call names.
@@ -1845,7 +1881,8 @@ fn spell(term: &FreeTerm) -> String
         | TermView::Ctor { .. }
         | TermView::Op { .. }
         | TermView::Inst { .. }
-        | TermView::Abs { .. } => term.to_string(),
+        | TermView::Abs { .. }
+        | TermView::Atom(_) => term.to_string(),
     }
 }
 

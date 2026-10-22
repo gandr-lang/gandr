@@ -1244,7 +1244,8 @@ impl<'source> Lowerer<'_, 'source>
                     TermView::Ctor { .. }
                     | TermView::Results { .. }
                     | TermView::Inst { .. }
-                    | TermView::Abs { .. } => {
+                    | TermView::Abs { .. }
+                    | TermView::Atom(_) => {
                         return Err(Missing::Unlowered);
                     },
                 },
@@ -3101,7 +3102,7 @@ fn term_heads<'term>(
     let mut pending = Vec::from([term.to_node()]);
     while let Some(node) = pending.pop() {
         match node.view() {
-            TermView::Var(_) => {},
+            TermView::Var(_) | TermView::Atom(_) => {},
             TermView::Op { name, args } => {
                 into.push(name);
                 pending.extend(args);

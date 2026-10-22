@@ -424,7 +424,7 @@ impl<'form> Unstated<'form>
         let mut pending = Vec::from([left.to_node()]);
         while let Some(node) = pending.pop() {
             match node.view() {
-                TermView::Var(_) => {},
+                TermView::Var(_) | TermView::Atom(_) => {},
                 TermView::Op { name, args } => {
                     if let Some(operation) = operations.get(name) {
                         for (arg, port) in args.clone().zip(&operation.inputs) {
@@ -535,6 +535,7 @@ fn substitute(
                     by.get(name)
                         .map_or_else(|| FreeTerm::var(name.clone()), Clone::clone),
                 ),
+                TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
                 TermView::Op { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Rebuild::Op(name, args.len()));
@@ -696,7 +697,8 @@ impl Typer<'_>
                     TermView::Ctor { .. }
                     | TermView::Results { .. }
                     | TermView::Inst { .. }
-                    | TermView::Abs { .. } => {
+                    | TermView::Abs { .. }
+                    | TermView::Atom(_) => {
                         return None;
                     },
                 },
@@ -1312,8 +1314,9 @@ impl Typer<'_>
     /// arguments the elaboration gives it, and an application's head at its
     /// operation's type; for a law no component states, a variable and an
     /// application at the unindexed sort the theory writes for them, an
-    /// instantiation at the sort of its variable's binding port, and an
-    /// abstraction's atom at the atom sort its port abstracts there.
+    /// instantiation at the sort of its variable's binding port, an
+    /// abstraction's atom at the atom sort its port abstracts there, and an
+    /// atom's occurrence at the sort of the port it stands at.
     ///
     /// # Specification
     /// - requires: an elaboration, when present, is `side` with each
@@ -1333,11 +1336,12 @@ impl Typer<'_>
     ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
     ///   the code its sort returns; the identity-return signature's index
     ///   `arrow(a, b)` at `CTy`; `let(u, t)`, `u` and `t(u)` at `Tm`; the atom
-    ///   of `bind a . p` at `Name`.
+    ///   of `bind a . p` at `Name`; `a` in `out(a, nil())` at `Name`.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
     /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `described::tests::an_occurrence_answers_at_its_port`
     fn law_side(
         &mut self,
         scope: &Scope,
@@ -1348,20 +1352,30 @@ impl Typer<'_>
         read: Reading<'_, '_>,
     )
     {
+        // Each node with its elaboration, the atoms its port abstracts that no
+        // abstraction above it has taken, and the port's sort.
+        type Pending<'term> = (
+            TermNode<'term>,
+            Option<TermNode<'term>>,
+            &'term [Binder],
+            Option<&'term SortTerm>,
+        );
         let (elaborated, unstated) = match read {
             Reading::Elaborated(elaborated) => (elaborated, None),
             Reading::Written(unstated) => (None, Some(unstated)),
         };
         let context = self.context(scope);
-        // Each node with its elaboration, and the atoms its port abstracts
-        // that no abstraction above it has taken.
-        let mut pending: Vec<(TermNode<'_>, Option<TermNode<'_>>, &[Binder])> =
-            Vec::from([(side.to_node(), elaborated.map(FreeTerm::to_node), &[][..])]);
+        let mut pending: Vec<Pending<'_>> = Vec::from([(
+            side.to_node(),
+            elaborated.map(FreeTerm::to_node),
+            &[][..],
+            None,
+        )]);
         let mut at = nodes.nodes.iter();
         // The elaborated arguments by the binder each instantiates, refilled
         // per application.
         let mut by: BTreeMap<&Name, FreeTerm> = BTreeMap::new();
-        while let Some((node, image, atoms)) = pending.pop() {
+        while let Some((node, image, atoms, port)) = pending.pop() {
             let Some(written) = at.next()
             else {
                 break;
@@ -1382,6 +1396,13 @@ impl Typer<'_>
                         && let Some(ty) = self.sort(scope, sort)
                     {
                         self.emit(written.span, DescribedRole::Term, ty, context);
+                    }
+                },
+                TermView::Atom(_) => {
+                    if let Some(sort) = port
+                        && let Some(ty) = self.sort(scope, sort)
+                    {
+                        self.emit(written.span, DescribedRole::Name, ty, context);
                     }
                 },
                 TermView::Op { name, args } => {
@@ -1444,10 +1465,9 @@ impl Typer<'_>
                         .map_or(&[][..], |operation| operation.inputs.as_slice());
                     for (place, arg) in args.into_iter().enumerate().rev() {
                         let image = images.get(place.saturating_add(implicit)).copied();
-                        let atoms = ports
-                            .get(place)
-                            .map_or(&[][..], |port| port.abstractions.as_slice());
-                        pending.push((arg, image, atoms));
+                        let port = ports.get(place);
+                        let atoms = port.map_or(&[][..], |port| port.abstractions.as_slice());
+                        pending.push((arg, image, atoms, port.map(|port| &port.sort)));
                     }
                 },
                 TermView::Inst { name, args } => {
@@ -1459,7 +1479,7 @@ impl Typer<'_>
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
                     let first = pending.len();
-                    pending.extend(args.map(|arg| (arg, None, &[][..])));
+                    pending.extend(args.map(|arg| (arg, None, &[][..], None)));
                     if let Some(added) = pending.get_mut(first ..) {
                         added.reverse();
                     }
@@ -1474,12 +1494,12 @@ impl Typer<'_>
                         self.emit(atom, DescribedRole::Name, ty, context);
                     }
                     if let Some(body) = args.next() {
-                        pending.push((body, None, below));
+                        pending.push((body, None, below, port));
                     }
                 },
                 TermView::Ctor { args, .. } | TermView::Results { args } => {
                     let first = pending.len();
-                    pending.extend(args.map(|arg| (arg, None, &[][..])));
+                    pending.extend(args.map(|arg| (arg, None, &[][..], None)));
                     if let Some(added) = pending.get_mut(first ..) {
                         added.reverse();
                     }
@@ -1768,7 +1788,8 @@ impl Typer<'_>
                 | TermView::Ctor { .. }
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
-                | TermView::Abs { .. } => None,
+                | TermView::Abs { .. }
+                | TermView::Atom(_) => None,
             };
             for (side, nodes, expected) in [
                 (&face.lhs, &member.left, None),
@@ -1842,6 +1863,7 @@ impl Typer<'_>
                             (expected, args.map(|arg| (arg, None)).collect())
                         },
                         TermView::Abs { args, .. } => (None, args.map(|arg| (arg, None)).collect()),
+                        TermView::Atom(_) => (expected, Vec::new()),
                     };
                     if let Some(ty) = ty {
                         self.emit(written.span, DescribedRole::Term, ty, closed);

@@ -1,0 +1,32 @@
+// The twin of `model/desc/atom-occurrence.gandr`: an atom named where no port
+// of its sort stands, and a freshness condition where a term can name the atom
+// it is stated on.
+
+// The law over the channel its restriction abstracts.
+import "../../model/desc/atom-occurrence.gandr" ;
+
+/// `par` takes processes, so the channel `bind a .` abstracts cannot stand as
+/// one: the description check refuses the occurrence as misplaced, an
+/// ill-formed description.
+@[ refuses("IllFormedDescription") ]
+theory Misplaced {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule stray : nu(bind a . par(a, nil())) ==> nil();
+}
+
+/// Scope extrusion where `out` takes a channel: an instance of `q` may name
+/// `a`, and no rewriting step decides `a # q` of it yet, so the condition is
+/// refused undecided (#1900).
+@[ refuses("IllFormedDescription") ]
+theory Extruded {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+}

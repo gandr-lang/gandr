@@ -4,9 +4,11 @@
 // the term `q` stands for. A rule whose variable moves into or out of an
 // abstraction states that atom fresh for it, or the description check refuses
 // the rule for capture (`pathological/desc/freshness.gandr`). The value of
-// `Theory` keeps each condition as a `Fresh` link after its rule. No term
-// names an atom yet (#1580), so the support of every instance is empty and
-// every condition holds.
+// `Theory` keeps each condition as a `Fresh` link after its rule. No port of
+// these theories takes an atom, so no term names one: the support of every
+// instance is empty and every condition holds. Where a port takes an atom, a
+// condition is refused as undecided (#1900):
+// `pathological/desc/atom-occurrence.gandr`.
 
 /// The π-calculus's structural congruence: the inert process, parallel
 /// composition and restriction, scope extrusion moving `q` under the

@@ -1,5 +1,5 @@
 // The twin of `model/desc/bind-term.gandr`: an abstraction where no port
-// abstracts, and an atom named inside the abstraction that binds it.
+// abstracts.
 
 // The abstraction's laws.
 import "../../model/desc/bind-term.gandr" ;
@@ -14,17 +14,4 @@ theory Escape {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   rule leak : par(bind a . nil(), nil()) ==> nil();
-}
-
-/// The channel `out` sends on is the atom `nu` abstracts. A rule term does not
-/// read an atom yet (#1580), and reading `a` as a variable would match every
-/// channel, so the reader refuses it.
-@[ refuses("UndescribedMember.AtomOccurrence") ]
-theory Occurs {
-  sort Name : Atom;
-  sort Proc : Type;
-  oper nil : () --> Proc;
-  oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule use : nu(bind a . out(a, nil())) ==> nil();
 }

@@ -1146,7 +1146,6 @@ fn every_member_fault_renders_its_own_message()
         MemberFault::UnderivedWiring,
         MemberFault::ParallelRedexes,
         MemberFault::OffBoundary,
-        MemberFault::AtomOccurrence,
     ]
     .map(|fault| fault.to_string());
     for (position, message) in messages.iter().enumerate() {

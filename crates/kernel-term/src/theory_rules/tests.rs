@@ -402,6 +402,19 @@ impl Code
         self.node(ConstructorTag::from(super::tag::ABS), vec![atom, chain])
     }
 
+    /// The atom `atom`, named inside an abstraction of it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn occ(
+        &mut self,
+        atom: StringLiteral,
+    ) -> ValueId
+    {
+        let atom = self.text(atom);
+        self.node(ConstructorTag::from(super::tag::OCC), vec![atom])
+    }
+
     /// The presentation whose rule chain is `members`, each a tag and its
     /// fields before the rest, ended by `End`.
     ///
@@ -412,15 +425,58 @@ impl Code
         members: Vec<(ConstructorTag, Vec<ValueId>)>,
     ) -> ValueId
     {
+        let (sorts, operations) = (self.end(), self.end());
+        self.presenting(sorts, operations, members)
+    }
+
+    /// The presentation over the sort chain `sorts` and the operation chain
+    /// `operations` whose rule chain is `members`, as [`Self::presents`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn presenting(
+        &mut self,
+        sorts: ValueId,
+        operations: ValueId,
+        members: Vec<(ConstructorTag, Vec<ValueId>)>,
+    ) -> ValueId
+    {
         let mut chain = self.end();
         for (tag, mut fields) in members.into_iter().rev() {
             fields.push(chain);
             chain = self.node(tag, fields);
         }
-        let (sorts, operations) = (self.end(), self.end());
         self.node(ConstructorTag::from(super::tag::PRESENTS), vec![
             sorts, operations, chain,
         ])
+    }
+
+    /// The sort chain declaring the atom sort `Name` and the operation chain
+    /// declaring `out`, whose first input port takes a `Name` when `naming`
+    /// is [`super::Naming::Named`] and a `Proc` otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn channels(
+        &mut self,
+        naming: super::Naming,
+    ) -> (ValueId, ValueId)
+    {
+        let literal = |text: &str| StringLiteral::new(String::from(text));
+        let tag = ConstructorTag::from;
+        let [name, process, out, c, p] =
+            ["Name", "Proc", "out", "c", "p"].map(|text| self.text(literal(text)));
+        let end = self.end();
+        let ordinary = self.node(tag(super::tag::SORT), vec![process, end, end]);
+        let sorts = self.node(tag(super::tag::ATOM), vec![name, end, ordinary]);
+        let rest = self.node(tag(super::tag::PORT), vec![p, process, end, end]);
+        let channel = match naming {
+            super::Naming::Named => name,
+            super::Naming::Unnamed => process,
+        };
+        let inputs = self.node(tag(super::tag::PORT), vec![c, channel, end, rest]);
+        let operations = self.node(tag(super::tag::OPER), vec![out, inputs, end, end]);
+        (sorts, operations)
     }
 }
 
@@ -571,5 +627,97 @@ fn a_freshness_condition_reads_after_its_written_rule()
             fault: TheoryRuleFault::Unreadable,
         }),
         "a condition stands after the rule it is stated on"
+    );
+}
+
+#[test]
+fn an_occurrence_counts_to_its_abstraction()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let rule_tag = ConstructorTag::from(super::tag::RULE);
+    let mut code = Code::new();
+    let nil = code.app(literal("nil"), &[]);
+    let stop = code.app(literal("stop"), &[]);
+    let [unheard, deaf, outer, inner, leak] =
+        ["unheard", "deaf", "outer", "inner", "leak"].map(|name| code.text(literal(name)));
+    let sends = |code: &mut Code, channel: &str| {
+        let named = code.occ(literal(channel));
+        code.app(literal("out"), &[named, nil])
+    };
+    let restricted = |code: &mut Code, atom: &str, body: ValueId| {
+        let over = code.abs(literal(atom), body);
+        code.app(literal("nu"), &[over])
+    };
+    let (sorts, operations) = code.channels(super::Naming::Named);
+    let on_a = sends(&mut code, "a");
+    let on_b = sends(&mut code, "b");
+    let left_a = restricted(&mut code, "a", on_a);
+    let left_b = restricted(&mut code, "b", on_b);
+    let renamed = code.presenting(sorts, operations, vec![
+        (rule_tag, vec![unheard, left_a, nil]),
+        (rule_tag, vec![deaf, left_b, stop]),
+    ]);
+    let read = TheoryRules::read(&code.arena, renamed).expect("the chain reads");
+    assert_eq!(
+        read.rules(),
+        [
+            rule(&[s!(0), s!(1), s!(2), s!(3), s!(4)], &[s!(4)]),
+            rule(&[s!(0), s!(1), s!(2), s!(3), s!(4)], &[s!(5)]),
+        ],
+        "`out(a, …)` under `bind a .` and `out(b, …)` under `bind b .` are one term"
+    );
+    assert_eq!(
+        read.symbols().get(3),
+        Some(&(SymbolKind::Constructor, FieldCount::from(0_usize))),
+        "an occurrence is a constant"
+    );
+    let under_b = restricted(&mut code, "b", on_a);
+    let skipping = restricted(&mut code, "a", under_b);
+    let shadowed_inner = restricted(&mut code, "a", on_a);
+    let shadowing = restricted(&mut code, "a", shadowed_inner);
+    let nested = code.presenting(sorts, operations, vec![
+        (rule_tag, vec![outer, skipping, nil]),
+        (rule_tag, vec![inner, shadowing, nil]),
+    ]);
+    let read = TheoryRules::read(&code.arena, nested).expect("the chain reads");
+    assert_eq!(
+        read.rules(),
+        [
+            rule(&[s!(0), s!(1), s!(0), s!(1), s!(2), s!(3), s!(4)], &[s!(4)]),
+            rule(&[s!(0), s!(1), s!(0), s!(1), s!(2), s!(5), s!(4)], &[s!(4)]),
+        ],
+        "`a` past `bind b .` counts one abstraction, `a` shadowed by `bind a .` none"
+    );
+    let free = code.presenting(sorts, operations, vec![(rule_tag, vec![leak, on_a, nil])]);
+    assert_eq!(
+        TheoryRules::read(&code.arena, free),
+        Err(TheoryRuleRefusal {
+            rule: RuleIndex::from(0_usize),
+            fault: TheoryRuleFault::Unreadable,
+        }),
+        "an occurrence no abstraction binds"
+    );
+    let p = code.var(literal("p"));
+    let hiding = restricted(&mut code, "a", p);
+    let undecided = |code: &mut Code, naming: super::Naming| {
+        let (sorts, operations) = code.channels(naming);
+        let presentation = code.presenting(sorts, operations, vec![
+            (rule_tag, vec![unheard, left_a, nil]),
+            (rule_tag, vec![leak, hiding, p]),
+        ]);
+        TheoryRules::read(&code.arena, presentation).map(|read| read.rules().len())
+    };
+    assert_eq!(
+        undecided(&mut code, super::Naming::Named),
+        Err(TheoryRuleRefusal {
+            rule: RuleIndex::from(1_usize),
+            fault: TheoryRuleFault::UndecidedCondition,
+        }),
+        "`p` leaves `bind a .` where `out` takes a channel: an instance may name it"
+    );
+    assert_eq!(
+        undecided(&mut code, super::Naming::Unnamed),
+        Ok(2),
+        "where no port takes a channel no term names one, and the move is read"
     );
 }

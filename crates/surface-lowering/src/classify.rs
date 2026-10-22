@@ -164,8 +164,7 @@ impl LoweringRefusal<'_>
                     | MemberFault::AggregatedOutput
                     | MemberFault::NestedOperation
                     | MemberFault::UnrepresentableOperation
-                    | MemberFault::ParallelRedexes
-                    | MemberFault::AtomOccurrence,
+                    | MemberFault::ParallelRedexes,
                 ..
             }
             | Self::UnderivedRule {
@@ -177,6 +176,10 @@ impl LoweringRefusal<'_>
                             | ModelFault::Binding
                             | ModelFault::Abstraction,
                     ),
+                ..
+            }
+            | Self::IllFormedDescription {
+                kind: crate::WfKind::UndecidedCondition,
                 ..
             }
             | Self::GradedBridge { .. }
@@ -259,6 +262,10 @@ impl LoweringRefusal<'_>
     pub fn classify(&self) -> FailureClass
     {
         match *self {
+            Self::IllFormedDescription {
+                kind: crate::WfKind::UndecidedCondition,
+                ..
+            } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -686,7 +693,6 @@ fn undescribed(fault: MemberFault) -> FailureClass
         MemberFault::ParallelRedexes => {
             FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES)
         },
-        MemberFault::AtomOccurrence => FailureClass::Unimplemented(TrackingIssue::ATOM_OCCURRENCE),
         MemberFault::HigherOrderField
         | MemberFault::DependentField
         | MemberFault::TypeShape
@@ -1258,6 +1264,27 @@ mod tests
                 "`{form}` read as {sort} with the {boundary:?} boundary"
             );
         }
+        let ill_formed = |kind| {
+            LoweringRefusal::IllFormedDescription {
+                span: empty,
+                kind,
+                subjects: [
+                    Maybe::Present(SurfaceName::from("a")),
+                    Maybe::Absent(crate::description_subject::Absent::Unnamed),
+                ],
+            }
+            .classify()
+        };
+        assert_eq!(
+            ill_formed(crate::WfKind::UndecidedCondition),
+            FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            "a condition no rewriting step decides yet names the issue tracking it"
+        );
+        assert_eq!(
+            ill_formed(crate::WfKind::Capture),
+            FailureClass::MalformedSource,
+            "a crossing left unstated is the source's fault"
+        );
     }
 
     /// Only an instantiation and a grade carry the sort their position
@@ -1382,10 +1409,6 @@ mod tests
             (
                 MemberFault::ParallelRedexes,
                 FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES),
-            ),
-            (
-                MemberFault::AtomOccurrence,
-                FailureClass::Unimplemented(TrackingIssue::ATOM_OCCURRENCE),
             ),
             (
                 MemberFault::HigherOrderField,
