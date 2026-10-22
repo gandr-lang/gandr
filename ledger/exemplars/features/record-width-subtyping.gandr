@@ -1,0 +1,10 @@
+/// `record-width-subtyping`: a record with more labels stands where one with fewer is expected.
+@[ checks ]
+def first(p : #{x : Integer}) -> -F Integer {
+  return p.x
+}
+
+/// A record with a label `first` never asks for, passed where it asks for `x` alone.
+@[ runs("3") ]
+def wide : () => Integer ;
+def wide = thunk { become first(#{x = 3, y = 4}) } ;

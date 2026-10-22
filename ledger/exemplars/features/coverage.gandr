@@ -1,0 +1,25 @@
+/// `coverage`: a match is checked for missing and unreachable arms; every `Shape` meets one arm here, with no wildcard to hide a gap.
+@[ checks ]
+data Shape : Type {
+  Dot : Shape;
+  Line : (n : Integer) --> Shape;
+  Pair : (a : Shape, b : Shape) --> Shape;
+}
+
+/// Each arm takes values the arms before it left: the literal `0` before the variable that takes every other length, and a pair split on its left part.
+@[ checks ]
+def weight(s : Shape) -> -F Integer {
+  case s {
+    Dot => return 0,
+    Line(0) => return 0,
+    Line(n) => return n,
+    Pair(Dot, b) => return 1,
+    Pair(Line(n), b) => return n,
+    Pair(Pair(a, c), b) => return 2
+  }
+}
+
+/// The match run on a pair whose left part is a line of seven.
+@[ runs("7") ]
+def heavy : () => Integer ;
+def heavy = thunk { become weight(Pair(Line(7), Dot)) } ;
