@@ -227,7 +227,10 @@
 //! then restores the prior subscriber when the invocation ends. Libraries
 //! install no subscriber. Standard-output write and flush errors remain faults
 //! rather than successful-completion events. Tracing diagnostics may precede a
-//! fault’s `gandr:` line on stderr; stdout and exit codes are unchanged.
+//! fault’s `gandr:` line on stderr; stdout and exit codes are unchanged. A
+//! diagnostic an unwritable stderr refuses is dropped: the subscriber's
+//! internal-error report, which would `eprintln!` to that same stream and
+//! panic, is off.
 //!
 //! The output backend is
 //! [`tracing-subscriber`](https://docs.rs/tracing-subscriber/0.3.23/tracing_subscriber/fmt/index.html)
@@ -883,6 +886,10 @@ fn main() -> ExitCode
         tracing_subscriber::fmt()
             .with_writer(std::io::stderr)
             .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            // A diagnostic the stream refuses is dropped: the subscriber's own
+            // report of the failure would go to the same refused stream
+            // through `eprintln!`, which panics.
+            .log_internal_errors(false)
             .finish(),
     );
     #[cfg(feature = "tracing")]

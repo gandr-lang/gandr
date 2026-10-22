@@ -256,26 +256,50 @@ fn stdout(output: &Output) -> String
     String::from_utf8(output.stdout.clone()).expect("standard output is UTF-8")
 }
 
-/// Standard error of `output`, as text.
+/// The driver's own standard error of `output`, as text.
+///
+/// A `tracing` build writes its subscriber's diagnostics to the same stream,
+/// and the driver's documentation lets them precede its `gandr:` line. Each
+/// diagnostic is one line, a UTC timestamp and then a level; under
+/// `tracing`, those lines are dropped, so the tests read the driver's own
+/// lines in either build.
 ///
 /// # Specification
 /// - requires: captured standard error is UTF-8.
-/// - ensures: returns its bytes unchanged as owned text.
+/// - ensures: returns its bytes as owned text, unchanged in a default build;
+///   under `tracing`, without the lines the subscriber wrote.
 /// - provides: readable fault and refusal observations.
 /// - fails: never.
 /// - panics: if standard error is not UTF-8.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — absent paths, checker refusal and blame identify the
-///   failed source or goal on the diagnostic stream. Lost bytes or confused
-///   streams change these observations; non-UTF-8 output is excluded.
+///   failed source or goal on the diagnostic stream, in a default and a
+///   `tracing` build. Lost bytes or confused streams change these observations;
+///   non-UTF-8 output is excluded.
 /// - witness: `tests::cli::an_absent_script_is_refused_by_path`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
-#[spec(ensures: |ref ret| ret.as_bytes() == output.stderr.as_slice())]
+#[spec(ensures: |ref ret| cfg!(feature = "tracing") || ret.as_bytes() == output.stderr.as_slice())]
 fn stderr(output: &Output) -> String
 {
-    String::from_utf8(output.stderr.clone()).expect("standard error is UTF-8")
+    let text = String::from_utf8(output.stderr.clone()).expect("standard error is UTF-8");
+    #[cfg(feature = "tracing")]
+    let text = {
+        const LEVELS: [&str; 5] = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+        text.split_inclusive('\n')
+            .filter(|line| {
+                let mut words = line.split_whitespace();
+                let stamped = words.next().is_some_and(|stamp| {
+                    stamp.ends_with('Z')
+                        && stamp.get(4 .. 5) == Some("-")
+                        && stamp.get(10 .. 11) == Some("T")
+                });
+                !(stamped && words.next().is_some_and(|level| LEVELS.contains(&level)))
+            })
+            .collect::<String>()
+    };
+    text
 }
 
 /// The lines of `output`'s standard output that start with `path`, the
@@ -1012,7 +1036,7 @@ fn status_and_version_identify_the_same_build()
     let report = stdout(&status);
     assert!(report.starts_with(&format!("{} ", identity.trim_end())));
     assert_eq!(report.lines().count(), 1);
-    assert!(version.stderr.is_empty() && status.stderr.is_empty());
+    assert!(version.stderr.is_empty() && stderr(&status).is_empty());
 }
 
 #[test]
@@ -1766,7 +1790,7 @@ fn smoke_is_terminal_free_but_interactive_tui_refuses_pipes()
     let smoke = ran(gandr(&["tui", "--smoke"]));
     let interactive = ran(gandr(&["tui"]));
     assert_eq!(code(&smoke), Code(0));
-    assert!(smoke.stderr.is_empty());
+    assert!(stderr(&smoke).is_empty());
     assert!(
         !smoke.stdout.contains(&0x1b_u8),
         "the headless face emits no terminal commands"
