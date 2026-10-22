@@ -631,6 +631,66 @@ fn a_scope_handles_its_capability_and_resumes()
     );
 }
 
+/// A function stating a continuation's type resumes the continuation it is
+/// handed as the clause that bound it would, and checks; a thunk a parameter
+/// holds is still forced (#1387). A type member abbreviating the stack, read
+/// bare inside its module or qualified outside it, states it too (#1651).
+#[test]
+fn a_stated_stack_is_resumed_as_a_clause_resumes_1387()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "def later(j : Stack(-F Unit, -F Integer)) -> -F Integer { j(unit) }\n",
+        "def apply(f : +U (Unit -> -F Integer)) -> -F Integer { f(unit) }\n",
+        "module Conts {\n",
+        "  type K = Stack(-F Unit, -F Integer) ;\n",
+        "  def aliased(j : K) -> -F Integer { j(unit) }\n",
+        "}\n",
+        "def qualified(j : Conts.K) -> -F Integer { j(unit) }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    let resumes = |arena: &CoreArena, name: &str| {
+        let mut at = tail_of(&module, arena, name.into());
+        while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+            at = body;
+        }
+        match arena.computation(at) {
+            Some(&Computation::Resume(continuation, _)) => {
+                Some(arena.value(continuation) == Some(&variable(DeBruijnIndex::from(0_u32))))
+            },
+            Some(_) | None => None,
+        }
+    };
+    assert_eq!(
+        resumes(&arena, "later"),
+        Some(true),
+        "`j(unit)` resumes the stack its parameter holds"
+    );
+    assert_eq!(
+        resumes(&arena, "apply"),
+        None,
+        "`f(unit)` is not a resumption"
+    );
+    for name in ["aliased", "qualified"] {
+        assert_eq!(
+            resumes(&arena, name),
+            Some(true),
+            "{name}: a member abbreviating the stack states it"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    for name in ["later", "apply", "aliased", "qualified"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
 /// `abandon(k)` in an operation clause ends the clause's continuation without
 /// running it, and the clause checks; a program that binds its own `abandon`
 /// calls it (#1334).

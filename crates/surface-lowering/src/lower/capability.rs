@@ -1,7 +1,7 @@
 //! Capabilities in the lowering: the capability type `Cap {op, …}`, a
 //! returner's effect row `-F [I, …] A`, the exercise `c.op(v)`, the
 //! capability scope `handle c : I { M } with { … }`, and the resumption
-//! `k(v)` an operation clause calls.
+//! `k(v)` of a continuation an operation clause binds or a parameter states.
 //!
 //! The rules these forms lower into are `gandr-core-checker`'s `capability`
 //! module; this one decides only their spelling and what each spelling
@@ -73,10 +73,12 @@
 //! `k(v)` resumes the subject with `pure v`, and `abandon(k)` ends the
 //! subject's continuation without running it, its value the unit; `abandon`
 //! is that former only where the program binds no `abandon` of its own. `k`
-//! is bound in that clause alone, so a resumption or an abandonment written
-//! elsewhere names nothing. Coverage — one clause per operation of `I` — is
-//! the checker's, and so is the rule that a clause whose continuation holds
-//! an obligation ends `k` exactly once.
+//! is bound in that clause alone, so an abandonment written elsewhere names
+//! nothing. A clause may hand `k` on: a function stating `Stack(C, D)`, or a
+//! type member abbreviating it, resumes the stack its parameter holds with the
+//! same former, `j(v)`. Coverage — one clause per operation of `I` — is the
+//! checker's, and so is the rule that a clause whose continuation holds an
+//! obligation ends `k` exactly once, never handing it on.
 //!
 //! # A clause that mints a buffer
 //!
@@ -212,6 +214,19 @@ enum Holder
     /// A capability: the selection is an exercise.
     Capability,
     /// Anything else: the selection is an observation or a member.
+    Other,
+}
+
+/// What a binder's declared type states to a call its name heads.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Stated
+{
+    /// A continuation's type, `Stack(C, D)`: the call resumes it.
+    Stack,
+    /// Any other type: the call applies it.
     Other,
 }
 
@@ -995,17 +1010,63 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// What the type written at `declared` states: a stack, `Stack(C, D)`
+    /// itself or a type member abbreviating one through any number of
+    /// members, or another type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Stated::Stack`] exactly when the chain of transparent plans
+    ///   from `declared`, each the type a manifest member was written at,
+    ///   reaches a node planned as a stack, or a node not yet classified that
+    ///   [`Self::written_stack`] reads as one; a member is classified after a
+    ///   declaration that reads it whenever the member's type lies deeper in
+    ///   the tree.
+    /// - fails: an engine fault.
+    /// - panics: none.
+    /// - executable: none — the answer is the walk itself, and no predicate
+    ///   over the plans states it without walking them again.
+    ///
+    /// # Errors
+    /// The engine fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written stack, a member abbreviating one read
+    ///   inside its module and one read qualified from a declaration classified
+    ///   before it are resumed, and a thunk type is applied.
+    /// - witness: `lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    fn states_a_stack(
+        &mut self,
+        declared: NodeIndex,
+    ) -> Result<Stated, LoweringRefusal<'source>>
+    {
+        let mut at = declared;
+        loop {
+            self.fuel.spend()?;
+            match self.plans.get(at) {
+                Some(&super::Plan::Stack(..)) => return Ok(Stated::Stack),
+                Some(&super::Plan::Transparent(written)) => at = written,
+                Some(&super::Plan::Unplanned) => return self.written_stack(at),
+                Some(_) | None => return Ok(Stated::Other),
+            }
+        }
+    }
+
     /// Classify the call at `site` as a resumption when its head is a
-    /// continuation an operation clause binds.
+    /// continuation: one an operation clause binds, or a binder declared at
+    /// `Stack(C, D)` or a member abbreviating it, which a clause hands its
+    /// continuation on by.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the call's head.
-    /// - ensures: a head naming a clause's continuation stands as a computation
-    ///   reading the continuation and each argument as a value under its frame,
-    ///   planned as the resumption with the reply its arguments make; any other
-    ///   call is left unplanned.
+    /// - ensures: a head naming a clause's continuation or a binder whose
+    ///   declared type is a stack, as [`Self::states_a_stack`] reads it, stands
+    ///   as a computation reading the continuation and each argument as a value
+    ///   under its frame, planned as the resumption with the reply its
+    ///   arguments make; any other call is left unplanned.
     /// - fails: the wrong-sort refusal where no computation is read; the name's
-    ///   resolution refusal; the argument list's fault.
+    ///   resolution refusal; an engine fault reading the binder's declared
+    ///   type; the argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -1013,8 +1074,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a clause resuming its subject lowers to the
-    ///   resumption of `pure unit` and checks.
+    ///   resumption of `pure unit` and checks; a function resuming the stack it
+    ///   states lowers to the same resumption.
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&super::Plan::Resume(..))))]
     pub(super) fn resumption(
         &mut self,
@@ -1037,7 +1100,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        if !self.resumptions.contains(&bound.binder) {
+        let resumes = self.resumptions.contains(&bound.binder)
+            || match bound.declared {
+                Maybe::Present(declared) => self.states_a_stack(declared)? == Stated::Stack,
+                Maybe::Absent(_) => false,
+            };
+        if !resumes {
             return Ok(Planned(false));
         }
         let frame = self.require(site, Produced::Computation)?;

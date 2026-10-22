@@ -8728,9 +8728,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   fields; a call whose head is `here`, `back` or `cong`, a name no
     ///   binder and no earlier declaration carries, is that identity operation
     ///   over the arguments; a call whose head selects an operation off a
-    ///   capability is that exercise, one whose head is an operation clause's
-    ///   continuation resumes it, and one whose head selects a method off its
-    ///   receiver is that method's call, as [`Self::exercise`],
+    ///   capability is that exercise, one whose head is a continuation — an
+    ///   operation clause's, or a binder declared at `Stack(C, D)` or a member
+    ///   abbreviating it — resumes it, and one whose head selects a method off
+    ///   its receiver is that method's call, as [`Self::exercise`],
     ///   [`Self::resumption`] and [`Self::method`] read them; a call standing
     ///   where a value is read whose head is a type former's name, free —
     ///   `Path` over three arguments, `List(A)`, `Flow`, `Stack`, `Run` — is
@@ -10536,6 +10537,118 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, Plan::Stack(input, output));
 
         Ok(())
+    }
+
+    /// What the form at `at`, not yet classified, states to a call a binder
+    /// declared at it heads: the reading [`Self::type_application`] gives it,
+    /// taken without classifying it.
+    ///
+    /// # Specification
+    /// - requires: `at` holds the reading it is classified under.
+    /// - ensures: [`capability::Stated::Stack`] exactly when the form at `at`
+    ///   is a type application headed `Stack` over two operands, which fixes no
+    ///   sorts, whose head is no constructor where a value is read, no type
+    ///   family the scope states and no name the scope resolves, so that
+    ///   classifying it plans it as [`Plan::Stack`]; a refusal on the way
+    ///   answers [`capability::Stated::Other`] and is left to the form's own
+    ///   classification; no plan, resolution or operand is kept.
+    /// - fails: an engine fault: the lowering's allowance spent, or a mold the
+    ///   grammar does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The engine fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member abbreviating a stack, read from a
+    ///   declaration classified before the member is, states the stack.
+    /// - witness: `lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`
+    #[spec(
+        captures: before = (self.plans.count(), self.resolutions.len(), self.operands.len()),
+        ensures: |_| self.plans.count() == before.0
+            && self.resolutions.len() == before.1
+            && self.operands.len() == before.2,
+    )]
+    fn written_stack(
+        &mut self,
+        at: NodeIndex,
+    ) -> Result<capability::Stated, LoweringRefusal<'source>>
+    {
+        let other = Ok(capability::Stated::Other);
+        let Some(node) = self.tree.node(at)
+        else {
+            return other;
+        };
+        let Shape::Form {
+            name,
+            former: Former::TypeApplication,
+        } = shape_of(self.pbg, node)?
+        else {
+            return other;
+        };
+        let site = Site {
+            at: Placed::of(at, node),
+            name,
+            reading: self.reading(at),
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let start = self.operands.len();
+        let read = read_pieces(self.pbg, self.tree, at, &mut scratch);
+        let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
+        let head = match cursor.peek() {
+            Maybe::Present(Piece::Tile { label, at: head })
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                let _head = cursor.tile(label);
+                Some(head)
+            },
+            Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => None,
+        };
+        let shaped = read.is_ok()
+            && head.is_some_and(|head| self.name_at(head).as_ref() == STACK)
+            && arguments(site, &mut cursor, &mut self.operands).is_ok()
+            && self.operands.len().saturating_sub(start) == 2_usize;
+        self.operands.truncate(start);
+        self.scratch = scratch;
+        let Some(head) = head.filter(|_| shaped)
+        else {
+            return other;
+        };
+        if self
+            .fixed_sorts
+            .get(&at)
+            .is_some_and(|sorts| !sorts.is_empty())
+        {
+            return other;
+        }
+        let name = self.name_at(head);
+        if let Reading::Value(_) = site.reading
+            && let Maybe::Present(_) = self.constructor_named(site, name)
+        {
+            return other;
+        }
+        let unresolved = match self.stated_named(site, name) {
+            Ok(Maybe::Present(TypeComponent {
+                meaning: TypeMeaning::Family(_),
+                ..
+            })) => Ok(capability::Stated::Other),
+            Ok(Maybe::Present(_) | Maybe::Absent(_)) => {
+                let named = Site { at: head, ..site };
+                self.resolve_name(named, site.reading.frame(), name).map(
+                    |resolved| match resolved {
+                        Maybe::Absent(named::Absent::Unresolved) => capability::Stated::Stack,
+                        Maybe::Present(_) => capability::Stated::Other,
+                    },
+                )
+            },
+            Err(refusal) => Err(refusal),
+        };
+
+        match unresolved {
+            Err(refusal) if refusal.classify() == FailureClass::EngineFault => Err(refusal),
+            Err(_) => other,
+            Ok(stated) => Ok(stated),
+        }
     }
 
     /// Classify the static application of the code `resolved` names to the
