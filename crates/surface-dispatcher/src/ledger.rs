@@ -11,12 +11,13 @@
 //! construction, and both files open with the grammar's fingerprint: a ledger
 //! whose fingerprint is not the built grammar's is stale by definition.
 //! `gandr ledger syntax --write <directory>` writes `syntax.md` and
-//! `syntax.json` there; `mise run check:syntax-ledger` writes them into a
-//! temporary directory and compares both with the committed files byte for
-//! byte. Each committed rule and each attribute also has an exemplar, a
-//! hand-cut source the `exemplars` module verifies against the ledger:
-//! `gandr ledger exemplars <directory>`, gated by
-//! `mise run check:syntax-exemplars`.
+//! `syntax.json` there, each committed rule's admission read off its exemplar
+//! under `--exemplars`, `<directory>/exemplars` by default;
+//! `mise run check:syntax-ledger` writes them into a temporary directory and
+//! compares both with the committed files byte for byte. Each committed rule
+//! and each attribute also has an exemplar, a hand-cut source the `exemplars`
+//! module verifies against the ledger: `gandr ledger exemplars <directory>`,
+//! gated by `mise run check:syntax-exemplars`.
 //!
 //! - Choice: a driver verb over this module. The dispatcher already holds the
 //!   grammar, the parser and the lowering a row reads.
@@ -39,6 +40,30 @@
 //! the next mold of the rule, refusing a pairing whose labels disagree
 //! ([`LedgerFault::Molds`]). An attribute's row carries its name and the
 //! payload its schema admits.
+//!
+//! # A committed rule's admission is its exemplar's
+//!
+//! A committed row also carries its admission: what lowering the rule's
+//! exemplar makes of its kind. [`SyntaxLedger::admitted`] lowers each exemplar
+//! under `syntax/` and reads `unadmitted` or `reserved` where the lowering
+//! refuses a form of the kind out of the fragment at that boundary, `admitted`
+//! otherwise. The exemplar states such a refusal as
+//! `refuses("OutOfFragment.<kind>…")`, and `check:exemplars` settles it, so the
+//! column says what a source of the form meets, proven by the source the row
+//! links. A committed rule whose exemplar cannot be read refuses the ledger
+//! ([`LedgerFault::Unshown`]).
+//!
+//! - Choice: the exemplar's lowering. Whether the lowering reads a form is
+//!   decided in many places: the expression dispatch's former table, the
+//!   declaration collector, the pattern reader, and checks on a form's
+//!   operands, such as an instantiation reserved only when written with a
+//!   comma.
+//! - Alternatives: the former table alone, which reads every declaration and
+//!   pattern as unadmitted; a table of admissions kept beside the grammar,
+//!   which drifts from the lowering it describes.
+//! - Reversal: a form whose exemplar cannot show its admission, one admitted in
+//!   one position and refused in another, gives the column a value per
+//!   position.
 //!
 //! # How a form is spelled
 //!
@@ -101,6 +126,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_term::CoreArena;
+use gandr_surface_corpus::Refusal;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
@@ -116,11 +143,19 @@ use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::AttributeSchema;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::CandidateLabel;
 use gandr_surface_parser::TileSpelling;
+use gandr_surface_parser::parse;
 use gandr_surface_parser::tile_spelling;
 use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 use serde_json::json;
@@ -143,11 +178,14 @@ const REGENERATE: &str = "gandr ledger syntax --write ledger";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerTask
 {
-    /// The syntax ledger, written into `directory`.
+    /// The syntax ledger, written into `directory`, each committed rule's
+    /// admission read off its exemplar under `exemplars`.
     Syntax
     {
         /// The directory `syntax.md` and `syntax.json` are written into.
         directory: PathBuf,
+        /// The directory holding `syntax/`, the rules' exemplars.
+        exemplars: PathBuf,
     },
     /// The syntax exemplars under `directory`, verified.
     Exemplars
@@ -214,6 +252,15 @@ pub enum LedgerFault
         /// Why.
         error: std::io::Error,
     },
+    /// A committed rule's exemplar, which its admission is read off, could
+    /// not be read or parsed.
+    Unshown
+    {
+        /// The exemplar.
+        path: PathBuf,
+        /// Why.
+        error: String,
+    },
 }
 
 impl core::fmt::Display for LedgerFault
@@ -248,6 +295,14 @@ impl core::fmt::Display for LedgerFault
                 ref path,
                 ref error,
             } => write!(f, "{}: cannot list: {error}", path.display()),
+            Self::Unshown {
+                ref path,
+                ref error,
+            } => write!(
+                f,
+                "{}: the rule's exemplar, which its admission is read off, cannot be read: {error}",
+                path.display()
+            ),
         }
     }
 }
@@ -262,19 +317,22 @@ impl LedgerTask
     ///   missing.
     /// - ensures: under [`LedgerTask::Syntax`], `syntax.md` and `syntax.json`
     ///   in the directory hold exactly [`SyntaxLedger::markdown`] and
-    ///   [`SyntaxLedger::json`] of a freshly built ledger, and the paths are
-    ///   returned in that order. Under [`LedgerTask::Exemplars`], the report of
-    ///   the exemplars under the directory against the committed rules and the
-    ///   registered attributes (the `exemplars` module).
+    ///   [`SyntaxLedger::json`] of a freshly built ledger whose admissions are
+    ///   read off the exemplars, and the paths are returned in that order.
+    ///   Under [`LedgerTask::Exemplars`], the report of the exemplars under the
+    ///   directory against the committed rules and the registered attributes
+    ///   (the `exemplars` module).
     /// - provides: `gandr ledger syntax --write <directory>` and `gandr ledger
     ///   exemplars <directory>`.
-    /// - fails: the ledger cannot be built, a file cannot be written, or an
-    ///   exemplar directory cannot be listed.
+    /// - fails: the ledger cannot be built, a committed rule's exemplar cannot
+    ///   be read, a file cannot be written, or an exemplar directory cannot be
+    ///   listed.
     /// - panics: none.
     ///
     /// # Errors
-    /// What [`SyntaxLedger::build`] reports, [`LedgerFault::Unwritable`]
-    /// naming the file, or [`LedgerFault::Unreadable`] naming the directory.
+    /// What [`SyntaxLedger::build`] and [`SyntaxLedger::admitted`] report,
+    /// [`LedgerFault::Unwritable`] naming the file, or
+    /// [`LedgerFault::Unreadable`] naming the directory.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run into an empty directory writes both files with
@@ -295,7 +353,11 @@ impl LedgerTask
     {
         let ledger = SyntaxLedger::build()?;
         match *self {
-            Self::Syntax { ref directory } => {
+            Self::Syntax {
+                ref directory,
+                ref exemplars,
+            } => {
+                let ledger = ledger.admitted(exemplars)?;
                 std::fs::create_dir_all(directory).map_err(|error| LedgerFault::Unwritable {
                     path: directory.clone(),
                     error,
@@ -385,6 +447,10 @@ struct RuleRow
     kind: &'static str,
     /// Whether the tree-sitter grammar has that kind.
     tree_sitter: TreeSitterKind,
+    /// What its exemplar's lowering makes of that kind: read by
+    /// [`SyntaxLedger::admitted`] for a committed rule, none before or for an
+    /// internal one.
+    admission: Option<Admission>,
     /// The form, spelled for reading.
     form: String,
     /// The form in its ASCII spelling, for a rule holding a glyph tile.
@@ -501,6 +567,7 @@ impl SyntaxLedger
                 form,
                 tree: tree.value,
                 roles: tree.roles,
+                admission: None,
                 standing: standing::standing(&pbg, rule)?,
             });
         }
@@ -525,6 +592,45 @@ impl SyntaxLedger
             rules,
             attributes,
         })
+    }
+
+    /// The ledger with each committed rule's admission read off its exemplar
+    /// under `exemplars`' `syntax/` folder.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every committed row carries the admission its exemplar's
+    ///   lowering shows, and an internal row none; the rows are otherwise
+    ///   unchanged.
+    /// - fails: the grammar does not build, or a committed rule's exemplar
+    ///   cannot be read or parsed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LedgerFault::Grammar`], or [`LedgerFault::Unshown`] naming the
+    /// exemplar.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the committed exemplars give every committed rule an
+    ///   admission, the one its exemplar states; a folder missing one exemplar
+    ///   refuses the ledger naming it.
+    /// - witness: `ledger::tests::each_rule_reads_its_admission_off_its_exemplar`
+    /// - witness: `ledger::tests::a_rule_without_an_exemplar_refuses_the_ledger`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |ledger| ledger.rules.iter().all(|row| row.admission.is_some() == (row.standing == Standing::Committed))))]
+    #[inline]
+    pub fn admitted(
+        mut self,
+        exemplars: &Path,
+    ) -> Result<Self, LedgerFault>
+    {
+        let pbg = built_in().map_err(LedgerFault::Grammar)?;
+        let folder = exemplars.join("syntax");
+        for row in &mut self.rules {
+            if row.standing == Standing::Committed {
+                row.admission = Some(admission(&pbg, &folder, row)?);
+            }
+        }
+        Ok(self)
     }
 
     /// The ledger for reading: a header naming the fingerprint and the
@@ -620,14 +726,14 @@ impl SyntaxLedger
             "| `⟨block⟩` | the whole form of rule `block`, written out in place: its tiles are this rule's own |\n\n",
         );
         out.push_str("A rule holding a glyph tile writes its form twice: the glyph spelling, then `or` and the ASCII spelling the labeler reads as the same tile. The isomorphism's ASCII spelling is a call of `Iso` over its operands, which the lowering reads as the same type.\n\n");
-        out.push_str("Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule; a glyph rule's exemplar holds one item per spelling, and the gate checks each is written. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
+        out.push_str("Each committed rule links its exemplar, a small source the exemplar gate parses and checks for a tile of the rule; a glyph rule's exemplar holds one item per spelling, and the gate checks each is written. The group is the rule's precedence group. The kind is the named node kind the rule realises; `*` marks a kind the surface's tree-sitter grammar does not have. The admission is what lowering the exemplar makes of that kind: `unadmitted` or `reserved` where it refuses a form of the kind out of the fragment at that boundary, which the exemplar states as `refuses(\"OutOfFragment.<kind>…\")` and `check:exemplars` settles, `admitted` otherwise. The roles are the highlight roles of the rule's tiles, each once, first use first.\n");
         for (sort, rows) in &by_sort {
             write!(out, "\n## `{}` — {}\n\n", sort.name(), Counted {
                 count: rows.len(),
                 noun: "rule"
             })?;
-            out.push_str("| Rule | Form | Group | Kind | Roles |\n");
-            out.push_str("| ---- | ---- | ----- | ---- | ----- |\n");
+            out.push_str("| Rule | Form | Group | Kind | Admission | Roles |\n");
+            out.push_str("| ---- | ---- | ----- | ---- | --------- | ----- |\n");
             for row in rows {
                 let marker = match row.tree_sitter {
                     TreeSitterKind::Shared => "",
@@ -641,10 +747,11 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| [`{name}`](exemplars/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {roles} |",
+                    "| [`{name}`](exemplars/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
                     Forms(row),
                     row.group,
                     row.kind,
+                    Shown(row.admission),
                     name = row.name,
                 )?;
             }
@@ -822,6 +929,9 @@ fn rule_json(row: &RuleRow) -> Value
         "tree_sitter".to_owned(),
         Value::from(row.tree_sitter == TreeSitterKind::Shared),
     );
+    if let Some(admission) = row.admission {
+        fields.insert("admission".to_owned(), Value::from(admission.to_string()));
+    }
     fields.insert("form".to_owned(), Value::from(row.form.clone()));
     if let Some(ref ascii) = row.ascii {
         fields.insert("ascii".to_owned(), Value::from(ascii.clone()));
@@ -1445,6 +1555,146 @@ impl core::fmt::Display for Suffix
     }
 }
 
+/// What the lowering makes of a committed rule's form, read off the rule's
+/// exemplar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Admission
+{
+    /// The exemplar's lowering raises no refusal spelled
+    /// `OutOfFragment.<kind>`.
+    Admitted,
+    /// The exemplar's lowering refuses a form of the rule's kind out of the
+    /// fragment at a boundary other than the reserved one.
+    Unadmitted,
+    /// The exemplar's lowering refuses a form of the rule's kind as reserved.
+    Reserved,
+}
+
+/// The admission of `row`'s form, read by lowering its exemplar under
+/// `folder`.
+///
+/// # Specification
+/// - requires: `row` is a committed rule's.
+/// - ensures: [`Admission::Reserved`] where a declaration of the exemplar, or
+///   the whole source, is refused under the spelling `OutOfFragment.<kind>` (or
+///   a qualification of it) at the reserved boundary; [`Admission::Unadmitted`]
+///   where it is refused under that spelling at any other boundary;
+///   [`Admission::Admitted`] otherwise. The spelling is the corpus's, the one
+///   an exemplar's `refuses` states.
+/// - fails: the exemplar cannot be read or parsed.
+/// - panics: none.
+///
+/// # Errors
+/// [`LedgerFault::Unshown`] naming the exemplar.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every committed rule's exemplar is read, and the rules
+///   whose exemplars state an `OutOfFragment` refusal of their own kind are
+///   exactly the rules read as unadmitted or reserved; a missing exemplar
+///   refuses the ledger naming it.
+/// - witness: `ledger::tests::each_rule_reads_its_admission_off_its_exemplar`
+/// - witness: `ledger::tests::a_rule_without_an_exemplar_refuses_the_ledger`
+#[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(LedgerFault::Unshown { .. })))]
+fn admission(
+    pbg: &Pbg,
+    folder: &Path,
+    row: &RuleRow,
+) -> Result<Admission, LedgerFault>
+{
+    let path = folder.join(format!("{}.gandr", row.name));
+    let unshown = |error: String| LedgerFault::Unshown {
+        path: path.clone(),
+        error,
+    };
+    let text = std::fs::read_to_string(&path).map_err(|error| unshown(error.to_string()))?;
+    let parsed =
+        parse(pbg, SourceText::from(text.as_str())).map_err(|error| unshown(error.to_string()))?;
+    let mut arena = CoreArena::new();
+    let refusals: Vec<LoweringRefusal<'_>> = match lower_module(
+        pbg,
+        parsed.tree(),
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    ) {
+        Ok(module) => module
+            .declarations()
+            .iter()
+            .filter_map(|declared| {
+                if let DeclarationOutcome::Refused(refusal) = declared.outcome() {
+                    Some(refusal)
+                }
+                else {
+                    None
+                }
+            })
+            .collect(),
+        Err(refusal) => vec![refusal],
+    };
+    let own = format!("OutOfFragment.{}", row.kind);
+    let names_the_kind = |refusal: LoweringRefusal<'_>| {
+        let spelled = Refusal::Lowering(refusal).name().spelling().to_string();
+        spelled
+            .strip_prefix(own.as_str())
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+    };
+    let mut admission = Admission::Admitted;
+    for refusal in refusals
+        .into_iter()
+        .filter(|&refusal| names_the_kind(refusal))
+    {
+        if matches!(refusal, LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Reserved,
+            ..
+        }) {
+            return Ok(Admission::Reserved);
+        }
+        admission = Admission::Unadmitted;
+    }
+    Ok(admission)
+}
+
+impl core::fmt::Display for Admission
+{
+    /// Writes the admission as the ledger spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Admitted => "admitted",
+            Self::Unadmitted => "unadmitted",
+            Self::Reserved => "reserved",
+        })
+    }
+}
+
+/// A row's admission as the reading form writes it: `—` where it has none.
+#[repr(transparent)]
+struct Shown(Option<Admission>);
+
+impl core::fmt::Display for Shown
+{
+    /// Writes the admission, or `—`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match self.0 {
+            Some(admission) => write!(f, "{admission}"),
+            None => f.write_str("—"),
+        }
+    }
+}
+
 /// A form's tree and its tiles' roles, read together.
 struct Tree
 {
@@ -1564,6 +1814,15 @@ mod tests
     use super::standing::Internal;
     use super::standing::standing;
     use super::tree;
+
+    /// The committed exemplar directory.
+    ///
+    /// # Specification
+    /// trivial.
+    fn committed() -> PathBuf
+    {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars")
+    }
 
     /// A directory of this test's own under the system's temporary directory,
     /// emptied first.
@@ -2035,11 +2294,89 @@ mod tests
     }
 
     #[test]
+    fn each_rule_reads_its_admission_off_its_exemplar()
+    {
+        let ledger = SyntaxLedger::build()
+            .and_then(|built| built.admitted(&committed()))
+            .expect("the ledger reads its admissions");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&ledger.json()).expect("the machine ledger parses");
+        let rules = parsed["rules"].as_array().expect("rules are an array");
+        let mut seen: alloc::collections::BTreeSet<String> = alloc::collections::BTreeSet::new();
+        for (json_row, row) in rules.iter().zip(&ledger.rules) {
+            if row.standing != Standing::Committed {
+                assert!(
+                    json_row.get("admission").is_none(),
+                    "the internal rule `{}` has no exemplar and no admission",
+                    row.name
+                );
+                continue;
+            }
+            let text = std::fs::read_to_string(
+                committed()
+                    .join("syntax")
+                    .join(format!("{}.gandr", row.name)),
+            )
+            .expect("a committed rule's exemplar reads");
+            let stated = [
+                format!("refuses(\"OutOfFragment.{}\")", row.kind),
+                format!("refuses(\"OutOfFragment.{}.", row.kind),
+            ]
+            .iter()
+            .any(|spelling| text.contains(spelling.as_str()));
+            let admission = json_row["admission"]
+                .as_str()
+                .expect("a committed rule's admission is written");
+            assert_eq!(
+                admission != "admitted",
+                stated,
+                "`{}` is {admission}, and its exemplar {} its kind out of the fragment",
+                row.name,
+                if stated { "refuses" } else { "does not refuse" }
+            );
+            let _fresh = seen.insert(admission.to_owned());
+        }
+        assert!(
+            seen.contains("admitted") && seen.contains("unadmitted"),
+            "the committed exemplars show an admitted and an unadmitted form: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn a_rule_without_an_exemplar_refuses_the_ledger()
+    {
+        let directory = scratch(Path::new("unshown"));
+        let folder = directory.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        let ledger = SyntaxLedger::build().expect("the ledger builds");
+        let missing = ledger
+            .rules
+            .iter()
+            .find(|row| row.standing == Standing::Committed)
+            .map(|row| format!("{}.gandr", row.name))
+            .expect("a committed rule");
+        for entry in std::fs::read_dir(committed().join("syntax")).expect("the exemplars list") {
+            let path = entry.expect("an entry").path();
+            let name = path.file_name().expect("a file name").to_owned();
+            if name.to_str() != Some(missing.as_str()) {
+                let _bytes = std::fs::copy(&path, folder.join(name)).expect("the exemplar copies");
+            }
+        }
+        let refused = ledger.admitted(&directory);
+        assert!(
+            matches!(refused, Err(LedgerFault::Unshown { ref path, .. }) if *path == folder.join(&missing)),
+            "a committed rule without an exemplar refuses the ledger naming the file: {refused:?}"
+        );
+        std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+    }
+
+    #[test]
     fn a_run_writes_both_files_and_repeats_them_exactly()
     {
         let directory = scratch(Path::new("run"));
         let task = LedgerTask::Syntax {
             directory: directory.clone(),
+            exemplars: committed(),
         };
         let Ok(LedgerRun::Written(paths)) = task.run()
         else {
@@ -2049,7 +2386,9 @@ mod tests
             directory.join("syntax.md"),
             directory.join("syntax.json")
         ]);
-        let ledger = SyntaxLedger::build().expect("the ledger builds");
+        let ledger = SyntaxLedger::build()
+            .and_then(|built| built.admitted(&committed()))
+            .expect("the ledger builds");
         let first = (
             std::fs::read_to_string(directory.join("syntax.md")).expect("the reading form"),
             std::fs::read_to_string(directory.join("syntax.json")).expect("the machine form"),
@@ -2074,6 +2413,7 @@ mod tests
         let under = file.join("ledger");
         let refused = LedgerTask::Syntax {
             directory: under.clone(),
+            exemplars: committed(),
         }
         .run();
         assert!(

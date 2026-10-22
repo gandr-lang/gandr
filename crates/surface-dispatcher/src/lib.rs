@@ -770,6 +770,7 @@ mod tests
     {
         let task = super::LedgerTask::Syntax {
             directory: PathBuf::from("no/such/ledger"),
+            exemplars: PathBuf::from("no/such/ledger/exemplars"),
         };
         let outcome = dispatch(Invocation::Ledger(task.clone()));
         let Outcome::Ledger(routed) = outcome

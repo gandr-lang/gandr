@@ -37,7 +37,7 @@
 //! | `gandr fmt --width <columns> <paths>` | as `fmt`, laid out at that page width instead of 100 | as `fmt` |
 //! | `gandr fmt --form <explicit\|sugared> <paths>` | as `fmt`, asking for that spelling: a source declaring a form with `@[ form(…) ]` keeps its own, and one declaring none is refused, since no layout changes a token | as `fmt` |
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
-//! | `gandr ledger syntax --write <directory>` | the path of each file written, `syntax.md` then `syntax.json` (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written |
+//! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
 //! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
@@ -607,6 +607,11 @@ enum LedgerName
         /// The directory both files are written into, created when missing.
         #[arg(long, value_name = "DIRECTORY")]
         write: PathBuf,
+        /// The directory holding `syntax/`, whose exemplars each committed
+        /// rule's admission is read off; `exemplars/` under the written
+        /// directory when not given.
+        #[arg(long, value_name = "DIRECTORY")]
+        exemplars: Option<PathBuf>,
     },
     /// The syntax exemplars: one source per committed rule under `syntax/`
     /// and per attribute under `attributes/`, each parsed and checked for the
@@ -972,9 +977,12 @@ fn main() -> ExitCode
             Verbosity::User,
         ),
         Some(Command::Ledger {
-            ledger: LedgerName::Syntax { write },
+            ledger: LedgerName::Syntax { write, exemplars },
         }) => (
-            Invocation::Ledger(LedgerTask::Syntax { directory: write }),
+            Invocation::Ledger(LedgerTask::Syntax {
+                exemplars: exemplars.unwrap_or_else(|| write.join("exemplars")),
+                directory: write,
+            }),
             Verbosity::User,
         ),
         Some(Command::Ledger {

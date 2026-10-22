@@ -770,13 +770,17 @@ fn the_syntax_ledger_is_written_and_reproduced()
 {
     let scratch = Scratch::new(Path::new("ledger"));
     let directory = scratch.0.join("ledger");
-    let (ledger, syntax, write) = (
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars");
+    let (ledger, syntax, write, with) = (
         Path::new("ledger"),
         Path::new("syntax"),
         Path::new("--write"),
+        Path::new("--exemplars"),
     );
 
-    let written = ran(gandr(&[ledger, syntax, write, &directory]));
+    let written = ran(gandr(&[
+        ledger, syntax, write, &directory, with, &committed,
+    ]));
     assert_eq!(code(&written), Code(0_i32), "{}", stderr(&written));
     let markdown = directory.join("syntax.md");
     let json = directory.join("syntax.json");
@@ -794,7 +798,9 @@ fn the_syntax_ledger_is_written_and_reproduced()
         "the reading form names the fingerprint"
     );
 
-    let again = ran(gandr(&[ledger, syntax, write, &directory]));
+    let again = ran(gandr(&[
+        ledger, syntax, write, &directory, with, &committed,
+    ]));
     assert_eq!(code(&again), Code(0_i32), "{}", stderr(&again));
     let second = (
         std::fs::read(&markdown).expect("the reading form is written"),
@@ -803,12 +809,30 @@ fn the_syntax_ledger_is_written_and_reproduced()
     assert_eq!(first, second, "a second run writes the same bytes");
 
     let blocked = scratch.file(Path::new("file"), Text::from(""));
-    let refused = ran(gandr(&[ledger, syntax, write, &blocked.join("ledger")]));
+    let refused = ran(gandr(&[
+        ledger,
+        syntax,
+        write,
+        &blocked.join("ledger"),
+        with,
+        &committed,
+    ]));
     assert_eq!(code(&refused), Code(2_i32), "{}", stdout(&refused));
     assert!(
         stderr(&refused).starts_with(&format!("gandr: {}", blocked.join("ledger").display())),
         "{}",
         stderr(&refused)
+    );
+
+    let unshown = ran(gandr(&[ledger, syntax, write, &directory]));
+    assert_eq!(code(&unshown), Code(2_i32), "{}", stdout(&unshown));
+    assert!(
+        stderr(&unshown).starts_with(&format!(
+            "gandr: {}",
+            directory.join("exemplars").join("syntax").display()
+        )),
+        "without `--exemplars` the admissions are read under the written directory: {}",
+        stderr(&unshown)
     );
 }
 
