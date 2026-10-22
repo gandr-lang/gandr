@@ -42,6 +42,23 @@ module Point :> #{ type T, origin : T, other : T } {
 def originOther : Path(Point.T, Point.origin, Point.other) ;
 def originOther = unit ;
 
+/// Based path induction along that evidence, in a family that reads neither
+/// the point nor the path: the evidence is no reflexivity, and the transport
+/// returns the element given (#1854).
+@[ checks ]
+def carriedAlong : Path(
+  Unit,
+  transport(
+    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Unit),
+    originOther,
+    here(Point.origin),
+    here(originOther),
+    unit
+  ),
+  unit
+) ;
+def carriedAlong = here(unit) ;
+
 /// Based path induction at the sealed type (the HoTT book's § 1.12.1): a
 /// path from `origin` reversed by transport in the family of paths back to
 /// `origin`, reflexivity at `origin` carried to the path's end.

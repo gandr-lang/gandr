@@ -2975,6 +2975,53 @@ fn telescope_transport_along_here_reduces()
 }
 
 #[test]
+fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
+{
+    // In `(y : Unit, z : Path(Unit, (), y)) => C`, the unit's evidence `()`
+    // is a closed path that is no reflexivity. A returned type reading neither
+    // entry returns the value along it; one reading the endpoint or the
+    // identity over it sticks.
+    let mut arena = TermArena::new();
+    let boolean = boolean(&mut arena);
+    let unit = arena.value_type_unit();
+    let centre = arena.value_unit();
+    let end = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(unit, centre, end);
+    let step = |arena: &mut TermArena, body: ValueTypeId| {
+        let returns = arena.comp_type_returner(body);
+        let entry = arena.comp_type_pi(singleton, returns);
+        let motive = arena.comp_type_pi(unit, entry);
+        let start = arena.value_here(centre);
+        let mut table = ContentTable::new();
+        let mut memo = gandr_kernel_check_memo::NullMemo;
+        telescope_beta(arena, &mut table, &mut memo, TelescopeStep {
+            motive,
+            path: centre,
+            start,
+            over: start,
+            value: boolean.truth,
+        })
+    };
+
+    let Ok(Reduction::Reduced(reduct)) = step(&mut arena, boolean.ty)
+    else {
+        panic!("a motive reading neither entry returns its value");
+    };
+    assert_eq!(
+        arena.computation(reduct),
+        Some(&Computation::Return(boolean.truth))
+    );
+
+    let endpoint = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let reads_endpoint = arena.value_type_path(unit, endpoint, endpoint);
+    assert_eq!(step(&mut arena, reads_endpoint), Ok(Reduction::Stuck));
+
+    let over = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let reads_over = arena.value_type_path(boolean.ty, over, over);
+    assert_eq!(step(&mut arena, reads_over), Ok(Reduction::Stuck));
+}
+
+#[test]
 fn j_derived_in_the_singleton_checks_and_computes()
 {
     // J := λx : Bool. λp : Path(Bool, T, x). λd : C[T, here(T)].

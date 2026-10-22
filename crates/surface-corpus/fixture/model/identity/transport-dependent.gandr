@@ -22,6 +22,28 @@ def reduced : Path(
 );
 def reduced = here(Succ(Zero));
 
+/// The unit type's evidence between its point and itself, a closed path
+/// that is no reflexivity.
+@[ checks ]
+def unitPath : Path(Unit, unit, unit);
+def unitPath = unit;
+
+/// Transport along that evidence, in a family that reads neither the point
+/// nor the path, returns the element given (#1854).
+@[ checks ]
+def carriedUnit : Path(
+  Nat,
+  transport(
+    +U ((y : Unit) -> (z : Path(Unit, unit, y)) -> -F Nat),
+    unitPath,
+    here(unit),
+    here(unitPath),
+    Succ(Zero)
+  ),
+  Succ(Zero)
+);
+def carriedUnit = here(Succ(Zero));
+
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 @[ checks ]
