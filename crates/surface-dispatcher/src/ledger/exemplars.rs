@@ -1078,8 +1078,13 @@ mod tests
         };
         match task.run() {
             Ok(LedgerRun::Verified(report)) => report,
-            Ok(LedgerRun::Written(_) | LedgerRun::Swept(_)) => {
-                panic!("verifying writes and sweeps nothing")
+            Ok(
+                LedgerRun::Written(_)
+                | LedgerRun::Swept(_)
+                | LedgerRun::Listed(_)
+                | LedgerRun::Shown(_),
+            ) => {
+                panic!("verifying writes, sweeps and reads nothing else")
             },
             Err(fault) => panic!("the directory verifies: {fault}"),
         }

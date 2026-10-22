@@ -1,10 +1,13 @@
 //! The tools a model calls: each reads the documents the hub holds, at the
-//! version the editor last synchronised.
+//! version the editor last synchronised, or the features ledger.
 //!
 //! A tool names its document by the URI the editor opened it under. The
 //! diagnostics are the ones last published to the editor, read without a
 //! recheck; the outline, the expected syntax and a declaration's type are the
 //! language server's own answers to the requests an editor sends for them.
+//! `ledger_list` and `ledger_show` answer what `gandr ledger list` and `gandr
+//! ledger show` print, read from `ledger/features.sql` under a root the call
+//! names or the server's working directory, and hold no document.
 //!
 //! # Changes ride on every tool result
 //!
@@ -56,10 +59,18 @@
 //! checking means and how the editor shows a kept fill.
 
 use alloc::string::String;
+use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
+use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Area;
+use gandr_surface_dispatcher::Feature;
+use gandr_surface_dispatcher::FeatureId;
+use gandr_surface_dispatcher::FeatureLedger;
+use gandr_surface_dispatcher::LedgerFault;
+use gandr_surface_dispatcher::Status;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
@@ -127,6 +138,55 @@ fn position_schema() -> Value
             },
         },
         "required": ["uri", "line", "character"],
+    })
+}
+
+/// The schema of `root`, the tree a features ledger tool reads.
+///
+/// # Specification
+/// trivial.
+fn root_schema() -> Value
+{
+    json!({
+        "type": "string",
+        "description": "The tree holding `ledger/features.sql`; the server's working directory when not given",
+    })
+}
+
+/// The schema of the features ledger's list: an area, a status and a root,
+/// each optional.
+///
+/// # Specification
+/// trivial.
+fn ledger_list_schema() -> Value
+{
+    json!({
+        "type": "object",
+        "properties": {
+            "area": { "type": "string", "description": "Only the features in this area, such as `syntax`" },
+            "status": {
+                "type": "string",
+                "enum": ["implemented", "partial", "planned", "declined"],
+                "description": "Only the features at this status",
+            },
+            "root": root_schema(),
+        },
+    })
+}
+
+/// The schema of the features ledger's show: a feature's id and a root.
+///
+/// # Specification
+/// trivial.
+fn ledger_show_schema() -> Value
+{
+    json!({
+        "type": "object",
+        "properties": {
+            "id": { "type": "string", "description": "The feature's id, as `ledger_list` names it" },
+            "root": root_schema(),
+        },
+        "required": ["id"],
     })
 }
 
@@ -244,6 +304,24 @@ pub fn list() -> Vec<Value>
             "inputSchema": position_schema(),
         }),
         json!({
+            "name": "ledger_list",
+            "title": "List the features ledger",
+            "description": "The features of gandr, one per row of the features ledger: its id, area, name, \
+                            status (implemented, partial, planned or declined) and one sentence on what it \
+                            is, narrowed to an area and a status when given. Before writing a form, list \
+                            its area.",
+            "inputSchema": ledger_list_schema(),
+        }),
+        json!({
+            "name": "ledger_show",
+            "title": "Show a feature",
+            "description": "One feature of the features ledger: its row, each of its exemplars' gandr \
+                            sources whole, whose `///` comments explain the form, and the paths of the \
+                            corpus sources and tests that witness it. Show each feature a form uses \
+                            before writing it.",
+            "inputSchema": ledger_show_schema(),
+        }),
+        json!({
             "name": "outline",
             "title": "Outline",
             "description": "An open document's declarations, each nested inside the one that holds it.",
@@ -283,20 +361,25 @@ pub fn list() -> Vec<Value>
 /// # Specification
 /// - requires: nothing; any name and arguments are admitted.
 /// - ensures: a document tool answers for a document the hub holds, naming its
-///   URI and the version answered at; a document the hub does not hold,
-///   arguments the tool cannot read, and a name no tool has are refused.
+///   URI and the version answered at; a features ledger tool answers from the
+///   ledger under its root; a document the hub does not hold, arguments the
+///   tool cannot read, a ledger that cannot be read or answer, and a name no
+///   tool has are refused.
 /// - provides: `tools/call`.
 /// - fails: as above, with the reason in the refusal.
 /// - panics: none.
 ///
 /// # Errors
-/// [`ToolRefusal`] for an unknown tool, unreadable arguments or a document
-/// the hub does not hold.
+/// [`ToolRefusal`] for an unknown tool, unreadable arguments, a document the
+/// hub does not hold, or a features ledger fault.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every tool is called through the wire on a held document,
-///   and one on a document the hub does not hold.
+///   and one on a document the hub does not hold; the features ledger tools
+///   list and show the committed ledger, and refuse an unknown area, status and
+///   id.
 /// - witness: `connection::tests::each_tool_answers_through_the_wire`
+/// - witness: `connection::tests::the_ledger_tools_read_the_committed_ledger_1827`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(Value::is_object))]
 #[inline]
 pub fn call(
@@ -306,12 +389,17 @@ pub fn call(
 ) -> Result<Value, ToolRefusal>
 {
     let name = name.and_then(Value::as_str).unwrap_or_default();
-    if name == "documents" {
-        let documents: Vec<Value> = workspace
-            .held()
-            .map(|(uri, version)| json!({ "uri": uri, "version": version }))
-            .collect();
-        return Ok(json!({ "documents": documents }));
+    match name {
+        "documents" => {
+            let documents: Vec<Value> = workspace
+                .held()
+                .map(|(uri, version)| json!({ "uri": uri, "version": version }))
+                .collect();
+            return Ok(json!({ "documents": documents }));
+        },
+        "ledger_list" => return ledger_listed(arguments),
+        "ledger_show" => return ledger_shown(arguments),
+        _ => {},
     }
     let (uri, version) = held(workspace, arguments)?;
     let document = json!({ "uri": uri });
@@ -372,6 +460,131 @@ pub fn call(
         into.extend(from);
     }
     Ok(answered)
+}
+
+/// The name of a features ledger tool's argument.
+#[repr(transparent)]
+#[derive(Clone, Copy)]
+struct Argument(&'static str);
+
+/// The tree holding the ledger.
+const ROOT: Argument = Argument("root");
+
+/// The area a list narrows to.
+const AREA: Argument = Argument("area");
+
+/// The status a list narrows to.
+const STATUS: Argument = Argument("status");
+
+/// The feature a show names.
+const ID: Argument = Argument("id");
+
+/// The string `argument` of `arguments`, when given.
+///
+/// # Specification
+/// trivial.
+fn text(
+    arguments: &Value,
+    argument: Argument,
+) -> Result<Option<String>, ToolRefusal>
+{
+    match arguments.get(argument.0) {
+        None | Some(&Value::Null) => Ok(None),
+        Some(&Value::String(ref text)) => Ok(Some(text.clone())),
+        Some(_) => Err(ToolRefusal(alloc::format!(
+            "`{}` must be a string",
+            argument.0
+        ))),
+    }
+}
+
+/// The features ledger under the root `arguments` names, or the server's
+/// working directory.
+///
+/// # Specification
+/// trivial.
+fn ledger(arguments: &Value) -> Result<FeatureLedger, ToolRefusal>
+{
+    let root = text(arguments, ROOT)?.map_or_else(|| PathBuf::from("."), PathBuf::from);
+    FeatureLedger::read(&root).map_err(|fault| refused(&fault))
+}
+
+/// A features ledger fault, as the refusal a tool answers.
+///
+/// # Specification
+/// trivial.
+fn refused(fault: &LedgerFault) -> ToolRefusal
+{
+    ToolRefusal(fault.to_string())
+}
+
+/// The features `arguments` narrows the ledger to, as JSON.
+///
+/// # Specification
+/// - requires: nothing; any arguments are admitted.
+/// - ensures: `features`, one object per feature of the ledger under the root
+///   in the area and at the status named, each where named, in the ledger's
+///   order.
+/// - provides: the `ledger_list` tool, answering what `gandr ledger list`
+///   prints.
+/// - fails: an argument that is not a string, a status of no spelling, an area
+///   no feature is in, or a ledger that cannot be read.
+/// - panics: none.
+///
+/// # Errors
+/// [`ToolRefusal`] naming the argument or the ledger's fault.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the committed ledger lists narrowed to an area and a
+///   status through the wire, and an unknown area and status are refused.
+/// - witness: `connection::tests::the_ledger_tools_read_the_committed_ledger_1827`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|answer|
+    answer.get("features").is_some_and(Value::is_array)))]
+fn ledger_listed(arguments: &Value) -> Result<Value, ToolRefusal>
+{
+    let area = text(arguments, AREA)?.map(Area);
+    let status = text(arguments, STATUS)?
+        .map(|spelling| spelling.parse::<Status>())
+        .transpose()
+        .map_err(|fault| refused(&fault))?;
+    let features: Vec<Value> = ledger(arguments)?
+        .listed(area.as_ref(), status)
+        .map_err(|fault| refused(&fault))?
+        .iter()
+        .map(Feature::json)
+        .collect();
+    Ok(json!({ "features": features }))
+}
+
+/// The feature `arguments` names, with its exemplars' sources and its corpus
+/// paths, as JSON.
+///
+/// # Specification
+/// - requires: nothing; any arguments are admitted.
+/// - ensures: `feature`, the row's object; `exemplars`, each `{path, source}`;
+///   `corpus`, its paths — what `gandr ledger show` prints.
+/// - provides: the `ledger_show` tool.
+/// - fails: no `id` string, an id no feature has, an exemplar that cannot be
+///   read, or a ledger that cannot be read.
+/// - panics: none.
+///
+/// # Errors
+/// [`ToolRefusal`] naming the argument or the ledger's fault.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a committed feature shows its row and corpus through the
+///   wire, and a missing and an unknown id are refused.
+/// - witness: `connection::tests::the_ledger_tools_read_the_committed_ledger_1827`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|answer|
+    answer.pointer("/feature/id").and_then(Value::as_str) == arguments.get("id").and_then(Value::as_str)))]
+fn ledger_shown(arguments: &Value) -> Result<Value, ToolRefusal>
+{
+    let id = text(arguments, ID)?
+        .ok_or_else(|| ToolRefusal(String::from("`id` must name a feature")))?;
+    let shown = ledger(arguments)?
+        .shown(&FeatureId(id))
+        .map_err(|fault| refused(&fault))?;
+    Ok(shown.json())
 }
 
 /// The document `arguments` names, and its version, when the hub holds it.

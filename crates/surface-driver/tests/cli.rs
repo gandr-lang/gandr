@@ -903,6 +903,109 @@ fn the_recovery_sweep_reports_its_table_and_count()
     );
 }
 
+/// #1827: `gandr ledger list` and `gandr ledger show` read the features ledger
+/// as the guide an author writes from.
+#[test]
+fn the_features_ledger_lists_and_shows_1827()
+{
+    let scratch = Scratch::new(Path::new("features"));
+    let _ledger = scratch.file(
+        Path::new("ledger/features.sql"),
+        Text::from(
+            "PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;\nCREATE TABLE feature(\n  id TEXT PRIMARY KEY,\n  \
+             area TEXT NOT NULL,\n  name TEXT NOT NULL,\n  parent TEXT,\n  status TEXT NOT NULL,\n  notability \
+             TEXT NOT NULL,\n  compared_to TEXT,\n  line TEXT NOT NULL CHECK(line <> ''),\n  crate TEXT,\n  \
+             corpus TEXT,\n  exemplar TEXT,\n  issue TEXT,\n  since TEXT\n) WITHOUT ROWID;\n\
+             INSERT INTO feature VALUES('answers','syntax','Answers',NULL,'implemented','ordinary',NULL,'A \
+             definition''s answer.','surface-parser','tests/answers.rs','ledger/answers.gandr',NULL,'#2');\n\
+             INSERT INTO feature VALUES('questions','syntax','Questions',NULL,'planned','ordinary',NULL,'A \
+             question.',NULL,NULL,NULL,'#3',NULL);\n\
+             INSERT INTO feature VALUES('reels','storage','Reels',NULL,'implemented','ordinary',NULL,'A \
+             reel.','storage-records',NULL,'crate-tests',NULL,'#4');\nCOMMIT;\n",
+        ),
+    );
+    let _exemplar = scratch.file(
+        Path::new("ledger/answers.gandr"),
+        Text::from("/// `answers`: a definition.\n@[ checks ]\ndef answer = 42 ;\n"),
+    );
+    let (ledger, root) = (Path::new("ledger"), Path::new("--root"));
+
+    let listed = ran(gandr(&[
+        ledger,
+        Path::new("list"),
+        Path::new("--area"),
+        Path::new("syntax"),
+        root,
+        &scratch.0,
+    ]));
+    assert_eq!(code(&listed), Code(0_i32), "{}", stderr(&listed));
+    assert_eq!(
+        stdout(&listed),
+        "answers [implemented] Answers: A definition's answer.\nquestions [planned] Questions: A question.\n"
+    );
+    let planned = ran(gandr(&[
+        ledger,
+        Path::new("list"),
+        Path::new("--status"),
+        Path::new("planned"),
+        root,
+        &scratch.0,
+    ]));
+    assert_eq!(code(&planned), Code(0_i32), "{}", stderr(&planned));
+    assert_eq!(
+        stdout(&planned),
+        "questions [planned] Questions: A question.\n"
+    );
+
+    let shown = ran(gandr(&[
+        ledger,
+        Path::new("show"),
+        Path::new("answers"),
+        root,
+        &scratch.0,
+    ]));
+    assert_eq!(code(&shown), Code(0_i32), "{}", stderr(&shown));
+    assert_eq!(
+        stdout(&shown),
+        "id: answers\narea: syntax\nname: Answers\nstatus: implemented\nnotability: ordinary\nline: A \
+         definition's answer.\ncrate: surface-parser\ncorpus: tests/answers.rs\nexemplar: \
+         ledger/answers.gandr\nsince: #2\n--- ledger/answers.gandr\n/// `answers`: a definition.\n@[ checks \
+         ]\ndef answer = 42 ;\n--- corpus\ntests/answers.rs\n"
+    );
+
+    let elsewhere = ran(gandr(&[
+        ledger,
+        Path::new("list"),
+        Path::new("--area"),
+        Path::new("astrology"),
+        root,
+        &scratch.0,
+    ]));
+    assert_eq!(code(&elsewhere), Code(2_i32), "{}", stdout(&elsewhere));
+    assert_eq!(
+        stderr(&elsewhere),
+        "gandr: no feature is in the area `astrology`; the areas are storage, syntax\n"
+    );
+    let unknown = ran(gandr(&[
+        ledger,
+        Path::new("show"),
+        Path::new("answer"),
+        root,
+        &scratch.0,
+    ]));
+    assert_eq!(code(&unknown), Code(2_i32), "{}", stdout(&unknown));
+    assert_eq!(stderr(&unknown), "gandr: no feature is `answer`\n");
+
+    let committed = ran(gandr(&[
+        ledger,
+        Path::new("show"),
+        Path::new("features-exemplars"),
+        root,
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+    ]));
+    assert_eq!(code(&committed), Code(0_i32), "{}", stderr(&committed));
+}
+
 #[test]
 fn every_width_prints_the_serial_run()
 {

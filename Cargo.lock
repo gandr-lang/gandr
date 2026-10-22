@@ -1032,6 +1032,7 @@ dependencies = [
 name = "gandr-surface-mcp"
 version = "0.0.0"
 dependencies = [
+ "gandr-surface-dispatcher",
  "gandr-surface-lsp",
  "quenchant-anodized",
  "quenchant-shape",

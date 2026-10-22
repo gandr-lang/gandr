@@ -755,6 +755,8 @@ mod tests
             "diagnostics",
             "documents",
             "expected_syntax",
+            "ledger_list",
+            "ledger_show",
             "outline",
             "propose",
             "trial",
@@ -773,6 +775,8 @@ mod tests
                 Some(&json!(["uri"])),
                 None,
                 Some(&json!(["uri", "line", "character"])),
+                None,
+                Some(&json!(["id"])),
                 Some(&json!(["uri"])),
                 Some(&json!(["uri", "version", "range", "text"])),
                 Some(&json!(["uri", "candidates"])),
@@ -1010,6 +1014,97 @@ mod tests
             closed.pointer("/structuredContent/changes"),
             Some(&json!({ "changed": [], "closed": [uri] }))
         );
+    }
+
+    #[test]
+    fn the_ledger_tools_read_the_committed_ledger_1827()
+    {
+        let (mut workspace, _server) = editor();
+        let mut connection = Connection::default();
+        let root = json!(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let listed = call(
+            &mut connection,
+            &mut workspace,
+            &json!("ledger_list"),
+            &json!({ "root": root, "area": "workflow", "status": "implemented" }),
+        );
+        assert_eq!(listed.pointer("/isError"), Some(&json!(false)));
+        let features = listed
+            .pointer("/structuredContent/features")
+            .and_then(Value::as_array)
+            .expect("the features are listed");
+        assert!(
+            !features.is_empty(),
+            "the workflow area has implemented features"
+        );
+        assert!(features.iter().all(|feature| {
+            feature.get("area") == Some(&json!("workflow"))
+                && feature.get("status") == Some(&json!("implemented"))
+                && feature
+                    .get("line")
+                    .and_then(Value::as_str)
+                    .is_some_and(|line| !line.is_empty())
+        }));
+        let shown = call(
+            &mut connection,
+            &mut workspace,
+            &json!("ledger_show"),
+            &json!({ "root": root, "id": "features-exemplars" }),
+        );
+        assert_eq!(
+            shown.pointer("/structuredContent/feature/id"),
+            Some(&json!("features-exemplars"))
+        );
+        assert_eq!(
+            shown.pointer("/structuredContent/corpus/0"),
+            Some(&json!("ledger/exemplars/features"))
+        );
+        for (tool, arguments, error) in [
+            (
+                "ledger_list",
+                json!({ "root": root, "area": "astrology" }),
+                "no feature is in the area `astrology`",
+            ),
+            (
+                "ledger_list",
+                json!({ "root": root, "status": "finished" }),
+                "`finished` is no status",
+            ),
+            (
+                "ledger_list",
+                json!({ "root": root, "area": 3_u8 }),
+                "`area` must be a string",
+            ),
+            (
+                "ledger_show",
+                json!({ "root": root }),
+                "`id` must name a feature",
+            ),
+            (
+                "ledger_show",
+                json!({ "root": root, "id": "astrology" }),
+                "no feature is `astrology`",
+            ),
+            (
+                "ledger_show",
+                json!({ "root": "/nonexistent", "id": "a" }),
+                "/nonexistent/ledger/features.sql: cannot read",
+            ),
+        ] {
+            let refused = call(&mut connection, &mut workspace, &json!(tool), &arguments);
+            assert_eq!(
+                refused.pointer("/isError"),
+                Some(&json!(true)),
+                "{tool} {arguments}"
+            );
+            assert!(
+                refused
+                    .pointer("/structuredContent/error")
+                    .and_then(Value::as_str)
+                    .is_some_and(|said| said.starts_with(error)),
+                "{tool} {arguments}: {refused}"
+            );
+        }
     }
 
     #[test]
