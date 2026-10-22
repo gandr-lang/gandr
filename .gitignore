@@ -14,3 +14,6 @@ rustc-ice-*.txt
 /coverage-plain.lcov
 # `mise run mutants` outcomes.
 /mutants.out
+# The features ledger database, built from the tracked `ledger/features.sql`.
+/ledger/features.db
+/ledger/features.db.new

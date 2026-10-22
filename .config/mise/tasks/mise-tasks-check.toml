@@ -519,6 +519,64 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 description = "Every features exemplar settles under `gandr test`"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars/features"
 
+# The features ledger (`ledger/features.sql`, `ledger/README.md`): the dump
+# builds with every CHECK constraint holding (a refused row stops the build),
+# re-dumps byte-identical, and every `parent` resolves; every path a row
+# names exists — a `crate` a directory under `crates/` or a `contrib/` path, a
+# `corpus` entry a path from the root or under `crates/surface-corpus/` (a
+# `::item` suffix naming a test inside it), an `exemplar` a file; and every
+# features exemplar is named by a row. Every finding is printed before the
+# gate fails.
+["check:ledger"]
+description = "The features ledger round-trips, keeps its constraints and names paths that exist"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+db="$tmp/features.db"
+sqlite3 -bail "$db" < ledger/features.sql
+sqlite3 "$db" .dump > "$tmp/features.sql"
+failed=0
+if ! cmp -s "$tmp/features.sql" ledger/features.sql; then
+  diff -u ledger/features.sql "$tmp/features.sql" >&2 || true
+  echo 'ledger/features.sql is not its own re-dump; normalize it with `mise run ledger:build && mise run ledger:dump`' >&2
+  failed=1
+fi
+if [ -n "$(sqlite3 "$db" 'PRAGMA foreign_key_check;')" ]; then
+  sqlite3 "$db" "SELECT id || ': parent ' || parent || ' names no row' FROM feature WHERE parent NOT IN (SELECT id FROM feature);" >&2
+  failed=1
+fi
+integrity=$(sqlite3 "$db" 'PRAGMA integrity_check;')
+if [ "$integrity" != ok ]; then
+  echo "$integrity" >&2
+  failed=1
+fi
+while IFS='|' read -r id column paths; do
+  for path in $paths; do
+    case $column in
+      crate) [[ -d crates/$path || ( $path == contrib/* && -e $path ) ]] ;;
+      corpus) [[ -e ${path%%::*} || -e crates/surface-corpus/${path%%::*} ]] ;;
+      exemplar) [[ -f $path ]] ;;
+    esac || { echo "$id: $column \`$path\` does not exist" >&2; failed=1; }
+  done
+done < <(sqlite3 -separator '|' "$db" "
+  SELECT id, 'crate', crate FROM feature WHERE crate IS NOT NULL
+  UNION ALL SELECT id, 'corpus', corpus FROM feature WHERE corpus IS NOT NULL
+  UNION ALL SELECT id, 'exemplar', exemplar FROM feature WHERE exemplar IS NOT NULL;")
+sqlite3 "$db" "SELECT exemplar FROM feature WHERE exemplar IS NOT NULL;" | tr ' ' '\n' | sort -u > "$tmp/named"
+git ls-files -- 'ledger/exemplars/features/*.gandr' | sort > "$tmp/files"
+while read -r file; do
+  echo "$file: no row of the features ledger names it" >&2
+  failed=1
+done < <(comm -23 "$tmp/files" "$tmp/named")
+if (( failed )); then
+  echo 'ledger check FAILED' >&2
+  exit 1
+fi
+echo "ledger check OK: $(sqlite3 "$db" 'SELECT count(*) FROM feature;') rows round-trip, every path exists, every exemplar is named"
+'''
+
 ["check:tests"]
 description = "Unit and integration tests over every target"
 run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"

@@ -1,0 +1,24 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The features ledger (`ledger/README.md`). `ledger/features.sql` is tracked;
+# `ledger/features.db` is built from it and ignored. The `feature` table is
+# `WITHOUT ROWID`, so `.dump` writes its rows in primary-key order: the dump
+# depends on the rows, never on the order they were written in, and two
+# branches adding rows touch different lines. `check:ledger` in
+# `mise-tasks-check.toml` holds the round trip and the paths.
+
+["ledger:build"]
+description = "Build ledger/features.db from the tracked dump ledger/features.sql"
+# Built beside the target and moved over it, so a refused row leaves the
+# previous database in place.
+run = '''
+set -eu
+rm -f ledger/features.db.new
+sqlite3 -bail ledger/features.db.new < ledger/features.sql
+mv ledger/features.db.new ledger/features.db
+'''
+
+["ledger:dump"]
+description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
+run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
