@@ -901,6 +901,7 @@ impl SessionLoop
     ///   declaration after it refuses keeps the earlier chunk; reloading an
     ///   unchanged file answers that nothing changed.
     /// - witness: `tests::repl_loop::a_reloaded_file_replaces_its_chunk`
+    /// - witness: `tests::repl_loop::a_longer_reload_moves_the_later_files_and_a_missing_one_is_named`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|block|
         block.source == <&str>::from(echo) && !block.lines.is_empty()))]
     fn reload(
@@ -999,3 +1000,6 @@ impl SessionLoop
         })
     }
 }
+
+#[cfg(test)]
+mod tests;
