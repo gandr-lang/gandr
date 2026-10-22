@@ -1,0 +1,12 @@
+/// `UnstatedComponent.Arity`: a model component the derivation cannot state: an application written with other than its head's explicit count.
+///
+/// The theory the model derives from.
+@[ checks ]
+theory T {
+  sort Nat : Type;
+  oper add : (a : Nat, b : Nat) --> Nat;
+  rule half : add(x) ==> x;
+}
+
+@[ refuses("UnstatedComponent.Arity") ]
+def model : Model(T) ;

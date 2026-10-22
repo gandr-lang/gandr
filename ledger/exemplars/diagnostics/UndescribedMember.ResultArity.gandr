@@ -1,0 +1,7 @@
+/// `UndescribedMember.ResultArity`: a member the description does not read: a rule returning other than its operation's output count.
+@[ refuses("UndescribedMember.ResultArity") ]
+theory Divide {
+  sort Nat : Type;
+  oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
+  rule whole : divmod(m, n) ==> m;
+}

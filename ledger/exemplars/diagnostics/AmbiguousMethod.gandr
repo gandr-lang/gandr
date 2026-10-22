@@ -1,0 +1,18 @@
+/// `AmbiguousMethod`: a method call whose name more than one module's receivers declare.
+///
+/// An integer's width, one way.
+module Wide {
+  @[ checks ]
+  def width(self : shared Integer) -> -F Integer { pure 1 }
+}
+
+/// An integer's width, another way.
+module Narrow {
+  @[ checks ]
+  def width(self : shared Integer) -> -F Integer { pure 0 }
+}
+
+@[ refuses("AmbiguousMethod") ]
+def measured(n : Integer) -> -F Integer {
+  n.width()
+}

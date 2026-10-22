@@ -1,0 +1,9 @@
+/// `ImplicitInParentheses`: a call writing a function's implicit arguments among its parentheses.
+///
+/// The identity at a type supplied by name.
+@[ checks ]
+def same @[a : Type] (x : a) -> -F a { return x }
+
+@[ refuses("ImplicitInParentheses") ]
+def inParentheses : () => Integer ;
+def inParentheses = thunk { become same(Integer, 3) } ;

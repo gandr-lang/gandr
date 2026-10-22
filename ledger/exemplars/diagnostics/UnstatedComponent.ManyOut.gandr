@@ -1,0 +1,12 @@
+/// `UnstatedComponent.ManyOut`: a model component the derivation cannot state: a term relating the results of a many-out operation.
+///
+/// The theory the model derives from.
+@[ checks ]
+theory T {
+  sort Nat : Type;
+  oper pair : (a : Nat, b : Nat) --> (c : Nat, d : Nat);
+  rule swap : pair(x, y) ==> (y, x);
+}
+
+@[ refuses("UnstatedComponent.ManyOut") ]
+def model : Model(T) ;

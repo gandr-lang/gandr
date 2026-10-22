@@ -1,0 +1,7 @@
+/// `UnexportedName`: a name an import answers with a declaration its source does not export.
+// `code`, a signature with no definition.
+import "../attributes/owes.gandr" ;
+
+@[ refuses("UnexportedName") ]
+def used : Type ;
+def used = code ;

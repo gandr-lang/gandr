@@ -1,0 +1,6 @@
+/// `UndescribedMember.TypeShape`: a member the description does not read: a type shape with no first-order reference.
+@[ refuses("UndescribedMember.TypeShape") ]
+theory Shape {
+  sort Nat : Type+;
+  sort Bad : Integer;
+}

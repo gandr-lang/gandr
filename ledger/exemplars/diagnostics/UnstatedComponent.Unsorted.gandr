@@ -1,0 +1,12 @@
+/// `UnstatedComponent.Unsorted`: a model component the derivation cannot state: a variable no occurrence gives a sort.
+///
+/// The theory the model derives from.
+@[ refuses("UndescribedMember.LhsNotOperation") ]
+theory T {
+  sort Nat : Type;
+  oper zero : () --> Nat;
+  rule loose : x ==> x;
+}
+
+@[ refuses("UnstatedComponent.Unsorted") ]
+def model : Model(T) ;

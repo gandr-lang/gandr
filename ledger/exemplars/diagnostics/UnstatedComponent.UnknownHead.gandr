@@ -1,0 +1,12 @@
+/// `UnstatedComponent.UnknownHead`: a model component the derivation cannot state: a sort or an operation the theory does not declare, or one used where the other is read.
+///
+/// The theory the model derives from.
+@[ refuses("IllFormedDescription") ]
+theory T {
+  sort Nat : Type;
+  oper zero : () --> Nat;
+  rule stray : succ(zero()) ==> zero();
+}
+
+@[ refuses("UnstatedComponent.UnknownHead") ]
+def model : Model(T) ;
