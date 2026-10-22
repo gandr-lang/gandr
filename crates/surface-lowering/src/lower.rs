@@ -2922,6 +2922,9 @@ struct Lowerer<'run, 'source>
     typed_parameters: BTreeMap<NodeIndex, (NodeIndex, Frame)>,
     /// Each value argument of a data family's application, with its place.
     argued: BTreeMap<NodeIndex, native::Argued>,
+    /// Each argument of a call naming a declaration, with the type the
+    /// declaration writes for the parameter at its place.
+    parameter_typed: BTreeMap<NodeIndex, Placed>,
     /// Each constructor classified by its place in a data family's
     /// application, not yet minted: its classifier reads the arguments before
     /// it, which the mint sweep reaches after it, so the application mints it.
@@ -4437,6 +4440,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ascribed: BTreeMap::new(),
             typed_parameters: BTreeMap::new(),
             argued: BTreeMap::new(),
+            parameter_typed: BTreeMap::new(),
             awaiting: BTreeSet::new(),
             thunked: BTreeMap::new(),
             inherited: BTreeMap::new(),
@@ -9179,6 +9183,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if applied.start == applied.end {
             let _first = self.nullary.insert(head.node, site.at.node);
         }
+        if !descends {
+            self.parameters_classify(site, frame, head, applied);
+        }
         self.read(head.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
@@ -12213,6 +12220,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .filter_map(|(_, argued)| self.collected.data.get(argued.form))
                     .flat_map(|form| form.parameters.iter().map(|parameter| parameter.classifier)),
             )
+            // A declaration's parameter types classify the constructors
+            // written as the arguments of a call naming it.
+            .chain(
+                self.parameter_typed
+                    .iter()
+                    .filter(|&(argument, _)| owns(argument))
+                    .map(|(_, &declared)| declared),
+            )
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
@@ -12240,6 +12255,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     native::Classifier::Field(_)
                     | native::Classifier::Answered { .. }
                     | native::Classifier::Slot(_)
+                    | native::Classifier::Parameter(_)
                     | native::Classifier::Inserted => None,
                 }),
         );

@@ -1412,6 +1412,11 @@ pub struct Collected<'source>
     /// which the function's lowering raises.
     pub plicities:
         BTreeMap<SlotIndex, Result<Vec<TelescopeEntry<'source>>, LoweringRefusal<'source>>>,
+    /// The written type of each explicit parameter of each function written
+    /// with a parameter list, by its slot, in written order, when the type
+    /// names no parameter of the function: what each argument of a call
+    /// naming the function checks against.
+    pub parameters: BTreeMap<SlotIndex, Vec<Maybe<Placed, plicity::unclosed::Absent>>>,
     /// The stage binders of each function quantified over stages, by its
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
@@ -2526,6 +2531,7 @@ pub fn begin_collection<'source>(
         blocks: Vec::new(),
         recursive: BTreeSet::new(),
         plicities: BTreeMap::new(),
+        parameters: BTreeMap::new(),
         stage_binders: BTreeMap::new(),
         receivers: BTreeMap::new(),
         declared_uses: Vec::new(),
@@ -4515,6 +4521,10 @@ impl<'source> Collector<'_, 'source>
             };
             if let Some(merged) = merged {
                 let _first = self.collected.plicities.insert(slot, merged);
+            }
+            let parameters = self.explicit_parameters(&header);
+            if !parameters.is_empty() {
+                let _first = self.collected.parameters.insert(slot, parameters);
             }
             if let Ok(binders) = self.stage_binders(&header)
                 && !binders.is_empty()

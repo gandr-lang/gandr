@@ -1943,6 +1943,49 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
     assert_accepted(&report);
 }
 
+/// #1833: a constructor written as a call's argument took no classifier from
+/// the parameter it is passed to, so `count(Some(3))` was refused as
+/// unannotated where `count((Some(3) : Maybe(Integer)))` checked. The
+/// parameter's closed type classifies it. A type naming the parameter before
+/// it, and a binder's parameter, classify nothing: each stays unannotated.
+#[test]
+fn a_constructor_argument_takes_its_parameter_s_type_1833()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def count(m : Maybe(Integer)) -> -F Integer {{ return 0 }}\n\
+         def passed : () => Integer ;\ndef passed = thunk {{ become count(Some(3)) }} ;\n\
+         def bare : () => Integer ;\ndef bare = thunk {{ become count(None) }} ;\n\
+         def annotated : () => Integer ;\n\
+         def annotated = thunk {{ become count((Some(3) : Maybe(Integer))) }} ;\n\
+         def local(g : Maybe(Integer) => Integer) -> -F Integer {{ g(None) }}\n\
+         def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}\n\
+         def dependent : () => Integer ;\ndef dependent = thunk {{ become pick(Integer, None) }} ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["passed", "bare", "annotated"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    for name in ["local", "dependent"].map(SurfaceName::from) {
+        assert!(
+            matches!(refusal_of(&module, name), LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            }),
+            "`{name}`'s argument stays unannotated: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #1171: a constructor written in a field typed by another family took no
 /// classifier from the field, so `Inline(Some(3))` was refused as
 /// unannotated where `Inline((Some(3) : Maybe(Integer)))` checked. The field's

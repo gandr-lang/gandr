@@ -1,0 +1,44 @@
+// A constructor passed as an argument is checked at the type of the
+// parameter it is passed to: a list of strings is no list of integers, and
+// the checker, not the lowering, refuses it (#1833). A parameter whose type
+// names the one before it classifies nothing yet (#1876).
+
+/// A list of any type.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+/// The first of a list of integers, or zero.
+@[ checks ]
+def first(xs : List(Integer)) -> -F Integer {
+  case xs {
+    Nil => 0,
+    Cons(x, _) => x
+  }
+}
+
+/// A string where the parameter takes integers is refused by the checker,
+/// not as unannotated (#1833).
+@[ refuses("TypeMismatch") ]
+def mistyped : () => Integer ;
+def mistyped = thunk { become first(Cons("no", Nil)) } ;
+
+/// How many elements a list of any type holds.
+@[ checks ]
+def rec size(a : Type, xs : List(a)) -> -F Integer {
+  case xs {
+    Nil => 0,
+    Cons(_, rest) => {
+      run n <- size[<](a, rest);
+      n + 1
+    }
+  }
+}
+
+/// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
+/// reads the argument before it, and it still needs a stated type (#1876).
+@[ refuses("OutOfFragment.Unannotated") ]
+def one : () => Integer ;
+def one = thunk { become size(Integer, Cons(1, Nil)) } ;
