@@ -764,7 +764,10 @@ done <<< "$landings"
 # gone and the new pull request opens on the trunk. The top is read at the
 # start and again just before the push (#1601): the obligations step between
 # takes about a minute, and a `pr:land` started on the top inside it holds
-# the top a few seconds in. A top held or changed by then is refused.
+# the top. A top held or changed by then is refused. `pr:land` holds its pull
+# request before it reads the chain and reads the chain again before it
+# queues, so an open that read the top before the hold and pushes after it
+# makes the landing refuse instead.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -1023,8 +1026,13 @@ source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 own_head=$(git branch --show-current)
 # From the moment the landing is this run's until its chain is queued, the
 # chain's pull requests carry the `landing` label, so `pr:open` stacks
-# nothing on the top under it (#1556); every exit takes the label off.
+# nothing on the top under it (#1556); every exit takes the label off. The
+# pull request is held before the chain is first read (#1601): a land runs
+# from the top, so a `pr:open` whose last read of the top follows this label
+# refuses, and one whose last read came before it opens a pull request the
+# read below, or the one before queueing, finds above the top.
 trap release_landing EXIT
+hold_landing "[$number]"
 while :; do
   server=$(server_stack "$number")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$number is not open" >&2; exit 2; }
@@ -1106,6 +1114,14 @@ entry=$(queue_state)
 IFS=$'\t' read -r in_queue queue_status position <<< "$entry"
 if [[ "$in_queue" == true ]]; then queued=true; fi
 if [[ "$state" == OPEN && "$auto" == false && "$in_queue" == false ]]; then
+  # A pull request opened on the top after the chain was read, by a
+  # `pr:open` whose last read of the top preceded the hold, would be left out
+  # of the queued chain and closed with its base (#1601).
+  now=$(server_stack "$number")
+  if [[ $(jq -c 'map(.number)' <<< "$now") != "$(jq -c 'map(.number)' <<< "$server")" ]]; then
+    echo "the stack changed while it was readied to land: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$now"); run \`pr:land\` again from its top" >&2
+    exit 2
+  fi
   queue_stack "$server"
 fi
 # Queued, the chain is landing (`open_prs`), so nothing stacks on it.

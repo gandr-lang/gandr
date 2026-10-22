@@ -166,6 +166,32 @@ restack() {
   git fetch --quiet origin "${heads[@]}"
 }
 
+# The trunk's required status contexts, from its rules, as a JSON array.
+required_contexts() {
+  gh api "repos/$repo/rules/branches/$trunk" \
+    --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique'
+}
+
+# Wait, every 30 seconds, until each of the trunk's required contexts on pull
+# request `$1`'s head has concluded (`required.jq`, #1601); fail at the first
+# reading with a required context red, naming it. The contexts are read from
+# the rules, not through `gh pr checks --required`, so the wait never rests
+# on gh's filter nor on the end of a run whose other jobs are not required.
+wait_required() {
+  local required reading
+  required=$(required_contexts)
+  while :; do
+    reading=$(gh pr view "$1" -R "$repo" --json statusCheckRollup --jq .statusCheckRollup \
+      | jq -c --argjson required "$required" -f "$pr_stack_dir/required.jq")
+    if [[ $(jq '.failed | length' <<< "$reading") != 0 ]]; then
+      echo "#$1's required checks are red: $(jq -r '.failed | join(", ")' <<< "$reading")" >&2
+      return 1
+    fi
+    [[ $(jq '.pending | length' <<< "$reading") != 0 ]] || return 0
+    sleep 30
+  done
+}
+
 # Re-run the runs on pull request `$1`'s head that a twin on the same commit
 # cancelled (`twins.jq`); succeeds when it re-ran one.
 rerun_twins() {
@@ -242,7 +268,8 @@ carried_queued() {
 # pull request on one of its branches outside it is retargeted to the trunk
 # first (`retarget_landing`). An atomic stack merge refuses a pull request
 # whose required checks are still expected, so each one's required checks are
-# waited on first, and a red one stops the landing, naming it. A restack gives
+# waited on first (`wait_required`), and a red one stops the landing, naming
+# it. A restack gives
 # each head above the bottom two runs per workflow, one cancelled by the
 # other; a cancelled one the rollup reads is re-run (`rerun_twins`), at most
 # three times for a pull request, and its checks waited on again.
@@ -259,7 +286,7 @@ queue_stack() {
     reruns=0
     while :; do
       watched=0
-      gh pr checks "$number" -R "$repo" --required --watch --fail-fast --interval 30 > /dev/null || watched=$?
+      wait_required "$number" || watched=$?
       if (( reruns < 3 )) && rerun_twins "$number"; then
         reruns=$(( reruns + 1 ))
         sleep 30
