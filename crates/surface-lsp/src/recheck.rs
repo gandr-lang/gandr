@@ -575,10 +575,11 @@ pub struct Rechecked
 }
 
 /// Judge `text`, the document at `uri`, in its `session` over `laid`, the
-/// closure [`lay`] laid it out in, polling `retirement` before each item the
-/// incremental pass adopts or judges; read its diagnostics off the judgement
-/// at `verbosity`, their types in `spelling`, and find the form holding `caret`
-/// in the tree the judgement parsed, the wall measured from `started`.
+/// closure [`lay`] laid it out in, polling `retirement` before each declaration
+/// it checks, before their settle and before each item the incremental pass
+/// adopts or judges; read its diagnostics off the judgement at `verbosity`,
+/// their types in `spelling`, and find the form holding `caret` in the tree the
+/// judgement parsed, the wall measured from `started`.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; `laid` is [`lay`] of `text`; any

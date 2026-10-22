@@ -339,8 +339,8 @@ use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_member;
-use gandr_surface_dispatcher::judge_member_after;
-use gandr_surface_dispatcher::judge_member_tabled;
+use gandr_surface_dispatcher::judge_member_after_retiring;
+use gandr_surface_dispatcher::judge_member_tabled_retiring;
 use gandr_surface_dispatcher::lower_closure;
 use gandr_surface_dispatcher::lower_onto_closure;
 use gandr_surface_dispatcher::lower_parsed;
@@ -2314,17 +2314,19 @@ impl<Store, Blocks> Session<Store, Blocks>
     }
 
     /// [`judge_reading`](Self::judge_reading), polling `retirement` before each
-    /// item the incremental pass adopts or judges.
+    /// declaration the member judgement checks, once before their settle, and
+    /// before each item the incremental pass adopts or judges.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: while every poll answers wanted, [`Polled::Whole`] with what
-    ///   [`judge_reading`](Self::judge_reading) answers. Retired before an
-    ///   item, [`Polled::Retired`]: the incremental session holds the resume it
-    ///   held, and the imports, snapshot and documentation the session holds
-    ///   are the last accepted revision's; the session holds no admission.
+    ///   [`judge_reading`](Self::judge_reading) answers. Retired before a
+    ///   declaration, the settle or an item, [`Polled::Retired`]: the
+    ///   incremental session holds the resume it held, and the imports,
+    ///   snapshot and documentation the session holds are the last accepted
+    ///   revision's; the session holds no admission.
     /// - provides: an editor's judgement that a newer revision overtakes stops
-    ///   at its next item, on whatever thread runs it.
+    ///   at its next declaration or item, on whatever thread runs it.
     /// - fails: as [`judge`](Self::judge).
     /// - panics: only by propagating a panic of `read`.
     /// - executable: none — as [`judge_reading`](Self::judge_reading).
@@ -2334,8 +2336,11 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a judgement retired part way leaves the next one
-    ///   judging what it would have with no retired one before it.
+    ///   judging what it would have with no retired one before it; one never
+    ///   retired polls once before each declaration it checks, once before
+    ///   their settle and once before each item.
     /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
+    /// - witness: `tests::session::a_judgement_polls_before_each_declaration_it_checks_1663`
     #[inline]
     pub fn judge_reading_retiring<'text, Read, Poll>(
         &mut self,
@@ -2390,7 +2395,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   ([`Closure::led`]), once per process and root; the document is lowered
     ///   onto the arena that pass left, which extends the judgement's
     ///   ([`lower_onto_closure`]), judged on a copy of the judgement's state
-    ///   ([`judge_member_after`]) and submitted after the pass's state
+    ///   ([`judge_member_after_retiring`]) and submitted after the pass's state
     ///   ([`IncrementalSession::submit_after`]) — onto the judgement's own
     ///   arena and submitted whole when the pass holds no state — and otherwise
     ///   the module is the closure's lowering resumed over the tree
@@ -2429,13 +2434,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     }
 
     /// [`judge_unit_reading`](Self::judge_unit_reading), polling `retirement`
-    /// before each item the incremental pass adopts or judges.
+    /// as [`judge_reading_retiring`](Self::judge_reading_retiring) polls it.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
     /// - ensures: while every poll answers wanted, [`Polled::Whole`] with what
-    ///   [`judge_unit_reading`](Self::judge_unit_reading) answers; retired
-    ///   before an item, as
+    ///   [`judge_unit_reading`](Self::judge_unit_reading) answers; retired, as
     ///   [`judge_reading_retiring`](Self::judge_reading_retiring) states.
     /// - provides: as [`judge_reading_retiring`](Self::judge_reading_retiring),
     ///   for a document that imports a sibling.
@@ -2631,28 +2635,37 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Some(closure) = closure {
             closure.keep_snapshot(|| snapshot.leading(ItemOrdinal::from(boundary)));
         }
-        let ((settled, admission), table) = match self.tables {
-            Tables::Kept => {
-                let (judged, table) = judge_member_tabled(
-                    self.root.corpus_root(),
-                    (module, revision),
-                    arena,
-                    (&HostGrant::UNBOUNDED, checking),
-                    (unit, base),
-                );
-                (judged.into_parts(), table)
+        let judged = match self.tables {
+            Tables::Kept => match judge_member_tabled_retiring(
+                self.root.corpus_root(),
+                (module, revision),
+                arena,
+                (&HostGrant::UNBOUNDED, checking),
+                (unit, base),
+                retirement,
+            ) {
+                Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
+                Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
             },
-            Tables::Unkept => (
-                judge_member_after(
-                    self.root.corpus_root(),
-                    (module, revision),
-                    arena,
-                    (&HostGrant::UNBOUNDED, checking),
-                    base,
-                )
-                .into_parts(),
-                Maybe::Absent(tabled::Absent::Untabled),
-            ),
+            Tables::Unkept => match judge_member_after_retiring(
+                self.root.corpus_root(),
+                (module, revision),
+                arena,
+                (&HostGrant::UNBOUNDED, checking),
+                base,
+                retirement,
+            ) {
+                Polled::Whole(judged) => {
+                    Polled::Whole((judged.into_parts(), Maybe::Absent(tabled::Absent::Untabled)))
+                },
+                Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+            },
+        };
+        // Retired before a declaration or the settle: as retired before an
+        // item, the session keeps what its last accepted revision left.
+        let ((settled, admission), table) = match judged {
+            Polled::Whole(judged) => judged,
+            Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, ())),
         };
         let composed = match settled {
             Ok(composed) => composed,
