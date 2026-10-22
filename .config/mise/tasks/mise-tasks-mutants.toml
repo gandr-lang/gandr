@@ -154,7 +154,15 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # run started, and the group running then is stopped at it. A stopped
 # group's outcomes so far count; its other mutants, like those of a group
 # that never started, wait for the next run. A run therefore takes what fits
-# and the rest follows it, which `mutants:nightly` relies on.
+# and the rest follows it, which `mutants:nightly` relies on. Their names are
+# in `waiting.txt`.
+#
+# `--seed-target <dir>` copies a built target directory into each lane before
+# its first build, and each lane builds in its own copy. A lane's worktree
+# sits elsewhere, so the workspace's own crates rebuild there, but every
+# dependency is the seed's. CI seeds the lanes with main's restored test
+# state, so its lanes build in parallel instead of queueing on one target
+# directory's lock.
 ["mutants:witnessed"]
 description = "Mutation-test one crate, each mutant under the witnesses of its function"
 depends = ["evidence:rustdoc"]
@@ -169,6 +177,7 @@ flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses 
 flag "--in-diff <file>" help="mutate only the lines a unified diff adds"
 flag "--iterate" help="skip the mutants earlier --iterate runs settled, and those they tried in the current pass"
 flag "--until <seconds>" help="start no group after this many seconds and stop the one running then; the rest wait for the next run"
+flag "--seed-target <dir>" help="copy this built target directory into each lane, which builds in its copy"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -178,6 +187,7 @@ lanes=${usage_lanes:-4}
 timeout=${usage_timeout:-300}
 iterate=${usage_iterate:-false}
 until=${usage_until:-}
+seed=${usage_seed_target:-}
 in_diff=()
 if [[ -n "${usage_in_diff:-}" ]]; then
   [[ -f "$usage_in_diff" ]] || { printf 'no diff at %s\n' "$usage_in_diff" >&2; exit 2; }
@@ -188,6 +198,10 @@ fi
 if [[ -n "$until" ]]; then
   [[ "$until" =~ ^[1-9][0-9]*$ ]] || { echo '--until takes a positive count of seconds' >&2; exit 2; }
   command -v timeout > /dev/null || { echo '--until stops a group with timeout(1), which is not on the path' >&2; exit 2; }
+fi
+if [[ -n "$seed" ]]; then
+  [[ -d "$seed" ]] || { printf 'no target directory at %s\n' "$seed" >&2; exit 2; }
+  seed=$(cd "$seed" && pwd)
 fi
 package=$(cargo metadata --locked --no-deps --format-version 1 | jq -c --arg crate "$crate" '.packages[] | select(.name == $crate)')
 if [[ -z "$package" ]]; then
@@ -251,6 +265,8 @@ if [[ "$pending" != '[]' ]]; then
   # (`git merge-base origin/main HEAD`), which a bare copy has not got. A
   # tracked file the working tree deleted is left out of the overlay here,
   # since macOS's tar cannot skip an unreadable name.
+  # A seeded lane builds in its own copy, never in a shared target directory.
+  [[ -z "$seed" ]] || unset CARGO_TARGET_DIR
   scratch=$(mktemp -d)
   trap 'for lane in "$scratch"/[0-9]*; do git worktree remove --force "$lane" 2> /dev/null || true; done; rm -rf "$scratch"; git worktree prune' EXIT
   for (( lane = 0; lane < lanes; lane++ )); do
@@ -258,6 +274,7 @@ if [[ "$pending" != '[]' ]]; then
     git ls-files -z --cached --others --exclude-standard \
       | while IFS= read -r -d '' path; do [[ ! -e "$path" && ! -L "$path" ]] || printf '%s\0' "$path"; done \
       | tar --null -T - -cf - | tar -xf - -C "$scratch/$lane"
+    [[ -z "$seed" ]] || cp -a "$seed" "$scratch/$lane/target"
   done
   # One unmutated run of every pending group's witnesses, in a lane as the
   # mutants will run: a witness that fails there, or names no test, would
@@ -305,6 +322,9 @@ if [[ "$pending" != '[]' ]]; then
   wait
   [[ ! -e "$scratch/failed" ]] || exit 1
 fi
+jq -c '.[]' <<< "$witnessed" | while IFS= read -r group; do
+  [[ -f "$output/groups/$(jq -r .key <<< "$group")/resolved" ]] || jq -r '.names[]' <<< "$group"
+done | sort > "$output/waiting.txt"
 waiting=$(jq -r '.[].key' <<< "$witnessed" | while IFS= read -r key; do [[ -f "$output/groups/$key/resolved" ]] || printf '%s\n' "$key"; done | wc -l | tr -d ' ')
 # cargo-mutants 27.1.0 skips `--re` for a struct literal's field deletions, so
 # every group in their file runs them too: each group keeps only the outcomes
@@ -354,6 +374,14 @@ printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, mis
 # line. The task exits 0 whatever survives; the report is the verdict. A
 # crate's directory stays from one run to the next, so a run restarted over
 # the same change resumes each crate's groups (`mutants:witnessed`).
+#
+# The rustdoc JSON the listing reads is built once, for every crate.
+# `--until` bounds the run's wall time from the task's start, that build
+# included: each crate runs under what is left of it, and a crate the budget
+# never reaches runs nothing. The report names every mutant the budget left
+# untested, under its crate, and counts them in its last line;
+# `unreached.txt` lists them. An untested mutant is not a survivor.
+# `--seed-target` passes through to each crate's lanes.
 ["mutants:changed"]
 description = "Mutation-test the lines a change adds, each mutant under the witnesses of its function"
 tools."cargo:cargo-mutants" = "27.1.0"
@@ -362,10 +390,17 @@ usage = '''
 flag "--base <ref>" default="origin/main" help="the branch the change is read against"
 flag "--lanes <count>" default="4" help="workspace copies whose groups build and test at once"
 flag "--timeout <seconds>" default="300" help="the longest a mutant's witnesses may run"
+flag "--until <seconds>" help="the run's wall-time budget, from the task's start"
+flag "--seed-target <dir>" help="copy this built target directory into each lane, which builds in its copy"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+started=$SECONDS
+until=${usage_until:-}
+[[ -z "$until" || "$until" =~ ^[1-9][0-9]*$ ]] || { echo '--until takes a positive count of seconds' >&2; exit 2; }
+seed=()
+[[ -z "${usage_seed_target:-}" ]] || seed=(--seed-target "$usage_seed_target")
 base=${usage_base:-origin/main}
 output=${MUTANTS_OUTPUT:-mutants.out/changed}
 source .config/mise/mutants.bash
@@ -387,26 +422,53 @@ for dir in "$output"/*/; do
   printf '%s\n' "${crates[@]}" | grep -Fxq -- "$name" || rm -rf "$dir"
 done
 : > "$output/survivors.txt"
+: > "$output/unreached.txt"
 {
   printf '## Mutants of the change\n\n'
   printf 'Against `%s` · the lines the change adds in %s crate(s) with Rust sources changed.\n' "$(git rev-parse --short "$fork")" "${#crates[@]}"
 } > "$output/report.md"
+# Names the mutants `$1` the budget left untested in the report, and lists them.
+untested() {
+  [[ -s "$1" ]] || return 0
+  printf '\nNot reached within the %ss budget, so untested:\n\n' "$until"
+  sed 's/^/- /' "$1"
+  cat "$1" >> "$output/unreached.txt"
+}
+documented=false
 for crate in "${crates[@]}"; do
-  listed=$(cargo mutants --list --json --package "$crate" --in-diff "$output/change.diff" | jq length)
-  if (( listed == 0 )); then
+  cargo mutants --list --json --package "$crate" --in-diff "$output/change.diff" | jq -r '.[].name' > "$output/$crate.listed"
+  if [[ ! -s "$output/$crate.listed" ]]; then
     printf '\n### %s\n\nNo mutant on an added line.\n' "$crate" >> "$output/report.md"
     continue
   fi
-  MUTANTS_OUTPUT="$output/$crate" mise run mutants:witnessed -- --package "$crate" \
-    --lanes "${usage_lanes:-4}" --timeout "${usage_timeout:-300}" --in-diff "$output/change.diff"
+  if [[ "$documented" == false ]]; then
+    mise run evidence:rustdoc
+    documented=true
+  fi
+  limit=()
+  if [[ -n "$until" ]]; then
+    left=$((until - (SECONDS - started)))
+    if (( left <= 0 )); then
+      { printf '\n### %s\n' "$crate"; untested "$output/$crate.listed"; } >> "$output/report.md"
+      continue
+    fi
+    limit=(--until "$left")
+  fi
+  MUTANTS_OUTPUT="$output/$crate" mise run --skip-deps mutants:witnessed -- --package "$crate" \
+    --lanes "${usage_lanes:-4}" --timeout "${usage_timeout:-300}" --in-diff "$output/change.diff" "${limit[@]}" "${seed[@]}"
   out=$output/$crate
   {
     printf '\n### %s\n\n%s\n' "$crate" "$(< "$out/summary.txt")"
-    mutants_survivors "$out" || printf '\nEvery mutant on an added line is caught or unviable.\n'
+    mutants_survivors "$out" || printf '\nEvery mutant on an added line it tested is caught or unviable.\n'
+    untested "$out/waiting.txt"
   } >> "$output/report.md"
   cat "$out/missed.txt" "$out/timeout.txt" >> "$output/survivors.txt"
 done
-printf '\n%s survivor(s).\n' "$(wc -l < "$output/survivors.txt" | tr -d ' ')" >> "$output/report.md"
+printf '\n%s survivor(s)' "$(wc -l < "$output/survivors.txt" | tr -d ' ')" >> "$output/report.md"
+if [[ -s "$output/unreached.txt" ]]; then
+  printf '; %s mutant(s) not reached within the %ss budget' "$(wc -l < "$output/unreached.txt" | tr -d ' ')" "$until" >> "$output/report.md"
+fi
+printf '.\n' >> "$output/report.md"
 cat "$output/report.md"
 {% endraw %}
 '''
@@ -468,7 +530,7 @@ if (( left <= 0 )); then
   printf 'the documentation build spent the night'"'"'s %ss before %s could start\n' "$until" "$crate" >&2
   exit 1
 fi
-MUTANTS_OUTPUT="$state/$crate" mise run mutants:witnessed -- --package "$crate" \
+MUTANTS_OUTPUT="$state/$crate" mise run --skip-deps mutants:witnessed -- --package "$crate" \
   --lanes "${usage_lanes:-1}" --timeout "${usage_timeout:-300}" --iterate --until "$left"
 out=$state/$crate
 {
