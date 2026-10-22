@@ -463,6 +463,7 @@ pub fn match_pattern(
                 | Pattern::Constructor { .. }),
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }

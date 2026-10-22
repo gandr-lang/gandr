@@ -1268,6 +1268,8 @@ enum Task
     },
     /// Assemble evaluated record fields in source label order.
     Record(ValueId),
+    /// Assemble evaluated payloads in the source run's move order.
+    Recorded(ValueId),
     /// Select a native branch and apply its constructor fields.
     DataCase
     {
@@ -3312,7 +3314,7 @@ fn run(
         entry_first = machine.values.len().checked_sub(2_usize).and_then(|index| machine.values.get(index)).copied()],
     ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
         && (ret.is_err() || match task {
-            Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
+            Task::Constructor { .. } | Task::Record(_) | Task::Recorded(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
             | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::OperandRide { .. } | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
@@ -3398,6 +3400,11 @@ fn run(
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. }) if domain.value(value).and_then(|held| domain.components(held)).is_some()))
                 || (machine.comps.len() == entry_comps && machine.values.len() == entry_values.saturating_add(2)
                     && matches!((mover, machine.tasks.get(entry_tasks..)), (crate::closure::Mover::Ride, Some(&[Task::BindClosure(_), Task::Ride(_)])) | (crate::closure::Mover::Transport, Some(&[Task::BindClosure(_), Task::PathTransport(_)])))),
+            Task::Body { body: crate::closure::CompBody::Payloads { .. }, .. } => (machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. }) if matches!(domain.value(value), Some(&DomainValue::Recorded { .. }))))
+                || (machine.comps.len() == entry_comps && machine.values.len() == entry_values.saturating_add(2)
+                    && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::PathTransport(_)]))),
             Task::Body { body: crate::closure::CompBody::Inject(summand), env } => machine.values.len() == entry_values
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
@@ -3474,6 +3481,7 @@ fn step(
     match task {
         Task::Constructor { term, env } => step_constructor(core, domain, machine, term, env),
         Task::Record(term) => step_record(core, domain, machine, term),
+        Task::Recorded(term) => step_recorded(core, domain, machine, term),
         Task::DataCase { term, env } => step_data_case(core, domain, machine, term, env),
         Task::Projection(term) => step_projection(core, domain, machine, term),
         Task::DataCaseClosure(closure) => {
@@ -3750,6 +3758,26 @@ fn step(
                         (environment, moved),
                     )
                 },
+                crate::closure::CompBody::Payloads {
+                    motive,
+                    along,
+                    source,
+                    moved,
+                    at,
+                } => {
+                    let environment = machine.env(env)?.clone();
+                    move_payloads(
+                        core,
+                        domain,
+                        machine,
+                        Payloadwise {
+                            motive,
+                            along,
+                            source,
+                        },
+                        (environment, moved, at),
+                    )
+                },
                 crate::closure::CompBody::Inject(summand) => {
                     let injected = domain.value_injection(summand, bound, TermFace::Reduced);
                     machine
@@ -4012,6 +4040,7 @@ fn step(
                 },
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -4062,6 +4091,7 @@ fn step(
                 },
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -4306,19 +4336,31 @@ fn step_value(
             Ok(())
         },
         // A closed native path, a closed funext, a closed equivalence, a
-        // univalence statement, a session statement and a recorded run are
-        // inert certificates: nothing reduces them, and transport reads their
+        // univalence statement and a session statement are inert
+        // certificates: nothing reduces them, and transport reads their
         // syntax.
         Value::PathRefl(_)
         | Value::PathEquiv { .. }
         | Value::Funext(..)
         | Value::Equiv(..)
         | Value::Ua { .. }
-        | Value::SessionRelated { .. }
-        | Value::Recorded(_) => {
+        | Value::SessionRelated { .. } => {
             machine
                 .values
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
+            Ok(())
+        },
+        // A recorded run evaluates its payloads where it stands, so transport
+        // moves each along its own payload type.
+        Value::Recorded(ref moves) => {
+            machine.tasks.push(Task::Recorded(term));
+            machine.tasks.extend(
+                moves
+                    .iter()
+                    .rev()
+                    .filter_map(carried)
+                    .map(|payload| Task::Value { term: payload, env }),
+            );
             Ok(())
         },
         // A flow introduction evaluates its parts where it stands, so a ride
@@ -4931,6 +4973,7 @@ fn step_force(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
@@ -5081,6 +5124,7 @@ fn step_apply(
                 },
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -5339,6 +5383,7 @@ fn step_static_apply(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
@@ -5527,6 +5572,7 @@ fn step_case(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
@@ -5737,6 +5783,7 @@ fn step_case_branches(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
@@ -5862,6 +5909,7 @@ fn step_transport(
                 },
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -5887,6 +5935,7 @@ fn step_transport(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::Here { .. }
         | DomainValue::Flow { .. }
         | DomainValue::Literal { .. }
@@ -5916,18 +5965,21 @@ fn step_transport(
 ///   motive and binds it into its injection; a list motive returns `nil`
 ///   unchanged and binds a cell's head, transported in the element's motive,
 ///   before its tail, transported in the list's — the kernel's reducts, so a
-///   component stuck on a definition holds the components after it; the decode
-///   of the motive's own binder hands a universe path — a certificate, a
-///   product of them or a univalence — to native transport; the singleton `y.
-///   Path(D, l, y)`, its carrier and left endpoint closed over the binder, read
-///   against reflexivity returns the path itself; a word moves by the rules of
-///   the `words` module, and in that singleton a path no word rule reads moves
-///   the empty word or a letter-headed word by appending on it; a function
-///   motive along `ua(e)`, `equiv(f, g)` or a held transport returns the thunk
-///   [`CompBody::TransportFunction`] holds, wherever [`function_parts`] reads
-///   its motives; any other configuration over a stuck path stacks the
-///   transport on the path's spine, and over a canonical path and a stuck
-///   operand on the operand's.
+///   component stuck on a definition holds the components after it; a run
+///   motive quoting a session, read against a recorded run, transports each
+///   payload in the payload type of the step it is read against, binding each
+///   before the next, and returns the run with every move and label kept, by
+///   [`move_payloads`]; the decode of the motive's own binder hands a universe
+///   path — a certificate, a product of them or a univalence — to native
+///   transport; the singleton `y. Path(D, l, y)`, its carrier and left endpoint
+///   closed over the binder, read against reflexivity returns the path itself;
+///   a word moves by the rules of the `words` module, and in that singleton a
+///   path no word rule reads moves the empty word or a letter-headed word by
+///   appending on it; a function motive along `ua(e)`, `equiv(f, g)` or a held
+///   transport returns the thunk [`CompBody::TransportFunction`] holds,
+///   wherever [`function_parts`] reads its motives; any other configuration
+///   over a stuck path stacks the transport on the path's spine, and over a
+///   canonical path and a stuck operand on the operand's.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
@@ -5958,6 +6010,8 @@ fn step_transport(
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
 /// - witness: `identity::tests::transport_along_an_equivalence_waits_on_a_stuck_list_1677`
+/// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+/// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 /// - witness: `identity::tests::transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive`
 /// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
@@ -6060,6 +6114,30 @@ fn step_path_transport(
             machine.tasks.push(Task::PathTransport(head));
             machine.values.extend([path, first]);
             return Ok(());
+        },
+        // A run motive over a recorded run moves each payload in its own
+        // payload type and keeps every move's action and label.
+        (Some(&ValueType::Run(code)), DomainValue::Recorded { .. }) => {
+            if let Some(session) = quoted_session(core, code) {
+                return move_payloads(
+                    core,
+                    domain,
+                    machine,
+                    Payloadwise {
+                        motive,
+                        along: path,
+                        source: value,
+                    },
+                    (
+                        Environment::new(),
+                        ComponentCount::from(0_usize),
+                        crate::closure::RunPosition {
+                            read: 0_usize,
+                            state: session.state(),
+                        },
+                    ),
+                );
+            }
         },
         // The motive's own binder decoded: the universe path itself carries
         // the operand, as native transport does, a univalence by its forward
@@ -6345,6 +6423,7 @@ fn back_along(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::HeldTransport { .. }
@@ -6445,6 +6524,7 @@ fn function_parts(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Flow { .. }
@@ -6637,6 +6717,7 @@ fn step_ride(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
@@ -6802,6 +6883,7 @@ fn step_ride(
                 },
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -6831,6 +6913,7 @@ fn step_ride(
                 } => flow,
                 DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
@@ -7018,6 +7101,239 @@ fn move_components(
     }
 }
 
+/// The payload a recorded move carries: a send's or a receive's value.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the value of a sent or received move; `None` for a choice or a
+///   close.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of a send, a choice and a receive evaluates and
+///   reads back with both payloads in order.
+/// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
+#[spec(ensures: |ret| ret.is_some() == matches!(*movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_)))]
+pub const fn carried(movement: &gandr_core_term::session::RecordedMove) -> Option<ValueId>
+{
+    match *movement {
+        gandr_core_term::session::RecordedMove::Sent(payload)
+        | gandr_core_term::session::RecordedMove::Received(payload) => Some(payload),
+        gandr_core_term::session::RecordedMove::Selected(_)
+        | gandr_core_term::session::RecordedMove::Offered(_)
+        | gandr_core_term::session::RecordedMove::Closed => None,
+    }
+}
+
+/// The session type a run motive's code quotes, read as written.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session type of `code` when it is a quote of a session type;
+///   `None` for any other code, an open one included.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a quoted session moves a run's payloads and an opaque
+///   code leaves the transport stuck.
+/// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+#[spec(ensures: |ret| ret.is_none() || matches!(core.value(code), Some(&Value::Quote(_))))]
+fn quoted_session(
+    core: &CoreArena,
+    code: ValueId,
+) -> Option<&gandr_core_term::session::SessionType>
+{
+    let &Value::Quote(quoted) = core.value(code)?
+    else {
+        return None;
+    };
+    let &ValueType::Session(ref session) = core.value_type(quoted)?
+    else {
+        return None;
+    };
+    Some(session)
+}
+
+/// A recorded run moving payload by payload through its run motive.
+#[derive(Clone, Copy, Debug)]
+struct Payloadwise
+{
+    /// The run motive, closed over its environment.
+    motive: crate::arena::ValueClosureId,
+    /// The path every payload moves along.
+    along: DomainValueId,
+    /// The run moved.
+    source: DomainValueId,
+}
+
+/// Move the next payload of a recorded run in its own payload type, or return
+/// the run of every moved payload.
+///
+/// # Specification
+/// - requires: `moving_run.motive` closes a run motive quoting a session the
+///   run conforms to; `moved` payloads have moved, their results bound in
+///   `bound`, the latest innermost; `at` counts the run's moves read and the
+///   protocol state they leave the session at.
+/// - ensures: with a payload left, the transport of the next payload in the
+///   payload type of the step it is read against along `moving_run.along`,
+///   under a continuation over `bound` that moves the rest; with none left, the
+///   return of the run with the source's moves carrying `bound`'s values in
+///   move order. A choice follows its label's branch and a close reads the end,
+///   so a payload stuck on a definition holds every payload after it.
+/// - provides: the run row of transport.
+/// - fails: [`EvalFault::MachineInvariant`] for a motive closure holding no run
+///   type, a source that is no recorded run, a move the session does not take
+///   or a binding `bound` lacks; [`EvalFault::DanglingTerm`] for a source
+///   naming no core run; domain faults for dangling nodes.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`, as above.
+///
+/// # Termination
+/// - reason: the `loop` reads each move once, from `read` on, and stops at the
+///   first payload; each later payload moves in a later step of the machine.
+/// - measure: the moves left to read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run sending one payload and receiving another moves
+///   each in its own payload type and returns them in move order; a choice
+///   between them keeps its label; dropping a payload's transport or swapping
+///   two payloads changes the read-back term.
+/// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+/// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
+#[spec(
+    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values)
+        || (machine.comps.len() == comps && machine.tasks.len() == tasks.saturating_add(2_usize) && machine.values.len() == values.saturating_add(2_usize)),
+)]
+fn move_payloads(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    moving_run: Payloadwise,
+    (bound, moved, at): (Environment, ComponentCount, crate::closure::RunPosition),
+) -> Result<(), EvalFault>
+{
+    use gandr_core_term::session::ProtocolNode;
+    use gandr_core_term::session::RecordedMove;
+    use gandr_core_term::session::Step;
+    let dangling = EvalFault::Domain(DomainFault::Dangling);
+    let protocol = |_broken: gandr_core_term::session::ProtocolError| EvalFault::MachineInvariant;
+    let closure = domain.value_closure(moving_run.motive).ok_or(dangling)?;
+    let crate::ValueBody::ValueType(family) = closure.body()
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let environment = closure.environment().clone();
+    let Some(&ValueType::Run(code)) = core.value_type(family)
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let session = quoted_session(core, code).ok_or(EvalFault::MachineInvariant)?;
+    let DomainValue::Recorded {
+        source: run,
+        fields,
+        ..
+    } = *domain.value(moving_run.source).ok_or(dangling)?
+    else {
+        return Err(EvalFault::MachineInvariant);
+    };
+    let Some(&Value::Recorded(ref moves)) = core.value(run)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let mut current = at.state;
+    let mut index = at.read;
+    let next = loop {
+        let Some(movement) = moves.get(index)
+        else {
+            break None;
+        };
+        index = index
+            .checked_add(1_usize)
+            .ok_or(EvalFault::MachineInvariant)?;
+        let (_, node) = session.protocol().head(current).map_err(protocol)?;
+        current = match (movement, node) {
+            (&RecordedMove::Sent(_), &ProtocolNode::Send { .. })
+            | (&RecordedMove::Received(_), &ProtocolNode::Receive { .. }) => {
+                match session
+                    .at(current)
+                    .map_err(protocol)?
+                    .step()
+                    .map_err(protocol)?
+                {
+                    Step::Send { payload, next } | Step::Receive { payload, next } => {
+                        break Some((payload, next.state()));
+                    },
+                    Step::Select(_) | Step::Offer(_) | Step::End => {
+                        return Err(EvalFault::MachineInvariant);
+                    },
+                }
+            },
+            (&RecordedMove::Selected(ref label), &ProtocolNode::Select(ref branches))
+            | (&RecordedMove::Offered(ref label), &ProtocolNode::Offer(ref branches)) => {
+                *branches.get(label).ok_or(EvalFault::MachineInvariant)?
+            },
+            (&RecordedMove::Closed, &ProtocolNode::End) => current,
+            _ => return Err(EvalFault::MachineInvariant),
+        };
+    };
+    let count = usize::from(moved);
+    let field = domain
+        .fields(fields)
+        .map_err(EvalFault::Domain)?
+        .get(count)
+        .copied();
+    match (next, field) {
+        (Some((payload, after)), Some(field)) => {
+            let part = domain.value_closure_node(crate::ValueBody::ValueType(payload), environment);
+            let continuation = domain.native_continuation_over(
+                CompBody::Payloads {
+                    motive: moving_run.motive,
+                    along: moving_run.along,
+                    source: moving_run.source,
+                    moved: ComponentCount::from(
+                        count
+                            .checked_add(1_usize)
+                            .ok_or(EvalFault::MachineInvariant)?,
+                    ),
+                    at: crate::closure::RunPosition {
+                        read: index,
+                        state: after,
+                    },
+                },
+                bound,
+            );
+            machine.tasks.push(Task::BindClosure(continuation));
+            machine.tasks.push(Task::PathTransport(part));
+            machine.values.extend([moving_run.along, field]);
+            Ok(())
+        },
+        (None, None) => {
+            let mut payloads = Vec::with_capacity(count);
+            for position in (0 .. count).rev() {
+                let position =
+                    u32::try_from(position).map_err(|_overflow| EvalFault::MachineInvariant)?;
+                let payload = bound
+                    .lookup(Zone::Intuitionistic, DeBruijnIndex::from(position))
+                    .ok_or(EvalFault::MachineInvariant)?;
+                payloads.push(payload);
+            }
+            let fields = domain.hold_fields(payloads);
+            let moved_run = domain
+                .value_recorded(run, fields, TermFace::Reduced)
+                .map_err(EvalFault::Domain)?;
+            machine
+                .comps
+                .push(domain.comp_return(moved_run, CompTermFace::Reduced));
+            Ok(())
+        },
+        (Some(_), None) | (None, Some(_)) => Err(EvalFault::MachineInvariant),
+    }
+}
+
 /// Transport the operand above an identity over a path, a start and the path
 /// along a two-entry telescope, in a motive `Π (y : A). Π (z : B). F C`.
 ///
@@ -7102,6 +7418,7 @@ fn step_telescope_transport(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Univalence { .. }
@@ -7970,6 +8287,58 @@ fn step_record(
     Ok(())
 }
 
+/// Assemble a recorded run without copying its moves out of the source arena.
+///
+/// # Specification
+/// - requires: evaluated payloads occupy the stack suffix in the source run's
+///   move order.
+/// - ensures: the run retains that order and keeps its source only when every
+///   payload does.
+/// - fails: missing source nodes, spans or stack operands.
+/// - panics: none.
+///
+/// # Errors
+/// Returns a dangling term, domain fault or machine invariant refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of two payloads reads back with both, in order.
+/// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+#[spec(ensures: |ret| ret.is_err() || matches!(machine.values.last().and_then(|id| domain.value(*id)),Some(DomainValue::Recorded { .. }))) ]
+fn step_recorded(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ValueId,
+) -> Result<(), EvalFault>
+{
+    let Some(&Value::Recorded(ref moves)) = core.value(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let payloads = moves.iter().filter_map(carried);
+    let start = machine
+        .values
+        .len()
+        .checked_sub(payloads.clone().count())
+        .ok_or(EvalFault::MachineInvariant)?;
+    let mut kept = SourceKept::Kept;
+    for (value, source) in machine
+        .values
+        .get(start ..)
+        .ok_or(EvalFault::MachineInvariant)?
+        .iter()
+        .zip(payloads)
+    {
+        kept = kept.and(denotes(domain, *value, source));
+    }
+    let fields = domain.hold_fields(machine.values.drain(start ..));
+    let value = domain
+        .value_recorded(term, fields, composite_face(kept, term))
+        .map_err(EvalFault::Domain)?;
+    machine.values.push(value);
+    Ok(())
+}
+
 /// Select a nominal branch, or suspend the complete case on a neutral head.
 ///
 /// # Specification
@@ -8034,6 +8403,7 @@ fn step_data_case(
             Ok(())
         },
         DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
@@ -8114,6 +8484,7 @@ fn step_split(
         },
         DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }

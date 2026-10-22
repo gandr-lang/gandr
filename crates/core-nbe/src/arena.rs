@@ -1286,7 +1286,7 @@ impl DomainArena
     /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
+    #[spec(ensures: |ret| match *value { DomainValue::Tuple { fields, .. } => ret == self.fields(fields).ok(), DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Neutral { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret.is_none() })]
     pub fn components(
         &self,
         value: &DomainValue,
@@ -1296,6 +1296,7 @@ impl DomainArena
             DomainValue::Tuple { fields, .. } => self.fields(fields).ok(),
             DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
+            | DomainValue::Recorded { .. }
             | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
@@ -1828,6 +1829,50 @@ impl DomainArena
         );
         Ok(self.alloc_value(
             DomainValue::Record {
+                source,
+                fields,
+                face,
+            },
+            guard,
+        ))
+    }
+
+    /// Retain a recorded run with a guard over its evaluated payloads.
+    ///
+    /// The moves and their labels are compared by decomposition; leaving them
+    /// out of the guard can only make that early refutation inconclusive.
+    ///
+    /// # Specification
+    /// - requires: the source run supplies the moves, one payload per send and
+    ///   receive, in move order.
+    /// - ensures: success retains the exact source, span and face.
+    /// - fails: a dangling field span.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `DomainFault::Dangling` when the span does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recorded run reads back with its moves and its
+    ///   payloads in order.
+    /// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Recorded {source,fields,face})))]
+    #[inline]
+    pub fn value_recorded(
+        &mut self,
+        source: ValueId,
+        fields: FieldSpan,
+        face: TermFace,
+    ) -> Result<DomainValueId, DomainFault>
+    {
+        let values = self.fields(fields)?;
+        let guard = Guard::compose(
+            GuardTag::Recorded,
+            &values.len(),
+            values.iter().map(|id| self.folded_value_guard(*id)),
+        );
+        Ok(self.alloc_value(
+            DomainValue::Recorded {
                 source,
                 fields,
                 face,

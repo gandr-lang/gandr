@@ -473,6 +473,7 @@ fn head(
             }
         },
         DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathCertificate { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Univalence { .. }
