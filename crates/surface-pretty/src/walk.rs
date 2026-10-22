@@ -954,15 +954,16 @@ where
 /// # Specification
 /// - requires: nothing.
 /// - ensures: an n-ary former's components, answered by the source for `node`,
-///   a record's and a record type's after their field labels and an injection's
-///   body after its summand; type children admit types and term children terms
-///   as the grammar places them; a dependent arrow's codomain, a dependent
-///   pair's second factor, a static abstraction's, a lambda's and a fixpoint's
-///   body, a bind's rest, a case's branches, a transport's motive, a return
-///   clause and a stack capture's body stand under one binder, a split's body
-///   under one per component, a data case's branch under one per field of its
-///   constructor, a fold's cell branch and a handler's operation clauses under
-///   two, a scope's subject under the capability's and a fork's child and
+///   a recorded run's one value per payload its moves carry and none where they
+///   carry none, a record's and a record type's after their field labels and an
+///   injection's body after its summand; type children admit types and term
+///   children terms as the grammar places them; a dependent arrow's codomain, a
+///   dependent pair's second factor, a static abstraction's, a lambda's and a
+///   fixpoint's body, a bind's rest, a case's branches, a transport's motive, a
+///   return clause and a stack capture's body stand under one binder, a split's
+///   body under one per component, a data case's branch under one per field of
+///   its constructor, a fold's cell branch and a handler's operation clauses
+///   under two, a scope's subject under the capability's and a fork's child and
 ///   parent each under one linear binder, a hold's scope and an access's body
 ///   each under one linear binder; the computation a bind runs, the function an
 ///   application applies, a computation where a value is read, an offer's arms
@@ -990,10 +991,11 @@ where
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+/// - witness: `tests::goldens::a_recorded_run_without_payloads_spells_its_moves_1871`
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } => ret.len() == usize::from(arity)
+    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } | Former::Recorded { payloads: arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
