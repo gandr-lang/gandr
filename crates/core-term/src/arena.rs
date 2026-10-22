@@ -21,6 +21,10 @@
 //! - **Wholesale truncation.** [`CoreArena::watermark`] snapshots the four
 //!   family lengths and [`CoreArena::truncate_to`] restores them, so a pass's
 //!   intermediates allocate past a mark and are dropped in one step afterwards.
+//! - **Frozen rows.** [`CoreArena::freeze`] shares every node minted so far
+//!   with every clone made after, so a clone copies, and its drop releases,
+//!   only the nodes minted since. A truncation into frozen rows takes the
+//!   arena's own copy of those it keeps, and no other clone changes.
 //!
 //! # The honest cost
 //!
@@ -93,6 +97,7 @@
 //!   leaves and pass-throughs come back out; a reader that needs an edge per
 //!   child at a cost a derivation cannot meet stores the edges.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -255,25 +260,225 @@ struct Row<Node>
     support: Slot,
 }
 
+/// One family's rows in allocation order: those frozen by
+/// [`CoreArena::freeze`], shared with every clone of the arena made after,
+/// then the rows minted since.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`Self::get`], [`Self::truncate`]
+///   and [`Self::freeze`] state what a read, a truncation and a freeze see.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family read, minted into, truncated and compared across
+///   a freeze answers as one never frozen does.
+/// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+#[derive(Clone, Debug)]
+struct Family<Node>
+{
+    /// The rows frozen before the family's own, shared by reference.
+    frozen: Option<Arc<[Row<Node>]>>,
+    /// The rows minted after them.
+    own: Vec<Row<Node>>,
+}
+
+impl<Node> Default for Family<Node>
+{
+    /// The empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            frozen: None,
+            own: Vec::new(),
+        }
+    }
+}
+
+impl<Node: PartialEq> PartialEq for Family<Node>
+{
+    /// Two families hold the same rows in the same order, wherever each row
+    /// is kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl<Node: Eq> Eq for Family<Node>
+{
+}
+
+impl<Node> Family<Node>
+{
+    /// The rows frozen before the family's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn frozen(&self) -> &[Row<Node>]
+    {
+        self.frozen.as_deref().unwrap_or_default()
+    }
+
+    /// How many rows the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn len(&self) -> ArenaLength
+    {
+        ArenaLength(self.frozen().len().saturating_add(self.own.len()))
+    }
+
+    /// The row at `offset` in allocation order, or `None` past the family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn get(
+        &self,
+        offset: ArenaLength,
+    ) -> Option<&Row<Node>>
+    {
+        let frozen = self.frozen();
+        offset
+            .0
+            .checked_sub(frozen.len())
+            .map_or_else(|| frozen.get(offset.0), |own| self.own.get(own))
+    }
+
+    /// The row minted last, or `None` for an empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn last(&self) -> Option<&Row<Node>>
+    {
+        self.own.last().or_else(|| self.frozen().last())
+    }
+
+    /// Every row, in allocation order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn iter(&self) -> impl Iterator<Item = &Row<Node>>
+    {
+        self.frozen().iter().chain(&self.own)
+    }
+
+    /// Mint `row` after every row the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn push(
+        &mut self,
+        row: Row<Node>,
+    )
+    {
+        self.own.push(row);
+    }
+}
+
+impl<Node: Clone> Family<Node>
+{
+    /// Keep the first `length` rows, dropping later ones; a length at or past
+    /// the family's end keeps every row.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds its first `length.0.min(entry)` rows, each
+    ///   as it was. A truncation into the frozen rows takes the family's own
+    ///   copy of those it keeps, so no clone made before it changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — truncations past the frozen rows and into them, each
+    ///   read back beside a clone taken before.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len().0 == length.0.min(entry.0),
+    )]
+    fn truncate(
+        &mut self,
+        length: ArenaLength,
+    )
+    {
+        let frozen = self.frozen().len();
+        if let Some(own) = length.0.checked_sub(frozen) {
+            self.own.truncate(own);
+        }
+        else {
+            self.own = self.frozen().get(.. length.0).unwrap_or_default().to_vec();
+            self.frozen = None;
+        }
+    }
+
+    /// Share every row the family holds with every clone made after: the
+    /// rows minted so far join the frozen ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds the same rows in the same order, all of them
+    ///   frozen.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family frozen twice, with rows minted between,
+    ///   reads back every row at its offset.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len() == entry && self.own.is_empty(),
+    )]
+    fn freeze(&mut self)
+    {
+        if self.own.is_empty() {
+            return;
+        }
+        let own = core::mem::take(&mut self.own);
+        self.frozen = Some(match self.frozen.take() {
+            None => Arc::from(own),
+            Some(frozen) => frozen.iter().cloned().chain(own).collect(),
+        });
+    }
+}
+
 /// The append-only arena owning every core term and type node of one run.
 ///
 /// The four families are parallel append-only vectors and a node's children are
 /// ids into the same arena, so cloning or dropping a whole arena is a flat
 /// per-family vector operation, total on any term depth. Each node's support
 /// sits beside it, in its family's row, recorded when the node is minted, and
-/// the word arena holds the codes wider than a slot.
+/// the word arena holds the codes wider than a slot. Rows [`Self::freeze`]
+/// froze are shared by every clone made after, so such a clone copies, and
+/// its drop releases, only the rows minted since.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CoreArena
 {
     /// The value nodes and their supports, in allocation order, which is
     /// child-before-parent.
-    values: Vec<Row<Value>>,
+    values: Family<Value>,
     /// The computation nodes and their supports.
-    computations: Vec<Row<Computation>>,
+    computations: Family<Computation>,
     /// The value-type nodes and their supports.
-    value_types: Vec<Row<ValueType>>,
+    value_types: Family<ValueType>,
     /// The computation-type nodes and their supports.
-    comp_types: Vec<Row<CompType>>,
+    comp_types: Family<CompType>,
     /// The words of every support wider than a slot.
     words: WordArena,
     /// The watermark just before the arena's first value type naming a region
@@ -390,10 +595,10 @@ impl CoreArena
     pub fn watermark(&self) -> ArenaWatermark
     {
         ArenaWatermark {
-            values: self.values.len(),
-            computations: self.computations.len(),
-            value_types: self.value_types.len(),
-            comp_types: self.comp_types.len(),
+            values: self.values.len().0,
+            computations: self.computations.len().0,
+            value_types: self.value_types.len().0,
+            comp_types: self.comp_types.len().0,
             words: self.words.mark(),
         }
     }
@@ -425,7 +630,7 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ValueId> + use<>
     {
-        (after.values .. self.values.len()).map(|index| ValueId(id_index(ArenaLength(index)).0))
+        (after.values .. self.values.len().0).map(|index| ValueId(id_index(ArenaLength(index)).0))
     }
 
     /// The computation ids allocated after `after`, in allocation order.
@@ -448,7 +653,7 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ComputationId> + use<>
     {
-        (after.computations .. self.computations.len())
+        (after.computations .. self.computations.len().0)
             .map(|index| ComputationId(id_index(ArenaLength(index)).0))
     }
 
@@ -472,7 +677,7 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ValueTypeId> + use<>
     {
-        (after.value_types .. self.value_types.len())
+        (after.value_types .. self.value_types.len().0)
             .map(|index| ValueTypeId(id_index(ArenaLength(index)).0))
     }
 
@@ -496,7 +701,7 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = CompTypeId> + use<>
     {
-        (after.comp_types .. self.comp_types.len())
+        (after.comp_types .. self.comp_types.len().0)
             .map(|index| CompTypeId(id_index(ArenaLength(index)).0))
     }
 
@@ -551,17 +756,52 @@ impl CoreArena
         watermark: ArenaWatermark,
     )
     {
-        self.values.truncate(watermark.values);
-        self.computations.truncate(watermark.computations);
-        self.value_types.truncate(watermark.value_types);
-        self.comp_types.truncate(watermark.comp_types);
+        self.values.truncate(ArenaLength(watermark.values));
+        self.computations
+            .truncate(ArenaLength(watermark.computations));
+        self.value_types
+            .truncate(ArenaLength(watermark.value_types));
+        self.comp_types.truncate(ArenaLength(watermark.comp_types));
         self.words.truncate(watermark.words);
         if self
             .region_binders_from
-            .is_some_and(|from| self.value_types.len() <= from.value_types)
+            .is_some_and(|from| self.value_types.len().0 <= from.value_types)
         {
             self.region_binders_from = None;
         }
+    }
+
+    /// Share every node minted so far with every clone of the arena made
+    /// after: such a clone copies, and its drop releases, only the nodes
+    /// minted after the freeze.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the watermark is unchanged and every id resolves to the node
+    ///   and the support it did; minting, truncation and comparison answer as
+    ///   they would have unfrozen.
+    /// - provides: the arena of an import closure judged once, which each
+    ///   revision of a document laid after it copies and drops at the cost of
+    ///   the document's nodes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena frozen, cloned, minted into on both sides,
+    ///   frozen again and truncated past and into its frozen nodes, each read
+    ///   against an arena built alike and never frozen.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.values.freeze();
+        self.computations.freeze();
+        self.value_types.freeze();
+        self.comp_types.freeze();
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -579,7 +819,7 @@ impl CoreArena
     ///   truncation to zero, and a later stale mark distinguish wrong-slot
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(ensures: |ret| match (ret, self.values.get(id_offset(ArenaIndex(id.0)).0)) {
+    #[spec(ensures: |ret| match (ret, self.values.get(id_offset(ArenaIndex(id.0)))) {
         | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
@@ -592,7 +832,7 @@ impl CoreArena
     ) -> Option<&Value>
     {
         self.values
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| &row.node)
     }
 
@@ -611,7 +851,7 @@ impl CoreArena
     ///   truncation to zero, and a later stale mark distinguish wrong-slot
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(ensures: |ret| match (ret, self.computations.get(id_offset(ArenaIndex(id.0)).0)) {
+    #[spec(ensures: |ret| match (ret, self.computations.get(id_offset(ArenaIndex(id.0)))) {
         | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
@@ -624,7 +864,7 @@ impl CoreArena
     ) -> Option<&Computation>
     {
         self.computations
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| &row.node)
     }
 
@@ -643,7 +883,7 @@ impl CoreArena
     ///   truncation to zero, and a later stale mark distinguish wrong-slot
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(ensures: |ret| match (ret, self.value_types.get(id_offset(ArenaIndex(id.0)).0)) {
+    #[spec(ensures: |ret| match (ret, self.value_types.get(id_offset(ArenaIndex(id.0)))) {
         | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
@@ -656,7 +896,7 @@ impl CoreArena
     ) -> Option<&ValueType>
     {
         self.value_types
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| &row.node)
     }
 
@@ -675,7 +915,7 @@ impl CoreArena
     ///   truncation to zero, and a later stale mark distinguish wrong-slot
     ///   lookup, surviving removed nodes and accidental growth.
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
-    #[spec(ensures: |ret| match (ret, self.comp_types.get(id_offset(ArenaIndex(id.0)).0)) {
+    #[spec(ensures: |ret| match (ret, self.comp_types.get(id_offset(ArenaIndex(id.0)))) {
         | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
         | (None, None) => true,
         | (Some(_), None) | (None, Some(_)) => false,
@@ -688,7 +928,7 @@ impl CoreArena
     ) -> Option<&CompType>
     {
         self.comp_types
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| &row.node)
     }
 
@@ -717,7 +957,7 @@ impl CoreArena
     ) -> Option<ThinningRef<'_>>
     {
         self.values
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| self.support_of(row.support))
     }
 
@@ -740,7 +980,7 @@ impl CoreArena
     ) -> Option<ThinningRef<'_>>
     {
         self.computations
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| self.support_of(row.support))
     }
 
@@ -763,7 +1003,7 @@ impl CoreArena
     ) -> Option<ThinningRef<'_>>
     {
         self.value_types
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| self.support_of(row.support))
     }
 
@@ -792,7 +1032,7 @@ impl CoreArena
     {
         let first = self
             .region_binders_from
-            .map_or(self.value_types.len(), |from| from.value_types);
+            .map_or(self.value_types.len().0, |from| from.value_types);
         if id_offset(ArenaIndex(id.0)).0 < first {
             BinderPrecedence::Before
         }
@@ -823,7 +1063,7 @@ impl CoreArena
     {
         let first = self
             .region_binders_from
-            .map_or(self.comp_types.len(), |from| from.comp_types);
+            .map_or(self.comp_types.len().0, |from| from.comp_types);
         if id_offset(ArenaIndex(id.0)).0 < first {
             BinderPrecedence::Before
         }
@@ -852,7 +1092,7 @@ impl CoreArena
     ) -> Option<ThinningRef<'_>>
     {
         self.comp_types
-            .get(id_offset(ArenaIndex(id.0)).0)
+            .get(id_offset(ArenaIndex(id.0)))
             .map(|row| self.support_of(row.support))
     }
 
@@ -874,8 +1114,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.values.len(), kind = core::mem::discriminant(&value)],
-        ensures: |ret| entry.checked_add(1) == Some(self.values.len())
+        captures: [entry = self.values.len().0, kind = core::mem::discriminant(&value)],
+        ensures: |ret| entry.checked_add(1) == Some(self.values.len().0)
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.values.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -885,7 +1125,7 @@ impl CoreArena
         value: Value,
     ) -> ValueId
     {
-        let id = ValueId(id_index(ArenaLength(self.values.len())).0);
+        let id = ValueId(id_index(self.values.len()).0);
         let support = self.value_carried(&value);
         self.values.push(Row {
             node: value,
@@ -912,8 +1152,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.computations.len(), kind = core::mem::discriminant(&computation)],
-        ensures: |ret| entry.checked_add(1) == Some(self.computations.len())
+        captures: [entry = self.computations.len().0, kind = core::mem::discriminant(&computation)],
+        ensures: |ret| entry.checked_add(1) == Some(self.computations.len().0)
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.computations.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -923,7 +1163,7 @@ impl CoreArena
         computation: Computation,
     ) -> ComputationId
     {
-        let id = ComputationId(id_index(ArenaLength(self.computations.len())).0);
+        let id = ComputationId(id_index(self.computations.len()).0);
         let support = self.computation_carried(&computation);
         self.computations.push(Row {
             node: computation,
@@ -982,8 +1222,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.value_types.len(), kind = core::mem::discriminant(&value_type)],
-        ensures: |ret| entry.checked_add(1) == Some(self.value_types.len())
+        captures: [entry = self.value_types.len().0, kind = core::mem::discriminant(&value_type)],
+        ensures: |ret| entry.checked_add(1) == Some(self.value_types.len().0)
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.value_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -993,7 +1233,7 @@ impl CoreArena
         value_type: ValueType,
     ) -> ValueTypeId
     {
-        let id = ValueTypeId(id_index(ArenaLength(self.value_types.len())).0);
+        let id = ValueTypeId(id_index(self.value_types.len()).0);
         if self.region_binders_from.is_none()
             && matches!(
                 value_type,
@@ -1034,8 +1274,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.comp_types.len(), kind = core::mem::discriminant(&comp_type)],
-        ensures: |ret| entry.checked_add(1) == Some(self.comp_types.len())
+        captures: [entry = self.comp_types.len().0, kind = core::mem::discriminant(&comp_type)],
+        ensures: |ret| entry.checked_add(1) == Some(self.comp_types.len().0)
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.comp_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -1045,7 +1285,7 @@ impl CoreArena
         comp_type: CompType,
     ) -> CompTypeId
     {
-        let id = CompTypeId(id_index(ArenaLength(self.comp_types.len())).0);
+        let id = CompTypeId(id_index(self.comp_types.len()).0);
         let support = self.comp_type_carried(&comp_type);
         self.comp_types.push(Row {
             node: comp_type,

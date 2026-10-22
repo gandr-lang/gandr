@@ -1680,6 +1680,9 @@ fn judge_closure<'held>(
         run.judge(&mut context, &declarations, |_, _, _| {});
         context.checkpoint()
     };
+    // Every revision of a document laid after the closure copies this arena:
+    // frozen, a copy costs the nodes minted after it alone.
+    arena.freeze();
     // The closure's verdicts, as a document after it finishes them.
     let mut closing = arena.clone();
     let verdicts = run.clone().finish(&mut CheckingContext::resume(
