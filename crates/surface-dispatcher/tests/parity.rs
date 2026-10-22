@@ -1479,6 +1479,8 @@ mod sweeps
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::SourceText;
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -1529,6 +1531,11 @@ mod sweeps
         size: SampleSize(64),
     };
 
+    /// The nights the nightly profile takes to compare every source's
+    /// declarations: a quarter a night. The whole corpus took 80 s to 147 s on
+    /// the nightly runner, the slowest of its sweeps.
+    const BODIES_NIGHTS: Nights = Nights(4);
+
     /// The most bytes of text a source of the body parity's sample lays out,
     /// its import closure then itself: 16 KiB. The parity lowers that text
     /// seven times and formats it four, so its cost grows with the closure,
@@ -1566,7 +1573,7 @@ mod sweeps
                 }
             })
             .collect();
-        let sources = sweep.visit(BODIES, &candidates);
+        let sources = sweep.visit_rotating(BODIES, BODIES_NIGHTS, &candidates);
         assert!(
             whole || sources.len() >= BODIES.size.0,
             "the sample is drawn: {}",
@@ -1591,21 +1598,23 @@ mod sweeps
             }
         }
         if whole {
-            report(&total, counted);
+            report(&total, counted, sweep.rotation());
         }
         let all = total.misses;
         assert!(all.is_empty(), "{} misses:\n{}", all.len(), all.join("\n"));
     }
 
-    /// The whole corpus's report: the declarations the body parity holds,
-    /// those it holds out by issue, and the census of the signatures as
-    /// written; on standard error, and in the job's summary under CI.
+    /// The report over the sources visited, the whole corpus or the night's
+    /// slice of it: the declarations the body parity holds, those it holds
+    /// out by issue, and the census of the signatures as written; on standard
+    /// error, and in the job's summary under CI.
     ///
     /// # Specification
     /// trivial.
     fn report(
         total: &Bodies,
         counted: Census,
+        rotation: Rotation,
     )
     {
         let mut rows = vec![format!("| held to the body parity | {} |", total.compared)];
@@ -1616,7 +1625,11 @@ mod sweeps
                 .map(|(why, names)| format!("| held out: {why} | {} |", names.len())),
         );
         let out = format!(
-            "### The formatter at parity with the printer (#755)\n\n| declarations | count |\n| --- | --- |\n{}\n\n| signatures as written | count |\n| --- | --- |\n| as the printer spells them sugared | {} |\n| as the printer spells them explicitly | {} |\n| alike in both forms | {} |\n| as the printer spells them in neither | {} |\n",
+            "### The formatter at parity with the printer (#755)\n\nOver {}.\n\n| declarations | count |\n| --- | --- |\n{}\n\n| signatures as written | count |\n| --- | --- |\n| as the printer spells them sugared | {} |\n| as the printer spells them explicitly | {} |\n| alike in both forms | {} |\n| as the printer spells them in neither | {} |\n",
+            match rotation {
+                Rotation::Whole => String::from("the whole corpus"),
+                Rotation::Night(_) => format!("the night's quarter of the corpus: {rotation}"),
+            },
             rows.join("\n"),
             counted.sugared,
             counted.explicit,

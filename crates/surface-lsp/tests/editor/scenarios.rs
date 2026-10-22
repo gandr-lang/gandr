@@ -1372,7 +1372,7 @@ mod sweeps
 {
     use gandr_surface_dispatcher::classify;
     use gandr_surface_dispatcher::lay_out;
-    use gandr_workflow_sweep::Parts;
+    use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Rotation;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
@@ -1415,11 +1415,12 @@ mod sweeps
     const TYPED_CEILING: Ceiling = Ceiling(1024);
 
     /// How many parts the nightly typing cuts every source into, one typed a
-    /// night: a sixteenth of typing the whole corpus each night, and of its
-    /// costliest source, every keystroke within sixteen nights. A quarter of
-    /// every source typed for 317 s to 480 s on the nightly runner, past the
-    /// profile's limit once three more sweeps shared its cores.
-    const TYPED_PARTS: Parts = Parts(16);
+    /// night: a sixty-fourth of typing the whole corpus each night, and of
+    /// its costliest source, every keystroke within sixty-four nights. A
+    /// quarter of every source typed for 317 s to 480 s on the nightly runner,
+    /// a sixteenth for 139 s to 163 s and a thirty-second for 90 s, past its
+    /// share of the nightly budget.
+    const TYPED_NIGHTS: Nights = Nights(64);
 
     /// The erasure's sample: twenty-four sources, every keystroke held to the
     /// oracle.
@@ -1427,6 +1428,11 @@ mod sweeps
         name: SampleName("erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful"),
         size: SampleSize(24),
     };
+
+    /// The nights the nightly erasure takes to erase every source: a
+    /// sixteenth a night. A quarter erased for 89 s to 93 s on the nightly
+    /// runner, and an eighth for 60 s.
+    const ERASED_NIGHTS: Nights = Nights(16);
 
     /// The most keystrokes a sampled erasure spends on one source. Each
     /// keystroke checks the whole text left, so erasing a source line by line
@@ -1486,6 +1492,11 @@ mod sweeps
         name: SampleName("hovering_every_position_of_each_corpus_source_answers_without_fault"),
         size: SampleSize(48),
     };
+
+    /// The nights the nightly hover sweep takes to hover every source: a
+    /// sixteenth a night. A quarter hovered for 84 s to 94 s on the nightly
+    /// runner, and an eighth for 68 s.
+    const HOVERED_NIGHTS: Nights = Nights(16);
 
     /// The most a sampled hover of one source costs, counted as the positions
     /// it hovers times the bytes its check reads ([`checked`]): 4 MiB. A
@@ -1591,7 +1602,7 @@ mod sweeps
     enum Nightly
     {
         /// The night's slice of the sources, each visited whole.
-        Slice,
+        Slice(Nights),
         /// Every source, the night's part of each.
         Part,
     }
@@ -1607,8 +1618,8 @@ mod sweeps
     /// - requires: nothing.
     /// - ensures: the rotation [`Sweep::asked`] reads, and the visited sources
     ///   sorted longest first: under [`Nightly::Slice`] what
-    ///   [`Sweep::visit_rotating`] returns, under [`Nightly::Part`] what
-    ///   [`Sweep::visit`] returns.
+    ///   [`Sweep::visit_rotating`] returns over its nights, under
+    ///   [`Nightly::Part`] what [`Sweep::visit`] returns.
     /// - provides: the sources each corpus sweep visits.
     /// - panics: the corpus, the change or the night cannot be read.
     ///
@@ -1646,7 +1657,7 @@ mod sweeps
             })
             .collect();
         let chosen = match nightly {
-            Nightly::Slice => sweep.visit_rotating(sample, &candidates),
+            Nightly::Slice(nights) => sweep.visit_rotating(sample, nights, &candidates),
             Nightly::Part => sweep.visit(sample, &candidates),
         };
         let mut sources = opened(&chosen);
@@ -1678,15 +1689,15 @@ mod sweeps
     }
 
     /// Every source of the run typed: from its start, or under the `nightly`
-    /// profile opened whole up to the night's part of [`TYPED_PARTS`] and
+    /// profile opened whole up to the night's part of [`TYPED_NIGHTS`] and
     /// typed through it, so every keystroke of every source is typed once
-    /// every [`TYPED_PARTS`] nights.
+    /// every [`TYPED_NIGHTS`] nights.
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
         let (rotation, sources) = visited(TYPED, Some(TYPED_CEILING), Nightly::Part);
         each_in_parallel(&sources, |source| {
-            let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_PARTS);
+            let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_NIGHTS);
             let opening = source
                 .text
                 .get(.. part.start.0)
@@ -1709,7 +1720,8 @@ mod sweeps
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        let (_rotation, sources) = visited(ERASED, Some(ERASED_CEILING), Nightly::Slice);
+        let (_rotation, sources) =
+            visited(ERASED, Some(ERASED_CEILING), Nightly::Slice(ERASED_NIGHTS));
         let grammar = built_in().expect("the built-in grammar builds");
         each_in_parallel(&sources, |source| {
             let mut session = Session::open(
@@ -1738,7 +1750,12 @@ mod sweeps
             sources
         }
         else {
-            visited(HOVERED, Some(HOVERED_CEILING), Nightly::Slice).1
+            visited(
+                HOVERED,
+                Some(HOVERED_CEILING),
+                Nightly::Slice(HOVERED_NIGHTS),
+            )
+            .1
         };
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);

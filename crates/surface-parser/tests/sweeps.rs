@@ -31,6 +31,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_workflow_sweep::Changed;
 use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Nights;
 use gandr_workflow_sweep::Rotation;
 use gandr_workflow_sweep::Sample;
 use gandr_workflow_sweep::SampleName;
@@ -52,6 +53,12 @@ const RECOVERY: Sample = Sample {
 /// The step between the token rows the recovery sample checks.
 const RECOVERY_STRIDE: usize = 16;
 
+/// The nights the nightly recovery sweep takes to visit the corpus: a
+/// thirty-second a night. A quarter took 179 s and 410 s with specifications
+/// enforced on the nightly runner, and a sixteenth 128 s, past its share of
+/// the nightly budget alone.
+const RECOVERY_NIGHTS: Nights = Nights(32);
+
 /// The most tab-separated fields a recovery record row holds, with room
 /// to spare: a row with more is read as its first this many.
 const ROW_FIELDS: usize = 8;
@@ -64,6 +71,11 @@ const TABLES: Sample = Sample {
     name: SampleName("table_verdicts_equal_dry_run_verdicts"),
     size: SampleSize(12),
 };
+
+/// The nights the nightly table sweep takes to visit the corpus: a sixteenth
+/// a night. A quarter took 102 s and 196 s with specifications enforced on
+/// the nightly runner, and an eighth 95 s.
+const TABLES_NIGHTS: Nights = Nights(16);
 
 /// The step between the token rows the table sample molds over its stated
 /// size.
@@ -211,7 +223,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     };
     let sources = corpus::sources()?;
     let visited: HashSet<PathBuf> = sweep
-        .visit_rotating(RECOVERY, &sources)
+        .visit_rotating(RECOVERY, RECOVERY_NIGHTS, &sources)
         .into_iter()
         .map(|source| source.path)
         .collect();
@@ -432,7 +444,7 @@ fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let sweep = Sweep::asked()?;
     eprintln!("{}", sweep.rotation());
-    let visited = sweep.visit_rotating(TABLES, &corpus::sources()?);
+    let visited = sweep.visit_rotating(TABLES, TABLES_NIGHTS, &corpus::sources()?);
     let stride = match sweep.coverage() {
         Coverage::Full => TABLES_WHOLE_STRIDE,
         Coverage::Sampled => {

@@ -444,13 +444,15 @@ fn spell(shard: Shard)
 /// printed type is a written type that reads back to its certificate, in
 /// either spelling (#782) — the Unicode glyphs and their ASCII spellings.
 ///
-/// The sweep visits its sample under every pull-request profile and every
-/// source under the `sweeps` profile, as every sweep does
-/// (`gandr-workflow-sweep`), but a pull request reads back no source past
-/// `READ_BYTES`; the nightly run prints the whole corpus's counts.
+/// The sweep visits its sample under every pull-request profile, every
+/// source under the `sweeps` profile and the night's slice of them under the
+/// nightly one, as every sweep does (`gandr-workflow-sweep`), but a pull
+/// request reads back no source past `READ_BYTES`; the nightly run prints its
+/// slice's counts.
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -467,6 +469,11 @@ mod sweeps
         size: SampleSize(64),
     };
 
+    /// The nights the nightly profile takes to read back every source: a
+    /// third a night. The whole corpus read back for 88 s to 125 s on the
+    /// nightly runner.
+    const NIGHTS: Nights = Nights(3);
+
     /// The most a sampled run lets one source's read-back lower: its printed
     /// types times the bytes its check reads. Each type read back is appended
     /// to the source laid out after its import closure, and the whole is
@@ -476,7 +483,8 @@ mod sweeps
     /// few milliseconds. The nine λ-calculus sources past it and, of the
     /// sources before them, `model/identity/univalence.gandr` (18 M),
     /// `loop-space.gandr` (8.5 M) and `set-fold.gandr` (7.8 M) are read back
-    /// under the `sweeps` and nightly profiles, which read every source whole.
+    /// under the `sweeps` and nightly profiles, which read every source they
+    /// visit whole.
     const READ_BYTES: usize = 0x0060_0000;
 
     /// The bytes one check of a source reads.
@@ -510,7 +518,8 @@ mod sweeps
         let page = PageWidth::from(PAGE);
         let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
         let sweep = Sweep::asked().expect("the run's sweep resolves");
-        let visited = sweep.visit(SAMPLE, &sources);
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &sources);
         assert!(
             visited.len() >= SAMPLE.size.0,
             "the sample is drawn: {}",

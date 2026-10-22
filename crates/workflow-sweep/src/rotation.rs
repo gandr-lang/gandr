@@ -1,6 +1,6 @@
 //! The nightly rotation: the slice of its inputs a rotating sweep visits on a
-//! night, so the costliest sweeps cover the whole corpus every [`NIGHTS`]
-//! nights inside the nightly budget.
+//! night, so each costly sweep covers the whole corpus over the [`Nights`] it
+//! states, inside the nightly budget.
 
 use core::fmt;
 use std::time::SystemTime;
@@ -14,11 +14,6 @@ use crate::coverage::Profile;
 use crate::error::SweepError;
 use crate::sample::SampleName;
 
-/// How many nights a rotating sweep takes to visit every source: each night
-/// visits about a quarter of the corpus. The crate docs record the
-/// measurement this was chosen from.
-pub const NIGHTS: u64 = 4;
-
 /// The variable naming the night a run visits, in whole UTC days since the
 /// Unix epoch; unset, the night the run starts in.
 pub const NIGHT: &str = "GANDR_SWEEP_NIGHT";
@@ -31,17 +26,20 @@ const DAY: u64 = 86_400;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Night(pub u64);
 
-/// Which of the [`NIGHTS`] slices a night visits: its day number modulo
-/// [`NIGHTS`].
+/// Which of a rotation's slices a night visits: its day number modulo the
+/// rotation's [`Nights`].
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Slice(pub u64);
 
-/// How many consecutive parts a sweep that rotates within each source cuts a
-/// text into: one part a night, the whole text every `parts` nights.
+/// How many nights a rotating sweep takes to visit all of its inputs.
+///
+/// One slice of the corpus, or one part of each text, a night, and all of
+/// them every `nights` nights. Each rotating sweep states its own, its whole
+/// cost over its share of the nightly budget; zero is one night, the whole.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Parts(pub u64);
+pub struct Nights(pub u64);
 
 /// Whether a night's slice holds a source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,13 +143,17 @@ impl Night
         }
     }
 
-    /// The slice this night visits, below [`NIGHTS`].
+    /// The slice this night visits of a rotation over `nights`, below
+    /// `nights`; the only slice, zero, when `nights` is zero.
     ///
     /// # Specification
     /// trivial.
-    const fn slice(self) -> Slice
+    const fn slice(
+        self,
+        nights: Nights,
+    ) -> Slice
     {
-        match self.0.checked_rem(NIGHTS) {
+        match self.0.checked_rem(nights.0) {
             Some(slice) => Slice(slice),
             None => Slice(0),
         }
@@ -235,33 +237,36 @@ impl Rotation
         }
     }
 
-    /// Whether the sweep `salt` names visits `source` under this rotation.
+    /// Whether the sweep `salt` names, rotating over `nights`, visits
+    /// `source` under this rotation.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Held::Tonight`] under [`Rotation::Whole`]; under
-    ///   [`Rotation::Night`], [`Held::Tonight`] exactly when the first eight
-    ///   bytes of the BLAKE3 digest of `rotation`, a zero byte, `salt`, a zero
-    ///   byte and `source`'s name, read little-endian, leave the night's
-    ///   remainder modulo [`NIGHTS`], [`Held::Elsewhen`] otherwise.
-    /// - provides: a partition of every corpus into [`NIGHTS`] slices, the same
+    /// - ensures: [`Held::Tonight`] under [`Rotation::Whole`] and when `nights`
+    ///   is zero; otherwise under [`Rotation::Night`], [`Held::Tonight`]
+    ///   exactly when the first eight bytes of the BLAKE3 digest of `rotation`,
+    ///   a zero byte, `salt`, a zero byte and `source`'s name, read
+    ///   little-endian, leave the night's remainder modulo `nights`,
+    ///   [`Held::Elsewhen`] otherwise.
+    /// - provides: a partition of every corpus into `nights` slices, the same
     ///   on every machine, salted per sweep so two sweeps spread their
     ///   costliest sources over different nights, and moved by nothing but the
     ///   source added or removed when the corpus changes.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a corpus of forty sources over [`NIGHTS`] consecutive
-    ///   nights and the next; a source in no slice or in two, a night that does
-    ///   not wrap, an unsalted digest, or a whole rotation that drops a source
-    ///   fails the witness.
+    /// - hypothesis: L3 — a corpus of forty sources over three and over twelve
+    ///   consecutive nights and the nights after them; a source in no slice or
+    ///   in two, a night that does not wrap, a night count ignored, an unsalted
+    ///   digest, or a whole rotation that drops a source fails the witness.
     /// - witness: `rotation::tests::the_nights_partition_the_corpus`
-    #[spec(ensures: |ret| self != Self::Whole || ret == Held::Tonight)]
+    #[spec(ensures: |ret| (self != Self::Whole && nights.0 != 0) || ret == Held::Tonight)]
     #[inline]
     #[must_use]
     pub fn holds(
         self,
         salt: SampleName,
+        nights: Nights,
         source: &Source,
     ) -> Held
     {
@@ -278,7 +283,7 @@ impl Rotation
                     .as_bytes()
                     .first_chunk::<8>()
                     .map_or(0, |bytes| u64::from_le_bytes(*bytes));
-                if word.checked_rem(NIGHTS) == Some(night.slice().0) {
+                if word.checked_rem(nights.0).unwrap_or_default() == night.slice(nights).0 {
                     Held::Tonight
                 }
                 else {
@@ -290,32 +295,32 @@ impl Rotation
 
     /// The part of `text` a sweep that rotates within each source covers
     /// under this rotation: all of it under [`Rotation::Whole`], and under
-    /// [`Rotation::Night`] the night's part of `parts` consecutive parts, cut
+    /// [`Rotation::Night`] the night's part of `nights` consecutive parts, cut
     /// at line starts so that each costs about the same for a sweep whose
     /// work at an offset grows with the offset. The night's part is its day
-    /// number modulo `parts`, so the parts turn over every `parts` nights.
+    /// number modulo `nights`, so the parts turn over every `nights` nights.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: all of `text` under [`Rotation::Whole`]; under
     ///   [`Rotation::Night`], the range from cut `j` to cut `j + 1`, `j` the
-    ///   night's day number modulo `parts`, where cut `j` of `parts` is the
-    ///   first line start at or past `len × √(j / parts)`, cut 0 is 0 and cut
-    ///   `parts` is the text's end; one part, the whole text, when `parts` is
+    ///   night's day number modulo `nights`, where cut `j` of `nights` is the
+    ///   first line start at or past `len × √(j / nights)`, cut 0 is 0 and cut
+    ///   `nights` is the text's end; one part, the whole text, when `nights` is
     ///   zero.
-    /// - provides: `parts` consecutive parts over `parts` consecutive nights
+    /// - provides: `nights` consecutive parts over `nights` consecutive nights
     ///   that partition the text, each starting at a line start or at the
-    ///   text's end, each costing about a `parts`th of a sweep whose work is
+    ///   text's end, each costing about a `nights`th of a sweep whose work is
     ///   quadratic in the text's length — the typing sweep, which checks the
     ///   text typed so far at every keystroke.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a text of equal lines and one without a newline over
-    ///   [`NIGHTS`] and over sixteen consecutive nights, and the whole
-    ///   rotation; a gap or an overlap between parts, a cut off a line start, a
-    ///   linear cut, a part count ignored, or a night that does not wrap fails
-    ///   the witness.
+    ///   four and over sixteen consecutive nights, and the whole rotation; a
+    ///   gap or an overlap between parts, a cut off a line start, a linear cut,
+    ///   a night count ignored, or a night that does not wrap fails the
+    ///   witness.
     /// - witness: `rotation::tests::the_nights_part_a_text_at_line_starts`
     #[spec(ensures: |ret| ret.start <= ret.end && ret.end.0 <= text.0.len() && (ret.start.0 == 0 || ret.start.0 == text.0.len() || text.0.as_bytes().get(ret.start.0.saturating_sub(1)) == Some(&b'\n')))]
     #[inline]
@@ -323,15 +328,15 @@ impl Rotation
     pub fn part(
         self,
         text: Text<'_>,
-        parts: Parts,
+        nights: Nights,
     ) -> Part
     {
         match self {
-            Self::Night(night) if parts.0 > 0 => {
-                let slice = Slice(night.0.checked_rem(parts.0).unwrap_or_default());
+            Self::Night(night) if nights.0 > 0 => {
+                let slice = night.slice(nights);
                 Part {
-                    start: cut(text, slice, parts),
-                    end: cut(text, Slice(slice.0.saturating_add(1)), parts),
+                    start: cut(text, slice, nights),
+                    end: cut(text, Slice(slice.0.saturating_add(1)), nights),
                 }
             },
             Self::Whole | Self::Night(_) => Part {
@@ -350,7 +355,7 @@ impl Rotation
 fn cut(
     text: Text<'_>,
     of: Slice,
-    parts: Parts,
+    parts: Nights,
 ) -> Offset
 {
     if of.0 >= parts.0 {
@@ -381,18 +386,18 @@ impl fmt::Display for Rotation
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: writes one line: no rotation, or the night, its slice of
-    ///   [`NIGHTS`] and the [`NIGHT`] setting that replays it.
+    /// - ensures: writes one line: no rotation, or the night and the [`NIGHT`]
+    ///   setting that replays it.
     /// - provides: the line a rotating sweep prints, so its failure names its
-    ///   slice.
+    ///   night.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both variants rendered; a wrong slice, a dropped
-    ///   night or a swapped variant changes the asserted line.
-    /// - witness: `rotation::tests::a_night_names_its_slice_and_its_replay`
+    /// - hypothesis: L3 — both variants rendered; a dropped night or a swapped
+    ///   variant changes the asserted line.
+    /// - witness: `rotation::tests::a_night_names_its_replay`
     #[inline]
     fn fmt(
         &self,
@@ -402,13 +407,7 @@ impl fmt::Display for Rotation
         match *self {
             Self::Whole => f.write_str("no nightly rotation"),
             Self::Night(night) => {
-                write!(
-                    f,
-                    "night {}, slice {} of {NIGHTS}; replay it with {NIGHT}={}",
-                    night.0,
-                    night.slice().0,
-                    night.0
-                )
+                write!(f, "night {}; replay it with {NIGHT}={}", night.0, night.0)
             },
         }
     }
@@ -423,10 +422,9 @@ mod tests
     use std::time::SystemTime;
 
     use super::Held;
-    use super::NIGHTS;
     use super::Night;
+    use super::Nights;
     use super::Part;
-    use super::Parts;
     use super::Rotation;
     use super::Text;
     use crate::corpus::Class;
@@ -459,59 +457,70 @@ mod tests
     {
         let corpus = corpus();
         let salt = SampleName("a sweep");
-        let slices: Vec<Vec<&CorpusName>> = (0 .. NIGHTS)
-            .map(|night| {
-                corpus
-                    .iter()
-                    .filter(|source| {
-                        Rotation::Night(Night(night)).holds(salt, source) == Held::Tonight
-                    })
-                    .map(|source| &source.name)
-                    .collect()
-            })
-            .collect();
-        for source in &corpus {
-            assert_eq!(
-                slices
-                    .iter()
-                    .filter(|slice| slice.contains(&&source.name))
-                    .count(),
-                1,
-                "{} sits in exactly one night's slice",
-                source.name
-            );
-        }
-        assert!(
-            slices.iter().all(|slice| !slice.is_empty()),
-            "every night visits some of forty sources: {slices:?}"
-        );
-        for (night, slice) in (0 .. NIGHTS).zip(&slices) {
-            let wrapped: Vec<&CorpusName> = corpus
-                .iter()
-                .filter(|source| {
-                    Rotation::Night(Night(night + NIGHTS)).holds(salt, source) == Held::Tonight
-                })
-                .map(|source| &source.name)
-                .collect();
-            assert_eq!(&wrapped, slice, "night {night} recurs {NIGHTS} nights on");
-        }
-        let other = SampleName("another sweep");
-        let resalted: Vec<&CorpusName> = corpus
-            .iter()
-            .filter(|source| Rotation::Night(Night(0)).holds(other, source) == Held::Tonight)
-            .map(|source| &source.name)
-            .collect();
-        assert_ne!(
-            slices.first(),
-            Some(&resalted),
-            "the sweep's name salts its slices"
-        );
-        assert!(
+        let tonight = |rotation: Rotation, salt, nights| -> Vec<&CorpusName> {
             corpus
                 .iter()
-                .all(|source| Rotation::Whole.holds(salt, source) == Held::Tonight),
-            "the whole rotation visits every source"
+                .filter(|source| rotation.holds(salt, nights, source) == Held::Tonight)
+                .map(|source| &source.name)
+                .collect()
+        };
+        for count in [3, 12] {
+            let nights = Nights(count);
+            let slices: Vec<Vec<&CorpusName>> = (0 .. count)
+                .map(|night| tonight(Rotation::Night(Night(night)), salt, nights))
+                .collect();
+            for source in &corpus {
+                assert_eq!(
+                    slices
+                        .iter()
+                        .filter(|slice| slice.contains(&&source.name))
+                        .count(),
+                    1,
+                    "{} sits in exactly one of {count} nights' slices",
+                    source.name
+                );
+            }
+            assert!(
+                slices
+                    .iter()
+                    .filter(|slice| !slice.is_empty())
+                    .nth(1)
+                    .is_some(),
+                "the forty sources spread over the {count} nights: {slices:?}"
+            );
+            for (night, slice) in (0 .. count).zip(&slices) {
+                assert_eq!(
+                    &tonight(Rotation::Night(Night(night + count)), salt, nights),
+                    slice,
+                    "night {night} recurs {count} nights on"
+                );
+            }
+            assert_ne!(
+                slices.first(),
+                Some(&tonight(
+                    Rotation::Night(Night(0)),
+                    SampleName("another sweep"),
+                    nights
+                )),
+                "the sweep's name salts its slices"
+            );
+        }
+        assert_ne!(
+            tonight(Rotation::Night(Night(0)), salt, Nights(3)).len(),
+            tonight(Rotation::Night(Night(0)), salt, Nights(12)).len(),
+            "the night count sizes the slice"
         );
+        for (rotation, nights) in [
+            (Rotation::Whole, Nights(12)),
+            (Rotation::Night(Night(5)), Nights(0)),
+            (Rotation::Night(Night(5)), Nights(1)),
+        ] {
+            assert_eq!(
+                tonight(rotation, salt, nights).len(),
+                corpus.len(),
+                "{rotation} over {nights:?} visits every source"
+            );
+        }
     }
 
     #[test]
@@ -554,12 +563,12 @@ mod tests
     }
 
     #[test]
-    fn a_night_names_its_slice_and_its_replay()
+    fn a_night_names_its_replay()
     {
         assert_eq!(Rotation::Whole.to_string(), "no nightly rotation");
         assert_eq!(
             Rotation::Night(Night(20_379)).to_string(),
-            "night 20379, slice 3 of 4; replay it with GANDR_SWEEP_NIGHT=20379"
+            "night 20379; replay it with GANDR_SWEEP_NIGHT=20379"
         );
     }
 
@@ -569,13 +578,13 @@ mod tests
         let span = |part: Part| part.start.0 .. part.end.0;
         let line = "abcdefghi\n";
         let text = line.repeat(100);
-        let parted = |text: &str, parts: Parts| -> Vec<Range<usize>> {
-            (0 .. parts.0)
-                .map(|night| span(Rotation::Night(Night(night)).part(Text(text), parts)))
+        let parted = |text: &str, nights: Nights| -> Vec<Range<usize>> {
+            (0 .. nights.0)
+                .map(|night| span(Rotation::Night(Night(night)).part(Text(text), nights)))
                 .collect()
         };
-        for count in [NIGHTS, 16] {
-            let parts = parted(&text, Parts(count));
+        for count in [4, 16] {
+            let parts = parted(&text, Nights(count));
             assert_eq!(parts.first().map(|part| part.start), Some(0));
             assert_eq!(parts.last().map(|part| part.end), Some(text.len()));
             for pair in parts.windows(2) {
@@ -599,7 +608,7 @@ mod tests
         // `a` to `b` costs about `b² - a²`: with the cuts at 500, 710 and 870
         // of 1000 bytes, each of four parts costs a quarter, within a line.
         assert_eq!(
-            parted(&text, Parts(NIGHTS)),
+            parted(&text, Nights(4)),
             [0 .. 500, 500 .. 710, 710 .. 870, 870 .. 1000],
             "the cuts fall at √(j/4) of the text, on the next line start"
         );
@@ -607,7 +616,7 @@ mod tests
             0, 250, 360, 440, 500, 560, 620, 670, 710, 750, 790, 830, 870, 910, 940, 970, 1000,
         ];
         assert_eq!(
-            parted(&text, Parts(16)),
+            parted(&text, Nights(16)),
             cuts.iter()
                 .zip(cuts.iter().skip(1))
                 .map(|(&from, &to)| from .. to)
@@ -615,29 +624,29 @@ mod tests
             "the cuts fall at √(j/16) of the text, on the next line start"
         );
         assert_eq!(
-            span(Rotation::Night(Night(NIGHTS + 1)).part(Text(&text), Parts(NIGHTS))),
+            span(Rotation::Night(Night(4 + 1)).part(Text(&text), Nights(4))),
             500 .. 710,
-            "the parts recur {NIGHTS} nights on"
+            "four parts recur four nights on"
         );
         assert_eq!(
-            span(Rotation::Night(Night(16 + 1)).part(Text(&text), Parts(16))),
+            span(Rotation::Night(Night(16 + 1)).part(Text(&text), Nights(16))),
             250 .. 360,
             "sixteen parts recur sixteen nights on"
         );
         let unbroken = "x".repeat(64);
         assert_eq!(
-            parted(&unbroken, Parts(NIGHTS)),
+            parted(&unbroken, Nights(4)),
             [0 .. 64, 64 .. 64, 64 .. 64, 64 .. 64],
             "a text without a line break is one part"
         );
         assert_eq!(
-            span(Rotation::Whole.part(Text(&text), Parts(16))),
+            span(Rotation::Whole.part(Text(&text), Nights(16))),
             0 .. text.len()
         );
         assert_eq!(
-            span(Rotation::Night(Night(3)).part(Text(&text), Parts(0))),
+            span(Rotation::Night(Night(3)).part(Text(&text), Nights(0))),
             0 .. text.len(),
-            "no part count is one part"
+            "no night count is one part"
         );
     }
 }

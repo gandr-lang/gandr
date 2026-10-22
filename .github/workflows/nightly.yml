@@ -8,7 +8,7 @@ name: Nightly
 
 # Every sweep over its whole input, which the merge queue samples: the
 # `nightly` nextest profile with specifications enforced (`mise run
-# ci:sweeps-nightly`), the four costliest sweeps over the night's slice of
+# ci:sweeps-nightly`), the costliest sweeps each over the night's slice of
 # the corpus; the night's third of the crates that declare features, each
 # crate's tests with every feature on; and the recovery sweep over the syntax
 # exemplars, its causes filed. Daily on main when main moved since the last

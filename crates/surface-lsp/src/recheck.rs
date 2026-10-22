@@ -1619,15 +1619,17 @@ mod tests
     }
 
     /// The sweep of a recheck's kept table against a hover's. A run visits the
-    /// sources [`Sweep::visit`] names: under a pull-request profile, plain or
-    /// enforcing, a sample of the sources importing a sibling, a sample of the
-    /// sources standing alone and every source the change adds or modifies;
-    /// under `sweeps` and `nightly`, every source.
+    /// sources [`Sweep::visit_rotating`] names: under a pull-request profile,
+    /// plain or enforcing, a sample of the sources importing a sibling, a
+    /// sample of the sources standing alone and every source the change adds
+    /// or modifies; under `sweeps`, every source; under `nightly`, the night's
+    /// slice of them over [`NIGHTS`].
     mod sweeps
     {
         use gandr_surface_dispatcher::TypeTable;
         use gandr_surface_pretty::Form;
         use gandr_surface_pretty::PageWidth;
+        use gandr_workflow_sweep::Nights;
         use gandr_workflow_sweep::Sample;
         use gandr_workflow_sweep::SampleName;
         use gandr_workflow_sweep::SampleSize;
@@ -1649,6 +1651,11 @@ mod tests
             size: SampleSize(16),
         };
 
+        /// The nights the nightly profile takes to recheck every source: a
+        /// third a night. The whole corpus rechecked for 86 s on the nightly
+        /// runner.
+        const NIGHTS: Nights = Nights(3);
+
         /// #1521: a corpus source, rechecked, keeps the table its hovers would
         /// otherwise type — after its closure's lowering when it imports a
         /// sibling, alone otherwise: every entry, declaration and declared
@@ -1668,6 +1675,7 @@ mod tests
             };
             let (mut written, mut spelled) = (String::new(), String::new());
             let sweep = Sweep::asked().expect("the run's sweep resolves");
+            eprintln!("{}", sweep.rotation());
             let (importing, alone): (Vec<_>, Vec<_>) = corpus::sources()
                 .expect("the corpus reads")
                 .into_iter()
@@ -1677,8 +1685,8 @@ mod tests
                         .and_then(|mut file| std::io::Read::read_to_string(&mut file, &mut written))
                         .is_ok_and(|_| written.contains("\nimport "))
                 });
-            let mut sources = sweep.visit(LAID, &importing);
-            sources.extend(sweep.visit(ALONE, &alone));
+            let mut sources = sweep.visit_rotating(LAID, NIGHTS, &importing);
+            sources.extend(sweep.visit_rotating(ALONE, NIGHTS, &alone));
             let (mut kept, mut laid) = (0_usize, 0_usize);
             let mut differing = Vec::new();
             for source in sources {
