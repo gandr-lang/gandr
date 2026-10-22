@@ -35,6 +35,7 @@ use gandr_surface_syntax::SourceText;
 use serde::Deserialize as _;
 use serde_json::Value;
 
+use crate::complete::Elsewhere;
 use crate::complete::completions;
 use crate::hover::Hovering;
 use crate::inline::Forms;
@@ -252,6 +253,10 @@ pub fn holes(
             hovering,
             (uri, range.start),
             (printer, LabelsDetailed(false), TakesSnippets(false)),
+            Elsewhere {
+                sources: &[],
+                import: &|_| Vec::new(),
+            },
         )
         .items
         .into_iter()

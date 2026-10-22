@@ -26,6 +26,16 @@
 //! The list is complete for the prefix: a longer prefix offers a subset of
 //! it, so a client filtering as the author types never asks again.
 //!
+//! After them, for a word that is not empty, come the names the closure does
+//! not reach: those of every source under a folder an editor opened that the
+//! document does not import, as the workspace-symbol index reads them
+//! ([`Unimported`]). A slot offers such a name as it would a declared one,
+//! only when importing the source brings it into scope — a top-level value, a
+//! top-level family, a constructor of a top-level family — and never a name
+//! something before it offers. Each carries its source's import line as its
+//! detail and the edit writing that line as its additional edit, made once
+//! per source that offers a name.
+//!
 //! Each item carries what it is in the list itself, so a reader sees the types
 //! before choosing: a binder its type, read off the table at its written name,
 //! and a declared name its head ([`Signatures`]), as the item's detail and, to
@@ -39,6 +49,7 @@
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_dispatcher::NameKind;
@@ -69,8 +80,21 @@ use crate::protocol::InsertTextFormat;
 use crate::protocol::LabelDetails;
 use crate::protocol::LabelsDetailed;
 use crate::protocol::MarkupContent;
+use crate::protocol::SymbolKind;
 use crate::protocol::TakesSnippets;
 use crate::protocol::TextEdit;
+use crate::search::Declared;
+
+/// One item of a completion before it is numbered: its label, its kind, its
+/// detail, the snippet it inserts in place of its label, and the import edit
+/// it adds.
+type Offer<'text> = (
+    &'text str,
+    CompletionItemKind,
+    Option<String>,
+    Option<String>,
+    Option<usize>,
+);
 
 /// The page width a binder's type is laid out at in a completion: wide enough
 /// that a type a reader would write on one line stays on it.
@@ -257,6 +281,78 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
     }
 }
 
+/// A source the document's import closure does not reach, under a folder an
+/// editor opened: its path and the names its file declares.
+#[derive(Clone, Copy, Debug)]
+pub struct Unimported<'held>
+{
+    /// Its path, as [`gandr_surface_dispatcher::named_path`] names it.
+    pub path: &'held Path,
+    /// The names its file declares, as [`crate::search::declared`] reads them.
+    pub names: &'held [Declared],
+}
+
+/// The sources under the opened folders a document does not import, and how
+/// an import of one is written into it.
+#[derive(Clone, Copy)]
+pub struct Elsewhere<'held>
+{
+    /// The sources, each once.
+    pub sources: &'held [Unimported<'held>],
+    /// The edit importing the source at a path into the document, as
+    /// [`crate::reading::Reading::imported`] writes it.
+    pub import: &'held dyn Fn(&Path) -> Vec<TextEdit>,
+}
+
+/// How a slot of `category` offers `declared`, a name of a source the document
+/// does not import, among `names`, every name that source declares: as the
+/// protocol's kind for it, or not at all.
+///
+/// # Specification
+/// - ensures: a value or a computation offers a value declared at its source's
+///   top as a function; a value, a computation or a pattern offers a
+///   constructor whose family is declared at its source's top as a constructor;
+///   a type offers a family declared at its source's top as an enum; nothing
+///   else is offered, a module's or a theory's member among it, since importing
+///   the source does not bring it into scope.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause is the match itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the unimported witness offers a function in a body, a
+///   family in a type and a constructor in a pattern, and a module's member
+///   nowhere.
+/// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
+fn unimported_as(
+    category: Category,
+    declared: &Declared,
+    names: &[Declared],
+) -> Option<CompletionItemKind>
+{
+    let top = declared.container.is_none();
+    match (category, declared.kind) {
+        (Category::Value | Category::Computation, SymbolKind::FUNCTION | SymbolKind::VARIABLE)
+            if top =>
+        {
+            Some(CompletionItemKind::FUNCTION)
+        },
+        (Category::Value | Category::Computation | Category::Pattern, SymbolKind::CONSTRUCTOR)
+            if names.iter().any(|family| {
+                family.container.is_none()
+                    && matches!(family.kind, SymbolKind::ENUM | SymbolKind::STRUCT)
+                    && declared.container.as_deref() == Some(family.name.as_str())
+            }) =>
+        {
+            Some(CompletionItemKind::CONSTRUCTOR)
+        },
+        (Category::Type, SymbolKind::ENUM | SymbolKind::STRUCT) if top => {
+            Some(CompletionItemKind::ENUM)
+        },
+        _ => None,
+    }
+}
+
 /// The completions at `position` of `text`, the document at `uri` whose copy
 /// keeps `hovering`, under `grammar` whose forms are `forms`, each type spelled
 /// in `printer`'s style and label details given when `labels` says the client
@@ -272,14 +368,19 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 ///   the word's text up to the position, each once and each written over that
 ///   text: the binders in scope where the word starts, innermost first, then
 ///   the declared names the slot admits, by name, then the keywords, in mold
-///   order; a name a binder already offers is not offered again. Each item's
-///   sort text is its position, so the client keeps this order, and each
-///   declared name carries `uri` for its resolution. A binder the table types
-///   at its written name carries `name : type` as its detail; a declared name
-///   whose head [`Signatures`] keeps carries that head's label, unless it is
-///   the name alone; a keyword carries none. When `labels` holds, an item with
-///   a detail carries it beside its label too: the rest after the name when the
-///   detail starts with it, the detail whole as the description otherwise. When
+///   order, then, for a word that is not empty, the names of each source of
+///   `elsewhere` that [`unimported_as`] admits and no item before offers, in
+///   its order and its names' order, each once per source; a name a binder
+///   already offers is not offered again. Each item's sort text is its
+///   position, so the client keeps this order, and each declared name of the
+///   closure carries `uri` for its resolution. A binder the table types at its
+///   written name carries `name : type` as its detail; a declared name whose
+///   head [`Signatures`] keeps carries that head's label, unless it is the name
+///   alone; a keyword carries none; a name of an unimported source carries its
+///   source's import line as its detail and that source's import edit as its
+///   additional edits, and no data. When `labels` holds, an item with a detail
+///   carries it beside its label too: the rest after the name when the detail
+///   starts with it, the detail whole as the description otherwise. When
 ///   `snippets` holds, a keyword whose form writes more than the keyword
 ///   inserts the form as [`KeywordForm::snippet`] spells it between the text
 ///   before the word and the text after the cursor, and a declared name whose
@@ -314,6 +415,7 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
 /// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
 /// - witness: `tests::session::a_completion_offers_what_a_sibling_declares_806`
+/// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 ///
 /// [`Signatures`]: crate::signature::Signatures
 /// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
@@ -331,6 +433,7 @@ pub fn completions(
     hovering: &Hovering,
     (uri, position): (&DocumentUri, Position),
     (printer, labels, snippets): (Style, LabelsDetailed, TakesSnippets),
+    elsewhere: Elsewhere<'_>,
 ) -> CompletionList
 {
     let index = LineIndex::new(<&str>::from(text).into());
@@ -353,7 +456,7 @@ pub fn completions(
     };
     let table = hovering.table();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut offered: Vec<(&str, CompletionItemKind, Option<String>, Option<String>)> = Vec::new();
+    let mut offered: Vec<Offer<'_>> = Vec::new();
     if matches!(
         category,
         Category::Value | Category::Computation | Category::Type
@@ -369,7 +472,7 @@ pub fn completions(
                     },
                     Maybe::Present(_) | Maybe::Absent(_) => None,
                 };
-                offered.push((name, CompletionItemKind::VARIABLE, typed, None));
+                offered.push((name, CompletionItemKind::VARIABLE, typed, None, None));
             }
         }
     }
@@ -393,7 +496,7 @@ pub fn completions(
             let call = signature
                 .filter(|_| calls)
                 .and_then(|signature| signature.called(SourceText::from(name.as_str())));
-            offered.push((name.as_str(), as_kind, head, call));
+            offered.push((name.as_str(), as_kind, head, call, None));
         }
     }
     let before = SourceText::from(
@@ -408,7 +511,39 @@ pub fn completions(
                 .snippet(before, after)
                 .filter(|_| snippets.0)
                 .map(String::from);
-            offered.push((word, CompletionItemKind::KEYWORD, None, form));
+            offered.push((word, CompletionItemKind::KEYWORD, None, form, None));
+        }
+    }
+    let mut edits: Vec<Vec<TextEdit>> = Vec::new();
+    if !prefix.is_empty() {
+        for source in elsewhere.sources {
+            let mut once: BTreeSet<&str> = BTreeSet::new();
+            let mut line: Option<(usize, String)> = None;
+            for declared in source.names {
+                let name = declared.name.as_str();
+                let Some(as_kind) = unimported_as(category, declared, source.names)
+                    .filter(|_| name.starts_with(prefix) && !seen.contains(name))
+                else {
+                    continue;
+                };
+                if !once.insert(name) {
+                    continue;
+                }
+                if line.is_none() {
+                    let edit = (elsewhere.import)(source.path);
+                    let Some(written) = edit
+                        .first()
+                        .map(|first| String::from(first.new_text.trim()))
+                    else {
+                        break;
+                    };
+                    line = Some((edits.len(), written));
+                    edits.push(edit);
+                }
+                if let Some((at, ref written)) = line {
+                    offered.push((name, as_kind, Some(written.clone()), None, Some(at)));
+                }
+            }
         }
     }
     let width = offered.len().to_string().len();
@@ -417,7 +552,7 @@ pub fn completions(
         items: offered
             .into_iter()
             .enumerate()
-            .map(|(rank, (name, kind, head, form))| CompletionItem {
+            .map(|(rank, (name, kind, head, form, import))| CompletionItem {
                 label: String::from(name),
                 kind,
                 sort_text: format!("{rank:0width$}"),
@@ -433,7 +568,10 @@ pub fn completions(
                     .map(|head| beside(SourceText::from(name), SourceText::from(head))),
                 detail: head,
                 documentation: None,
-                data: declared_as(kind).map(|_| CompletionData { uri: uri.clone() }),
+                data: declared_as(kind)
+                    .filter(|_| import.is_none())
+                    .map(|_| CompletionData { uri: uri.clone() }),
+                additional_text_edits: import.and_then(|at| edits.get(at)).cloned(),
             })
             .collect(),
     }
@@ -525,6 +663,8 @@ pub fn resolved(
 #[cfg(test)]
 mod tests
 {
+    use std::path::Path;
+
     use gandr_core_incremental::BackendArtifact;
     use gandr_core_incremental::MemoryCheckpointStore;
     use gandr_storage_records::InMemoryBlockStore;
@@ -534,6 +674,8 @@ mod tests
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
 
+    use super::Elsewhere;
+    use super::Unimported;
     use super::completions;
     use super::resolved;
     use crate::hover::Hovering;
@@ -548,6 +690,7 @@ mod tests
     use crate::protocol::TextEdit;
     use crate::recheck::forms;
     use crate::recheck::grammar;
+    use crate::search::declared;
 
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.
@@ -620,6 +763,10 @@ mod tests
                 labels,
                 snippets,
             ),
+            Elsewhere {
+                sources: &[],
+                import: &|_| Vec::new(),
+            },
         )
         .items
     }
@@ -746,6 +893,105 @@ mod tests
         assert!(
             binding.names.is_empty() && binding.keywords.is_empty(),
             "a binding name: nothing, {binding:?}"
+        );
+    }
+
+    #[test]
+    fn a_name_no_import_reaches_is_offered_with_its_import()
+    {
+        use CompletionItemKind as Kind;
+
+        let far = declared(SourceText::from(
+            "data Shape : Type {\n  Circle : Shape;\n}\ndef faraway : Integer ;\ndef faraway = 7 \
+             ;\ndef far : Integer ;\ndef far = 2 ;\nmodule Inner {\n  def fargone = 1 ;\n}\n",
+        ));
+        let import = [TextEdit {
+            range: crate::position::Range::default(),
+            new_text: String::from("import \"./far.gandr\" ;\n"),
+        }];
+        let at_end = |text: &str| {
+            let source = SourceText::from(text);
+            let index = LineIndex::new(text.into());
+            let position = Position::of_byte(&index, RenderOffset::from(text.len()))
+                .expect("the cursor is in the text");
+            completions(
+                grammar().expect("the grammar builds"),
+                forms().expect("the forms build"),
+                source,
+                &hovered(source),
+                (&DocumentUri::from("file:///complete.gandr"), position),
+                (
+                    gandr_surface_pretty::Style {
+                        form: gandr_surface_pretty::Form::Sugared,
+                        spelling: gandr_surface_pretty::Spelling::Unicode,
+                    },
+                    LabelsDetailed(false),
+                    TakesSnippets(false),
+                ),
+                Elsewhere {
+                    sources: &[Unimported {
+                        path: Path::new("/folder/far.gandr"),
+                        names: &far,
+                    }],
+                    import: &|_| import.to_vec(),
+                },
+            )
+            .items
+        };
+        let elsewhere = |items: &[CompletionItem]| -> Vec<(String, Kind)> {
+            items
+                .iter()
+                .filter(|item| item.additional_text_edits.is_some())
+                .map(|item| (item.label.clone(), item.kind))
+                .collect()
+        };
+
+        let body =
+            at_end("def far : Integer ;\ndef far = 1 ;\ndef here : Integer ;\ndef here = fa");
+        assert_eq!(
+            elsewhere(&body),
+            [(String::from("faraway"), Kind::FUNCTION)],
+            "a body: the unimported source's top-level value, never its module's member, \
+             {body:?}"
+        );
+        let faraway = body.last().expect("an item is offered");
+        assert_eq!(
+            (
+                faraway.detail.as_deref(),
+                faraway.additional_text_edits.as_deref(),
+                &faraway.data
+            ),
+            (Some("import \"./far.gandr\" ;"), Some(&import[..]), &None),
+            "it carries its import line and edit, and nothing to resolve"
+        );
+        assert_eq!(
+            body.iter()
+                .filter(|item| item.label == "far")
+                .map(|item| item.additional_text_edits.is_some())
+                .collect::<Vec<_>>(),
+            [false],
+            "a name in scope is offered once, without an import, {body:?}"
+        );
+
+        let ty = at_end("def here : Sh");
+        assert_eq!(
+            elsewhere(&ty),
+            [(String::from("Shape"), Kind::ENUM)],
+            "a type: the unimported family, {ty:?}"
+        );
+
+        let constructor = at_end("def here : Integer ;\ndef here = Ci");
+        assert_eq!(
+            elsewhere(&constructor),
+            [(String::from("Circle"), Kind::CONSTRUCTOR)],
+            "a body: the unimported family's constructor, {constructor:?}"
+        );
+
+        let empty = at_end("def here : Integer ;\ndef here = ");
+        assert_eq!(
+            elsewhere(&empty),
+            [],
+            "an empty word offers no unimported name, {empty:?}"
         );
     }
 
@@ -1174,6 +1420,7 @@ mod tests
                     label_details: None,
                     documentation: None,
                     data: None,
+                    additional_text_edits: None,
                 },
                 &hovering,
             );
