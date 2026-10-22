@@ -357,7 +357,7 @@ pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
 /// # Adequacy
 /// - hypothesis: L2 — over every corpus source, a document opened through it
 ///   publishes the reports the walk renders under the same root.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
 pub fn open(uri: &DocumentUri) -> DocumentSession
@@ -630,7 +630,7 @@ pub struct Rechecked
 ///   opening published and counts no form molded and no item judged; L3 — a
 ///   judgement retired by a later change leaves the next one judging what it
 ///   would have with no retired one before it.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
@@ -800,7 +800,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`judge_laid`].
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn lay(
     uri: &DocumentUri,
@@ -1235,7 +1235,7 @@ pub fn trial(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref()),
     Maybe::Absent(_) => true,
@@ -1265,7 +1265,7 @@ fn laid_out(
 /// # Adequacy
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(moved) => usize::from(moved.start()).saturating_add(usize::from(base)) == usize::from(span.start()),
     Maybe::Absent(_) => usize::from(span.start()) < usize::from(base) || usize::from(span.end()) < usize::from(base),
@@ -1404,7 +1404,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
 /// - witness: `recheck::tests::an_unimplemented_refusal_links_its_tracking_issue`
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match found.severity { Seriousness::Goal => Severity::INFORMATION, Seriousness::Warning => Severity::WARNING, Seriousness::Note => Severity::HINT, Seriousness::Error | Seriousness::Ledger => Severity::ERROR }
     && ret.code.is_some() == matches!(found.identifier, Maybe::Present(_))

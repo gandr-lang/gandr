@@ -2263,7 +2263,7 @@ impl TypeTable
     /// # Adequacy
     /// - hypothesis: L3 — the corpus entry gate asks at every byte of every
     ///   source and holds the answer to the innermost node there.
-    /// - witness: `tests::entries::every_judged_node_answers_at_its_own_span`
+    /// - witness: `tests::entries::sweeps::every_judged_node_answers_at_its_own_span`
     #[spec(ensures: |ret| ret.is_none_or(|span| span.start() <= offset && offset < span.end()))]
     #[inline]
     #[must_use]
