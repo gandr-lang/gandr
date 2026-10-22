@@ -3507,6 +3507,33 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     }
 }
 
+/// A recorded run whose moves carry no payload spells as written: the empty
+/// run and a run of choices alone, each read back to itself (#1871).
+#[test]
+fn a_recorded_run_without_payloads_spells_its_moves_1871()
+{
+    let mut core = CoreArena::new();
+    let empty = core.value_recorded(Arc::from(Vec::new()));
+    let chosen = core.value_recorded(Arc::from(vec![
+        RecordedMove::Selected(FieldLabel::from(String::from("report"))),
+        RecordedMove::Offered(FieldLabel::from(String::from("next"))),
+        RecordedMove::Closed,
+    ]));
+    let names = [Name::from("kept")];
+    let source = CoreSource::new(&core, &names);
+    for (recorded, expected) in [
+        (empty, "recorded()"),
+        (chosen, "recorded(selected(report), offered(next), closed)"),
+    ] {
+        agrees(&core, &names, CoreNode::Value(recorded));
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(recorded))),
+            (expected.to_owned(), Fidelity::Faithful),
+            "{expected}"
+        );
+    }
+}
+
 /// The body of `def rec down(n : Nat) -> -F Nat { case n { Zero => z, Succ(p)
 /// => down[<](p) } }` under its fixpoint, `z` the value the zero arm returns,
 /// and the type it is stated at.
