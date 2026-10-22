@@ -1,0 +1,9 @@
+/// `ImplicitUnsupplied`: a use of a function leaving one of its implicits unsupplied.
+///
+/// The identity at a type supplied by name.
+@[ checks ]
+def same @[a : Type] (x : a) -> -F a { return x }
+
+@[ refuses("ImplicitUnsupplied") ]
+def unsupplied : () => Integer ;
+def unsupplied = thunk { become same(3) } ;

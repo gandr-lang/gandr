@@ -1,0 +1,5 @@
+/// `UnresolvedDocLink`: a documentation link to a name nothing declares.
+///
+/// Points at [missing], which nothing declares.
+@[ refuses("UnresolvedDocLink") ]
+def stale = 1 ;

@@ -75,6 +75,21 @@ pub(super) const DIAGNOSTICS: &str = "diagnostics";
 /// The issue writing the exemplars of the lowering's unshown names.
 const LOWERING: Issue = Issue(1788);
 
+/// The issue letting a fixture state a refusal raised while its source is
+/// collected.
+const COLLECTED: Issue = Issue(1798);
+
+/// The issue letting a fixture state a type member's own refusal.
+const TYPE_MEMBER: Issue = Issue(1087);
+
+/// The issue letting a fixture state a refusal at a module's header or a
+/// functor application.
+const MODULE_HEADER: Issue = Issue(1274);
+
+/// The issue letting a fixture state the refusal of a data family's member held
+/// apart.
+const DATA_MEMBER: Issue = Issue(1462);
+
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
@@ -99,7 +114,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 147_usize] = [
+const OWED: [(&str, Owed); 122_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -138,72 +153,70 @@ const OWED: [(&str, Owed); 147_usize] = [
             "a parsed tree holds only molds of the grammar that built it",
         )),
     ),
-    ("UnresolvedDocLink", Owed::Unwritten(LOWERING)),
-    ("DuplicateSignature", Owed::Unwritten(LOWERING)),
-    ("DuplicateImportAlias", Owed::Unwritten(LOWERING)),
-    ("ImportCycle", Owed::Unwritten(LOWERING)),
-    ("ImportShadows", Owed::Unwritten(LOWERING)),
-    ("UnexportedName", Owed::Unwritten(LOWERING)),
-    ("MalformedLiteral", Owed::Unwritten(LOWERING)),
-    ("DuplicateAttribute", Owed::Unwritten(LOWERING)),
-    ("PhaseDependence", Owed::Unwritten(LOWERING)),
-    ("UnknownMember", Owed::Unwritten(LOWERING)),
-    ("NotAFunctor", Owed::Unwritten(LOWERING)),
-    ("UnreadAscription", Owed::Unwritten(LOWERING)),
-    ("FamilyTelescope", Owed::Unwritten(LOWERING)),
-    ("LowercaseModuleName", Owed::Unwritten(LOWERING)),
-    ("ImplicitTelescope", Owed::Unwritten(LOWERING)),
-    ("ImplicitUnsupplied", Owed::Unwritten(LOWERING)),
-    ("ImplicitInParentheses", Owed::Unwritten(LOWERING)),
-    ("AmbiguousMethod", Owed::Unwritten(LOWERING)),
-    ("ViewOfNoPlace", Owed::Unwritten(LOWERING)),
+    ("DuplicateImportAlias", Owed::Unwritten(COLLECTED)),
+    (
+        "MalformedLiteral",
+        Owed::Unreachable(Reason(
+            "the tokenizer forms only number and text lexemes the literal reader accepts",
+        )),
+    ),
+    ("PhaseDependence", Owed::Unwritten(TYPE_MEMBER)),
+    ("NotAFunctor", Owed::Unwritten(MODULE_HEADER)),
+    ("UnreadAscription", Owed::Unwritten(MODULE_HEADER)),
+    ("FamilyTelescope", Owed::Unwritten(TYPE_MEMBER)),
+    ("LowercaseModuleName", Owed::Unwritten(MODULE_HEADER)),
+    ("ImplicitTelescope", Owed::Unwritten(COLLECTED)),
     ("RulesUndecided", Owed::Unwritten(LOWERING)),
-    ("Unminted", Owed::Unwritten(LOWERING)),
-    ("OutOfFragment.Indexed", Owed::Unwritten(LOWERING)),
-    ("OutOfFragment.NonUniform", Owed::Unwritten(LOWERING)),
-    ("OutOfFragment.EmptyList", Owed::Unwritten(LOWERING)),
-    ("OutOfFragment.Held", Owed::Unwritten(LOWERING)),
-    ("OutOfFragment.View", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.UnknownHead", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Arity", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.IllSorted", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Unsorted", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.ManyOut", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Circuit", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Constructor", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Inherited", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Binding", Owed::Unwritten(LOWERING)),
-    ("UnstatedComponent.Abstraction", Owed::Unwritten(LOWERING)),
+    (
+        "Unminted",
+        Owed::Unreachable(Reason(
+            "the lowering mints a type or a body for every declaration it does not refuse",
+        )),
+    ),
+    ("OutOfFragment.Indexed", Owed::Unwritten(COLLECTED)),
+    (
+        "UnstatedComponent.Constructor",
+        Owed::Unreachable(Reason(
+            "a theory declares no constructor, and a rule naming an undeclared head is \
+             refused as ill-formed first",
+        )),
+    ),
+    ("UnstatedComponent.Inherited", Owed::Unwritten(TYPE_MEMBER)),
     (
         "UndescribedMember.HigherOrderField",
-        Owed::Unwritten(LOWERING),
+        Owed::Unwritten(DATA_MEMBER),
     ),
     (
         "UndescribedMember.DependentField",
-        Owed::Unwritten(LOWERING),
+        Owed::Unwritten(DATA_MEMBER),
     ),
-    ("UndescribedMember.TypeShape", Owed::Unwritten(LOWERING)),
     ("UndescribedMember.NativeDecode", Owed::Unwritten(LOWERING)),
-    ("UndescribedMember.NoOutput", Owed::Unwritten(LOWERING)),
+    ("UndescribedMember.NoOutput", Owed::Unwritten(DATA_MEMBER)),
     (
         "UndescribedMember.AggregatedOutput",
-        Owed::Unwritten(LOWERING),
+        Owed::Unreachable(Reason(
+            "the description feeds each output port of an operation from its own one monomial",
+        )),
     ),
     (
         "UndescribedMember.EmptyOperation",
-        Owed::Unwritten(LOWERING),
+        Owed::Unwritten(DATA_MEMBER),
     ),
     (
         "UndescribedMember.UnrepresentableOperation",
-        Owed::Unwritten(LOWERING),
+        Owed::Unwritten(DATA_MEMBER),
     ),
-    ("UndescribedMember.ResultArity", Owed::Unwritten(LOWERING)),
     ("UndescribedMember.MixedPolarity", Owed::Unwritten(LOWERING)),
     (
         "UndescribedMember.UnderivedWiring",
         Owed::Unwritten(LOWERING),
     ),
-    ("UndescribedMember.OffBoundary", Owed::Unwritten(LOWERING)),
+    (
+        "UndescribedMember.OffBoundary",
+        Owed::Unreachable(Reason(
+            "a circuit rule's redex is placed on the boundary its own wiring derives",
+        )),
+    ),
     ("NotADataType", Owed::Unwritten(CHECKER)),
     ("DataKindNotUniverse", Owed::Unwritten(CHECKER)),
     ("LoopUndecided", Owed::Unwritten(CHECKER)),

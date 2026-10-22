@@ -1,0 +1,12 @@
+/// `UnstatedComponent.Binding`: a model component the derivation cannot state: an operation one of whose ports binds a variable.
+///
+/// The theory the model derives from.
+@[ checks ]
+theory T {
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : pi+ (x : Val) . Proc) --> Proc;
+}
+
+@[ refuses("UnstatedComponent.Binding") ]
+def model : Model(T) ;

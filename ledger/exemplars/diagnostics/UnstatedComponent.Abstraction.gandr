@@ -1,0 +1,13 @@
+/// `UnstatedComponent.Abstraction`: a model component the derivation cannot state: an operation one of whose ports abstracts an atom.
+///
+/// Restriction: a fresh name bound over a process.
+@[ checks ]
+theory Restriction {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+}
+
+@[ refuses("UnstatedComponent.Abstraction") ]
+def restrictionModel : Model(Restriction) ;

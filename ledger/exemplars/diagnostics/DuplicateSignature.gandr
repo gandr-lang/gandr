@@ -1,0 +1,4 @@
+/// `DuplicateSignature`: a second signature for one name.
+@[ refuses("DuplicateSignature") ]
+def x : Integer ;
+def x : Unit ;

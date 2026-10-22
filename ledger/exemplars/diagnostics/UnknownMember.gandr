@@ -1,0 +1,9 @@
+/// `UnknownMember`: a selection or a signature component a module does not supply.
+///
+/// The answers.
+module Answers {
+  def answer = 42 ;
+}
+
+@[ refuses("UnknownMember") ]
+def asked = Answers.question ;
