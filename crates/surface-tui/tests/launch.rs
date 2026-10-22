@@ -28,6 +28,7 @@ use gandr_surface_tui::Handled;
 use gandr_surface_tui::Input;
 use gandr_surface_tui::InputSource;
 use gandr_surface_tui::Key;
+use gandr_surface_tui::SMOKE_NOTE;
 use gandr_surface_tui::draw;
 use gandr_surface_tui::drive;
 use gandr_surface_tui::run_smoke;
@@ -363,7 +364,8 @@ where
     found
 }
 
-/// A partially accepting writer reports its failure instead of completing.
+/// A writer with room takes the launch note once and the run completes; a
+/// partially accepting writer reports its failure instead of completing.
 #[test]
 fn the_smoke_face_propagates_a_partial_write_failure()
 {
@@ -375,6 +377,9 @@ fn the_smoke_face_propagates_a_partial_write_failure()
         5_u64,
         "the full capacity was accepted before refusal"
     );
+    let mut written = Vec::new();
+    assert!(matches!(run_smoke(&mut written), Ok(Ended::Completed)));
+    assert_eq!(written, SMOKE_NOTE.as_bytes());
 }
 
 #[test]
@@ -619,7 +624,8 @@ fn the_transcript_pane_follows_the_newest_rows()
     );
 }
 
-/// Run this witness alone on a terminal and enter :quit.
+/// Run this witness alone on a terminal and enter :quit; on Linux,
+/// `tests::terminal` runs it on a pseudo-terminal.
 #[cfg(unix)]
 #[test]
 #[ignore = "requires an attached terminal; enter :quit"]

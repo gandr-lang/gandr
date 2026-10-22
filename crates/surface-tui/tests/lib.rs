@@ -5,3 +5,5 @@ extern crate alloc;
 
 #[cfg(test)]
 mod launch;
+#[cfg(test)]
+mod terminal;
