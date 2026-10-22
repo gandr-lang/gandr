@@ -161,7 +161,8 @@
 //! A rule term writes `bind a . t` as an argument at such a port: an `Abs`
 //! node with the atom's name and its body as a chain of one argument, kept as
 //! written, as a rule's variables are. Matching, the critical pairs and the
-//! kernel's reading compare abstractions by depth rather than by atom
+//! kernel's reading compare abstractions without their atom, at any depth, and
+//! read one back naming the canonical atom of its depth
 //! ([`FreeTerm::canonical_atoms`]), so a rule that renames an abstraction's
 //! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
 //! no port abstracts as many atoms.

@@ -148,11 +148,10 @@ enum Head
     /// as a head of its own, since no store holds a cell whose face
     /// instantiates a metavariable.
     Inst(Name, Count),
-    /// An atom's abstraction over its one body, keyed by its depth among the
-    /// abstractions above it rather than by the atom it names: the canonical
-    /// re-minting at admission, under which two abstractions that differ only
-    /// in their atom are one head.
-    Abs(Count),
+    /// An atom's abstraction over its one body, keyed by nothing: two
+    /// abstractions that differ only in their atom are one head at any depth,
+    /// so a rule's abstraction matches below another.
+    Abs,
 }
 
 impl Head
@@ -165,7 +164,7 @@ impl Head
     {
         match *self {
             Self::Var(_) | Self::Konst(_) => Count(0),
-            Self::Abs(_) => Count(1),
+            Self::Abs => Count(1),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
@@ -195,22 +194,23 @@ quenchant_shape::reason_enum! {
 impl From<&FreeTerm> for Term
 {
     /// The free term's nodes in prefix order, each head kept and each
-    /// abstraction's atom re-minted as its depth.
+    /// abstraction's atom dropped.
     ///
     /// # Specification
     /// - ensures: one node per free-term node in prefix order, a variable a
     ///   metavariable, a constructor, an operation, a results tuple and an
     ///   instantiation each their own head over their argument count, and an
-    ///   abstraction its depth among the abstractions above it.
+    ///   abstraction the one abstraction head.
     /// - panics: none.
     /// - intension: one pass with an explicit stack of the subterms still to
-    ///   visit, each at its depth, so nesting costs no call stack.
+    ///   visit, so nesting costs no call stack.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a term nesting a constructor, an operation and a
     ///   results tuple reads back as itself, and its positions are the free
     ///   term's; a child order reversed or a head kind merged changes the read.
-    ///   Two abstractions naming different atoms read as one term.
+    ///   Two abstractions naming different atoms read as one term, and an
+    ///   abstraction below another is the same head as at the root.
     /// - witness: `term::tests::a_free_term_reads_back_through_the_alphabet`
     /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
     #[inline]
@@ -218,30 +218,26 @@ impl From<&FreeTerm> for Term
     fn from(term: &FreeTerm) -> Self
     {
         let mut nodes = Vec::new();
-        let mut pending = alloc::vec![(term.to_node(), 0_usize)];
-        while let Some((node, depth)) = pending.pop() {
-            let (head, args, below) = match node.view() {
+        let mut pending = alloc::vec![term.to_node()];
+        while let Some(node) = pending.pop() {
+            let (head, args) = match node.view() {
                 TermView::Var(name) => {
                     nodes.push(Head::Var(name.clone()));
                     continue;
                 },
                 TermView::Ctor { name, args } => {
-                    (Head::Ctor(name.clone(), Count(args.len())), args, depth)
+                    (Head::Ctor(name.clone(), Count(args.len())), args)
                 },
-                TermView::Op { name, args } => {
-                    (Head::Op(name.clone(), Count(args.len())), args, depth)
-                },
-                TermView::Results { args } => (Head::Results(Count(args.len())), args, depth),
+                TermView::Op { name, args } => (Head::Op(name.clone(), Count(args.len())), args),
+                TermView::Results { args } => (Head::Results(Count(args.len())), args),
                 TermView::Inst { name, args } => {
-                    (Head::Inst(name.clone(), Count(args.len())), args, depth)
+                    (Head::Inst(name.clone(), Count(args.len())), args)
                 },
-                TermView::Abs { args, .. } => {
-                    (Head::Abs(Count(depth)), args, depth.saturating_add(1))
-                },
+                TermView::Abs { args, .. } => (Head::Abs, args),
             };
             nodes.push(head);
             let mark = pending.len();
-            pending.extend(args.map(|arg| (arg, below)));
+            pending.extend(args);
             if let Some(children) = pending.get_mut(mark ..) {
                 children.reverse();
             }
@@ -255,12 +251,15 @@ impl Term
     /// The free term this term spells.
     ///
     /// # Specification
-    /// - ensures: one free-term node per node, in the same order.
+    /// - ensures: one free-term node per node, in the same order, each
+    ///   abstraction naming the canonical atom of its depth.
     /// - provides: [`term_reading::Absent::Skolem`] when a node is a skolem
     ///   constant.
     /// - panics: none.
     /// - intension: one pass over the table in reverse prefix order, each
-    ///   application taking its arguments off a stack.
+    ///   application taking its arguments off a stack; a term holding an
+    ///   abstraction is re-minted once more, as the depths are only known from
+    ///   the root.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as the conversion from a free term, and a skolemized
@@ -279,6 +278,7 @@ impl Term
     pub fn read(&self) -> Maybe<FreeTerm, term_reading::Absent>
     {
         let mut built: Vec<FreeTerm> = Vec::new();
+        let mut abstracts = false;
         for head in self.0.iter().rev() {
             let take = |built: &mut Vec<FreeTerm>, arity: Count| {
                 let split = built.len().saturating_sub(arity.0);
@@ -291,19 +291,24 @@ impl Term
                 Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
                 Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
                 Head::Inst(ref name, arity) => FreeTerm::inst(name, take(&mut built, arity)),
-                Head::Abs(level) => {
+                Head::Abs => {
+                    abstracts = true;
                     let mut body = take(&mut built, Count(1));
                     FreeTerm::abs(
-                        FreeTerm::canonical_atom(AbstractionDepth::from(level.0)),
+                        FreeTerm::canonical_atom(AbstractionDepth::from(0_usize)),
                         body.pop().unwrap_or_else(|| FreeTerm::results([])),
                     )
                 },
             };
             built.push(node);
         }
-        built
-            .pop()
-            .map_or_else(|| Maybe::Present(FreeTerm::results([])), Maybe::Present)
+        let read = built.pop().unwrap_or_else(|| FreeTerm::results([]));
+        Maybe::Present(if abstracts {
+            read.canonical_atoms()
+        }
+        else {
+            read
+        })
     }
 
     /// The end of the subterm starting at `start`: one past its last node.
@@ -425,7 +430,7 @@ impl Term
             | Head::Op(..)
             | Head::Results(_)
             | Head::Inst(..)
-            | Head::Abs(_) => None,
+            | Head::Abs => None,
         })
     }
 
@@ -462,7 +467,7 @@ impl Term
                     | Head::Op(..)
                     | Head::Results(_)
                     | Head::Inst(..)
-                    | Head::Abs(_) => head.clone(),
+                    | Head::Abs => head.clone(),
                 })
                 .collect(),
         )
@@ -508,7 +513,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) => 1,
+        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -1595,7 +1600,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))

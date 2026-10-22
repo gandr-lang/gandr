@@ -739,22 +739,39 @@ fn abstractions_naming_different_atoms_are_one_term()
     assert_eq!(
         Term(alloc::vec![
             Head::Op(Name::from("nu"), Count(1)),
-            Head::Abs(Count(0)),
+            Head::Abs,
             Head::Var(Name::from("p")),
         ]),
         term,
-        "the outermost abstraction is keyed at depth zero"
+        "an abstraction is its own head"
     );
     assert_eq!(
         Maybe::Present(restricted("a0")),
         term.read(),
         "it reads back naming its canonical atom"
     );
-    let twice = FreeTerm::abs("a", FreeTerm::abs("b", FreeTerm::var("p")));
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let z = || FreeTerm::op("z", []);
+    let nested = Term::from(&nu("a", nu("b", z())));
     assert_eq!(
-        Some(&Head::Abs(Count(1))),
-        Term::from(&twice).0.get(1),
-        "an abstraction under another is keyed one deeper"
+        Maybe::Present(nu("a0", nu("a1", z()))),
+        nested.read(),
+        "an abstraction under another reads back one deeper"
+    );
+    let below =
+        TermAlphabet::position_at_path(&[PositionStep::from(0_usize), PositionStep::from(0_usize)]);
+    let Maybe::Present(inner) = TermAlphabet::subterm_cmd_at(&nested, &below)
+    else {
+        panic!("the inner restriction is a subterm");
+    };
+    let mut matched = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::match_cmd(
+            &Term::from(&nu("c", z())),
+            &inner,
+            &mut matched
+        )),
+        "a rule's abstraction matches one below another (#1709)"
     );
 }
 
