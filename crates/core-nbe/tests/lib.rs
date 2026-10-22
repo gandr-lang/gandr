@@ -20,11 +20,15 @@ mod deep_readback;
 #[cfg(test)]
 mod duplication;
 #[cfg(test)]
+mod free_indices;
+#[cfg(test)]
 mod full_laziness;
 #[cfg(test)]
 mod glued_shape;
 #[cfg(test)]
 mod measure;
+#[cfg(test)]
+mod normal_forms;
 #[cfg(test)]
 mod readback_terms;
 #[cfg(test)]

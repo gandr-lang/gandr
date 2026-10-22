@@ -1164,9 +1164,11 @@ fn loop_arm(
 ///   of a transport in `motive`, both already taken off the value stack.
 /// - ensures: [`Moved::Stepped`] with the result returned or the step's tasks
 ///   pushed — the operand unchanged along the empty word; the first letter's
-///   transport with the rest's bound after it along a longer word; a one-letter
-///   word in a path family conjugating as the module states — and
-///   [`Moved::Unmoved`] with the machine unchanged otherwise.
+///   transport with the rest's bound after it along a longer word; along a
+///   one-letter word in a path family, an operand a definition names reread as
+///   its word whichever way the endpoints act, and any other operand
+///   conjugating as the module states — and [`Moved::Unmoved`] with the machine
+///   unchanged otherwise.
 /// - fails: as [`head`], and the free-index walk's fault.
 /// - panics: none.
 ///
@@ -1177,10 +1179,14 @@ fn loop_arm(
 /// - hypothesis: L3 — the loop transports reflexivity to itself in `y.
 ///   Path(Circle, Base, y)`, conjugates the loop to itself in `y. Path(Circle,
 ///   y, y)`, a word of two letters takes two steps, and a map with a loop arm
-///   carries the loop to the arm's image.
+///   carries the loop to the arm's image. Over every pairing of a fixed, a
+///   moving and a called endpoint, words of up to two letters and the named
+///   loop, spelled and named operands land on the word the free group computes,
+///   a named operand under a called endpoint included.
 /// - witness: `eval::words::tests::transport_along_the_loop_moves_the_endpoint`
 /// - witness: `eval::words::tests::the_loop_conjugates_a_loop_to_itself`
 /// - witness: `eval::words::tests::cong_along_the_loop_is_the_arm_s_image`
+/// - witness: `eval::words::tests::transport_along_a_word_conjugates_by_its_moving_endpoints`
 #[spec(
     captures: [tasks = machine.tasks.len(), comps = machine.comps.len()],
     ensures: |ret| ret.is_err() || matches!(ret, Ok(Moved::Unmoved)) && machine.tasks.len() == tasks && machine.comps.len() == comps
@@ -1228,6 +1234,12 @@ pub(super) fn transport(
     else {
         return Ok(Moved::Unmoved);
     };
+    // The operand a definition names reads as its word before any row
+    // splices it, whichever way the endpoints act on the letter.
+    if let Some(body) = named(core, domain, machine, value)? {
+        reread(machine, motive, (path, value), (Side::Right, body));
+        return Ok(Moved::Stepped);
+    }
     let static_image = |action: Action| match action {
         Action::Fixed => Some(rest),
         Action::Moving => Some(path),
@@ -1235,10 +1247,6 @@ pub(super) fn transport(
     };
     match (static_image(left), static_image(right)) {
         (Some(left), Some(right)) => {
-            if let Some(body) = named(core, domain, machine, value)? {
-                reread(machine, motive, (path, value), (Side::Right, body));
-                return Ok(Moved::Stepped);
-            }
             let Some(moved) = spliced(core, domain, machine, (left, value, right))?
             else {
                 return Ok(Moved::Unmoved);
