@@ -518,18 +518,22 @@ run = [
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes
 # as a comment, its resolution trailer or the `// refused_by:` line it puts
-# atop each side of a block it could not resolve (#1560). The patterns live in
-# `.config/merge-residue/patterns`, one extended regular expression per line,
-# and each case in `cases.json` beside it holds a line and whether the
-# patterns read it as residue; the scan skips that file, whose cases are
-# residue by design. Git writes conflict markers as EXACTLY seven marker
-# characters followed by end-of-line or whitespace plus a label
-# (`<<<<<<< HEAD`, bare `=======`). Anchoring on `([[:space:]]|$)` keeps real
-# markers matched while rejecting longer decorative runs -- setext underlines
-# and `====` delimiter rules are not conflicts. The trailer patterns bracket a
-# character so the patterns file does not match itself. The `:/` pathspec
-# scopes the scan to tracked files under the repository root whatever
-# directory the hook runs from.
+# atop each side of a block it could not resolve (#1560); nor a file named as
+# residue, a driver's `.orig` backup or a `.rej` hunk, or the `_BACKUP_`,
+# `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool` writes, which
+# hold clean text no marker scan sees (#1642). The line patterns live in
+# `.config/merge-residue/patterns` and the path patterns in `names` beside
+# it, one extended regular expression per line; each case in `cases.json`
+# holds a `line` or a `path` and whether the patterns read it as residue;
+# the line scan skips that file, whose cases are residue by design. Git
+# writes conflict markers as EXACTLY seven marker characters followed by
+# end-of-line or whitespace plus a label (`<<<<<<< HEAD`, bare `=======`).
+# Anchoring on `([[:space:]]|$)` keeps real markers matched while rejecting
+# longer decorative runs -- setext underlines and `====` delimiter rules are
+# not conflicts. The trailer patterns bracket a character so the patterns
+# file does not match itself. The `:/` pathspec scopes the line scan to
+# tracked files under the repository root whatever directory the hook runs
+# from; the name scan lists them from the root.
 ["check:merge-residue"]
 description = "Detect conflict markers and merge-driver residue in tracked files"
 tools.jq = "1.8.1"
@@ -538,16 +542,25 @@ run = '''
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 patterns="$root/.config/merge-residue/patterns"
+names="$root/.config/merge-residue/names"
 cases="$root/.config/merge-residue/cases.json"
 failed=0
 while IFS= read -r case; do
   name=$(jq -r .name <<< "$case")
-  line=$(jq -r .line <<< "$case")
   want=$(jq -r .residue <<< "$case")
+  if jq -e 'has("path")' <<< "$case" > /dev/null; then
+    kind=path
+    text=$(jq -r .path <<< "$case")
+    against=$names
+  else
+    kind=line
+    text=$(jq -r .line <<< "$case")
+    against=$patterns
+  fi
   got=false
-  if grep -qE -f "$patterns" <<< "$line"; then got=true; fi
+  if grep -qE -f "$against" <<< "$text"; then got=true; fi
   if [[ "$got" != "$want" ]]; then
-    printf 'merge residue case FAILED: %s\n  line: %s\n  read as residue: %s, recorded: %s\n' "$name" "$line" "$got" "$want" >&2
+    printf 'merge residue case FAILED: %s\n  %s: %s\n  read as residue: %s, recorded: %s\n' "$name" "$kind" "$text" "$got" "$want" >&2
     failed=1
   fi
 done < <(jq -c '.[]' "$cases")
@@ -556,7 +569,11 @@ if git grep -nIE -f "$patterns" -- ':/' ':(top,exclude).config/merge-residue/cas
   echo 'merge residue check FAILED: conflict markers or merge-driver residue found' >&2
   exit 1
 fi
-echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no conflict markers or merge-driver residue in tracked files"
+if git -C "$root" ls-files | grep -E -f "$names"; then
+  echo 'merge residue check FAILED: tracked files named as merge residue' >&2
+  exit 1
+fi
+echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no conflict markers, merge-driver residue or residue file names in tracked files"
 '''
 
 # A workflow never hashes a tarball through `hashFiles`: the expression

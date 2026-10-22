@@ -1,0 +1,3 @@
+\.orig$
+\.rej$
+_(BACKUP|BASE|LOCAL|REMOTE)_[0-9]+(\.[^/]*)?$

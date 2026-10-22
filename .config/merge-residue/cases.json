@@ -23,5 +23,33 @@
     "name": "a comment that names the word",
     "line": "// what refused_by means here",
     "residue": false
-  }
+  },
+  {
+    "name": "a merge driver's backup (#1642)",
+    "path": "crates/surface-dispatcher/src/typed.rs.orig",
+    "residue": true
+  },
+  { "name": "a rejected hunk", "path": "crates/core-term/src/rewrite.rs.rej", "residue": true },
+  {
+    "name": "mergetool's backup copy",
+    "path": "crates/core-term/src/rewrite_BACKUP_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's base copy",
+    "path": "crates/core-term/src/rewrite_BASE_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's local copy",
+    "path": "crates/core-term/src/rewrite_LOCAL_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's remote copy, of a file without an extension",
+    "path": "Makefile_REMOTE_4242",
+    "residue": true
+  },
+  { "name": "a source named like the word", "path": "crates/x/src/origin.rs", "residue": false },
+  { "name": "an upper-case word in a name", "path": "docs/REMOTE_ACCESS.md", "residue": false }
 ]
