@@ -261,6 +261,12 @@ fn empty_input_and_final_remainder_partition_the_input()
     assert_eq!(chunks.len(), 1, "input under the minimums is one chunk");
     assert_eq!(chunks[0].reason(), BoundaryReason::FinalRemainder);
     assert_partition(&chunks, records);
+    let whole = chunks[0].bytes();
+    assert_eq!(
+        (whole.start(), whole.end()),
+        (BytePosition::ZERO, BytePosition::from(6)),
+        "the one chunk spans all six bytes"
+    );
 }
 
 #[test]
