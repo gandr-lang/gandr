@@ -491,6 +491,62 @@ fn a_passing_run_marks_its_row_fixed_without_a_comment()
 }
 
 #[test]
+fn a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress()
+{
+    let scratch = scratch!("rerun-passed");
+    let checks = [
+        check!(
+            "hotpath / gandr",
+            "completed",
+            Some("failure"),
+            9_u64,
+            DECIDE
+        ),
+        check!("hotpath / gandr", "completed", Some("success"), 11_u64, ""),
+    ]
+    .join("\n");
+    let issues = serde_json::json!([
+        issue!(
+            4_u64,
+            "perf: gandr_core_checker::module::decide",
+            "OPEN",
+            index![open_row!(1358_u64, 1_u64)]
+        ),
+        issue!(5_u64, "perf: lsp keystroke", "OPEN", index![open_row!(
+            1358_u64, 2_u64
+        )]),
+    ])
+    .to_string();
+    let pulls = pulls!(1358_u64);
+    let output = run!(scratch, HEAD, ["--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str()),
+        ("FAKE_GH_ISSUES", issues.as_str())
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(
+        writes!(scratch),
+        [
+            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+            "issue edit 5 --body-file - --add-label kind:performance",
+            "issue close 5"
+        ],
+        "the function the failed check names stays open; the other, which the pass touches, closes"
+    );
+    assert_eq!(
+        body!(scratch, "edit", 4_u64),
+        index![open_row!(1358_u64, 1_u64).replace("runs/1)", "runs/9)")],
+        "the regressed row names the failed run and is not fixed by the passing one"
+    );
+    let fixed = open_row!(1358_u64, 2_u64).replace(
+        "| open |",
+        "| fixed — `hotpath / gandr` passed at [`914a768`](https://github.com/gandr-lang/gandr/runs/11) |",
+    );
+    assert_eq!(body!(scratch, "edit", 5_u64), index![fixed]);
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
 fn a_uniform_shift_is_a_runner_shift_row_without_a_comment()
 {
     let scratch = scratch!("shift");

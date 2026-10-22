@@ -78,8 +78,8 @@ impl IssueTitle
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the title after [`TITLE_PREFIX`] when it opens with it and
-    ///   the rest holds no space beside a `#` pull request number, so a
-    ///   per-pull-request title of the earlier shape names no function.
+    ///   the rest does not open with `#`, so a per-pull-request title of the
+    ///   earlier shape, `perf: #<n> regresses <site>`, names no function.
     /// - provides: the function whose index a passing run may fix.
     /// - fails: never.
     /// - panics: none.
@@ -97,7 +97,7 @@ impl IssueTitle
         let rest = self
             .0
             .strip_prefix(TITLE_PREFIX)
-            .filter(|rest| !rest.starts_with('#') && !rest.contains(" regresses "))?;
+            .filter(|rest| !rest.starts_with('#'))?;
         rest.parse::<SiteName>().ok()
     }
 }
@@ -226,9 +226,11 @@ impl Row
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the hand-folded `fixed — …` and `runner shift — …`
-    ///   rows beside an `open` one; reading prose after the dash, or an unknown
-    ///   cell as settled, changes whether the issue closes.
+    ///   rows, and an `accepted — …` row beside an `open` one; reading prose
+    ///   after the dash, a settled word as open, or an unknown cell as settled,
+    ///   changes whether the issue closes.
     /// - witness: `index::tests::a_hand_folded_index_keeps_its_rows`
+    /// - witness: `index::tests::an_open_row_keeps_the_issue_open_and_an_accepted_one_settles`
     fn status(&self) -> Status
     {
         let cell = self.cells.get(5).map_or("", String::as_str);
@@ -357,10 +359,12 @@ impl Index
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the hand-folded index of `decide`'s regressions with
-    ///   its prose, lint and close sections and a seventh column named `was`,
-    ///   and a body without a table; a lost line, a row read as prose, prose
-    ///   read as a row or a second table changes the rewritten body.
+    ///   its prose, lint and close sections and a seventh column named `was`, a
+    ///   body without a table, and a table with an open row; a lost line, a row
+    ///   read as prose, prose read as a row or a second table changes the
+    ///   rewritten body or the standing.
     /// - witness: `index::tests::a_hand_folded_index_keeps_its_rows`
+    /// - witness: `index::tests::an_open_row_keeps_the_issue_open_and_an_accepted_one_settles`
     #[must_use]
     #[inline]
     pub fn read(body: &IssueBody) -> Self
@@ -804,6 +808,37 @@ Owed once for the function.
             bare,
             "A note.\n\n## Index\n\n| pull request | commit | series | metric | delta | status | \
              report |\n| --- | --- | --- | --- | --- | --- | --- |\n"
+        );
+    }
+
+    #[test]
+    fn an_open_row_keeps_the_issue_open_and_an_accepted_one_settles()
+    {
+        let body = FOLDED.replace(
+            "| #1496 | `e6f58bf9` | `gandr-timing` | wall avg | 179 → 235 µs, +31 % | runner shift \
+             — every function +25 to +31 % together | #1516 |",
+            "| #1496 | `e6f58bf9` | `gandr-timing` | wall avg | 179 → 235 µs, +31 % | accepted — \
+             records cost 31 allocations each | #1516 |\n| #1500 | `0a1b2c3d` | `gandr` | \
+             allocations avg | 917 → 950, +3.6 % | open | #1520 |",
+        );
+        let index = Index::read(&IssueBody(body.clone()));
+        assert_eq!(index.to_string(), body, "read and written back unchanged");
+        let standing = |subject: &str, series: &str| {
+            index.standing_in(
+                &subject.parse::<Subject>().unwrap(),
+                &series.parse::<Benchmark>().unwrap(),
+            )
+        };
+        assert_eq!(
+            standing("#1496", "gandr-timing"),
+            Standing::Settled,
+            "an accepted row is settled"
+        );
+        assert_eq!(standing("#1500", "gandr"), Standing::Open);
+        assert_eq!(
+            index.standing(),
+            Standing::Open,
+            "the open row keeps the issue open"
         );
     }
 
