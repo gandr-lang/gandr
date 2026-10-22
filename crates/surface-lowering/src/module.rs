@@ -262,6 +262,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Sort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeCount;
@@ -2662,10 +2663,12 @@ pub fn source_pieces(
 ///   [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one alias;
 ///   [`LoweringRefusal::OutOfFragment`] when a root child is neither a
 ///   declaration, a module nor an import — an attribute block decorating
-///   nothing, or a module with no member, included — or when a declaration's
-///   name is a form rather than an identifier; [`LoweringRefusal::UnknownMold`]
-///   for a mold the grammar does not hold; [`LoweringRefusal::BudgetExceeded`]
-///   when the walk outruns the allowance.
+///   nothing, or a module with no member, included — in a source that declares
+///   nothing and holds no complete item of the grammar out of the fragment,
+///   which carries its own refusal, or when a declaration's name is a form
+///   rather than an identifier; [`LoweringRefusal::UnknownMold`] for a mold the
+///   grammar does not hold; [`LoweringRefusal::BudgetExceeded`] when the walk
+///   outruns the allowance.
 /// - panics: none. A position the tree does not hold contributes nothing.
 ///
 /// # Errors
@@ -2694,6 +2697,8 @@ pub fn source_pieces(
 /// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
 /// - witness: `module::tests::a_trailing_attribute_block_refuses_itself`
 /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+/// - witness: `module::tests::a_lone_item_out_of_the_fragment_refuses_itself_1753`
+/// - witness: `module::tests::an_empty_module_beside_a_stray_declares`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
 /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `tests::namespace::an_unqualified_import_binds_no_alias`
@@ -2721,14 +2726,19 @@ pub fn collect_source<'source>(
         pieces: Pieces::new(),
         ordinals: BTreeMap::new(),
     };
+    // A datatype declares its family's slot before it is entered, so the slots
+    // count it; a module may declare no slot, so the structures count it.
     let declared_before = (
         collector.collected.slots.len(),
         collector.collected.structures.len(),
-        collector.collected.data.len(),
     );
     let mut strays: Vec<Stray<'source>> = Vec::new();
     let mut decorations: Vec<Placed> = Vec::new();
     let mut after_stray = false;
+    // A complete item of the grammar the lowering does not reach yet is a
+    // declaration out of the fragment: it carries its own refusal, whatever
+    // else the source declares. One the parser repaired is malformed instead.
+    let mut items_refused = false;
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
@@ -2815,6 +2825,19 @@ pub fn collect_source<'source>(
         // The blocks before a child that stands on its own decorate it; before
         // a module, an import or a member they decorate nothing.
         if let Some(refusal) = strayed(collector.module_child(child))? {
+            items_refused |= collector.tree.node(child.node).is_some_and(|held| {
+                matches!(held.label(), NodeLabel::Meld(mold) | NodeLabel::Tile(mold)
+                    if pbg.mold(mold).is_ok_and(|def| def.sort == Sort::Item))
+                    && !collector.tree.positions().any(|position| {
+                        collector.tree.node(position).is_some_and(|inner| {
+                            matches!(
+                                inner.label(),
+                                NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }
+                            ) && inner.span().start() >= child.span.start()
+                                && inner.span().end() <= child.span.end()
+                        })
+                    })
+            });
             strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
             after_stray = true;
         }
@@ -2830,11 +2853,11 @@ pub fn collect_source<'source>(
     {
         strays.push(Stray::of(block, refusal, Vec::new()));
     }
-    // A source that declares nothing is no list of declarations: its first
-    // stray refuses it whole.
+    // A source that declares nothing, not even an item out of the fragment, is
+    // no list of declarations: its first stray refuses it whole.
     let declared = collector.collected.slots.len() > declared_before.0
         || collector.collected.structures.len() > declared_before.1
-        || collector.collected.data.len() > declared_before.2;
+        || items_refused;
     let mut strays = strays.into_iter();
     if !declared && let Some(first) = strays.next() {
         return Err(first.refusal);
@@ -10302,6 +10325,64 @@ mod tests
             "both declarations are kept, and each stray refused on its own"
         );
         assert_eq!(collected.by_name.len(), 2, "a stray enters no name table");
+    }
+
+    /// A source of one item the lowering does not reach refuses that item, not
+    /// the source: an operator declaration and an extern block alone each
+    /// carry their refusal (#1753).
+    #[test]
+    fn a_lone_item_out_of_the_fragment_refuses_itself_1753()
+    {
+        let pbg = grammar();
+        for (text, held) in [
+            ("op prefix 9 \"!\" ;", "op"),
+            (
+                "extern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}",
+                "extern",
+            ),
+        ] {
+            let tree = parsed(&pbg, SourceText::from(text));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            let read: Vec<_> = collected
+                .slots
+                .iter()
+                .map(|slot| {
+                    (
+                        slot.name,
+                        slot.role,
+                        matches!(slot.refusal, Maybe::Present(_)),
+                    )
+                })
+                .collect();
+
+            assert_eq!(
+                read,
+                [(SurfaceName::from(held), Role::Held, true)],
+                "the item alone is held with its own refusal: {text}"
+            );
+        }
+    }
+
+    /// A module with no member declares no slot, yet it declares: beside it
+    /// alone, a stray refuses itself, and the source is kept.
+    #[test]
+    fn an_empty_module_beside_a_stray_declares()
+    {
+        let pbg = grammar();
+        let tree = parsed(&pbg, SourceText::from("module M { }\n3 ;"));
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let read: Vec<_> = collected
+            .slots
+            .iter()
+            .map(|slot| (slot.name, slot.role))
+            .collect();
+
+        assert_eq!(
+            read,
+            [(SurfaceName::from("3"), Role::Held)],
+            "the stray alone is a slot, held with its own refusal"
+        );
+        assert_eq!(collected.structures.len(), 1, "the module is kept");
     }
 
     #[test]

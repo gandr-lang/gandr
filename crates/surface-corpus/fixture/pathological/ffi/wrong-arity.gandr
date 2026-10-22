@@ -1,0 +1,13 @@
+// A foreign function called with fewer arguments than its signature takes,
+// to be refused at the call (#327). The lowering reads neither the extern
+// block nor a run target yet (#1105).
+
+/// The maths library's power function.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+extern "c" from "m" {
+  def pow(base: f64, exp: f64) -> f64;
+}
+
+/// The run target calls it with its base alone (#1105).
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+m.pow(2.0f64)

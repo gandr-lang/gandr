@@ -1,3 +1,4 @@
 /// `operator_declaration`: an operator fixity declaration: a fixity, a precedence and the operator's text.
-/// parse-only: the lowering refuses an operator declaration as a whole, out of its fragment; #1111 tracks it.
+/// The checker does not reach this form yet; #1111 tracks it.
+@[ refuses("OutOfFragment.operator_declaration") ]
 op prefix 9 "!" ;

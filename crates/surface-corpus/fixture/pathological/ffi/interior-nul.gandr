@@ -1,0 +1,13 @@
+// A C string with an interior NUL handed to a foreign function: the string
+// would end early at the seam, so the call is to be refused (#327). The
+// lowering reads neither the extern block nor a run target yet (#1105).
+
+/// The test library's string length.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+extern "c" from "testlib" {
+  def gandr_test_strlen(s: CStr) -> u64;
+}
+
+/// The run target measures a string holding a NUL (#1105).
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+testlib.gandr_test_strlen("a\0b")

@@ -1,0 +1,18 @@
+// A foreign call: an extern block binds a C library's functions under an
+// alias, and a run calls them as effects at the host seam (#327). The
+// lowering reads neither the extern block nor a run target yet (#1105).
+
+/// The test library's adder and string length.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+extern "c" from "./testlib" as testlib {
+  def gandr_test_add(a: i64, b: i64) -> i64;
+  def gandr_test_strlen(s: CStr) -> u64;
+}
+
+/// The run target adds twenty-one to itself and measures a string (#1105).
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+{
+  run doubled <- testlib.gandr_test_add(21i64, 21i64);
+  run length <- testlib.gandr_test_strlen("hello");
+  pure (doubled, length)
+}

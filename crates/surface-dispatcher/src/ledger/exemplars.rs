@@ -20,8 +20,6 @@
 //!   lowers, no declaration is refused and the attribute is filed on one. The
 //!   `doc` attribute is filed as documentation, so its exemplar's declaration
 //!   must carry documentation beyond the opening comment's lines;
-//! - a parse-only rule exemplar names its reason, and the lowering refuses it
-//!   as a whole;
 //! - a glyph rule's exemplar writes each spelling the spelling table gives: a
 //!   tile of the rule written as the glyph, and one written as its ASCII token,
 //!   or, for a glyph the table pairs with a head, a call of the head. The table
@@ -57,7 +55,7 @@
 //! the smallest corpus form whose tree holds each rule's molds; each is then
 //! cut down by hand.
 //!
-//! # Every exemplar settles, but the parse-only
+//! # Every exemplar settles
 //!
 //! The `ledger` directory is a fixture root (the `root` module), so `mise run
 //! check:exemplars` settles every exemplar under `gandr test`: each declaration
@@ -65,20 +63,6 @@
 //! it holds and `refuses` naming the refusal where the checker does not reach
 //! the form yet. Such an expectation breaks when the checker grows, and the
 //! exemplar's comment names the issue that would settle it.
-//!
-//! A rule exemplar the lowering refuses as a whole has no declaration to carry
-//! an expectation. Its opening comment carries a line `/// parse-only:
-//! <reason>` instead, the reason naming why the lowering refuses it, and
-//! `check:exemplars` leaves it out. The line holds only while the refusal does:
-//! once the lowering reads the source, the line is a finding.
-//!
-//! - Choice: a line in the exemplar's own header, checked here against the
-//!   lowering.
-//! - Alternatives: the corpus's `pending` set, which moves the file away from
-//!   the name the bijection reads; an attribute, which a source refused before
-//!   any declaration exists cannot carry.
-//! - Reversal: when the lowering admits every committed form, no exemplar is
-//!   parse-only and the line goes.
 //!
 //! # Features exemplars exhibit
 //!
@@ -123,10 +107,6 @@ const ATTRIBUTES: &str = "attributes";
 
 /// The directory of features exemplars under the exemplar directory.
 const FEATURES: &str = "features";
-
-/// The opening comment's line marking a rule exemplar the lowering refuses as
-/// a whole, followed by the reason.
-const PARSE_ONLY: &str = "/// parse-only:";
 
 /// The extension every exemplar carries.
 const EXTENSION: &str = "gandr";
@@ -247,11 +227,6 @@ pub enum ExemplarFault
         /// The attribute.
         attribute: String,
     },
-    /// A parse-only exemplar names no reason.
-    Unreasoned,
-    /// A parse-only exemplar the lowering reads: its declarations can state
-    /// their expectations.
-    Lowered,
     /// A features exemplar states an expectation the strict root refuses.
     Unexhibited
     {
@@ -278,7 +253,6 @@ impl core::fmt::Display for ExemplarFault
     ///   file and compared whole. The wording is the report's, not pinned
     ///   beyond those findings.
     /// - witness: `ledger::exemplars::tests::each_check_names_its_file`
-    /// - witness: `ledger::exemplars::tests::a_parse_only_exemplar_holds_while_the_lowering_refuses_it`
     /// - witness: `ledger::exemplars::tests::a_features_exemplar_states_only_what_holds`
     #[inline]
     fn fmt(
@@ -299,10 +273,14 @@ impl core::fmt::Display for ExemplarFault
                 noun: "obligation"
             }),
             Self::Items { count, expected } => {
-                write!(f, "holds {} of its rule where it shows {expected}", super::Counted {
-                    count,
-                    noun: "item"
-                })
+                write!(
+                    f,
+                    "holds {} of its rule where it shows {expected}",
+                    super::Counted {
+                        count,
+                        noun: "item"
+                    }
+                )
             },
             Self::Unwritten { ref rule, spelling } => {
                 write!(f, "writes no tile of rule `{rule}` as `{spelling}`")
@@ -314,12 +292,11 @@ impl core::fmt::Display for ExemplarFault
             Self::Unfiled { ref attribute } => {
                 write!(f, "the attribute `{attribute}` is filed on no declaration")
             },
-            Self::Unreasoned => f.write_str("is parse-only and names no reason"),
-            Self::Lowered => f.write_str(
-                "is parse-only, but the lowering reads it: its declarations state their expectations",
-            ),
             Self::Unexhibited { schema } => {
-                write!(f, "states `{schema}`, but a features exemplar shows what holds")
+                write!(
+                    f,
+                    "states `{schema}`, but a features exemplar shows what holds"
+                )
             },
         }
     }
@@ -466,14 +443,12 @@ impl core::fmt::Display for ExemplarReport
 /// - hypothesis: L3 — the committed exemplars verify with no finding; a renamed
 ///   exemplar is two findings, its rule missing and its file stray; an exemplar
 ///   replaced by another rule's form fails the mold check; an uncommented,
-///   two-item or grouted exemplar fails by name; a parse-only exemplar holds
-///   while the lowering refuses it and names a reason; a features exemplar
-///   stating `owes` or `refuses` is a finding.
+///   two-item or grouted exemplar fails by name; a features exemplar stating
+///   `owes` or `refuses` is a finding.
 /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
 /// - witness: `ledger::exemplars::tests::a_renamed_exemplar_breaks_the_bijection`
 /// - witness: `ledger::exemplars::tests::an_exemplar_of_another_form_lacks_the_mold`
 /// - witness: `ledger::exemplars::tests::each_check_names_its_file`
-/// - witness: `ledger::exemplars::tests::a_parse_only_exemplar_holds_while_the_lowering_refuses_it`
 /// - witness: `ledger::exemplars::tests::a_features_exemplar_states_only_what_holds`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.verified <= rules.len().saturating_add(AttributeRegistry::names().len())))]
 pub(super) fn verify(
@@ -587,9 +562,8 @@ fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 /// - ensures: `Ok` exactly when the file reads, opens with a comment naming the
 ///   subject, parses with no obligation, holds one item of its rule per
 ///   spelling (context declarations beside them are free), holds a tile of the
-///   subject's rule or files the subject's attribute, writes each spelling of a
-///   glyph rule, and, when its comment marks it parse-only, names a reason and
-///   is refused as a whole by the lowering.
+///   subject's rule or files the subject's attribute, and writes each spelling
+///   of a glyph rule.
 /// - fails: the first check that does not hold.
 /// - panics: none.
 ///
@@ -601,7 +575,6 @@ fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 /// - witness: `ledger::exemplars::tests::each_check_names_its_file`
 /// - witness: `ledger::exemplars::tests::an_exemplar_of_another_form_lacks_the_mold`
 /// - witness: `ledger::exemplars::tests::a_glyph_exemplar_writes_both_spellings`
-/// - witness: `ledger::exemplars::tests::a_parse_only_exemplar_holds_while_the_lowering_refuses_it`
 #[spec(ensures: |ref ret| ret.is_ok() || !matches!(*ret, Err(ExemplarFault::Missing { .. } | ExemplarFault::Stray)))]
 fn exemplar(
     pbg: &Pbg,
@@ -679,58 +652,9 @@ fn exemplar(
             .count(),
     };
     match subject {
-        Subject::Rule(rule) => {
-            written(pbg, tree, rule, &glyphs)?;
-            parse_only(pbg, tree, SourceText::from(text.as_str()))
-        },
+        Subject::Rule(rule) => written(pbg, tree, rule, &glyphs),
         Subject::Attribute(attribute) => filed(pbg, tree, attribute, header),
     }
-}
-
-/// Verify a rule exemplar whose opening comment marks it parse-only names its
-/// reason and is refused as a whole by the lowering.
-///
-/// # Specification
-/// - requires: `tree` is the parse of `source`.
-/// - ensures: `Ok` when no line of the opening comment starts with the
-///   parse-only mark, or one does, names a reason after it, and the lowering
-///   refuses the source as a whole.
-/// - fails: a mark with no reason, or a source the lowering reads.
-/// - panics: none.
-///
-/// # Errors
-/// [`ExemplarFault::Unreasoned`] or [`ExemplarFault::Lowered`].
-///
-/// # Adequacy
-/// - hypothesis: L3 — a form the lowering refuses holds with a reason and fails
-///   without one; a form the lowering reads fails when marked.
-/// - witness: `ledger::exemplars::tests::a_parse_only_exemplar_holds_while_the_lowering_refuses_it`
-#[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(ExemplarFault::Unreasoned | ExemplarFault::Lowered)))]
-fn parse_only(
-    pbg: &Pbg,
-    tree: &SyntaxTree<'_>,
-    source: SourceText<'_>,
-) -> Result<(), ExemplarFault>
-{
-    let Some(reason) = <&str>::from(source)
-        .lines()
-        .take_while(|line| line.starts_with("///"))
-        .find_map(|line| line.strip_prefix(PARSE_ONLY))
-    else {
-        return Ok(());
-    };
-    if reason.trim().is_empty() {
-        return Err(ExemplarFault::Unreasoned);
-    }
-    let mut arena = CoreArena::new();
-    lower_module(
-        pbg,
-        tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .map_or(Ok(()), |_module| Err(ExemplarFault::Lowered))
 }
 
 /// Verify the features exemplar at `path` states only what the strict root
@@ -1254,35 +1178,6 @@ mod tests
             "equivalence_type.gandr: writes no tile of rule `equivalence_type` as `<~>`",
             "isomorphism_type.gandr: writes no tile of rule `isomorphism_type` as `Iso`",
             "universe_flow_type.gandr: holds 1 item of its rule where it shows 2",
-        ]);
-    }
-
-    #[test]
-    fn a_parse_only_exemplar_holds_while_the_lowering_refuses_it()
-    {
-        let directory = copied(Path::new("parse-only"));
-        for (file, text) in [
-            (
-                "syntax/extern_block.gandr",
-                "/// `extern_block`: foreign declarations.\n/// parse-only: the lowering admits no extern block.\nextern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}\n",
-            ),
-            (
-                "syntax/operator_declaration.gandr",
-                "/// `operator_declaration`: no reason given.\n/// parse-only:\nop prefix 9 \"!\" ;\n",
-            ),
-            (
-                "syntax/def_value.gandr",
-                "/// `def_value`: a form the lowering reads.\n/// parse-only: claimed all the same.\ndef answer = 42 ;\n",
-            ),
-        ] {
-            std::fs::write(directory.join(file), text).expect("the exemplar is replaced");
-        }
-        let report = verified(&directory);
-        let mut findings = named(&report);
-        findings.sort();
-        assert_eq!(findings, [
-            "def_value.gandr: is parse-only, but the lowering reads it: its declarations state their expectations",
-            "operator_declaration.gandr: is parse-only and names no reason",
         ]);
     }
 

@@ -1,5 +1,0 @@
-extern "c" from "sensor" {
-  def read(channel: i32) -> i64;
-}
-
-sensor.read(0i32)
