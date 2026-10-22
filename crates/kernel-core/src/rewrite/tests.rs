@@ -205,6 +205,94 @@ fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
 }
 
 #[test]
+fn sharing_an_endpoint_binds_its_node_and_raises_the_rest()
+{
+    let mut arena = TermArena::new();
+    let head = arena.value_constant(gandr_kernel_term::ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let first = gandr_kernel_term::Component::from(0_usize);
+    let variable = |at: u32| Some(Value::Variable(DeBruijnIndex::from(at)));
+    // `x ← ⟨k k⟩.0; return (⟨k k⟩, ⟨k k⟩', x, y)`: the closed endpoint read
+    // at the root and again under the bind, beside a twin of equal content
+    // minted apart, the bind's variable and a free one.
+    let call = arena.computation_application(forced, head);
+    let endpoint = arena.value_returned(call);
+    let twin = arena.value_returned(call);
+    let projected = arena.computation_tuple_projection(endpoint, first);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let free = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let tuple = arena.value_tuple(&[endpoint, twin, bound, free]);
+    let returned = arena.computation_return(tuple);
+    let subject = arena.computation_bind(projected, returned);
+    let shared = super::share_endpoint(
+        &mut arena,
+        &mut ContentTable::new(),
+        &mut RewriteMemo::new(),
+        subject,
+        endpoint,
+    );
+    let Some(&Computation::Bind(read, body)) = arena.computation(shared)
+    else {
+        panic!("a bind");
+    };
+    let Some(&Computation::TupleProjection(inspected, _)) = arena.computation(read)
+    else {
+        panic!("a projection");
+    };
+    // At the root the endpoint reads the new binder's variable.
+    assert_eq!(arena.value(inspected).cloned(), variable(0));
+    let Some(&Computation::Return(components)) = arena.computation(body)
+    else {
+        panic!("a return");
+    };
+    let Some(&Value::Tuple(ref components)) = arena.value(components)
+    else {
+        panic!("a tuple");
+    };
+    let reading = |at: usize| arena.value(*components.get(at)?);
+    // Under the bind it reads that variable one binder out, the twin minted
+    // apart is kept, the bind's variable stands and the free one rises past
+    // the new binder.
+    assert_eq!(reading(0).cloned(), variable(1));
+    assert_eq!(
+        components.get(1),
+        Some(&twin),
+        "a twin minted apart is not the endpoint"
+    );
+    assert_eq!(reading(2).cloned(), variable(0));
+    assert_eq!(reading(3).cloned(), variable(2));
+    // `x ← ⟨k z⟩.0; return ⟨k z⟩`, `z` free: under the bind the node reads
+    // the bind's variable, so it is not the endpoint read at the root.
+    let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(forced, argument);
+    let open = arena.value_returned(call);
+    let projected = arena.computation_tuple_projection(open, first);
+    let kept = arena.computation_return(open);
+    let subject = arena.computation_bind(projected, kept);
+    let shared = super::share_endpoint(
+        &mut arena,
+        &mut ContentTable::new(),
+        &mut RewriteMemo::new(),
+        subject,
+        open,
+    );
+    let Some(&Computation::Bind(read, body)) = arena.computation(shared)
+    else {
+        panic!("a bind");
+    };
+    let Some(&Computation::TupleProjection(inspected, _)) = arena.computation(read)
+    else {
+        panic!("a projection");
+    };
+    assert_eq!(arena.value(inspected).cloned(), variable(0));
+    assert_eq!(
+        arena.computation(body),
+        Some(&Computation::Return(open)),
+        "an open endpoint under a binder is kept"
+    );
+}
+
+#[test]
 fn a_binder_spares_what_it_binds()
 {
     let mut arena = TermArena::new();

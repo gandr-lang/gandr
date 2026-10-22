@@ -1786,6 +1786,79 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
 }
 
 #[test]
+fn an_endpoint_read_twice_runs_its_call_once_1747()
+{
+    // `x ← ⟨tag u⟩.0; y ← ⟨tag u⟩.1; return y` against `return t`, `tag =
+    // λb. return (b, t)` a definition: a reading carried between two
+    // carriers, which takes both components of the pair its moved argument
+    // returns, in miniature. The endpoint's call waits on `tag`, so it is
+    // bound once over both projections and one recorded unfold serves both.
+    // Before, each projection ran the call again and wanted an unfold of its
+    // own, which the producer, keeping one unfolding per held endpoint, never
+    // recorded.
+    use alloc::string::String;
+
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::StringLiteral;
+
+    let mut arena = TermArena::new();
+    let unit = arena.value_unit();
+    let text = arena.value_literal(Literal::Text(StringLiteral::new(String::from("t"))));
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let pair = arena.value_tuple(&[bound, text]);
+    let returns_pair = arena.computation_return(pair);
+    let body = arena.computation_lambda(returns_pair);
+    let body = arena.value_thunk(body);
+    let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Body(body)]);
+    let tag = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(tag);
+    let call = arena.computation_application(forced, unit);
+    let endpoint = arena.value_returned(call);
+    let first = arena.computation_tuple_projection(endpoint, Component::from(0_usize));
+    let second = arena.computation_tuple_projection(endpoint, Component::from(1_usize));
+    let returns_second = arena.computation_return(bound);
+    let rest = arena.computation_bind(second, returns_second);
+    let read = arena.computation_bind(first, rest);
+    let expected = arena.computation_return(text);
+    let unfold = [
+        ConversionDecision::Unfold {
+            constant: ReplayNode::Constant(ConstantIndex::from(0_usize)),
+        },
+        ConversionDecision::ReduceLeft {
+            redex: ReplayNode::Constant(ConstantIndex::from(0_usize)),
+        },
+    ];
+    let shared = ConversionDecision::ComparedShared {
+        left: ReplayNode::Other,
+        right: ReplayNode::Other,
+    };
+    let sides = ReplaySides::Computations(read, expected);
+    let once = [unfold[0], unfold[1], shared];
+    assert_eq!(
+        run(
+            &mut arena,
+            &unfoldings,
+            sides,
+            EngineClaim::Convertible,
+            &once
+        ),
+        KernelVerdict::Convertible
+    );
+    let twice = [unfold[0], unfold[1], unfold[0], unfold[1], shared];
+    assert_ne!(
+        run(
+            &mut arena,
+            &unfoldings,
+            sides,
+            EngineClaim::Convertible,
+            &twice
+        ),
+        KernelVerdict::Convertible,
+        "the shared call runs once: a second unfold finds nothing to unfold"
+    );
+}
+
+#[test]
 fn an_endpoint_passes_over_a_bind_its_own_elimination_built()
 {
     // `⟨pred ⟨pred x⟩ to n. return S(n)⟩` against `S(⟨pred ⟨pred x⟩⟩)`:

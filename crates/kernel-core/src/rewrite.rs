@@ -528,6 +528,19 @@ enum Rewrite
         /// The variable it reads as at the root.
         index: DeBruijnIndex,
     },
+    /// Raise every free index by one, as [`Rewrite::Shift`] does from no
+    /// cutoff, except at the returned endpoint `endpoint` — that node, met at
+    /// the root's depth or, when it reads no variable, under any binder — which
+    /// reads the variable of the binder just outside the root, raised under
+    /// every binder crossed.
+    Share
+    {
+        /// The endpoint shared, by its node.
+        endpoint: ValueId,
+        /// Whether the endpoint reads no variable, so that its node means the
+        /// same under every binder.
+        closed: bool,
+    },
     /// Substitute `replacement` as [`Rewrite::Substitute`] does, except at a
     /// decode whose returned code reads the binder: there `call` runs ahead,
     /// bound as the lowering binds a type-read call argument, and the code
@@ -557,7 +570,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// An instantiation at a call, or the rotation it carries a body
             /// with, decides a decode by whether its returned code reads the
-            /// binder, which a content key does not carry.
+            /// binder, and a share names its endpoint by its node; a content
+            /// key carries neither.
             Local,
         }
     }
@@ -595,7 +609,7 @@ impl Rewrite
                 constant,
                 index,
             },
-            Self::Instantiate { .. } | Self::Rotate { .. } => {
+            Self::Instantiate { .. } | Self::Rotate { .. } | Self::Share { .. } => {
                 return Maybe::Absent(keyed::Absent::Local);
             },
         })
@@ -979,6 +993,55 @@ where
     .value_type_or(subject)
 }
 
+/// The computation `subject` under one new binder, with every occurrence of
+/// the returned endpoint `endpoint` reading that binder's variable.
+///
+/// # Specification
+/// - requires: `table` is this session's; `memo` holds only entries this
+///   session recorded against this arena.
+/// - ensures: `subject` with every free index raised by one, as
+///   [`shift_computation`] by one from no cutoff raises it, except that the
+///   node `endpoint` itself — met at the root's depth, or under any binder when
+///   the endpoint reads no variable — becomes `Value::Variable(d)` under `d`
+///   binders; a node of equal content minted apart is raised, not replaced; an
+///   unreadable subject answers itself.
+/// - provides: one returned endpoint bound once for every elimination of it in
+///   a term, as the replay binds an endpoint whose call waits on a definition.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the endpoint at the root and under a binder, a node of
+///   equal content beside it, an open endpoint under a binder and a free
+///   variable, each asserted exactly.
+/// - witness: `rewrite::tests::sharing_an_endpoint_binds_its_node_and_raises_the_rest`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
+#[must_use]
+pub(crate) fn share_endpoint<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ComputationId,
+    endpoint: ValueId,
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let closed = crate::support::LooseDepths::new().value_reach(arena, endpoint)
+        == crate::support::LooseDepth::default();
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Share { endpoint, closed },
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
+}
+
 /// The value type `subject` with its innermost binder instantiated at
 /// `replacement`; see [`substitute_comp_type`].
 ///
@@ -1337,10 +1400,11 @@ where
 /// - measure: the multiset of scheduled opens, ordered by the arena position of
 ///   the node each names. An open pushes either its node's children, whose ids
 ///   are strictly below their parent's within a family, or — at the
-///   carried-occurrence arm alone — one sub-walk open on the replacement. A
-///   close pushes nothing, except an instantiation's close of a decode whose
-///   returned code reads its binder, which pushes two sub-walk opens, on the
-///   call and on the code's body. A record and a bind-ahead push nothing.
+///   carried-occurrence arm alone — one sub-walk open on the replacement; a
+///   share's endpoint answers at once and pushes nothing. A close pushes
+///   nothing, except an instantiation's close of a decode whose returned code
+///   reads its binder, which pushes two sub-walk opens, on the call and on the
+///   code's body. A record and a bind-ahead push nothing.
 /// - boundedness: the arena is finite and acyclic by the minting invariant, and
 ///   a minted node is never opened, so the set of openable nodes is finite. The
 ///   carried-occurrence arm and the decode close are the only ones whose
@@ -1435,6 +1499,16 @@ where
                 {
                     note_read(&mut reads, &mut reading, (node, depth));
                 }
+                // A share's endpoint answers at once: the variable of the binder
+                // outside the root, raised under every binder crossed.
+                if let Rewrite::Share { endpoint, closed } = step
+                    && node == AnyNode::Value(endpoint)
+                    && (closed || depth == BinderDepth::NONE)
+                {
+                    let shared = arena.value_variable(DeBruijnIndex::from(depth.0));
+                    results.push(RewriteOutcome::Value(shared));
+                    continue;
+                }
                 // The one arm that answers through a sub-walk rather than
                 // through its children: the occurrence being substituted, where
                 // the walk has crossed binders the replacement has to be carried
@@ -1456,6 +1530,7 @@ where
                     Maybe::Absent(
                         carrying::Absent::Shift
                         | carrying::Absent::Abstraction
+                        | carrying::Absent::Sharing
                         | carrying::Absent::Rotation
                         | carrying::Absent::NoCrossedBinders
                         | carrying::Absent::DifferentOccurrence
@@ -1665,6 +1740,8 @@ quenchant_shape::reason_enum! {
             Shift,
             /// Abstracting a constant substitutes no replacement.
             Abstraction,
+            /// Sharing an endpoint substitutes no replacement.
+            Sharing,
             /// A rotation renames indices and substitutes no replacement.
             Rotation,
             /// A replacement at depth zero crosses no binders.
@@ -1712,6 +1789,7 @@ quenchant_shape::reason_enum! {
 #[spec(ensures: |ret| match rewrite {
     Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
     Rewrite::Abstract { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Abstraction)),
+    Rewrite::Share { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Sharing)),
     Rewrite::Rotate { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Rotation)),
     Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
         if depth.0 == 0 {
@@ -1742,6 +1820,7 @@ fn carried_occurrence(
         },
         Rewrite::Shift { .. } => return Maybe::Absent(carrying::Absent::Shift),
         Rewrite::Abstract { .. } => return Maybe::Absent(carrying::Absent::Abstraction),
+        Rewrite::Share { .. } => return Maybe::Absent(carrying::Absent::Sharing),
         Rewrite::Rotate { .. } => return Maybe::Absent(carrying::Absent::Rotation),
     };
     if depth == BinderDepth::NONE {
@@ -2519,7 +2598,7 @@ Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 
         Some(&Value::Variable(_)) => true,
         Some(&Value::Constant(found)) => match rewrite {
             Rewrite::Abstract { constant, .. } if constant == found => matches!(arena.value(ret), Some(&Value::Variable(_))),
-            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } => ret == id,
+            Rewrite::Abstract { .. } | Rewrite::Shift { .. } | Rewrite::Substitute { .. } | Rewrite::Instantiate { .. } | Rewrite::Rotate { .. } | Rewrite::Share { .. } => ret == id,
         },
         Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
     },
@@ -2846,7 +2925,8 @@ fn close_value(
             | Rewrite::Shift { .. }
             | Rewrite::Substitute { .. }
             | Rewrite::Instantiate { .. }
-            | Rewrite::Rotate { .. } => id,
+            | Rewrite::Rotate { .. }
+            | Rewrite::Share { .. } => id,
         },
         Value::ListNil | Value::Literal(_) => id,
         Value::Tuple(ref components) => {
@@ -2948,10 +3028,11 @@ fn close_value(
 ///   index. A substituted occurrence at positive depth has already taken the
 ///   carrying path and never reaches this close.
 /// - ensures: for a shift, the index rises by the amount exactly when it is at
-///   or above the cutoff measured from this depth, and stands otherwise; for a
-///   substitution, an index below the depth stands, an index equal to it
-///   becomes the replacement, and an index above it lowers by one. Shift
-///   cutoffs and raised indices clamp at the representable ceiling.
+///   or above the cutoff measured from this depth, and stands otherwise, and a
+///   share moves it as a shift by one from no cutoff does; for a substitution,
+///   an index below the depth stands, an index equal to it becomes the
+///   replacement, and an index above it lowers by one. Shift cutoffs and raised
+///   indices clamp at the representable ceiling.
 /// - provides: the whole variable rule of both machines, written once.
 /// - fails: never.
 /// - panics: none.
@@ -2977,6 +3058,11 @@ fn close_value(
                 arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(amount.0))))
             }
         },
+        Rewrite::Share { .. } => if u32::from(index) < depth.0 {
+            ret == id
+        } else {
+            arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(1))))
+        },
         Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => match u32::from(index).cmp(&depth.0) {
             core::cmp::Ordering::Less => ret == id,
             core::cmp::Ordering::Equal => ret == replacement,
@@ -3001,28 +3087,15 @@ fn rewrite_variable(
     match rewrite {
         Rewrite::Abstract { .. } => id,
         Rewrite::Shift { cutoff, amount } => {
-            // reason: a cutoff beyond the index range uses its conservative ceiling.
-            let effective = BinderDepth(u32::from(arith::saturating_add(
-                arith::Int::from(cutoff.0),
-                arith::Int::from(depth.0),
-            )));
-            if index < effective {
-                id
-            }
-            else {
-                // reason: the shift specification clamps an out-of-range raised index.
-                let raised = u32::from(arith::saturating_add(
-                    arith::Int::from(index.0),
-                    arith::Int::from(amount.0),
-                ));
-                if raised == index.0 {
-                    id
-                }
-                else {
-                    arena.value_variable(DeBruijnIndex::from(raised))
-                }
-            }
+            shifted_variable(arena, id, (index, depth), (cutoff, amount))
         },
+        // A share raises every free index by one, as a shift by one does.
+        Rewrite::Share { .. } => shifted_variable(
+            arena,
+            id,
+            (index, depth),
+            (BinderDepth::NONE, BinderDepth::NONE.deeper()),
+        ),
         Rewrite::Substitute { replacement } | Rewrite::Instantiate { replacement, .. } => {
             match index.cmp(&depth) {
                 core::cmp::Ordering::Less => id,
@@ -3055,6 +3128,58 @@ fn rewrite_variable(
             },
             Some(_) | None => id,
         },
+    }
+}
+
+/// A variable at `index` under `depth` crossed binders, shifted by `amount`
+/// from `cutoff`.
+///
+/// # Specification
+/// - requires: `id` is the variable at `index`.
+/// - ensures: `id` when the index is below the cutoff measured from this depth
+///   or the raise saturates to the same index; otherwise the variable at the
+///   index raised by the amount, clamped at the representable ceiling.
+/// - provides: the shift's variable rule, which a share uses too.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rewrite_variable`]'s shift.
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+#[spec(ensures: |ret| if index.0 < cutoff.0.saturating_add(depth.0)
+    || index.0.saturating_add(amount.0) == index.0 {
+    ret == id
+} else {
+    arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(index.0.saturating_add(amount.0))))
+})]
+fn shifted_variable(
+    arena: &mut TermArena,
+    id: ValueId,
+    (index, depth): (BinderDepth, BinderDepth),
+    (cutoff, amount): (BinderDepth, BinderDepth),
+) -> ValueId
+{
+    // reason: a cutoff beyond the index range uses its conservative ceiling.
+    let effective = BinderDepth(u32::from(arith::saturating_add(
+        arith::Int::from(cutoff.0),
+        arith::Int::from(depth.0),
+    )));
+    if index < effective {
+        id
+    }
+    else {
+        // reason: the shift specification clamps an out-of-range raised index.
+        let raised = u32::from(arith::saturating_add(
+            arith::Int::from(index.0),
+            arith::Int::from(amount.0),
+        ));
+        if raised == index.0 {
+            id
+        }
+        else {
+            arena.value_variable(DeBruijnIndex::from(raised))
+        }
     }
 }
 

@@ -4,6 +4,8 @@
 // operation is carried along the carrier's path, its argument moved back by
 // the equivalence's backward map and its result forward by its forward map,
 // and the carried operation is related to the other structure's by `funext`.
+// A reading carried between two different carriers, booleans tagged with
+// unit and the booleans, is related the same way.
 
 // Negation, `not`, and the identity, `same`, on the booleans.
 import "./funext.gandr" ;
@@ -45,3 +47,34 @@ def oneToggle = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
 @[ refuses("PointwiseDistinct") ]
 def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) ;
 def unread = funext(transport(\t. t => Bool, negation, same), same) ;
+
+/// The boolean a tagged boolean carries.
+@[ checks ]
+def untag(p : Bool * Unit) -> -F Bool {
+  case p { (x, u) => x }
+}
+
+/// A boolean tagged with unit.
+@[ checks ]
+def tag(b : Bool) -> -F (Bool * Unit) {
+  (b, unit)
+}
+
+/// The tagged booleans to the booleans: the tag dropped, and added back.
+@[ checks ]
+def tagging : Path(Type, Bool * Unit, Bool) ;
+def tagging = equiv(untag, tag) ;
+
+/// The reading of a tagged boolean, its first component.
+@[ checks ]
+def readTagged(p : Bool * Unit) -> -F Bool {
+  case p { (x, u) => x }
+}
+
+/// #1747: the reading carried along `tagging` reads the boolean itself. Its
+/// argument moves back by `tag`, and the reading takes both components of the
+/// pair that returns; the kernel ran `tag` once per component where the
+/// checker ran it once, and refused the pointwise evidence.
+@[ checks ]
+def untagged : Path(Bool => Bool, transport(\t. t => Bool, tagging, readTagged), same) ;
+def untagged = funext(transport(\t. t => Bool, tagging, readTagged), same) ;
