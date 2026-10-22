@@ -248,7 +248,17 @@ impl fmt::Display for MessageKey
     /// `ledger`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a refusal's key is its `refuses` spelling, a lint's its name;
+    ///   the three statements' keys are their fixed words; propagates a
+    ///   destination failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each key prints the word a tool matches it by, every
+    ///   word distinct.
+    /// - witness: `model::tests::a_message_key_and_an_identifier_print_their_spellings`
     #[inline]
     fn fmt(
         &self,
@@ -592,7 +602,15 @@ impl fmt::Display for Identifier
     /// Writes the identifier's spelling.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a refusal's `refuses` spelling, or a lint's name; propagates
+    ///   a destination failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an identifier prints as its message key does.
+    /// - witness: `model::tests::a_message_key_and_an_identifier_print_their_spellings`
     #[inline]
     fn fmt(
         &self,
@@ -1277,13 +1295,20 @@ struct JsonLocus
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::ToString as _;
+
+    use gandr_surface_corpus::RefusalName;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Identifier;
     use super::Locus;
+    use super::MessageKey;
     use super::located;
+    use crate::lint::Lint;
+    use crate::report::Unsettlement;
 
     #[test]
     fn a_locus_counts_lines_and_characters()
@@ -1305,6 +1330,43 @@ mod tests
             Locus::of(text, at(1_usize, 2_usize)),
             Maybe::Absent(located::Absent::OutsideText),
             "a span splitting a character is not located"
+        );
+    }
+
+    #[test]
+    fn a_message_key_and_an_identifier_print_their_spellings()
+    {
+        let refusal = RefusalName::ShadowedBuiltin;
+        let keys = [
+            (MessageKey::Refusal(refusal), "ShadowedBuiltin"),
+            (MessageKey::Lint(Lint::ExplicitExits), "explicit-exits"),
+            (
+                MessageKey::Unsettled(Unsettlement::Obligations),
+                "unsettled",
+            ),
+            (MessageKey::Goal, "goal"),
+            (MessageKey::Ledger, "ledger"),
+        ];
+        for (key, word) in keys {
+            assert_eq!(
+                key.to_string(),
+                word,
+                "{key:?} prints the word a tool matches"
+            );
+        }
+        assert_eq!(
+            Identifier::Refusal(refusal.spelling()).to_string(),
+            MessageKey::Refusal(refusal).to_string(),
+            "a refusal's identifier prints as its key"
+        );
+        assert_eq!(
+            Identifier::Lint(Lint::ExplicitRuns).to_string(),
+            MessageKey::Lint(Lint::ExplicitRuns).to_string(),
+            "a lint's identifier prints as its key"
+        );
+        assert_eq!(
+            Identifier::Lint(Lint::ExplicitRuns).to_string(),
+            "explicit-runs"
         );
     }
 }

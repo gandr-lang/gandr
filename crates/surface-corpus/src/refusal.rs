@@ -232,7 +232,17 @@ impl fmt::Display for Tag
     /// Writes the tag's text.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the tag's text unchanged; propagates a destination
+    ///   failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text; the witness
+    ///   reads each print back as the name it spells.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a qualified name prints with its tag after the dot,
+    ///   and an empty print names no refusal.
+    /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
     #[inline]
     fn fmt(
         &self,
@@ -279,7 +289,19 @@ impl fmt::Display for Qualifier
     /// Writes the qualifier as a payload writes it after the variant's dot.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a form as the grammar names it, a form at a sort as the form,
+    ///   a dot and the sort's tag, a named reading as its tag; propagates a
+    ///   destination failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text; the witness
+    ///   reads each print back as the name it spells.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each qualifier's print is the spelling a producer
+    ///   mints for it, the form, the form at a sort and the named readings
+    ///   among them.
+    /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
     #[inline]
     fn fmt(
         &self,
@@ -1682,7 +1704,17 @@ const MEMBER_FAULTS: [MemberFault; 19_usize] = [
 /// arity standing for every operand count.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: every boundary but reserved and unadmitted, once each, an arity
+///   at no operand.
+/// - panics: none.
+/// - executable: none — the list is the boundaries' own enumeration, which a
+///   predicate would restate; the witness mints each and reads it back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a crossed boundary named by no other producer, the
+///   endpoint's, is minted and read back only through this list.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 fn crossed() -> [FragmentBoundary; 14_usize]
 {
     [
@@ -1761,7 +1793,16 @@ fn fragment(feature: FragmentFeature) -> Qualifier
 /// operand count.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the boundary's variant name, an arity's without its count.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `OutOfFragment.WrongSort` and `OutOfFragment.Endpoint`
+///   are minted by their boundaries' tags.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 const fn boundary_tag(boundary: FragmentBoundary) -> Tag
 {
     Tag(match boundary {
@@ -1787,7 +1828,16 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
 /// The tag a sort is named by, snake case as a form is.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the sort's name in snake case.
+/// - panics: none.
+/// - executable: none — the tag is the sort's spelling, which a predicate would
+///   restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `OutOfFragment.instantiation_expression.value` is minted
+///   with the value sort's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 const fn sort_tag(sort: FragmentSort) -> Tag
 {
     Tag(match sort {
@@ -1805,7 +1855,15 @@ const fn sort_tag(sort: FragmentSort) -> Tag
 /// The tag a checker former is named by: its variant.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the former's variant name.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `OutOfFragment.Perform` is minted by its former's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 const fn former_tag(former: UnadmittedFormer) -> Tag
 {
     Tag(match former {
@@ -1839,7 +1897,15 @@ const fn former_tag(former: UnadmittedFormer) -> Tag
 /// The tag a model component's fault is named by: its variant.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the fault's variant name.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `UnstatedComponent.ManyOut` is minted by its fault's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 const fn model_tag(fault: ModelFault) -> Tag
 {
     Tag(match fault {
@@ -1859,7 +1925,16 @@ const fn model_tag(fault: ModelFault) -> Tag
 /// The tag a description member's fault is named by: its variant.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the fault's variant name.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate; the witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `UndescribedMember.HigherCell` is minted by its fault's
+///   tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 const fn member_tag(fault: MemberFault) -> Tag
 {
     Tag(match fault {
