@@ -877,6 +877,33 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
 }
 
 #[test]
+fn the_recovery_sweep_reports_its_table_and_count()
+{
+    let scratch = Scratch::new(Path::new("recovery"));
+    let _path = scratch.file(
+        Path::new("syntax/def_value.gandr"),
+        Text::from("/// `def_value`: a definition.\n@[ checks ]\ndef answer = 42 ;\n"),
+    );
+    let swept = ran(gandr(&[
+        Path::new("ledger"),
+        Path::new("recovery"),
+        &scratch.0,
+    ]));
+    assert_eq!(code(&swept), Code(0_i32), "{}", stderr(&swept));
+    let printed = stdout(&swept);
+    assert!(
+        printed
+            .lines()
+            .any(|line| line == "near miss: `def` → `de`"),
+        "the table names what each tile is mistaken for: {printed}"
+    );
+    assert!(
+        printed.ends_with(" accepted, 0 marked elsewhere\n"),
+        "the count closes the report: {printed}"
+    );
+}
+
+#[test]
 fn every_width_prints_the_serial_run()
 {
     let scratch = Scratch::new(Path::new("widths"));

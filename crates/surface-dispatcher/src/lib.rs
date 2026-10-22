@@ -254,6 +254,8 @@ pub use crate::ledger::ExemplarReport;
 pub use crate::ledger::LedgerFault;
 pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;
+pub use crate::ledger::RecoveryFinding;
+pub use crate::ledger::RecoveryReport;
 pub use crate::ledger::SyntaxLedger;
 pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;

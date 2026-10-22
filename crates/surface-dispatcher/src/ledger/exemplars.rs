@@ -583,7 +583,7 @@ pub(super) fn verify(
 ///   file is listed.
 /// - witness: `ledger::exemplars::tests::a_renamed_exemplar_breaks_the_bijection`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |paths| paths.iter().all(|path| path.starts_with(folder))))]
-fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
+pub(super) fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 {
     let unreadable = |error| LedgerFault::Unreadable {
         path: folder.to_path_buf(),
@@ -1078,7 +1078,9 @@ mod tests
         };
         match task.run() {
             Ok(LedgerRun::Verified(report)) => report,
-            Ok(LedgerRun::Written(_)) => panic!("verifying writes nothing"),
+            Ok(LedgerRun::Written(_) | LedgerRun::Swept(_)) => {
+                panic!("verifying writes and sweeps nothing")
+            },
             Err(fault) => panic!("the directory verifies: {fault}"),
         }
     }
