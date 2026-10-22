@@ -12,6 +12,8 @@ mod coincide;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
+mod differential;
+#[cfg(test)]
 mod entries;
 #[cfg(test)]
 mod parity;

@@ -850,6 +850,19 @@ impl CodeDefinitions
             .map(|(&constant, &body)| (constant, body))
     }
 
+    /// The definitions the normaliser unfolds: each body recorded, and each
+    /// data declaration presented, as every conversion this table answers
+    /// reads them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn normaliser(&self) -> Definitions<'_>
+    {
+        Definitions::new(&self.lowered, &self.environment, self.environment.root())
+    }
+
     /// One step of reduction at `code`'s head: a constant's δ-step, a static
     /// definition's δβ-step at a saturated instance, a static lambda's
     /// β-step at a saturated application, or a closed returned code's run to

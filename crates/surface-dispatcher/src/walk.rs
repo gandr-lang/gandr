@@ -79,6 +79,7 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map;
+use alloc::sync::Arc;
 use core::cell::OnceCell;
 use core::cmp::Reverse;
 use core::num::NonZeroUsize;
@@ -108,11 +109,14 @@ use crate::component::Grouped;
 use crate::component::ParsedBytes;
 use crate::component::Reading;
 use crate::component::group;
+use crate::compose::Admission;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
+use crate::compose::Keeping;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::judge_component;
+use crate::compose::kept;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::pool::Pool;
@@ -416,6 +420,8 @@ struct Held<'text>
     text: SourceText<'text>,
     /// Where the source's own bytes start in `text`.
     start: ByteOffset,
+    /// Its component's admission, when the walk keeps them.
+    admission: Maybe<Arc<Admission>, kept::Absent>,
 }
 
 impl Walk
@@ -550,13 +556,81 @@ impl Walk
     /// - witness: `walk::tests::a_source_given_twice_answers_twice_from_one_judgement`
     #[inline]
     pub fn visit<Stop, Visitor>(
-        mut self,
+        self,
         pool: &Pool,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
         Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
     {
+        self.visiting(pool, Keeping::Composed, |step, _unkept| visitor(step))
+    }
+
+    /// [`Self::visit`], handing each step beside the admission of the
+    /// component its source was judged in, as it stood before the kernel was
+    /// offered anything: the arena the component was judged over and the
+    /// checker's verdicts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the steps [`Self::visit`] hands over, in its order, each
+    ///   beside its component's admission, or [`kept::Absent::Unjudged`] for a
+    ///   fault and for a source whose component's lowering faulted or refused
+    ///   it whole; the sources of one component share one copy.
+    /// - provides: the corpus walk a differential evaluates the checked core
+    ///   of, apart from the program each composition carries.
+    /// - fails: never; as [`Self::visit`].
+    /// - panics: as [`Self::visit`].
+    /// - executable: none — as [`Self::visit`]; the witness evaluates every
+    ///   handed admission's `runs` items.
+    /// - intension: one copy of each judged component's arena and verdicts,
+    ///   held until its last source is handed over.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every `runs` item of the corpus is read from the
+    ///   admission handed beside its source.
+    /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    #[inline]
+    pub fn visit_admitting<Stop, Visitor>(
+        self,
+        pool: &Pool,
+        visitor: Visitor,
+    ) -> ControlFlow<Stop, RunReport>
+    where
+        Visitor: FnMut(Step<'_>, Maybe<&Admission, kept::Absent>) -> ControlFlow<Stop>,
+    {
+        self.visiting(pool, Keeping::Admission, visitor)
+    }
+
+    /// [`Self::visit`], each step handed beside its component's admission
+    /// when `keeping` asks for one.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::visit_admitting`] under [`Keeping::Admission`]; as
+    ///   [`Self::visit`] under [`Keeping::Composed`], each step beside
+    ///   [`kept::Absent::Unasked`] and no admission copied.
+    /// - executable: none — as [`Self::visit`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::visit`]'s witnesses under
+    ///   [`Keeping::Composed`], and as [`Self::visit_admitting`]'s under
+    ///   [`Keeping::Admission`].
+    /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+    /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+    /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    fn visiting<Stop, Visitor>(
+        mut self,
+        pool: &Pool,
+        keeping: Keeping,
+        mut visitor: Visitor,
+    ) -> ControlFlow<Stop, RunReport>
+    where
+        Visitor: FnMut(Step<'_>, Maybe<&Admission, kept::Absent>) -> ControlFlow<Stop>,
+    {
+        let unkept = match keeping {
+            Keeping::Composed => kept::Absent::Unasked,
+            Keeping::Admission => kept::Absent::Unjudged,
+        };
         let mut paths = Vec::new();
         let mut slots = Vec::new();
         let mut given = Vec::new();
@@ -589,7 +663,7 @@ impl Walk
                         Slot::Unreadable(unread) => SourceFault::Unreadable(unread),
                         Slot::Given { .. } => SourceFault::Grammar(error),
                     };
-                    visitor(Step::Fault { path, fault })?;
+                    visitor(Step::Fault { path, fault }, Maybe::Absent(unkept))?;
                 }
                 return ControlFlow::Continue(self.report);
             },
@@ -644,20 +718,26 @@ impl Walk
             // last step standing at each is handed over.
             let mut judged: BTreeMap<usize, Vec<Option<Held<'_>>>> = BTreeMap::new();
             for (path, slot) in paths.iter().zip(slots) {
-                let step = match slot {
+                let (step, admission) = match slot {
                     Slot::NoSource => {
                         self.report.faulted();
-                        Step::Fault {
-                            path,
-                            fault: SourceFault::NoSource,
-                        }
+                        (
+                            Step::Fault {
+                                path,
+                                fault: SourceFault::NoSource,
+                            },
+                            Maybe::Absent(unkept),
+                        )
                     },
                     Slot::Unreadable(error) => {
                         self.report.faulted();
-                        Step::Fault {
-                            path,
-                            fault: SourceFault::Unreadable(error),
-                        }
+                        (
+                            Step::Fault {
+                                path,
+                                fault: SourceFault::Unreadable(error),
+                            },
+                            Maybe::Absent(unkept),
+                        )
                     },
                     Slot::Given { given, root } => {
                         let Some(&placed) = grouped.placed.get(given)
@@ -716,14 +796,14 @@ impl Walk
                                     judge_regrouped(
                                         &mut self.report,
                                         grammar,
-                                        (root.corpus_root(), grant),
+                                        (root.corpus_root(), grant, keeping),
                                         again,
                                     )
                                 }
                                 else {
                                     judge(
                                         &mut self.report,
-                                        (root.corpus_root(), grant),
+                                        (root.corpus_root(), grant, keeping),
                                         component,
                                         lowering,
                                     )
@@ -742,7 +822,7 @@ impl Walk
                                 judge_regrouped(
                                     &mut self.report,
                                     grammar,
-                                    (root.corpus_root(), grant),
+                                    (root.corpus_root(), grant, keeping),
                                     again,
                                 )
                             };
@@ -770,16 +850,23 @@ impl Walk
                         else {
                             continue;
                         };
-                        settled(
-                            &mut self.report,
-                            path,
-                            root,
-                            (held.text, held.start),
-                            held.composed,
+                        (
+                            settled(
+                                &mut self.report,
+                                path,
+                                root,
+                                (held.text, held.start),
+                                held.composed,
+                            ),
+                            held.admission,
                         )
                     },
                 };
-                if let ControlFlow::Break(stop) = visitor(step) {
+                let admission = match admission {
+                    Maybe::Present(ref admission) => Maybe::Present(&**admission),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                };
+                if let ControlFlow::Break(stop) = visitor(step, admission) {
                     cursor.store(order.len(), Ordering::Relaxed);
                     return ControlFlow::Break(stop);
                 }
@@ -1125,8 +1212,10 @@ fn lower<'text>(
 /// - requires: `lowering` is what [`lower`] or [`lower_unit_source`] made of
 ///   `component`.
 /// - ensures: one held composition per member, in member order: what
-///   [`judge_component`] makes of a lowering, or the lowering's fault at every
-///   source; `report`'s spellings advance as [`judge_component`] says.
+///   [`judge_component`] makes of a lowering under `keeping`, each beside the
+///   component's one kept admission, or the lowering's fault at every source,
+///   with no admission; `report`'s spellings advance as [`judge_component`]
+///   says.
 /// - fails: never; a fault is carried in the answer.
 /// - panics: none.
 ///
@@ -1137,24 +1226,34 @@ fn lower<'text>(
 #[spec(ensures: |ref ret| ret.len() == component.members.len())]
 fn judge<'text>(
     report: &mut RunReport,
-    (root, grant): (CorpusRoot, &HostGrant),
+    (root, grant, keeping): (CorpusRoot, &HostGrant, Keeping),
     component: &'text Component,
     lowering: Result<Lowering<'text>, ComposeFault<'text>>,
 ) -> Vec<Held<'text>>
 {
-    let composed = match lowering {
+    let (composed, admission) = match lowering {
         Ok(lowering) => judge_component(
             root,
             (lowering, SourceText::from(component.text.as_str())),
             grant,
-            &component.members,
-            report.spellings_mut(),
+            (&component.members, report.spellings_mut()),
+            keeping,
         ),
-        Err(fault) => component
-            .members
-            .iter()
-            .map(|_| Err(fault.clone()))
-            .collect(),
+        Err(fault) => (
+            component
+                .members
+                .iter()
+                .map(|_| Err(fault.clone()))
+                .collect(),
+            Maybe::Absent(match keeping {
+                Keeping::Composed => kept::Absent::Unasked,
+                Keeping::Admission => kept::Absent::Unjudged,
+            }),
+        ),
+    };
+    let admission = match admission {
+        Maybe::Present(admission) => Maybe::Present(Arc::new(admission)),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
     };
     composed
         .into_iter()
@@ -1168,12 +1267,14 @@ fn judge<'text>(
                     .unwrap_or_default(),
             ),
             start: member.start,
+            admission: admission.clone(),
         })
         .collect()
 }
 
-/// Lower and judge each component of `again`, under `root` and `grant`, and
-/// hand back each given source's held composition in the order given.
+/// Lower and judge each component of `again`, under `root` and `grant`,
+/// keeping each one's admission when `keeping` asks for it, and hand back
+/// each given source's held composition in the order given.
 ///
 /// # Specification
 /// - requires: `again` is what [`regroup`] made of one component.
@@ -1192,7 +1293,7 @@ fn judge<'text>(
 fn judge_regrouped<'text>(
     report: &mut RunReport,
     grammar: &Pbg,
-    (root, grant): (CorpusRoot, &HostGrant),
+    (root, grant, keeping): (CorpusRoot, &HostGrant, Keeping),
     again: &'text Grouped,
 ) -> Vec<Option<Held<'text>>>
 {
@@ -1211,7 +1312,7 @@ fn judge_regrouped<'text>(
             .parsed_mut()
             .absorb(ParsedBytes::from(part.text.len()));
         parts.push(
-            judge(report, (root, grant), part, lowering)
+            judge(report, (root, grant, keeping), part, lowering)
                 .into_iter()
                 .map(Some)
                 .collect(),

@@ -242,6 +242,21 @@ pub enum Engine
     Executor,
 }
 
+impl Engine
+{
+    /// The emitter's tier the engine runs on.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn tier(self) -> Tier
+    {
+        match self {
+            Self::Native => Tier::Native,
+            Self::Executor => Tier::Executor,
+        }
+    }
+}
+
 /// Which tier a run asks the emitter for.
 ///
 /// # Specification
@@ -421,6 +436,19 @@ pub struct SealedRun
     module: String,
     /// The declared type of the declaration run, spelled on one line.
     declared: String,
+}
+
+/// Where a run of a declaration ended: its terminal value read back, or the
+/// evaluation that ended it before there was one to read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Terminal<'source>
+{
+    /// The terminal value, read back as the computation returning it into
+    /// the arena the run was given.
+    Read(ComputationId),
+    /// The evaluation the run ended with first: unrunnable, stuck, blamed, or
+    /// a terminal whose read-back refused.
+    Ended(Evaluation<'source>),
 }
 
 impl fmt::Display for SealedRun
@@ -1162,11 +1190,58 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return Ok(evaluation),
         };
-        let tier = match engine {
-            Engine::Native => Tier::Native,
-            Engine::Executor => Tier::Executor,
+        self.tiered(constant, returned, forced, Choice::Tier(engine.tier()))
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, as
+    /// [`Self::evaluate_on`] does, and read its terminal value back into
+    /// `into` instead of spelling it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the [`Evaluation::Unrunnable`] [`Self::evaluate_on`] gives
+    ///   before any engine runs, and the evaluation a run that blames or sticks
+    ///   ends with, as [`Terminal::Ended`]; otherwise the run's terminal value,
+    ///   forced when it is a suspension, read back as a computation of `into`,
+    ///   or [`Unfinished::Readback`] when it does not read back. A run reaching
+    ///   a member its module's signature hides is read back like any other.
+    /// - provides: the run as a core term, so a differential holds it to
+    ///   another evaluator's normal form node for node.
+    /// - panics: none.
+    /// - executable: none — the read-back term is the clause, and holding it to
+    ///   the normaliser is the differential's.
+    ///
+    /// # Errors
+    /// [`Declined`], as [`Self::evaluate_on`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every `runs` item of the corpus reads back on the
+    ///   executor to the normaliser's answer.
+    /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    #[inline]
+    pub fn read_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        into: &mut CoreArena,
+    ) -> Result<Terminal<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(Terminal::Ended(evaluation)),
         };
-        self.tiered(constant, returned, forced, Choice::Tier(tier))
+        let mut store = Store::new();
+        Ok(
+            match self.terminal((returned, forced), Choice::Tier(engine.tier()), &mut store)? {
+                Ok(terminal) => match read_back_terminal(&self.arena, &store, terminal, into) {
+                    Ok(read) => Terminal::Read(read),
+                    Err(refusal) => {
+                        Terminal::Ended(Evaluation::Unfinished(Unfinished::Readback(refusal)))
+                    },
+                },
+                Err(evaluation) => Terminal::Ended(evaluation),
+            },
+        )
     }
 
     /// The two commands that run the declaration at `constant`, started as
@@ -1216,8 +1291,33 @@ impl<'source> Program<'source>
         choice: Choice,
     ) -> Result<Evaluation<'source>, Declined>
     {
-        let fuel = Fuel::from(RUN_BUDGET);
         let mut store = Store::new();
+        Ok(
+            match self.terminal((returned, forced), choice, &mut store)? {
+                Ok(terminal) => self.finish(constant, &store, terminal),
+                Err(evaluation) => evaluation,
+            },
+        )
+    }
+
+    /// Run the commands on a tier the choice names into `store`, forcing a
+    /// suspended answer: the terminal value, or the evaluation that ends the
+    /// run first, blaming the opaque constant it observed or answers outside
+    /// any suspension.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    fn terminal(
+        &self,
+        (returned, forced): (CommandId, CommandId),
+        choice: Choice,
+        store: &mut Store,
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    {
+        let fuel = Fuel::from(RUN_BUDGET);
         let run = |root, store: &mut Store| match choice {
             Choice::Policy => {
                 gandr_runtime_emitter::evaluate(&self.arena, &self.definitions, root, fuel, store)
@@ -1226,18 +1326,15 @@ impl<'source> Program<'source>
                 evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
             },
         };
-        let outcome = run(returned, &mut store)?;
-        let terminal = match self.halted(&store, outcome) {
+        let outcome = run(returned, store)?;
+        let terminal = match self.halted(store, outcome) {
             Ok(terminal) => terminal,
-            Err(evaluation) => return Ok(evaluation),
+            Err(evaluation) => return Ok(Err(evaluation)),
         };
-        let terminal = match store.value(terminal) {
+        Ok(match store.value(terminal) {
             Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
-                let outcome = run(forced, &mut store)?;
-                match self.halted(&store, outcome) {
-                    Ok(forced) => forced,
-                    Err(evaluation) => return Ok(evaluation),
-                }
+                let outcome = run(forced, store)?;
+                self.halted(store, outcome)
             },
             Some(
                 &(HeapValue::Literal(_)
@@ -1248,9 +1345,8 @@ impl<'source> Program<'source>
                 | HeapValue::Opaque(_)
                 | HeapValue::Capability),
             )
-            | None => terminal,
-        };
-        Ok(self.finish(constant, &store, terminal))
+            | None => Ok(terminal),
+        })
     }
 
     /// Read the terminal `terminal` of `store` back and spell it, or name the
