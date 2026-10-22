@@ -1707,6 +1707,44 @@ impl TypeTable
                 }),
             });
         }
+        // Each parameter a lambda binds and no use answers, at the domain the
+        // lambda's first judgement states it binds, so a parameter nothing
+        // reads answers at its own type rather than at the lambda that opens
+        // it, written at the same name.
+        for &(opener, name) in origins.binders() {
+            let span = name.span();
+            if name.provenance() != Provenance::Written
+                || binders.contains(&span)
+                || !matches!(arena.computation(opener), Some(&Computation::Lambda(_)))
+            {
+                continue;
+            }
+            let node = CoreNode::Computation(opener);
+            let Some(&(_, domain)) = opened
+                .binary_search_by_key(&node, |&(held, _)| held)
+                .ok()
+                .and_then(|at| opened.get(at))
+            else {
+                continue;
+            };
+            let Some((_, (constant, depth))) = first_of(TermNode::Computation(opener))
+            else {
+                continue;
+            };
+            let _fresh = binders.insert(span);
+            entries.push(Entry {
+                span,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty: TypeNode::Value(domain),
+                last: TypeNode::Value(domain),
+                standing: Standing::Judged(Within {
+                    constant,
+                    node,
+                    depth: Some(depth),
+                }),
+            });
+        }
         // What each written computation returns, read at the first judgement
         // the run finished of a computation written there: a `run` binder
         // answers at what its bound computation returns, wherever a rewrite
@@ -4612,6 +4650,37 @@ mod tests
     {
         let grammar = built_in().expect("the built-in grammar builds");
         TypeTable::of(&grammar, source).expect("the source parses")
+    }
+
+    /// #1743: a parameter nothing reads answers as a binder at its own type,
+    /// not at the type of the lambda written at its name that opens it.
+    #[test]
+    fn an_unused_parameter_answers_at_its_own_type_1743()
+    {
+        let source = SourceText::from(
+            "def plus(n : Integer, m : Integer) -> -F Integer { return n }\n\ndef keep(a : \
+             Type, x : a) -> -F Type { return a }\n",
+        );
+        let table = table(source);
+        for (needle, ty, reason) in [
+            ("n :", "Integer", "a parameter its body reads"),
+            (
+                "m :",
+                "Integer",
+                "a parameter nothing reads, not the lambda opening it",
+            ),
+            (
+                "x :",
+                "a",
+                "an unread parameter whose type names an earlier one",
+            ),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "{reason}"
+            );
+        }
     }
 
     /// An answer of `subject` at `ty`, checked against nothing else.

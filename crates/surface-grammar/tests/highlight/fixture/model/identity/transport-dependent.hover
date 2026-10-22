@@ -68,7 +68,7 @@
 28:15-28:15 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:17-28:19 Nat ⇒ Nat : Type @28:17-28:20
 28:20-28:20 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
-28:22-28:22 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> -F Path(Nat, b, a) @28:22-28:23
+28:22-28:22 b ⇒ b : Nat @28:22-28:23
 28:23-28:23 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
 28:25-28:27 Nat ⇒ Nat : Type @28:25-28:28
 28:28-28:28 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @28:1-28:72
@@ -141,7 +141,7 @@
 40:13-40:13 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:15-40:17 Nat ⇒ Nat : Type @40:15-40:18
 40:18-40:18 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
-40:20-40:20 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @40:20-40:21
+40:20-40:20 b ⇒ b : Nat @40:20-40:21
 40:21-40:21 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:23-40:25 Nat ⇒ Nat : Type @40:23-40:26
 40:26-40:26 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
@@ -155,7 +155,7 @@
 40:44-40:44 b ⇒ b : Nat @40:44-40:45
 40:45-40:45 ) ⇒ Path(Nat, a, b) : Type @40:31-40:46
 40:46-40:46 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
-40:48-40:48 v ⇒ v : Nat -> -F Nat @40:48-40:49
+40:48-40:48 v ⇒ v : Nat @40:48-40:49
 40:49-40:49 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
 40:51-40:53 Nat ⇒ Nat : Type @40:51-40:54
 40:54-40:57 ) -> ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @40:1-40:66
@@ -200,11 +200,11 @@
 45:1-45:29 @[ refuses("ShapeMismatc… ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @45:1-46:1
 46:1-46:3 def ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:5-46:9 flat( ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:5-46:9
-46:10-46:10 a ⇒ a : (a : Nat) -> (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @46:10-46:11
+46:10-46:10 a ⇒ a : Nat @46:10-46:11
 46:11-46:11 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:13-46:15 Nat ⇒ Nat : Type @46:13-46:16
 46:16-46:16 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
-46:18-46:18 b ⇒ b : (b : Nat) -> Path(Nat, a, b) -> Nat -> -F Nat @46:18-46:19
+46:18-46:18 b ⇒ b : Nat @46:18-46:19
 46:19-46:19 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:21-46:23 Nat ⇒ Nat : Type @46:21-46:24
 46:24-46:24 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
@@ -218,7 +218,7 @@
 46:42-46:42 b ⇒ b : Nat @46:42-46:43
 46:43-46:43 ) ⇒ Path(Nat, a, b) : Type @46:29-46:44
 46:44-46:44 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
-46:46-46:46 v ⇒ v : Nat -> -F Nat @46:46-46:47
+46:46-46:46 v ⇒ v : Nat @46:46-46:47
 46:47-46:47 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
 46:49-46:51 Nat ⇒ Nat : Type @46:49-46:52
 46:52-46:55 ) -> ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @46:1-46:64
