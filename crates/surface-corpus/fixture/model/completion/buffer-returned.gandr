@@ -31,3 +31,20 @@ def bufferReturned() -> -F Unit {
     oper free(b, k) => k(unit)
   }
 }
+
+/// A buffer freed in each arm of a case: each arm starts from the buffer as
+/// the case found it live, and every arm hands it back.
+@[ checks ]
+def freedInEachArm(flag : Bool) -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    case flag {
+      true => r.free(b),
+      false => r.free(b)
+    }
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}

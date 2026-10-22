@@ -248,7 +248,8 @@ pub enum LinearityDefect
         index: gandr_kernel_term::DeBruijnIndex,
     },
     /// A buffer placed live — by a receive, a placement or an operation
-    /// clause's mint — reached the end of its scope never returned.
+    /// clause's mint — reached the end of its scope never returned, or one arm
+    /// of a branch returned it where another kept it.
     BufferUnreturned
     {
         /// The computation that placed the buffer live.

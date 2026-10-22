@@ -1880,6 +1880,78 @@ fn an_allocated_buffer_is_returned_once()
     );
 }
 
+/// The program `x <- (return inl(()) : F (1 + 1)) ; case x { _ => on_left,
+/// _ => on_right }` placed live over `alloc(0)` as `allocated` builds it, each
+/// arm minted from the placement's linear variable; the program, the
+/// placement and the right arm.
+///
+/// # Specification
+/// trivial.
+fn branched(
+    arena: &mut CoreArena,
+    ring: &gandr_core_term::effect::EffectSig,
+    on_left: impl FnOnce(&mut CoreArena) -> ComputationId,
+    on_right: impl FnOnce(&mut CoreArena) -> ComputationId,
+) -> (ComputationId, ComputationId, ComputationId)
+{
+    let mut right = None;
+    let (program, placed) = allocated(arena, ring, |arena, _live| {
+        let unit_type = arena.value_type_unit();
+        let two = arena.value_type_sum(&[unit_type, unit_type]);
+        let twos = arena.comp_type_returner(two);
+        let unit = arena.value_unit();
+        let left = arena.value_injection(gandr_core_term::Summand::from(0_usize), unit);
+        let returned = arena.computation_return(left);
+        let ascribed = arena.computation_ascribe(returned, twos);
+        let left_arm = on_left(arena);
+        let right_arm = on_right(arena);
+        right = Some(right_arm);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_case(x, &[left_arm, right_arm]);
+        arena.computation_bind(ascribed, case)
+    });
+    (program, placed, right.expect("the right arm was minted"))
+}
+
+#[test]
+fn a_case_s_arms_each_return_the_placed_buffer_1792()
+{
+    let mut arena = CoreArena::new();
+    let ring = ring(&mut arena);
+    let free = |arena: &mut CoreArena| {
+        let live = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        arena.computation_perform(ring.clone(), "free".into(), live)
+    };
+    let kept = |arena: &mut CoreArena| {
+        let unit = arena.value_unit();
+        arena.computation_return(unit)
+    };
+    let (both, ..) = branched(&mut arena, &ring, free, free);
+    assert_eq!(
+        check_ring(&mut arena, ring.clone(), both),
+        Ok(()),
+        "each arm returns the buffer the case found live"
+    );
+    let (one, placed, right) = branched(&mut arena, &ring, free, kept);
+    assert_eq!(
+        check_ring(&mut arena, ring.clone(), one),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(right)),
+            defect: LinearityDefect::BufferUnreturned { site: placed },
+        }),
+        "the right arm keeps the buffer the left arm returned"
+    );
+    let (other, placed, right) = branched(&mut arena, &ring, kept, free);
+    assert_eq!(
+        check_ring(&mut arena, ring, other),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Computation(right)),
+            defect: LinearityDefect::BufferUnreturned { site: placed },
+        }),
+        "the right arm returns the buffer the left arm kept"
+    );
+}
+
 #[test]
 fn a_buffer_no_slot_holds_is_never_returned()
 {

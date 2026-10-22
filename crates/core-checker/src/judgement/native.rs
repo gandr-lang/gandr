@@ -870,11 +870,19 @@ impl Machine<'_, '_>
         }
         let constructors = former::signature(self.context, datatype)?;
         let owed = crate::loops::loops(self.context, datatype);
-        // While the run holds a value each arm starts from the zone the case
-        // found; an arm with another after it ends by handing that zone on.
+        // While the run holds a value or has a buffer live each arm starts from
+        // the zone the case found; an arm with another after it ends by handing
+        // that zone on.
         let joining = self.arms_opened();
         if let super::session::Joining::Joined(zones) = joining {
-            self.wait(Frame::ArmsJoined(zones));
+            let Computation::DataCase { ref branches, .. } = *self.computation(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            // An empty case checks no arm, so no arm can disagree: the join
+            // names the case itself.
+            let arm = branches.last().copied().unwrap_or(term);
+            self.wait(Frame::ArmsJoined { zones, arm });
         }
         let mut followed = false;
         if count != constructors.constructors().len() {
@@ -932,7 +940,7 @@ impl Machine<'_, '_>
                 if let super::session::Joining::Joined(zones) = joining
                     && followed
                 {
-                    self.wait(Frame::ArmEnded(zones));
+                    self.wait(Frame::ArmEnded { zones, arm });
                 }
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
@@ -1001,7 +1009,7 @@ impl Machine<'_, '_>
             if let super::session::Joining::Joined(zones) = joining
                 && followed
             {
-                self.wait(Frame::ArmEnded(zones));
+                self.wait(Frame::ArmEnded { zones, arm: branch });
             }
             self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,
