@@ -574,7 +574,7 @@ jobs:
       - name: check the syntax exemplars
         if: *plain-gate
         run: mise run check:syntax-exemplars
-      - name: settle the features exemplars
+      - name: settle the exemplars
         if: *plain-gate
         run: mise run check:exemplars
       - name: check the features ledger
