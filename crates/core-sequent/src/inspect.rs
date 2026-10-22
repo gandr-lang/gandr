@@ -141,6 +141,7 @@ pub fn origin_histogram(provenance: &Provenance) -> BTreeMap<FocusOrigin, NodeCo
 /// - witness: `inspect::tests::stats_and_dump_report_a_terminal_cut`
 /// - witness: `inspect::tests::asymmetric_populations_and_unrecorded_roots_remain_distinct`
 /// - witness: `inspect::tests::histograms_count_repeated_origins_without_inventing_categories`
+/// - witness: `inspect::tests::dumps_name_every_origin`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref ret| ret.lines().count() == 2

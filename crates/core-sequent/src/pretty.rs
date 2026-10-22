@@ -85,7 +85,8 @@ impl RenderDepth
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the command in the module's notation, depth-bounded, with a
-///   dangling address rendered as `<dangling>`.
+///   dangling address rendered as `<dangling>`; a cut, and only a cut, is
+///   bracketed `⟨…⟩`, every other command opening with its keyword.
 /// - provides: the textual view of a command.
 /// - fails: never.
 /// - panics: none.
@@ -104,9 +105,11 @@ impl RenderDepth
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[inline]
 #[must_use]
-#[spec(ensures: |ref ret| if arena.command(command).is_none() {
-    ret == "<dangling>"
-} else { ret.starts_with('⟨') && ret.ends_with('⟩') })]
+#[spec(ensures: |ref ret| match arena.command(command) {
+    | None => ret == "<dangling>",
+    | Some(&CommandNode::Cut { .. }) => ret.starts_with('⟨') && ret.ends_with('⟩'),
+    | Some(_) => !ret.starts_with('⟨'),
+})]
 pub fn render_command(
     arena: &CommandArena,
     command: CommandId,
@@ -289,6 +292,7 @@ fn render<'arena>(
 /// - witness: `pretty::tests::renders_terminal_cut`
 /// - witness: `pretty::tests::renders_lambda_cocase`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
+/// - witness: `pretty::tests::renders_effect_control_and_memory_commands`
 #[spec(ensures: |ref ret| match (arena.command(id), ret.as_slice()) {
     | (Some(&CommandNode::Cut { polarity, producer, consumer }), &[Piece::Text(Token("⟨")), Piece::Producer(p, pd), Piece::Text(Token(bar)), Piece::Consumer(c, cd), Piece::Text(Token("⟩"))]) =>
         producer == p && consumer == c && pd == depth && cd == depth
@@ -515,6 +519,7 @@ fn command(
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
+/// - witness: `pretty::tests::renders_frames_primitives_folds_and_projections`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,
@@ -530,7 +535,7 @@ fn command(
                 matches!(ret.as_slice(), &[Piece::Text(Token("()"))])
             } else { matches!(ret.first(), Some(&Piece::Text(Token(name))) if name == constructor_name(tag).0) },
         | ProducerNode::Thunk { body } => matches!(ret.as_slice(), &[Piece::Text(Token("{force(α) ⇒ ")), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
-        | ProducerNode::Fixpoint { body, .. } => matches!(ret.as_slice(), &[Piece::Text(Token("fix")), Piece::Text(_), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
+        | ProducerNode::Fixpoint { body, .. } => matches!(ret.as_slice(), &[Piece::Text(Token("fix")), Piece::Text(_) | Piece::Owned(_), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
         | ProducerNode::Mu { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μα. ")), Piece::Command(found, _)] if body == found),
         | ProducerNode::Cocase { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("cocase {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
@@ -667,6 +672,7 @@ fn producer(
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::renders_records_and_selections`
+/// - witness: `pretty::tests::renders_frames_primitives_folds_and_projections`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,

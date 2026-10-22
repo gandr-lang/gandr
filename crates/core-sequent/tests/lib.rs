@@ -14,4 +14,6 @@ mod focus_properties;
 #[cfg(test)]
 mod generate;
 #[cfg(test)]
+mod refusals;
+#[cfg(test)]
 mod run;

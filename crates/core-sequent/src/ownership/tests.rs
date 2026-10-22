@@ -261,6 +261,35 @@ fn a_kept_body_duplicates_its_captures_on_entry()
     }
 }
 
+/// A reified stack's bind frame is resumed once per resumption of the stack:
+/// its body is kept, and duplicates on entry the capture it names, while an
+/// applied argument and a projection mark nothing.
+#[test]
+fn a_reified_bind_body_is_kept()
+{
+    let mut arena = CommandArena::new();
+    let argument = tuple(&mut arena, &[]);
+    let capture = variable(&mut arena, Zone::Intuitionistic, x1());
+    let returned = alpha0(&mut arena);
+    let body = cut(&mut arena, capture, returned);
+    let stack = arena
+        .mint_producer(ProducerNode::Reify(alloc::sync::Arc::from([
+            gandr_core_term::control::StackFrame::Apply(argument),
+            gandr_core_term::control::StackFrame::Project(gandr_kernel_term::Component::from(
+                1_usize,
+            )),
+            gandr_core_term::control::StackFrame::Bind(body),
+        ])))
+        .expect("the frames resolve");
+
+    let ownership = read(&arena, &[NodeAddress::Producer(stack)]);
+
+    assert_eq!(
+        entry(&ownership, NodeAddress::Command(body)).entered,
+        [x1()].as_slice()
+    );
+}
+
 /// A match on the unit that builds the unit pairs nothing: a nullary head
 /// has no cell to write into.
 #[test]
