@@ -3148,6 +3148,7 @@ impl<'source> Lowerer<'_, 'source>
             patterns: Patterns::new(),
             arms: Vec::new(),
             spans: Vec::new(),
+            labelled: Vec::new(),
         };
         let stated = self.scrutinee_type(frame, scrutinee)?;
         let mut roots = Vec::new();
@@ -3368,6 +3369,7 @@ impl<'source> Lowerer<'_, 'source>
                 patterns: Patterns::new(),
                 arms: Vec::new(),
                 spans: Vec::new(),
+                labelled: Vec::new(),
             },
             variables: Vec::new(),
         });
@@ -5524,6 +5526,9 @@ impl<'source> Lowerer<'_, 'source>
                 },
             };
             let id = kept.patterns.mint(pattern);
+            if let Matcher::Record { ref labels, .. } = *shape {
+                kept.labelled.push((id, labels.clone()));
+            }
             if let Some(held) = minted.get_mut(position) {
                 *held = Some(id);
             }

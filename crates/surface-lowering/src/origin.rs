@@ -2231,7 +2231,9 @@ pub struct PatternSpan
 ///   pattern hole's identity is its syntax node's position, the identity the
 ///   tree's stuck leaves and the term holes carry; every written pattern has a
 ///   span in `spans`, so a face answers a pattern as the node it is rather than
-///   as the match around it.
+///   as the match around it; every record pattern has its labels in `labelled`,
+///   one per field in its fields' order, so a field answers at the record
+///   type's field of its label.
 /// - executable: none — the record holds no tree to check its nodes against.
 ///
 /// # Adequacy
@@ -2255,6 +2257,9 @@ pub struct CaseOrigin
     /// Where each pattern, each constructor name and each letter was written,
     /// in the order the patterns were read.
     pub spans: Vec<PatternSpan>,
+    /// The labels each record pattern binds, one per field in the order its
+    /// fields stand in `patterns`.
+    pub labelled: Vec<(PatternId, Vec<FieldLabel>)>,
 }
 
 #[cfg(test)]
