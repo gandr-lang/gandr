@@ -13,6 +13,30 @@ def twice(x: Integer) -> -F Integer {
   become inc(inc(x))
 }
 
+/// A call nested in an argument, then sixteen calls each on what the last
+/// returned: what follows the nested call lowers once, so the run fits its
+/// region (#1856).
+@[ runs("18") ]
+def chained : () => Integer ;
+def chained = thunk {
+  run a <- inc(inc(0));
+  run b <- inc(a);
+  run c <- inc(b);
+  run d <- inc(c);
+  run e <- inc(d);
+  run f <- inc(e);
+  run g <- inc(f);
+  run h <- inc(g);
+  run i <- inc(h);
+  run j <- inc(i);
+  run k <- inc(j);
+  run l <- inc(k);
+  run m <- inc(l);
+  run n <- inc(m);
+  run o <- inc(n);
+  become inc(inc(o))
+} ;
+
 /// The run target calls `twice`; the lowering reads no final expression as a
 /// run target yet (#1105).
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
