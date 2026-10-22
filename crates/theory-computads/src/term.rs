@@ -67,6 +67,7 @@ use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
+use gandr_theory_cell_complexes::command_below;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
 use gandr_theory_levitation::AbstractionDepth;
@@ -1448,6 +1449,96 @@ impl CellAlphabet for TermAlphabet
     {
         cmd.range_at(&pos.0)
             .map(|(start, end)| cmd.slice(start, end))
+    }
+
+    /// The subterms below `above`, breadth first from it, each offered from
+    /// one buffer the walk reuses; a position is built only for the one
+    /// accepted.
+    ///
+    /// # Specification
+    /// - ensures: as [`CellAlphabet::first_command_below`]: breadth first from
+    ///   `above` is [`CellAlphabet::command_positions`]' order restricted to
+    ///   the positions `above` encloses.
+    /// - provides: [`command_below::Absent::NoneAccepted`] when `above` leaves
+    ///   the term or `accepts` holds below it nowhere.
+    /// - panics: none.
+    /// - intension: one table of the visited nodes — each its start, its
+    ///   parent's slot and its step — and one buffer, both the size of
+    ///   `above`'s subterm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over every position of a nested term and one off it,
+    ///   the walk offers exactly the listing's subterms below the position, in
+    ///   the listing's order, and answers the listing's first accepted
+    ///   position. Offering the position itself, skipping a level or building
+    ///   the path from the wrong parent changes either.
+    /// - witness: `term::tests::the_walk_below_a_position_agrees_with_the_listing`
+    #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ref at) => Self::position_order(above, at) == PositionOrder::Encloses
+            && matches!(cmd.range_at(&at.0), Maybe::Present(_)),
+        Maybe::Absent(command_below::Absent::NoneAccepted) => true,
+    })]
+    fn first_command_below<F>(
+        cmd: &Self::Cmd,
+        above: &Self::Pos,
+        mut accepts: F,
+    ) -> Maybe<Self::Pos, command_below::Absent>
+    where
+        F: FnMut(&Self::Cmd) -> bool,
+    {
+        let Maybe::Present((root, end)) = cmd.range_at(&above.0)
+        else {
+            return Maybe::Absent(command_below::Absent::NoneAccepted);
+        };
+        let size = end.0.saturating_sub(root.0);
+        let mut visited: Vec<(Count, usize, PositionStep)> = Vec::with_capacity(size);
+        visited.push((root, 0, PositionStep::from(0_usize)));
+        let mut buffer = Term(Vec::with_capacity(size));
+        let mut cursor = 0_usize;
+        while let Some(&(start, ..)) = visited.get(cursor) {
+            let Some(head) = cmd.0.get(start.0)
+            else {
+                break;
+            };
+            let mut child = start.next();
+            for index in 0 .. head.arity().0 {
+                visited.push((child, cursor, PositionStep::from(index)));
+                child = cmd.end_of(child);
+            }
+            if cursor != 0 {
+                buffer.0.clear();
+                buffer.0.extend(
+                    cmd.0
+                        .iter()
+                        .take(cmd.end_of(start).0)
+                        .skip(start.0)
+                        .cloned(),
+                );
+                if accepts(&buffer) {
+                    let mut steps = Vec::new();
+                    let mut node = cursor;
+                    while node != 0 {
+                        let Some(&(_, parent, step)) = visited.get(node)
+                        else {
+                            break;
+                        };
+                        steps.push(step);
+                        node = parent;
+                    }
+                    return Maybe::Present(TermPos(
+                        above
+                            .0
+                            .iter()
+                            .copied()
+                            .chain(steps.into_iter().rev())
+                            .collect(),
+                    ));
+                }
+            }
+            cursor = cursor.saturating_add(1);
+        }
+        Maybe::Absent(command_below::Absent::NoneAccepted)
     }
 
     /// `cmd` with the subterm at `pos` replaced.
