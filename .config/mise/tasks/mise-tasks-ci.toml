@@ -832,7 +832,7 @@ fi
 status=0
 mise run evidence:obligations --body "$body" --require-acknowledged "$measured" || status=$?
 if (( status == 2 )); then
-  echo "tick one box per prose obligation, and the lint assessment's box once its verdict is written, in $body's ## Re-verification section, then run \`pr:open\` again" >&2
+  echo "tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in $body's ## Re-verification section, then run \`pr:open\` again" >&2
   exit 2
 fi
 (( status == 0 )) || exit "$status"
@@ -907,8 +907,9 @@ fi
 # body against the rebased branch, its ticks carried, and the landing is
 # refused while a box is unticked; a stack is measured whole against
 # origin/main into its top pull request's body, whose own labels join its
-# targets' for the lint assessment. Once every box is ticked, a failed
-# obligations lane is rerun so it reads the ticks.
+# targets' for the lint assessment, and whose head's red hotpath checks owe
+# the hotpath verdict. Once every box is ticked, a failed obligations lane is
+# rerun so it reads the ticks.
 #
 # A queued stack member leaves the queue alone only by being closed and
 # reopened: `dequeuePullRequest` looks for a queue on the member's own base
@@ -1081,7 +1082,7 @@ if (( status != 0 && status != 2 )); then rm -f "$body" "$body.read"; exit "$sta
 if ! cmp -s "$body" "$body.read"; then gh pr edit "$number" -R "$repo" --body-file "$body" > /dev/null; fi
 rm -f "$body" "$body.read"
 if (( status == 2 )); then
-  echo "PR #$number: tick one box per prose obligation, and the lint assessment's box once its verdict is written, in its body's ## Re-verification section, then run \`pr:land\` again" >&2
+  echo "PR #$number: tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in its body's ## Re-verification section, then run \`pr:land\` again" >&2
   exit 2
 fi
 lane=$(gh pr checks "$number" -R "$repo" --json name,bucket,link --jq '.[] | select(.name == "re-verify obligated specifications (linux)" and .bucket == "fail") | .link')
