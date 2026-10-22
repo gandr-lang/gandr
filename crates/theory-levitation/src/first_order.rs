@@ -105,6 +105,11 @@ impl fmt::Display for TranslationError
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every refusal renders, a named one with its name, and
+    ///   no two alike, so an empty or fixed text shows.
+    /// - witness: `tests::glf::each_translation_refusal_reads_as_its_own_message`
     #[inline]
     fn fmt(
         &self,

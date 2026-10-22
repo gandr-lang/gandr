@@ -440,6 +440,12 @@ impl Tag
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation's identity bytes pin the tags of its
+    ///   members, and the newest tag is read off its position.
+    /// - witness: `theory::tests::a_presentation_encodes_to_its_exact_identity_bytes`
+    /// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
     fn constructor(self) -> ConstructorTag
     {
         ConstructorTag::from(match self {
@@ -1515,6 +1521,14 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an abstracting, a bound and a plain port each read back
+///   as written, and an abstraction codes apart from a binder, so a port coded
+///   under the wrong constructor reads back as another.
+/// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
+/// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 fn ports(list: &[TheoryPort]) -> DescValue
 {
     let chained = |binders: &[TheoryBinder]| {
@@ -2133,6 +2147,11 @@ fn read_plain<Read>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every member of a first-order presentation reads back as
+///   written, so a port read with another name or sort differs.
+/// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 fn unbound(plain: TheoryBinder) -> TheoryPort
 {
     TheoryPort {
@@ -2548,6 +2567,12 @@ impl TheoryOperation
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the table read off a presentation abstracting an atom
+///   keeps the abstraction apart from the binders and checks, so a port that
+///   loses either reads otherwise.
+/// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
 fn port_ref(
     port: &TheoryPort,
     name: Name,

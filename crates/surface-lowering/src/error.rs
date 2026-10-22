@@ -1385,6 +1385,11 @@ impl fmt::Display for Subject<'_>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every kind the check gives, over the same two subjects,
+///   renders a reason no other kind renders, so an empty or fixed text shows.
+/// - witness: `error::tests::each_ill_formed_description_reads_as_its_own_reason`
 fn ill_formed(
     kind: WfKind,
     subjects: [Maybe<SurfaceName<'_>, description_subject::Absent>; 2],
@@ -2371,6 +2376,57 @@ mod tests
                     left, right,
                     "two variants rendering alike read as one mistake"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn each_ill_formed_description_reads_as_its_own_reason()
+    {
+        use alloc::string::String;
+        use alloc::string::ToString as _;
+        use alloc::vec::Vec;
+
+        use crate::WfKind;
+
+        let messages: Vec<String> = [
+            WfKind::OutOfSignatureRule,
+            WfKind::UnboundRhsVariable,
+            WfKind::ArityDoesNotCompose,
+            WfKind::DeclaresDerivedMetadata,
+            WfKind::DerivedBoundaryMismatch,
+            WfKind::CyclicCircuitWiring,
+            WfKind::UnknownRewritePort,
+            WfKind::CircuitDerivationBudget,
+            WfKind::DuplicateSortName,
+            WfKind::UnknownResultSort,
+            WfKind::UnknownVarSort,
+            WfKind::SortPolarityDisagreement,
+            WfKind::MisplacedResults,
+            WfKind::NonRepresentableBinder,
+            WfKind::SplitCircuitOutputs,
+            WfKind::DuplicateFaceName,
+            WfKind::FaceOutsideShape,
+            WfKind::UnsortedBinding,
+            WfKind::AtomResult,
+            WfKind::NonAtomAbstraction,
+        ]
+        .into_iter()
+        .map(|kind| {
+            LoweringRefusal::IllFormedDescription {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                kind,
+                subjects: [
+                    Maybe::Present(SurfaceName::from("first")),
+                    Maybe::Present(SurfaceName::from("second")),
+                ],
+            }
+            .to_string()
+        })
+        .collect();
+        for (first, left) in messages.iter().enumerate() {
+            for right in messages.iter().skip(first.saturating_add(1)) {
+                assert_ne!(left, right, "no two reasons the check gives read alike");
             }
         }
     }

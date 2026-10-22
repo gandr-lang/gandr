@@ -257,9 +257,11 @@ fn an_underivable_component_keeps_its_fault()
   sort Ob : Type;
   sort Hom(dom: Ob, cod: Ob) : Type;
   sort Tm : Type+;
+  sort Name : Atom;
   oper id : (a : Ob) --> Hom(a, a);
   oper split : (a : Ob) --> (l : Ob, r : Ob);
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper nu : (p : bind (c : Name) . Ob) --> Ob;
   rule twice : id(id(a)) ==> id(a);
   rule loose : x ==> x;
   rule halves : split(a) ==> split(a);
@@ -299,6 +301,11 @@ fn an_underivable_component_keeps_its_fault()
         "lam refused: Binding",
         "an operation whose port binds a variable"
     );
+    assert_eq!(
+        spelled(&model, "nu"),
+        "nu refused: Abstraction",
+        "an operation whose port abstracts an atom"
+    );
     assert!(
         model
             .components
@@ -306,6 +313,33 @@ fn an_underivable_component_keeps_its_fault()
             .all(|component| component.form != Err(ModelFault::Inherited)),
         "no component names a refused one"
     );
+}
+
+#[test]
+fn each_model_fault_reads_as_its_own_clause()
+{
+    use alloc::string::ToString;
+
+    let clauses: Vec<String> = [
+        ModelFault::UnknownHead,
+        ModelFault::Arity,
+        ModelFault::IllSorted,
+        ModelFault::Unsorted,
+        ModelFault::ManyOut,
+        ModelFault::Circuit,
+        ModelFault::Constructor,
+        ModelFault::Inherited,
+        ModelFault::Binding,
+        ModelFault::Abstraction,
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    for (first, left) in clauses.iter().enumerate() {
+        for right in clauses.iter().skip(first.saturating_add(1)) {
+            assert_ne!(left, right, "no two faults read alike");
+        }
+    }
 }
 
 #[test]
