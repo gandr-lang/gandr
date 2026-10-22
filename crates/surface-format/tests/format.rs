@@ -13,6 +13,7 @@ use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::Layout;
 use gandr_surface_format::PageWidth;
+use gandr_surface_format::declared_form;
 use gandr_surface_format::format;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -298,6 +299,11 @@ fn an_explicit_source_keeps_its_explicit_spelling()
     ] {
         let parsed =
             parse(&grammar, SourceText::from(written.as_str())).expect("the source parses");
+        assert_eq!(
+            declared_form(&grammar, &parsed),
+            Some(Form::Explicit),
+            "the head declares the explicit form"
+        );
         for form in [Form::Source, Form::Explicit, Form::Sugared] {
             let options = FormatOptions {
                 form,
@@ -310,6 +316,19 @@ fn an_explicit_source_keeps_its_explicit_spelling()
             );
         }
     }
+    let sugared = "@[ form(sugared) ]\ndef shown : () => Integer ;\n";
+    for (written, declared) in [
+        (sugared, Some(Form::Sugared)),
+        ("def shown : () => Integer ;\n", None),
+    ] {
+        let parsed = parse(&grammar, SourceText::from(written)).expect("the source parses");
+        assert_eq!(declared_form(&grammar, &parsed), declared, "{written}");
+    }
+    assert_eq!(
+        [Form::Source, Form::Explicit, Form::Sugared].map(|form| form.to_string()),
+        ["source", "explicit", "sugared"],
+        "each form is named as the option and the declaration spell it"
+    );
 }
 
 /// The formatter's sweep: every corpus source keeps its meaning and

@@ -293,6 +293,7 @@ pub fn unelaborated(
 ///   two operands is withdrawn from its declaration.
 /// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+/// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
 #[spec(ensures: |ret| !matches!(ret, Agreement::Declarations(ref keys) if keys.is_empty()))]
 pub fn agree(
     arena: &CoreArena,

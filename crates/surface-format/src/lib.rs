@@ -744,6 +744,8 @@ pub fn declared_form(
 ///   elaborates them otherwise, and kept where it refuses the source.
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
 /// - witness: `tests::rewrite::a_linear_run_follows_the_checker_s_elaborations`
+/// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
+/// - witness: `tests::rewrite::the_runs_ending_a_block_are_written_away_together`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format_beside(
