@@ -386,6 +386,22 @@ impl Code
         self.node(ConstructorTag::from(super::tag::APP), vec![name, chain])
     }
 
+    /// The abstraction of the atom `atom` over `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn abs(
+        &mut self,
+        atom: StringLiteral,
+        body: ValueId,
+    ) -> ValueId
+    {
+        let end = self.end();
+        let chain = self.node(ConstructorTag::from(super::tag::ARG), vec![body, end]);
+        let atom = self.text(atom);
+        self.node(ConstructorTag::from(super::tag::ABS), vec![atom, chain])
+    }
+
     /// The presentation whose rule chain is `members`, each a tag and its
     /// fields before the rest, ended by `End`.
     ///
@@ -480,5 +496,39 @@ fn a_presentation_value_reads_as_its_oriented_rules()
         TheoryRules::read(&code.arena, ranked_twice),
         unreadable(1),
         "a second rank for one name"
+    );
+}
+
+#[test]
+fn an_abstraction_reads_as_one_symbol_whatever_its_atom()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let mut code = Code::new();
+    let nil = code.app(literal("nil"), &[]);
+    let stop = code.app(literal("stop"), &[]);
+    let (over_a, over_b) = (code.abs(literal("a"), nil), code.abs(literal("b"), nil));
+    let (left_a, left_b) = (
+        code.app(literal("nu"), &[over_a]),
+        code.app(literal("nu"), &[over_b]),
+    );
+    let [gc, halt] = ["gc", "halt"].map(|name| code.text(literal(name)));
+    let rule_tag = ConstructorTag::from(super::tag::RULE);
+    let presentation = code.presents(vec![
+        (rule_tag, vec![gc, left_a, nil]),
+        (rule_tag, vec![halt, left_b, stop]),
+    ]);
+    let read = TheoryRules::read(&code.arena, presentation).expect("the chain reads");
+    assert_eq!(
+        read.rules(),
+        [
+            rule(&[s!(0), s!(1), s!(2)], &[s!(2)]),
+            rule(&[s!(0), s!(1), s!(2)], &[s!(3)]),
+        ],
+        "`bind a .` and `bind b .` are one symbol, so the two left sides are one"
+    );
+    assert_eq!(
+        read.symbols().get(1),
+        Some(&(SymbolKind::Constructor, FieldCount::from(1_usize))),
+        "an abstraction is a constructor of one field"
     );
 }

@@ -69,6 +69,7 @@ use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
+use gandr_theory_levitation::AbstractionDepth;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RuleFace;
@@ -147,6 +148,11 @@ enum Head
     /// as a head of its own, since no store holds a cell whose face
     /// instantiates a metavariable.
     Inst(Name, Count),
+    /// An atom's abstraction over its one body, keyed by its depth among the
+    /// abstractions above it rather than by the atom it names: the canonical
+    /// re-minting at admission, under which two abstractions that differ only
+    /// in their atom are one head.
+    Abs(Count),
 }
 
 impl Head
@@ -159,6 +165,7 @@ impl Head
     {
         match *self {
             Self::Var(_) | Self::Konst(_) => Count(0),
+            Self::Abs(_) => Count(1),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
@@ -187,45 +194,54 @@ quenchant_shape::reason_enum! {
 
 impl From<&FreeTerm> for Term
 {
-    /// The free term's nodes in prefix order, each head kept.
+    /// The free term's nodes in prefix order, each head kept and each
+    /// abstraction's atom re-minted as its depth.
     ///
     /// # Specification
     /// - ensures: one node per free-term node in prefix order, a variable a
     ///   metavariable, a constructor, an operation, a results tuple and an
-    ///   instantiation each their own head over their argument count.
+    ///   instantiation each their own head over their argument count, and an
+    ///   abstraction its depth among the abstractions above it.
     /// - panics: none.
     /// - intension: one pass with an explicit stack of the subterms still to
-    ///   visit, so nesting costs no call stack.
+    ///   visit, each at its depth, so nesting costs no call stack.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a term nesting a constructor, an operation and a
     ///   results tuple reads back as itself, and its positions are the free
     ///   term's; a child order reversed or a head kind merged changes the read.
+    ///   Two abstractions naming different atoms read as one term.
     /// - witness: `term::tests::a_free_term_reads_back_through_the_alphabet`
+    /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
     #[inline]
-    #[spec(ensures: |ret| ret.read() == Maybe::Present(term.clone()))]
+    #[spec(ensures: |ret| ret.read() == Maybe::Present(term.canonical_atoms()))]
     fn from(term: &FreeTerm) -> Self
     {
         let mut nodes = Vec::new();
-        let mut pending = alloc::vec![term.to_node()];
-        while let Some(node) = pending.pop() {
-            let (head, args) = match node.view() {
+        let mut pending = alloc::vec![(term.to_node(), 0_usize)];
+        while let Some((node, depth)) = pending.pop() {
+            let (head, args, below) = match node.view() {
                 TermView::Var(name) => {
                     nodes.push(Head::Var(name.clone()));
                     continue;
                 },
                 TermView::Ctor { name, args } => {
-                    (Head::Ctor(name.clone(), Count(args.len())), args)
+                    (Head::Ctor(name.clone(), Count(args.len())), args, depth)
                 },
-                TermView::Op { name, args } => (Head::Op(name.clone(), Count(args.len())), args),
-                TermView::Results { args } => (Head::Results(Count(args.len())), args),
+                TermView::Op { name, args } => {
+                    (Head::Op(name.clone(), Count(args.len())), args, depth)
+                },
+                TermView::Results { args } => (Head::Results(Count(args.len())), args, depth),
                 TermView::Inst { name, args } => {
-                    (Head::Inst(name.clone(), Count(args.len())), args)
+                    (Head::Inst(name.clone(), Count(args.len())), args, depth)
+                },
+                TermView::Abs { args, .. } => {
+                    (Head::Abs(Count(depth)), args, depth.saturating_add(1))
                 },
             };
             nodes.push(head);
             let mark = pending.len();
-            pending.extend(args);
+            pending.extend(args.map(|arg| (arg, below)));
             if let Some(children) = pending.get_mut(mark ..) {
                 children.reverse();
             }
@@ -275,6 +291,13 @@ impl Term
                 Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
                 Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
                 Head::Inst(ref name, arity) => FreeTerm::inst(name, take(&mut built, arity)),
+                Head::Abs(level) => {
+                    let mut body = take(&mut built, Count(1));
+                    FreeTerm::abs(
+                        FreeTerm::canonical_atom(AbstractionDepth::from(level.0)),
+                        body.pop().unwrap_or_else(|| FreeTerm::results([])),
+                    )
+                },
             };
             built.push(node);
         }
@@ -397,9 +420,12 @@ impl Term
     {
         self.0.iter().filter_map(|head| match *head {
             Head::Var(ref var) => Some(var),
-            Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => {
-                None
-            },
+            Head::Konst(_)
+            | Head::Ctor(..)
+            | Head::Op(..)
+            | Head::Results(_)
+            | Head::Inst(..)
+            | Head::Abs(_) => None,
         })
     }
 
@@ -435,7 +461,8 @@ impl Term
                     | Head::Ctor(..)
                     | Head::Op(..)
                     | Head::Results(_)
-                    | Head::Inst(..) => head.clone(),
+                    | Head::Inst(..)
+                    | Head::Abs(_) => head.clone(),
                 })
                 .collect(),
         )
@@ -481,7 +508,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => 1,
+        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -1568,7 +1595,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))
@@ -1693,7 +1720,9 @@ impl CellAlphabet for TermAlphabet
 ///
 /// # Specification
 /// - ensures: the cell `Term::from(lhs) ~> Term::from(rhs)`, oriented
-///   [`TermOrient::Written`] with provenance [`TermProv::SurfaceRule`].
+///   [`TermOrient::Written`] with provenance [`TermProv::SurfaceRule`]; each
+///   side reads back as written but for its abstractions' atoms, re-minted by
+///   depth.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1703,8 +1732,8 @@ impl CellAlphabet for TermAlphabet
 /// - witness: `term::tests::the_circles_rules_fire_below_the_root`
 #[inline]
 #[must_use]
-#[spec(ensures: |ret| ret.lhs().read() == Maybe::Present(face.lhs.clone())
-    && ret.rhs().read() == Maybe::Present(face.rhs.clone())
+#[spec(ensures: |ret| ret.lhs().read() == Maybe::Present(face.lhs.canonical_atoms())
+    && ret.rhs().read() == Maybe::Present(face.rhs.canonical_atoms())
     && ret.orient() == TermOrient::Written && ret.provenance() == TermProv::SurfaceRule)]
 pub fn face_cell(face: &RuleFace) -> Cell<TermAlphabet>
 {

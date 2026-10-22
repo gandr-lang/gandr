@@ -1,0 +1,63 @@
+// Abstraction in rule terms (Gabbay and Mathijssen, _Nominal (universal)
+// algebra_, JLC 2009; Fernández and Gabbay, _Nominal rewriting_, I&C 2007).
+// At a port written `bind (a : N) . T`, a rule writes `bind a . t`: the atom
+// `a` abstracted over the term `t`. Admission re-mints every abstraction's
+// atom by its depth among the abstractions above it, so `bind a . t` and
+// `bind b . t` are one term to matching, the critical pairs and the kernel's
+// replay alike. The value of `Theory` keeps each atom as written, as it keeps
+// a rule's variables. The signature is `bind-port.gandr`'s restriction.
+
+/// Scope extrusion: a restriction over one side of a parallel composition
+/// encloses both. The checker orients the law, finds no critical pair and
+/// the kernel replays the verdict.
+@[ checks ]
+theory Scope {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q));
+}
+
+/// Two laws whose left sides differ only in the atom they abstract: one left
+/// side once re-minted, so the laws overlap at the root, and completion joins
+/// `nil()` and `stop()` as it would for one binder-free left side.
+@[ checks ]
+theory Alpha {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper stop : () --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule gc : nu(bind a . nil()) ==> nil();
+  rule halt : nu(bind b . nil()) ==> stop();
+}
+
+/// Structural recursion over a rule chain: one per `Derived` link, the
+/// rules completion added to join a critical pair.
+@[ checks ]
+def rec derived(chain : Theory) -> -F Integer {
+  case chain {
+    Rule(name, lhs, rhs, rest) => become derived[<](rest),
+    Turned(name, lhs, rhs, rest) => become derived[<](rest),
+    Derived(outer, position, inner, lhs, rhs, rest) => {
+      run r <- derived[<](rest);
+      return r + 1
+    },
+    _ => 0
+  }
+}
+
+/// `Alpha`'s two laws overlap, so completion derives rules to join them:
+/// two, as many as for the block with `nu(nil())` on both left sides. Were
+/// the atoms compared by name, the laws would not overlap and none would be
+/// derived.
+@[ runs("2") ]
+def derivations : () => Integer ;
+def derivations = thunk {
+  case Alpha {
+    Presents(sorts, opers, rules) => become derived(rules),
+    _ => 0
+  }
+} ;

@@ -262,6 +262,7 @@ pub use crate::binding::BindingTerm;
 pub use crate::binding::Evaluation;
 pub use crate::binding::FirstOrderJudgement;
 pub use crate::binding::SimplySorted;
+pub use crate::boundary::AbstractionDepth;
 pub use crate::boundary::AttributeEmptiness;
 pub use crate::boundary::AttributePresence;
 pub use crate::boundary::CircuitNodeBudget;

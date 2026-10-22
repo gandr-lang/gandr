@@ -500,6 +500,7 @@ fn read_rule(
                     OperationNode::Results(gandr_kernel_term::FieldCount::from(arguments.len()))
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
+                TermView::Abs { .. } => return Err(RouteFault::Pattern),
             };
             side.push(read);
             pending.extend(arguments.iter().rev().copied());
@@ -629,7 +630,12 @@ fn switch<'face>(
                     }
                     columns.extend(args.map(Some));
                 },
-                Some(TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. }) => {
+                Some(
+                    TermView::Op { .. }
+                    | TermView::Results { .. }
+                    | TermView::Inst { .. }
+                    | TermView::Abs { .. },
+                ) => {
                     return Err(RouteFault::Pattern);
                 },
             }
@@ -731,7 +737,8 @@ fn leaf(
                 TermView::Ctor { .. }
                 | TermView::Op { .. }
                 | TermView::Results { .. }
-                | TermView::Inst { .. },
+                | TermView::Inst { .. }
+                | TermView::Abs { .. },
             ) => {
                 return Err(RouteFault::Pattern);
             },
@@ -802,7 +809,8 @@ fn steps(
                     TermView::Ctor { args, .. }
                     | TermView::Op { args, .. }
                     | TermView::Results { args }
-                    | TermView::Inst { args, .. } => args.collect(),
+                    | TermView::Inst { args, .. }
+                    | TermView::Abs { args, .. } => args.collect(),
                 };
                 stack.extend(
                     arguments
@@ -862,6 +870,7 @@ fn steps(
                     planned.push(Step::Deliver(Width(args.len())));
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
+                TermView::Abs { .. } => return Err(RouteFault::Pattern),
             },
         }
     }

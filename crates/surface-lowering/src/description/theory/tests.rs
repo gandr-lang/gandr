@@ -1162,7 +1162,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2
         ],
         "each constructor's names, then its recursions"
     );
@@ -2268,5 +2268,63 @@ fn an_applied_left_variable_reads_as_its_instantiation()
         ),
         [(FreeTerm::op("g", [var("u")]), FreeTerm::op("t", [var("u")]),)],
         "a name the left side does not hold still calls its operation"
+    );
+}
+
+#[test]
+fn a_rule_term_abstracts_an_atom_and_names_none()
+{
+    let signature = "sort Name : Atom; sort Proc : Type; oper nil : () --> Proc; oper par : (p : Proc, q : Proc) --> Proc; oper out : (c : Name, p : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
+    let report = described(
+        format!(
+            "theory Scope {{ {signature} rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)); }}"
+        )
+        .as_str(),
+    );
+    assert_eq!(report.diagnostics, [], "scope extrusion reads");
+    let [ref theory] = *report.declarations.as_slice()
+    else {
+        panic!("one theory: {:?}", report.declarations)
+    };
+    let [ref scope] = *theory.description.rules
+    else {
+        panic!("one rule")
+    };
+    let var = FreeTerm::var;
+    assert_eq!(
+        (scope.lhs.clone(), scope.rhs.clone()),
+        (
+            FreeTerm::op("par", [
+                FreeTerm::op("nu", [FreeTerm::abs("a", var("p"))]),
+                var("q"),
+            ]),
+            FreeTerm::op("nu", [FreeTerm::abs(
+                "a",
+                FreeTerm::op("par", [var("p"), var("q")]),
+            )]),
+        ),
+        "each `bind a .` abstracts the atom over the term after it"
+    );
+    let report = described(
+        format!("theory Occurs {{ {signature} rule use : nu(bind a . out(a, nil())) ==> nil(); }}")
+            .as_str(),
+    );
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    assert_eq!(
+        diagnostic.fault,
+        DescriptionFault::AtomOccurrence,
+        "the atom named inside its abstraction is refused by name"
+    );
+    let report = described(
+        format!("theory Beside {{ {signature} rule use : par(nu(bind a . p), a) ==> nil(); }}")
+            .as_str(),
+    );
+    assert_eq!(
+        report.diagnostics,
+        [],
+        "past its abstraction the name is a variable again"
     );
 }

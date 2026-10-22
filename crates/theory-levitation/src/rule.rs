@@ -19,6 +19,7 @@ use core::fmt;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::AbstractionDepth;
 use crate::boundary::InstantiationStatus;
 use crate::boundary::RuleVariableLinearity;
 use crate::code::Name;
@@ -44,6 +45,8 @@ enum TermHead
     Results(ArgumentCount),
     /// A metavariable instantiated at its argument count of terms.
     Inst(Name, ArgumentCount),
+    /// An atom abstracted over its one body, `bind a . t`.
+    Abs(Name),
 }
 
 impl Head for TermHead
@@ -57,6 +60,7 @@ impl Head for TermHead
     {
         match *self {
             Self::Var(_) => ArgumentCount::from(0_usize),
+            Self::Abs(_) => ArgumentCount::from(1_usize),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
@@ -181,6 +185,120 @@ impl FreeTerm
         Self(Tree::node(TermHead::Inst(name.into(), arity), args))
     }
 
+    /// The abstraction `bind a . t` of the atom `a` over `body`, at a port
+    /// written `bind (a : N) . T`: the atom is bound in `body`, and two
+    /// abstractions that differ by renaming it to an atom fresh for the body
+    /// are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn abs<N>(
+        atom: N,
+        body: Self,
+    ) -> Self
+    where
+        N: Into<Name>,
+    {
+        Self(Tree::node(TermHead::Abs(atom.into()), alloc::vec![body.0]))
+    }
+
+    /// The canonical name of the atom an abstraction `depth` abstractions deep
+    /// abstracts: `a0` at the outermost, `a1` under it, and so on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn canonical_atom(depth: AbstractionDepth) -> Name
+    {
+        Name::from(format!("a{}", usize::from(depth)))
+    }
+
+    /// The term with every abstraction's atom re-minted canonically: an
+    /// abstraction under `n` others abstracts the canonical atom of depth `n`
+    /// ([`Self::canonical_atom`]). Two terms that differ only in the atoms
+    /// their abstractions name re-mint to one term, since no term names an
+    /// atom an abstraction binds.
+    ///
+    /// # Specification
+    /// - ensures: the term's shape, heads and variables kept, each
+    ///   abstraction's atom replaced by the canonical atom of its depth among
+    ///   the abstractions above it; the executable predicate checks the root,
+    ///   whose head is kept unless it is an abstraction.
+    /// - panics: none.
+    /// - intension: one worklist pass, each node read once and rebuilt from its
+    ///   rebuilt arguments.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two terms whose nested abstractions name different
+    ///   atoms re-mint to one term, and an abstraction beside another, rather
+    ///   than under it, takes the same level.
+    /// - witness: `rule::tests::atoms_are_reminted_by_their_depth`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref minted| matches!(*self.0.to_ref().head(), TermHead::Abs(_))
+        || minted.0.to_ref().head() == self.0.to_ref().head())]
+    pub fn canonical_atoms(&self) -> Self
+    {
+        /// A step of the rebuild: a node to read at a depth, or a head to
+        /// apply to the arguments rebuilt last.
+        enum Mint<'term>
+        {
+            /// Read a node `usize` abstractions deep.
+            Read(TermNode<'term>, usize),
+            /// Rebuild the application of this node's head to its rebuilt
+            /// arguments, `usize` abstractions deep.
+            Build(TermNode<'term>, usize),
+        }
+        let mut pending = alloc::vec![Mint::Read(self.to_node(), 0)];
+        let mut built: Vec<Self> = Vec::new();
+        while let Some(step) = pending.pop() {
+            match step {
+                Mint::Read(node, depth) => {
+                    pending.push(Mint::Build(node, depth));
+                    let (args, below) = match node.view() {
+                        TermView::Var(_) => continue,
+                        TermView::Abs { args, .. } => (args, depth.saturating_add(1)),
+                        TermView::Ctor { args, .. }
+                        | TermView::Op { args, .. }
+                        | TermView::Results { args }
+                        | TermView::Inst { args, .. } => (args, depth),
+                    };
+                    let mark = pending.len();
+                    pending.extend(args.map(|arg| Mint::Read(arg, below)));
+                    if let Some(children) = pending.get_mut(mark ..) {
+                        children.reverse();
+                    }
+                },
+                Mint::Build(node, depth) => {
+                    let count = match node.view() {
+                        TermView::Var(_) => 0,
+                        TermView::Ctor { args, .. }
+                        | TermView::Op { args, .. }
+                        | TermView::Results { args }
+                        | TermView::Inst { args, .. }
+                        | TermView::Abs { args, .. } => args.len(),
+                    };
+                    let args = built.split_off(built.len().saturating_sub(count));
+                    built.push(match node.view() {
+                        TermView::Var(name) => Self::var(name.clone()),
+                        TermView::Ctor { name, .. } => Self::ctor(name.clone(), args),
+                        TermView::Op { name, .. } => Self::op(name.clone(), args),
+                        TermView::Results { .. } => Self::results(args),
+                        TermView::Inst { name, .. } => Self::inst(name.clone(), args),
+                        TermView::Abs { .. } => Self::abs(
+                            Self::canonical_atom(AbstractionDepth::from(depth)),
+                            args.into_iter().next().unwrap_or_else(|| Self::results([])),
+                        ),
+                    });
+                },
+            }
+        }
+        built.pop().unwrap_or_else(|| self.clone())
+    }
+
     /// The term as a borrowed node.
     ///
     /// # Specification
@@ -250,7 +368,7 @@ impl FreeTerm
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
-            TermHead::Var(_) | TermHead::Results(_) | TermHead::Inst(..) => None,
+            TermHead::Var(_) | TermHead::Results(_) | TermHead::Inst(..) | TermHead::Abs(_) => None,
             TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
         })
     }
@@ -293,7 +411,11 @@ impl FreeTerm
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
             TermHead::Results(width) => Some(width),
-            TermHead::Var(_) | TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Inst(..) => None,
+            TermHead::Var(_)
+            | TermHead::Ctor(..)
+            | TermHead::Op(..)
+            | TermHead::Inst(..)
+            | TermHead::Abs(_) => None,
         })
     }
 
@@ -325,9 +447,11 @@ impl FreeTerm
     {
         Self(self.0.to_ref().replace_leaves(|head| match *head {
             TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
-            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) | TermHead::Inst(..) => {
-                Maybe::Absent(leaf_image::Absent::Kept)
-            },
+            TermHead::Ctor(..)
+            | TermHead::Op(..)
+            | TermHead::Results(_)
+            | TermHead::Inst(..)
+            | TermHead::Abs(_) => Maybe::Absent(leaf_image::Absent::Kept),
         }))
     }
 }
@@ -371,6 +495,11 @@ impl fmt::Display for FreeTerm
         for head in self.0.heads() {
             let (name, arity) = match *head {
                 TermHead::Var(ref name) => (Some(name), 0_usize),
+                TermHead::Abs(ref atom) => {
+                    let body = rendered.pop().unwrap_or_default();
+                    rendered.push(format!("bind {atom} . {body}"));
+                    continue;
+                },
                 TermHead::Ctor(ref name, arity)
                 | TermHead::Op(ref name, arity)
                 | TermHead::Inst(ref name, arity) => (Some(name), usize::from(arity)),
@@ -423,6 +552,10 @@ impl<'term> TermNode<'term>
                 name,
                 args: TermArgs(self.0.children()),
             },
+            TermHead::Abs(ref atom) => TermView::Abs {
+                atom,
+                args: TermArgs(self.0.children()),
+            },
         }
     }
 
@@ -445,9 +578,11 @@ impl<'term> TermNode<'term>
     {
         self.0.preorder().filter_map(|head| match *head {
             TermHead::Var(ref name) => Some(name),
-            TermHead::Ctor(..) | TermHead::Op(..) | TermHead::Results(_) | TermHead::Inst(..) => {
-                None
-            },
+            TermHead::Ctor(..)
+            | TermHead::Op(..)
+            | TermHead::Results(_)
+            | TermHead::Inst(..)
+            | TermHead::Abs(_) => None,
         })
     }
 
@@ -500,6 +635,15 @@ pub enum TermView<'term>
         /// The metavariable's name.
         name: &'term Name,
         /// The terms standing for the variables it binds, in binder order.
+        args: TermArgs<'term>,
+    },
+    /// An atom's abstraction `bind a . t` at a port written
+    /// `bind (a : N) . T`: the atom is bound in its one argument, the body.
+    Abs
+    {
+        /// The abstracted atom's name.
+        atom: &'term Name,
+        /// The body, the one argument.
         args: TermArgs<'term>,
     },
 }
@@ -675,6 +819,32 @@ mod tests
         assert!(
             ground.collect_vars().is_empty(),
             "a ground term has no variables"
+        );
+    }
+
+    #[test]
+    fn atoms_are_reminted_by_their_depth()
+    {
+        // `par(bind x . bind y . p, bind z . q)` and the same term naming
+        // other atoms re-mint to one term: the outer abstractions take `a0`,
+        // the inner one `a1`, and the sibling `a0` again.
+        let written = |outer: &str, inner: &str, beside: &str| {
+            FreeTerm::op("par", [
+                FreeTerm::abs(outer, FreeTerm::abs(inner, FreeTerm::var("p"))),
+                FreeTerm::abs(beside, FreeTerm::var("q")),
+            ])
+        };
+        let minted = written("x", "y", "z").canonical_atoms();
+        assert_eq!(minted, written("a0", "a1", "a0"), "atoms by depth");
+        assert_eq!(
+            minted,
+            written("b", "c", "b").canonical_atoms(),
+            "renamed atoms re-mint alike"
+        );
+        assert_ne!(
+            written("x", "y", "z"),
+            written("b", "c", "b"),
+            "as written the two differ"
         );
     }
 

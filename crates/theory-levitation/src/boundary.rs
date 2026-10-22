@@ -292,6 +292,11 @@ count_wrapper! {
 }
 
 count_wrapper! {
+    /// How many abstractions stand above a position of a rule term.
+    pub struct AbstractionDepth(usize);
+}
+
+count_wrapper! {
     /// A zero-based index into a description's rule faces.
     pub struct RuleIndex(usize);
 }

@@ -1146,7 +1146,10 @@ impl<'source> Lowerer<'_, 'source>
                         pending.push(Walk::Apply(name, OperandCount::from(arguments.len())));
                         pending.extend(arguments.into_iter().rev().map(Walk::Read));
                     },
-                    TermView::Ctor { .. } | TermView::Results { .. } | TermView::Inst { .. } => {
+                    TermView::Ctor { .. }
+                    | TermView::Results { .. }
+                    | TermView::Inst { .. }
+                    | TermView::Abs { .. } => {
                         return Err(Missing::Unlowered);
                     },
                 },
@@ -3018,7 +3021,8 @@ fn term_heads<'term>(
             },
             TermView::Ctor { args, .. }
             | TermView::Results { args }
-            | TermView::Inst { args, .. } => {
+            | TermView::Inst { args, .. }
+            | TermView::Abs { args, .. } => {
                 pending.extend(args);
             },
         }

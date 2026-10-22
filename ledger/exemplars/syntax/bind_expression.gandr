@@ -1,0 +1,9 @@
+/// `bind_expression`: an atom abstracted over a rule term, at a port that
+/// abstracts one.
+theory Restriction {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule gc : nu(bind a . nil()) ==> nil();
+}

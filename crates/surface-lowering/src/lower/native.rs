@@ -9702,7 +9702,8 @@ fn rule_side(
             },
             gandr_theory_levitation::TermView::Op { .. }
             | gandr_theory_levitation::TermView::Results { .. }
-            | gandr_theory_levitation::TermView::Inst { .. } => {
+            | gandr_theory_levitation::TermView::Inst { .. }
+            | gandr_theory_levitation::TermView::Abs { .. } => {
                 return Maybe::Absent(rule_side::Absent::Foreign);
             },
         }

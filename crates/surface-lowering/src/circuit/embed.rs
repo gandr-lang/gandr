@@ -138,7 +138,8 @@ pub fn circuit_wiring(body: &CircuitBody) -> Result<Wiring, CircuitWiringError>
                 TermView::Var(name) => name,
                 TermView::Ctor { name, .. }
                 | TermView::Op { name, .. }
-                | TermView::Inst { name, .. } => {
+                | TermView::Inst { name, .. }
+                | TermView::Abs { atom: name, .. } => {
                     return Err(CircuitWiringError::ArgumentIsNotAPort(name.clone()));
                 },
                 TermView::Results { .. } => return Err(CircuitWiringError::ResultsAreNotAPort),

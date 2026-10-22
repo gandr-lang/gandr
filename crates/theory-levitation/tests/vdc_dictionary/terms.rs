@@ -88,6 +88,8 @@ enum Application
     Results,
     /// A metavariable's instantiation.
     Inst,
+    /// An atom's abstraction over its one body.
+    Abs,
 }
 
 impl Application
@@ -108,6 +110,12 @@ impl Application
             Self::Op => FreeTerm::op(name, args),
             Self::Results => FreeTerm::results(args),
             Self::Inst => FreeTerm::inst(name, args),
+            Self::Abs => FreeTerm::abs(
+                name,
+                args.into_iter()
+                    .next()
+                    .unwrap_or_else(|| FreeTerm::results([])),
+            ),
         }
     }
 }
@@ -218,6 +226,9 @@ where
                 },
                 TermView::Inst { name, args } => {
                     schedule(&mut work, Application::Inst, name.clone(), args);
+                },
+                TermView::Abs { atom, args } => {
+                    schedule(&mut work, Application::Abs, atom.clone(), args);
                 },
             },
             Rebuild::Assemble {
@@ -393,7 +404,7 @@ fn match_node(
 /// - witness: `tests::vdc_dictionary::terms::tests::positions_and_replacement_preserve_the_spine`
 #[spec(ensures: |ref found| *found == position.iter().try_fold(term.to_node(), |node, index| {
     match node.view() {
-        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } => args.nth(usize::from(*index)),
+        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } | TermView::Abs { mut args, .. } => args.nth(usize::from(*index)),
         | TermView::Var(_) => None,
     }
 }).map_or(Maybe::Absent(position::Absent::OffTerm), Maybe::Present))]
@@ -408,7 +419,8 @@ pub fn subterm_at<'term>(
             TermView::Ctor { mut args, .. }
             | TermView::Op { mut args, .. }
             | TermView::Results { mut args }
-            | TermView::Inst { mut args, .. } => args.nth(usize::from(index)),
+            | TermView::Inst { mut args, .. }
+            | TermView::Abs { mut args, .. } => args.nth(usize::from(index)),
             TermView::Var(_) => None,
         };
         let Some(next) = next
@@ -464,6 +476,7 @@ pub fn replace_at(
             TermView::Op { name, args } => (Application::Op, name.clone(), args),
             TermView::Results { args } => (Application::Results, Name::from(""), args),
             TermView::Inst { name, args } => (Application::Inst, name.clone(), args),
+            TermView::Abs { atom, args } => (Application::Abs, atom.clone(), args),
             TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
         };
         let args: Vec<TermNode<'_>> = args.collect();

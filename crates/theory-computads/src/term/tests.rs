@@ -727,6 +727,38 @@ fn a_free_term_reads_back_through_the_alphabet()
 }
 
 #[test]
+fn abstractions_naming_different_atoms_are_one_term()
+{
+    let restricted = |atom: &str| FreeTerm::op("nu", [FreeTerm::abs(atom, FreeTerm::var("p"))]);
+    let term = Term::from(&restricted("a"));
+    assert_eq!(
+        term,
+        Term::from(&restricted("b")),
+        "the atom an abstraction names is no part of its head"
+    );
+    assert_eq!(
+        Term(alloc::vec![
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs(Count(0)),
+            Head::Var(Name::from("p")),
+        ]),
+        term,
+        "the outermost abstraction is keyed at depth zero"
+    );
+    assert_eq!(
+        Maybe::Present(restricted("a0")),
+        term.read(),
+        "it reads back naming its canonical atom"
+    );
+    let twice = FreeTerm::abs("a", FreeTerm::abs("b", FreeTerm::var("p")));
+    assert_eq!(
+        Some(&Head::Abs(Count(1))),
+        Term::from(&twice).0.get(1),
+        "an abstraction under another is keyed one deeper"
+    );
+}
+
+#[test]
 fn the_circles_rules_fire_below_the_root()
 {
     let base = || ctor("Base", []);

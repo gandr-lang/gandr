@@ -80,6 +80,8 @@ const COUNTED: &[&str] = &[
     "expression access_expression name",
     "expression become_expression",
     "expression binary_expression",
+    "expression bind_expression",
+    "expression bind_expression name",
     "expression block",
     "expression block name",
     "expression boolean",

@@ -820,6 +820,8 @@ pub fn derive_boundary_within(
         FinishResults(usize),
         /// Rebuild a metavariable's instantiation over the last results.
         FinishInst(&'body Name, usize),
+        /// Rebuild an atom's abstraction over the last result.
+        FinishAbs(&'body Name),
         /// The port's subtree is built: take it off the active path.
         Leave(&'body Name),
     }
@@ -899,6 +901,7 @@ pub fn derive_boundary_within(
                     TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
                     TermView::Results { args } => (Step::FinishResults(args.len()), args),
                     TermView::Inst { name, args } => (Step::FinishInst(name, args.len()), args),
+                    TermView::Abs { atom, args } => (Step::FinishAbs(atom), args),
                 };
                 stack.push(finish);
                 pending.clear();
@@ -924,6 +927,10 @@ pub fn derive_boundary_within(
             Step::FinishInst(name, arity) => {
                 let args = results.split_off(results.len().saturating_sub(arity));
                 results.push(FreeTerm::inst(name.clone(), args));
+            },
+            Step::FinishAbs(atom) => {
+                let body = results.pop().unwrap_or_else(|| FreeTerm::var(atom.clone()));
+                results.push(FreeTerm::abs(atom.clone(), body));
             },
             Step::Leave(port) => {
                 path.remove(port);

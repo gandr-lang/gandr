@@ -262,6 +262,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Abstracted", vec![
             "String", "String", "Theory", "Theory", "Theory", "Theory",
         ]),
+        ("Abs", vec!["String", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1277,5 +1278,57 @@ fn an_abstracting_port_takes_its_own_tag()
         .decode(),
         Err(TheoryFault::Misplaced(Tag::Abstracted.constructor())),
         "a sort's index port abstracts nothing"
+    );
+}
+
+#[test]
+fn a_rule_abstraction_takes_its_own_tag()
+{
+    let gc = |atom: &str| {
+        let mut body = port("p", "Proc", []);
+        body.abstractions.push(TheoryBinder {
+            name: Name::from("a"),
+            sort: Name::from("Name"),
+            indices: Vec::new(),
+        });
+        TheoryParts {
+            sorts: vec![
+                sort("Name", Representability::Atom),
+                sort("Proc", Representability::Ordinary),
+            ],
+            operations: vec![
+                TheoryOperation {
+                    name: Name::from("nil"),
+                    kind: OperationKind::Operation,
+                    inputs: Vec::new(),
+                    outputs: vec![port("", "Proc", [])],
+                },
+                TheoryOperation {
+                    name: Name::from("nu"),
+                    kind: OperationKind::Operation,
+                    inputs: vec![body],
+                    outputs: vec![port("", "Proc", [])],
+                },
+            ],
+            rules: vec![TheoryRule {
+                name: Name::from("gc"),
+                left: FreeTerm::op("nu", [FreeTerm::abs(atom, FreeTerm::op("nil", []))]),
+                right: FreeTerm::op("nil", []),
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let parts = gc("a");
+    let value = TheoryValue::encode(&parts);
+    assert_eq!(value.decode(), Ok(parts), "a rule's abstraction reads back");
+    assert_eq!(
+        Tag::Abs.constructor(),
+        ConstructorTag::from(24_usize),
+        "appended, so a presentation abstracting in no rule keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&gc("b")),
+        value,
+        "the value keeps the atom as written, as it keeps a rule's variables"
     );
 }
