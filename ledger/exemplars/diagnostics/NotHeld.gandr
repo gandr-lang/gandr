@@ -1,0 +1,6 @@
+/// `NotHeld`: an access naming a linear slot that holds no value.
+@[ refuses("NotHeld") ]
+def nested() -> -F Unit {
+  hold n = 1;
+  access n as v { access v as w { resume(w, 2) } ; resume(v, 1) }
+}

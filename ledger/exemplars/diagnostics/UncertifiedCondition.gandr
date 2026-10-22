@@ -1,0 +1,31 @@
+/// `UncertifiedCondition`: univalence over a catalogue whose site fails the corolla or the Segal condition.
+theory Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => +{.1 = unit},
+    false => +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  e
+}
+
+@[ checks ]
+def raised = ua[
+  2,
+  4
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UncertifiedCondition") ]
+def empty = ua[
+  1,
+  0
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

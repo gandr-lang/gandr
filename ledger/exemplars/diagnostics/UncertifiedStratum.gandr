@@ -1,0 +1,53 @@
+/// `UncertifiedStratum`: a universe equivalence whose round trip at a list cell does not return it with the tail unread.
+@[ checks ]
+def not(b : Unit + Unit) -> -F (Unit + Unit) {
+  case b {
+    +{.0 = u} => +{.1 = u},
+    +{.1 = u} => +{.0 = u}
+  }
+}
+
+@[ checks ]
+def not_not(b : Unit + Unit) -> -F (Unit + Unit) {
+  become not(not(b))
+}
+
+@[ checks ]
+def same(b : Unit + Unit) -> -F (Unit + Unit) {
+  b
+}
+
+@[ checks ]
+def negation : Path(Type, Bool, Bool) ;
+
+def negation = equiv(not, not) ;
+
+@[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
+def both : List(Bool) ;
+
+def both = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
+
+@[ checks ]
+def keep(xs : List(Bool)) -> -F List(Bool) {
+  xs
+}
+
+@[ checks ]
+def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
+  case entry {
+    #{b, xs} => { run c <- not(b); (c, xs) }
+  }
+}
+
+@[ checks ]
+def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) ;
+
+def flagged = equiv(flip_flag, flip_flag) ;
+
+@[ checks ]
+def emptied(xs : List(Bool)) -> -F List(Bool) {
+  nil
+}
+
+@[ refuses("UncertifiedStratum") ]
+def collapsed = equiv(emptied, keep) ;

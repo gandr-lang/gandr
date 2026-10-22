@@ -1,0 +1,17 @@
+/// `HeldConsumed`: a held slot read, accessed or consumed after a consumed receiver ended its hold, or consumed on one arm of an offer and not on another.
+/// An integer's methods.
+module Taken {
+  /// The integer, taken.
+  @[ checks ]
+  def take(self : consumed Integer) -> -F Integer { pure self }
+  /// The integer, read.
+  @[ checks ]
+  def look(self : shared Integer) -> -F Integer { pure 1 }
+}
+
+@[ refuses("HeldConsumed") ]
+def readAfterTaken() -> -F Integer {
+  hold n = 3;
+  run m <- n.take();
+  n.look()
+}

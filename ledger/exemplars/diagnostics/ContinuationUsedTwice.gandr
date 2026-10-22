@@ -1,0 +1,40 @@
+/// `ContinuationUsedTwice`: a continuation holding an obligation resumed or abandoned a second time.
+module Ring :> #{
+  type Sqe,
+  type Cqe,
+  type Submission = ?Sqe. !Cqe. end,
+  type Buffer = end,
+  type Pending = ?Cqe. end,
+  type Moving = ?Buffer. !Cqe. end,
+  type Reaping = ?Pending. end,
+  type Cancelling = ?Pending. !Cqe. end,
+  read : Sqe,
+  done : Cqe
+} {
+  type Sqe = String;
+  type Cqe = Integer;
+  /// The entry a read submits.
+  @[ checks ]
+  def read = "read";
+  /// The result its completion posts.
+  @[ checks ]
+  def done = 0;
+}
+
+@[ refuses("ContinuationUsedTwice") ]
+def resumedTwice() -> -F Unit {
+  handle c : Proc {
+    fork (kernel : Ring.Submission) {
+      recv(kernel) as sqe;
+      send(kernel, Ring.done);
+      close(kernel)
+    } as ring;
+    send(ring, Ring.read);
+    c.exit(1);
+    recv(ring) as cqe;
+    close(ring)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => { run first <- k(unit) ; k(unit) }
+  }
+}

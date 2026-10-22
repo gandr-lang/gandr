@@ -1,0 +1,20 @@
+/// `IndexedCase`: a case scrutinises a value of an indexed family, whose branches would each learn the index their constructor stands at.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+data Vec(a : Type) : Nat -> Type {
+  VNil : Vec(a, Zero);
+  VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n));
+}
+
+@[ refuses("IndexedCase") ]
+def size(v : Vec(Integer, Succ(Zero))) -> -F Nat {
+  case v {
+    VNil => Zero,
+    VCons(n, head, tail) => Succ(n)
+  }
+}

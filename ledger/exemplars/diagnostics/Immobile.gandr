@@ -1,0 +1,38 @@
+/// `Immobile`: a value crossing to a world its type does not reach.
+module Seat :> #{
+  type Dispatch,
+  mobile type Report,
+  type Handoff,
+  type SeatEnd = ?Dispatch. mu turn. +{
+    report : !Report. &{ next : turn, retire : end },
+    handoff : !Handoff. end
+  },
+  task : Dispatch,
+  progress : Report,
+  notes : Handoff
+} {
+  type Dispatch = String;
+  type Report = String;
+  type Handoff = String;
+  /// The dispatch a seat receives.
+  @[ checks ]
+  def task = "task";
+  /// A report it sends.
+  @[ checks ]
+  def progress = "progress";
+  /// The notes it hands off.
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ checks ]
+world operator ;
+
+@[ checks ]
+world seat ;
+
+@[ refuses("Immobile") ]
+@[ entry((operator, seat)) ]
+def suspendedBack() -> -F (() => Seat.Report) {
+  migrate [seat] { pure thunk { pure Seat.progress } }
+}
