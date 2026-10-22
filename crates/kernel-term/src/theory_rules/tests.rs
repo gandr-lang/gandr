@@ -532,3 +532,44 @@ fn an_abstraction_reads_as_one_symbol_whatever_its_atom()
         "an abstraction is a constructor of one field"
     );
 }
+
+#[test]
+fn a_freshness_condition_reads_after_its_written_rule()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let mut code = Code::new();
+    let (p, q) = (code.var(literal("p")), code.var(literal("q")));
+    let over = code.abs(literal("a"), p);
+    let restricted = code.app(literal("nu"), &[over]);
+    let left = code.app(literal("par"), &[restricted, q]);
+    let joined = code.app(literal("par"), &[p, q]);
+    let enclosed = code.abs(literal("a"), joined);
+    let right = code.app(literal("nu"), &[enclosed]);
+    let [scope, a, q_name] = ["scope", "a", "q"].map(|name| code.text(literal(name)));
+    let (rule_tag, fresh_tag) = (
+        ConstructorTag::from(super::tag::RULE),
+        ConstructorTag::from(super::tag::FRESH),
+    );
+    let unconditioned = code.presents(vec![(rule_tag, vec![scope, left, right])]);
+    let conditioned = code.presents(vec![
+        (rule_tag, vec![scope, left, right]),
+        (fresh_tag, vec![a, q_name]),
+    ]);
+    assert_eq!(
+        TheoryRules::read(&code.arena, conditioned).map(|read| read.rules().to_vec()),
+        TheoryRules::read(&code.arena, unconditioned).map(|read| read.rules().to_vec()),
+        "a condition holds of every instance while no term names an atom"
+    );
+    let fresh_first = code.presents(vec![
+        (fresh_tag, vec![a, q_name]),
+        (rule_tag, vec![scope, left, right]),
+    ]);
+    assert_eq!(
+        TheoryRules::read(&code.arena, fresh_first),
+        Err(TheoryRuleRefusal {
+            rule: RuleIndex::from(0_usize),
+            fault: TheoryRuleFault::Unreadable,
+        }),
+        "a condition stands after the rule it is stated on"
+    );
+}

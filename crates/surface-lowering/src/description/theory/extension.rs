@@ -338,7 +338,12 @@ impl Reader<'_, '_>
         );
         let law = |name: Name, left: FreeTerm, right: FreeTerm| {
             (
-                TheoryRule { name, left, right },
+                TheoryRule {
+                    name,
+                    left,
+                    right,
+                    fresh: Vec::new(),
+                },
                 extension.keyword,
                 WrittenFace {
                     named: Maybe::Absent(member_name::Absent::Generated),

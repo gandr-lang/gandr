@@ -41,6 +41,7 @@ use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::rule::FreeTerm;
+use crate::rule::Freshness;
 use crate::termination::Rank;
 use crate::test_support::Grade;
 use crate::wellformed::check_desc;
@@ -179,11 +180,13 @@ fn cat_like() -> TheoryParts
                     FreeTerm::var("f"),
                 ]),
                 right: FreeTerm::var("f"),
+                fresh: Vec::new(),
             },
             TheoryRule {
                 name: Name::from("halves"),
                 left: FreeTerm::op("split", [FreeTerm::ctor("Pair", [x(), x()])]),
                 right: FreeTerm::results([x(), x()]),
+                fresh: Vec::new(),
             },
         ],
         ..TheoryParts::default()
@@ -263,6 +266,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
             "String", "String", "Theory", "Theory", "Theory", "Theory",
         ]),
         ("Abs", vec!["String", "Theory"]),
+        ("Fresh", vec!["String", "String", "Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -837,6 +841,7 @@ fn semigroup() -> TheoryParts
             name: Name::from("assoc"),
             left: mul(mul(v("x"), v("y")), v("z")),
             right: mul(v("x"), mul(v("y"), v("z"))),
+            fresh: Vec::new(),
         }],
         ..TheoryParts::default()
     }
@@ -863,6 +868,7 @@ fn unit_named(
             name: rule,
             left: FreeTerm::op("mul", [FreeTerm::op(operation, []), FreeTerm::var("x")]),
             right: FreeTerm::var("x"),
+            fresh: Vec::new(),
         },
     )
 }
@@ -1314,6 +1320,7 @@ fn a_rule_abstraction_takes_its_own_tag()
                 name: Name::from("gc"),
                 left: FreeTerm::op("nu", [FreeTerm::abs(atom, FreeTerm::op("nil", []))]),
                 right: FreeTerm::op("nil", []),
+                fresh: Vec::new(),
             }],
             ..TheoryParts::default()
         }
@@ -1330,5 +1337,86 @@ fn a_rule_abstraction_takes_its_own_tag()
         TheoryValue::encode(&gc("b")),
         value,
         "the value keeps the atom as written, as it keeps a rule's variables"
+    );
+}
+
+#[test]
+fn a_freshness_condition_follows_its_rule()
+{
+    let scope = |fresh: Vec<Freshness>| {
+        let mut body = port("p", "Proc", []);
+        body.abstractions.push(binder("a", "Name"));
+        let par = |left: FreeTerm, right: FreeTerm| FreeTerm::op("par", [left, right]);
+        let nu = |body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs("a", body)]);
+        TheoryParts {
+            sorts: vec![
+                sort("Name", Representability::Atom),
+                sort("Proc", Representability::Ordinary),
+            ],
+            operations: vec![
+                TheoryOperation {
+                    name: Name::from("par"),
+                    kind: OperationKind::Operation,
+                    inputs: vec![port("p", "Proc", []), port("q", "Proc", [])],
+                    outputs: vec![port("", "Proc", [])],
+                },
+                TheoryOperation {
+                    name: Name::from("nu"),
+                    kind: OperationKind::Operation,
+                    inputs: vec![body],
+                    outputs: vec![port("", "Proc", [])],
+                },
+            ],
+            rules: vec![TheoryRule {
+                name: Name::from("scope"),
+                left: par(nu(FreeTerm::var("p")), FreeTerm::var("q")),
+                right: nu(par(FreeTerm::var("p"), FreeTerm::var("q"))),
+                fresh,
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let conditioned = scope(vec![Freshness::new("a", "q"), Freshness::new("a", "p")]);
+    let value = TheoryValue::encode(&conditioned);
+    assert_eq!(
+        value.decode(),
+        Ok(conditioned.clone()),
+        "the conditions read back with their rule, in written order"
+    );
+    let turned = RuleCertificate {
+        turns: vec![RuleTurn::Turned],
+        ..RuleCertificate::default()
+    };
+    let certified = TheoryValue::encode_certified(&conditioned, &turned);
+    assert_eq!(
+        (certified.decode(), certified.certificate()),
+        (Ok(conditioned), Ok(turned)),
+        "a turned rule keeps its conditions"
+    );
+    assert_eq!(
+        Tag::Fresh.constructor(),
+        ConstructorTag::from(25_usize),
+        "appended, so a presentation stating no condition keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&scope(Vec::new())),
+        value,
+        "the conditions are part of the value"
+    );
+    let fresh_first = node(
+        Tag::Fresh,
+        Payload::pair(
+            Payload::leaf(&b"a"[..]),
+            Payload::pair(Payload::leaf(&b"q"[..]), end()),
+        ),
+    );
+    assert_eq!(
+        TheoryValue::from_value(node(
+            Tag::Presents,
+            Payload::pair(end(), Payload::pair(end(), Payload::rec(fresh_first))),
+        ))
+        .decode(),
+        Err(TheoryFault::Misplaced(Tag::Fresh.constructor())),
+        "a condition follows the rule it is stated on"
     );
 }

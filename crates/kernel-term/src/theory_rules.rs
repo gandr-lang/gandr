@@ -5,9 +5,10 @@
 //! A `theory` block's core definition is a value of the presentation code,
 //! `Theory`. Its rule chain carries, beside each written rule, what the
 //! decision replays rather than searches for: the rule's orientation (`Rule`
-//! as written, `Turned` right to left), the rules a completion derived
-//! (`Derived`, each naming the critical pair it joins) and each operation's
-//! rank (`Rank`). [`TheoryRules::read`] reads the chain and
+//! as written, `Turned` right to left) and the freshness conditions it states
+//! (`Fresh`), the rules a completion derived (`Derived`, each naming the
+//! critical pair it joins) and each operation's rank (`Rank`).
+//! [`TheoryRules::read`] reads the chain and
 //! [`TheoryRules::decide`] decides it in four steps:
 //!
 //! 1. every side is one term, every left side is headed by an operation and
@@ -93,7 +94,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 25] = [
+pub const PRESENTATION_CODE: [(usize, usize); 26] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -119,6 +120,7 @@ pub const PRESENTATION_CODE: [(usize, usize); 25] = [
     (1, 2),
     (2, 4),
     (1, 1),
+    (2, 1),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -150,6 +152,8 @@ mod tag
     pub(super) const INST: usize = 21;
     /// An atom's abstraction over its body.
     pub(super) const ABS: usize = 24;
+    /// A freshness condition on the written rule before it.
+    pub(super) const FRESH: usize = 25;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -584,18 +588,21 @@ impl TheoryRules
     /// - requires: nothing — the value may be arbitrary producer bytes.
     /// - ensures: the root is `Presents` and its rule chain reads, in order,
     ///   written rules (`Rule` as written, `Turned` with its sides exchanged),
-    ///   then derived rules (`Derived`, its peak's three numerals), then ranks
-    ///   (`Rank`, an operation's name and a numeral), then `End`. Each term is
-    ///   a `Var`, or an `App`, `Con` or `Tuple` over its `Arg` chain; a symbol
-    ///   is interned by kind, name and argument count, an `App` symbol taking
-    ///   the rank its name is given and every other symbol a constructor's
-    ///   place. A rule's variables are numbered by first occurrence on its left
-    ///   side, then on its right.
+    ///   each followed by its freshness conditions (`Fresh`, an atom's and a
+    ///   variable's names), then derived rules (`Derived`, its peak's three
+    ///   numerals), then ranks (`Rank`, an operation's name and a numeral),
+    ///   then `End`. Each term is a `Var`, or an `App`, `Con` or `Tuple` over
+    ///   its `Arg` chain; a symbol is interned by kind, name and argument
+    ///   count, an `App` symbol taking the rank its name is given and every
+    ///   other symbol a constructor's place. A rule's variables are numbered by
+    ///   first occurrence on its left side, then on its right. A condition
+    ///   holds of every instance, since no term names an atom, so the rules
+    ///   read are the rules decided.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
-    ///   being readable at: a member out of that order, a term position holding
-    ///   no term, a field that is no string where a name or numeral stands, a
-    ///   numeral not in its one decimal spelling, or a second rank for one
-    ///   name.
+    ///   being readable at: a member out of that order, a condition before
+    ///   every written rule, a term position holding no term, a field that is
+    ///   no string where a name or numeral stands, a numeral not in its one
+    ///   decimal spelling, or a second rank for one name.
     /// - panics: none.
     /// - intension: the chain walked in a loop and each term read from a
     ///   worklist, so no step recurses.
@@ -2276,6 +2283,11 @@ impl<'arena> Reader<'arena>
                 },
                 Some((tag::TURNED, &[_, left, right, rest])) if stage == Stage::Written => {
                     self.rule(right, left, &mut buffers).map(|()| rest)
+                },
+                Some((tag::FRESH, &[atom, term, rest]))
+                    if stage == Stage::Written && !self.rules.is_empty() =>
+                {
+                    self.text(atom).and_then(|_| self.text(term)).map(|_| rest)
                 },
                 Some((tag::DERIVED, &[outer, position, inner, left, right, rest]))
                     if stage <= Stage::Derived =>

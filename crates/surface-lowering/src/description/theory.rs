@@ -93,6 +93,19 @@
 //! `description::theory::tests::a_binder_over_an_ordinary_sort_is_refused_by_name`,
 //! `description::theory::tests::an_abstraction_stands_outside_the_binders`.
 //!
+//! A rule between terms may close on a `where` clause of freshness
+//! conditions, `rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p,
+//! q)) where a # q;`: the atom `a` stands outside the support of the term `q`
+//! stands for (Fernández and Gabbay, _Nominal rewriting_, I&C 2007). The
+//! reader keeps each condition on its rule, in written order, and the value
+//! codes it in a `Fresh` member after the rule; a condition naming an atom no
+//! abstraction of the rule names or a variable its left side does not bind,
+//! and a rule whose variable moves into or out of an abstraction with no
+//! condition naming that atom fresh for it, are the description check's
+//! `UnknownFreshness` and `Capture`. Witnesses:
+//! `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`,
+//! `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`.
+//!
 //! # The shape parameter
 //!
 //! A `shape` member states the finite shape the signature's cells are stated
@@ -174,6 +187,7 @@ use gandr_theory_levitation::CircuitRule;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FrameHead;
 use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::Freshness;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::NominalSerial;
@@ -202,6 +216,7 @@ use quenchant_shape::shape::Maybe;
 use super::DescribedDeclaration;
 use super::DescriptionDiagnostic;
 use super::DescriptionFault;
+use super::MemberEnd;
 use super::Reader;
 use super::Run;
 use super::Spelling;
@@ -399,7 +414,7 @@ impl Reader<'_, '_>
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let members = split_members(run.remaining());
+        let members = split_members(run.remaining(), MemberEnd::Semicolon);
         let mut parts = TheoryParts::default();
         let mut placement = Placement::default();
         let mut scope = BTreeMap::new();
@@ -1519,15 +1534,17 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a rule member: a written face between two terms, or a circuit
-    /// body whose sphere is derived from the written wiring.
+    /// Read a rule member: a written face between two terms, with the
+    /// freshness conditions its `where` clause states, or a circuit body
+    /// whose sphere is derived from the written wiring.
     ///
     /// # Specification
     /// - ensures: a member whose first side is a term is the face `lhs ==> rhs`
-    ///   it writes; a member whose first side is a port group is a circuit rule
-    ///   whose source and target are derived, never fabricated for a failed
-    ///   body, with one root per declared output and one port per output of
-    ///   each frame.
+    ///   it writes, each `a # q` of its `where` clause a condition on it in
+    ///   written order; a member whose first side is a port group is a circuit
+    ///   rule whose source and target are derived, never fabricated for a
+    ///   failed body, with one root per declared output and one port per output
+    ///   of each frame.
     /// - fails: malformed, cyclic, oversized and unrepresentable bodies are
     ///   located; a redex binds exactly one port; a member with no body whose
     ///   first side is a parenthesized composite, a cell between composites of
@@ -1542,14 +1559,16 @@ impl Reader<'_, '_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a readable body, a cycle, a body past the node
-    ///   ceiling, a written face and a two-rooted body over a many-out frame
-    ///   separate a derived sphere, a written one and the two refusals.
+    ///   ceiling, a written face, a face with two conditions and a two-rooted
+    ///   body over a many-out frame separate a derived sphere, a written one,
+    ///   its conditions and the two refusals.
     /// - witness: `description::theory::tests::a_ruled_theory_block_lowers_its_members_into_a_description`
     /// - witness: `description::theory::tests::a_wiring_that_closes_a_cycle_earns_the_declaration_tables_refusal`
     /// - witness: `description::theory::tests::a_doubling_body_declines_on_the_derivation_node_budget`
     /// - witness: `description::theory::tests::the_cat_shape_laws_are_written_faces`
     /// - witness: `description::theory::tests::a_many_out_frame_binds_every_port_and_roots_the_body`
     /// - witness: `description::theory::tests::a_coherence_between_composites_is_a_higher_cell`
+    /// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1591,6 +1610,20 @@ impl Reader<'_, '_>
             };
             run.arrow(Some(ArrowRow::Face))?;
             let rhs = run.take()?;
+            let mut fresh = Vec::new();
+            if run.eat(Spelling("where")).0 {
+                loop {
+                    let atom = run.take()?;
+                    if !run.eat(Spelling("#")).0 {
+                        return Err(run.fault(DescriptionFault::Malformed));
+                    }
+                    let term = run.take()?;
+                    fresh.push(Freshness::new(self.text(atom).0, self.text(term).0));
+                    if !run.eat(Spelling(",")).0 {
+                        break;
+                    }
+                }
+            }
             run.end()?;
             let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
             let (rhs, right) = self.free_term(rhs, &lhs.to_node().vars().collect())?;
@@ -1599,6 +1632,7 @@ impl Reader<'_, '_>
                     name: self.text(name).0.into(),
                     left: lhs,
                     right: rhs,
+                    fresh,
                 },
                 name,
                 run.span,

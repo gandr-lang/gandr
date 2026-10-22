@@ -8,8 +8,9 @@
 // a rule's variables. The signature is `bind-port.gandr`'s restriction.
 
 /// Scope extrusion: a restriction over one side of a parallel composition
-/// encloses both. The checker orients the law, finds no critical pair and
-/// the kernel replays the verdict.
+/// encloses both. `q` moves under the restriction, so the law states `a`
+/// fresh for it (`freshness.gandr`). The checker orients the law, finds no
+/// critical pair and the kernel replays the verdict.
 @[ checks ]
 theory Scope {
   sort Name : Atom;
@@ -17,7 +18,7 @@ theory Scope {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q));
+  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
 }
 
 /// Two laws whose left sides differ only in the atom they abstract: one left

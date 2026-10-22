@@ -1610,7 +1610,8 @@ fn scan_shell_double_interior(
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; shell brackets are subshell delimiters, not
-///   host punctuation.
+///   host punctuation; a lone `#` is unknown, the freshness relation being host
+///   syntax.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1618,9 +1619,9 @@ fn scan_shell_double_interior(
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
 ///   and failure to advance change a row; shell brackets are subshell
-///   delimiters, not host punctuation.
+///   delimiters, not host punctuation, and a lone `#` stays unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, _ => true }))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, Some(b'#') if !matches!(bytes.0.get(pos.0 ..).and_then(|rest| rest.get(1)), Some(b'!' | b'{')) => ret.lexeme == Lexeme::Unknown, _ => true }))]
 fn scan_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1640,8 +1641,15 @@ fn scan_shell_interior(
         },
         b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
         // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
-        // punctuation is structural.
-        b'#' => scan_hash(bytes, pos),
+        // punctuation is structural. The freshness relation's lone `#` is host
+        // syntax, so inside a shell block it stays unknown.
+        b'#' => match scan_hash(bytes, pos) {
+            ScanResult {
+                lexeme: Lexeme::Punct,
+                next,
+            } if next == pos.advance(ByteWidth::ONE) => ScanResult::new(Lexeme::Unknown, next),
+            scanned => scanned,
+        },
         b'$' => scan_dollar(bytes, pos),
         // A shell `[` / `]` is a subshell bracket (tree-sitter `subshell`),
         // classified DISTINCTLY from the host list-literal `[` so a subshell
@@ -1891,12 +1899,15 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: shebang, shell/record start, or a stray byte.
+/// Scan a lexeme led by `#`: shebang, shell/record start, the freshness
+/// relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; shebangs are layout, record and valid shell
-///   openers are punctuation, other hashes are unknown.
+///   openers are punctuation, a `#` that opens neither is the one-byte
+///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
+///   shell is unknown.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1904,7 +1915,8 @@ fn scan_slash(
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
 ///   and failure to advance change a row; shebangs are layout, record and valid
-///   shell openers are punctuation, other hashes are unknown.
+///   shell openers are punctuation, a lone hash is punctuation and a `#!` that
+///   opens no shell is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
@@ -1924,7 +1936,8 @@ fn scan_hash(
         },
         // `#{` record / record-type / record-pattern open.
         Some(b'{') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
-        _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
+        // `a # t`: the freshness relation.
+        _ => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
     }
 }
 
@@ -3176,6 +3189,7 @@ mod tests
             (super::scan_shell_interior, &[
                 ("[x", Lexeme::SubshellOpen, 1),
                 ("]x", Lexeme::SubshellClose, 1),
+                ("# q", Lexeme::Unknown, 1),
                 ("word=ok;", Lexeme::EnvAssign, 7),
                 (" \t", Lexeme::Space, 2),
                 ("2>x", Lexeme::FileDescriptor, 1),
@@ -3199,7 +3213,8 @@ mod tests
                 ("#!sh{x", Lexeme::Punct, 5),
                 ("#{x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 1),
-                ("#", Lexeme::Unknown, 1),
+                ("#", Lexeme::Punct, 1),
+                ("# q", Lexeme::Punct, 1),
             ]),
             (super::scan_character, &[
                 ("'é'x", Lexeme::Character, 4),

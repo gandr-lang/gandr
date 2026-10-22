@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-five constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-six constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -94,6 +94,7 @@
 //! | 22 | `Atom` | as `Sort`, for an atom sort |
 //! | 23 | `Abstracted` | as `Bound`, its atom binders before its binders |
 //! | 24 | `Abs` | an atom's name, its body as a chain of one argument |
+//! | 25 | `Fresh` | an atom's name, a metavariable's name, the rest of the rules |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -303,6 +304,7 @@ use crate::generic::PayloadNode;
 use crate::generic::PayloadView;
 use crate::generic::serialize_value;
 use crate::rule::FreeTerm;
+use crate::rule::Freshness;
 use crate::rule::RuleFace;
 use crate::rule::TermNode;
 use crate::rule::TermView;
@@ -310,7 +312,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 25] = [
+pub const THEORY_CONSTRUCTORS: [&str; 26] = [
     "Presents",
     "End",
     "Sort",
@@ -336,11 +338,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 25] = [
     "Atom",
     "Abstracted",
     "Abs",
+    "Fresh",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 25] = [
+const CONSTRUCTORS: [(&str, usize, usize); 26] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -366,6 +369,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 25] = [
     (THEORY_CONSTRUCTORS[22], 1, 2),
     (THEORY_CONSTRUCTORS[23], 2, 4),
     (THEORY_CONSTRUCTORS[24], 1, 1),
+    (THEORY_CONSTRUCTORS[25], 2, 1),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -423,6 +427,9 @@ enum Tag
     Abstracted,
     /// An atom's abstraction over its body.
     Abs,
+    /// A freshness condition on the rule before it, and the rest of the
+    /// rules.
+    Fresh,
 }
 
 impl Tag
@@ -460,11 +467,12 @@ impl Tag
             Self::Atom => 22,
             Self::Abstracted => 23,
             Self::Abs => 24,
+            Self::Fresh => 25,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-five constructors.
+/// The description of `Theory`, one data sort of twenty-six constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -670,6 +678,8 @@ pub struct TheoryRule
     pub left: FreeTerm,
     /// The right-hand side.
     pub right: FreeTerm,
+    /// The freshness conditions the rule states, in written order.
+    pub fresh: Vec<Freshness>,
 }
 
 /// How a written rule rewrites: as written, or right to left.
@@ -1142,10 +1152,11 @@ impl TheoryValue
     ///   sort chain over its `Face` chain, a representable sort as
     ///   `Representable`, an atom sort as `Atom` and a port with binders as
     ///   `Bound`; the rule chain holds each written rule as a `Turned` where
-    ///   `certificate` turns it and a `Rule` otherwise, then each derived rule
-    ///   as a `Derived`, then each rank as a `Rank`. [`Self::decode`] reads
-    ///   `parts` back and [`Self::certificate`] the certificate, its turns one
-    ///   per written rule.
+    ///   `certificate` turns it and a `Rule` otherwise, followed by a `Fresh`
+    ///   per freshness condition it states, then each derived rule as a
+    ///   `Derived`, then each rank as a `Rank`. [`Self::decode`] reads `parts`
+    ///   back and [`Self::certificate`] the certificate, its turns one per
+    ///   written rule.
     /// - panics: none.
     /// - intension: every chain is folded from its end and every term built
     ///   from a post-order worklist, so no step recurses.
@@ -1238,6 +1249,13 @@ impl TheoryValue
             ]);
         }
         for (index, rule) in parts.rules.iter().enumerate().rev() {
+            for condition in rule.fresh.iter().rev() {
+                rules = value(Tag::Fresh, vec![
+                    leaf(&condition.atom),
+                    leaf(&condition.term),
+                    rec(rules),
+                ]);
+            }
             let left = term(rule.left.to_node());
             let right = term(rule.right.to_node());
             let tag = match certificate.turns.get(index) {
@@ -1911,15 +1929,18 @@ fn read_shape(
 }
 
 /// The written rules of the rule chain at `node`, in order, each with its
-/// written sides, and the certificate the chain carries after them.
+/// written sides and its freshness conditions, and the certificate the chain
+/// carries after them.
 ///
 /// # Specification
-/// - ensures: one rule and one turn per `Rule` or `Turned` member, then one
-///   derived rule per `Derived` member, then one rank per `Rank` member, the
-///   chain ending at `End`.
+/// - ensures: one rule and one turn per `Rule` or `Turned` member, its
+///   conditions the `Fresh` members after it, then one derived rule per
+///   `Derived` member, then one rank per `Rank` member, the chain ending at
+///   `End`.
 /// - fails: as [`member`], [`text`], [`nested`] and [`read_term`] for a member
-///   out of that order or a malformed field; [`TheoryFault::Numeral`] for a
-///   peak's or a rank's numeral not in its one spelling.
+///   out of that order or a malformed field, a `Fresh` member after no written
+///   rule among them; [`TheoryFault::Numeral`] for a peak's or a rank's numeral
+///   not in its one spelling.
 /// - panics: none.
 /// - executable: none — a predicate would read the chain a second time.
 ///
@@ -1958,9 +1979,20 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
         let name = text(name)?;
         let left = read_term(nested(left)?)?;
         let right = read_term(nested(right)?)?;
-        rules.push(TheoryRule { name, left, right });
-        certificate.turns.push(turn);
+        let mut fresh = Vec::new();
         at = nested(rest)?;
+        while at.ctor == Tag::Fresh.constructor() {
+            let [atom, term, rest] = expect::<3>(at, Tag::Fresh)?;
+            fresh.push(Freshness::new(text(atom)?, text(term)?));
+            at = nested(rest)?;
+        }
+        rules.push(TheoryRule {
+            name,
+            left,
+            right,
+            fresh,
+        });
+        certificate.turns.push(turn);
     }
     while at.ctor == Tag::Derived.constructor() {
         let [outer, position, inner, left, right, rest] = expect::<6>(at, Tag::Derived)?;
@@ -2408,7 +2440,7 @@ impl TheoryValue
             .zip(faces)
             .map(|(rule, &span)| {
                 let variables = derive_cell_var_meta(&rule.left);
-                RuleFace::new(rule.left, rule.right, variables, span)
+                RuleFace::new(rule.left, rule.right, variables, span).with_fresh(rule.fresh)
             })
             .collect();
         let description = TheoryDesc::new(

@@ -596,11 +596,13 @@ enum Continuation
     Continued,
 }
 
-/// The items of a group's elements: an item ends after a separator, unless
-/// a comment follows on the separator's line, and before an element the
-/// source wrote on a new line. An item the source started on a new line,
-/// after no separator and indented deeper than the statement before it,
-/// continues that statement.
+/// The items of a group's elements: an item ends after a separator, unless a
+/// comment follows on the separator's line, and before an element the source
+/// wrote on a new line. A separator is a `;`, or a `,` in a group no `;`
+/// separates, so the commas inside a statement, as in a rule's
+/// `where a # q, b # q`, stay on its line. An item the source started on a
+/// new line, after no separator and indented deeper than the statement before
+/// it, continues that statement.
 ///
 /// # Specification
 /// trivial.
@@ -609,6 +611,9 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
     let mut items = Vec::new();
     let mut start = 0_usize;
     let mut ended = false;
+    let commas_end = !placed
+        .iter()
+        .any(|current| matches!(current.element, Element::Text(text) if <&str>::from(text) == ";"));
     let mut continuation = Continuation::Statement;
     let mut base: Option<Indent> = placed
         .first()
@@ -636,7 +641,11 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
             }
         }
         ended = match current.element {
-            Element::Text(text) => SEPARATORS.contains(&<&str>::from(text)),
+            Element::Text(text) => match <&str>::from(text) {
+                ";" => true,
+                "," => commas_end,
+                _ => false,
+            },
             Element::LineComment(_) | Element::BlockComment(_) => ended,
             Element::Verbatim(_) | Element::Group(_) => false,
         };
