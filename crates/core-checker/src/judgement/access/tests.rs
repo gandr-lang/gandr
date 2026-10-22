@@ -3,6 +3,7 @@ use alloc::sync::Arc;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Summand;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::control::EffectClause;
@@ -1243,10 +1244,10 @@ fn a_consumed_hold_is_read_lent_or_consumed_no_more()
     );
 }
 
-/// #1488: a case's arms each take the hold from where the case found it, so
-/// both may consume it, or one consume it and the other read it; after the
-/// case the hold is spent when any arm consumed it. A fold's step runs once
-/// per element, so it consumes none.
+/// #1488: a case's arms, on a list or on a sum, each take the hold from where
+/// the case found it, so both may consume it, or one consume it and the other
+/// read it; after the case the hold is spent whichever arm consumed it. A
+/// fold's step runs once per element, so it consumes none.
 #[test]
 fn a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488()
 {
@@ -1286,24 +1287,50 @@ fn a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488()
             "each arm starts from the hold the case found (empty arm consumes: {nil}, cell arm consumes: {cell})"
         );
     }
+    // A case on a sum ends each arm but the last as a list's does.
+    // hold c = 0; b <- (return inl () : F (1 + 1)); case b { inl _ => …, inr _ => …
+    // }
+    let unit = arena.value_type_unit();
+    let sum = arena.value_type_sum(&[unit, unit]);
+    let sums = arena.comp_type_returner(sum);
+    for (first, second) in [(false, false), (true, true), (true, false), (false, true)] {
+        let on_first = arm(&mut arena, first);
+        let on_second = arm(&mut arena, second);
+        let b = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_case(b, &[on_first, on_second]);
+        let point = arena.value_unit();
+        let injected = arena.value_injection(Summand::from(0_usize), point);
+        let returned = arena.computation_return(injected);
+        let ascribed = arena.computation_ascribe(returned, sums);
+        let bound = arena.computation_bind(ascribed, case);
+        let program = hold(&mut arena, bound);
+        assert_eq!(
+            checked(&mut arena, program, integers),
+            Ok(()),
+            "each arm of a sum starts from the hold the case found (first consumes: {first}, second consumes: {second})"
+        );
+    }
     // hold c = 0; xs <- …;
     // _ <- (case xs { [] => consume(c), _ :: _ => (c,).0 } : F Integer); (c,).0
-    let on_nil = consume(&mut arena, l0());
-    let (_kept, on_cons) = copied(&mut arena, l0());
-    let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = arena.computation_list_case(xs, on_nil, on_cons);
-    let typed = arena.computation_ascribe(case, integers);
-    let (read, after) = copied(&mut arena, l0());
-    let then = arena.computation_bind(typed, after);
-    let program = held(&mut arena, then);
-    assert_eq!(
-        checked(&mut arena, program, integers),
-        Err(CheckRefusal::Access {
-            at: CoreNode::Term(TermNode::Value(read)),
-            defect: AccessDefect::Consumed,
-        }),
-        "a read after the case finds the value one arm took"
-    );
+    // and the arms the other way about.
+    for nil in [true, false] {
+        let on_nil = arm(&mut arena, nil);
+        let on_cons = arm(&mut arena, !nil);
+        let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_list_case(xs, on_nil, on_cons);
+        let typed = arena.computation_ascribe(case, integers);
+        let (read, after) = copied(&mut arena, l0());
+        let then = arena.computation_bind(typed, after);
+        let program = held(&mut arena, then);
+        assert_eq!(
+            checked(&mut arena, program, integers),
+            Err(CheckRefusal::Access {
+                at: CoreNode::Term(TermNode::Value(read)),
+                defect: AccessDefect::Consumed,
+            }),
+            "a read after the case finds the value an arm took (empty arm consumes: {nil})"
+        );
+    }
     // hold c = 0; xs <- …; fold xs { [] => consume(c), _ _ => consume(c) }
     let on_nil = consume(&mut arena, l0());
     let on_cons = consume(&mut arena, l0());

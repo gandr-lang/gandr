@@ -1,5 +1,11 @@
 use anodized::spec;
+use gandr_core_nbe::DomainArena;
+use gandr_core_nbe::Fuel;
+use gandr_core_nbe::ReadbackMode;
+use gandr_core_nbe::eval_computation;
+use gandr_core_nbe::readback_computation;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
@@ -367,5 +373,49 @@ fn definitions_reject_reordering_without_replacing_earlier_bodies()
     assert_eq!(
         certificate.verdict(),
         gandr_core_nbe::MachineVerdict::Convertible
+    );
+}
+
+#[test]
+fn the_normaliser_unfolds_each_recorded_definition()
+{
+    let mut arena = CoreArena::new();
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let defined = ConstantIndex::from(0_usize);
+    let rigid = ConstantIndex::from(1_usize);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(defined, zero);
+    // `return c`, evaluated and read back by the table's normaliser.
+    let normal = |arena: &mut CoreArena, constant| {
+        let reference = arena.value_constant(constant);
+        let returned = arena.computation_return(reference);
+        let mut domain = DomainArena::new();
+        let fuel = Fuel::from(1_000_u32);
+        let head = eval_computation(arena, &mut domain, definitions.normaliser(), fuel, returned)
+            .expect("a returned constant evaluates");
+        let read = readback_computation(
+            arena,
+            &mut domain,
+            definitions.normaliser(),
+            ReadbackMode::Unfolding,
+            fuel,
+            head,
+        )
+        .expect("a returned constant reads back");
+        match arena.computation(read) {
+            Some(&Computation::Return(answer)) => arena.value(answer).cloned(),
+            other => panic!("a returned constant reads back as a return: {other:?}"),
+        }
+    };
+    let body = arena.value(zero).cloned();
+    assert_eq!(
+        normal(&mut arena, defined),
+        body,
+        "a constant with a body unfolds to it"
+    );
+    assert_eq!(
+        normal(&mut arena, rigid),
+        Some(Value::Constant(rigid)),
+        "a constant with no body stays as written"
     );
 }
