@@ -393,7 +393,9 @@
 //! constants, as the kernel reads it, so the fibre is the kernel's and the
 //! dialogues recorded at its endpoints replay there.
 //! `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
-//! witnesses it.
+//! witnesses it. At the empty product the fibre is the empty tuple of paths:
+//! `()` checks at `Path(Unit, l, r)` between any two points; the law of the
+//! lawful atom below is one.
 //!
 //! **Identity at an open type is a neutral fibre.** A carrier that mentions a
 //! variable bound outside it — the decode of a type variable, a data type at a
@@ -405,13 +407,17 @@
 //! is stuck except on reflexivity, where it reduces, and two such path types
 //! convert structurally. The kernel reads the same neutral fibre, so a judged
 //! identity readmits. A sealed atom past its seal is the fragment's other open
-//! type and its identity is the same neutral fibre; inside its seal the weak
-//! head reads its representation, whose fibre the recursion computes. The
-//! alternatives were refusing the path type and reflexivity at such a
-//! carrier, which left every law over an abstract carrier unstatable, and
-//! refusing it at readmission alone, which let a reflexivity inside a body
-//! reach the kernel. Reversal: a recursion clause for type variables computes
-//! the fibre this leaves neutral.
+//! type and its identity is the same neutral fibre, unless its interface
+//! states a law: then an introduction at `Path(atom, l, r)` checks at the
+//! relation between its endpoints, `El(⟨relation l r⟩)`, the atom's identity
+//! system, and the kernel reads the same fibre
+//! (`bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`).
+//! Inside its seal the weak head reads its representation, whose fibre the
+//! recursion computes. The alternatives were refusing the path type and
+//! reflexivity at such a carrier, which left every law over an abstract
+//! carrier unstatable, and refusing it at readmission alone, which let a
+//! reflexivity inside a body reach the kernel. Reversal: a recursion clause
+//! for type variables computes the fibre this leaves neutral.
 //!
 //! **Function extensionality is decided by computation.** `funext(f, g)`
 //! synthesises `Path(U (A → F B), f, g)` for closed functions over a
@@ -4813,12 +4819,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
         // An introduction form enters a region at the type it keeps; a value
         // that synthesises crosses the bridge to the kept type itself, so a
         // value already kept there stays kept.
-        let entered = expected;
+        let mut entered = expected;
         let mut expected = expected;
         while let ValueTypeView::Kept { value, .. } =
             value_type_view(self.context.arena(), expected)?
         {
             expected = value;
+        }
+        // An introduction checked at an identity of the unit type checks at
+        // the unit type, and one at an identity of a lawful atom at the
+        // relation between its endpoints, the atom's identity system,
+        // whether its own rule or its synthesis reads it.
+        if matches!(
+            *self.value(term)?,
+            Value::Tuple(_)
+                | Value::Literal(_)
+                | Value::Constructor { .. }
+                | Value::Thunk(_)
+                | Value::Record(_)
+                | Value::Quote(_)
+                | Value::ListNil
+                | Value::ListCons(..)
+        ) && let Some(fibre) = self.identity_fibre(expected)?
+        {
+            expected = fibre;
+            entered = fibre;
         }
         // A constructor checked at a stage stands above its recursive fields.
         if matches!(*self.value(term)?, Value::Constructor { .. })
@@ -6238,6 +6263,72 @@ impl<'context, 'arena> Machine<'context, 'arena>
             .map(|(&part, (from, to))| arena.value_type_path(part, from, to))
             .collect();
         Ok(arena.value_type_product(&paths))
+    }
+
+    /// The fibre an introduction checked at an identity reads: at the unit
+    /// type, the unit type, the empty tuple of paths as a tuple at a product
+    /// is a tuple of paths; at a lawful atom past its seal, the relation its
+    /// interface states, between the two endpoints.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: when `expected`'s weak head is `Path(A, left, right)`: `A`
+    ///   itself when `A`'s weak head is the unit type, and `El(⟨relation left
+    ///   right⟩)` at the atom's kind's level when it is an atom whose interface
+    ///   states a law; nothing otherwise, an atom inside its seal reading as
+    ///   its representation.
+    /// - fails: the unfolding's refusal; [`CheckRefusal::MachineInvariant`] for
+    ///   an atom whose kind is no universe.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relation's evidence between two points of a
+    ///   lawful atom checks at their identity, `()` at an identity of the unit
+    ///   type between two variables, and the kernel admits both.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibre| fibre.is_none_or(|fibre| self.context.arena().value_type(fibre).is_some())))]
+    fn identity_fibre(
+        &mut self,
+        expected: ValueTypeId,
+    ) -> Result<Option<ValueTypeId>, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        let ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        } = value_type_view(self.context.arena(), head)?
+        else {
+            return Ok(None);
+        };
+        let carrier = self.context.whnf_value_type(carrier)?;
+        let view = value_type_view(self.context.arena(), carrier)?;
+        if matches!(view, ValueTypeView::Unit) {
+            return Ok(Some(carrier));
+        }
+        let ValueTypeView::Abstract(atom) = view
+        else {
+            return Ok(None);
+        };
+        let Some((interface, kind)) = self.context.lawful_interface(atom)
+        else {
+            return Ok(None);
+        };
+        let Some(&gandr_core_term::ValueType::Universe { ref level, .. }) =
+            self.context.arena().value_type(kind)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let level = level.clone();
+        Ok(Some(crate::former::related_by(
+            self.context.arena_mut(),
+            interface.relation(),
+            (left, right),
+            &level,
+        )))
     }
 
     /// The domain and codomain a static lambda's body checks against: the

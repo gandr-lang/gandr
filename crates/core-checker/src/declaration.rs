@@ -129,8 +129,160 @@ impl From<OriginToken> for usize
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a sealed atom's interface states no identity-system law.
+    pub mod law {
+        /// The reason an interface states no law.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration states none: an identity at the atom is refused.
+            Unstated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a sealed atom carries no element interface.
+    pub mod interface {
+        /// The reason an atom states no element relation.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration states none: the atom's identity is its own
+            /// neutral fibre.
+            Unstated,
+        }
+    }
+}
+
+/// What a sealed atom's elements are related by: a relation, its reflexivity
+/// and, when stated, the law that makes the relation its identity.
+///
+/// Over the representation `R` at the kind's level `l`: `relation` at `U(R →
+/// R → F U_l)`, `reflexivity` at `U(Π (x : R). F El(⟨relation x x⟩))`, and
+/// `law` at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
+/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`, every element of the
+/// singleton at `a` its centre. Each is a closed value.
+///
+/// # Specification
+/// - requires: nothing; the atom's judgement checks each value at its type.
+/// - ensures: retains every value verbatim.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lawful atom's relation is its identity in the checker
+///   and in the kernel.
+/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AtomInterface
+{
+    /// The relation between two elements, a code-valued binary function.
+    relation: ValueId,
+    /// The relation's reflexivity, one witness per element.
+    reflexivity: ValueId,
+    /// The singleton's contraction onto its centre, when stated.
+    law: Maybe<ValueId, law::Absent>,
+}
+
+impl AtomInterface
+{
+    /// The interface relating elements by `relation`, reflexive by
+    /// `reflexivity`, stating no law.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        relation: ValueId,
+        reflexivity: ValueId,
+    ) -> Self
+    {
+        Self {
+            relation,
+            reflexivity,
+            law: Maybe::Absent(law::Absent::Unstated),
+        }
+    }
+
+    /// This interface with `law` as its identity-system law.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same atom with and without its law reads the
+    ///   relation's evidence as an identity only with it.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `bridge::tests::an_atom_stating_no_law_keeps_its_neutral_fibre`
+    #[inline]
+    #[must_use]
+    pub const fn lawful(
+        self,
+        law: ValueId,
+    ) -> Self
+    {
+        Self {
+            law: Maybe::Present(law),
+            ..self
+        }
+    }
+
+    /// The relation between two elements.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relation is checked at its own type and read as
+    ///   the atom's identity, so another value in its place refuses the atom or
+    ///   the evidence.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+    #[inline]
+    #[must_use]
+    pub const fn relation(&self) -> ValueId
+    {
+        self.relation
+    }
+
+    /// The relation's reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the reflexivity is checked at its own type, so
+    ///   another value in its place refuses the atom.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+    #[inline]
+    #[must_use]
+    pub const fn reflexivity(&self) -> ValueId
+    {
+        self.reflexivity
+    }
+
+    /// The identity-system law, when stated.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stated law makes the relation's evidence an
+    ///   identity, and its absence keeps the atom's own fibre.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `bridge::tests::an_atom_stating_no_law_keeps_its_neutral_fibre`
+    #[inline]
+    pub const fn law(&self) -> Maybe<ValueId, law::Absent>
+    {
+        self.law
+    }
+}
+
 /// A sealed abstract type: an atom of a universe, the representation it
-/// stands for inside its seal, and the reach of that seal.
+/// stands for inside its seal, the reach of that seal, and the interface its
+/// elements are related by, when stated.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractType
 {
@@ -145,12 +297,14 @@ pub struct AbstractType
     site: SealSite,
     /// Whether the signature marks the atom as crossing worlds.
     mobility: Mobility,
+    /// The relation, reflexivity and law the atom's elements are related by.
+    interface: Maybe<AtomInterface, interface::Absent>,
 }
 
 impl AbstractType
 {
     /// The atom of `kind` standing for `representation` for the `extent`
-    /// positions after its own, minted at `site`.
+    /// positions after its own, minted at `site`, stating no interface.
     ///
     /// # Specification
     /// trivial.
@@ -169,7 +323,45 @@ impl AbstractType
             extent,
             site,
             mobility: Mobility::Immobile,
+            interface: Maybe::Absent(interface::Absent::Unstated),
         }
+    }
+
+    /// This abstract type with its elements related by `interface`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an interfaced atom reads its relation as its
+    ///   identity, which a plain atom does not.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    #[inline]
+    #[must_use]
+    pub const fn interfaced(
+        self,
+        interface: AtomInterface,
+    ) -> Self
+    {
+        Self {
+            interface: Maybe::Present(interface),
+            ..self
+        }
+    }
+
+    /// The interface the atom's elements are related by, when stated.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the interface read back is the one the evidence is
+    ///   checked through, so an absent one keeps the atom's own fibre.
+    /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    #[inline]
+    pub const fn interface(&self) -> Maybe<AtomInterface, interface::Absent>
+    {
+        self.interface
     }
 
     /// This abstract type with the signature's mark `mobility`.

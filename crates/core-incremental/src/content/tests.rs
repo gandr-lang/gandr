@@ -1908,6 +1908,7 @@ fn open_roots_project_under_their_own_supports()
                 gandr_core_checker::ComponentOrdinal::from(0_usize),
             ),
             mobility: gandr_core_checker::worlds::Mobility::Immobile,
+            interface: Maybe::Absent(gandr_core_checker::interface::Absent::Unstated),
         }),
         &raw,
     );

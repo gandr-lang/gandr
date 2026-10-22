@@ -4808,16 +4808,29 @@ where
         },
         crate::content::DeclarationRoots::Abstract(roots) => {
             // An unmarked abstract type keeps its original tag; a mobile one
-            // takes its own.
-            writer.tag(Tag(match roots.mobility {
-                gandr_core_checker::worlds::Mobility::Immobile => 2,
-                gandr_core_checker::worlds::Mobility::Mobile => 4,
+            // takes its own, and an interfaced one of either mark its own.
+            writer.tag(Tag(match (roots.mobility, roots.interface) {
+                (gandr_core_checker::worlds::Mobility::Immobile, Maybe::Absent(_)) => 2,
+                (gandr_core_checker::worlds::Mobility::Mobile, Maybe::Absent(_)) => 4,
+                (gandr_core_checker::worlds::Mobility::Immobile, Maybe::Present(_)) => 8,
+                (gandr_core_checker::worlds::Mobility::Mobile, Maybe::Present(_)) => 9,
             }));
             write_index(writer, roots.kind)?;
             write_index(writer, roots.representation)?;
             writer.count(Count(usize::from(roots.extent)))?;
             writer.count(Count(usize::from(roots.site.sealing())))?;
             writer.count(Count(usize::from(roots.site.component())))?;
+            if let Maybe::Present(interface) = roots.interface {
+                write_index(writer, interface.relation)?;
+                write_index(writer, interface.reflexivity)?;
+                match interface.law {
+                    Maybe::Present(law) => {
+                        writer.count(Count(1))?;
+                        write_index(writer, law)?;
+                    },
+                    Maybe::Absent(_) => writer.count(Count(0))?,
+                }
+            }
         },
         crate::content::DeclarationRoots::World => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Located));
@@ -4934,14 +4947,18 @@ fn read_operation_side(reader: &mut Reader<'_>)
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — ordinary and signed contents round-trip; swapped
-///   discovery order and unreachable entries are refused. The predicate checks
-///   root sorts and canonical reach without allocating a second graph. This is
-///   structural validity, not a typing certificate.
+/// - hypothesis: L3 — ordinary and signed contents round-trip, value, data and
+///   abstract declarations among them, an abstract one with an interface with
+///   and without its law; swapped discovery order and unreachable entries are
+///   refused. The predicate checks root sorts and canonical reach without
+///   allocating a second graph. This is structural validity, not a typing
+///   certificate.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
@@ -5072,23 +5089,41 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
-        tag @ (2 | 4) => {
+        tag @ (2 | 4 | 8 | 9) => {
             let kind = read_index(reader)?;
             let representation = read_index(reader)?;
             let extent = gandr_kernel_term::SealExtent::from(reader.count()?.0);
             let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
             let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
+            let interface = if matches!(tag, 8 | 9) {
+                let relation = read_index(reader)?;
+                let reflexivity = read_index(reader)?;
+                let law = match reader.count()?.0 {
+                    0 => Maybe::Absent(gandr_core_checker::law::Absent::Unstated),
+                    1 => Maybe::Present(read_index(reader)?),
+                    _ => return Err(CodecError::Corrupt),
+                };
+                Maybe::Present(crate::content::InterfaceRoots {
+                    relation,
+                    reflexivity,
+                    law,
+                })
+            }
+            else {
+                Maybe::Absent(gandr_core_checker::interface::Absent::Unstated)
+            };
             crate::content::DeclarationRoots::Abstract(crate::content::AbstractRoots {
                 kind,
                 representation,
                 extent,
                 site: gandr_core_checker::SealSite::new(sealing, component),
-                mobility: if tag == 4 {
+                mobility: if matches!(tag, 4 | 9) {
                     gandr_core_checker::worlds::Mobility::Mobile
                 }
                 else {
                     gandr_core_checker::worlds::Mobility::Immobile
                 },
+                interface,
             })
         },
         _ => return Err(CodecError::Corrupt),
