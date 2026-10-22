@@ -2247,10 +2247,15 @@ enum Plan
     Product(Stretch),
     /// The type over labels `#{ l : A, … }`: its fields by label, the binders
     /// of every entry but the last in the lowerer's parameter store, each
-    /// over the entries after it, and the last entry's type. The record type
-    /// of its fields when no later entry names an earlier label, the
-    /// dependent pairs nested to the right otherwise.
-    RecordType(BTreeMap<FieldLabel, NodeIndex>, Stretch, NodeIndex),
+    /// over the entries after it, the last entry's type and where its label
+    /// is written. The record type of its fields when no later entry names an
+    /// earlier label, the dependent pairs nested to the right otherwise.
+    RecordType(
+        BTreeMap<FieldLabel, NodeIndex>,
+        Stretch,
+        NodeIndex,
+        Option<NodeIndex>,
+    ),
     /// The sum of the value types in the lowerer's operand store, in order.
     Sum(Stretch),
     /// The lazy record of the computation types in the lowerer's operand
@@ -12647,8 +12652,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.computation(id, origin)
             }),
             Plan::Product(components) => self.mint_product(components, sink, origin),
-            Plan::RecordType(ref fields, binders, last) => {
-                self.mint_labelled_type(fields, binders, last, sink, origin)
+            Plan::RecordType(ref fields, binders, last, labelled) => {
+                self.mint_labelled_type(fields, binders, (last, labelled), sink, origin)
             },
             Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
             Plan::With(entries) => self.mint_with(entries, sink, origin),

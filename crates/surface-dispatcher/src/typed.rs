@@ -646,14 +646,47 @@ struct Printed
     under: Option<Under>,
 }
 
+/// Each pair of `named` with the label `text` writes at its span, and each
+/// pair `reread` names, ascending by pair.
+///
+/// # Specification
+/// trivial.
+fn labelled<'names>(
+    named: &[(ValueTypeId, ByteSpan)],
+    text: SourceText<'names>,
+    reread: &'names [(ValueTypeId, String)],
+) -> Vec<(ValueTypeId, Name<'names>)>
+{
+    let text: &str = text.into();
+    let mut labelled: Vec<(ValueTypeId, Name<'names>)> = named
+        .iter()
+        .filter_map(|&(pair, span)| {
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+                .map(|name| (pair, Name::from(name)))
+        })
+        .chain(
+            reread
+                .iter()
+                .map(|&(pair, ref name)| (pair, Name::from(name.as_str()))),
+        )
+        .collect();
+    labelled.sort_by_key(|&(pair, _)| pair);
+    labelled
+}
+
 /// What a reprint's own lowering keeps beside the types it read, at their
-/// images in the table's arena: the name each dependent arrow binds and the
-/// relation each type was written as.
+/// images in the table's arena: the name each dependent arrow binds, the
+/// labels each dependent pair was written with and the relation each type
+/// was written as.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Read
 {
     /// Each dependent arrow's image with the name it binds.
     arrows: Vec<(CompTypeId, String)>,
+    /// Each dependent pair's image with the label its binder was written as.
+    pairs: Vec<(ValueTypeId, String)>,
+    /// Each dependent pair's image with the label its second was written as.
+    seconds: Vec<(ValueTypeId, String)>,
     /// Each related type's image with the relation it was written as.
     relations: Vec<(ValueTypeId, Relation)>,
 }
@@ -3023,6 +3056,8 @@ impl TypeTable
             )
             .collect();
         arrows.sort_by_key(|&(arrow, _)| arrow);
+        let pairs = labelled(self.naming.pairs(), self.naming.text(), &read.pairs);
+        let seconds = labelled(self.naming.seconds(), self.naming.text(), &read.seconds);
         let mut relations: Vec<(ValueTypeId, Relation)> = self
             .naming
             .relations()
@@ -3035,6 +3070,7 @@ impl TypeTable
         let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
             .naming_arrows(&arrows)
+            .naming_pairs(&pairs, &seconds)
             .relating(&relations)
             .within(&binders)
             .scoped(&regions);
@@ -3489,6 +3525,20 @@ impl TypeTable
                         augmented.get(usize::from(span.start()) .. usize::from(span.end())),
                     ) {
                         read_back.arrows.push((image, String::from(name)));
+                    }
+                }
+                for (named, kept) in [
+                    (module.origins().pairs(), &mut read_back.pairs),
+                    (module.origins().seconds(), &mut read_back.seconds),
+                ] {
+                    for &(pair, origin) in named {
+                        let span = origin.span();
+                        if let (Some(image), Some(name)) = (
+                            importer.value_type_image(pair),
+                            augmented.get(usize::from(span.start()) .. usize::from(span.end())),
+                        ) {
+                            kept.push((image, String::from(name)));
+                        }
                     }
                 }
                 for &(related, relation) in module.origins().relations() {
@@ -6301,17 +6351,17 @@ mod tests
             answer(&table, source, SourceText::from("#{y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{a : Integer, b : Path(Integer, x, a)}"),
+                ty: String::from("#{y : Integer, q : Path(Integer, x, y)}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the inner record answers at the pair's second component, under the `x` the \
-             outer pattern writes (#558)"
+             outer pattern writes, with the labels it was written with (#558, #1613)"
         );
         assert_eq!(
             answer(&table, source, SourceText::from("#{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("#{a : Integer, b : #{b : Integer, c : Path(Integer, a, b)}}"),
+                ty: String::from("#{x : Integer, y : #{y : Integer, q : Path(Integer, x, y)}}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "a record of three answers as itself, not as the pair the lowering nests at its \

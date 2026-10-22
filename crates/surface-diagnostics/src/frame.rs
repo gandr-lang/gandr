@@ -53,7 +53,9 @@ use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::judged;
 use gandr_core_term::ValueTypeId;
+use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::SplitComponent;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -398,7 +400,10 @@ where
 ///   the source `origins` measures.
 /// - ensures: one name per binder the obligation opens: the first binder of a
 ///   computation opener the table records a binder for is named by the bytes
-///   the table locates; every other binder is [`binding::Absent::Unnamed`].
+///   the table locates; a binder of a split the table records a component for
+///   is named by the pattern variable written for it, or by the label of the
+///   field a labelled pattern leaves unwritten; every other binder is
+///   [`binding::Absent::Unnamed`].
 /// - provides: the names a context's binders, the diagnostic's hypotheses and
 ///   the spelling of every type under them read ([`crate::TypeSpellings::of`]).
 /// - fails: never.
@@ -406,9 +411,11 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `run` binder and a function's parameters are named, and
-///   a type over them spells them by those names.
+///   a type over them spells them by those names; a record split's two binders,
+///   the second's type naming the first, are named as the pattern writes them.
 /// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
 /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
+/// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
 #[spec(ensures: |ret| ret.len() == obligation.binders().len())]
 pub fn opened(
     obligation: &Obligation,
@@ -418,15 +425,54 @@ pub fn opened(
 {
     let name = written_binder(obligation.at(), origins, text);
     (0_usize .. obligation.binders().len())
-        .map(|at| {
-            if at == 0_usize {
-                name.clone()
-            }
-            else {
-                Maybe::Absent(binding::Absent::Unnamed)
-            }
+        .map(|at| match name {
+            Maybe::Present(ref name) if at == 0_usize => Maybe::Present(name.clone()),
+            Maybe::Present(_) | Maybe::Absent(_) => {
+                split_binder(obligation.at(), SplitComponent::from(at), origins, text)
+            },
         })
         .collect()
+}
+
+/// The name the source writes for the binder at `component` of the split at
+/// `at`, read through `origins` and `text`.
+///
+/// # Specification
+/// - requires: as [`opened`].
+/// - ensures: for a split the table records the component for, the pattern
+///   variable's bytes, or the label a labelled pattern leaves unwritten;
+///   [`binding::Absent::Unnamed`] for every other node and component.
+/// - provides: the split's binders [`opened`] names.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`opened`].
+/// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
+#[spec(ensures: |ret| matches!(ret, Maybe::Absent(_))
+    || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
+fn split_binder(
+    at: CoreNode,
+    component: SplitComponent,
+    origins: &OriginTable,
+    text: SourceText<'_>,
+) -> Maybe<String, binding::Absent>
+{
+    let CoreNode::Term(TermNode::Computation(split)) = at
+    else {
+        return Maybe::Absent(binding::Absent::Unnamed);
+    };
+    match origins.component(split, component) {
+        Maybe::Present(&ComponentName::Written(origin)) => text
+            .fragment(origin.span())
+            .map_or(Maybe::Absent(binding::Absent::Unnamed), |fragment| {
+                Maybe::Present(String::from(fragment.as_ref()))
+            }),
+        Maybe::Present(&ComponentName::Labelled(ref label)) => {
+            Maybe::Present(String::from(label.as_ref()))
+        },
+        Maybe::Absent(_) => Maybe::Absent(binding::Absent::Unnamed),
+    }
 }
 
 /// The name the source writes for the first binder the former at `at` opens,

@@ -447,6 +447,12 @@ pub struct CoreSource<'arena>
     /// The name the source writes for each dependent arrow's binder,
     /// ascending by the arrow.
     arrows: &'arena [(CompTypeId, Name<'arena>)],
+    /// The label the source writes for each dependent pair's binder,
+    /// ascending by the pair.
+    pairs: &'arena [(ValueTypeId, Name<'arena>)],
+    /// The label the source writes for each dependent pair's second
+    /// component, ascending by the pair.
+    seconds: &'arena [(ValueTypeId, Name<'arena>)],
     /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
     /// `A ⇝ B` abbreviates, ascending by the type.
     relations: &'arena [(ValueTypeId, Relation)],
@@ -475,6 +481,8 @@ impl<'arena> CoreSource<'arena>
             regions: &[],
             binders: &[],
             arrows: &[],
+            pairs: &[],
+            seconds: &[],
             relations: &[],
         }
     }
@@ -618,6 +626,27 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { arrows, ..self }
+    }
+
+    /// This source, naming each dependent pair's binder as `pairs` writes it
+    /// and its second component as `seconds` does, each ascending by the
+    /// pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_pairs(
+        self,
+        pairs: &'arena [(ValueTypeId, Name<'arena>)],
+        seconds: &'arena [(ValueTypeId, Name<'arena>)],
+    ) -> Self
+    {
+        Self {
+            pairs,
+            seconds,
+            ..self
+        }
     }
 
     /// This source, spelling each type `relations` records as the relation
@@ -2317,26 +2346,58 @@ impl Source for CoreSource<'_>
         self.binders
     }
 
-    /// The name the source writes for a dependent arrow's binder.
+    /// The name the source writes for a dependent arrow's or a dependent
+    /// pair's binder.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn arrow_binder(
+    fn written_binder(
         &self,
         node: CoreNode,
     ) -> Option<Name<'_>>
     {
-        let CoreNode::CompType(id) = self.restoration.restored(node)
+        match self.restoration.restored(node) {
+            CoreNode::CompType(id) => written(self.arrows, id),
+            CoreNode::ValueType(id) => written(self.pairs, id),
+            CoreNode::Value(_) | CoreNode::Computation(_) => None,
+        }
+    }
+
+    /// The label the source writes for a dependent pair's second component.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn second_label(
+        &self,
+        node: CoreNode,
+    ) -> Option<Name<'_>>
+    {
+        let CoreNode::ValueType(id) = self.restoration.restored(node)
         else {
             return None;
         };
-        self.arrows
-            .binary_search_by_key(&id, |&(arrow, _)| arrow)
-            .ok()
-            .and_then(|at| self.arrows.get(at))
-            .map(|&(_, name)| name)
+        written(self.seconds, id)
     }
+}
+
+/// The name `names` holds for `id`, ascending by id.
+///
+/// # Specification
+/// trivial.
+fn written<'arena, Id>(
+    names: &[(Id, Name<'arena>)],
+    id: Id,
+) -> Option<Name<'arena>>
+where
+    Id: Ord + Copy,
+{
+    names
+        .binary_search_by_key(&id, |&(held, _)| held)
+        .ok()
+        .and_then(|at| names.get(at))
+        .map(|&(_, name)| name)
 }
 
 #[cfg(test)]
