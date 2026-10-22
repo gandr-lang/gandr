@@ -1719,6 +1719,12 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer as they state: a frame
+    ///   resuming at another frame's label runs another block.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn frame_label(
         &mut self,
         owners: Option<OwnerRun>,
@@ -1734,6 +1740,12 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an access's unwinding frame and a selection's frame
+    ///   own nothing, and the programs holding them answer as they state.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn unowned(&self) -> OwnerRun
     {
         let at = self.owners.len();
@@ -1815,6 +1827,14 @@ impl Lowering<'_>
     /// # Errors
     /// [`Form::Dangling`] when `handle` is no handler; [`Form::Unbound`] for
     /// a name no slot of `scope` holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a handler resuming its stack twice answers as it
+    ///   states. A handler's frame that keeps none of its clauses' names leaks
+    ///   them, which no answer shows: the clause duplicates what it names on
+    ///   entry, so only the drops at the handler's return go missing.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn kept(
         &self,
         handle: CommandId,
@@ -2534,6 +2554,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer as they state: a command
+    ///   lowered to nothing runs none of its cut.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn command(
         &mut self,
         id: CommandId,

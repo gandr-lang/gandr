@@ -427,6 +427,13 @@ impl Ownership
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case's arms each drop what a sibling uses, and a
+    ///   body that may run many times duplicates its captures on entry; an edge
+    ///   left unmarked does neither.
+    /// - witness: `ownership::tests::an_arm_drops_what_its_sibling_uses`
+    /// - witness: `ownership::tests::a_kept_body_duplicates_its_captures_on_entry`
     fn share(
         &self,
         arena: &CommandArena,
