@@ -58,6 +58,11 @@ fn advertised_capabilities_name_the_token_legend()
                 "documentLinkProvider": {"resolveProvider": true},
                 "linkedEditingRangeProvider": true,
                 "callHierarchyProvider": true,
+                "diagnosticProvider": {
+                    "identifier": "gandr",
+                    "interFileDependencies": true,
+                    "workspaceDiagnostics": false,
+                },
                 "workspace": {
                     "workspaceFolders": {"supported": true, "changeNotifications": true},
                     "fileOperations": {

@@ -80,6 +80,9 @@ const REFRESH_FOLDS: &str = "workspace/foldingRange/refresh";
 /// The method a server asks the client to request its inlay hints again with.
 const REFRESH_HINTS: &str = "workspace/inlayHint/refresh";
 
+/// The method a server asks the client to pull its diagnostics again with.
+const REFRESH_DIAGNOSTICS: &str = "workspace/diagnostic/refresh";
+
 /// The method a server asks the client to request a virtual document's text
 /// again with.
 const REFRESH_CONTENT: &str = "workspace/textDocumentContent/refresh";
@@ -185,6 +188,9 @@ impl ErrorCode
     pub const REQUEST_CANCELLED: Self = Self(-32_800);
     /// The request was valid, but the server could not answer it.
     pub const REQUEST_FAILED: Self = Self(-32_803);
+    /// A request the server stopped answering, which the client may send
+    /// again: a pull of a document's diagnostics whose document changed.
+    pub const SERVER_CANCELLED: Self = Self(-32_802);
     /// A request arrived before `initialize` was answered.
     pub const SERVER_NOT_INITIALIZED: Self = Self(-32_002);
 }
@@ -315,7 +321,10 @@ impl Withdrawn
         }
     }
 
-    /// The response refusing the request `id` for this reason.
+    /// The response refusing the request `id`, of `method`, for this reason:
+    /// a pull of a document's diagnostics whose document changed is cancelled
+    /// by the server and asked again, so its client keeps what it shows
+    /// rather than taking the refusal as an empty report.
     ///
     /// # Specification
     /// trivial.
@@ -324,6 +333,7 @@ impl Withdrawn
     pub fn response(
         self,
         id: RequestId,
+        method: &Method,
     ) -> Outgoing
     {
         match self {
@@ -332,6 +342,18 @@ impl Withdrawn
                 ErrorCode::REQUEST_CANCELLED,
                 "the client cancelled the request".to_owned(),
             ),
+            Self::Modified if method.as_ref() == "textDocument/diagnostic" => Outgoing::Failure {
+                jsonrpc: VERSION,
+                id,
+                error: Refusal {
+                    code: ErrorCode::SERVER_CANCELLED,
+                    message: "the document changed before its diagnostics were published"
+                        .to_owned(),
+                    data: Some(Retrigger {
+                        retrigger_request: true,
+                    }),
+                },
+            },
             Self::Modified => failure(
                 id,
                 ErrorCode::CONTENT_MODIFIED,
@@ -573,6 +595,19 @@ pub struct Refusal
     pub code: ErrorCode,
     /// What was refused, and why.
     pub message: String,
+    /// What a cancelled pull of a document's diagnostics tells the client.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Retrigger>,
+}
+
+/// Whether the client sends a request the server cancelled again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct Retrigger
+{
+    /// It does.
+    pub retrigger_request: bool,
 }
 
 /// Classify `body` by its envelope.
@@ -694,7 +729,11 @@ pub const fn failure(
     Outgoing::Failure {
         jsonrpc: VERSION,
         id,
-        error: Refusal { code, message },
+        error: Refusal {
+            code,
+            message,
+            data: None,
+        },
     }
 }
 
@@ -974,6 +1013,8 @@ pub enum Refreshed
     Folds,
     /// Its inlay hints.
     Hints,
+    /// Its pulled diagnostics.
+    Diagnostics,
 }
 
 /// The request asking the client to request every `answer` again, the
@@ -993,6 +1034,7 @@ pub fn refresh(
         Refreshed::Tokens => REFRESH_TOKENS,
         Refreshed::Folds => REFRESH_FOLDS,
         Refreshed::Hints => REFRESH_HINTS,
+        Refreshed::Diagnostics => REFRESH_DIAGNOSTICS,
     };
     Outgoing::Request {
         jsonrpc: VERSION,
@@ -1255,6 +1297,7 @@ mod tests
             (super::ErrorCode::REQUEST_CANCELLED, -32_800_i64),
             (super::ErrorCode::CONTENT_MODIFIED, -32_801_i64),
             (super::ErrorCode::REQUEST_FAILED, -32_803_i64),
+            (super::ErrorCode::SERVER_CANCELLED, -32_802_i64),
         ] {
             assert_eq!(
                 serde_json::to_value(code).expect("a code serializes"),

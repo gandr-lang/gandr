@@ -164,6 +164,8 @@ use crate::protocol::ContentResult;
 use crate::protocol::CopiedSourcesParams;
 use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
+use crate::protocol::DiagnosticParams;
+use crate::protocol::DiagnosticReport;
 use crate::protocol::DidChangeParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
@@ -202,6 +204,7 @@ use crate::protocol::PositionParams;
 use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::PullsConfiguration;
+use crate::protocol::PullsDiagnostics;
 use crate::protocol::RangeParams;
 use crate::protocol::RangesParams;
 use crate::protocol::ReferenceContext;
@@ -459,7 +462,8 @@ impl Document
     }
 
     /// The answers owed the requests it holds, now its text changed under
-    /// them or it was let go: `ContentModified`, in the order they were read.
+    /// them or it was let go, in the order they were read: `ContentModified`,
+    /// or for a pull of its diagnostics `ServerCancelled`, asked again.
     ///
     /// # Specification
     /// trivial.
@@ -467,7 +471,7 @@ impl Document
     {
         self.asked
             .drain(..)
-            .map(|asked| Withdrawn::Modified.response(asked.id))
+            .map(|asked| Withdrawn::Modified.response(asked.id, &asked.method))
             .collect()
     }
 
@@ -1603,6 +1607,55 @@ impl Workspace
             .map(|held| (held.document.version, held.document.published.as_slice()))
     }
 
+    /// What a pull of `peer`'s diagnostics of the document at `uri` answers:
+    /// what its copy last published, named by their digest, or that the
+    /// client holds them when `previous` names that digest.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the report names [`ResultId::of_json`] of the diagnostics
+    ///   `peer`'s copy last published, none for a document it holds no copy of;
+    ///   it is unchanged when `previous` is that id, and carries them whole
+    ///   otherwise.
+    /// - provides: the answer to `textDocument/diagnostic`, which waits for the
+    ///   copy's judgement as every request naming a copy does.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal pulled whole, pulled again by its id, and
+    ///   pulled after the edit that clears it are each asserted at their
+    ///   answer.
+    /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
+    #[spec(ensures: |ret| match ret {
+        DiagnosticReport::Unchanged { ref result_id } => previous == Some(result_id),
+        DiagnosticReport::Full { ref result_id, .. } => previous != Some(result_id),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn diagnosed(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        previous: Option<&ResultId>,
+    ) -> DiagnosticReport
+    {
+        let published: &[Diagnostic] = match self.documents.get(uri).map(|held| held.own(peer)) {
+            Some(Maybe::Present(document)) => &document.published,
+            Some(Maybe::Absent(_)) | None => &[],
+        };
+        let result_id = ResultId::of_json(published);
+        if previous == Some(&result_id) {
+            DiagnosticReport::Unchanged { result_id }
+        }
+        else {
+            DiagnosticReport::Full {
+                result_id,
+                items: published.to_vec(),
+            }
+        }
+    }
+
     /// The render bus's greeting: every open document, at the version its
     /// latest copy is at, in URI order.
     ///
@@ -1843,6 +1896,7 @@ impl Workspace
             cancelled: Vec::new(),
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
+            pulled: PullsDiagnostics(false),
             applying: AppliesEdits(false),
             editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
@@ -2102,6 +2156,11 @@ pub struct Server
     /// Whether its client answers a pull of its settings, read at
     /// `initialize`.
     pulling: PullsConfiguration,
+    /// Whether its client pulls a document's diagnostics, read at
+    /// `initialize`: each publication is then recorded on its copy and not
+    /// sent, a pull waiting on the copy answered from it, and the client
+    /// asked to pull again when none waited.
+    pulled: PullsDiagnostics,
     /// Whether its client applies an edit the server asks it to, read at
     /// `initialize`: a lens over one checked fill then runs the command
     /// applying it.
@@ -2213,6 +2272,7 @@ impl Server
             cancelled: Vec::new(),
             trace: Trace::Off,
             pulling: PullsConfiguration(false),
+            pulled: PullsDiagnostics(false),
             applying: AppliesEdits(false),
             editing: EditsShaped::BY_URI,
             showing: ShowsDocuments(false),
@@ -2569,9 +2629,11 @@ impl Server
     /// # Specification
     /// - requires: nothing.
     /// - ensures: when this connection holds a copy of `uri` whose published
-    ///   diagnostics are fewer than it checked, one diagnostic notification at
-    ///   `uri` and the copy's version carrying all of them, recorded as the
-    ///   copy's publication; nothing otherwise.
+    ///   diagnostics are fewer than it checked, all of them are recorded as the
+    ///   copy's publication, and sent as one diagnostic notification at `uri`
+    ///   and the copy's version, or, to a client that pulls them, the client is
+    ///   asked to pull again when it refreshes its diagnostics; nothing
+    ///   otherwise.
     /// - provides: the promotion a passed deadline makes, and the one a
     ///   configuration that holds nothing makes.
     /// - fails: never.
@@ -2582,11 +2644,12 @@ impl Server
     ///   when released, and a copy holding nothing publishes nothing.
     /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
     /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
     #[spec(ensures: |ret| ret.len() <= 1)]
     #[inline]
     #[must_use]
     pub fn release(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         uri: &DocumentUri,
     ) -> Vec<Outgoing>
@@ -2608,7 +2671,13 @@ impl Server
             diagnostics: document.checked.clone(),
         });
         workspace.published_by(self.peer, &release);
-        vec![release]
+        if !self.pulled.0 {
+            return vec![release];
+        }
+        if self.refreshing.diagnostics.0 {
+            return vec![self.asked(Refreshed::Diagnostics)];
+        }
+        Vec::new()
     }
 
     /// Handle one message body over `workspace`.
@@ -2623,8 +2692,9 @@ impl Server
     ///   document synchronisation makes this connection's copy due, judged by
     ///   [`Server::admit`] after it and published by [`Server::admitted`] —
     ///   opening and changing it judge it at its new version, published to this
-    ///   connection and to every other holding it open, and closing it
-    ///   publishes none to this connection and forgets it once no connection
+    ///   connection and to every other holding it open, a connection whose
+    ///   client pulls its diagnostics answered on its pull instead, and closing
+    ///   it publishes none to this connection and forgets it once no connection
     ///   holds it. A configuration change that names another verbosity makes
     ///   every document this connection holds due. A body that is not a message
     ///   is answered with the error the protocol owes it. `exit` ends the
@@ -2689,7 +2759,9 @@ impl Server
     ///   this connection holds whose judgement is due or running is held on the
     ///   copy and answered nothing now: [`Server::admitted`] answers it once
     ///   the copy is published, and a change or close of the copy first answers
-    ///   it `ContentModified`.
+    ///   it `ContentModified`, or a pull of the copy's diagnostics
+    ///   `ServerCancelled` with `retriggerRequest`, which its client asks again
+    ///   instead of reading the refusal as an empty report.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -2758,7 +2830,7 @@ impl Server
                     return Outcome::quiet();
                 }
                 let answered = match withdrawn {
-                    Some(withdrawn) => withdrawn.response(id),
+                    Some(withdrawn) => withdrawn.response(id, &method),
                     None => self.request(workspace, id, &method, params),
                 };
                 if unwatching {
@@ -2805,8 +2877,8 @@ impl Server
     ///   sent.
     /// - ensures: the copy holds the version and the text the change brings it
     ///   to and no proposal, as a judged change leaves it, and the requests it
-    ///   held are answered `ContentModified`; nothing is published, logged or
-    ///   asked.
+    ///   held are answered `ContentModified`, a pull of its diagnostics
+    ///   `ServerCancelled`; nothing is published, logged or asked.
     /// - fails: never; unreadable parameters and a document this connection
     ///   holds no copy of are ignored.
     /// - panics: none.
@@ -2817,7 +2889,8 @@ impl Server
     /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
     #[spec(ensures: |ret| ret.flow == Flow::Continue
         && ret.messages.iter().all(|message| matches!(*message,
-            Outgoing::Failure { ref error, .. } if error.code == ErrorCode::CONTENT_MODIFIED)))]
+            Outgoing::Failure { ref error, .. }
+                if error.code == ErrorCode::CONTENT_MODIFIED || error.code == ErrorCode::SERVER_CANCELLED)))]
     fn deferred(
         &self,
         workspace: &mut Workspace,
@@ -3107,8 +3180,12 @@ impl Server
     ///   notification at the line's URI and version whose one diagnostic names
     ///   it, recorded as the copy's publication and as all it checked, and the
     ///   line holds nothing. A delivered admission whose copy is gone is logged
-    ///   as retired. With [`Awaiting::All`], no judgement or admission is left
-    ///   running and no progress end left waiting.
+    ///   as retired. To a client that pulls its diagnostics, no notification is
+    ///   sent: each publication is recorded alone, and when one was recorded
+    ///   that no pull held on its copy answers, a client that refreshes its
+    ///   diagnostics is asked to pull again, once. With [`Awaiting::All`], no
+    ///   judgement or admission is left running and no progress end left
+    ///   waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
@@ -3121,7 +3198,9 @@ impl Server
     /// - witness: `server::tests::an_admission_follows_its_synchronisation`
     /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
-    #[spec(ensures: |ret| ret.judged.len() <= ret.messages.len()
+    /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
+    /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
+    #[spec(ensures: |ret| (self.pulled.0 || ret.judged.len() <= ret.messages.len())
         && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
             && admissions.waiting.is_empty() && admissions.ending.is_empty())))]
     #[inline]
@@ -3135,6 +3214,9 @@ impl Server
     {
         let mut settled = Settled::default();
         let mut refresh = Refresh(false);
+        // A publication a pulling client was not sent and no pull of its
+        // waited for: the client is asked to pull again.
+        let mut unpulled = false;
         loop {
             let delivered = match awaiting {
                 Awaiting::Ended => admissions.judgements.ready(),
@@ -3179,7 +3261,15 @@ impl Server
             let taken = admission(&mut locked(&document.session), line.timing);
             refresh = Refresh(refresh.0 || refreshing.0);
             workspace.published_by(self.peer, &message);
-            settled.messages.push(message);
+            if !self.pulled.0 {
+                settled.messages.push(message);
+            }
+            else if !asked
+                .iter()
+                .any(|asked| asked.method.as_ref() == "textDocument/diagnostic")
+            {
+                unpulled = true;
+            }
             for Asked { id, method, params } in asked {
                 let answered = self.request(workspace, id, &method, params);
                 settled.messages.push(answered);
@@ -3211,6 +3301,9 @@ impl Server
             if self.refreshing.hints.0 {
                 settled.messages.push(self.asked(Refreshed::Hints));
             }
+        }
+        if unpulled && self.refreshing.diagnostics.0 && self.phase == Phase::Running {
+            settled.messages.push(self.asked(Refreshed::Diagnostics));
         }
         let (ended, waiting): (Vec<_>, Vec<_>) = core::mem::take(&mut admissions.ending)
             .into_iter()
@@ -3261,7 +3354,12 @@ impl Server
                     diagnostics: vec![fault],
                 });
                 workspace.published_by(self.peer, &correction);
-                settled.messages.push(correction);
+                if !self.pulled.0 {
+                    settled.messages.push(correction);
+                }
+                else if self.refreshing.diagnostics.0 && self.phase == Phase::Running {
+                    settled.messages.push(self.asked(Refreshed::Diagnostics));
+                }
             }
             settled.log.push(logged);
         }
@@ -3700,6 +3798,12 @@ impl Server
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
                 },
+            (Phase::Running, "textDocument/diagnostic") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Diagnosed(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    Outgoing::Success { .. } | Outgoing::Notification { .. } | Outgoing::Request { .. } | Outgoing::Progress(_) => false,
+                },
             (Phase::Running, "textDocument/inlayHint") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Hints(_), .. } => true,
@@ -3903,6 +4007,7 @@ impl Server
                 self.inline_trigger = settings.trigger().unwrap_or_default();
                 self.trace = initial_trace(&params);
                 self.pulling = initial_pulling(&params);
+                self.pulled = initial_pulled(&params);
                 self.applying = initial_applying(&params);
                 self.editing = initial_editing(&params);
                 self.showing = initial_showing(&params);
@@ -3952,6 +4057,19 @@ impl Server
                             ),
                         )
                     },
+                    Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            (Phase::Running, "textDocument/diagnostic") => {
+                match serde_json::from_value::<DiagnosticParams>(params) {
+                    Ok(params) => success(
+                        id,
+                        Answer::Diagnosed(workspace.diagnosed(
+                            &params.text_document.uri,
+                            self.peer,
+                            params.previous_result_id.as_ref(),
+                        )),
+                    ),
                     Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -4495,29 +4613,29 @@ impl Server
     ///   answers each request it holds `ContentModified`, in the order read.
     ///   Close lets this connection's copy go, forgets the document once no
     ///   connection holds a copy, and publishes a versionless empty diagnostic
-    ///   list to this connection, even for an unknown URI. A running-state
-    ///   configuration change whose `gandr` section names a quiet interval
-    ///   takes it, and one naming a presentation form takes it for every later
-    ///   hover. One that names a verbosity or a presentation spelling other
-    ///   than this connection's takes them, then makes every copy this
-    ///   connection holds due; otherwise, one that names a zero interval
-    ///   publishes what each copy holds back, as [`Server::release`] states,
-    ///   and one naming neither changes nothing. A running-state `initialized`
-    ///   from a client that watches files asks it, in one
-    ///   `client/registerCapability` request, to watch every gandr source for
-    ///   `workspace/didChangeWatchedFiles`; from any other client it sends
-    ///   nothing. A running-state watched-files change makes due every copy
-    ///   this connection holds whose closure, at its last judgement, named a
-    ///   changed file no connection holds, as [`named_path`] names it; a copy
-    ///   whose closure names none is untouched. Each import is judged as the
-    ///   editors hold it, as [`Workspace`] states: after an open, a change or a
-    ///   close of a copy whose file some copy's closure names, every copy this
-    ///   connection holds whose closure names it is made due, and every other
-    ///   hub connection whose copies name it hears it changed. A copy made due
-    ///   for what its closure names asks a client that refreshes its semantic
-    ///   tokens or its inlay hints for them again once it is published.
-    ///   Unknown, malformed and out-of-phase notifications leave documents
-    ///   alone.
+    ///   list to this connection, even for an unknown URI, unless its client
+    ///   pulls its diagnostics. A running-state configuration change whose
+    ///   `gandr` section names a quiet interval takes it, and one naming a
+    ///   presentation form takes it for every later hover. One that names a
+    ///   verbosity or a presentation spelling other than this connection's
+    ///   takes them, then makes every copy this connection holds due;
+    ///   otherwise, one that names a zero interval publishes what each copy
+    ///   holds back, as [`Server::release`] states, and one naming neither
+    ///   changes nothing. A running-state `initialized` from a client that
+    ///   watches files asks it, in one `client/registerCapability` request, to
+    ///   watch every gandr source for `workspace/didChangeWatchedFiles`; from
+    ///   any other client it sends nothing. A running-state watched-files
+    ///   change makes due every copy this connection holds whose closure, at
+    ///   its last judgement, named a changed file no connection holds, as
+    ///   [`named_path`] names it; a copy whose closure names none is untouched.
+    ///   Each import is judged as the editors hold it, as [`Workspace`] states:
+    ///   after an open, a change or a close of a copy whose file some copy's
+    ///   closure names, every copy this connection holds whose closure names it
+    ///   is made due, and every other hub connection whose copies name it hears
+    ///   it changed. A copy made due for what its closure names asks a client
+    ///   that refreshes its semantic tokens or its inlay hints for them again
+    ///   once it is published. Unknown, malformed and out-of-phase
+    ///   notifications leave documents alone.
     /// - provides: document synchronization, configuration, file watching, the
     ///   folders the client opens and termination: a folder opened is a root of
     ///   the path table while this connection holds it open.
@@ -4579,7 +4697,8 @@ impl Server
                     },
                     _ => false,
                 },
-                Outgoing::Failure { ref error, .. } => error.code == ErrorCode::CONTENT_MODIFIED
+                Outgoing::Failure { ref error, .. } => (error.code == ErrorCode::CONTENT_MODIFIED
+                    || error.code == ErrorCode::SERVER_CANCELLED)
                     && matches!(method.as_ref(), "textDocument/didChange" | "textDocument/didClose"),
                 Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
                 | Outgoing::Progress(_) => false,
@@ -4696,11 +4815,15 @@ impl Server
                 if let Some(path) = named {
                     self.reclosed(workspace, &path);
                 }
-                messages.push(publish(PublishParams {
-                    uri: text_document.uri,
-                    version: None,
-                    diagnostics: Vec::new(),
-                }));
+                // A pulling client drops a closed document's diagnostics
+                // itself.
+                if !self.pulled.0 {
+                    messages.push(publish(PublishParams {
+                        uri: text_document.uri,
+                        version: None,
+                        diagnostics: Vec::new(),
+                    }));
+                }
                 Outcome::saying(messages)
             },
             (Phase::Running, "workspace/didChangeConfiguration") => {
@@ -5139,6 +5262,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Diagnosed(_)
             | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn tokens(
@@ -5205,6 +5329,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
+            | Answer::Diagnosed(_)
             | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inlay_hints(
@@ -5351,6 +5476,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
+            | Answer::Diagnosed(_)
             | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inline(
@@ -7238,6 +7364,18 @@ fn initial_viewer(params: &Value) -> ViewsContent
         .unwrap_or_default()
 }
 
+/// Whether the client `initialize` names in `params` pulls a document's
+/// diagnostics; not when the parameters do not read.
+///
+/// # Specification
+/// trivial.
+fn initial_pulled(params: &Value) -> PullsDiagnostics
+{
+    InitializeParams::deserialize(params)
+        .map(|params| params.pulls_diagnostics())
+        .unwrap_or_default()
+}
+
 /// The warning logged to the client when its `gandr` settings do not read:
 /// what `error` says, and that none of them is applied.
 ///
@@ -7645,7 +7783,7 @@ fn publication(
 ///   and its lines logged. A publication that held a diagnostic back arms its
 ///   document's deadline the server's quiet interval later, and one that held
 ///   nothing, or whose correction replaced what it held, disarms it; a deadline
-///   that passes with no frame read publishes what the document holds back, as
+///   that passes with no frame read releases what the document holds back, as
 ///   [`Server::release`] states. The session ends at `exit` or at a stream
 ///   closed at a frame boundary, as [`Server::closed`] states, once every
 ///   judgement and admission still running ended and was settled, its line
@@ -8185,6 +8323,8 @@ mod tests
                         "documentLinkProvider":{"resolveProvider":true},
                         "linkedEditingRangeProvider":true,
                         "callHierarchyProvider":true,
+                        "diagnosticProvider":{"identifier":"gandr","interFileDependencies":true,
+                            "workspaceDiagnostics":false},
                         "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true},
                             "fileOperations":{"didCreate":{"filters":[
                                 {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
@@ -13180,6 +13320,284 @@ mod tests
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
+        );
+    }
+
+    /// The messages `outgoing` spells, encoded.
+    ///
+    /// # Specification
+    /// trivial.
+    fn encoded(outgoing: &[Outgoing]) -> Vec<Value>
+    {
+        outgoing
+            .iter()
+            .map(|message| serde_json::to_value(message).expect("a message encodes"))
+            .collect()
+    }
+
+    /// The methods `messages` carry, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn methods(messages: &[Value]) -> Vec<Value>
+    {
+        messages
+            .iter()
+            .filter_map(|message| message.get("method").cloned())
+            .collect()
+    }
+
+    #[test]
+    fn a_pulled_report_is_named_by_its_digest_and_answered_unchanged()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
+                    "textDocument":{"diagnostic":{}}}}}"#,
+            ),
+        );
+        let opened = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/pulled.gandr","languageId":"gandr","version":1,
+                    "text":"def g = missing ;\n"}}}"#,
+            ),
+        );
+        let opened = opened.as_array().expect("the messages are a list");
+        assert!(
+            !methods(opened).contains(&serde_json::json!("textDocument/publishDiagnostics")),
+            "a client that pulls is sent no publication: {opened:?}"
+        );
+        assert!(
+            !methods(opened).contains(&serde_json::json!("workspace/diagnostic/refresh")),
+            "nor asked to pull again when it refreshes nothing: {opened:?}"
+        );
+        let pull = |server: &mut Connected, id: i32, previous: Option<&str>| {
+            let previous =
+                previous.map_or_else(String::new, |id| format!(r#","previousResultId":"{id}""#));
+            send(
+                server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"method":"textDocument/diagnostic","params":{{
+                        "textDocument":{{"uri":"file:///tmp/pulled.gandr"}}{previous}}}}}"#
+                )),
+            )[0]["result"]
+                .clone()
+        };
+        let full = pull(&mut server, 2_i32, None);
+        assert_eq!(
+            full["kind"], "full",
+            "the first pull is answered whole: {full}"
+        );
+        assert_eq!(
+            full.pointer("/items/0/code"),
+            Some(&wire(Json(r#""UnresolvedName""#))),
+            "with the refusal the copy published: {full}"
+        );
+        let id = full["resultId"]
+            .as_str()
+            .expect("a full report names its digest")
+            .to_owned();
+        assert_eq!(id.len(), 64_usize, "a BLAKE3 digest in hexadecimal: {id}");
+        assert_eq!(
+            pull(&mut server, 3_i32, Some(&id)),
+            serde_json::json!({"kind": "unchanged", "resultId": id}),
+            "a pull naming the digest of what the copy still holds is answered unchanged"
+        );
+        let _changed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/pulled.gandr","version":2},
+                    "contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
+            ),
+        );
+        let cleared = pull(&mut server, 4_i32, Some(&id));
+        assert_eq!(
+            cleared.get("items"),
+            Some(&serde_json::json!([])),
+            "an edit clearing the refusal is answered whole, with nothing: {cleared}"
+        );
+        assert_ne!(
+            cleared["resultId"].as_str(),
+            Some(id.as_str()),
+            "under another digest"
+        );
+    }
+
+    #[test]
+    fn a_pulling_client_is_sent_no_publication_and_asked_to_pull_again()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
+                    "textDocument":{"diagnostic":{}},
+                    "workspace":{"diagnostics":{"refreshSupport":true}}}}}"#,
+            ),
+        );
+        let uri = DocumentUri::from("file:///tmp/pulling.gandr");
+        let opened = server.server.handle(
+            &mut server.workspace,
+            &Body::from(
+                br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/pulling.gandr","languageId":"gandr","version":1,
+                    "text":"def a = 1 ;\n"}}}"#
+                    .to_vec(),
+            ),
+        );
+        let held = server.server.handle(
+            &mut server.workspace,
+            &Body::from(
+                br#"{"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{
+                    "textDocument":{"uri":"file:///tmp/pulling.gandr"}}}"#
+                    .to_vec(),
+            ),
+        );
+        assert!(
+            opened.messages.is_empty() && held.messages.is_empty(),
+            "a pull of a copy being judged waits for its publication"
+        );
+        let settled = encoded(&server.settle().messages);
+        assert_eq!(
+            settled
+                .iter()
+                .map(|message| (
+                    message.get("id").cloned(),
+                    message.pointer("/result/kind").cloned()
+                ))
+                .collect::<Vec<_>>(),
+            [(Some(wire(Json("2"))), Some(wire(Json(r#""full""#))))],
+            "the judgement answers the pull that waited on it, and sends nothing else: \
+             {settled:?}"
+        );
+        let typed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/pulling.gandr","version":2},
+                    "contentChanges":[{"range":{"start":{"line":1,"character":0},
+                        "end":{"line":1,"character":0}},"text":"def b ="}]}}"#,
+            ),
+        );
+        let typed = typed.as_array().expect("the messages are a list");
+        assert!(
+            methods(typed) == [serde_json::json!("workspace/diagnostic/refresh")],
+            "a publication no pull waited for asks the client to pull again: {typed:?}"
+        );
+        let pulled =
+            |server: &mut Connected, id: i32| {
+                send(
+                server,
+                Json(&format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"method":"textDocument/diagnostic","params":{{
+                        "textDocument":{{"uri":"file:///tmp/pulling.gandr"}}}}}}"#
+                )),
+            )[0]
+                .pointer("/result/items")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().map(|item| item["code"].clone()).collect::<Vec<_>>())
+            };
+        assert_eq!(
+            pulled(&mut server, 3_i32),
+            Some(Vec::new()),
+            "the refusal under the caret is held from the pull as from a publication"
+        );
+        let released = encoded(&server.server.release(&mut server.workspace, &uri));
+        assert!(
+            methods(&released) == [serde_json::json!("workspace/diagnostic/refresh")],
+            "the quiet deadline releasing it asks the client to pull again: {released:?}"
+        );
+        assert_eq!(
+            pulled(&mut server, 4_i32),
+            Some(vec![wire(Json(r#""MalformedForm""#))]),
+            "and the next pull carries it"
+        );
+        let closed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didClose",
+                    "params":{"textDocument":{"uri":"file:///tmp/pulling.gandr"}}}"#,
+            ),
+        );
+        assert_eq!(
+            closed,
+            wire(Json("[]")),
+            "a pulling client drops a closed document's diagnostics itself"
+        );
+    }
+
+    #[test]
+    fn a_pull_its_document_changed_under_is_cancelled_and_asked_again()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
+                    "textDocument":{"diagnostic":{}}}}}"#,
+            ),
+        );
+        let _opened = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+                    "uri":"file:///tmp/superseded.gandr","languageId":"gandr","version":1,
+                    "text":"def a = missing ;\n"}}}"#,
+            ),
+        );
+        let mut handled = |text: &[u8]| {
+            encoded(
+                &server
+                    .server
+                    .handle(&mut server.workspace, &Body::from(text.to_vec()))
+                    .messages,
+            )
+        };
+        let _due = handled(
+            br#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/superseded.gandr","version":2},
+                "contentChanges":[{"text":"def a = still ;\n"}]}}"#,
+        );
+        let held = handled(
+            br#"{"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{
+                "textDocument":{"uri":"file:///tmp/superseded.gandr"}}}"#,
+        );
+        assert!(held.is_empty(), "the pull waits for the change's judgement");
+        let hover = handled(
+            br#"{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{
+                "textDocument":{"uri":"file:///tmp/superseded.gandr"},
+                "position":{"line":0,"character":4}}}"#,
+        );
+        assert!(hover.is_empty(), "as does a hover");
+        let superseded = handled(
+            br#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/superseded.gandr","version":3},
+                "contentChanges":[{"text":"def a = 1 ;\n"}]}}"#,
+        );
+        assert_eq!(
+            superseded
+                .iter()
+                .map(|message| (
+                    message["id"].clone(),
+                    message["error"]["code"].clone(),
+                    message.pointer("/error/data").cloned()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    wire(Json("2")),
+                    wire(Json("-32802")),
+                    Some(wire(Json(r#"{"retriggerRequest":true}"#)))
+                ),
+                (wire(Json("3")), wire(Json("-32801")), None),
+            ],
+            "a later change cancels the pull for its client to ask again, where any \
+             other request is answered as modified"
         );
     }
 

@@ -205,12 +205,43 @@ impl AsRef<[u32]> for TokenStream
     }
 }
 
-/// What names a full token stream to a later delta request: the hexadecimal
-/// BLAKE3 digest of its integers, each in little-endian bytes.
+/// What names a full answer to a later request that holds it: for a token
+/// stream, the hexadecimal BLAKE3 digest of its integers, each in
+/// little-endian bytes; for any other answer, of its JSON text.
 #[repr(transparent)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ResultId(String);
+
+impl ResultId
+{
+    /// The id an answer whose content `value` serializes is named by: the
+    /// hexadecimal BLAKE3 digest of its JSON text.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: 64 lowercase hexadecimal digits; values serializing to the
+    ///   same JSON text have one id, and a value that does not serialize has
+    ///   the id of no text.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a report pulled twice over one publication shares its
+    ///   id, and one pulled after an edit changed it has another.
+    /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
+    #[spec(ensures: |ret| ret.0.len() == 64
+        && ret.0.bytes().all(|digit| digit.is_ascii_digit() || (b'a' ..= b'f').contains(&digit)))]
+    #[inline]
+    #[must_use]
+    pub fn of_json<Value>(value: &Value) -> Self
+    where
+        Value: Serialize + ?Sized,
+    {
+        let text = serde_json::to_vec(value).unwrap_or_default();
+        Self(blake3::hash(&text).to_hex().to_string())
+    }
+}
 
 /// One edit of a token stream: `delete_count` integers from `start` replaced
 /// by `data`.

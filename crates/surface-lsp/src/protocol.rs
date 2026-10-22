@@ -679,8 +679,8 @@ impl InitializeParams
 
     /// Which answers this client requests again when asked to: each it
     /// declares `refreshSupport` for under `workspace.codeLens`,
-    /// `workspace.semanticTokens`, `workspace.foldingRange` and
-    /// `workspace.inlayHint`.
+    /// `workspace.semanticTokens`, `workspace.foldingRange`,
+    /// `workspace.inlayHint` and `workspace.diagnostics`.
     ///
     /// # Specification
     /// trivial.
@@ -703,6 +703,7 @@ impl InitializeParams
             tokens: Refreshes(refreshes(workspace.semantic_tokens)),
             folds: Refreshes(refreshes(workspace.folding_range)),
             hints: Refreshes(refreshes(workspace.inlay_hint)),
+            diagnostics: Refreshes(refreshes(workspace.diagnostics)),
         }
     }
 
@@ -810,6 +811,23 @@ impl InitializeParams
         )
     }
 
+    /// Whether this client pulls a document's diagnostics rather than taking
+    /// them as they are published: when it declares `textDocument.diagnostic`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pulls_diagnostics(&self) -> PullsDiagnostics
+    {
+        PullsDiagnostics(
+            self.capabilities
+                .as_ref()
+                .and_then(|capabilities| capabilities.text_document)
+                .is_some_and(|text_document| text_document.diagnostic.is_some()),
+        )
+    }
+
     /// How this client takes a workspace edit: versioned when it declares
     /// `workspace.workspaceEdit.documentChanges`; annotated as well when it
     /// also declares `workspace.workspaceEdit.changeAnnotationSupport`; and
@@ -866,6 +884,12 @@ pub struct ListsFolders(pub bool);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ViewsContent(pub bool);
+
+/// Whether a client pulls a document's diagnostics rather than taking them as
+/// they are published.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PullsDiagnostics(pub bool);
 
 /// How a client takes a workspace edit.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1075,6 +1099,8 @@ pub struct Refreshing
     pub folds: Refreshes,
     /// Its inlay hints.
     pub hints: Refreshes,
+    /// Its pulled diagnostics.
+    pub diagnostics: Refreshes,
 }
 
 impl Refreshing
@@ -1085,6 +1111,7 @@ impl Refreshing
         tokens: Refreshes(false),
         folds: Refreshes(false),
         hints: Refreshes(false),
+        diagnostics: Refreshes(false),
     };
 }
 
@@ -1151,6 +1178,9 @@ pub struct WorkspaceCapabilities
     /// `workspace.inlayHint`.
     #[serde(default)]
     pub inlay_hint: Option<RefreshCapabilities>,
+    /// `workspace.diagnostics`.
+    #[serde(default)]
+    pub diagnostics: Option<RefreshCapabilities>,
     /// `workspace.configuration`: whether it answers a pull of its settings.
     #[serde(default)]
     pub configuration: Option<bool>,
@@ -1520,6 +1550,21 @@ pub struct TextDocumentCapabilities
     /// `textDocument.inlayHint`.
     #[serde(default)]
     pub inlay_hint: Option<InlayHintCapabilities>,
+    /// `textDocument.diagnostic`: present when it pulls a document's
+    /// diagnostics.
+    #[serde(default)]
+    pub diagnostic: Option<DiagnosticCapabilities>,
+}
+
+/// What a client offers of pulling a document's diagnostics.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct DiagnosticCapabilities
+{
+    /// `dynamicRegistration`: whether it takes the pull by registration.
+    #[serde(default)]
+    pub dynamic_registration: Option<bool>,
 }
 
 /// What the client takes in answer to an inlay-hint request.
@@ -2056,6 +2101,18 @@ pub struct DeltaParams
     pub previous_result_id: ResultId,
 }
 
+/// The parameters of `textDocument/diagnostic`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticParams
+{
+    /// The document addressed.
+    pub text_document: DocumentIdentifier,
+    /// The id of the report the client holds, when it holds one.
+    #[serde(default)]
+    pub previous_result_id: Option<ResultId>,
+}
+
 /// The parameters of `textDocument/references`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -2187,7 +2244,10 @@ impl InitializeResult
             && ret.capabilities.call_hierarchy_provider.0
             && ret.capabilities.code_lens_provider.resolve_provider
             && ret.capabilities.completion_provider.resolve_provider
-            && ret.capabilities.completion_provider.completion_item.label_details_support)]
+            && ret.capabilities.completion_provider.completion_item.label_details_support
+            && matches!(ret.capabilities.diagnostic_provider.identifier.as_bytes(), b"gandr")
+            && ret.capabilities.diagnostic_provider.inter_file_dependencies
+            && !ret.capabilities.diagnostic_provider.workspace_diagnostics)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -2255,6 +2315,11 @@ impl InitializeResult
                 },
                 linked_editing_range_provider: Provider::ANSWERED,
                 call_hierarchy_provider: Provider::ANSWERED,
+                diagnostic_provider: DiagnosticOptions {
+                    identifier: SOURCE,
+                    inter_file_dependencies: true,
+                    workspace_diagnostics: false,
+                },
                 workspace: WorkspaceOptions {
                     workspace_folders: FoldersOptions {
                         supported: true,
@@ -2354,8 +2419,26 @@ pub struct ServerCapabilities
     /// The call hierarchy is answered: the declared values a definition
     /// uses, and those whose definitions use it.
     pub call_hierarchy_provider: Provider,
+    /// A document's diagnostics are answered when its client pulls them:
+    /// what its copy last published, named by their digest.
+    pub diagnostic_provider: DiagnosticOptions,
     /// The workspace features answered.
     pub workspace: WorkspaceOptions,
+}
+
+/// The diagnostic provider, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticOptions
+{
+    /// The name the client keeps the pulled diagnostics under.
+    pub identifier: &'static str,
+    /// Whether a document's diagnostics change when another document does:
+    /// they do, a copy being judged with its import closure.
+    pub inter_file_dependencies: bool,
+    /// Whether `workspace/diagnostic` is answered: it is not, a source no
+    /// editor holds being checked by no one.
+    pub workspace_diagnostics: bool,
 }
 
 /// The range-formatting provider, as advertised.
@@ -2826,6 +2909,9 @@ pub enum Answer
     /// What a text-document-content request answers for a virtual document
     /// that views an open one: its printed syntax tree.
     Content(ContentResult),
+    /// What a pull of an open document's diagnostics answers: what its copy
+    /// last published, or that the client already holds it.
+    Diagnosed(DiagnosticReport),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
@@ -3800,6 +3886,30 @@ pub struct PublishParams
     pub version: Option<DocumentVersion>,
     /// Every diagnostic of the document; an empty list clears them.
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// What a pull of a document's diagnostics answers.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum DiagnosticReport
+{
+    /// Every diagnostic the copy last published, named by their digest.
+    Full
+    {
+        /// The digest the client names them by in its next pull.
+        #[serde(rename = "resultId")]
+        result_id: ResultId,
+        /// The diagnostics.
+        items: Vec<Diagnostic>,
+    },
+    /// The diagnostics the client names by its previous report's digest are
+    /// still the copy's.
+    Unchanged
+    {
+        /// That digest.
+        #[serde(rename = "resultId")]
+        result_id: ResultId,
+    },
 }
 
 /// One diagnostic, as the editor shows it.
