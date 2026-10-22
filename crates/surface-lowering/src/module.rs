@@ -254,6 +254,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::CodataSignature;
+use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -275,6 +276,8 @@ use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
+use crate::attribute::DeprecatedUse;
+use crate::attribute::Deprecation;
 use crate::coincide::Decisions;
 use crate::description::DescriptionFault;
 use crate::doc::Documentation;
@@ -9069,6 +9072,65 @@ impl<'source> LoweredModule<'source>
     pub fn resolutions(&self) -> &[(ByteSpan, Resolution)]
     {
         &self.resolutions
+    }
+
+    /// Each written name the lowering resolved to a declaration whose
+    /// `deprecated` attribute marks it, ascending by span, with what the
+    /// attribute states, read off its payload in `arena`.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this module was lowered into.
+    /// - ensures: one entry per resolution of [`Self::resolutions`] naming a
+    ///   declaration either half of which carries a `deprecated` entry, at the
+    ///   resolution's span, with that declaration's name and the attribute's
+    ///   texts; a use of a declaration in another source of the unit included.
+    /// - provides: the uses a face reports as deprecated.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a use of a marked declaration, of one marked with a
+    ///   record, and of an unmarked one separate the answers.
+    /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
+    #[spec(ensures: |ret| ret.len() <= self.resolutions.len() && ret.is_sorted_by_key(|used| used.span))]
+    #[must_use]
+    #[inline]
+    pub fn deprecated_uses(
+        &self,
+        arena: &CoreArena,
+    ) -> Vec<DeprecatedUse<'source>>
+    {
+        let deprecated: BTreeMap<ConstantIndex, (SurfaceName<'source>, Deprecation)> = self
+            .declarations
+            .iter()
+            .filter_map(|declaration| {
+                [declaration.signature(), declaration.definition()]
+                    .into_iter()
+                    .find_map(|half| match half {
+                        Maybe::Present(key) => self.attributes.deprecation(key, arena),
+                        Maybe::Absent(_) => None,
+                    })
+                    .map(|stated| (declaration.constant(), (declaration.name(), stated)))
+            })
+            .collect();
+        if deprecated.is_empty() {
+            return Vec::new();
+        }
+        self.resolutions
+            .iter()
+            .filter_map(|&(span, resolution)| match resolution {
+                Resolution::Declaration(constant) => {
+                    deprecated
+                        .get(&constant)
+                        .map(|&(name, ref stated)| DeprecatedUse {
+                            span,
+                            name,
+                            deprecation: stated.clone(),
+                        })
+                },
+                Resolution::Binder(_) | Resolution::Constructor { .. } => None,
+            })
+            .collect()
     }
 
     /// This module, carrying the bytes of each import a name lookup was

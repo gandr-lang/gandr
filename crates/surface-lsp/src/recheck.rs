@@ -159,6 +159,8 @@ use gandr_core_incremental::DiscardingCheckpointStore;
 use gandr_core_incremental::ResumeCensus;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::AnnotationKind;
+use gandr_surface_diagnostics::Identifier;
+use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Severity as Seriousness;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::ComposeFault;
@@ -204,6 +206,7 @@ use crate::inline::Forms;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
 use crate::protocol::Diagnostic;
+use crate::protocol::DiagnosticTag;
 use crate::protocol::DocumentUri;
 use crate::protocol::Location;
 use crate::protocol::RelatedInformation;
@@ -1383,7 +1386,9 @@ fn reported(step: Step<'_>) -> Step<'_>
 ///   refusal is unimplemented describes the code at its tracking issue's
 ///   address. The related information is every annotation but the primary one,
 ///   in order, then every located context, outermost first, then each mark the
-///   diagnostic makes in an import, at that import's file, in order.
+///   diagnostic makes in an import, at that import's file, in order. A finding
+///   of the `deprecated` lint carries the `Deprecated` tag, which an editor
+///   strikes through.
 /// - provides: the one map from a model diagnostic to an editor diagnostic.
 /// - fails: never.
 /// - panics: none.
@@ -1402,6 +1407,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::one_refusal_is_published_at_every_verbosity`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
+/// - witness: `recheck::tests::a_deprecated_use_is_published_struck_through`
 /// - witness: `recheck::tests::a_refusal_in_an_import_is_published_where_the_document_reaches_it_1199`
 /// - witness: `recheck::tests::an_unimplemented_refusal_links_its_tracking_issue`
 /// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
@@ -1412,7 +1418,8 @@ fn reported(step: Step<'_>) -> Step<'_>
     && (verbosity == Verbosity::Json || ret.message.starts_with(found.message.text.as_str()))
     && ret.related_information.len() >= found.annotations.iter()
         .filter(|annotation| annotation.kind == AnnotationKind::Context).count()
-        .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count()))]
+        .saturating_add(found.contexts.iter().filter(|context| matches!(context.locus, Maybe::Present(_))).count())
+    && (ret.tags == [DiagnosticTag::DEPRECATED]) == (found.identifier == Maybe::Present(Identifier::Lint(Lint::Deprecated))))]
 fn diagnostic(
     found: &gandr_surface_diagnostics::Diagnostic,
     index: &LineIndex<'_>,
@@ -1483,6 +1490,9 @@ fn diagnostic(
         diagnostic.code = Some(spelling.to_string());
         if let Maybe::Present(issue) = found.detail.class.tracking() {
             diagnostic.code_description = Some(CodeDescription { href: issue.url() });
+        }
+        if *spelling == Identifier::Lint(Lint::Deprecated) {
+            diagnostic.tags = Vec::from([DiagnosticTag::DEPRECATED]);
         }
     }
     let contexts = found
@@ -1585,6 +1595,7 @@ mod tests
     use crate::position::Range;
     use crate::protocol::CodeDescription;
     use crate::protocol::Diagnostic;
+    use crate::protocol::DiagnosticTag;
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
     use crate::protocol::Severity;
@@ -1957,6 +1968,48 @@ mod tests
             "a warning at the shadowing name, never an error"
         );
         assert!(diagnostic.related_information.is_empty());
+    }
+
+    #[test]
+    fn a_deprecated_use_is_published_struck_through()
+    {
+        let uri = DocumentUri::from("file:///strict/deprecated.gandr");
+        let text = "@[ deprecated(#{ note = \"use two\" }) ] def one = 1 ;\ndef two = 2 \
+                    ;\ndef uses = one ;\ndef add : Integer ;\ndef add = two ;\n";
+        let diagnostics = checked(&uri, SourceText::from(text));
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(|diagnostic| (
+                    diagnostic.range,
+                    diagnostic.severity,
+                    diagnostic.code.as_deref(),
+                    diagnostic.tags.as_slice(),
+                ))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    range(Span(3, 4, 3, 7)),
+                    Severity::WARNING,
+                    Some("ShadowedBuiltin"),
+                    [].as_slice()
+                ),
+                (
+                    range(Span(2, 11, 2, 14)),
+                    Severity::WARNING,
+                    Some("deprecated"),
+                    [DiagnosticTag::DEPRECATED].as_slice()
+                ),
+            ],
+            "the use is a warning the editor strikes through, and another warning is not"
+        );
+        let message = diagnostics
+            .get(1_usize)
+            .map(|diagnostic| diagnostic.message.as_str());
+        assert!(
+            message.is_some_and(|message| message.starts_with("`one` is deprecated: use two")),
+            "the message names the note: {message:?}"
+        );
     }
 
     #[test]

@@ -546,12 +546,13 @@ impl Style
 ///   the table types it, then the checker's refusal when it refused the
 ///   declaration; the name and the refusal — the lowering's, or the checker's
 ///   where the lowering typed nothing — when the table holds one; else the
-///   declaration as written, a theory and a module always so; then the
-///   documentation the session filed for the form after a blank line. On a
-///   member's name with no entry inside the member, the member as written,
-///   about the name. Else, on a use of a declaration the text writes with no
-///   entry inside the use — the theory an `include` or a `Model(…)` names — as
-///   on that declaration's name, about the use; in a run a theory or a `data`
+///   declaration as written, a theory and a module always so; then, after a
+///   blank line, what a `deprecated` attribute marking the form states, and the
+///   documentation the session filed for the form after another. On a member's
+///   name with no entry inside the member, the member as written, about the
+///   name. Else, on a use of a declaration the text writes with no entry inside
+///   the use — the theory an `include` or a `Model(…)` names — as on that
+///   declaration's name, about the use; in a run a theory or a `data`
 ///   declaration writes that declares nothing — an `include`, a rule — with no
 ///   entry inside it and no orientation noted at the position, the same for the
 ///   first such use in the run, about the run, and else the run as written,
@@ -1446,8 +1447,10 @@ impl Quoted<'_>
 ///   among them, the declaration as [`written`] writes it, a theory with its
 ///   members. Where `table` holds the checker's refusal of a declaration it
 ///   does not hold the lowering's refusal of, that refusal after a blank line.
-///   Then the documentation `session` filed under the form's key after a blank
-///   line.
+///   Where a `deprecated` attribute marks the form, `deprecated`, with the
+///   version after `since` and the note after a colon when the attribute states
+///   them, after a blank line. Then the documentation `session` filed under the
+///   form's key after a blank line.
 /// - provides: the declaration half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -1460,6 +1463,7 @@ impl Quoted<'_>
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 /// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 /// - witness: `hover::tests::a_checker_refused_declaration_hovers_its_refusal_1204`
+/// - witness: `hover::tests::a_deprecated_declaration_hovers_its_note`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
 fn declared<Store, Blocks>(
@@ -1523,6 +1527,17 @@ fn declared<Store, Blocks>(
     if let Some(refusal) = checked {
         value.push_str("\n\nrefused: ");
         value.push_str(<&str>::from(refusal));
+    }
+    if let Some(stated) = key.and_then(|key| session.deprecation(key)) {
+        value.push_str("\n\ndeprecated");
+        if let Some(ref since) = stated.since {
+            value.push_str(" since ");
+            value.push_str(since);
+        }
+        if let Some(ref note) = stated.note {
+            value.push_str(": ");
+            value.push_str(note);
+        }
     }
     if let Some(text) = documented {
         value.push_str("\n\n");
@@ -2261,6 +2276,33 @@ mod tests
                 "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
             )),
             "the keyword answers the declaration it introduces"
+        );
+    }
+
+    #[test]
+    fn a_deprecated_declaration_hovers_its_note()
+    {
+        let text = SourceText::from(
+            "/// The answer.\n@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef \
+             answer = 42 ;\n@[ deprecated ] def bare = 1 ;\ndef other = 2 ;\n",
+        );
+        assert_eq!(
+            shown(text, (2.into(), 5.into())),
+            Ok(String::from(
+                "```gandr\nanswer : Integer\n```\n\ndeprecated since 0.2: use `other`\n\nThe \
+                 answer."
+            )),
+            "the deprecation stands before the documentation"
+        );
+        assert_eq!(
+            shown(text, (3.into(), 21.into())),
+            Ok(String::from("```gandr\nbare : Integer\n```\n\ndeprecated")),
+            "a bare mark states neither the version nor the note"
+        );
+        assert_eq!(
+            shown(text, (4.into(), 5.into())),
+            Ok(String::from("```gandr\nother : Integer\n```")),
+            "an unmarked declaration says nothing of it"
         );
     }
 

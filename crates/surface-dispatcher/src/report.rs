@@ -129,7 +129,8 @@ pub struct Lints
 impl Lints
 {
     /// The lints that reach everywhere: each of `enabled`, the rest within
-    /// their attributes; `explicit-runs` reaches every run.
+    /// their attributes; `explicit-runs` reaches every run, and `deprecated`
+    /// reaches every use whether enabled or not.
     ///
     /// # Specification
     /// trivial.
@@ -144,6 +145,7 @@ impl Lints
             match lint {
                 Lint::ExplicitExits => lints.explicit_exits = Reach::Everywhere,
                 Lint::ExplicitRuns => lints.explicit_runs = AskedRuns::Every,
+                Lint::Deprecated => {},
             }
         }
         lints
@@ -1073,6 +1075,7 @@ def broken = missing ;"#,
             shadowed: Vec::new(),
             inferred: Vec::new(),
             runs: Vec::new(),
+            deprecated: Vec::new(),
             unused: Vec::new(),
             unreached: Vec::new(),
             program,

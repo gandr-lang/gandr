@@ -552,6 +552,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
 use crate::attribute::RegisteredAttribute;
+use crate::attribute::deprecation;
 use crate::attribute::members;
 use crate::attribute::names;
 use crate::attribute::payload;
@@ -9307,9 +9308,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the outermost scope at the depth that binds it: a path ending at an
     ///   exported value component stands as that member's constant when the
     ///   member is declared strictly before the declaration the path is written
-    ///   in, and a path ending at a type component stands as its stated type,
-    ///   as [`Self::module_type`] reads it. The chain is walked by an explicit
-    ///   loop, and its links are left unread.
+    ///   in, its last segment kept as a written name resolved to that
+    ///   declaration, and a path ending at a type component stands as its
+    ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
+    ///   an explicit loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -9338,6 +9340,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
         ensures: |ret| {
@@ -9466,7 +9469,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted));
                 };
-                self.select(site, exported)
+                self.select(site, exported)?;
+                if let Some(&(_, member)) = links.first()
+                    && let Some(entry) = self.collected.slots.get(usize::from(exported))
+                {
+                    self.resolved(member.span, Resolved::Declaration {
+                        constant: entry.constant,
+                        declared: Maybe::Absent(binder_type::Absent::Untyped),
+                    });
+                }
+                Ok(())
             },
             PathResolution::Complete(Recognized::ModuleNamespace) => {
                 Err(site.out(FragmentBoundary::WrongSort))
@@ -15928,9 +15940,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   where a word schema stands is admitted only when it spells one of the
     ///   schema's words, filed with no value, and is ill-typed as another word
     ///   otherwise; a `respects` or `entry` payload is admitted only when it
-    ///   names declarations, and an `identity` payload only when it names two
-    ///   or three, which the filing carries, and each is ill-typed as another
-    ///   value otherwise.
+    ///   names declarations, an `identity` payload only when it names two or
+    ///   three, which the filing carries, and a `deprecated` record only when
+    ///   its fields are texts among those its schema names, and each is
+    ///   ill-typed as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -16067,6 +16080,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     AttributeSchema::Interface => match members(arena, value) {
                         Maybe::Present(members) => Maybe::Present((Vec::new(), members)),
+                        Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                    AttributeSchema::MarkerOrRecord(_) => match deprecation(arena, value) {
+                        Maybe::Present(_) => Maybe::Present((Vec::new(), Vec::new())),
                         Maybe::Absent(absent) => Maybe::Absent(absent),
                     },
                     AttributeSchema::Marker
@@ -22991,6 +23008,65 @@ mod tests
             key(undocumented),
             key(square),
             "documentation leaves the declaration's identity alone"
+        );
+    }
+
+    #[test]
+    fn each_use_of_a_deprecated_declaration_is_listed()
+    {
+        let text = "@[ deprecated(#{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 \
+                    ;\n@[ deprecated ] def old : Integer ;\ndef old = 2 ;\ndef cube = 3 ;\ndef \
+                    a = square ;\ndef b = old ;\ndef c = cube ;\ndef d = square ;\nmodule Holder \
+                    {\n  @[ deprecated ] def member = 4 ;\n}\ndef e = Holder.member ;";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(text), &mut arena);
+        let listed: Vec<(&str, String, Option<String>, Option<String>)> = module
+            .deprecated_uses(&arena)
+            .into_iter()
+            .map(|used| {
+                (
+                    text.get(usize::from(used.span.start()) .. usize::from(used.span.end()))
+                        .unwrap_or_default(),
+                    alloc::format!("{}", used.name),
+                    used.deprecation.since,
+                    used.deprecation.note,
+                )
+            })
+            .collect();
+        let starts: Vec<usize> = module
+            .deprecated_uses(&arena)
+            .iter()
+            .map(|used| usize::from(used.span.start()))
+            .collect();
+        let stated = (Some(String::from("0.2")), Some(String::from("use cube")));
+        assert_eq!(
+            listed,
+            [
+                (
+                    "square",
+                    String::from("square"),
+                    stated.0.clone(),
+                    stated.1.clone()
+                ),
+                ("old", String::from("old"), None, None),
+                ("square", String::from("square"), stated.0, stated.1),
+                ("member", String::from("member"), None, None),
+            ],
+            "each use of a marked declaration is listed with what its attribute states, an \
+             attribute on the signature half marking the whole declaration and a module \
+             member's use through its dotted path among them; an unmarked use and the \
+             declarations' own names are not"
+        );
+        assert_eq!(
+            starts,
+            [
+                (text.find("= square"), 2_usize),
+                (text.find("= old"), 2_usize),
+                (text.rfind("= square"), 2_usize),
+                (text.rfind(".member"), 1_usize),
+            ]
+            .map(|(at, past)| at.unwrap_or_default().saturating_add(past)),
+            "in source order, at each use, a dotted path's at its last segment"
         );
     }
 

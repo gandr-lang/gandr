@@ -380,6 +380,8 @@ pub use crate::attribute::AttributeRegistry;
 pub use crate::attribute::AttributeSchema;
 pub use crate::attribute::AttributeTable;
 pub use crate::attribute::AttributedCount;
+pub use crate::attribute::DeprecatedUse;
+pub use crate::attribute::Deprecation;
 pub use crate::attribute::EditDistance;
 pub use crate::attribute::PayloadForm;
 pub use crate::attribute::PayloadVerdict;

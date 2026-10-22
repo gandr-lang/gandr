@@ -1,0 +1,5 @@
+/// `deprecated`: marks a declaration that still checks; each use of it is a
+/// `deprecated` warning naming the version and the note it states.
+@[ deprecated(#{ since = "0.2", note = "use `answer`" }) ]
+@[ checks ]
+def old_answer = 42 ;

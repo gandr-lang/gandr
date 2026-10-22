@@ -1051,6 +1051,37 @@ fn documentation_is_kept_by_declaration_identity()
     );
 }
 
+/// The session keeps what each accepted declaration's `deprecated`
+/// attribute states under the form's identity: a record's texts, nothing
+/// for a bare mark, and no answer for an unmarked form.
+#[test]
+fn a_deprecation_is_kept_by_declaration_identity()
+{
+    let mut session = session(SourceRoot::Strict);
+    let text = "@[ deprecated(#{ since = \"0.2\", note = \"use `other`\" }) ]\ndef answer = 42 \
+                ;\n@[ deprecated ]\ndef bare = 2 ;\ndef other = 1 ;";
+    let _submitted = submit(&mut session, text);
+    let key = |form: &str| first_declaration(form.into());
+    assert_eq!(
+        session.deprecation(key("def answer = 42 ;")),
+        Some(&gandr_surface_lowering::Deprecation {
+            since: Some(String::from("0.2")),
+            note: Some(String::from("use `other`")),
+        }),
+        "a record states both texts"
+    );
+    assert_eq!(
+        session.deprecation(key("def bare = 2 ;")),
+        Some(&gandr_surface_lowering::Deprecation::default()),
+        "a bare mark states neither"
+    );
+    assert_eq!(
+        session.deprecation(key("def other = 1 ;")),
+        None,
+        "an unmarked form answers nothing"
+    );
+}
+
 /// #776: a document laid out after its import closure offers the kernel its
 /// own declarations alone once the closure was admitted, exporting and
 /// committing what a whole admission of the revision exports and commits, and
@@ -1637,6 +1668,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 shadowed,
                 inferred,
                 runs,
+                deprecated,
                 unused,
                 unreached,
                 kernel,
@@ -1652,6 +1684,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 shadowed,
                 inferred,
                 runs,
+                deprecated,
                 unused,
                 unreached,
                 kernel,

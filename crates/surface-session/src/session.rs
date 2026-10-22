@@ -311,6 +311,7 @@ use gandr_core_incremental::address_of;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
+use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EncodedArtifact;
@@ -350,6 +351,7 @@ use gandr_surface_dispatcher::tabled;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Deprecation;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
@@ -1547,6 +1549,10 @@ pub struct Session<Store, Blocks>
     /// The documentation of the latest accepted revision, by the documented
     /// form's cross-tree key.
     documentation: BTreeMap<NodeKey, DocumentationText>,
+    /// What the `deprecated` attribute states of each of the latest accepted
+    /// revision's own declarations it marks, by the marked form's
+    /// cross-tree key.
+    deprecations: BTreeMap<NodeKey, Deprecation>,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
     /// The rule blocks' decisions kept across the session's lowerings, so
@@ -1799,6 +1805,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             imports: Imports::empty(),
             snapshot: Snapshot::default(),
             documentation: BTreeMap::new(),
+            deprecations: BTreeMap::new(),
             lowerings: LoweringCount::default(),
             decisions: Decisions::held(),
             forms: FormStore::default(),
@@ -1913,35 +1920,40 @@ impl<Store, Blocks> Session<Store, Blocks>
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
         let lowering = lower_parsed(&grammar, parsed, &mut lowerings, &mut decisions)
             .map_err(SessionFault::Compose)?;
-        let (imports, snapshot, documentation, restored) = match lowering.into_lowered() {
-            Lowered::Refused(_) => (
-                Imports::empty(),
-                Snapshot::default(),
-                BTreeMap::new(),
-                Maybe::Absent(reopened::Absent::RefusedWhole),
-            ),
-            Lowered::Module { module, arena } => {
-                let program = program(&module, arena).map_err(SessionFault::Unordered)?;
-                let address = address_of(&program).map_err(SessionFault::Store)?;
-                let restored = match restore(&mut store, &program, address, backend, &mut Quiet)
-                    .map_err(SessionFault::Store)?
-                {
-                    Maybe::Present(checkpoints) => {
-                        let count = ItemCount::from(checkpoints.items().len());
-                        let resume =
-                            Resume::from_checkpoints(checkpoints).map_err(SessionFault::Resume)?;
-                        Maybe::Present((resume, count))
-                    },
-                    Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
-                };
-                (
-                    Imports::of(&module, SourceIndex::from(0_usize)),
-                    Snapshot::of(&program, module.origins()),
-                    documentation_of(&module, SourceIndex::from(0_usize)),
-                    restored,
-                )
-            },
-        };
+        let (imports, snapshot, (documentation, deprecations), restored) =
+            match lowering.into_lowered() {
+                Lowered::Refused(_) => (
+                    Imports::empty(),
+                    Snapshot::default(),
+                    (BTreeMap::new(), BTreeMap::new()),
+                    Maybe::Absent(reopened::Absent::RefusedWhole),
+                ),
+                Lowered::Module { module, arena } => {
+                    let deprecations = deprecations_of(&module, &arena, SourceIndex::from(0_usize));
+                    let program = program(&module, arena).map_err(SessionFault::Unordered)?;
+                    let address = address_of(&program).map_err(SessionFault::Store)?;
+                    let restored = match restore(&mut store, &program, address, backend, &mut Quiet)
+                        .map_err(SessionFault::Store)?
+                    {
+                        Maybe::Present(checkpoints) => {
+                            let count = ItemCount::from(checkpoints.items().len());
+                            let resume = Resume::from_checkpoints(checkpoints)
+                                .map_err(SessionFault::Resume)?;
+                            Maybe::Present((resume, count))
+                        },
+                        Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
+                    };
+                    (
+                        Imports::of(&module, SourceIndex::from(0_usize)),
+                        Snapshot::of(&program, module.origins()),
+                        (
+                            documentation_of(&module, SourceIndex::from(0_usize)),
+                            deprecations,
+                        ),
+                        restored,
+                    )
+                },
+            };
         let (incremental, restored) = match restored {
             Maybe::Present((resume, count)) => (
                 IncrementalSession::reopen(store, backend, resume),
@@ -1961,6 +1973,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 imports,
                 snapshot,
                 documentation,
+                deprecations,
                 lowerings,
                 decisions,
                 forms,
@@ -2617,6 +2630,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);
+        let deprecations = deprecations_of(&module, &arena, own);
         // The closure's declarations — those written before the revision's own
         // source — lead the judged ones, a declaration the lowering refused
         // being judged nowhere.
@@ -2711,6 +2725,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.imports = imports;
         self.snapshot = snapshot;
         self.documentation = documentation;
+        self.deprecations = deprecations;
         self.admission = Maybe::Present(Pending {
             admission,
             boundary,
@@ -3368,6 +3383,34 @@ impl<Store, Blocks> Session<Store, Blocks>
             Maybe::Absent(documentation::Absent::Undocumented),
             Maybe::Present,
         )
+    }
+
+    /// What the `deprecated` attribute states of the latest accepted
+    /// revision's declaration form whose key is `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing — any key is admissible input.
+    /// - ensures: the version and note the attribute marking the form at `key`
+    ///   states, either absent when unstated, for the latest accepted revision;
+    ///   none when no `deprecated` attribute marks it. A revision refused whole
+    ///   keeps the accepted one's.
+    /// - provides: the deprecation a hover shows beside a declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration marked with a record, one marked bare
+    ///   and an unmarked one separate the answers.
+    /// - witness: `tests::session::a_deprecation_is_kept_by_declaration_identity`
+    #[spec(ensures: |ret| ret == self.deprecations.get(&key))]
+    #[inline]
+    #[must_use]
+    pub fn deprecation(
+        &self,
+        key: NodeKey,
+    ) -> Option<&Deprecation>
+    {
+        self.deprecations.get(&key)
     }
 
     /// The synthesis stream of the latest accepted revision.
@@ -4038,6 +4081,30 @@ fn documentation_of(
         .iter()
         .filter(|&(key, _)| key.source() == own)
         .map(|(key, documented)| (key.form(), documented.text().clone()))
+        .collect()
+}
+
+/// What the `deprecated` attribute states of each declaration it marks in the
+/// source at `own`, by the marked form's key in that source's own tree, read
+/// off `arena`, the arena `module` was lowered into.
+///
+/// # Specification
+/// trivial.
+fn deprecations_of(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    own: SourceIndex,
+) -> BTreeMap<NodeKey, Deprecation>
+{
+    module
+        .declarations()
+        .iter()
+        .flat_map(|declaration| [declaration.signature(), declaration.definition()])
+        .filter_map(|half| match half {
+            Maybe::Present(key) if key.source() == own => Some(key),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
+        .filter_map(|key| Some((key.form(), module.attributes().deprecation(key, arena)?)))
         .collect()
 }
 

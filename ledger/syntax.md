@@ -5,7 +5,7 @@ Generated from the built-in grammar by `gandr ledger syntax --write ledger`; nev
 - Grammar fingerprint: `0x7d3e7201b5626440`
 - Rules: 160 — 159 committed, 1 internal
 - Molds: 3113
-- Attributes: 12
+- Attributes: 13
 
 ## Reading a form
 
@@ -222,7 +222,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Attributes — 12 attributes
+## Attributes — 13 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -240,3 +240,4 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`entry`](exemplars/attributes/entry.gandr) | a declared name or a tuple of declared names |
 | [`form`](exemplars/attributes/form.gandr) | one of the words `explicit`, `sugared` |
 | [`identity`](exemplars/attributes/identity.gandr) | a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law |
+| [`deprecated`](exemplars/attributes/deprecated.gandr) | no payload or a record of the texts `since`, `note` |

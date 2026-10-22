@@ -177,6 +177,7 @@
     {"exemplar":"exemplars/attributes/respects.gandr","name":"respects","payload":{"schema":"names"},"reads":"a declared name or a tuple of declared names"},
     {"exemplar":"exemplars/attributes/entry.gandr","name":"entry","payload":{"schema":"names"},"reads":"a declared name or a tuple of declared names"},
     {"exemplar":"exemplars/attributes/form.gandr","name":"form","payload":{"schema":"word","words":["explicit","sugared"]},"reads":"one of the words `explicit`, `sugared`"},
-    {"exemplar":"exemplars/attributes/identity.gandr","name":"identity","payload":{"schema":"interface"},"reads":"a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law"}
+    {"exemplar":"exemplars/attributes/identity.gandr","name":"identity","payload":{"schema":"interface"},"reads":"a tuple of two or three declared names: a relation, its reflexivity and optionally its transport law"},
+    {"exemplar":"exemplars/attributes/deprecated.gandr","name":"deprecated","payload":{"fields":["since","note"],"schema":"marker_or_record"},"reads":"no payload or a record of the texts `since`, `note`"}
   ]
 }

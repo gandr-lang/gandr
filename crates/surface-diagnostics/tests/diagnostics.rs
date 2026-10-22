@@ -40,6 +40,7 @@ use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::fix;
 use gandr_surface_diagnostics::report_identifier;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_diagnostics::tracking;
@@ -1516,6 +1517,79 @@ fn a_shadowed_builtin_is_a_warning()
         .iter()
         .all(|diagnostic| diagnostic.severity == Severity::Warning),
         "a warning unsettles nothing"
+    );
+}
+
+#[test]
+fn a_deprecated_use_is_a_finding_naming_its_note()
+{
+    let text = "@[ deprecated(#{ since = \"0.2\", note = \"use cube\" }) ] def square = 1 ;\n@[ \
+                deprecated(#{ note = \"use one\" }) ] def single = 1 ;\n@[ deprecated ] def old \
+                = 2 ;\ndef cube = 3 ;\ndef a = square ;\ndef b = single ;\ndef c = old ;\ndef d \
+                = cube ;\n";
+    let checked = printed(
+        Path::new("deprecated.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    let at = |name: &str| {
+        let start = text
+            .find(&format!("= {name} ;"))
+            .expect("the use is written")
+            .saturating_add(2);
+        Maybe::Present(
+            ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(name.len())),
+            )
+            .expect("the use is ordered"),
+        )
+    };
+    assert_eq!(
+        checked
+            .iter()
+            .map(|diagnostic| (
+                diagnostic.severity,
+                diagnostic.detail.class,
+                diagnostic.identifier,
+                diagnostic.span,
+                diagnostic.message.text.as_str(),
+                diagnostic
+                    .annotations
+                    .first()
+                    .map(|primary| primary.label.as_str()),
+                diagnostic.fix.clone(),
+            ))
+            .collect::<Vec<_>>(),
+        [
+            ("square", "`square` is deprecated since 0.2: use cube"),
+            ("single", "`single` is deprecated: use one"),
+            ("old", "`old` is deprecated"),
+        ]
+        .map(|(name, message)| (
+            Severity::Warning,
+            Class::Lint(Lint::Deprecated),
+            Maybe::Present(Identifier::Lint(Lint::Deprecated)),
+            at(name),
+            message,
+            Some("names a deprecated declaration"),
+            Maybe::Absent(fix::Absent::Unproposed),
+        )),
+        "each use of a marked declaration is a finding at the use, naming what its attribute \
+         states and no more; the declarations themselves and an unmarked use are not, and \
+         nothing unsettles"
+    );
+    assert!(
+        printed(
+            Path::new("deprecated.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(text),
+            Verb::Test
+        )
+        .iter()
+        .all(|diagnostic| diagnostic.severity != Severity::Warning),
+        "`test` prints settlements, never a finding"
     );
 }
 
