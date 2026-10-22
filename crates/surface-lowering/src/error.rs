@@ -1912,6 +1912,7 @@ mod tests
     use anodized::spec;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
     use quenchant_shape::shape::Maybe;
@@ -1930,6 +1931,7 @@ mod tests
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::form::FormName;
+    use crate::form::Repair;
     use crate::lower::LoweringBudget;
     use crate::resolve::CandidateCount;
     use crate::resolve::HeadArity;
@@ -2320,5 +2322,85 @@ mod tests
                 );
             }
         }
+    }
+
+    /// Assert that each of `renderings`, the messages of every variant of
+    /// one tag, is written and that no two are alike.
+    ///
+    /// # Specification
+    /// trivial.
+    fn assert_apart(renderings: &[alloc::string::String])
+    {
+        for (first, left) in renderings.iter().enumerate() {
+            assert!(!left.is_empty(), "every variant writes its message");
+            for right in renderings.iter().skip(first.saturating_add(1_usize)) {
+                assert_ne!(
+                    left, right,
+                    "two variants rendering alike read as one mistake"
+                );
+            }
+        }
+    }
+
+    /// Every variant of each tag a refusal names renders its own message.
+    #[test]
+    fn every_tag_renders_its_own_message()
+    {
+        use alloc::string::ToString as _;
+
+        let render = |each: &[&dyn core::fmt::Display]| {
+            each.iter()
+                .map(alloc::string::ToString::to_string)
+                .collect::<alloc::vec::Vec<_>>()
+        };
+        assert_apart(&render(&[
+            &FragmentSort::Module,
+            &FragmentSort::Declaration,
+            &FragmentSort::ValueType,
+            &FragmentSort::CompType,
+            &FragmentSort::Value,
+            &FragmentSort::Computation,
+            &FragmentSort::Pattern,
+            &FragmentSort::Continuation,
+        ]));
+        assert_apart(&render(&[
+            &FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)),
+            &FormFault::MissingOperand,
+            &FormFault::ExtraOperand,
+            &FormFault::MisplacedTile,
+        ]));
+        assert_apart(&render(&[
+            &AscriptionForm::Kinded,
+            &AscriptionForm::Parameterized,
+        ]));
+        assert_apart(&render(&[&LoopExit::Break, &LoopExit::Continue]));
+        assert_apart(&render(&[
+            &CrossedExit::Become,
+            &CrossedExit::Break,
+            &CrossedExit::Continue,
+        ]));
+        assert_apart(&render(&[
+            &TelescopeFault::Arity {
+                stated: OperandCount::from(1_usize),
+                written: OperandCount::from(2_usize),
+            },
+            &TelescopeFault::Index(OperandCount::from(1_usize)),
+        ]));
+        let ambiguous = |more: usize| {
+            LoweringRefusal::AmbiguousMethod {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                method: SurfaceName::from("len"),
+                first: SurfaceName::from("Str"),
+                second: SurfaceName::from("Bytes"),
+                more: CandidateCount::from(more),
+            }
+            .to_string()
+        };
+        let (two, more) = (ambiguous(0_usize), ambiguous(2_usize));
+        assert_apart(&[two.clone(), more.clone()]);
+        assert!(
+            more.contains('2') && !two.contains('0'),
+            "the message counts the further modules only when there are some: {two} / {more}"
+        );
     }
 }
