@@ -171,7 +171,8 @@ impl Disk
     ///   path that does not resolve, or a directory the system refuses to
     ///   watch, goes unnoticed. When what `peer` is served with changed, every
     ///   path a served connection follows whose directory is watched, as named;
-    ///   `None` otherwise.
+    ///   `None` otherwise. It returns while the followed files change: the
+    ///   system's watcher is asked with the followers released.
     /// - provides: a connection's resynchronisation after each message it
     ///   handled, and its leaving; the paths whose reads stand without a
     ///   `stat`.
@@ -180,9 +181,12 @@ impl Disk
     ///
     /// # Adequacy
     /// - hypothesis: L3 — through [`Self::new`]'s witness; a second set
-    ///   replaces the first and an empty one stops serving the connection.
+    ///   replaces the first and an empty one stops serving the connection; five
+    ///   hundred watches and unwatches return while a followed file is
+    ///   rewritten without pause.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
     /// - witness: `disk::tests::a_connection_follows_exactly_what_it_named_last`
+    /// - witness: `disk::tests::a_follow_returns_while_its_files_keep_changing_1898`
     #[spec(captures: following = !named.is_empty(),
         ensures: lock(&self.followed).followers.contains_key(&peer) == following)]
     #[inline]
@@ -222,6 +226,11 @@ impl Disk
             }
             let _named = resolved.insert(real, path.clone());
         }
+        held.resolved = resolved;
+        // The system's watcher answers a watch or an unwatch from the thread
+        // that hands each event on, and `handed` takes the followers there:
+        // asked while they are held, the two would wait on each other (#1898).
+        drop(held);
         for gone in self.directories.difference(&directories) {
             let _unwatched = self.watcher.unwatch(gone);
         }
@@ -236,7 +245,8 @@ impl Disk
             }
         }
         directories.retain(|directory| !refused.contains(directory));
-        let watched = resolved
+        let watched = lock(&self.followed)
+            .resolved
             .iter()
             .filter(|&(real, _)| {
                 real.parent()
@@ -244,8 +254,6 @@ impl Disk
             })
             .map(|(_, named)| named.clone())
             .collect();
-        held.resolved = resolved;
-        drop(held);
         self.directories = directories;
         Some(watched)
     }
@@ -354,5 +362,65 @@ mod tests
             None,
             "an empty set stops serving the connection"
         );
+    }
+
+    /// A connection that changes what it follows while the files it follows
+    /// keep changing is answered, whatever the watcher's thread is handing
+    /// on: the system's watcher replies to a watch or an unwatch from the
+    /// thread that hands each event on, so a follow that held the followers
+    /// while waiting for that reply waited on a thread waiting for the
+    /// followers, and the hub stopped (#1898).
+    #[test]
+    fn a_follow_returns_while_its_files_keep_changing_1898()
+    {
+        use alloc::sync::Arc;
+        use core::sync::atomic::AtomicBool;
+        use core::sync::atomic::Ordering;
+        use core::time::Duration;
+        use std::sync::mpsc;
+
+        let scratch = std::env::temp_dir().join(format!("gd-{}-1898", std::process::id()));
+        drop(std::fs::remove_dir_all(&scratch));
+        let (busy, other) = (scratch.join("busy"), scratch.join("other"));
+        for directory in [&busy, &other] {
+            std::fs::create_dir_all(directory).expect("a scratch directory is made");
+        }
+        let (written, aside) = (busy.join("base.gandr"), other.join("aside.gandr"));
+        for file in [&written, &aside] {
+            std::fs::write(file, "def one = 1 ;\n").expect("a followed file is written");
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer = {
+            let (stop, written) = (Arc::clone(&stop), written.clone());
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::SeqCst) {
+                    drop(std::fs::write(&written, "def one = 1 ;\n"));
+                }
+            })
+        };
+        let (done, finished) = mpsc::channel();
+        let following = std::thread::spawn(move || {
+            let inbox = Inbox::default();
+            let mut disk = Disk::new().expect("the watcher starts");
+            let peer = Peer::from(1_u64);
+            let one = BTreeSet::from([written.clone()]);
+            let both = BTreeSet::from([written, aside]);
+            for _ in 0_u32 .. 500_u32 {
+                disk.follow(peer, &inbox.changes(), both.clone());
+                disk.follow(peer, &inbox.changes(), one.clone());
+            }
+            disk.follow(peer, &inbox.changes(), BTreeSet::new());
+            let _sent = done.send(());
+        });
+        let answered = finished.recv_timeout(Duration::from_secs(10));
+        stop.store(true, Ordering::SeqCst);
+        writer.join().expect("the writer stops");
+        drop(std::fs::remove_dir_all(&scratch));
+        assert_eq!(
+            answered,
+            Ok(()),
+            "every follow returns while the followed file keeps changing"
+        );
+        following.join().expect("the follower ends");
     }
 }
