@@ -1601,6 +1601,16 @@ impl<'run> Walk<'run>
                         motive: right_motive,
                         value: right_value,
                     },
+                )
+                | (
+                    Elimination::OperandTransport {
+                        motive: left_motive,
+                        path: left_value,
+                    },
+                    Elimination::OperandTransport {
+                        motive: right_motive,
+                        path: right_value,
+                    },
                 ) => match crate::identity::motives(self.domain, left_motive, right_motive)
                     .map_err(ConversionFault::Domain)?
                 {
@@ -1771,6 +1781,7 @@ impl<'run> Walk<'run>
                     | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::PathTransport { .. }
+                    | Elimination::OperandTransport { .. }
                     | Elimination::Ride { .. }
                     | Elimination::TelescopeTransport { .. }
                     | Elimination::Apply(_)
