@@ -270,7 +270,15 @@ impl Statement
     /// converts.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the pairs [`decide`] collected, the evidence's payload slot
+    ///   pairs read at the two protocols' payload types.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bisimilarity whose protocols receive `Unit * Unit`
+    ///   and `Unit` owes exactly that pair.
+    /// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+    #[spec(ensures: |ret| ret.len() == self.owed.len())]
     #[inline]
     #[must_use]
     pub fn owed(&self) -> &[(ValueTypeId, ValueTypeId)]
@@ -688,7 +696,16 @@ pub fn identity(
 /// payload types, in the statement's order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: every type in `owed` lives in `arena`.
+/// - ensures: one universe path per pair of `owed`, from the pair's first
+///   type's code to its second's, in the pairs' order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one owed pair yields its path, two yield both paths in
+///   order, and none yields no path.
+/// - witness: `flow::tests::payload_paths_check_as_unit_one_path_or_a_tuple_in_order`
+#[spec(ensures: |ret| ret.len() == owed.len())]
 fn owed_paths(
     arena: &mut CoreArena,
     owed: &[(ValueTypeId, ValueTypeId)],
@@ -708,7 +725,17 @@ fn owed_paths(
 /// statement's order for several.
 ///
 /// # Specification
-/// trivial.
+/// - requires: every type in `owed` lives in `arena`.
+/// - ensures: the empty product for no pair; the pair's universe path, as
+///   [`owed_paths`] forms it, for one; the product of those paths in the pairs'
+///   order for several.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one owed pair checks against its path, two against the
+///   tuple of both paths in order, and none against the unit type.
+/// - witness: `flow::tests::payload_paths_check_as_unit_one_path_or_a_tuple_in_order`
+#[spec(ensures: |ret| arena.value_type(ret).is_some())]
 #[inline]
 pub fn payload_paths(
     arena: &mut CoreArena,

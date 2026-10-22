@@ -1107,6 +1107,14 @@ fn a_bisimulation_owes_a_path_per_differing_payload_pair()
         Some(alloc::vec![(slot(0), slot(0))]),
         "the evidence names the owed slot pair once"
     );
+    assert_eq!(
+        report
+            .flows()
+            .get(&paid)
+            .map(|statement| statement.owed().to_vec()),
+        Some(alloc::vec![(pair, unit)]),
+        "the statement owes the pair's payload types, source first"
+    );
     assert!(
         matches!(
             report.natives().get(&paths).and_then(|&native| arena.value(native)),
@@ -1157,5 +1165,55 @@ fn a_bisimulation_owes_a_path_per_differing_payload_pair()
             })) if at == bound
         ),
         "a path a parameter binds names no certificate: {report:?}"
+    );
+}
+
+/// The type a bisimilarity's paths check against: the unit type when it owes
+/// none, the one owed pair's universe path alone, and the tuple of both paths
+/// in the pairs' order for two.
+#[test]
+fn payload_paths_check_as_unit_one_path_or_a_tuple_in_order()
+{
+    use gandr_core_term::Value;
+    use gandr_core_term::ValueType;
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let pair = arena.value_type_product(&[unit, unit]);
+    let relates = |arena: &CoreArena,
+                   path: ValueTypeId,
+                   (source, target): (ValueTypeId, ValueTypeId)| {
+        let quotes = |at: ValueId, ty: ValueTypeId| matches!(arena.value(at), Some(&Value::Quote(quoted)) if quoted == ty);
+        matches!(
+            arena.value_type(path),
+            Some(&ValueType::Path { carrier, left, right })
+                if matches!(arena.value_type(carrier), Some(&ValueType::Universe { .. }))
+                    && quotes(left, source)
+                    && quotes(right, target)
+        )
+    };
+    let none = super::payload_paths(&mut arena, &[]);
+    assert!(
+        matches!(arena.value_type(none), Some(&ValueType::Product(ref components)) if components.is_empty()),
+        "no owed pair checks against the unit type: {:?}",
+        arena.value_type(none)
+    );
+    let one = super::payload_paths(&mut arena, &[(pair, unit)]);
+    assert!(
+        relates(&arena, one, (pair, unit)),
+        "one owed pair checks against its path alone: {:?}",
+        arena.value_type(one)
+    );
+    let two = super::payload_paths(&mut arena, &[(pair, unit), (unit, pair)]);
+    let Some(&ValueType::Product(ref components)) = arena.value_type(two)
+    else {
+        panic!(
+            "two owed pairs check against a tuple: {:?}",
+            arena.value_type(two)
+        );
+    };
+    assert!(
+        matches!(**components, [first, second]
+            if relates(&arena, first, (pair, unit)) && relates(&arena, second, (unit, pair))),
+        "the tuple holds each pair's path in the pairs' order: {components:?}"
     );
 }
