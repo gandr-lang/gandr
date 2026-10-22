@@ -89,6 +89,11 @@ impl fmt::Display for Repository
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report's commit links name the repository; an
+    ///   empty write changes every link.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -149,6 +154,11 @@ impl CommitSha
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a forty-digit commit written short; another commit or
+    ///   the whole name changes the written form.
+    /// - witness: `check::tests::a_commit_is_seven_to_forty_hex_digits`
     #[must_use]
     #[inline]
     pub const fn short(&self) -> ShortSha<'_>
@@ -163,6 +173,11 @@ impl fmt::Display for CommitSha
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report links the commit by its full name; an
+    ///   empty write changes the link.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -184,6 +199,11 @@ impl fmt::Display for ShortSha<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a forty-digit commit written short; an empty write
+    ///   changes the written form.
+    /// - witness: `check::tests::a_commit_is_seven_to_forty_hex_digits`
     #[inline]
     fn fmt(
         &self,
@@ -293,6 +313,13 @@ impl FromStr for Benchmark
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name read and written back, and an accepted
+    ///   verdict's benchmark matched against a failed check's; a lost name
+    ///   changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -306,6 +333,12 @@ impl fmt::Display for Benchmark
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name read and written back, and a report's section
+    ///   heading; an empty write changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -329,6 +362,11 @@ impl FromStr for RunUrl
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an address read and written back; a lost address
+    ///   changes it.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -342,6 +380,12 @@ impl fmt::Display for RunUrl
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an address read and written back, and a report's run
+    ///   link; an empty write changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -370,6 +414,12 @@ impl fmt::Display for SummaryLine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a line read and written back, and a report's site
+    ///   lines; an empty write changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -399,6 +449,12 @@ impl FromStr for SiteName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name read and written back, and an issue's title
+    ///   read back to its function; a lost name changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -443,6 +499,12 @@ impl fmt::Display for SiteName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name read and written back, and an issue's title;
+    ///   an empty write changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -477,6 +539,11 @@ impl fmt::Display for CrateDir
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an issue's body names the function's crate; an empty
+    ///   write changes the body.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -568,6 +635,11 @@ impl fmt::Display for AreaLabel
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opened issue carries its area label; an empty
+    ///   write changes the label.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -610,6 +682,11 @@ impl fmt::Display for Percent
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decimal rise, a whole fall and no change; a sign
+    ///   chosen at another bound, or an empty write, changes one of them.
+    /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
     #[inline]
     fn fmt(
         &self,
@@ -633,6 +710,10 @@ impl FromStr for SummaryLine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a line read and written back; a lost line changes it.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -819,6 +900,7 @@ impl Failure
     ///   or a moved call count read as unchanged changes the reading.
     /// - witness: `check::tests::a_summary_reads_into_its_sites`
     /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
+    /// - witness: `check::tests::a_summary_of_another_shape_reads_without_sites`
     #[must_use]
     #[inline]
     pub fn read(
@@ -1111,6 +1193,11 @@ Wall time `313.23 ms → 401.90 ms` **+28%**
         );
         assert_eq!(Percent(305).to_string(), "+30.5");
         assert_eq!(Percent(-50).to_string(), "-5");
+        assert_eq!(
+            Percent(0).to_string(),
+            "+0",
+            "no change is written as a rise"
+        );
     }
 
     #[test]
@@ -1143,6 +1230,24 @@ Wall time `313.23 ms → 401.90 ms` **+28%**
         );
         assert_eq!(failure.sections, []);
         assert!(matches!(failure.wall, Maybe::Absent(_)));
+    }
+
+    #[test]
+    fn a_name_reads_back_as_written()
+    {
+        let name = "gandr_core_checker::module::decide";
+        let Ok(benchmark) = name.parse::<Benchmark>();
+        assert_eq!(benchmark.to_string(), name);
+        let Ok(site) = name.parse::<SiteName>();
+        assert_eq!(site.to_string(), name);
+        let address = "https://github.com/gandr-lang/gandr/runs/1";
+        let Ok(run) = address.parse::<RunUrl>();
+        assert_eq!(run.to_string(), address);
+        let line = "avg `1444 → 2558` **+77%**";
+        let Ok(summary) = line.parse::<SummaryLine>();
+        assert_eq!(summary.to_string(), line);
+        let Ok(subject) = "#1358".parse::<crate::report::Subject>();
+        assert_eq!(subject.to_string(), "#1358");
     }
 
     #[test]
