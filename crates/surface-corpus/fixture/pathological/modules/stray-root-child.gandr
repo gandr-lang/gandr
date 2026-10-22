@@ -9,11 +9,11 @@ def before = 1 ;
 
 /// A statement keyword outside any block: a block's statement, not a
 /// declaration (#1058).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 leta x = 1 ;
 
 /// An expression standing where a declaration belongs (#1058).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 1 + 2
 
 /// A declaration whose name is a keyword names nothing to file it under

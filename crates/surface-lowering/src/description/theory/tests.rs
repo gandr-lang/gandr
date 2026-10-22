@@ -746,7 +746,7 @@ fn an_ill_formed_theory_is_refused_with_the_checks_reason_1553()
 #[test]
 fn a_refused_top_level_operation_states_its_refusal()
 {
-    let source = "@[ refuses(\"OutOfFragment\") ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+    let source = "@[ refuses(\"UndescribedMember.OperationFiller\") ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
     let grammar = grammar();
     let tree = parse(&grammar, SourceText::from(source))
         .unwrap()

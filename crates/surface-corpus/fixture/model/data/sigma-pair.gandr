@@ -57,7 +57,7 @@ def lap_by_position(p : #{n : Integer, v : Path(Integer, n, n)}) -> -F Path(Inte
 }
 
 /// A pair has two positions.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def third(p : Integer * String) -> -F String {
   return p.2
 }

@@ -26,5 +26,5 @@ theory InnerAbstraction {
 /// The restriction signature's models: `nu` abstracts an atom over its port,
 /// whose model is a nominal set's abstraction `⟨a⟩Proc`, a type the value
 /// universe does not state (#1561).
-@[ refuses("UnstatedComponent") ]
+@[ refuses("UnstatedComponent.Abstraction") ]
 def restrictionModel : Model(Restriction) ;

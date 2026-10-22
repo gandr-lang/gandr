@@ -130,8 +130,8 @@ fn spanned(
     ensures: |ret| {
     ret.class == diagnostic.detail.class
         && matches!(
-            diagnostic.identifier, Maybe::Present(ref identifier) if ret.identifier.as_str() ==
-            identifier.as_ref()
+            diagnostic.identifier, Maybe::Present(ref identifier) if ret.identifier ==
+            identifier.to_string()
         )
         && matches!(
             diagnostic.span, Maybe::Present(span) if source.0.get(usize::from(span.start())

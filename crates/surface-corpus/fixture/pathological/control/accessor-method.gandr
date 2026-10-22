@@ -39,7 +39,7 @@ def sized() -> -F Integer {
 
 /// A view block on a list no hold holds: nothing keeps what an exclusive
 /// view would write back.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Held") ]
 def unheld(ys : List(Integer)) -> -F Integer {
   ys.first() as w { pure w }
 }
@@ -53,7 +53,7 @@ def raisedWhileRead() -> -F Integer {
 
 /// A bare index outside a method's body, which does not yet read its place
 /// (#1536).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.index_expression") ]
 def bare(i : Integer) -> -F Integer {
   hold xs = pair;
   run y <- xs[i];

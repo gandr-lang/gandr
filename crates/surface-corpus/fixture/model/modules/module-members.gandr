@@ -10,11 +10,11 @@ def seed = 40;
 /// `base` and `inner.hidden`.
 module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
   /// A shell command's reply; the lowering admits no shell block yet (#1057).
-  @[ refuses("OutOfFragment") ]
+  @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
   /// The seed and the reply's exit code, reached by a projection the
   /// lowering admits for no field yet (#1106).
-  @[ refuses("OutOfFragment") ]
+  @[ refuses("OutOfFragment.projection_expression") ]
   def base = seed + hidden_reply.exit_code + 1;
   /// A nested module whose `hidden` the signature leaves out.
   module inner : #{ answer: Integer } {
@@ -27,7 +27,7 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
     def answer = base + 1;
   }
   /// The nested answer, through a projection (#1106).
-  @[ refuses("OutOfFragment") ]
+  @[ refuses("OutOfFragment.projection_expression") ]
   def total = inner.answer + 1;
 }
 
@@ -38,5 +38,5 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
 def after = Facts.total + 1;
 
 /// The run target gathers both in a record (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{after = after, total = Facts.total}

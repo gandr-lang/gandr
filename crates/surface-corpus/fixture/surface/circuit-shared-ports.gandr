@@ -8,7 +8,7 @@ theory ConsumedTwice {
   };
 }
 
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.OperationFiller") ]
 theory ProducedTwice {
   sort Nat : Type;
   oper f : (a : Nat) --> (b : Nat);
@@ -20,7 +20,7 @@ theory ProducedTwice {
   };
 }
 
-@[ refuses("UndescribedMember") ]
+@[ refuses("UndescribedMember.ParallelRedexes") ]
 theory SharedRedexPort {
   sort Nat : Type;
   oper add : (l : Nat, r : Nat) --> (sum : Nat);

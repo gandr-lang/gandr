@@ -7,5 +7,5 @@ def greeting = "the value zone";
 
 /// The run target returns the named value; the lowering reads no final
 /// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 pure greeting

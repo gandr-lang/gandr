@@ -1,4 +1,4 @@
-error[OutOfFragment]: the annotation expression is not supported yet
+error[OutOfFragment.annotation_expression]: the annotation expression is not supported yet
   ╭▸ annotated.gandr:1:18
   │
 1 │ def annotated = ((3 : Integer), 1) ;

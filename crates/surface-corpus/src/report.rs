@@ -1567,7 +1567,7 @@ def plain_hole : Integer ;
         let source = SourceText::from(
             r#"def helper = 3 ;
 @[ owes(2) ] def owed : Integer ;
-@[ refuses("OutOfFragment") ] def annotated = ((3 : Integer), 1) ;
+@[ refuses("OutOfFragment.annotation_expression") ] def annotated = ((3 : Integer), 1) ;
 @[ checks ] def wrong : Integer ; def wrong = "text" ;"#,
         );
         let tally = settled(CorpusRoot::Fixture, source).tally();
@@ -1622,7 +1622,7 @@ def plain_hole : Integer ;
         let other = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment") ] def b = ((3 : Integer), 1) ;"#,
+                r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment.annotation_expression") ] def b = ((3 : Integer), 1) ;"#,
             ),
         )
         .tally();

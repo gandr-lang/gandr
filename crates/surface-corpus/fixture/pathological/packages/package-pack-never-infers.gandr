@@ -3,9 +3,9 @@
 // (#1108), so that refusal stands in front of the inference's.
 
 /// A pack with no stated type (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.pack_expression") ]
 def unannotated = pack [ Integer ] thunk { return #{ seed = 7 } };
 
 /// The run target returns it (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 unannotated

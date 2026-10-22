@@ -1,4 +1,4 @@
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def lookup(env: Integer) -> -F String {
   become env.get("HOME")
 }

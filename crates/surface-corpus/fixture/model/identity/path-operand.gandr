@@ -113,7 +113,7 @@ def mappedInto(a : Type, b : Type, g : b => a, u : b, v : b, q : Path(b, u, v)) 
 }
 
 /// A parameter of no path type gives no path to read.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Unannotated") ]
 def pointed(c : Circle) -> -F Path(Circle, Base, Base) {
   back(c) then loop
 }

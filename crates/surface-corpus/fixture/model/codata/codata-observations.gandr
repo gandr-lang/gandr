@@ -22,5 +22,5 @@ def rec origin() -> Point {
 
 /// The run target sums the coordinates; the lowering reads no final
 /// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 origin.x + origin.y

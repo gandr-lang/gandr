@@ -26,7 +26,7 @@ def printed(c : Integer) -> -F Integer {
 
 /// An arm that matches anything leaves the sum's width open, so the arms
 /// settle no sum and the scrutinee still needs its type (#1169).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Unannotated") ]
 def open(c : Integer) -> -F Integer {
   run small <- c < 128;
   case small {

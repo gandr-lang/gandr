@@ -4,7 +4,7 @@
 // one as a root child that is no declaration.
 
 /// An expression before a definition (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 1;
 
 /// A definition after it.

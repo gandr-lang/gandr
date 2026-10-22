@@ -20,5 +20,5 @@ theory BoundIndex {
 }
 
 /// The universe of representable sorts classifies a sort member only.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.representable_universe_type") ]
 def universeOutside : Type+ ;

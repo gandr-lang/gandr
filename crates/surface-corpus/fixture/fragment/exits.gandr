@@ -200,7 +200,7 @@ def local_elided(n : Nat) -> -F Nat {
   m
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.NotInTail") ]
 def returned = return Zero ;
 
 @[ checks ]
@@ -329,7 +329,7 @@ def skimmed = thunk { become skim(Succ(Succ(Succ(Zero)))) } ;
 def skimmed_elided : +U (-F Nat) ;
 def skimmed_elided = thunk { skim_elided(Succ(Succ(Succ(Zero)))) } ;
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.JoinsBlock") ]
 def joined(n : Nat) -> -F Nat {
   run m <- case n -> -F Nat {
     Zero => return n,
@@ -338,7 +338,7 @@ def joined(n : Nat) -> -F Nat {
   return m
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.JoinsBlock") ]
 def joined_elided(n : Nat) -> -F Nat {
   run m <- case n -> -F Nat {
     Zero => return n,

@@ -256,7 +256,7 @@ impl fmt::Display for MessageKey
     ) -> fmt::Result
     {
         match *self {
-            Self::Refusal(name) => f.write_str(name.spelling().as_ref()),
+            Self::Refusal(name) => fmt::Display::fmt(&name.spelling(), f),
             Self::Lint(lint) => fmt::Display::fmt(&lint, f),
             Self::Unsettled(_) => f.write_str("unsettled"),
             Self::Goal => f.write_str("goal"),
@@ -587,22 +587,6 @@ pub enum Identifier
     Lint(Lint),
 }
 
-impl AsRef<str> for Identifier
-{
-    /// The identifier's spelling.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn as_ref(&self) -> &str
-    {
-        match *self {
-            Self::Refusal(ref spelling) => spelling.as_ref(),
-            Self::Lint(ref lint) => lint.as_ref(),
-        }
-    }
-}
-
 impl fmt::Display for Identifier
 {
     /// Writes the identifier's spelling.
@@ -615,7 +599,10 @@ impl fmt::Display for Identifier
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(self.as_ref())
+        match *self {
+            Self::Refusal(ref spelling) => fmt::Display::fmt(spelling, f),
+            Self::Lint(ref lint) => f.write_str(lint.as_ref()),
+        }
     }
 }
 
@@ -1125,7 +1112,7 @@ impl Diagnostic
         let image = JsonDiagnostic {
             level: alloc::format!("{}", self.severity),
             name: match self.identifier {
-                Maybe::Present(ref identifier) => Some(String::from(identifier.as_ref())),
+                Maybe::Present(ref identifier) => Some(alloc::format!("{identifier}")),
                 Maybe::Absent(_) => None,
             },
             key: alloc::format!("{}", self.message.key),

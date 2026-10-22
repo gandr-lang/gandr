@@ -782,7 +782,7 @@ where
                     Literal::Text(ref text) if schema == ExpectationSchema::Refuses => {
                         match ret {
                             Ok(Stated::Verdict(Outcome::Refuses(name))) => {
-                                name.spelling().as_ref() == text.as_ref()
+                                RefusalName::named_by(text) == Maybe::Present(name)
                             }
                             Ok(
                                 Stated::Malformed(ExpectationFault::UnknownRefusal { span }),
@@ -883,7 +883,7 @@ fn stated_by(
 /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
 /// - witness: `expectation::tests::a_run_beside_a_refusal_states_both`
 #[spec(ensures: |ret| match ret {
-    | Ok(Maybe::Present(name)) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(ref text) if name.spelling().as_ref() == text.as_ref())),
+    | Ok(Maybe::Present(name)) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(ref text) if RefusalName::named_by(text) == Maybe::Present(name))),
     | Ok(Maybe::Absent(refusal_name::Absent::Unnamed)) => payload(entry, arena).is_ok_and(|literal| matches!(*literal, Literal::Text(_))),
     | Err(fault) => fault == SettleFault::UnreadablePayload { span: entry.span() },
 })]

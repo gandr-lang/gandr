@@ -82,8 +82,8 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer {
 def lasted : () => Integer ;
 def lasted = thunk { become last(chained) } ;
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort") ]
 def unthunked : -F Integer & -F Integer ;
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort") ]
 def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;

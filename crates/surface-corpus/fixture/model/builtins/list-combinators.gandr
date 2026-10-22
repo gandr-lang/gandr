@@ -3,29 +3,29 @@
 // from its namespace, which the lowering admits for no builtin yet (#1106).
 
 /// Each element doubled.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def doubled = list.each(thunk { fn(x) { return x * 2 } }, [1, 2, 3]);
 
 /// The doubled elements over two.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def big = list.where(thunk { fn(x) { return x > 2 } }, doubled);
 
 /// The large elements summed.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def total = list.reduce(thunk { fn(acc, x) { return acc + x } }, 0, big);
 
 /// Whether some large element is over five.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def any_big = list.any(thunk { fn(x) { return x > 5 } }, big);
 
 /// Whether every doubled element is over one.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def all_even = list.all(thunk { fn(x) { return x > 1 } }, doubled);
 
 /// Two lists, one after the other.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def flattened = list.flatten([[3, 1], [2, 2]]);
 
 /// The run target sorts the distinct elements (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 list.sort(list.uniq(flattened))

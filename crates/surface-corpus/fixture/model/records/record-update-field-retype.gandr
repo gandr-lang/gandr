@@ -8,5 +8,5 @@ def cell = #{ count = 3, label = "start" };
 /// The run target gives `count` a string; the lowering reads no final
 /// expression as a run target yet (#1105), and admits no record update
 /// (#1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ cell | count = "three" }

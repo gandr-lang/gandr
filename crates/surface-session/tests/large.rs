@@ -363,7 +363,7 @@ pub fn module(
                 },
                 SourceRoot::Fixture | SourceRoot::Pending => {
                     shape.push(format!(
-                        "@[ refuses(\"OutOfFragment\") ]\ndef h{i} = thunk {{ return ?seed{i} }} ;"
+                        "@[ refuses(\"NotSynthesisable\") ]\ndef h{i} = thunk {{ return ?seed{i} }} ;"
                     ));
                 },
             },

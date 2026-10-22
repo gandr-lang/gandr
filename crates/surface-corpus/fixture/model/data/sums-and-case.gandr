@@ -12,5 +12,5 @@ def pick() -> -F Integer {
 
 /// The run target calls `pick`; the lowering reads no final expression as a
 /// run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 pick()

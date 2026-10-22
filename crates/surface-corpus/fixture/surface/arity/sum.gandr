@@ -14,7 +14,7 @@ def failed = (+{.err = "no"} : +{ok : Integer, err : String}) ;
 def only : +{only : Integer} ;
 def only = (+{.only = 4} : +{only : Integer}) ;
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Unannotated") ]
 def unstated = +{.err = "no"} ;
 
 @[ checks ]

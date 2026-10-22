@@ -1059,7 +1059,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     use crate::namespace::Recognition;
     use crate::resolve::SurfaceName;
     let grammar = grammar();
-    let source = "@[ refuses(\"OutOfFragment\") ]\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef later = 7;";
+    let source = "@[ checks ]\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef later = 7;";
     let tree = parsed(&grammar, source.into());
     let mut arena = gandr_core_term::CoreArena::new();
     let module = lower_module(
@@ -1083,7 +1083,7 @@ fn an_attribute_block_decorates_the_codata_declaration_after_it()
     else {
         panic!("one attribute is filed under the codata family")
     };
-    assert_eq!(entry.name(), registered(SurfaceName::from("refuses")));
+    assert_eq!(entry.name(), registered(SurfaceName::from("checks")));
     assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
 }
 

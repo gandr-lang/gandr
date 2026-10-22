@@ -9,10 +9,10 @@ def total = 1 + 2 * 3;
 
 /// One number at each width a suffix states; the lowering admits no typed
 /// number yet (#1109).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.typed_number") ]
 def sized_atoms = (1u32, (2u64, (3i32, (4i64, (1.5f32, 2.5f64)))));
 
 /// The run target returns the sum; the lowering reads no final expression as
 /// a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 pure total

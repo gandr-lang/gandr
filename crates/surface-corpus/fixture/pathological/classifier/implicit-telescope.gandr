@@ -30,7 +30,7 @@ def sameNamed = same ;
 /// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, which
 /// stands before it and is not supplied, so a lambda calling `chosen` supplies
 /// it.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.instantiation_expression.value") ]
 def chosenStanding : +U (Type -> -F Integer) ;
 def chosenStanding = chosen[x = 7] ;
 

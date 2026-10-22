@@ -9,6 +9,7 @@
 use std::path::Path;
 
 use anodized::spec;
+use gandr_kernel_term::StringLiteral;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_diagnostics::Identifier;
@@ -48,8 +49,9 @@ struct Case
 {
     /// The row's name.
     name: &'static str,
-    /// The stable refusal category the source must drive.
-    identifier: RefusalName,
+    /// The stable refusal name the source must drive, as a `refuses` payload
+    /// spells it.
+    identifier: &'static str,
     /// The source.
     source: &'static str,
     /// The text the report's primary span covers: its last occurrence in the
@@ -87,84 +89,114 @@ struct Case
 const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "type-mismatch",
-        identifier: RefusalName::TypeMismatch,
+        identifier: "TypeMismatch",
         source: "def x : String ;\ndef x = 1 ;\n",
         locus: "1",
     },
     Case {
         name: "shape-arrow",
-        identifier: RefusalName::ShapeMismatch,
+        identifier: "ShapeMismatch",
         source: "def h : +U (-F Integer) ;\ndef h = thunk { return 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
              = thunk { become (force h)(1) } ;\n",
         locus: "force h",
     },
     Case {
         name: "shape-thunk",
-        identifier: RefusalName::ShapeMismatch,
+        identifier: "ShapeMismatch",
         source: "def y : +U (-F Integer) ;\ndef y = thunk { become force 1 } ;\n",
         locus: "1",
     },
     Case {
         name: "shape-returner",
-        identifier: RefusalName::ShapeMismatch,
+        identifier: "ShapeMismatch",
         source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { return 1 } ;\n",
         locus: "return 1",
     },
     Case {
         name: "not-synthesisable",
-        identifier: RefusalName::NotSynthesisable,
+        identifier: "NotSynthesisable",
         source: "def a = thunk { return 1 } ;\n",
         locus: "thunk { return 1 }",
     },
     Case {
         name: "unknown-constant",
-        identifier: RefusalName::UnknownConstant,
+        identifier: "UnknownConstant",
         source: "def a = thunk { return 1 } ;\ndef b = a ;\n",
         locus: "a",
     },
     Case {
         name: "unresolved-name",
-        identifier: RefusalName::UnresolvedName,
+        identifier: "UnresolvedName",
         source: "def x = nonesuch ;\n",
         locus: "nonesuch",
     },
     Case {
         name: "unresolved-type-head",
-        identifier: RefusalName::UnresolvedTypeHead,
+        identifier: "UnresolvedTypeHead",
         source: "def a : Intgr ;\n",
         locus: "Intgr",
     },
     Case {
         name: "duplicate-signature",
-        identifier: RefusalName::DuplicateSignature,
+        identifier: "DuplicateSignature",
         source: "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n",
         locus: "def a : Integer ;",
     },
     Case {
         name: "duplicate-definition",
-        identifier: RefusalName::DuplicateDefinition,
+        identifier: "DuplicateDefinition",
         source: "def a = 3 ;\ndef a = 4 ;\n",
         locus: "def a = 4 ;",
     },
     Case {
         name: "out-of-fragment",
-        identifier: RefusalName::OutOfFragment,
+        identifier: "OutOfFragment.WrongSort",
         source: "def a : -F Integer & -F Integer ;\n",
         locus: "-F Integer & -F Integer",
     },
     Case {
         name: "malformed-form",
-        identifier: RefusalName::MalformedForm,
+        identifier: "MalformedForm",
         source: "def bad = 1 ~ 2 ;\n",
         locus: "~",
     },
     Case {
         name: "refused-whole",
-        identifier: RefusalName::OutOfFragment,
+        identifier: "OutOfFragment.WrongSort.declaration",
         source: "def answer = 42 ;\n#!{echo hello |",
         locus: "#!{echo hello |",
     },
 ];
+
+/// The refusal each error-corpus row names, in table order.
+///
+/// # Specification
+/// - ensures: returns one spelling per row, the one its payload names.
+/// - panics: if a row's payload names no refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the thirteen rows, three of them qualified names; a
+///   misspelt payload panics here, and a payload naming another refusal fails
+///   the observers that compare it against the reports.
+/// - witness: `tests::diag::corpus_covers_each_reachable_variant`
+/// - witness: `tests::diag::error_corpus_has_exact_primary_loci`
+#[spec(
+    ensures: |ret| ret.len() == ERROR_CORPUS.len(),
+)]
+fn named() -> Vec<RefusalSpelling>
+{
+    ERROR_CORPUS
+        .iter()
+        .map(|case| {
+            let Maybe::Present(name) =
+                RefusalName::named_by(&StringLiteral::new(String::from(case.identifier)))
+            else {
+                panic!("{}: `{}` names a refusal", case.name, case.identifier)
+            };
+            name.spelling()
+        })
+        .collect()
+}
 
 /// The step a fresh strict session's submission of `source` becomes, at
 /// `path`.
@@ -255,16 +287,15 @@ fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_spa
 #[test]
 fn corpus_covers_each_reachable_variant()
 {
-    for case in &ERROR_CORPUS {
+    for (case, expected) in ERROR_CORPUS.iter().zip(named()) {
         let got: Vec<RefusalSpelling> = located(Text(case.source))
             .into_iter()
             .map(|(descriptor, _)| descriptor)
             .collect();
         assert!(
-            got.iter().any(|found| *found == case.identifier.spelling()),
-            "{}: expected a {} report, got {got:?}",
-            case.name,
-            case.identifier.spelling()
+            got.contains(&expected),
+            "{}: expected a {expected} report, got {got:?}",
+            case.name
         );
     }
 }
@@ -274,7 +305,7 @@ fn error_corpus_has_exact_primary_loci()
 {
     // Every report keeps the smallest surface term or token its refusal
     // justifies as its primary span.
-    for case in &ERROR_CORPUS {
+    for (case, expected_name) in ERROR_CORPUS.iter().zip(named()) {
         let start = case
             .source
             .rfind(case.locus)
@@ -286,15 +317,14 @@ fn error_corpus_has_exact_primary_loci()
             .expect("the locus is ordered");
         let found: Vec<Maybe<ByteSpan, report_span::Absent>> = located(Text(case.source))
             .into_iter()
-            .filter(|found| found.0 == case.identifier.spelling())
+            .filter(|found| found.0 == expected_name)
             .map(|(_, span)| span)
             .collect();
         assert_eq!(
             found,
             [Maybe::Present(expected)],
-            "{}: one {} report, at {:?}",
+            "{}: one {expected_name} report, at {:?}",
             case.name,
-            case.identifier.spelling(),
             case.locus
         );
     }

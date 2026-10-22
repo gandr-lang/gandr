@@ -26,7 +26,7 @@ def readInThunk() -> -F Integer {
 }
 
 /// A push onto a string no hold holds: nothing would keep what it writes back.
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Held") ]
 def pushedUnheld(t : Repr) -> -F Unit {
   t.push(33)
 }

@@ -2182,6 +2182,12 @@ data NatUnits : Type {{
     #[test]
     fn every_refusal_a_source_reaches_settles_the_fixture_naming_it()
     {
+        let named = |text: &str| match RefusalName::named_by(
+            &gandr_kernel_term::StringLiteral::new(alloc::string::String::from(text)),
+        ) {
+            Maybe::Present(name) => name,
+            Maybe::Absent(_) => panic!("`{text}` names a refusal"),
+        };
         let rows = [
             (
                 r#"@[ refuses("UnresolvedName") ] def a = b ;"#,
@@ -2204,8 +2210,8 @@ data NatUnits : Type {{
                 FailureClass::MalformedSource,
             ),
             (
-                r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
-                RefusalName::OutOfFragment,
+                r#"@[ refuses("OutOfFragment.WrongSort") ] def a : -F Integer & -F Integer ;"#,
+                named("OutOfFragment.WrongSort"),
                 FailureClass::MalformedSource,
             ),
             (

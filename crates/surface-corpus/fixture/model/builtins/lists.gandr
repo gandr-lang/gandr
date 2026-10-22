@@ -7,5 +7,5 @@ def xs = ([1, 2, 3] : List(Integer));
 
 /// The run target prepends a zero; the lowering reads no final expression as
 /// a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 [0] ++ xs

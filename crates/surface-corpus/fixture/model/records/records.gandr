@@ -7,9 +7,9 @@ def base = #{name = "gandr", stars = 1};
 
 /// The record with a third field inserted, reached by projection from the
 /// `record` namespace, which the lowering admits for no builtin yet (#1106).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.projection_expression") ]
 def extended = record.insert(base, "kind", "language");
 
 /// The run target reads the inserted field back (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 record.get(extended, "kind")

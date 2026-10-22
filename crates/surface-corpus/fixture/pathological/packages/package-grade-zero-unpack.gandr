@@ -3,17 +3,17 @@
 // `unpack` yet (#1108), so that refusal stands in front of the grade's.
 
 /// A package of a grade-zero thunk (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.package_type") ]
 def closed : package [ T ] +U[0] (-F #{ seed: T });
 def closed = pack [ Integer ] thunk[0] { return #{ seed = 7 } };
 
 /// Opens a grade-zero package (#1108).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.unpack_statement") ]
 def open_it(p: package [ T ] +U[0] (-F #{ seed: T })) -> -F Integer {
   unpack m : package [ T ] +U[0] (-F #{ seed: T }) = p;
   return 1
 }
 
 /// The run target opens it (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 open_it(closed)

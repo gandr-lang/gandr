@@ -1236,7 +1236,7 @@ def konst = thunk { fn (x) { fn (y) { return x } } } ;"#,
             ),
             (
                 r#"@[ checks ] data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
-@[ refuses("OutOfFragment") ] def rec both(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
+@[ refuses("OutOfFragment.instantiation_expression.computation") ] def rec both(n : Nat) -> -F Nat { case n { Zero => return n, Succ(p) => become both[<, >](p) } }"#,
                 &[(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, &[(
@@ -1291,7 +1291,7 @@ def d : Integer ;
         let source = SourceText::from(
             r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become force (thunk { return 3 }) } ;
 @[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { return 3 } ;
-@[ refuses("OutOfFragment") ] def c = 1.5 ;"#,
+@[ refuses("OutOfFragment.number") ] def c = 1.5 ;"#,
         );
         let mut lowerings = LoweringCount::default();
         let Composed::Settled {

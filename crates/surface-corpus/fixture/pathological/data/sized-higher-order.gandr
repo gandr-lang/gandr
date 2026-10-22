@@ -40,14 +40,14 @@ def rec applied_at_again(n : Nat) -> -F Nat {
 
 /// A stage on an integer: the signature's marks place only data types, so the
 /// checkers refuse the stage where the kernel could not read it (#392).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Stage") ]
 def integerAt @[i : Size] (n : Integer[i]) -> -F Integer {
   n
 }
 
 /// A stage in a path's carrier: a path places no stage, so the lowering
 /// refuses it where it is written (#392).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.staged_type") ]
 def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
   return a
 }
@@ -126,7 +126,7 @@ def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F 
 
 /// A stage supplied for a binder no argument shows: `n` stands at no stage,
 /// so nothing holds `i` at the `j` supplied (#1227).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.Stage") ]
 def suppliedUnshown @[j : Size] (n : Nat) -> -F Nat {
   run m <- predAt[i = j](n);
   m

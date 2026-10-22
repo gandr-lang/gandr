@@ -1470,8 +1470,11 @@ fn a_shadowed_builtin_is_a_warning()
         "each shadowed builtin is a warning at its name, printed before the declarations"
     );
     for warning in &checked[.. 2] {
-        assert!(
-            matches!(warning.identifier, Maybe::Present(ref spelling) if spelling.as_ref() == "ShadowedBuiltin"),
+        assert_eq!(
+            warning.identifier,
+            Maybe::Present(Identifier::Refusal(
+                gandr_surface_corpus::RefusalName::ShadowedBuiltin.spelling()
+            )),
             "a warning is named as the refusal the reject policy files"
         );
         assert_eq!(

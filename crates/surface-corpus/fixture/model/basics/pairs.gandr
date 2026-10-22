@@ -6,5 +6,5 @@ def point = (1, 2);
 
 /// The run target returns the pair; the lowering reads no final expression as
 /// a run target yet (#1105).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 pure point

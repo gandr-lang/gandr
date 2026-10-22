@@ -6,5 +6,5 @@ def point = #{ x = 1, y = 2 };
 
 /// The run target updates `x`; the lowering reads no final expression as a
 /// run target yet (#1105), and admits no record update (#1110).
-@[ refuses("OutOfFragment") ]
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
 #{ point | x = 9 }

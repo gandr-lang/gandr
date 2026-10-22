@@ -141,8 +141,10 @@
 //! refuses: a refused block's slot carries its first refusal, at that member's
 //! span, and each further refusal is a held declaration at its own member's
 //! span whose signature half is the block, so the attribute blocks written
-//! before the block state every one of them, `@[ refuses("OutOfFragment") ]
-//! theory …`. A top-level `oper` declares no core constant: each refusal raised
+//! before the block state every one of them,
+//! `@[ refuses("UndescribedMember.NestedOperation") ] theory …`, and a block
+//! whose members refuse two features is two sources. A top-level `oper`
+//! declares no core constant: each refusal raised
 //! inside it is such a held declaration and its name enters no namespace. The
 //! alternatives were a refused block taking no slot, which leaves `S` naming
 //! nothing a module or a program can reach, and a block's refusals with no
