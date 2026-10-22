@@ -16,9 +16,9 @@ pub enum BudgetError
         /// The argument.
         text: String,
     },
-    /// A `--daily` argument names the deep cone, which the scheduled runs are
-    /// never classified by.
-    Daily
+    /// A `--daily` or `--nightly` argument names the deep cone, which
+    /// scheduled runs are never classified by.
+    Scheduled
     {
         /// The argument.
         text: String,
@@ -68,10 +68,10 @@ impl fmt::Display for BudgetError
                 f,
                 "`{text}` is not a job name, `=`, and a whole number of seconds"
             ),
-            Self::Daily { ref text } => write!(
+            Self::Scheduled { ref text } => write!(
                 f,
-                "`{text}` names the deep cone; a daily lane is held to one budget over the \
-                 scheduled runs"
+                "`{text}` names the deep cone; a scheduled lane is held to one budget over \
+                 its scheduled runs"
             ),
             Self::Gh {
                 ref command,
@@ -103,11 +103,11 @@ mod tests
                 "`check Clippy wall` is not a job name, `=`, and a whole number of seconds",
             ),
             (
-                BudgetError::Daily {
+                BudgetError::Scheduled {
                     text: "mutate the night's crate (linux):deep=840".into(),
                 },
-                "`mutate the night's crate (linux):deep=840` names the deep cone; a daily lane \
-                 is held to one budget over the scheduled runs",
+                "`mutate the night's crate (linux):deep=840` names the deep cone; a scheduled \
+                 lane is held to one budget over its scheduled runs",
             ),
             (
                 BudgetError::Gh {
