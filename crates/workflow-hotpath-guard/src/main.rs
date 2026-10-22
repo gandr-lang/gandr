@@ -116,7 +116,7 @@ fn run(cli: Cli) -> Result<(), GuardError>
         if filed.is_empty() {
             writeln!(
                 std::io::stdout(),
-                "\nNo function regressed and no row was fixed."
+                "\nNo issue was filed: no regression stands unaccepted and no row was fixed."
             )
             .map_err(output)?;
         }

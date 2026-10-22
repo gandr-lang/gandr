@@ -70,6 +70,7 @@ const SHIFTED: &str = "Wall time `313.23 ms → 401.90 ms` **+28%**
 /// The report its two failed checks print and comment.
 const BODY: &str = "A hotpath check failed on [#1358](https://github.com/gandr-lang/gandr/pull/1358) (`theory-model-record`) at [`914a768`](https://github.com/gandr-lang/gandr/commit/914a768fb32501be92e5cb4d28ce6613dfa01022).
 The check is not required, so nothing waited for it. The index above holds this regression's row.
+Its body carries no settled `hotpath: accepted — <benchmark> …` verdict for `gandr`, `gandr-timing`: the hotpath verdict is missing.
 
 ## `hotpath / gandr`
 
@@ -546,6 +547,179 @@ fn a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress()
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
+/// A ticked accepted verdict for `gandr`, as the obligations section holds it.
+const ACCEPTED: &str = "hotpath: accepted — gandr exercises record literals; 31 allocations per \
+                        record; an arena per record was considered and loses to the shared one";
+
+/// The pull requests GitHub associates with the head: pull request 1358,
+/// whose body carries [`ACCEPTED`] ticked.
+///
+/// # Specification
+/// trivial.
+fn accepting_pull() -> String
+{
+    serde_json::json!([{
+        "number": 1358,
+        "html_url": "https://github.com/gandr-lang/gandr/pull/1358",
+        "head": {"ref": "theory-model-record", "sha": HEAD},
+        "body": format!(
+            "## Re-verification\n\n### Hotpath\n\n- [x] {ACCEPTED} <!-- ack hotpath-verdict -->\n"
+        ),
+    }])
+    .to_string()
+}
+
+#[test]
+fn a_landing_with_an_accepted_verdict_files_no_issue()
+{
+    let scratch = scratch!("accepted");
+    let checks = check!(
+        "hotpath / gandr",
+        "completed",
+        Some("failure"),
+        9_u64,
+        DECIDE
+    );
+    let pulls = accepting_pull();
+    let output = run!(scratch, HEAD, ["--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str()),
+        ("FAKE_GH_ISSUES", "[]")
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(
+            "\nIts body accepts this growth with a settled hotpath verdict, so its rows read \
+             `accepted`.\n"
+        ) && stdout.ends_with(
+            "\nNo issue was filed: no regression stands unaccepted and no row was fixed.\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(
+        writes!(scratch),
+        Vec::<String>::new(),
+        "an accepted regression opens no issue"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn an_unaccepted_benchmark_beside_an_accepted_one_still_files()
+{
+    let scratch = scratch!("accepted-settles");
+    let checks = [
+        check!(
+            "hotpath / gandr",
+            "completed",
+            Some("failure"),
+            9_u64,
+            DECIDE
+        ),
+        check!(
+            "hotpath / gandr-timing",
+            "completed",
+            Some("failure"),
+            10_u64,
+            TIMING
+        ),
+    ]
+    .join("\n");
+    let earlier = "| #1300 | x | `gandr` | allocations | +3% | fixed — earlier | #1493 |";
+    let issues = serde_json::json!([issue!(
+        4_u64,
+        "perf: gandr_core_checker::module::decide",
+        "CLOSED",
+        index![earlier]
+    )])
+    .to_string();
+    let pulls = accepting_pull();
+    let output = run!(scratch, HEAD, ["--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str()),
+        ("FAKE_GH_ISSUES", issues.as_str())
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(
+            "\nIts body carries no settled `hotpath: accepted — <benchmark> …` verdict for \
+             `gandr-timing`: the hotpath verdict is missing.\n"
+        ),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let writes = writes!(scratch);
+    assert_eq!(
+        writes.first().map(String::as_str),
+        Some("issue comment 4 --body-file -"),
+        "the unaccepted timing regression owes the comment: {writes:?}"
+    );
+    assert_eq!(
+        writes.get(1 ..).unwrap_or_default(),
+        [
+            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+            "issue reopen 4"
+        ],
+        "its open timing row reopens the issue"
+    );
+    // The commit's comment, owed by the timing row, is linked from both rows.
+    let accepted = format!(
+        "| #1358 | {COMMIT} | `gandr` | allocations | avg `1444 → 2558` **+77%** | accepted — \
+         {} | [run](https://github.com/gandr-lang/gandr/runs/9), [comment]",
+        ACCEPTED.trim_start_matches("hotpath: accepted — ")
+    );
+    let body = body!(scratch, "edit", 4_u64);
+    assert!(
+        body.contains(&format!("{earlier}\n{accepted}"))
+            && body.contains(
+                "| `gandr-timing` | timing | avg `284.34 µs → 411.59 µs` **+45%** | open |"
+            ),
+        "the accepted row beside the open timing one: {body}"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn an_accepted_landing_settles_its_issue_without_a_comment()
+{
+    let scratch = scratch!("accepted-alone");
+    let checks = check!(
+        "hotpath / gandr",
+        "completed",
+        Some("failure"),
+        9_u64,
+        DECIDE
+    );
+    let earlier = "| #1300 | x | `gandr` | allocations | +3% | fixed — earlier | #1493 |";
+    let issues = serde_json::json!([issue!(
+        4_u64,
+        "perf: gandr_core_checker::module::decide",
+        "CLOSED",
+        index![earlier]
+    )])
+    .to_string();
+    let pulls = accepting_pull();
+    let output = run!(scratch, HEAD, ["--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str()),
+        ("FAKE_GH_ISSUES", issues.as_str())
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(
+        writes!(scratch),
+        ["issue edit 4 --body-file - --add-label kind:performance --add-label area:core"],
+        "no comment, and the issue stays closed"
+    );
+    let accepted = format!(
+        "| #1358 | {COMMIT} | `gandr` | allocations | avg `1444 → 2558` **+77%** | accepted — \
+         {} | [run](https://github.com/gandr-lang/gandr/runs/9) |",
+        ACCEPTED.trim_start_matches("hotpath: accepted — ")
+    );
+    assert_eq!(body!(scratch, "edit", 4_u64), index![earlier, accepted]);
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
 #[test]
 fn a_uniform_shift_is_a_runner_shift_row_without_a_comment()
 {
@@ -668,8 +842,8 @@ fn a_clear_commit_files_nothing()
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "No hotpath check failed at [`914a768`](https://github.com/gandr-lang/gandr/commit/\
-         914a768fb32501be92e5cb4d28ce6613dfa01022).\n\nNo function regressed and no row was \
-         fixed.\n"
+         914a768fb32501be92e5cb4d28ce6613dfa01022).\n\nNo issue was filed: no regression \
+         stands unaccepted and no row was fixed.\n"
     );
     assert!(
         writes!(scratch).is_empty(),

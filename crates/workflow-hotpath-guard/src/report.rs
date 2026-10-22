@@ -47,6 +47,104 @@ impl fmt::Display for PullNumber
     }
 }
 
+/// The marker that closes the hotpath verdict's task line in a pull
+/// request's body.
+pub const VERDICT_MARKER: &str = "<!-- ack hotpath-verdict -->";
+
+/// The opening of an accepted hotpath verdict, after its ticked box.
+pub const ACCEPTED: &str = "hotpath: accepted — ";
+
+/// A pull request's Markdown body, as GitHub answers it.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
+pub struct PullBody(pub String);
+
+impl PullBody
+{
+    /// The growth the body accepts, by benchmark: each ticked hotpath verdict
+    /// in the accepted shape.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per benchmark a line accepts, where the line is a
+    ///   ticked task closed by [`VERDICT_MARKER`] whose text reads `hotpath:
+    ///   accepted — <benchmark> exercises <feature>; <n> allocations per <use>;
+    ///   <sentence>`, its acceptance that text after [`ACCEPTED`]; the first
+    ///   line kept for a benchmark accepted twice. An unticked line, a `fixed`
+    ///   verdict and a line of another shape accept nothing.
+    /// - provides: the regressions a landing settles as accepted. The
+    ///   obligation the merge passed through holds the full shape; this reads
+    ///   what it settled.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the scan is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ticked accepted line, the same benchmark accepted
+    ///   again, an unticked one, a ticked `fixed` one and one without its
+    ///   sentence; reading any but the first as an acceptance, or losing it,
+    ///   changes the rows a landing settles.
+    /// - witness: `report::tests::a_ticked_accepted_verdict_accepts_its_benchmark`
+    #[must_use]
+    #[inline]
+    pub fn accepted(&self) -> BTreeMap<Benchmark, Acceptance>
+    {
+        let mut accepted = BTreeMap::new();
+        for line in self.0.lines().map(str::trim) {
+            let Some(verdict) = line
+                .strip_prefix("- [x] ")
+                .or_else(|| line.strip_prefix("- [X] "))
+                .and_then(|rest| rest.strip_suffix(VERDICT_MARKER))
+                .and_then(|rest| rest.trim_end().strip_prefix(ACCEPTED))
+            else {
+                continue;
+            };
+            let Some((benchmark, cost)) = verdict.split_once(" exercises ")
+            else {
+                continue;
+            };
+            if cost.splitn(3, "; ").nth(2).is_some() {
+                let Ok(benchmark) = benchmark.parse::<Benchmark>();
+                accepted
+                    .entry(benchmark)
+                    .or_insert_with(|| Acceptance(verdict.to_owned()));
+            }
+        }
+        accepted
+    }
+}
+
+/// An accepted hotpath verdict's text after [`ACCEPTED`]: `<benchmark>
+/// exercises <feature>; <n> allocations per <use>; <sentence>`.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Acceptance(String);
+
+impl fmt::Display for Acceptance
+{
+    /// Writes the verdict as a table cell holds it, each `|` escaped.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0.replace('|', "\\|"))
+    }
+}
+
+/// Why a regression is not accepted: its pull request's body accepts no
+/// growth on its benchmark, or no pull request carries it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Unaccepted;
+
 /// One pull request as `gh api repos/<repository>/commits/<sha>/pulls`
 /// answers it.
 #[derive(Debug, Deserialize)]
@@ -58,6 +156,9 @@ pub(crate) struct ListedPull
     html_url: String,
     /// Its head.
     head: ListedHead,
+    /// Its body, null when it has none.
+    #[serde(default)]
+    body: Option<PullBody>,
 }
 
 /// A pull request's head as GitHub answers it.
@@ -81,6 +182,8 @@ pub struct Pull
     url: String,
     /// Its branch.
     branch: String,
+    /// The growth its body accepts, by benchmark.
+    accepted: BTreeMap<Benchmark, Acceptance>,
 }
 
 /// Why a commit names no pull request: none carries it.
@@ -130,6 +233,7 @@ pub(crate) fn pull_of(
             number: PullNumber(pull.number),
             url: pull.html_url,
             branch: pull.head.branch,
+            accepted: pull.body.unwrap_or_default().accepted(),
         }),
         None => Maybe::Absent(Unpulled),
     }
@@ -190,6 +294,9 @@ pub struct Regression
     pub delta: SummaryLine,
     /// The runner shift the check reads as, if it is one.
     pub shift: Maybe<Shift, Unshifted>,
+    /// The growth the pull request's body accepts on this benchmark, if it
+    /// accepts any.
+    pub accepted: Maybe<Acceptance, Unaccepted>,
 }
 
 /// A commit's concluded hotpath checks and the pull request they name.
@@ -323,7 +430,9 @@ impl Report
     /// - ensures: one regression per distinct function and failed benchmark,
     ///   from the first site naming it, in reading order; its metric is the
     ///   section heading after `Functions · `, its delta the site's line after
-    ///   its link, and its shift [`Failure::shift`] over the commit's failures.
+    ///   its link, its shift [`Failure::shift`] over the commit's failures, and
+    ///   its acceptance the one the pull request's body states for its
+    ///   benchmark (see [`PullBody::accepted`]).
     /// - provides: the rows this run writes.
     /// - fails: never.
     /// - panics: none.
@@ -342,6 +451,7 @@ impl Report
         let mut regressions = Vec::new();
         for failure in &self.failures {
             let shift = failure.shift(&self.failures);
+            let accepted = self.accepted(&failure.benchmark);
             for section in &failure.sections {
                 for site in &section.sites {
                     if !seen.insert((&site.name, &failure.benchmark)) {
@@ -355,11 +465,32 @@ impl Report
                         metric: section.metric.metric(),
                         delta: site.line.delta(),
                         shift,
+                        accepted: accepted.clone(),
                     });
                 }
             }
         }
         regressions
+    }
+
+    /// The growth the pull request's body accepts on `benchmark`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn accepted(
+        &self,
+        benchmark: &Benchmark,
+    ) -> Maybe<Acceptance, Unaccepted>
+    {
+        match self.pull {
+            Maybe::Present(ref pull) => pull
+                .accepted
+                .get(benchmark)
+                .map_or(Maybe::Absent(Unaccepted), |acceptance| {
+                    Maybe::Present(acceptance.clone())
+                }),
+            Maybe::Absent(_) => Maybe::Absent(Unaccepted),
+        }
     }
 
     /// The functions the failed checks regressed, by name, sorted, each once.
@@ -387,18 +518,23 @@ impl fmt::Display for Report
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a sentence naming the pull request, its branch and the commit
-    ///   (or the commit alone), then one `##` section per failed check linking
-    ///   its run with its wall-time line and each metric's sites as a list; a
-    ///   report without a failure writes one sentence saying no check failed.
+    ///   (or the commit alone); for a pull request, a sentence naming each
+    ///   failed benchmark its body accepts no growth on, the missing verdict,
+    ///   or saying it accepts them all; then one `##` section per failed check
+    ///   linking its run with its wall-time line and each metric's sites as a
+    ///   list; a report without a failure writes one sentence saying no check
+    ///   failed.
     /// - provides: the comment the guard appends and the job summary prints.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a real regression's two failed checks; a lost run
-    ///   link, wall line or site changes the asserted comment.
+    /// - hypothesis: L3 — a real regression's two failed checks, and a landing
+    ///   whose body accepts its growth; a lost run link, wall line, site or
+    ///   missing verdict changes the asserted comment.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    /// - witness: `tests::cli::a_landing_with_an_accepted_verdict_files_no_issue`
     #[inline]
     fn fmt(
         &self,
@@ -430,6 +566,29 @@ impl fmt::Display for Report
             "The check is not required, so nothing waited for it. The index above holds \
              this regression's row."
         )?;
+        if matches!(self.pull, Maybe::Present(_)) {
+            let unaccepted = self
+                .failures
+                .iter()
+                .filter(|failure| matches!(self.accepted(&failure.benchmark), Maybe::Absent(_)))
+                .map(|failure| format!("`{}`", failure.benchmark))
+                .collect::<Vec<_>>();
+            if unaccepted.is_empty() {
+                writeln!(
+                    f,
+                    "Its body accepts this growth with a settled hotpath verdict, so its rows \
+                     read `accepted`."
+                )?;
+            }
+            else {
+                writeln!(
+                    f,
+                    "Its body carries no settled `{ACCEPTED}<benchmark> …` verdict for {}: \
+                     the hotpath verdict is missing.",
+                    unaccepted.join(", ")
+                )?;
+            }
+        }
         for failure in &self.failures {
             writeln!(f, "\n## `hotpath / {}`\n", failure.benchmark)?;
             match failure.wall {
@@ -452,10 +611,13 @@ mod tests
 {
     use quenchant_shape::shape::Maybe;
 
+    use super::Acceptance;
     use super::ListedHead;
     use super::ListedPull;
+    use super::PullBody;
     use super::PullNumber;
     use super::pull_of;
+    use crate::check::Benchmark;
 
     /// A listed pull request numbered `$number` whose head is `$sha`.
     macro_rules! listed {
@@ -467,6 +629,7 @@ mod tests
                     branch: format!("branch-{}", $number),
                     sha: $sha.to_owned(),
                 },
+                body: None,
             }
         };
     }
@@ -489,5 +652,36 @@ mod tests
         )];
         assert!(matches!(pull_of(&sha, carried), Maybe::Present(_)));
         assert!(matches!(pull_of(&sha, Vec::new()), Maybe::Absent(_)));
+    }
+
+    #[test]
+    fn a_ticked_accepted_verdict_accepts_its_benchmark()
+    {
+        let marker = super::VERDICT_MARKER;
+        let body = PullBody(format!(
+            "### Hotpath\n\n- [x] hotpath: accepted — gandr exercises records; 31 allocations \
+             per record; an arena | a pool loses {marker}\n- [x] hotpath: accepted — gandr \
+             exercises other; 1 allocations per x; later {marker}\n- [ ] hotpath: accepted — \
+             store exercises blobs; 2 allocations per blob; a sentence {marker}\n- [x] hotpath: \
+             fixed — gandr-timing 235 → 179 {marker}\n- [X] hotpath: accepted — gandr-timing \
+             exercises records; 31 allocations per record {marker}\n- [x] hotpath: accepted — \
+             store exercises blobs; 2 allocations per blob; a sentence\n"
+        ));
+        let gandr = Acceptance(
+            "gandr exercises records; 31 allocations per record; an arena | a pool loses"
+                .to_owned(),
+        );
+        assert_eq!(
+            body.accepted().into_iter().collect::<Vec<_>>(),
+            [("gandr".parse::<Benchmark>().unwrap(), gandr.clone())],
+            "the first ticked accepted line alone; unticked, fixed, sentence-less and unmarked \
+             lines accept nothing"
+        );
+        assert_eq!(
+            gandr.to_string(),
+            "gandr exercises records; 31 allocations per record; an arena \\| a pool loses",
+            "a table cell escapes its bar"
+        );
+        assert!(PullBody::default().accepted().is_empty());
     }
 }
