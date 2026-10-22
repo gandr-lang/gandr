@@ -51,6 +51,9 @@ includes = [".config/mise/tasks"]
 # prebuilt sqlite3 CLI mise resolves on every platform.
 "conda:sqlite" = "3.54.1"
 "github:aubepkg/aube" = "2.8.0"
+# The ci:* tasks and the workflows' report steps read and write the server
+# through gh; the CI image carries this pin, as the hosted runner ships its own.
+"github:cli/cli" = "v2.102.1"
 "github:crate-ci/typos" = "v1.51.1"
 "github:j178/prek" = "v0.5.6"
 "github:koalaman/shellcheck" = "0.11.0"
