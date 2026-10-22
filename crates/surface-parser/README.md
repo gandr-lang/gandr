@@ -46,6 +46,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - **The source outlives the tree.** A committed tree borrows the text it spans; the caller keeps the `SourceText` alive for as long as it reads the tree.
 - **A checkpoint resumes under its own grammar and revision.** `Checkpoint::fingerprint` names the grammar a snapshot was taken under; pairing it with the right grammar is the caller's, and the byte stream carries no version, so a stream written by one revision of this crate is read by that revision only.
 - **`alloc`.** The crate is `no_std` with `alloc`; its tests link `std` for files and timing.
+- **Timing.** The corpus cold-parse p99 budget fails a slow parse only under `GANDR_WALL_CLOCK_GATES=1`, which CI sets; without it the test prints the measurement and passes.
 
 ## Examples
 

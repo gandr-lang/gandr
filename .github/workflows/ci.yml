@@ -59,6 +59,10 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_TERM_COLOR: always
+  # A test that times its code fails on a slow result only under this
+  # variable, which only CI sets (#1786); without it the test measures and
+  # prints, so a loaded workstation never fails on time.
+  GANDR_WALL_CLOCK_GATES: "1"
 
   # Opt back into quickinstall (jdx/mise PR 10923 flipped the default off) and
   # mise's built-in binstall, in env form so both bind regardless of

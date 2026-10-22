@@ -1658,7 +1658,10 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
 // A wall-clock budget measures the parser, not its predicates: under
 // `anodized_panic` every `#[spec]` predicate runs inside the timed parse, so
 // the enforcing lane is not a timing lane and this assertion stays out of it.
-// CI's plain lane runs it by name (`mise run check:tests-plain-only`).
+// CI's plain lane runs it by name (`mise run check:tests-plain-only`). The
+// budget gates only with `GANDR_WALL_CLOCK_GATES=1`, which CI sets; without it
+// the test measures and prints, since a loaded host times its load, not the
+// parser.
 #[cfg(not(anodized_panic))]
 #[test]
 fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Error>>
@@ -1721,6 +1724,17 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
         .min(per_file_nanos.len().saturating_sub(1));
     let p99 = &per_file_nanos[rank];
     let max = per_file_nanos.last().expect("non-empty corpus");
+    if std::env::var_os("GANDR_WALL_CLOCK_GATES").is_none_or(|gates| gates != "1") {
+        println!(
+            "p99 corpus cold-parse {} ns (file {:?}) against the {P99_BUDGET_NANOS} ns budget; \
+             slowest {} ns (file {:?}); not gated without GANDR_WALL_CLOCK_GATES=1",
+            p99.0,
+            p99.1.file_name(),
+            max.0,
+            max.1.file_name()
+        );
+        return Ok(());
+    }
     assert!(
         p99.0 < P99_BUDGET_NANOS,
         "p99 corpus cold-parse {} ns (file {:?}) exceeds the {P99_BUDGET_NANOS} ns \
