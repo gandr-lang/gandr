@@ -14,6 +14,7 @@ use gandr_theory_cell_complexes_tools::AlphabetLie;
 use gandr_theory_cell_complexes_tools::CollidingAddresses;
 use gandr_theory_cell_complexes_tools::IncomparablePositions;
 use gandr_theory_cell_complexes_tools::Lying;
+use gandr_theory_cell_complexes_tools::LyingOrient;
 use gandr_theory_cell_complexes_tools::NonLocalSplice;
 use gandr_theory_cell_complexes_tools::Toy;
 use gandr_theory_cell_complexes_tools::ToyAlphabet;
@@ -23,6 +24,7 @@ use gandr_theory_cell_complexes_tools::WithheldConvexity;
 use gandr_theory_cell_complexes_tools::lying_cell;
 use gandr_theory_cell_complexes_tools::reoriented_lying_cell;
 use gandr_theory_cell_complexes_tools::toy_cell;
+use quenchant_shape::shape::Maybe;
 
 /// The toy position of `path`.
 ///
@@ -304,4 +306,110 @@ fn default_answers_and_adversarial_boundaries_stay_distinct()
         <CollidingAddresses as AlphabetLie>::hash_orientation(orientation, &mut bytes);
         assert_eq!(Written(vec![1, 2, 3]), bytes);
     }
+}
+
+/// Asserts that `Lying<$lie>` gives the toy alphabet's answer to every
+/// method the frame delegates, on a pattern and a ground-but-for-one-variable
+/// command.
+macro_rules! delegates_honestly {
+    ($lie:ty) => {{
+        type Lie = Lying<$lie>;
+        let pattern = Toy::add(Toy::var("x"), Toy::zero());
+        let target = Toy::add(Toy::succ(Toy::var("y")), Toy::zero());
+        let (mut lying, mut honest) = (
+            <Lie as CellAlphabet>::Subst::default(),
+            <ToyAlphabet as CellAlphabet>::Subst::default(),
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::unify_cmd(&pattern, &target, &mut lying),
+            ToyAlphabet::unify_cmd(&pattern, &target, &mut honest)
+        );
+        assert_eq!(lying, honest);
+        assert_eq!(
+            <Lie as CellAlphabet>::root_agreement(&pattern, &target),
+            ToyAlphabet::root_agreement(&pattern, &target)
+        );
+        let vars = ToyAlphabet::metavariables(&target);
+        assert_eq!(<Lie as CellAlphabet>::metavariables(&target), vars);
+        assert_eq!(
+            <Lie as CellAlphabet>::restrict_subst(&lying, &vars),
+            ToyAlphabet::restrict_subst(&honest, &vars)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::cmd_size(&target),
+            ToyAlphabet::cmd_size(&target)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::command_positions(&target),
+            ToyAlphabet::command_positions(&target)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::root_position(),
+            ToyAlphabet::root_position()
+        );
+        let path = [PositionStep::from(0_usize), PositionStep::from(0_usize)];
+        assert_eq!(<Lie as CellAlphabet>::position_at_path(&path), at(&path));
+        assert_eq!(
+            <Lie as CellAlphabet>::reduction_cmp(&pattern, &target),
+            ToyAlphabet::reduction_cmp(&pattern, &target)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::rename_apart((&pattern, &target), (&target, &pattern)),
+            ToyAlphabet::rename_apart((&pattern, &target), (&target, &pattern))
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::skolemize(&target),
+            ToyAlphabet::skolemize(&target)
+        );
+        let provenance = ToyAlphabet::derived_provenance();
+        assert_eq!(<Lie as CellAlphabet>::derived_provenance(), provenance);
+        assert_eq!(
+            <Lie as CellAlphabet>::completion_certificate(&provenance),
+            ToyAlphabet::completion_certificate(&provenance)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::may_fire(&provenance, &target),
+            ToyAlphabet::may_fire(&provenance, &target)
+        );
+        assert_eq!(
+            <Lie as CellAlphabet>::derived_orientation(),
+            LyingOrient::from(ToyAlphabet::derived_orientation())
+        );
+        let invertible = ToyAlphabet::completion_certificate(&provenance);
+        let meta = ToyAlphabet::derive_meta(&pattern, &target, invertible);
+        assert_eq!(
+            <Lie as CellAlphabet>::derive_meta(&pattern, &target, invertible),
+            meta
+        );
+        for var in &vars {
+            let hole = ToyAlphabet::hole_of(var);
+            assert_eq!(<Lie as CellAlphabet>::hole_of(var), hole);
+            assert_eq!(
+                <Lie as CellAlphabet>::hole_flow(&meta, &hole),
+                ToyAlphabet::hole_flow(&meta, &hole)
+            );
+        }
+        let family: [&[Toy]; 2] = [
+            core::slice::from_ref(&pattern),
+            core::slice::from_ref(&target),
+        ];
+        assert_eq!(
+            matches!(
+                <Lie as CellAlphabet>::anti_unify_cmd(&family),
+                Maybe::Present(_)
+            ),
+            matches!(ToyAlphabet::anti_unify_cmd(&family), Maybe::Present(_))
+        );
+    }};
+}
+
+/// Every adversary gives the toy alphabet's answer to each method the frame
+/// delegates, so its one lie is the only answer that sets it apart.
+#[test]
+fn every_adversary_delegates_every_other_answer()
+{
+    delegates_honestly!(IncomparablePositions);
+    delegates_honestly!(NonLocalSplice);
+    delegates_honestly!(WithheldConvexity);
+    delegates_honestly!(CollidingAddresses);
 }
