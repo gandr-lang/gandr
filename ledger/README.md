@@ -27,7 +27,7 @@ How each row is read off the grammar, the notation a form is spelled in, why a r
 | `notability`, `compared_to` | `ordinary`, `notable`, `uncommon` or `unique`; the last two say against what |
 | `crate` | the owning crates, directory names under `crates/`, or a `contrib/` path |
 | `corpus` | witnesses: a fixture path under `crates/surface-corpus/`, or a test file from the root, `::item` naming a test in it |
-| `exemplar` | the program that shows the row: a `model/` or `strict/` corpus fixture, a path from the root, or `ledger/exemplars/features/<id>.gandr` where no fixture shows it; a `pathological/` fixture shows a refusal and is never one |
+| `exemplar` | the program showing the row: a `model/` or `strict/` fixture, as a path from the root, or `ledger/exemplars/features/<id>.gandr`; never a `pathological/` one. `crate-tests` marks a mechanism no program shows, its evidence the tests `corpus` names, and is refused where `corpus` names a fixture |
 | `issue` | tracker issues, `#n` separated by spaces |
 | `since` | the pull request that landed an implemented or partial row, or the commit before pull requests |
 

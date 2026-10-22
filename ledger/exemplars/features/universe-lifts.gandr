@@ -1,0 +1,9 @@
+/// `universe-lifts`: a type moves to a higher universe by a recorded lift; `Integer`, a type of the lowest universe, is a type of the universe above it too.
+@[ checks ]
+def raised : Type[+, 1] ;
+def raised = Integer ;
+
+/// The lifted type lifted again, one universe higher.
+@[ checks ]
+def raised_again : Type[+, 2] ;
+def raised_again = raised ;

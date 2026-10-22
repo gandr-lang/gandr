@@ -559,7 +559,7 @@ while IFS='|' read -r id column paths; do
     case $column in
       crate) [[ -d crates/$path || ( $path == contrib/* && -e $path ) ]] ;;
       corpus) [[ -e ${path%%::*} || -e crates/surface-corpus/${path%%::*} ]] ;;
-      exemplar) [[ -f $path ]] ;;
+      exemplar) [[ $path == crate-tests || -f $path ]] ;;
     esac || { echo "$id: $column \`$path\` does not exist" >&2; failed=1; }
     if [[ $column == exemplar && $path == */pathological/* ]]; then
       echo "$id: exemplar \`$path\` shows a refusal; an exemplar is a model or strict program" >&2
