@@ -66,6 +66,10 @@ where
             "--test-threads=1",
         ])
         .env(CHILD, "1")
+        // The editor writes its prompt on piped input only for a terminal it
+        // cannot drive, so the child names one rather than inheriting the
+        // caller's.
+        .env("TERM", "dumb")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
