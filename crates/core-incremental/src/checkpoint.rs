@@ -183,9 +183,10 @@ quenchant_shape::reason_enum! {
             ValueRead,
             /// The adopted type could not be seated in the edited arena.
             Unseated,
-            /// The body is univalence at a stratum or a path product, whose
-            /// native path the checker derives as it judges it; adoption does
-            /// not replay the derivation, so the declaration is judged again.
+            /// The body is univalence at a stratum, a path product or an
+            /// equivalence, whose native path or decision the checker records
+            /// as it judges it; adoption does not replay the judgement, so the
+            /// declaration is judged again.
             Derived,
         }
     }
@@ -2700,9 +2701,9 @@ struct AdoptionInput<'input, 'base>
 ///   `input.ordinal`.
 /// - ensures: when the item is transparent, the support holds pointwise, no
 ///   type position meets the value-changed set, the body is no accepted
-///   univalence statement or path product and the type seats, the item is
-///   admitted with its seated type and the checkpoint's support, typing and
-///   answer are returned; otherwise the context is unchanged.
+///   univalence statement, path product or equivalence and the type seats, the
+///   item is admitted with its seated type and the checkpoint's support, typing
+///   and answer are returned; otherwise the context is unchanged.
 /// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
 ///   `ValueRead`, `Derived` or `Unseated`, checked in that order.
 /// - panics: none.
@@ -2712,22 +2713,24 @@ struct AdoptionInput<'input, 'base>
 ///   and opaque content separate three guards. Generated edits exercise
 ///   successful seating; this is not exhaustive evidence of refusal precedence
 ///   or context preservation on every formation error. An accepted univalence
-///   statement or path product is judged again, so a later transport along it
-///   or a path identifying it unfolds to the native path the judgement derives,
-///   as a fresh check's does.
+///   statement, path product or equivalence is judged again, so a later
+///   transport along it, a path identifying it or a product reading it unfolds
+///   to the native path or decision the judgement records, as a fresh check's
+///   does.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 /// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
+/// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
 #[spec(
     requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
         let transparent = input.item.content.opacity() == Opacity::Transparent;
         let derived = matches!(*input.candidate.checkpoint.typing(), Typing::Checked { .. } | Typing::Synthesised { .. })
             && matches!(*input.declaration.content(), gandr_core_checker::DeclarationContent::Value { body: Maybe::Present(held), .. }
-                if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..))));
+                if matches!(context.arena().value(held), Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..) | gandr_core_term::Value::Equiv(..))));
         let supported =
             support_holds(input, input.candidate.checkpoint.support()) == Standing::Stands;
         let untouched = touches(input, input.candidate.checkpoint.support()) == Standing::Stands;
@@ -2875,7 +2878,11 @@ fn adopt(
         )
         && matches!(
             context.arena().value(held),
-            Some(gandr_core_term::Value::Ua { .. } | gandr_core_term::Value::PathProduct(..))
+            Some(
+                gandr_core_term::Value::Ua { .. }
+                    | gandr_core_term::Value::PathProduct(..)
+                    | gandr_core_term::Value::Equiv(..)
+            )
         )
     {
         return Maybe::Absent(recall::Absent::Derived);
