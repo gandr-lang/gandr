@@ -94,6 +94,9 @@ use gandr_theory_sites::Profile;
 use gandr_theory_sites::ShapeSize;
 use quenchant_shape::shape::Maybe;
 
+use crate::content::agrees;
+use crate::content::agrees_naming;
+
 /// The narrow page of every golden pair.
 ///
 /// # Specification
@@ -1011,6 +1014,9 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
             "fork (a : end) { offer(a) { next => close(a), retire => pure unit } } as a ; close(a)"
         ))
     );
+    for fork in [returned, offering] {
+        agrees(&core, &[], CoreNode::Computation(fork));
+    }
 }
 
 /// A tuple of any arity from one spells its components between `#{` and
@@ -2159,6 +2165,7 @@ fn a_block_body_holds_its_sequence_bare()
     let recursive =
         core.computation_fixpoint(sequence, gandr_kernel_term::FixpointEvidence::Partial);
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(recursive));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(recursive))),
         faithful(Written("loop { run b <- pure 1 ; break(b) }"))
@@ -2861,6 +2868,7 @@ fn funext_spells_its_functions_in_order()
     let witness = core.value_funext(twice, same);
     let names = [Name::from("twice"), Name::from("same")];
     let source = CoreSource::new(&core, &names);
+    agrees(&core, &names, CoreNode::Value(witness));
     assert_eq!(
         spelled(&source, Root::Value(CoreNode::Value(witness))),
         faithful(Written("funext(twice, same)")),
@@ -2884,6 +2892,9 @@ fn an_equivalence_and_a_list_spell_as_written()
     let list = core.value_type_list(element);
     let names = [Name::from("not")];
     let source = CoreSource::new(&core, &names);
+    for root in [equivalence, cell] {
+        agrees(&core, &names, CoreNode::Value(root));
+    }
     for (root, expected) in [
         (Root::Value(CoreNode::Value(equivalence)), "equiv(not, not)"),
         (Root::Value(CoreNode::Value(cell)), "cons(unit, nil)"),
@@ -2946,6 +2957,7 @@ fn univalence_spells_its_stratum_and_descriptions()
         backward,
     );
     let names = [Name::from("exchange"), Name::from("keep")];
+    agrees(&core, &names, CoreNode::Value(statement));
     pin(
         &CoreSource::new(&core, &names),
         Root::Value(CoreNode::Value(statement)),
@@ -2977,6 +2989,9 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
     let equiv = core.value_path_equiv(path_type, forward, backward, Arc::default());
     let names = [Name::from("forward"), Name::from("backward")];
     let source = CoreSource::new(&core, &names);
+    for root in [first, product, equiv] {
+        agrees(&core, &names, CoreNode::Value(root));
+    }
     for (root, expected) in [
         (
             Root::Type(CoreNode::ValueType(path_type)),
@@ -3016,6 +3031,7 @@ fn a_product_of_written_paths_spells_as_written()
     let telescope = core.value_path_product(here, corollas);
     let names = [Name::from("keep"), Name::from("exchange")];
     let source = CoreSource::new(&core, &names);
+    agrees(&core, &names, CoreNode::Value(telescope));
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
@@ -3041,6 +3057,7 @@ fn a_product_of_flows_spells_as_written()
     let telescope = core.value_flow_product(stay, corollas);
     let names = [Name::from("keep"), Name::from("exchange")];
     let source = CoreSource::new(&core, &names);
+    agrees(&core, &names, CoreNode::Value(telescope));
     let rendered = presented(&source, Root::Value(CoreNode::Value(telescope)), wide());
     assert_eq!(
         rendered.as_ref(),
@@ -3083,6 +3100,9 @@ fn a_composite_of_flows_spells_infix()
         Name::from("base"),
     );
     let source = CoreSource::new(&core, &names).naming(&constructors);
+    for root in [composite, nested, consed_first, consed_second] {
+        agrees_naming(&core, &names, &constructors, CoreNode::Value(root));
+    }
     for (root, expected) in [
         (composite, "forward(keep) then forward(exchange)"),
         (
@@ -3122,6 +3142,9 @@ fn a_returned_composite_of_paths_is_written_infix_754()
     let transported = core.value_returned(moved);
     let names = [Name::from("Circle"), Name::from("base"), Name::from("loop")];
     let source = CoreSource::new(&core, &names);
+    for root in [composite, transported] {
+        agrees(&core, &names, CoreNode::Value(root));
+    }
     for (root, form, expected) in [
         (composite, Form::Sugared, "loop then loop"),
         (
@@ -3170,6 +3193,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
         Name::from("sect"),
     ];
     let source = CoreSource::new(&core, &names);
+    agrees(&core, &names, CoreNode::Value(transported));
+    agrees(&core, &names, CoreNode::Computation(called));
     let rendered = presented_in(
         &source,
         Root::Value(CoreNode::Value(transported)),
@@ -3235,6 +3260,9 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     ];
     let context = [Some(Name::from("f"))];
     let source = CoreSource::new(&core, &names).within(&context);
+    for root in [inverse, action, unmapped] {
+        agrees(&core, &names, CoreNode::Value(root));
+    }
     for (root, form, expected) in [
         (inverse, Form::Sugared, "back(loop)"),
         (
@@ -3337,6 +3365,27 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     ]);
     constructors.case(data_case, Name::from("Nat"));
     let source = CoreSource::new(&core, &names).naming(&constructors);
+    for id in [
+        identity,
+        calling,
+        forced,
+        pure_one,
+        suspends,
+        analysed,
+        opened,
+        projected,
+        primitive_call,
+        riding,
+        paired,
+        chained,
+        tripled,
+        single,
+        empty,
+        sequenced,
+    ] {
+        agrees(&core, &names, CoreNode::Computation(id));
+    }
+    agrees(&core, &names, CoreNode::Value(recorded));
     let body = |id| Root::Computation(CoreNode::Computation(id));
     for (root, expected, fidelity) in [
         (body(identity), "fn (a) { a }", Fidelity::Faithful),
@@ -4060,6 +4109,8 @@ fn a_hole_is_written_faithfully_893()
     let value = core.value_hole(HoleId::from(0_u32));
     let computation = core.computation_hole(HoleId::from(1_u32));
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Value(value));
+    agrees(&core, &[], CoreNode::Computation(computation));
     for root in [
         Root::Value(CoreNode::Value(value)),
         Root::Computation(CoreNode::Computation(computation)),
@@ -4197,6 +4248,7 @@ fn a_received_payload_is_bound_as_the_surface_reads_it_815()
         body: returned,
     });
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(received));
     let (text, _fidelity) = spelled(&source, Root::Computation(CoreNode::Computation(received)));
     assert!(
         text.contains(") as a ;") && text.ends_with('a') && !text.contains("<-"),
@@ -4342,6 +4394,9 @@ fn a_body_answering_a_type_keeps_its_pure_815()
     let returns_one = core.computation_return(one);
     let answers_one = core.computation_lambda(returns_one);
     let source = CoreSource::new(&core, &[]);
+    for root in [answers_code, returns_returner] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(answers_code)),
@@ -4370,6 +4425,7 @@ fn a_body_answering_a_run_keeps_its_pure_815()
     let returns_run = core.computation_return(ran);
     let answers_run = core.computation_lambda(returns_run);
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(answers_run));
     assert_eq!(
         spelled(
             &source,
@@ -4398,6 +4454,9 @@ fn a_prelude_operator_is_written_as_its_operator()
     let negated = core.computation_primitive(named("neg"), Arguments::Unary(bound));
     let negates = core.computation_lambda(negated);
     let source = CoreSource::new(&core, &[]);
+    for root in [adds, negates] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(adds)),
@@ -4430,6 +4489,7 @@ fn a_typed_bind_spells_as_written()
     let lone = core.computation_ascribe(abstraction, returns_integer);
     let body = |id| Root::Computation(CoreNode::Computation(id));
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(typed));
     assert_eq!(
         spelled(&source, body(typed)),
         (
@@ -4459,6 +4519,9 @@ fn an_annotated_return_spells_as_written_1107()
     let abstraction = core.computation_lambda(ascribed);
     let body = |id| Root::Computation(CoreNode::Computation(id));
     let source = CoreSource::new(&core, &[]);
+    for root in [ascribed, abstraction] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     for (root, expected) in [
         (ascribed, "(1 : Integer)"),
         (abstraction, "fn (a) { (1 : Integer) }"),
@@ -4489,6 +4552,9 @@ fn an_approximate_printing_names_its_reason_820()
     let ascribed = core.computation_ascribe(abstraction, returns_integer);
     let suspended = core.value_thunk(pure_one);
     let source = CoreSource::new(&core, &[]);
+    for root in [recursive, ascribed] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     for (root, expected, reason) in [
         (
@@ -4615,6 +4681,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     let on_return = core.computation_return(answer);
     let scoped = core.computation_scope(signature.clone(), subject, on_return, Arc::from([]));
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(scoped));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(
@@ -4627,6 +4694,7 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     let bound_subject = core.computation_bind(bound_ascribed, returned);
     let bound_scoped = core.computation_scope(signature, bound_subject, on_return, Arc::from([]));
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(bound_scoped));
     assert_eq!(
         spelled(
             &source,
@@ -4665,6 +4733,7 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
         grade: HoldGrade::Many,
     });
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(holds));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(holds))),
         faithful(Written("hold a = unit ; run b : Unit at a <- pure a ; b"))
@@ -4716,6 +4785,9 @@ fn a_continuation_is_resumed_by_its_call_941()
     let forced = core.computation_force(payload);
     let noted = scoped(&mut core, forced);
     let source = CoreSource::new(&core, &[]);
+    for root in [called, noted] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(called))),
         faithful(Written(
@@ -4777,6 +4849,9 @@ fn a_return_leaving_a_handler_prints_as_written_941()
     let handled = scoped(&mut core, looped);
     let looped_out = core.computation_reset(handled);
     let source = CoreSource::new(&core, &[]);
+    for root in [left, looped_out] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(left)),
@@ -4873,6 +4948,9 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     let fixpoint = core.computation_fixpoint(fixpoint, partial);
     let nested = core.computation_lambda(fixpoint);
     let source = CoreSource::new(&core, &[]);
+    for root in [spinning, ending, whiled, becoming] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(spinning)),
@@ -4953,6 +5031,9 @@ fn a_for_loop_prints_as_the_loop_it_lowered_from_941()
     let leaked = core.computation_return(tail);
     let leaking = walking(&mut core, ends, leaked);
     let source = CoreSource::new(&core, &[]);
+    for root in [continuing, exiting, leaking] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
@@ -5048,6 +5129,9 @@ fn a_threading_loop_prints_as_the_loop_it_lowered_from_941()
     let swapped = passing(&mut core, [0_u32, 1_u32]);
     let swapping = two(&mut core, swapped);
     let source = CoreSource::new(&core, &[]);
+    for root in [continuing, breaking, continuing_both, swapping] {
+        agrees(&core, &[], CoreNode::Computation(root));
+    }
     let body = |id| Root::Computation(CoreNode::Computation(id));
     assert_eq!(
         spelled(&source, body(continuing)),
@@ -5138,6 +5222,7 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
         ]),
     );
     let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(scoped));
     assert_eq!(
         spelled(&source, Root::Computation(CoreNode::Computation(scoped))),
         faithful(Written(

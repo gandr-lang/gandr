@@ -4,4 +4,7 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod content;
+
+#[cfg(test)]
 mod goldens;

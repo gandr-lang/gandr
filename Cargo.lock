@@ -1059,6 +1059,7 @@ version = "0.0.0"
 dependencies = [
  "expect-test",
  "foldhash 0.2.0",
+ "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
