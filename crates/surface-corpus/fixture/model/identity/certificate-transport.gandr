@@ -1,0 +1,59 @@
+// Confluence certificates as paths in a presented type, and univalence over
+// the types of them (the HoTT book's § 2.10; Behr and Kock, _Tracelet Hopf
+// Algebras and Decomposition Spaces_, EPTCS 372, 2022). The critical pair of
+// the presented integers at `S(P(S(x)))` joins at `S(x)` two ways, and each
+// way is a certificate: a path from the peak to the join. Two boundaries that
+// convert have certificate types that `ua` makes one, and a consumer of one
+// boundary's certificates is carried to the other's unchanged. Identifying the
+// two certificates of one boundary by `here` waits on the kernel relating
+// reflexivities whose points a rule relates (#1723).
+
+// The presented integers and `up`.
+import "./circle-base.gandr" ;
+
+/// The certificate that rewrites the peak at its root: `S(P(y)) ==> y` with
+/// `y = S(x)`, a reflexivity once the rules convert the peak.
+@[ checks ]
+def atRoot(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+  here(S(x))
+}
+
+/// The certificate that rewrites inside the successor: `P(S(x)) ==> x`
+/// carried along `up`.
+@[ checks ]
+def inside(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+  cong(up, here(x))
+}
+
+/// The certificate types of the peak's boundary and of the join's own, one
+/// type by `ua` over the identity record.
+@[ checks ]
+def certificates(x : Int) -> -F Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S(x), S(x))) {
+  ua((
+    thunk { fn (c) { c } },
+    (
+      (thunk { fn (c) { c } }, thunk { fn (c) { here(c) } }),
+      (thunk { fn (c) { c } }, thunk { fn (c) { here(c) } })
+    )
+  ))
+}
+
+/// A consumer of the peak's certificates, carried along `certificates`, is
+/// the same consumer at the join's, by conversion.
+@[ checks ]
+def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> -F Path(
+  Path(Int, S(x), S(x)) => Int,
+  transport(\X. X => Int, certificates(x), f),
+  thunk { fn (d) { f(d) } }
+) {
+  here(thunk { fn (d) { f(d) } })
+}
+
+/// The carried consumer, run on a certificate of the join's boundary: it
+/// transports `S(Z)` along the certificate and keeps it.
+@[ runs("S(Z)") ]
+def carriedRun : () => Int ;
+def carriedRun = thunk {
+  run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) }) ;
+  g(here(S(Z)))
+} ;

@@ -77,6 +77,23 @@
 //! kernel-side certificate check, or a producer replaying guarded templates —
 //! lands, together with differentials that poison a memo entry in each
 //! direction and show the memoized verdict disagreeing with the engine's.
+//!
+//! # Boundaries
+//!
+//! Everything here is set-level. A certificate is a finite value, and
+//! [`replay_equivalent`] is a relation on those values that replay decides:
+//! two certificates are identified or not, and nothing records how.
+//! Composing certificates is associative and unital up to that relation, its
+//! unit on a boundary two empty paths that replay like any other certificate,
+//! and no step here relies on a groupoid structure on certificates or on
+//! univalence.
+//!
+//! The univalent reading — certificate identity as an identification, the
+//! symmetry of a boundary as groupoid coefficients rather than a side table —
+//! is derived above this crate, from `ua` over the certified strata. Those
+//! strata rest on the decisions replay makes here and in the kernel, so a
+//! step at the space level that feeds a conclusion back into replay or into
+//! this relation would be circular.
 
 use alloc::vec::Vec;
 

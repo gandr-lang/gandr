@@ -107,6 +107,37 @@ fn invertible_composition_of_a_ground_chain_replays()
 }
 
 #[test]
+fn invertible_composition_is_unital_up_to_replay()
+{
+    let (store, a, b) = ground_chain();
+    let unit_at = |certificate: &Tracelet, at: &CmdPat| {
+        let mut overlap = certificate.overlap.clone();
+        overlap.peak = at.clone();
+        Tracelet {
+            overlap,
+            path_a: alloc::vec::Vec::new(),
+            path_b: alloc::vec::Vec::new(),
+            joins_at: at.clone(),
+        }
+    };
+    let right = unit_at(&a, &a.joins_at);
+    let left = unit_at(&b, &b.overlap.peak);
+    assert!(
+        bool::from(right.replay(&store)) && bool::from(left.replay(&store)),
+        "two empty paths certify a seam against itself"
+    );
+    for (composite, certificate, side) in [
+        (compose_invertible(&a, &right), &a, "right"),
+        (compose_invertible(&left, &b), &b, "left"),
+    ] {
+        assert!(
+            bool::from(replay_equivalent(&composite, certificate, &store)),
+            "the unit on the {side} is a unit up to replay"
+        );
+    }
+}
+
+#[test]
 fn directed_composition_of_a_ground_chain_replays()
 {
     let (store, a, b) = ground_chain();
