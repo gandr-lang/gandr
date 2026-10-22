@@ -1336,6 +1336,117 @@ fn a_bisimulation_owes_a_path_per_differing_payload_pair()
     );
 }
 
+/// `thunk(λx. a ← x.0; b ← x.1; return (b, a))`: a pair's components swapped.
+///
+/// # Specification
+/// trivial.
+fn swap(arena: &mut CoreArena) -> ValueId
+{
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = arena.computation_tuple_projection(point, 0_usize.into());
+    let under = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let second = arena.computation_tuple_projection(under, 1_usize.into());
+    let [b, a] = [0_u32, 1_u32]
+        .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+    let swapped = arena.value_tuple(&[b, a]);
+    let returned = arena.computation_return(swapped);
+    let inner = arena.computation_bind(second, returned);
+    let outer = arena.computation_bind(first, inner);
+    let lambda = arena.computation_lambda(outer);
+    arena.value_thunk(lambda)
+}
+
+/// Protocols that receive `Unit * Bool` and `Bool * Unit` are bisimilar owing
+/// one path between the payload types: a univalence over the swap, whose laws
+/// hold by η, pays it as itself and the kernel checks its record at the native
+/// identity the pair owes; the same univalence over a record a parameter
+/// binds names no certificate, for the kernel checks payload paths closed.
+#[test]
+fn a_univalence_pays_a_payload_pair_when_closed()
+{
+    use gandr_core_term::identity::bi_invertible;
+    use gandr_core_term::identity::univalence_forward;
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit, unit]);
+    let (left, right) = (
+        arena.value_type_product(&[unit, boolean]),
+        arena.value_type_product(&[boolean, unit]),
+    );
+    let (heard, swapped) = (asking(&mut arena, left), asking(&mut arena, right));
+    let record_type = bi_invertible(&mut arena, left, right);
+    let record = {
+        let map = swap(&mut arena);
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let reflexivity = arena.value_here(point);
+        let returned = arena.computation_return(reflexivity);
+        let lambda = arena.computation_lambda(returned);
+        let law = arena.value_thunk(lambda);
+        let section = arena.value_tuple(&[map, law]);
+        let retraction = arena.value_tuple(&[map, law]);
+        let inverses = arena.value_tuple(&[section, retraction]);
+        arena.value_tuple(&[map, inverses])
+    };
+    let univalence = |arena: &mut CoreArena, record| {
+        let forward = univalence_forward(arena, record);
+        arena.value_univalence(record, forward)
+    };
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let closed = univalence(&mut arena, named);
+    let identity = super::identity(&mut arena, SessionRelation::Equivalence, (heard, swapped));
+    let paid = arena.value_session_related(SessionRelation::Equivalence, heard, swapped, closed);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open = univalence(&mut arena, bound);
+    let opened = arena.value_session_related(SessionRelation::Equivalence, heard, swapped, open);
+    let parameter = {
+        let returned = arena.computation_return(opened);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let declared = {
+        let codomain = arena.comp_type_returner(identity);
+        let arrow = arena.comp_type_arrow(record_type, codomain);
+        arena.value_type_thunk(arrow)
+    };
+    let report = judged(&mut arena, &[
+        declaration(At(0), record_type, record),
+        declaration(At(1), identity, paid),
+        declaration(At(2), declared, parameter),
+    ]);
+    assert!(
+        matches!(verdict(&report, At(1)), Some(Verdict::Checked { .. })),
+        "the univalence pays the one differing pair: {report:?}"
+    );
+    assert!(
+        matches!(
+            report.natives().get(&closed).and_then(|&native| arena.value(native)),
+            Some(gandr_core_term::Value::Tuple(natives))
+                if matches!(**natives, [native] if native == closed)
+        ),
+        "the univalence stands for itself among the payload certificates: {report:?}"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    assert!(
+        matches!(
+            readmission.readmitted(),
+            [.., paid, _] if matches!(paid.outcome(), Outcome::Defined { .. })
+        ),
+        "the kernel checks the record at the native identity the pair owes: {:?}",
+        readmission.readmitted()
+    );
+    assert!(
+        matches!(
+            verdict(&report, At(2)),
+            Some(Verdict::Refused(CheckRefusal::ShapeMismatch {
+                at: crate::refusal::TermNode::Value(at),
+                wanted: crate::refusal::ExpectedShape::PathUniverse,
+                ..
+            })) if at == open
+        ),
+        "a univalence over a bound record names no certificate: {report:?}"
+    );
+}
+
 /// The type a bisimilarity's paths check against: the unit type when it owes
 /// none, the one owed pair's universe path alone, and the tuple of both paths
 /// in the pairs' order for two.

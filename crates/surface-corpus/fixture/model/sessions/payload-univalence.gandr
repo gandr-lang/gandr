@@ -1,0 +1,13 @@
+// A bisimilarity paid with a univalence between two nominal types: the
+// univalence's record is the evidence, checked at the native identity the
+// payload pair owes, where `equiv` refuses nominal data (#1316).
+
+// The bits and the answers, their univalence `codes`, and the protocols
+// `Ask.Coded` and `Ask.Decoded` that hear them.
+import "./run-transport.gandr" ;
+
+/// #1739: the two protocols are one type along the univalence, which pays
+/// the one pair of payloads that differ.
+@[ checks ]
+def oneProtocol : Path(Type, Ask.Coded, Ask.Decoded) ;
+def oneProtocol = bisim(Ask.Coded, Ask.Decoded, codes) ;

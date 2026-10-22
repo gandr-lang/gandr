@@ -526,14 +526,16 @@ pub fn beta(
     Ok(Reduction::Reduced(reduct))
 }
 
-/// The two codes of `path_type` when it is an identity `Path(Type, a, b)` at
-/// the level-zero value universe, the identities `ua(e)` checks against.
+/// The two codes of `path_type` when it is an identity between codes of the
+/// level-zero value universe, under either reading: `Path(Type, a, b)` or the
+/// native `Path_U(a, b)`. These are the identities `ua(e)` checks against, so a
+/// univalence pays a bisimilarity's payload pair, whose obligation is native.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the endpoints `a` and `b`, in order, when `path_type` resolves to
 ///   a path type whose domain resolves to the level-zero universe of value
-///   codes.
+///   codes, or to `Path_U(a, b)`.
 /// - fails: [`PathError::ExpectedPath`] naming `path_type` otherwise.
 /// - panics: none.
 ///
@@ -542,10 +544,14 @@ pub fn beta(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a record literal checks against `Path(Type, ⌜List Bool⌝,
-///   ⌜List Bool⌝)` and an identity at the booleans is refused by name.
+///   ⌜List Bool⌝)` and against `Path_U` at the same codes, and an identity at
+///   the booleans is refused by name.
 /// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
 #[spec(ensures: |ret| match ret {
-    Ok((left, right)) => matches!(arena.value_type(path_type), Some(&ValueType::Path { left: written, right: other, .. }) if written == left && other == right),
+    Ok((left, right)) => match arena.value_type(path_type) {
+        Some(&ValueType::Path { left: written, right: other, .. } | &ValueType::PathUniverse(written, other)) => written == left && other == right,
+        _ => false,
+    },
     Err(PathError::ExpectedPath(named)) => named == path_type,
     Err(_) => false,
 })]
@@ -555,14 +561,15 @@ pub(crate) fn identity_codes(
 ) -> Result<(ValueId, ValueId), PathError>
 {
     let refused = PathError::ExpectedPath(path_type);
-    let Some(&ValueType::Path {
-        domain,
-        left,
-        right,
-        ..
-    }) = arena.value_type(path_type)
-    else {
-        return Err(refused);
+    let (domain, left, right) = match arena.value_type(path_type) {
+        Some(&ValueType::PathUniverse(left, right)) => return Ok((left, right)),
+        Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+            ..
+        }) => (domain, left, right),
+        _ => return Err(refused),
     };
     if matches!(
         arena.value_type(domain),
@@ -582,11 +589,11 @@ pub(crate) fn identity_codes(
 /// # Specification
 /// - requires: nothing; formation of `path_type` is the caller's.
 /// - ensures: for `path_type = Path(Type, a, b)` at the level-zero value
-///   universe, the record over `A` and `B`, where a quoted code `⌜T⌝` denotes
-///   `T` and any other code `c` the decode `El c`; `sect` is `(x : A) → F
-///   Path(A, g(to(x)), x)` and `retr` is `(y : B) → F Path(B, to(h(y)), y)`,
-///   each application the value its computation returns and each type shifted
-///   past the binders it stands under.
+///   universe, or `Path_U(a, b)`, the record over `A` and `B`, where a quoted
+///   code `⌜T⌝` denotes `T` and any other code `c` the decode `El c`; `sect` is
+///   `(x : A) → F Path(A, g(to(x)), x)` and `retr` is `(y : B) → F Path(B,
+///   to(h(y)), y)`, each application the value its computation returns and each
+///   type shifted past the binders it stands under.
 /// - provides: the one statement of the laws the kernel admits univalence on;
 ///   the checker's record is the same tree, so the bridge passes it unchanged.
 /// - fails: [`PathError::ExpectedPath`] naming `path_type` when it is no
