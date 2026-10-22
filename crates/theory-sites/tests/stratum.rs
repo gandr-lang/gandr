@@ -129,6 +129,55 @@ fn position(
     }
 }
 
+/// The elements at a corolla attach each generator's legs in every order, the
+/// inputs before the outputs, and a labelling of a graft reads one element
+/// per vertex in vertex order; a table reads back the images it was given.
+#[test]
+fn elements_attach_every_leg_order_and_labellings_read_by_vertex()
+{
+    let monoid = monoid();
+    let binary = monoid.elements(profile(Legs(2, 1)));
+    let read: Vec<(GeneratorIndex, Vec<Port>, Vec<Port>)> = binary
+        .iter()
+        .map(|element| {
+            (
+                element.generator(),
+                element.inputs().to_vec(),
+                element.outputs().to_vec(),
+            )
+        })
+        .collect();
+    let port = Port::from;
+    assert_eq!(read, [
+        (
+            GeneratorIndex::from(0_usize),
+            Vec::from([port(0_usize), port(1_usize)]),
+            Vec::from([port(0_usize)])
+        ),
+        (
+            GeneratorIndex::from(0_usize),
+            Vec::from([port(1_usize), port(0_usize)]),
+            Vec::from([port(0_usize)])
+        ),
+    ]);
+    let constant = monoid.elements(profile(Legs(0, 1)));
+    assert_eq!(constant.len(), 1);
+    let grafted = shape!(2; 1 > 0, o > 0, 0 > o);
+    let labels: Vec<Vec<Element>> = monoid
+        .labellings(&grafted)
+        .iter()
+        .map(|labelling| labelling.labels().to_vec())
+        .collect();
+    assert_eq!(labels, [
+        Vec::from([binary[0].clone(), constant[0].clone()]),
+        Vec::from([binary[1].clone(), constant[0].clone()]),
+    ]);
+    assert_eq!(bijection(Tables(&[1, 0], &[0, 1])).forward.images(), [
+        ElementIndex::from(1_usize),
+        ElementIndex::from(0_usize)
+    ]);
+}
+
 /// At size five the stratum is the fifteen corollas of at most four legs, each
 /// with its legs' permutations as automorphisms; the binary corolla holds two
 /// elements of one binary generator, the identity attachment first. Degree
@@ -291,7 +340,8 @@ fn an_equivalence_commutes_with_the_corolla_automorphisms()
 /// restricts to the swap. The same family with the identity at the graft is a
 /// bijection at every shape but not natural, and is refused at the inclusion
 /// of the binary corolla into the graft; a family missing its shapes is
-/// refused at the first.
+/// refused at the first, and one with a shape too many past the last. Two
+/// species with different term counts at a shape are refused there.
 #[test]
 fn restriction_reflects_a_natural_isomorphism_to_its_species()
 {
@@ -346,6 +396,25 @@ fn restriction_reflects_a_natural_isomorphism_to_its_species()
             shape: ShapeIndex::from(0)
         })
     );
+    let mut longer: Vec<Bijection> = natural.components().to_vec();
+    longer.push(Bijection::default());
+    assert_eq!(
+        restrict(&stratum, (&monoid, &monoid), &Natural::new(longer)),
+        Err(Defect::Tables {
+            shape: ShapeIndex::from(catalogue.shapes().len())
+        })
+    );
+    let doubled = species(&[(Legs(2, 1), Generators(2)), (Legs(0, 1), Generators(1))]);
+    let Err(Defect::Cardinality { shape }) = restrict(&stratum, (&monoid, &doubled), &natural)
+    else {
+        panic!("two binary generators hold twice the terms of one");
+    };
+    let form = catalogue.shape(shape);
+    assert!(
+        matches!(form, Maybe::Present(form) if monoid.labellings(form).len() != doubled.labellings(form).len()),
+        "the refused shape is one whose term counts differ"
+    );
+    assert_eq!(stratum.catalogue().shapes(), catalogue.shapes());
 }
 
 /// At size five the stratum of degree two holds the nineteen shapes of two

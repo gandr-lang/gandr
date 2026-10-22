@@ -51,6 +51,8 @@ mod point_count;
 #[cfg(test)]
 mod reedy;
 #[cfg(test)]
+mod reports;
+#[cfg(test)]
 mod shapes;
 #[cfg(test)]
 mod stratum;
