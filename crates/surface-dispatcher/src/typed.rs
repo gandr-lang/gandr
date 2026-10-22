@@ -3383,6 +3383,7 @@ impl TypeTable
     /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
+    /// - witness: `typed::tests::a_term_checked_against_a_type_spelled_alike_reads_back_once_1791`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
     #[spec(ensures: |ret| ret.len() >= self.entries.len())]
     #[inline]
@@ -3404,7 +3405,8 @@ impl TypeTable
             let mut sides = Vec::from([(ReadSite::Own(entry.span), entry.ty, own.clone())]);
             if entry.last != entry.ty {
                 let last = self.spell(entry.last, &binders, page, style);
-                if !matches!((&last, &own), (Maybe::Present(last), Maybe::Present(own)) if last == own)
+                if !matches!((&last, &own), (Maybe::Present(last), Maybe::Present(own))
+                    if <Presentation as AsRef<str>>::as_ref(last) == own.as_ref())
                 {
                     sides.push((ReadSite::CheckedAgainst(entry.span), entry.last, last));
                 }
@@ -7424,6 +7426,41 @@ mod tests
                 if against == "Integer" && own != against),
             "the term reads back at its own type, then at the type it was checked against: \
              {sides:?}"
+        );
+    }
+
+    /// A term checked against a type spelled like its own reads back once, at
+    /// its own type. Here the term is the field `b` passed back to `PiL`,
+    /// and its two types are distinct nodes printed alike, whose
+    /// presentations differ only in the declarations their names link to. A
+    /// spelling cannot tell them apart, so a second trip would read the
+    /// checked-against type back as the synthesised one.
+    #[test]
+    fn a_term_checked_against_a_type_spelled_alike_reads_back_once_1791()
+    {
+        use super::ReadSite;
+
+        let source = SourceText::from(include_str!(
+            "../../surface-corpus/fixture/pathological/universe/inductive-recursive.gandr"
+        ));
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = table(source);
+        let at = <&str>::from(source)
+            .find("unloop[<](PiL(a, b))")
+            .expect("the field is passed back")
+            .saturating_add("unloop[<](PiL(a, ".len());
+        let sides: Vec<(ReadSite, String)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .filter(|back| {
+                matches!(back.site, ReadSite::Own(span) | ReadSite::CheckedAgainst(span)
+                    if usize::from(span.start()) == at)
+            })
+            .map(|back| (back.site, back.spelled))
+            .collect();
+        assert!(
+            matches!(sides.as_slice(), [(ReadSite::Own(_), own)] if own == "unloop(a) => Loop"),
+            "the field reads back once, at its own type: {sides:?}"
         );
     }
 
