@@ -595,6 +595,32 @@
     "output": "{\"failed\":[\"test the workspace (linux)\"],\"pending\":[]}"
   },
   {
+    "name": "a required check run GitHub left in progress beside its conclusion is read by the conclusion, never waited for (#1858)",
+    "program": "required.jq",
+    "args": {
+      "required": ["resolve the CI image reference", "check Clippy wall"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "resolve the CI image reference",
+        "status": "IN_PROGRESS",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T13:15:39Z",
+        "completedAt": "2026-10-22T13:16:02Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "IN_PROGRESS",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-22T13:15:39Z",
+        "completedAt": "2026-10-22T13:21:10Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\"],\"pending\":[]}"
+  },
+  {
     "name": "a required commit status reads by its state: pending waits, success passes (#1601)",
     "program": "required.jq",
     "args": {
