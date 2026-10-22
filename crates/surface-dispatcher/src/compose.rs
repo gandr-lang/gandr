@@ -453,6 +453,41 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a source is handed no admission beside its composition.
+    pub mod kept {
+        /// The reason none is handed.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nobody asked for the admissions to be kept.
+            Unasked,
+            /// No checker judged the source: it could not be read, or its
+            /// component's lowering faulted or refused it whole.
+            Unjudged,
+        }
+    }
+}
+
+/// Whether judging a component keeps its admission beside its compositions.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Keeping
+{
+    /// The compositions alone.
+    Composed,
+    /// The admission too, as it stood before the kernel was offered anything.
+    Admission,
+}
+
+/// What [`judge_component`] answers: each source's composition, and
+/// the component's admission when it was kept.
+type KeptComponent<'source> = (
+    Vec<Result<Composed<'source>, ComposeFault<'source>>>,
+    Maybe<Admission, kept::Absent>,
+);
+
 impl Composed<'_>
 {
     /// This composition with `kernel` as its kernel artifact.
@@ -629,6 +664,29 @@ pub struct Admission
 
 impl Admission
 {
+    /// The arena the verdicts were judged over, before the admission mints
+    /// into it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn arena(&self) -> &CoreArena
+    {
+        &self.arena
+    }
+
+    /// The checker's verdicts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn verdicts(&self) -> &ModuleReport
+    {
+        &self.verdicts
+    }
+
     /// Offer every declaration the checker accepted to the kernel, and export
     /// what crossed.
     ///
@@ -2832,7 +2890,8 @@ fn settled<'source>(
 }
 
 /// Judge what the lowering made of one component once, and project the
-/// composition onto each of its sources.
+/// composition onto each of its sources, keeping the component's admission
+/// beside them when `keeping` asks for it.
 ///
 /// # Specification
 /// - requires: the lowering read `text`, the component's, whose sources' own
@@ -2844,9 +2903,15 @@ fn settled<'source>(
 ///   component's kernel artifact; a component of one source is
 ///   [`judge_lowering`] at offset zero. A whole-component refusal is every
 ///   source's. `spelled` advances once for a module the lowering read and
-///   settled, however many sources it has.
+///   settled, however many sources it has. Beside the compositions, under
+///   [`Keeping::Admission`], the admission of a module the lowering read as it
+///   stood before the kernel was offered anything — its arena, verdicts and
+///   names — or [`kept::Absent::Unjudged`] for a component the lowering refused
+///   whole or that has no source; under [`Keeping::Composed`],
+///   [`kept::Absent::Unasked`] and no copy made.
 /// - provides: the walk's verdict at each source of a component, the component
-///   lowered, checked and spelled once.
+///   lowered, checked and spelled once, and a hold on its checked core for a
+///   differential that evaluates it apart from the program.
 /// - fails: per source, as [`judge_module`]: a kernel disagreement is every
 ///   source's [`ComposeFault::Readmission`], since the component's environment
 ///   could not be built past it; otherwise a settle fault is every source's
@@ -2856,22 +2921,31 @@ fn settled<'source>(
 /// # Adequacy
 /// - hypothesis: L3 — a diamond judged whole reports each source's own
 ///   declarations, each certificate holding the base's segments once, first;
-///   the corpus at every width composes alike.
+///   the corpus at every width composes alike; a corpus walk that keeps the
+///   admissions evaluates every `runs` item of the corpus from them.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
 /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
-#[spec(ensures: |ref ret| ret.len() == members.len())]
+/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+#[spec(ensures: |ref ret| ret.0.len() == members.len() && match ret.1 {
+    Maybe::Present(_) | Maybe::Absent(kept::Absent::Unjudged) => keeping == Keeping::Admission,
+    Maybe::Absent(kept::Absent::Unasked) => keeping == Keeping::Composed,
+})]
 pub fn judge_component<'source>(
     root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     grant: &HostGrant,
-    members: &[Member],
-    spelled: &mut SpellingCount,
-) -> Vec<Result<Composed<'source>, ComposeFault<'source>>>
+    (members, spelled): (&[Member], &mut SpellingCount),
+    keeping: Keeping,
+) -> KeptComponent<'source>
 {
+    let unkept = match keeping {
+        Keeping::Composed => kept::Absent::Unasked,
+        Keeping::Admission => kept::Absent::Unjudged,
+    };
     let Some((&last, earlier)) = members.split_last()
     else {
-        return Vec::new();
+        return (Vec::new(), Maybe::Absent(unkept));
     };
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
@@ -2885,7 +2959,11 @@ pub fn judge_component<'source>(
                 &Unretired,
             )
             .whole();
-            match admission.admit() {
+            let kept = match keeping {
+                Keeping::Composed => Maybe::Absent(kept::Absent::Unasked),
+                Keeping::Admission => Maybe::Present(admission.clone()),
+            };
+            let composed = match admission.admit() {
                 Ok(kernel) => {
                     let mut composed: Vec<_> = projected
                         .earlier
@@ -2907,12 +2985,16 @@ pub fn judge_component<'source>(
                     .iter()
                     .map(|_| Err(ComposeFault::Readmission(fault.clone())))
                     .collect(),
-            }
+            };
+            (composed, kept)
         },
-        Lowered::Refused(refusal) => members
-            .iter()
-            .map(|_| Ok(Composed::Refused(refusal)))
-            .collect(),
+        Lowered::Refused(refusal) => (
+            members
+                .iter()
+                .map(|_| Ok(Composed::Refused(refusal)))
+                .collect(),
+            Maybe::Absent(unkept),
+        ),
     }
 }
 
@@ -6015,6 +6097,7 @@ def h = 1 ;"#,
     {
         use gandr_surface_syntax::ByteOffset;
 
+        use super::Keeping;
         use super::SpellingCount;
         use super::judge_component;
         use super::lower_parsed_unit;
@@ -6047,9 +6130,10 @@ def h = 1 ;"#,
             CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
             &HostGrant::UNBOUNDED,
-            &members,
-            &mut SpellingCount::default(),
+            (&members, &mut SpellingCount::default()),
+            Keeping::Composed,
         )
+        .0
         .into_iter()
         .map(|composed| match composed {
             Ok(Composed::Settled {
@@ -6097,6 +6181,7 @@ def h = 1 ;"#,
         use gandr_surface_lowering::UnitSource;
         use gandr_surface_syntax::ByteOffset;
 
+        use super::Keeping;
         use super::SpellingCount;
         use super::judge_component;
         use super::lower_parsed_unit;
@@ -6147,9 +6232,10 @@ def h = 1 ;"#,
             CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
             &HostGrant::UNBOUNDED,
-            &members,
-            &mut SpellingCount::default(),
+            (&members, &mut SpellingCount::default()),
+            Keeping::Composed,
         )
+        .0
         .into_iter()
         .map(|composed| match composed {
             Ok(Composed::Settled { unreached, .. }) => unreached
