@@ -2,7 +2,9 @@
 # stack queues (#1601). Only the required contexts are read, so a check the
 # rules do not require, such as the mutants report, never holds the landing.
 # A context is read at its newest run: a re-run attempt starts later than
-# the run it replaces.
+# the run it replaces. A check run that carries a conclusion is read by it
+# whatever its status says: GitHub has recorded a finished job as still in
+# progress beside its conclusion (#1858).
 #
 # Input: the head's status check rollup, each a `CheckRun` (`name`,
 # `status`, `conclusion`, `startedAt`) or a `StatusContext` (`context`,
@@ -16,7 +18,7 @@
 def verdict:
   if .__typename == "StatusContext" then
     if .state == "SUCCESS" then "pass" elif IN(.state; "PENDING", "EXPECTED") then "pending" else "fail" end
-  elif .status != "COMPLETED" then "pending"
+  elif .status != "COMPLETED" and (.conclusion // "") == "" then "pending"
   elif IN(.conclusion; "SUCCESS", "SKIPPED", "NEUTRAL") then "pass"
   else "fail"
   end;
