@@ -1695,6 +1695,8 @@ struct Suspended
     /// What met the endpoint: an elimination over it, or a fixpoint applied to
     /// it.
     elimination: ComputationId,
+    /// The endpoint, as the node `elimination` inspects.
+    endpoint: ValueId,
     /// The endpoint's computation.
     returned: ComputationId,
     /// The frames outside `elimination`, innermost last.
@@ -5614,17 +5616,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   met by a returned endpoint — a fixpoint applied to one among them —
     ///   which binds the endpoint's computation and eliminates what it returns,
     ///   that computation read first under [`Reduction::Endpoint`] when the
-    ///   reading is plain, and the element-identity transport and related
-    ///   application steps of [`crate::element_identity`], and under
-    ///   [`Reduction::Endpoint`] a bind over a call stuck at a variable or an
-    ///   opaque head read through: the innermost such bind whose continuation,
-    ///   run with the call as a returned endpoint for its value, returns or
-    ///   stops at a call a definition heads, which then stands as the reading —
-    ///   a continuation stuck at such a bind of its own read the same way
-    ///   first, a bind whose continuation eliminates its own variable at its
-    ///   head passed over, and the next bind out tried over both when it does
-    ///   neither — until none fires at its head, and the original id when none
-    ///   fired at all.
+    ///   reading is plain — a reading stopped at a call a definition heads
+    ///   bound once over the whole term, so every occurrence of that endpoint
+    ///   node reads the one value the call returns — and the element-identity
+    ///   transport and related application steps of
+    ///   [`crate::element_identity`], and under [`Reduction::Endpoint`] a bind
+    ///   over a call stuck at a variable or an opaque head read through: the
+    ///   innermost such bind whose continuation, run with the call as a
+    ///   returned endpoint for its value, returns or stops at a call a
+    ///   definition heads, which then stands as the reading — a continuation
+    ///   stuck at such a bind of its own read the same way first, a bind whose
+    ///   continuation eliminates its own variable at its head passed over, and
+    ///   the next bind out tried over both when it does neither — until none
+    ///   fires at its head, and the original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -5671,6 +5675,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
     /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
     /// - witness: `replay::tests::an_eliminated_endpoint_reads_a_bind_through_its_stuck_call`
+    /// - witness: `replay::tests::an_endpoint_read_twice_runs_its_call_once_1747`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -5742,6 +5747,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         if reduction == Reduction::Plain {
                             suspended = Some(Suspended {
                                 elimination: focus,
+                                endpoint: inspected,
                                 returned,
                                 frames: core::mem::take(&mut frames),
                             });
@@ -6148,6 +6154,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 if reduction == Reduction::Plain {
                                     suspended = Some(Suspended {
                                         elimination: applied,
+                                        endpoint: argument,
                                         returned,
                                         frames: core::mem::take(&mut frames),
                                     });
@@ -6321,7 +6328,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 }
             }
             // The endpoint's computation is read: the suspended plain reading binds
-            // what it came to and goes on.
+            // what it came to and goes on. A reading stopped at a call a definition
+            // heads waits for the conversion to unfold that call by a recorded
+            // step, so it is bound once over the whole term, every occurrence of
+            // the endpoint's node reading the bind's variable: the call then runs
+            // once for all of them, as the producer's held endpoint keeps its one
+            // unfolding for every elimination of it.
             let Some(held) = suspended.take()
             else {
                 break 'endpoints;
@@ -6335,8 +6347,33 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 }
                 focus
             };
-            focus = self.bind_returned(held.elimination, read)?;
-            frames = held.frames;
+            if matches!(
+                self.shape(
+                    Term::Computation(read),
+                    &Frozen::default(),
+                    ConversionSide::Left
+                ),
+                Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
+            ) {
+                let mut whole = held.elimination;
+                let mut outer = held.frames;
+                while let Some(frame) = outer.pop() {
+                    whole = self.wrap(whole, frame);
+                }
+                let shared = crate::rewrite::share_endpoint(
+                    self.arena,
+                    &mut self.table,
+                    &mut self.memo,
+                    whole,
+                    held.endpoint,
+                );
+                focus = self.arena.computation_bind(read, shared);
+                frames = Vec::new();
+            }
+            else {
+                focus = self.bind_returned(held.elimination, read)?;
+                frames = held.frames;
+            }
             reduction = Reduction::Plain;
             progress = Progress::Reduced;
         }
