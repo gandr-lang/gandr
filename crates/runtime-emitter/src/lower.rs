@@ -489,6 +489,7 @@ impl Scopes
     /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
     /// - witness: `tests::count::a_returned_body_gives_its_window_back`
     /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
+    /// - witness: `lower::tests::a_delivery_to_a_marked_covariable_shrinks_to_its_slot`
     fn covariable(
         &self,
         scope: Scope,
@@ -3427,12 +3428,14 @@ impl Lowering<'_>
     ///   function past its constructor's fields; the counts rebuild a unique
     ///   scrutinee in its own block and a shared one in a fresh block. A token
     ///   built into with the wrong fields, never built into, or overwriting a
-    ///   shared cell changes an answer or a count.
+    ///   shared cell changes an answer or a count. L3 — a match with a
+    ///   rebuilding branch and a branch building nothing leaves one token.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
     /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
     /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
+    /// - witness: `lower::tests::only_the_branch_paired_with_its_rebuild_takes_a_token`
     fn reuse(
         &mut self,
         id: ConsumerId,
@@ -3509,7 +3512,11 @@ impl Lowering<'_>
     ///   function past its constructor's fields; the counts rebuild a unique
     ///   scrutinee in its own block and a shared one in a fresh block. A token
     ///   built into with the wrong fields, never built into, or overwriting a
-    ///   shared cell changes an answer or a count.
+    ///   shared cell changes an answer or a count. The binder test is
+    ///   defensive: the ownership reading pairs no constructor that runs in
+    ///   another window than its branch, so every paired constructor is lowered
+    ///   under its token's binder and no program tells the test from its
+    ///   negation.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
@@ -3990,12 +3997,15 @@ struct Level
 ///   its constructor's fields; the counts rebuild a unique scrutinee in its own
 ///   block and a shared one in a fresh block. A token built into with the wrong
 ///   fields, never built into, or overwriting a shared cell changes an answer
-///   or a count.
+///   or a count. L3 — a branch of each shape a level or its body can break the
+///   chain with, against the one inlined, and a body naming the chain's force
+///   against one naming the first continuation past it.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
 /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
 /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
+/// - witness: `lower::tests::a_branch_is_inlined_only_in_its_exact_shape`
 fn inlined(
     arena: &CommandArena,
     branch: ProducerId,
@@ -4059,6 +4069,8 @@ fn inlined(
 #[cfg(test)]
 mod tests
 {
+    use gandr_core_sequent::CopatternArm;
+    use gandr_core_sequent::CovariableIndex;
     use gandr_core_sequent::Provenance;
     use gandr_core_sequent::focus_computation;
     use gandr_core_term::CoreArena;
@@ -4284,5 +4296,190 @@ mod tests
         rendered.sort();
         rendered.dedup();
         assert_eq!(rendered.len(), count, "{rendered:?}");
+    }
+
+    /// The instructions of `root`'s fused lowering, `core` focused.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lowered(
+        core: &CoreArena,
+        root: gandr_core_term::ComputationId,
+    ) -> Vec<Instruction>
+    {
+        let mut commands = CommandArena::new();
+        let root = focus_computation(core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        lower(&commands, &Definitions::new(), root)
+            .expect("the program lowers")
+            .function
+            .instructions()
+            .to_vec()
+    }
+
+    /// A nominal match whose first branch rebuilds the constructor it took
+    /// apart and whose second builds nothing leaves a reuse token in the
+    /// first alone: the second gives its scrutinee up, its fields gaining an
+    /// owner, rather than holding a token no constructor is built into.
+    #[test]
+    fn only_the_branch_paired_with_its_rebuild_takes_a_token()
+    {
+        let mut core = CoreArena::new();
+        let one = core.value_unit();
+        let two = core.value_unit();
+        let datatype = core.value_type_data(0_usize.into(), Vec::new());
+        let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+        let bound = core.computation_return(built);
+        let scrutinee = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let second = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+        let answered = core.computation_return(rebuilt);
+        let inner = core.computation_lambda(answered);
+        let rebuilding = core.computation_lambda(inner);
+        let nothing = core.value_unit();
+        let empty = core.computation_return(nothing);
+        let motive = core.comp_type_unknown();
+        let cased = core.computation_data_case(scrutinee, motive, vec![rebuilding, empty], vec![
+            FieldCount::from(2_usize),
+            FieldCount::from(0_usize),
+        ]);
+        let root = core.computation_bind(bound, cased);
+        let stencils: Vec<StencilId> = lowered(&core, root)
+            .iter()
+            .map(|instruction| instruction.stencil)
+            .collect();
+        let count = |stencil: StencilId| stencils.iter().filter(|&&each| each == stencil).count();
+        assert_eq!(
+            (1, 1),
+            (count(StencilId::Reuse), count(StencilId::CtorInto)),
+            "one token, built into once: {stencils:?}"
+        );
+        assert_eq!(
+            1,
+            count(StencilId::DupFields),
+            "the other branch gives its scrutinee up: {stencils:?}"
+        );
+    }
+
+    /// A force under a bind delivers to the bind's frame: the window is shrunk
+    /// to the slot the frame's push marked before the force is invoked.
+    #[test]
+    fn a_delivery_to_a_marked_covariable_shrinks_to_its_slot()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let made = core.computation_return(unit);
+        let thunk = core.value_thunk(made);
+        let held = core.computation_return(thunk);
+        let named = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let forced = core.computation_force(named);
+        let inner = core.computation_bind(held, forced);
+        let outer = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let rest = core.computation_return(outer);
+        let root = core.computation_bind(inner, rest);
+        let instructions = lowered(&core, root);
+        let stencils: Vec<StencilId> = instructions
+            .iter()
+            .map(|instruction| instruction.stencil)
+            .collect();
+        let pushed = instructions
+            .iter()
+            .find(|instruction| instruction.stencil == StencilId::Pushk)
+            .expect("the bind pushes its frame");
+        let shrunk = instructions
+            .iter()
+            .position(|instruction| instruction.stencil == StencilId::Shrink)
+            .unwrap_or_else(|| panic!("the force's delivery shrinks the window: {stencils:?}"));
+        assert_eq!(
+            pushed.b, instructions[shrunk].a,
+            "to the slot the frame marked: {stencils:?}"
+        );
+        assert_eq!(
+            Some(&StencilId::InvokeForce),
+            stencils.get(shrunk.wrapping_add(1)),
+            "just before the force: {stencils:?}"
+        );
+    }
+
+    /// A nominal branch of one field, `{force(α) ⇒ ⟨cocase {head(x; β) ⇒
+    /// ⟨x | named⟩} |− handed⟩}`, the head and both covariables chosen.
+    ///
+    /// # Specification
+    /// trivial.
+    fn branch(
+        head: DestructorTag,
+        handed: CovariableIndex,
+        named: CovariableIndex,
+    ) -> (CommandArena, ProducerId)
+    {
+        let mut arena = CommandArena::new();
+        let field = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            })
+            .expect("a leaf mints");
+        let answer = arena
+            .mint_consumer(ConsumerNode::Covariable(named))
+            .expect("a leaf mints");
+        let body = arena
+            .mint_cut(Polarity::Positive, field, answer)
+            .expect("the children resolve");
+        let object = arena
+            .mint_producer(ProducerNode::Cocase {
+                arms: Box::from([CopatternArm {
+                    destructor: head,
+                    body,
+                }]),
+            })
+            .expect("the arm resolves");
+        let back = arena
+            .mint_consumer(ConsumerNode::Covariable(handed))
+            .expect("a leaf mints");
+        let cut = arena
+            .mint_cut(Polarity::Negative, object, back)
+            .expect("the children resolve");
+        let thunk = arena
+            .mint_producer(ProducerNode::Thunk { body: cut })
+            .expect("the body resolves");
+        (arena, thunk)
+    }
+
+    /// A branch runs where its match stands only when each level applies
+    /// and hands its object back to its own `α0`, and its body names no
+    /// continuation of the chain but its own: the chain's force `α1` keeps
+    /// it a closure, and the first continuation past the chain, `α2`, does
+    /// not.
+    #[test]
+    fn a_branch_is_inlined_only_in_its_exact_shape()
+    {
+        let one = FieldCount::from(1_usize);
+        let inlines = |head: DestructorTag, handed: u32, named: u32| {
+            let (arena, thunk) = branch(head, handed.into(), named.into());
+            inlined(&arena, thunk, one)
+                .expect("the arena holds the branch")
+                .is_some()
+        };
+        assert!(
+            inlines(DestructorTag::Apply, 0, 0),
+            "a body answering its own continuation"
+        );
+        assert!(
+            inlines(DestructorTag::Apply, 0, 2),
+            "a body naming the first continuation past the chain"
+        );
+        assert!(
+            !inlines(DestructorTag::Apply, 0, 1),
+            "a body naming the chain's force"
+        );
+        assert!(
+            !inlines(DestructorTag::Apply, 1, 0),
+            "a level handing its object to another continuation"
+        );
+        assert!(
+            !inlines(DestructorTag::Force, 0, 0),
+            "a level answering another head"
+        );
     }
 }

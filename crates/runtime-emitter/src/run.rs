@@ -26,6 +26,7 @@ use gandr_core_sequent::Outcome;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_kernel_term::Component;
+use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Observed;
 use gandr_runtime_stencils::Runtime;
@@ -295,6 +296,31 @@ std::thread_local! {
         window: Vec::new(),
         windows: Vec::with_capacity(WINDOW_BOUND),
     });
+}
+
+/// Check that the constant table of `globals` fits the heap region `heap`,
+/// at whose base it sits: one word a constant, within the region's capacity.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Declined::Exhausted`] with [`Status::HeapExhausted`] when `globals`
+/// holds more constants than `heap` has capacity for words.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a table exactly the region's capacity fits and one word
+///   more does not; a strict or a reversed comparison changes one answer.
+/// - witness: `run::tests::a_constant_table_fits_its_region_up_to_its_capacity`
+fn hold_table(
+    heap: &Vec<Word>,
+    globals: &[ConstantIndex],
+) -> Result<(), Declined>
+{
+    if globals.len() > heap.capacity() {
+        return Err(Declined::Exhausted(Status::HeapExhausted));
+    }
+    Ok(())
 }
 
 /// The code a run enters.
@@ -777,9 +803,7 @@ fn run(
         // The constant table sits at the heap's base, every word zero: no
         // constant is unfolded yet.
         let constants = lowered.globals.len();
-        if constants > buffers.heap.capacity() {
-            return Err(Declined::Exhausted(Status::HeapExhausted));
-        }
+        hold_table(&buffers.heap, &lowered.globals)?;
         // SAFETY: the heap region's capacity holds the table's words.
         unsafe {
             table.write_bytes(0, constants);
@@ -897,13 +921,39 @@ mod tests
     use alloc::vec::Vec;
 
     use gandr_core_sequent::HeapValueId;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_runtime_stencils::Status;
+    use gandr_runtime_stencils::Word;
 
     use super::Declined;
     use super::Policy;
+    use super::hold_table;
     use crate::function::Function;
     use crate::lower::Form;
     use crate::transfer::TransferRefusal;
+
+    /// A constant table fills its heap region up to the region's capacity,
+    /// and one constant more is refused before a word is written.
+    #[test]
+    fn a_constant_table_fits_its_region_up_to_its_capacity()
+    {
+        let heap: Vec<Word> = Vec::with_capacity(4);
+        let globals = |count: usize| -> Vec<ConstantIndex> {
+            (0 .. count).map(ConstantIndex::from).collect()
+        };
+        let capacity = heap.capacity();
+        assert_eq!(Ok(()), hold_table(&heap, &globals(0)), "no table fits");
+        assert_eq!(
+            Ok(()),
+            hold_table(&heap, &globals(capacity)),
+            "a table of {capacity} words fills the region"
+        );
+        assert_eq!(
+            Err(Declined::Exhausted(Status::HeapExhausted)),
+            hold_table(&heap, &globals(capacity + 1)),
+            "one word past the region is refused"
+        );
+    }
 
     /// Each spelling of the variable selects its policy, and anything else
     /// the default: a misspelt `never` emits rather than silently running
