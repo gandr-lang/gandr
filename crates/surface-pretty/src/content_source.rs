@@ -322,6 +322,7 @@ impl Source for ContentSource<'_>
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => Former::DataCase {
                 scrutinee,
                 motive,

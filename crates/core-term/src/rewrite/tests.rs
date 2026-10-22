@@ -3590,7 +3590,9 @@ pub fn formers() -> Vec<Witnessed>
             let unit_type = a.value_type_unit();
             let motive = a.comp_type_returner(unit_type);
             let branch = done(a);
-            let body = a.computation_data_case(c, motive, vec![branch]);
+            let body = a.computation_data_case(c, motive, vec![branch], vec![
+                gandr_kernel_term::FieldCount::from(0_usize),
+            ]);
             a.value_thunk(body)
         }),
         ("record projection", |a, c| {

@@ -176,8 +176,14 @@ fn program() -> Program
         let bound = arena.computation_bind(call, returned);
         let on_successor = arena.computation_lambda(bound);
         let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
-        let case =
-            arena.computation_data_case(scrutinee, nat_returner, vec![on_zero, on_successor]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            nat_returner,
+            vec![on_zero, on_successor],
+            [0_usize, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
         arena.value_thunk(fixpoint)
@@ -438,7 +444,14 @@ fn rose_program() -> Program
         let rest_lambda = arena.computation_lambda(outer);
         let on_cons = arena.computation_lambda(rest_lambda);
         let xs = var(&mut arena, DeBruijnIndex::from(0));
-        let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+        let case = arena.computation_data_case(
+            xs,
+            motive,
+            vec![on_nil, on_cons],
+            [0_usize, 2]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
         let body = (0_u8 .. 3).fold(fixpoint, |body, _binder| arena.computation_lambda(body));
@@ -461,7 +474,12 @@ fn rose_program() -> Program
         let on_node = arena.computation_bind(mapped, counted);
         let on_node = arena.computation_lambda(on_node);
         let t = var(&mut arena, DeBruijnIndex::from(0));
-        let case = arena.computation_data_case(t, returner, vec![on_node]);
+        let case = arena.computation_data_case(
+            t,
+            returner,
+            vec![on_node],
+            [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
         let body = arena.value_thunk(fixpoint);

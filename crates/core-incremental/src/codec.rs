@@ -137,10 +137,10 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0d";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0e";
 
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x09";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0a";
 
 /// The decoder's cap on a level atom's offset.
 ///
@@ -1374,11 +1374,16 @@ where
             scrutinee,
             motive,
             ref branches,
+            ref arities,
         } => {
             writer.tag(Tag(0x54));
             write_index(writer, scrutinee)?;
             write_index(writer, motive)?;
             write_indices(writer, branches)?;
+            writer.count(Count(arities.len()))?;
+            for &arity in arities {
+                writer.count(Count(usize::from(arity)))?;
+            }
         },
         ContentNode::RecordProjection(record, ref label) => {
             writer.tag(Tag(0x55));
@@ -3655,6 +3660,14 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             scrutinee: read_index(reader)?,
             motive: read_index(reader)?,
             branches: read_indices(reader)?,
+            arities: {
+                let count = reader.count()?;
+                let mut arities = Vec::new();
+                for _ in 0 .. count.0 {
+                    arities.push(gandr_kernel_term::FieldCount::from(reader.count()?.0));
+                }
+                arities
+            },
         },
         0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
         0x5A => ContentNode::TupleProjection(

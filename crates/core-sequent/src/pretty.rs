@@ -692,7 +692,7 @@ fn producer(
         | ConsumerNode::Case { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("case {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(arms.iter().map(|arm| arm.body)),
-        | ConsumerNode::DataCase { ref branches, then } => matches!(ret.first(), Some(&Piece::Text(Token("datacase"))))
+        | ConsumerNode::DataCase { ref branches, then, .. } => matches!(ret.first(), Some(&Piece::Text(Token("datacase"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Consumer(..) => None }).eq(branches.iter().copied())
             && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, _) => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) => None }).eq(core::iter::once(then)),
         | ConsumerNode::Select { ref selector, then } => matches!(ret.as_slice(), &[Piece::Text(Token("select")), Piece::Owned(ref field), Piece::Text(Token("(")), Piece::Consumer(found, _), Piece::Text(Token(")"))]
@@ -749,7 +749,9 @@ fn consumer(
             }
             pieces
         },
-        ConsumerNode::DataCase { ref branches, then } => applied(
+        ConsumerNode::DataCase {
+            ref branches, then, ..
+        } => applied(
             Token("datacase"),
             branches,
             core::slice::from_ref(&then),

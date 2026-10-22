@@ -373,6 +373,7 @@ impl CoreArena
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => {
                 self.value_into(&mut union, scrutinee, at);
                 self.comp_type_into(&mut union, motive, under(Binders::ONE));

@@ -532,6 +532,20 @@ fn translate(
                         values[&scrutinee],
                         comp_types[&motive],
                         branches.iter().map(|branch| computations[branch]).collect(),
+                        // reason: the kernel's case states no arity; a
+                        // fixture branch binds each field by one lambda.
+                        branches
+                            .iter()
+                            .map(|&branch| {
+                                let mut at = branch;
+                                let mut fields = 0_usize;
+                                while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+                                    at = body;
+                                    fields = fields.saturating_add(1);
+                                }
+                                gandr_kernel_term::FieldCount::from(fields)
+                            })
+                            .collect(),
                     ),
                     Computation::SigmaSplit {
                         scrutinee,

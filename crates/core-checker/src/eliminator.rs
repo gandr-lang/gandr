@@ -490,9 +490,11 @@ pub fn derive(
         gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, plus(methods, two)?)
             .settle(arena);
     let mut branches: Vec<ComputationId> = Vec::new();
+    let mut arities = Vec::new();
     let mut preceding = Binders::NONE;
     for (fields, row) in signature.constructors().iter().zip(&shapes) {
         let width = count(fields)?;
+        arities.push(gandr_kernel_term::FieldCount::from(fields.len()));
         // The handler `m_i`, past the fields, `x`, `rec` and every later
         // method.
         let handler = plus(width, two)
@@ -548,7 +550,7 @@ pub fn derive(
         branches.push(branch);
     }
     let argument = variable(arena, Binders::NONE);
-    let case = arena.computation_data_case(argument, scoped_motive, branches);
+    let case = arena.computation_data_case(argument, scoped_motive, branches, arities);
     let over_argument = arena.computation_lambda(case);
     let mut body = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
     for _abstraction in 0 .. u32::from(plus(methods, parameters)?) {

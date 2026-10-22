@@ -2828,13 +2828,16 @@ fn agreement(
         },
         (
             &ContentNode::DataCase {
-                branches: ref left, ..
+                branches: ref left,
+                arities: ref left_arities,
+                ..
             },
             &ContentNode::DataCase {
                 branches: ref right,
+                arities: ref right_arities,
                 ..
             },
-        ) => left.len() == right.len(),
+        ) => left.len() == right.len() && left_arities == right_arities,
         (
             &ContentNode::RecordProjection(_, ref left),
             &ContentNode::RecordProjection(_, ref right),
@@ -3419,6 +3422,7 @@ where
             scrutinee,
             motive,
             ref branches,
+            ref arities,
         }) => ContentNode::DataCase {
             scrutinee: child(Root::Value(scrutinee)),
             motive: child(Root::CompType(motive)),
@@ -3426,6 +3430,7 @@ where
                 .iter()
                 .map(|&branch| child(Root::Computation(branch)))
                 .collect(),
+            arities: arities.clone(),
         },
         Some(&Computation::RecordProjection(record, ref label)) => {
             ContentNode::RecordProjection(child(Root::Value(record)), label.clone())

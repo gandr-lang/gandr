@@ -2226,6 +2226,7 @@ fn a_match_takes_its_answer_from_the_function_result()
         scrutinee,
         motive,
         ref branches,
+        ..
     }) = arena.computation(root)
     else {
         panic!("the match is a data case on its scrutinee");

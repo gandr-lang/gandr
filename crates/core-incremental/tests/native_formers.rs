@@ -112,7 +112,12 @@ fn program(schema: Schema) -> Program
         arena.computation_record_projection(field, FieldLabel::from(String::from("x")));
     let branch = arena.computation_lambda(projection);
     let scrutinee = arena.value_constant(ConstantIndex::from(1_usize));
-    let case = arena.computation_data_case(scrutinee, result, vec![branch]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        result,
+        vec![branch],
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let body = arena.value_thunk(case);
     let eliminate = Declaration::new(
         ConstantIndex::from(2_usize),

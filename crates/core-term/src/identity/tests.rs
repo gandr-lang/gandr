@@ -200,8 +200,9 @@ fn a_case_answers_at_a_point_by_the_value_its_branch_returns()
         arena.computation_return(held),
     );
     let branches = [at_point, at_fielded];
+    let arities = [0_usize, 1].map(gandr_kernel_term::FieldCount::from);
     assert_eq!(
-        super::answer_at(&mut arena, point, motive, &branches),
+        super::answer_at(&mut arena, point, motive, &branches, &arities),
         point,
         "a point without fields answers the value its branch returns"
     );
@@ -210,14 +211,14 @@ fn a_case_answers_at_a_point_by_the_value_its_branch_returns()
         matches!(arena.value(answered), Some(&crate::syntax::Value::Returned(case))
                 if matches!(arena.computation(case), Some(&crate::syntax::Computation::DataCase { scrutinee, .. }) if scrutinee == point || scrutinee == fielded))
     };
-    let answered = super::answer_at(&mut arena, fielded, motive, &branches);
+    let answered = super::answer_at(&mut arena, fielded, motive, &branches, &arities);
     assert!(
         case_at(&arena, answered),
         "a point with fields answers the case at it"
     );
     let forced = arena.computation_force(held);
     let computing = [forced, at_fielded];
-    let answered = super::answer_at(&mut arena, point, motive, &computing);
+    let answered = super::answer_at(&mut arena, point, motive, &computing, &arities);
     assert!(
         case_at(&arena, answered),
         "a branch that computes answers the case at the point"

@@ -556,7 +556,12 @@ fn stuck() -> [Row; 14]
                 let motive = returns_unit(a);
                 let unit = a.value_unit();
                 let branch = a.computation_return(unit);
-                CoreTerm::Computation(a.computation_data_case(held, motive, Vec::from([branch])))
+                CoreTerm::Computation(a.computation_data_case(
+                    held,
+                    motive,
+                    Vec::from([branch]),
+                    Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
+                ))
             },
             copies: Settlement::Deferred(Deferral::Binder),
             normal: None,
@@ -808,6 +813,7 @@ fn redexes() -> [Row; 16]
                     scrutinee,
                     motive,
                     Vec::from(branches),
+                    Vec::from([gandr_kernel_term::FieldCount::from(0_usize); 2]),
                 ))
             },
             copies: Settlement::StructurallyEqual,

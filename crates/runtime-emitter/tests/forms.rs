@@ -300,8 +300,14 @@ fn forms() -> Vec<Form>
                 let field = core.computation_lambda(returns_one);
                 let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
                 let motive = core.comp_type_returner(integer_type);
-                let root =
-                    core.computation_data_case(one, motive, Vec::from([returns_naught, field]));
+                let root = core.computation_data_case(
+                    one,
+                    motive,
+                    Vec::from([returns_naught, field]),
+                    [0_usize, 1]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                );
                 (root, Vec::new())
             },
             ends: Ends::Shows("⟨1 |+ ★⟩"),

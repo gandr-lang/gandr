@@ -299,6 +299,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
@@ -819,6 +820,10 @@ pub enum Computation
         motive: CompTypeId,
         /// One ordinary function over the constructor's fields per tag.
         branches: Vec<ComputationId>,
+        /// Each constructor's field count, in tag order: how many of its
+        /// branch's curried parameters take fields. A loop arm after the
+        /// constructors' branches has none.
+        arities: Vec<FieldCount>,
     },
     /// Select a named field, returning it in the computation fragment.
     RecordProjection(ValueId, FieldLabel),
@@ -2725,13 +2730,15 @@ fn equal_syntax(
                             scrutinee: a,
                             motive: am,
                             branches: ref ab,
+                            arities: ref arities_a,
                         },
                         &Computation::DataCase {
                             scrutinee: b,
                             motive: bm,
                             branches: ref bb,
+                            arities: ref arities_b,
                         },
-                    ) if ab.len() == bb.len() => {
+                    ) if ab.len() == bb.len() && arities_a == arities_b => {
                         pending.extend([V(a, b), CT(am, bm)]);
                         pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
                     },
@@ -4654,8 +4661,14 @@ mod tests
         };
         let mut cases = Vec::new();
 
-        let [twin, same, wider] = [1_usize, 1, 2]
-            .map(|count| arena.computation_data_case(unit, motive, alloc::vec![returned; count]));
+        let [twin, same, wider] = [1_usize, 1, 2].map(|count| {
+            arena.computation_data_case(
+                unit,
+                motive,
+                alloc::vec![returned; count],
+                alloc::vec![FieldCount::from(0_usize); count],
+            )
+        });
         cases.push((twin, same, alloc::vec![wider], "a nominal case"));
         let [twin, same, other] =
             ["a", "a", "b"].map(|name| arena.computation_record_projection(unit, label(name)));

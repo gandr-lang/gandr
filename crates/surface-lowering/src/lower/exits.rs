@@ -2110,11 +2110,12 @@ fn rebuild(
                 scrutinee,
                 motive,
                 ref branches,
+                ref arities,
             },
             branched,
         ) if branches.as_slice() != branched => {
             sink.arena
-                .computation_data_case(scrutinee, motive, branched.to_vec())
+                .computation_data_case(scrutinee, motive, branched.to_vec(), arities.clone())
         },
         (
             Computation::ListCase {

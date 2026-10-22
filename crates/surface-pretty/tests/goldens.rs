@@ -3330,7 +3330,14 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
     let returns_zero = core.computation_return(zero);
     let field = core.computation_lambda(returned);
-    let data_case = core.computation_data_case(bound, returns_nat, vec![returns_zero, field]);
+    let data_case = core.computation_data_case(
+        bound,
+        returns_nat,
+        vec![returns_zero, field],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let matched = core.computation_lambda(data_case);
     let projection = core.computation_record_projection(bound, FieldLabel::from(String::from("x")));
     let projected = core.computation_lambda(projection);
@@ -3523,7 +3530,14 @@ fn descent(
     let forced = core.computation_force(itself);
     let call = core.computation_application(forced, parameter);
     let field = core.computation_lambda(call);
-    let case = core.computation_data_case(parameter, returns_nat, vec![returned, field]);
+    let case = core.computation_data_case(
+        parameter,
+        returns_nat,
+        vec![returned, field],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let abstraction = core.computation_lambda(case);
     let fixpoint = core.computation_fixpoint(abstraction, evidence);
     (case, core.value_thunk(fixpoint))
@@ -3557,7 +3571,14 @@ fn two_parameters(
     let applied = core.computation_application(forced, field);
     let call = core.computation_application(applied, kept);
     let succeeded = core.computation_lambda(call);
-    let case = core.computation_data_case(first, returns_nat, vec![returned, succeeded]);
+    let case = core.computation_data_case(
+        first,
+        returns_nat,
+        vec![returned, succeeded],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let inner = core.computation_lambda(case);
     let outer = core.computation_lambda(inner);
     let fixpoint = core.computation_fixpoint(outer, evidence);
@@ -3585,7 +3606,14 @@ fn one_uniform(core: &mut CoreArena) -> (gandr_core_term::ComputationId, ValueId
     let forced = core.computation_force(itself);
     let call = core.computation_application(forced, field);
     let succeeded = core.computation_lambda(call);
-    let case = core.computation_data_case(staged, returns_nat, vec![returned, succeeded]);
+    let case = core.computation_data_case(
+        staged,
+        returns_nat,
+        vec![returned, succeeded],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let abstraction = core.computation_lambda(case);
     let fixpoint = core.computation_fixpoint(
         abstraction,
@@ -3620,7 +3648,14 @@ fn two_uniform(core: &mut CoreArena) -> (gandr_core_term::ComputationId, ValueId
     let mapped = core.computation_application(forced_map, result);
     let bound = core.computation_bind(call, mapped);
     let succeeded = core.computation_lambda(bound);
-    let case = core.computation_data_case(staged, returns_nat, vec![returned, succeeded]);
+    let case = core.computation_data_case(
+        staged,
+        returns_nat,
+        vec![returned, succeeded],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let abstraction = core.computation_lambda(case);
     let fixpoint = core.computation_fixpoint(
         abstraction,
@@ -4002,7 +4037,14 @@ fn a_case_nothing_types_writes_its_motive_815()
     let zero = core.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
     let returns_zero = core.computation_return(zero);
     let field = core.computation_lambda(returned);
-    let case = core.computation_data_case(bound, returns_nat, vec![returns_zero, field]);
+    let case = core.computation_data_case(
+        bound,
+        returns_nat,
+        vec![returns_zero, field],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     // `run b <- case a -> -F Nat { … } ; b`: a bind's run states no type.
     let run = core.computation_bind(case, returned);
     let running = core.computation_lambda(run);
@@ -4025,7 +4067,14 @@ fn a_case_nothing_types_writes_its_motive_815()
     let point = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let run_of = core.value_type_run(point);
     let returns_run = core.comp_type_returner(run_of);
-    let dependent = core.computation_data_case(bound, returns_run, vec![returns_zero, field]);
+    let dependent = core.computation_data_case(
+        bound,
+        returns_run,
+        vec![returns_zero, field],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let dependent_run = core.computation_bind(dependent, returned);
     let depending = core.computation_lambda(dependent_run);
     let names = [Name::from("Nat")];
@@ -4081,7 +4130,9 @@ fn a_constructor_at_the_depth_limit_binds_every_field()
     for _ in 0 .. limit {
         branch = core.computation_lambda(branch);
     }
-    let data_case = core.computation_data_case(bound, returns_wide, vec![branch]);
+    let data_case = core.computation_data_case(bound, returns_wide, vec![branch], vec![
+        gandr_kernel_term::FieldCount::from(limit),
+    ]);
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Wide")];
     let mut constructors = Constructors::default();
@@ -4144,7 +4195,14 @@ fn arms_sharing_a_body_bind_distinct_fields_815()
         }
         branches.push(branch);
     }
-    let data_case = core.computation_data_case(scrutinee, returns_theory, branches);
+    let data_case = core.computation_data_case(
+        scrutinee,
+        returns_theory,
+        branches,
+        [5_usize, 3]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Theory")];
     let mut constructors = Constructors::default();
@@ -4176,8 +4234,14 @@ fn a_case_over_words_writes_each_arm_as_the_surface_does_815()
     let unit = core.value_unit();
     let returned = core.computation_return(unit);
     let lettered = core.computation_lambda(returned);
-    let data_case =
-        core.computation_data_case(scrutinee, returns_loops, vec![returned, lettered, lettered]);
+    let data_case = core.computation_data_case(
+        scrutinee,
+        returns_loops,
+        vec![returned, lettered, lettered],
+        [0_usize, 1, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Loops")];
     let mut constructors = Constructors::default();
@@ -4216,7 +4280,12 @@ fn a_loop_arm_is_written_under_its_loop_813()
     let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let unit = core.value_unit();
     let returned = core.computation_return(unit);
-    let data_case = core.computation_data_case(scrutinee, returns_circle, vec![returned, returned]);
+    let data_case = core.computation_data_case(
+        scrutinee,
+        returns_circle,
+        vec![returned, returned],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let matched = core.computation_lambda(data_case);
     let names = [Name::from("Circle")];
     let mut constructors = Constructors::default();

@@ -1260,7 +1260,14 @@ fn chain(
     let on_link = arena.computation_lambda(applied);
     let on_link = arena.computation_lambda(on_link);
     let scrutinee = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returns,
+        vec![on_start, on_link],
+        [0_usize, 2]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let body = function(arena, Binders::from(1), case);
     [
         data(
@@ -1863,7 +1870,10 @@ fn universe(
         arm = arena.computation_lambda(arm);
     }
     let scrutinee = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returns, vec![answer, arm]);
+    let case = arena.computation_data_case(scrutinee, returns, vec![answer, arm], vec![
+        gandr_kernel_term::FieldCount::from(0_usize),
+        gandr_kernel_term::FieldCount::from(arity),
+    ]);
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -1997,7 +2007,12 @@ fn forest(
     };
     let node_arm = arena.computation_lambda(node_arm);
     let scrutinee = var(arena, DeBruijnIndex::from(0_u32));
-    let on_tree = arena.computation_data_case(scrutinee, returns, vec![node_arm]);
+    let on_tree = arena.computation_data_case(
+        scrutinee,
+        returns,
+        vec![node_arm],
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let unit_value = arena.value_unit();
     let on_nil = arena.computation_return(unit_value);
     // Under `self, x, ts, head, tail`, then the bind's binder.
@@ -2007,7 +2022,14 @@ fn forest(
     let on_cons = arena.computation_lambda(on_cons);
     let on_cons = arena.computation_lambda(on_cons);
     let scrutinee = var(arena, DeBruijnIndex::from(0_u32));
-    let on_forest = arena.computation_data_case(scrutinee, returns, vec![on_nil, on_cons]);
+    let on_forest = arena.computation_data_case(
+        scrutinee,
+        returns,
+        vec![on_nil, on_cons],
+        [0_usize, 2]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let scrutinee = var(arena, DeBruijnIndex::from(0_u32));
     let cased = arena.computation_case(scrutinee, &[on_tree, on_forest]);
     let body = arena.computation_lambda(cased);

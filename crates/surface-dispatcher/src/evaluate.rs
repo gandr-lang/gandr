@@ -3104,7 +3104,9 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                         ConsumerNode::Case { ref arms } => {
                             pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
                         },
-                        ConsumerNode::DataCase { ref branches, then } => {
+                        ConsumerNode::DataCase {
+                            ref branches, then, ..
+                        } => {
                             pending.extend(branches.iter().copied().map(Node::Producer));
                             pending.push(Node::Consumer(then));
                         },

@@ -2289,6 +2289,7 @@ pub fn loose_reach(
                         scrutinee,
                         motive,
                         ref branches,
+                        ..
                     } => {
                         work.push((CoreNode::Term(TermNode::Value(scrutinee)), depth));
                         work.push((CoreNode::Type(TypeNode::Computation(motive)), under));

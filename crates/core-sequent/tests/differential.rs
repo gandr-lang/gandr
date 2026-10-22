@@ -993,7 +993,14 @@ fn hand_built_declared_data_cases_agree()
                 let zero = returning(core, |core| integer(core, Integer(0_i32)));
                 let second = core.computation_lambda(zero);
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+                core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![first, second],
+                    [1_usize, 1]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                )
             },
         ),
         case(
@@ -1007,7 +1014,14 @@ fn hand_built_declared_data_cases_agree()
                 let own = returning(core, |core| variable(core, Index(0)));
                 let second = core.computation_lambda(own);
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+                core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![first, second],
+                    [1_usize, 1]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                )
             },
         ),
         case(
@@ -1017,7 +1031,12 @@ fn hand_built_declared_data_cases_agree()
                 let scrutinee = constructed(core, NAT, Ordinal(0), Vec::new());
                 let branch = returning(core, |core| integer(core, Integer(99_i32)));
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, alloc::vec![branch])
+                core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![branch],
+                    [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+                )
             },
         ),
         case(
@@ -1036,7 +1055,14 @@ fn hand_built_declared_data_cases_agree()
                 let inner = core.computation_lambda(pair);
                 let cons = core.computation_lambda(inner);
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, alloc::vec![empty, cons])
+                core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![empty, cons],
+                    [0_usize, 2]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                )
             },
         ),
         case(
@@ -1048,7 +1074,12 @@ fn hand_built_declared_data_cases_agree()
                 let own = returning(core, |core| variable(core, Index(0)));
                 let branch = core.computation_lambda(own);
                 let motive = returns_nat(core);
-                let matched = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
+                let matched = core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![branch],
+                    [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+                );
                 let doubled = returning(core, |core| {
                     let bound = variable(core, Index(0));
                     core.value_tuple(&[bound, bound])
@@ -1073,7 +1104,14 @@ fn hand_built_declared_data_cases_agree()
             let step = core.computation_lambda(rebuilt);
             let augend = variable(core, Index(1));
             let motive = returns_nat(core);
-            let matched = core.computation_data_case(augend, motive, alloc::vec![base, step]);
+            let matched = core.computation_data_case(
+                augend,
+                motive,
+                alloc::vec![base, step],
+                [0_usize, 1]
+                    .map(gandr_kernel_term::FieldCount::from)
+                    .to_vec(),
+            );
             let inner = core.computation_lambda(matched);
             let function = core.computation_lambda(inner);
             let plus = recursive(core, function);
@@ -1098,7 +1136,14 @@ fn hand_built_declared_data_cases_agree()
                 let step = core.computation_lambda(inner);
                 let list = variable(core, Index(0));
                 let motive = returns_nat(core);
-                let matched = core.computation_data_case(list, motive, alloc::vec![base, step]);
+                let matched = core.computation_data_case(
+                    list,
+                    motive,
+                    alloc::vec![base, step],
+                    [0_usize, 2]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                );
                 let function = core.computation_lambda(matched);
                 let length = recursive(core, function);
                 let mut list = constructed(core, LIST, Ordinal(0), Vec::new());
@@ -1131,7 +1176,14 @@ fn hand_built_declared_data_cases_agree()
                 let step = core.computation_lambda(descended);
                 let tree = variable(core, Index(0));
                 let motive = returns_nat(core);
-                let matched = core.computation_data_case(tree, motive, alloc::vec![base, step]);
+                let matched = core.computation_data_case(
+                    tree,
+                    motive,
+                    alloc::vec![base, step],
+                    [0_usize, 1]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                );
                 let function = core.computation_lambda(matched);
                 let size = recursive(core, function);
                 let mut tree = constructed(core, TREE, Ordinal(0), Vec::new());
@@ -1162,7 +1214,12 @@ fn hand_built_declared_data_cases_agree()
                 let own = returning(core, |core| variable(core, Index(0)));
                 let branch = core.computation_lambda(own);
                 let motive = returns_nat(core);
-                core.computation_data_case(one, motive, alloc::vec![branch])
+                core.computation_data_case(
+                    one,
+                    motive,
+                    alloc::vec![branch],
+                    [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+                )
             },
         ),
         case(
@@ -1173,7 +1230,14 @@ fn hand_built_declared_data_cases_agree()
                 let first = returning(core, CoreArena::value_unit);
                 let second = returning(core, CoreArena::value_unit);
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+                core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    alloc::vec![first, second],
+                    [0_usize, 0]
+                        .map(gandr_kernel_term::FieldCount::from)
+                        .to_vec(),
+                )
             },
         ),
         case(
@@ -1182,7 +1246,7 @@ fn hand_built_declared_data_cases_agree()
             |core| {
                 let scrutinee = constructed(core, NAT, Ordinal(0), Vec::new());
                 let motive = returns_nat(core);
-                core.computation_data_case(scrutinee, motive, Vec::new())
+                core.computation_data_case(scrutinee, motive, Vec::new(), Vec::new())
             },
         ),
     ]);

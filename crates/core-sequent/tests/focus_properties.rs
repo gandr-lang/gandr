@@ -542,7 +542,9 @@ fn walked(
                             stack.push(Visit::Command(arm.body, under));
                         }
                     },
-                    ConsumerNode::DataCase { ref branches, then } => {
+                    ConsumerNode::DataCase {
+                        ref branches, then, ..
+                    } => {
                         for &branch in branches {
                             stack.push(Visit::Producer(branch, depth));
                         }
@@ -1075,7 +1077,14 @@ fn cases() -> Vec<Case>
     let field = core.value_variable(Zone::Intuitionistic, 0_u32.into());
     let field_returned = core.computation_return(field);
     let on_successor = core.computation_lambda(field_returned);
-    let root = core.computation_data_case(scrutinee, motive, alloc::vec![on_zero, on_successor]);
+    let root = core.computation_data_case(
+        scrutinee,
+        motive,
+        alloc::vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     cases.push(Case {
         label: "nominal match on a datatype constructor",
         core,
@@ -1096,7 +1105,14 @@ fn cases() -> Vec<Case>
     let descent = core.computation_application(recurse, predecessor);
     let step = core.computation_lambda(descent);
     let argument = core.value_variable(Zone::Intuitionistic, 0_u32.into());
-    let matched = core.computation_data_case(argument, motive, alloc::vec![base, step]);
+    let matched = core.computation_data_case(
+        argument,
+        motive,
+        alloc::vec![base, step],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let function = core.computation_lambda(matched);
     let recursive = core.computation_fixpoint(
         function,

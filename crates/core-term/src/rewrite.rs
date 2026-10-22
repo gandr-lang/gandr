@@ -1804,6 +1804,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     scrutinee,
                     motive,
                     ref branches,
+                    ..
                 }) => {
                     self.tasks.extend(
                         branches
@@ -3049,6 +3050,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                 scrutinee,
                 motive,
                 ref branches,
+                ref arities,
             } => {
                 let mut changed = None;
                 for (index, original) in branches.iter().enumerate().rev() {
@@ -3072,6 +3074,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                         rewritten_scrutinee,
                         rewritten_motive,
                         changed.unwrap_or_else(|| branches.clone()),
+                        arities.clone(),
                     )
                 }
             },
