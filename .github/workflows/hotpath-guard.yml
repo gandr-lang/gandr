@@ -6,13 +6,14 @@
 # </critical>
 name: hotpath guard
 
-# A failed `hotpath / <benchmark>` check files one issue per pull request,
-# `perf: #<n> regresses <sites>` (`mise run ci:hotpath-guard`,
-# crates/workflow-hotpath-guard/README.md). hotpath Cloud posts its check
+# A failed `hotpath / <benchmark>` check files a row on each regressed
+# function's issue, `perf: <function>` (`mise run ci:hotpath-guard`,
+# crates/workflow-hotpath-guard/README.md); a passing one marks its pull
+# request's open rows of that benchmark fixed. hotpath Cloud posts its check
 # after the benchmark upload, so the check is never required and nothing
 # waits for it: the check's completion runs this workflow instead. GitHub
 # sends the event for check runs another app creates, from the default
-# branch's copy of this file; the job runs only for a failed hotpath check.
+# branch's copy of this file; the job runs only for a concluded hotpath check.
 on:
   check_run:
     types: [completed]
@@ -37,8 +38,8 @@ env:
 
 jobs:
   file:
-    name: file the failed hotpath checks
-    if: ${{ startsWith(github.event.check_run.name, 'hotpath / ') && github.event.check_run.conclusion == 'failure' && !github.event.repository.fork }}
+    name: file the concluded hotpath checks
+    if: ${{ startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success') && !github.event.repository.fork }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -47,15 +48,32 @@ jobs:
       issues: write
       pull-requests: read
     steps:
+      # Most passing checks have no open row to fix: an issue search for the
+      # pull request's number ends those runs before any build. A match may
+      # be another number in a body, which only costs a run; a check without
+      # a pull request, or a failed one, always runs.
+      - name: look for the pull request's open rows
+        id: rows
+        if: ${{ github.event.check_run.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PULL: ${{ github.event.check_run.pull_requests[0].number }}
+        run: |
+          if [[ -n "$PULL" ]] && [[ $(gh issue list --label kind:performance --state open --search "\"#$PULL\" in:body" --json number --jq length) == 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       # A check_run event's commit is the default branch's head, so the guard
       # never runs the code of the pull request whose check failed.
       - name: git checkout
+        if: ${{ steps.rows.outputs.skip != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
       # mise provides rustup under act, so it installs first, as in ci.yml.
       - name: install mise-managed policy tools
+        if: ${{ steps.rows.outputs.skip != 'true' }}
         # The setup step owns the toolchain on a hosted runner (ci.yml).
         env:
           MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
@@ -66,10 +84,12 @@ jobs:
           cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
           cache_save: false
       - name: setup rust
+        if: ${{ steps.rows.outputs.skip != 'true' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           cache-save: false
-      - name: file the commit's failed checks
+      - name: file the commit's concluded checks
+        if: ${{ steps.rows.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

@@ -542,13 +542,14 @@ awk -v ignore="$ignore" '
 upload "$series-timing" "$scratch/$series-timing-policy.toml"
 {% endraw %}'''
 
-# A commit's failed `hotpath / <benchmark>` checks, filed on one issue per
-# pull request, `perf: #<n> regresses <sites>`, labelled kind:performance and
-# the areas (crates/workflow-hotpath-guard/README.md). The hotpath guard
-# workflow runs it on each failed check's completion. Arguments pass through:
-# `--sha`, optionally `--repository` and `--file-issue`.
+# A commit's concluded `hotpath / <benchmark>` checks, filed on one issue per
+# regressed function, `perf: <function>`, labelled kind:performance and the
+# function's area: its body indexes the function's regressions, each new one
+# a comment (crates/workflow-hotpath-guard/README.md). The hotpath guard
+# workflow runs it on each concluded check's completion. Arguments pass
+# through: `--sha`, optionally `--repository` and `--file-issue`.
 ["ci:hotpath-guard"]
-description = "A commit's failed hotpath checks, filed on its pull request's one issue"
+description = "A commit's hotpath checks, filed on each regressed function's issue"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
 
 # A landing's hotpath verdicts, read on main's push from each merged pull
@@ -558,8 +559,9 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-ho
 # (HOTPATH_PUSH_BEFORE) is read, through the compare API: the checkout holds
 # one commit. Each red check and each report that improves past its policy's
 # band is a row of the open `Hotpath: the landed deltas` tracking issue, whose
-# body the task edits in place; a red row links the pull request's issue the
-# hotpath guard filed. A commit without a pull request number reads nothing.
+# body the task edits in place; a red row links the issues of the functions
+# the pull request regressed, each holding the pull request's row (the hotpath
+# guard's index). A commit without a pull request number reads nothing.
 # GH_REPO names the repository.
 ["ci:hotpath-landed"]
 description = "Add the landed pull requests' hotpath verdicts to the ledger"
@@ -592,17 +594,16 @@ while IFS=' ' read -r commit subject; do
     echo "#$pr carries no hotpath check"
     continue
   fi
-  key="perf: #$pr regresses "
-  issue=$(gh issue list --repo "$repo" --state open --search "\"${key% }\" in:title" --json number,title \
-    | jq -r --arg key "$key" '[.[] | select(.title | startswith($key))] | first | .number // empty')
+  issues=$(gh issue list --repo "$repo" --state all --label kind:performance --limit 100 \
+    --search "\"#$pr\" in:body" --json number,title,body \
+    | jq -r --arg row "| #$pr |" '[.[] | select((.title | startswith("perf: ")) and (.body | contains($row))) | "#\(.number)"] | join(" ")')
   while IFS= read -r run; do
     benchmark=$(jq -r '.name | ltrimstr("hotpath / ")' <<< "$run")
     conclusion=$(jq -r '.conclusion // "pending"' <<< "$run")
     # The summary's heading reads `` `<benchmark>` · <verdict> ``.
     verdict=$(jq -r '.summary | split("\n") | map(select(startswith("### "))) | (first // "") | sub("^### [^·]*· *"; "")' <<< "$run")
     if [[ $conclusion == failure ]]; then
-      row_issue=${issue:+#$issue}
-      row_issue=${row_issue:-—}
+      row_issue=${issues:-—}
     elif grep -qi improv <<< "$verdict"; then
       row_issue='—'
     else
@@ -623,7 +624,7 @@ ledger=$(gh issue list --repo "$repo" --state open --label kind:tracking --searc
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
 if [[ -z $ledger ]]; then
   {
-    printf 'Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy'"'"'s band, is one row here. `mise run ci:hotpath-landed` adds the row on main'"'"'s push; a red row links the pull request'"'"'s issue the hotpath guard filed, which a fix or a stated acceptance closes.\n\n'
+    printf 'Every landing whose `hotpath / <benchmark>` check is red, or whose report improves past its policy'"'"'s band, is one row here. `mise run ci:hotpath-landed` adds the row on main'"'"'s push; a red row links the issues of the functions it regressed, where the pull request'"'"'s row is settled by a fix or a stated acceptance.\n\n'
     printf '| Commit | PR | Benchmark | Verdict | Issue |\n| --- | --- | --- | --- | --- |\n'
   } > "$scratch/ledger.md"
   ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label kind:tracking --label area:workflow \

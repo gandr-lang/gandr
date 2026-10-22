@@ -1,7 +1,10 @@
-//! A commit's checks and pull request, and the one issue per pull request,
+//! A commit's checks and pull request, and each regressed function's issue,
 //! through `gh`, which resolves the repository of an `issue` command from
 //! `GH_REPO` or the checkout.
 
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
 use core::fmt;
 use std::io::Write as _;
 use std::process::Command;
@@ -11,15 +14,26 @@ use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
 
 use crate::check::CommitSha;
-use crate::check::Failure;
+use crate::check::Concluded;
+use crate::check::CrateDir;
 use crate::check::Listed;
 use crate::check::Repository;
+use crate::check::SiteName;
+use crate::check::Unstated;
 use crate::error::GuardError;
+use crate::index::Comment;
+use crate::index::CommentUrl;
+use crate::index::Index;
+use crate::index::IssueBody;
+use crate::index::IssueTitle;
+use crate::index::KIND;
+use crate::index::Run;
+use crate::index::Standing;
+use crate::index::Unposted;
 use crate::report::ListedPull;
 use crate::report::Pull;
+use crate::report::Regression;
 use crate::report::Report;
-use crate::report::Standing;
-use crate::report::TITLE_PREFIX;
 use crate::report::Unpulled;
 use crate::report::pull_of;
 
@@ -44,21 +58,19 @@ impl fmt::Display for IssueNumber
     }
 }
 
-/// What filing the report did.
+/// What filing did to one function's issue.
 ///
 /// # Specification
-/// - provides: the line the binary prints after the report.
+/// - provides: a line the binary prints after the report.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Filed
 {
-    /// A check failed and the subject had no open issue: one was opened, at
-    /// the address `gh` printed.
-    Opened(String),
-    /// A check failed and the subject's issue was open: its title, body and
-    /// labels now state this run.
-    Updated(IssueNumber),
-    /// No hotpath check failed: no issue was read or written.
-    Untouched,
+    /// The function had no issue: one was opened, at the address `gh`
+    /// printed, and closed again when its one row is settled.
+    Opened(IssueTitle, String, Standing),
+    /// The function's issue now states this run, and stands open or was
+    /// closed as its rows stand.
+    Updated(IssueNumber, Standing),
 }
 
 impl fmt::Display for Filed
@@ -73,32 +85,44 @@ impl fmt::Display for Filed
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
+        let state = |standing: Standing| match standing {
+            Standing::Open => "open",
+            Standing::Settled => "closed",
+        };
         match *self {
-            Self::Opened(ref url) => write!(f, "Opened {url}."),
-            Self::Updated(number) => write!(f, "Updated {number}."),
-            Self::Untouched => f.write_str("No hotpath check failed; no issue filed."),
+            Self::Opened(ref title, ref url, standing) => {
+                write!(f, "Opened {url} ({title}), {}.", state(standing))
+            },
+            Self::Updated(number, standing) => write!(f, "Updated {number}, {}.", state(standing)),
         }
     }
 }
 
-/// One issue as `gh issue list --json number,title` prints it.
+/// One issue as `gh issue list --json number,title,state,body` prints it.
 #[derive(Debug, Deserialize)]
 struct ListedIssue
 {
     /// The issue's number.
     number: u64,
     /// The issue's title.
-    title: String,
+    title: IssueTitle,
+    /// `OPEN` or `CLOSED`.
+    state: String,
+    /// The issue's body.
+    #[serde(default)]
+    body: IssueBody,
 }
 
 /// What a `gh` invocation reads on standard input.
 #[derive(Clone, Copy, Debug)]
-enum Feed<'report>
+enum Feed<'text>
 {
     /// Nothing: standard input stays the parent's.
     Nothing,
-    /// The report, as the issue body `--body-file -` reads.
-    Body(&'report Report),
+    /// A comment's report, as `--body-file -` reads it.
+    Report(&'text Report),
+    /// An issue's index, as `--body-file -` reads it.
+    Index(&'text Index),
 }
 
 /// Runs `command`, feeding it `feed` on standard input, and returns what it
@@ -122,7 +146,7 @@ enum Feed<'report>
 /// - hypothesis: L3 — a fake `gh` that succeeds, one that fails with a message,
 ///   and one that records the body it was fed; a swallowed exit status, a lost
 ///   message or an unfed body changes the observed result.
-/// - witness: `tests::cli::a_failed_check_opens_the_issue`
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 fn run(
     command: &mut Command,
@@ -135,13 +159,18 @@ fn run(
         message,
     };
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    if let Feed::Body(_) = feed {
+    let text = match feed {
+        Feed::Nothing => None,
+        Feed::Report(report) => Some(report.to_string()),
+        Feed::Index(index) => Some(index.to_string()),
+    };
+    if text.is_some() {
         command.stdin(Stdio::piped());
     }
     let mut child = command.spawn().map_err(|error| refuse(error.to_string()))?;
-    if let (Feed::Body(report), Some(mut stdin)) = (feed, child.stdin.take()) {
+    if let (Some(text), Some(mut stdin)) = (text, child.stdin.take()) {
         stdin
-            .write_all(report.to_string().as_bytes())
+            .write_all(text.as_bytes())
             .map_err(|error| refuse(error.to_string()))?;
     }
     let output = child
@@ -157,15 +186,15 @@ fn run(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// The failed `hotpath / <benchmark>` checks of `sha`.
+/// The concluded `hotpath / <benchmark>` checks of `sha`.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: every completed `hotpath / ` check of the commit whose conclusion
-///   is `failure`, in the order GitHub lists them, each read by
-///   [`Failure::read`]; every page of the listing is read.
-/// - provides: the checks a report is made of, all of them at once, so the
-///   event of each failed benchmark files the same issue.
+///   is `failure` or `success`, in the order GitHub lists them, each read by
+///   [`Listed::concluded`]; every page of the listing is read.
+/// - provides: the checks a report is made of, all of them at once, so each
+///   benchmark's event files the same rows.
 /// - fails: [`GuardError::Gh`] when the query fails or a line it prints is not
 ///   the JSON this crate reads.
 /// - panics: none.
@@ -176,14 +205,14 @@ fn run(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a commit whose listing holds two failed hotpath checks, a
-///   passing one, a pending one and a failed check of another name; reading any
-///   of the last three as a failure changes the report.
+///   passing one, a pending one and a failed check of another name; reading the
+///   pending or foreign one changes the report.
 /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
 #[inline]
-pub fn failures(
+pub fn checks(
     repository: &Repository,
     sha: &CommitSha,
-) -> Result<Vec<Failure>, GuardError>
+) -> Result<Vec<Concluded>, GuardError>
 {
     let mut query = Command::new("gh");
     query.args([
@@ -194,17 +223,17 @@ pub fn failures(
         ".check_runs[] | {name, status, conclusion, html_url, summary: (.output.summary // \"\")}",
     ]);
     let listing = run(&mut query, Feed::Nothing)?;
-    let mut failures = Vec::new();
+    let mut concluded = Vec::new();
     for line in listing.lines().filter(|line| !line.trim().is_empty()) {
         let listed: Listed = serde_json::from_str(line).map_err(|error| GuardError::Gh {
             command: format!("{query:?}"),
             message: error.to_string(),
         })?;
-        if let Maybe::Present(failure) = listed.failure() {
-            failures.push(failure);
+        if let Maybe::Present(check) = listed.concluded() {
+            concluded.push(check);
         }
     }
-    Ok(failures)
+    Ok(concluded)
 }
 
 /// The pull request `sha` names.
@@ -213,7 +242,7 @@ pub fn failures(
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: the pull request GitHub associates with the commit that it heads,
 ///   else the first it lists; absent when it lists none.
-/// - provides: the subject of the one issue.
+/// - provides: the subject of the rows.
 /// - fails: [`GuardError::Gh`] when the query fails or prints what this crate
 ///   does not read.
 /// - panics: none.
@@ -224,8 +253,8 @@ pub fn failures(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a commit a pull request heads and one none carries;
-///   inventing a pull request or losing one changes the title.
-/// - witness: `tests::cli::a_failed_check_opens_the_issue`
+///   inventing a pull request or losing one changes the rows' subject.
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_commit_without_a_pull_request_is_filed_by_its_sha`
 #[inline]
 pub fn pull(
@@ -244,19 +273,37 @@ pub fn pull(
     Ok(pull_of(sha, listed))
 }
 
-/// Files `report` on its subject's one open issue: opened when none is open,
-/// retitled, rewritten and relabelled when one is; nothing when no check
-/// failed.
+/// One function's issue as filing finds it and leaves it.
+#[derive(Debug)]
+struct Touched
+{
+    /// The issue's number and whether it stood open, when it exists.
+    issue: Maybe<(IssueNumber, Standing), Unstated>,
+    /// The crate the function lives in, for the area label.
+    krate: Maybe<CrateDir, Unstated>,
+    /// Its index, as this run leaves it.
+    index: Index,
+    /// The report owed as a comment.
+    comment: Comment,
+}
+
+/// Files `report` on each regressed function's issue: rows recorded, comments
+/// appended where owed, open rows of passing series marked fixed, and each
+/// issue closed or reopened as its rows stand.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository with
 ///   permission to write issues.
-/// - ensures: when the report stands [`Standing::Regressed`], the open issue
-///   whose title starts with [`Report::key`] carries the report's title, body
-///   and labels, opened with them if none was open; when it stands
-///   [`Standing::Clear`], no `gh` invocation runs.
-/// - provides: one open issue per pull request, updated by each later failed
-///   run; a closed one is history and stays closed.
+/// - ensures: when the report holds no failed and no passed check, no `gh`
+///   invocation runs. Otherwise the `kind:performance` issues are listed once;
+///   each function a failed check regressed has the issue titled `perf:
+///   <function>`, opened when it had none, carrying its row (see
+///   [`Index::record`]), with the report appended first as a comment when
+///   [`Index::owes`] says one is owed; each function with an open row of the
+///   report's subject in a passing series has that row marked fixed; each
+///   touched issue is closed when it stands settled and was open, reopened when
+///   it stands open and was closed.
+/// - provides: one issue per function, its body the index of its regressions.
 /// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
 ///   not the JSON this crate reads.
 /// - panics: none.
@@ -266,35 +313,36 @@ pub fn pull(
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a fake `gh` holding no issue for the pull request, one
-///   holding its issue beside another pull request's whose number it prefixes,
-///   and a clear commit; opening a second issue, editing the other pull
-///   request's or touching any issue while clear changes the recorded
-///   invocations.
-/// - witness: `tests::cli::a_failed_check_opens_the_issue`
-/// - witness: `tests::cli::a_later_run_updates_the_pull_request_issue`
+/// - hypothesis: L3 — a fake `gh` holding no issue, one holding a function's
+///   issue with the pull request's open row, a passing rerun, a shift, and a
+///   settled issue meeting a new regression; a second issue, a comment per
+///   rerun, an open row left after the pass or an issue left in the wrong state
+///   changes the recorded invocations.
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+/// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+/// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+/// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+/// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_clear_commit_files_nothing`
 #[inline]
-pub fn file(report: &Report) -> Result<Filed, GuardError>
+pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 {
-    if report.standing() == Standing::Clear {
-        return Ok(Filed::Untouched);
+    let regressions = report.regressions();
+    if regressions.is_empty() && report.passed().is_empty() {
+        return Ok(Vec::new());
     }
-    let key = report.key().to_string();
-    let title = report.title().to_string();
-    let labels = report.labels();
     let mut list = Command::new("gh");
     list.args([
         "issue",
         "list",
         "--state",
-        "open",
+        "all",
+        "--label",
+        KIND,
         "--limit",
-        "100",
-        "--search",
-        &format!("\"{}\" in:title", key.trim_end()),
+        "1000",
         "--json",
-        "number,title",
+        "number,title,state,body",
     ]);
     let listing = run(&mut list, Feed::Nothing)?;
     let issues: Vec<ListedIssue> =
@@ -302,31 +350,204 @@ pub fn file(report: &Report) -> Result<Filed, GuardError>
             command: format!("{list:?}"),
             message: error.to_string(),
         })?;
-    if let Some(issue) = issues
-        .into_iter()
-        .find(|issue| issue.title.starts_with(TITLE_PREFIX) && issue.title.starts_with(&key))
-    {
-        let mut edit = Command::new("gh");
-        edit.args([
-            "issue",
-            "edit",
-            &issue.number.to_string(),
-            "--title",
-            &title,
-            "--body-file",
-            "-",
-        ]);
-        for label in &labels {
-            edit.args(["--add-label", label]);
+    let subject = report.subject();
+    let regressed = report.regressed();
+    let at = Run {
+        repository: report.repository(),
+        sha: report.sha(),
+        subject: &subject,
+        regressed: &regressed,
+    };
+    let found = |function: &SiteName| {
+        let title = IssueTitle::of(function);
+        issues.iter().find(|issue| issue.title == title)
+    };
+    let mut touched: BTreeMap<SiteName, Touched> = BTreeMap::new();
+    let open = |function: &SiteName, krate: &Maybe<CrateDir, Unstated>| {
+        found(function).map_or_else(
+            || Touched {
+                issue: Maybe::Absent(Unstated),
+                krate: krate.clone(),
+                index: Index::new(function, krate),
+                comment: Comment::Unowed,
+            },
+            |issue| Touched {
+                issue: Maybe::Present((
+                    IssueNumber(issue.number),
+                    if issue.state == "OPEN" {
+                        Standing::Open
+                    }
+                    else {
+                        Standing::Settled
+                    },
+                )),
+                krate: krate.clone(),
+                index: Index::read(&issue.body),
+                comment: Comment::Unowed,
+            },
+        )
+    };
+    for regression in &regressions {
+        let entry = touched
+            .entry(regression.function.clone())
+            .or_insert_with(|| open(&regression.function, &regression.krate));
+        if entry.index.owes(&subject, regression, &regressed) == Comment::Owed {
+            entry.comment = Comment::Owed;
         }
-        run(&mut edit, Feed::Body(report))?;
-        return Ok(Filed::Updated(IssueNumber(issue.number)));
     }
-    let mut create = Command::new("gh");
-    create.args(["issue", "create", "--title", &title, "--body-file", "-"]);
-    for label in &labels {
-        create.args(["--label", label]);
+    for issue in &issues {
+        let Some(function) = issue.title.function()
+        else {
+            continue;
+        };
+        let index = Index::read(&issue.body);
+        let owed = report.passed().keys().any(|series| {
+            index.standing_in(&subject, series) == Standing::Open
+                && !regressions.iter().any(|regression| {
+                    regression.function == function && &regression.series == series
+                })
+        });
+        if owed {
+            touched
+                .entry(function.clone())
+                .or_insert_with(|| open(&function, &Maybe::Absent(Unstated)));
+        }
     }
-    let url = run(&mut create, Feed::Body(report))?;
-    Ok(Filed::Opened(url.trim().to_owned()))
+    let mut filed = Vec::new();
+    for (function, entry) in touched {
+        filed.push(file_function(&function, entry, report, &regressions, &at)?);
+    }
+    Ok(filed)
+}
+
+/// Files the run on `function`'s issue, as [`file()`] states for each touched
+/// function: rows recorded and fixed, the issue opened if it had none, the
+/// report commented when owed, the body written, and the issue closed or
+/// reopened as its rows stand.
+///
+/// # Specification
+/// - requires: `entry` is `function`'s issue as listed, and `regressions` the
+///   report's.
+/// - ensures: as [`file()`] states for one function.
+/// - provides: the filing of one issue.
+/// - fails: [`GuardError::Gh`] when a `gh` invocation fails, or `gh issue
+///   create` prints no issue's address.
+/// - panics: none.
+/// - executable: none — the outcome is the repository's issue state.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`file()`].
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+/// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+/// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
+fn file_function(
+    function: &SiteName,
+    mut entry: Touched,
+    report: &Report,
+    regressions: &[Regression],
+    at: &Run<'_>,
+) -> Result<Filed, GuardError>
+{
+    let unposted = Maybe::Absent(Unposted);
+    let own = || {
+        regressions
+            .iter()
+            .filter(|regression| &regression.function == function)
+    };
+    for regression in own() {
+        entry.index.record(regression, at, &unposted);
+    }
+    for (series, passing) in report.passed() {
+        if !own().any(|regression| &regression.series == series) {
+            entry.index.fix(series, passing, at);
+        }
+    }
+    let (number, was, opened) = match entry.issue {
+        Maybe::Present((number, was)) => (number, was, None),
+        Maybe::Absent(_) => {
+            let title = IssueTitle::of(function);
+            let mut create = Command::new("gh");
+            create.args([
+                "issue",
+                "create",
+                "--title",
+                &title.to_string(),
+                "--body-file",
+                "-",
+            ]);
+            for label in labels(&entry.krate) {
+                create.args(["--label", &label]);
+            }
+            let url = run(&mut create, Feed::Index(&entry.index))?
+                .trim()
+                .to_owned();
+            let number = url
+                .rsplit('/')
+                .next()
+                .and_then(|tail| tail.parse::<u64>().ok())
+                .ok_or_else(|| GuardError::Gh {
+                    command: format!("{create:?}"),
+                    message: format!("printed `{url}`, not an issue's address"),
+                })?;
+            (IssueNumber(number), Standing::Open, Some((title, url)))
+        },
+    };
+    let number_text = number.0.to_string();
+    if entry.comment == Comment::Owed {
+        let mut post = Command::new("gh");
+        post.args(["issue", "comment", &number_text, "--body-file", "-"]);
+        let posted = Maybe::Present(
+            run(&mut post, Feed::Report(report))?
+                .trim()
+                .parse::<CommentUrl>()
+                .unwrap_or_else(|never| match never {}),
+        );
+        for regression in own() {
+            entry.index.record(regression, at, &posted);
+        }
+    }
+    if opened.is_none() || entry.comment == Comment::Owed {
+        let mut edit = Command::new("gh");
+        edit.args(["issue", "edit", &number_text, "--body-file", "-"]);
+        for label in labels(&entry.krate) {
+            edit.args(["--add-label", &label]);
+        }
+        run(&mut edit, Feed::Index(&entry.index))?;
+    }
+    let standing = entry.index.standing();
+    let verb = match (was, standing) {
+        (Standing::Open, Standing::Settled) => Some("close"),
+        (Standing::Settled, Standing::Open) => Some("reopen"),
+        (Standing::Open, Standing::Open) | (Standing::Settled, Standing::Settled) => None,
+    };
+    if let Some(verb) = verb {
+        run(
+            Command::new("gh").args(["issue", verb, &number_text]),
+            Feed::Nothing,
+        )?;
+    }
+    Ok(match opened {
+        Some((title, url)) => Filed::Opened(title, url, standing),
+        None => Filed::Updated(number, standing),
+    })
+}
+
+/// The labels a function's issue carries: [`KIND`], and its crate's area when
+/// the crate is known.
+///
+/// # Specification
+/// trivial.
+fn labels(krate: &Maybe<CrateDir, Unstated>) -> Vec<String>
+{
+    let area = match *krate {
+        Maybe::Present(ref krate) => match krate.area() {
+            Maybe::Present(area) => Some(area.to_string()),
+            Maybe::Absent(_) => None,
+        },
+        Maybe::Absent(_) => None,
+    };
+    core::iter::once(KIND.to_owned()).chain(area).collect()
 }

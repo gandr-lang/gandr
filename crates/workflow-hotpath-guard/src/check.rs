@@ -25,6 +25,9 @@ const METRIC: &str = "**Functions";
 /// The opening of the wall-time line.
 const WALL: &str = "Wall time";
 
+/// The opening of a related-metrics row, after which its cells follow.
+const RELATED: &str = "| [`";
+
 /// The length of a commit's short form.
 const SHORT: usize = 7;
 
@@ -209,56 +212,93 @@ pub(crate) struct Listed
 
 impl Listed
 {
-    /// The check read as a failure, when it is a completed hotpath check that
-    /// failed.
+    /// The check read as a concluded hotpath check: a failure, or a pass.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Maybe::Present`] exactly when the name starts with `hotpath
-    ///   / `, the status is `completed` and the conclusion is `failure`; the
-    ///   failure carries the name's benchmark, the page and the summary read by
-    ///   [`Failure::read`].
-    /// - provides: the checks a report is made of; a pending, passing or
+    ///   / `, the status is `completed` and the conclusion is `failure` or
+    ///   `success`; a failure carries the name's benchmark, the page and the
+    ///   summary read by [`Failure::read`], a pass the benchmark and the page.
+    /// - provides: the checks a report is made of; a pending, cancelled or
     ///   foreign check is none of them.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the three tests are the clause.
+    /// - executable: none — the tests are the clause.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a failed hotpath check, a passing one, a pending one
-    ///   and a failed check of another name; keeping any of the last three
-    ///   files a check that did not fail on hotpath.
+    ///   and a failed check of another name; reading the pending or foreign one
+    ///   as concluded, or the passing one as failed, changes the report.
     /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
+    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
     #[inline]
-    pub(crate) fn failure(self) -> Maybe<Failure, Passed>
+    pub(crate) fn concluded(self) -> Maybe<Concluded, Unconcluded>
     {
         match (
             self.name.strip_prefix(CHECK_PREFIX),
             self.status.as_str(),
             self.conclusion.as_deref(),
         ) {
-            (Some(benchmark), "completed", Some("failure")) => Maybe::Present(Failure::read(
-                Benchmark(benchmark.to_owned()),
-                RunUrl(self.html_url),
-                &self.summary,
-            )),
-            _ => Maybe::Absent(Passed),
+            (Some(benchmark), "completed", Some("failure")) => {
+                Maybe::Present(Concluded::Failed(Failure::read(
+                    Benchmark(benchmark.to_owned()),
+                    RunUrl(self.html_url),
+                    &self.summary,
+                )))
+            },
+            (Some(benchmark), "completed", Some("success")) => Maybe::Present(Concluded::Passed {
+                benchmark: Benchmark(benchmark.to_owned()),
+                run: RunUrl(self.html_url),
+            }),
+            _ => Maybe::Absent(Unconcluded),
         }
     }
 }
 
-/// Why a listed check is no failure: it is pending, it passed, or it is not
-/// a hotpath check.
+/// A completed hotpath check: failed, or passed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Concluded
+{
+    /// The check failed.
+    Failed(Failure),
+    /// The check passed.
+    Passed
+    {
+        /// The benchmark the check judged.
+        benchmark: Benchmark,
+        /// The check's page.
+        run: RunUrl,
+    },
+}
+
+/// Why a listed check is not concluded: it is pending or cancelled, or it is
+/// not a hotpath check.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Passed;
+pub struct Unconcluded;
 
 /// A benchmark: the part of a check's name after `hotpath / `.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Benchmark(String);
+
+impl FromStr for Benchmark
+{
+    type Err = core::convert::Infallible;
+
+    /// Reads a benchmark's name as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        Ok(Self(text.to_owned()))
+    }
+}
 
 impl fmt::Display for Benchmark
 {
@@ -280,6 +320,21 @@ impl fmt::Display for Benchmark
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunUrl(String);
+
+impl FromStr for RunUrl
+{
+    type Err = core::convert::Infallible;
+
+    /// Reads a check's page as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        Ok(Self(text.to_owned()))
+    }
+}
 
 impl fmt::Display for RunUrl
 {
@@ -335,6 +390,21 @@ pub struct Summary(String);
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SiteName(String);
+
+impl FromStr for SiteName
+{
+    type Err = core::convert::Infallible;
+
+    /// Reads a profiled name as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        Ok(Self(text.to_owned()))
+    }
+}
 
 impl SiteName
 {
@@ -401,6 +471,22 @@ pub struct Site
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CrateDir(String);
 
+impl fmt::Display for CrateDir
+{
+    /// Writes the directory's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
 impl CrateDir
 {
     /// The area label of the crate's tier: `core-checker` is `area:core`.
@@ -463,7 +549,7 @@ impl FromStr for AreaLabel
     /// - hypothesis: L3 — a regressed pull request's `area:theory` beside
     ///   `kind:feature`; keeping the kind or losing the area changes the
     ///   issue's labels.
-    /// - witness: `tests::cli::a_failed_check_opens_the_issue`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -502,6 +588,190 @@ pub struct Section
     pub sites: Vec<Site>,
 }
 
+/// Whether a related-metrics row's call count moved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Calls
+{
+    /// Every row's calls read the same before and after.
+    Unchanged,
+    /// Some row's calls changed.
+    Changed,
+}
+
+/// A percentage change, in tenths of a point: `+3.2%` is 32.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Percent(i64);
+
+impl fmt::Display for Percent
+{
+    /// Writes the change signed, with its tenth when it has one: `+31`,
+    /// `+3.2`, `-5`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let sign = if self.0 < 0 { "-" } else { "+" };
+        let whole = self.0.unsigned_abs().div_euclid(10);
+        match self.0.unsigned_abs().rem_euclid(10) {
+            0 => write!(f, "{sign}{whole}"),
+            tenth => write!(f, "{sign}{whole}.{tenth}"),
+        }
+    }
+}
+
+impl FromStr for SummaryLine
+{
+    type Err = core::convert::Infallible;
+
+    /// Reads a line as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        Ok(Self(text.to_owned()))
+    }
+}
+
+impl SummaryLine
+{
+    /// A section heading's metric: `Functions · timing` is `timing`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the line after `Functions · `, or the whole line without it.
+    /// - provides: an index row's metric.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the strip is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the allocations and timing headings; keeping the
+    ///   prefix changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    #[must_use]
+    #[inline]
+    pub fn metric(&self) -> Self
+    {
+        Self(
+            self.0
+                .strip_prefix("Functions · ")
+                .unwrap_or(&self.0)
+                .to_owned(),
+        )
+    }
+
+    /// A site line's numbers: the line after its link's `): `.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the line after its first `): `, or the whole line without
+    ///   one.
+    /// - provides: an index row's delta.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the split is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a site line with its link; keeping the link changes
+    ///   the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    #[must_use]
+    #[inline]
+    pub fn delta(&self) -> Self
+    {
+        Self(
+            self.0
+                .split_once("): ")
+                .map_or(self.0.as_str(), |(_, delta)| delta)
+                .to_owned(),
+        )
+    }
+
+    /// The line's first bold percentage: `**+31%**` is +31.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first `**…%**` span whose inside reads as an optionally
+    ///   signed number with at most one decimal, in tenths of a point; absent
+    ///   when none does.
+    /// - provides: the delta a runner shift compares.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the scan is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a site's `avg` delta beside its `total` one, a wall
+    ///   line, a decimal change and a line without one; reading the second
+    ///   delta, dropping the decimal or the sign changes the shift.
+    /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
+    #[inline]
+    pub fn percent(&self) -> Maybe<Percent, Unstated>
+    {
+        for (start, _) in self.0.match_indices("**") {
+            let Some((number, _)) = self
+                .0
+                .get(start.saturating_add(2) ..)
+                .and_then(|rest| rest.split_once("%**"))
+            else {
+                continue;
+            };
+            let (negative, digits) = number.strip_prefix('-').map_or_else(
+                || (false, number.strip_prefix('+').unwrap_or(number)),
+                |digits| (true, digits),
+            );
+            let (whole, tenth) = digits.split_once('.').unwrap_or((digits, "0"));
+            let decimal =
+                |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+            if !decimal(whole) || !decimal(tenth) || tenth.len() > 1 {
+                continue;
+            }
+            let (Ok(whole), Ok(tenth)) = (whole.parse::<i64>(), tenth.parse::<i64>())
+            else {
+                continue;
+            };
+            let tenths = whole.saturating_mul(10).saturating_add(tenth);
+            return Maybe::Present(Percent(if negative {
+                tenths.saturating_neg()
+            }
+            else {
+                tenths
+            }));
+        }
+        Maybe::Absent(Unstated)
+    }
+}
+
+/// Why a failure is no runner shift: it measures allocations, a call count
+/// moved, the commit's allocations failed too, or its deltas differ.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Unshifted;
+
+/// How far a runner shift moved the wall time and every regressed function:
+/// from `low` to `high`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Shift
+{
+    /// The smallest delta.
+    pub low: Percent,
+    /// The largest delta.
+    pub high: Percent,
+}
+
+/// The widest spread of deltas a runner shift admits, in tenths of a point:
+/// in the shift that motivated it, every function moved +25 to +31 % together.
+const SHIFT_BAND: i64 = 80;
+
 /// A failed hotpath check, read from its summary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Failure
@@ -515,6 +785,8 @@ pub struct Failure
     pub wall: Maybe<SummaryLine, Unstated>,
     /// Each metric's sites over threshold.
     pub sections: Vec<Section>,
+    /// Whether a related-metrics row's calls moved.
+    pub calls: Calls,
 }
 
 impl Failure
@@ -529,8 +801,10 @@ impl Failure
     ///   ending `· fails the check` is a site of the open section, or of a
     ///   section headed `Functions` when none is open, named by its first
     ///   backquoted link text and placed in the crate its link's `crates/`
-    ///   component names. Every other line is ignored, so a summary of another
-    ///   shape reads as a failure without sites.
+    ///   component names; the calls are changed when a related-metrics row's
+    ///   second cell carries a percentage or differs either side of `→`. Every
+    ///   other line is ignored, so a summary of another shape reads as a
+    ///   failure without sites.
     /// - provides: the sites and numbers the issue states.
     /// - fails: never.
     /// - panics: none.
@@ -539,9 +813,10 @@ impl Failure
     /// # Adequacy
     /// - hypothesis: L3 — the summary of a real failed `gandr` check: five
     ///   sites under allocations, the wall line, and the related-metrics tables
-    ///   after them; a table row read as a site, a lost heading or a wrong
-    ///   crate changes the reading.
+    ///   after them; a table row read as a site, a lost heading, a wrong crate
+    ///   or a moved call count read as unchanged changes the reading.
     /// - witness: `check::tests::a_summary_reads_into_its_sites`
+    /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
     #[must_use]
     #[inline]
     pub fn read(
@@ -552,6 +827,7 @@ impl Failure
     {
         let mut wall = Maybe::Absent(Unstated);
         let mut sections: Vec<Section> = Vec::new();
+        let mut calls = Calls::Unchanged;
         for line in summary.0.lines().map(str::trim_end) {
             if line.starts_with(WALL) && matches!(wall, Maybe::Absent(_)) {
                 wall = Maybe::Present(SummaryLine(line.to_owned()));
@@ -561,6 +837,17 @@ impl Failure
                     metric: SummaryLine(line.trim_matches('*').to_owned()),
                     sites: Vec::new(),
                 });
+            }
+            else if let Some(row) = line.strip_prefix(RELATED) {
+                let moved = row.split('|').nth(1).map(str::trim).is_some_and(|cell| {
+                    cell.contains('%')
+                        || cell
+                            .split_once(" → ")
+                            .is_some_and(|(before, after)| before != after)
+                });
+                if moved {
+                    calls = Calls::Changed;
+                }
             }
             else if let Some(body) = line
                 .strip_prefix(WARNING)
@@ -592,6 +879,73 @@ impl Failure
             run,
             wall,
             sections,
+            calls,
+        }
+    }
+
+    /// Whether the failure is a runner shift: the wall time and every
+    /// regressed function slower by about the same ratio, as a slower runner
+    /// makes them, rather than a change to the code.
+    ///
+    /// # Specification
+    /// - requires: `commit` holds every failed check of the failure's commit.
+    /// - ensures: [`Maybe::Present`] exactly when the failure has sites, each
+    ///   of its sections and of every failure in `commit` measures timing (its
+    ///   heading ends `timing`, so the allocation report is clean), no
+    ///   related-metrics row's calls moved, and the wall line's delta and each
+    ///   site's first delta are all stated, all positive and within 8 points of
+    ///   each other; the shift carries the smallest and the largest.
+    /// - provides: the `runner shift` row, filed without a comment.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the conjunction is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real shift's timing failure (wall +28, `decide`
+    ///   +31), the same beside a failed allocation check, with a moved call
+    ///   count, and a real regression (wall +27, `decide` +45); reading any of
+    ///   the last three as a shift, or the first as none, changes the row.
+    /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
+    #[inline]
+    pub fn shift(
+        &self,
+        commit: &[Self],
+    ) -> Maybe<Shift, Unshifted>
+    {
+        let timing = |failure: &Self| {
+            failure
+                .sections
+                .iter()
+                .all(|section| section.metric.0.ends_with("timing"))
+        };
+        let sites = self
+            .sections
+            .iter()
+            .flat_map(|section| section.sites.iter());
+        if sites.clone().next().is_none()
+            || !commit.iter().chain(core::iter::once(self)).all(timing)
+            || self.calls == Calls::Changed
+        {
+            return Maybe::Absent(Unshifted);
+        }
+        let Maybe::Present(ref wall) = self.wall
+        else {
+            return Maybe::Absent(Unshifted);
+        };
+        let mut deltas = Vec::new();
+        for line in core::iter::once(wall).chain(sites.map(|site| &site.line)) {
+            match line.percent() {
+                Maybe::Present(delta) => deltas.push(delta),
+                Maybe::Absent(_) => return Maybe::Absent(Unshifted),
+            }
+        }
+        match (deltas.iter().min(), deltas.iter().max()) {
+            (Some(&low), Some(&high))
+                if low.0 > 0 && high.0.saturating_sub(low.0) <= SHIFT_BAND =>
+            {
+                Maybe::Present(Shift { low, high })
+            },
+            _ => Maybe::Absent(Unshifted),
         }
     }
 }
@@ -603,14 +957,18 @@ mod tests
 
     use super::AreaLabel;
     use super::Benchmark;
+    use super::Calls;
     use super::CommitSha;
     use super::CrateDir;
     use super::Failure;
+    use super::Percent;
     use super::Repository;
     use super::RunUrl;
+    use super::Shift;
     use super::SiteName;
     use super::Summary;
     use super::SummaryLine;
+    use super::Unshifted;
 
     /// The summary of a real failed `gandr` check, trimmed to two sites and
     /// one related-metrics table.
@@ -674,6 +1032,66 @@ Wall time `401.60 ms → 510.60 ms` **+27%**
                 "[`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `1444 → 2558` **+77%**, total `452181 → 813738` **+80%**"
             )
         );
+        assert_eq!(failure.calls, Calls::Changed, "313 → 318 moved");
+    }
+
+    /// A runner shift's failed `gandr-timing` check: the wall time +28 %,
+    /// `decide` +31 %, its calls unchanged.
+    const SHIFTED: &str = "### `gandr-timing` · ⚠️ 1 regression
+Wall time `313.23 ms → 401.90 ms` **+28%**
+
+**Functions · timing**
+⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/e6f58bf/crates/core-checker/src/module.rs#L1009): avg `179.28 µs → 235.30 µs` **+31%** · fails the check
+
+| Timing | Calls | Avg | P95 | Total | % Total |
+|:--|--:|--:|--:|--:|--:|
+| [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/e6f58bf/crates/core-checker/src/module.rs#L1009) | 319 → 319 | 179.28 µs → 235.30 µs +31% | 1.06 ms → 1.38 ms +31% | 57.19 ms → 75.06 ms +31% | 18.3% → 18.7% |
+";
+
+    #[test]
+    fn a_uniform_timing_shift_is_a_runner_shift()
+    {
+        let read = |benchmark: &str, summary: &str| {
+            Failure::read(
+                Benchmark(benchmark.into()),
+                RunUrl("https://github.com/gandr-lang/gandr/runs/1".into()),
+                &Summary(summary.to_owned()),
+            )
+        };
+        let shifted = read("gandr-timing", SHIFTED);
+        assert_eq!(
+            shifted.shift(&[]),
+            Maybe::Present(Shift {
+                low: Percent(280),
+                high: Percent(310),
+            })
+        );
+        assert_eq!(
+            shifted.shift(&[read("gandr", SUMMARY)]),
+            Maybe::Absent(Unshifted),
+            "the commit's allocations failed too"
+        );
+        let moved = read(
+            "gandr-timing",
+            &SHIFTED.replace("319 → 319", "319 → 325 +1.9%"),
+        );
+        assert_eq!(
+            moved.shift(&[]),
+            Maybe::Absent(Unshifted),
+            "a call count moved"
+        );
+        let real = read("gandr-timing", &SHIFTED.replace("**+31%**", "**+45%**"));
+        assert_eq!(real.shift(&[]), Maybe::Absent(Unshifted), "+28 against +45");
+        let decimal = read("gandr-timing", &SHIFTED.replace("**+31%**", "**+30.5%**"));
+        assert_eq!(
+            decimal.shift(&[]),
+            Maybe::Present(Shift {
+                low: Percent(280),
+                high: Percent(305),
+            })
+        );
+        assert_eq!(Percent(305).to_string(), "+30.5");
+        assert_eq!(Percent(-50).to_string(), "-5");
     }
 
     #[test]

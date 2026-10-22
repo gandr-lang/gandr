@@ -1,37 +1,46 @@
 //! **Hotpath guard**: a commit's failed `hotpath / <benchmark>` checks, filed
-//! on one issue per pull request, `perf: #<n> regresses <sites>`, for the
-//! triage lane to route to the authoring lane.
+//! on one issue per regressed function, `perf: <function>`, whose body is the
+//! index of that function's regressions and whose comments are their reports.
 //!
-//! - [`check`] reads a failed check's summary into its wall-time line and the
-//!   sites over its policy's threshold.
-//! - [`report`] names the pull request, and renders the title, the labels and
-//!   the body with its `## Lint` heading.
-//! - [`github`] lists the commit's checks and pull request and keeps the one
-//!   issue in step through `gh`.
+//! - [`check`] reads a concluded check: a failed one's summary into its
+//!   wall-time line, the sites over its policy's threshold and whether it is a
+//!   runner shift, a passed one into its benchmark.
+//! - [`report`] names the pull request, lists each function's regression per
+//!   benchmark, and renders the report a comment carries.
+//! - [`index`] reads and rewrites a function's index: its rows, their status
+//!   and the issue's standing.
+//! - [`github`] lists the commit's checks, its pull request and the
+//!   `kind:performance` issues, and keeps each function's issue in step through
+//!   `gh`.
 //!
 //! # Decisions
 //!
 //! **The check stays non-blocking; the issue is the guard.** hotpath Cloud
-//! posts its check after the benchmark upload, which can land after the rest
-//! of the pipeline, so a required check would hold every pull request for
-//! it. The guard runs on the check's completion instead, so the regression is
-//! filed whether or not the pull request has merged.
+//! posts its check after the benchmark upload, so a required check would hold
+//! every pull request for it; the guard runs on the check's completion
+//! instead, before or after the merge.
 //!
-//! **One issue per pull request, every failed benchmark in it.** Each failed
-//! check's event reads all of the commit's hotpath checks, so the `gandr`
-//! and `gandr-timing` events write the same issue and the later one loses
-//! nothing. The title opens `perf: #<n> regresses `, which finds the issue
-//! again; a later failed run retitles it. A commit no pull request carries is
-//! keyed by its short form. A closed issue stays closed: a regression after
-//! the close is a new issue.
+//! **One issue per function, not per pull request.** Three pull requests
+//! regressing `module::decide` in one afternoon gave three issues, two of
+//! them one runner shift, to be claimed together. The issue is the
+//! function's, `perf: <function>`; a check naming several functions touches
+//! several issues. One issue per pull request, the alternative, scattered a
+//! function's history.
+//!
+//! **The body is the index; each regression is a comment.** One row per pull
+//! request and benchmark, rewritten in place; everything around the table
+//! stays as written. A new regression's report is a comment its row links,
+//! so no fact lives only in a comment; a rerun adds none ([`index`]).
+//!
+//! **Runner shift.** A timing failure whose wall time and every regressed
+//! function moved up together, calls and allocations unchanged, is the
+//! runner: its row proposes the policy's false-positive step to the owner
+//! and adds no comment ([`check::Failure::shift`]). The summary lists only
+//! the functions over threshold, so the wall time stands for the rest.
 //!
 //! **The pull request the commit heads.** A stack's lower head is carried by
 //! every pull request above it, so the guard names the one whose head is the
 //! commit, and the first listed only when none is.
-//!
-//! **Areas from both ends.** The labels join the pull request's `area:`
-//! labels, the authoring lane, with the tiers of the crates the sites live
-//! in, where the regression shows.
 //!
 //! **Reversal**: hotpath Cloud filing issues itself, or a required hotpath
 //! check.
@@ -52,11 +61,12 @@
 pub mod check;
 pub mod error;
 pub mod github;
+pub mod index;
 pub mod report;
 
 pub use crate::check::CommitSha;
 pub use crate::check::Repository;
 pub use crate::error::GuardError;
 pub use crate::github::Filed;
+pub use crate::index::Standing;
 pub use crate::report::Report;
-pub use crate::report::Standing;
