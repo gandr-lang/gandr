@@ -362,9 +362,12 @@ fn frames<Reading>(
 /// The terminal's error when it cannot be claimed, drawn on or restored.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the loop it runs is witnessed under a scripted bus; the
-///   terminal setup and restore are `gandr tui`'s.
+/// - hypothesis: L3 — the loop it runs is witnessed under a scripted bus. On a
+///   pseudo-terminal on Linux, a bus the hub has already closed completes the
+///   view, sends one detach line, and leaves the terminal's settings as they
+///   were.
 /// - witness: `follow::tests::the_view_paints_what_the_bus_sends`
+/// - witness: `tests::terminal::the_side_view_claims_and_restores_a_terminal`
 #[inline]
 pub fn follow<Reading, Writing>(
     reading: Reading,
