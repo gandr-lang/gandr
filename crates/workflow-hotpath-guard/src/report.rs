@@ -1,28 +1,30 @@
-//! One commit's failed hotpath checks, as the issue that names its pull
-//! request: the title, the labels and the Markdown body.
+//! One commit's concluded hotpath checks and the pull request they name: the
+//! regressions each function's index records, and the report a regression's
+//! comment carries.
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::fmt;
+use core::str::FromStr;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
 
-use crate::check::AreaLabel;
+use crate::check::Benchmark;
 use crate::check::CommitSha;
+use crate::check::Concluded;
+use crate::check::CrateDir;
 use crate::check::Failure;
 use crate::check::Repository;
-
-/// The opening every title the guard files carries, before its subject.
-pub const TITLE_PREFIX: &str = "perf: ";
-
-/// The label every issue the guard files carries.
-pub const KIND: &str = "kind:performance";
-
-/// How long a title's list of sites may grow before the rest is counted.
-const TITLE_SITES: usize = 120;
+use crate::check::RunUrl;
+use crate::check::Shift;
+use crate::check::SiteName;
+use crate::check::SummaryLine;
+use crate::check::Unshifted;
+use crate::check::Unstated;
 
 /// A pull request's number.
 #[repr(transparent)]
@@ -56,8 +58,6 @@ pub(crate) struct ListedPull
     html_url: String,
     /// Its head.
     head: ListedHead,
-    /// Its labels.
-    labels: Vec<ListedLabel>,
 }
 
 /// A pull request's head as GitHub answers it.
@@ -71,15 +71,6 @@ struct ListedHead
     sha: String,
 }
 
-/// A label as GitHub answers it.
-#[repr(transparent)]
-#[derive(Debug, Deserialize)]
-struct ListedLabel
-{
-    /// The label's name.
-    name: String,
-}
-
 /// The pull request a failed check names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pull
@@ -90,8 +81,6 @@ pub struct Pull
     url: String,
     /// Its branch.
     branch: String,
-    /// Its `area:` labels.
-    areas: BTreeSet<AreaLabel>,
 }
 
 /// Why a commit names no pull request: none carries it.
@@ -141,30 +130,69 @@ pub(crate) fn pull_of(
             number: PullNumber(pull.number),
             url: pull.html_url,
             branch: pull.head.branch,
-            areas: pull
-                .labels
-                .into_iter()
-                .filter_map(|label| label.name.parse::<AreaLabel>().ok())
-                .collect(),
         }),
         None => Maybe::Absent(Unpulled),
     }
 }
 
-/// Whether the commit calls for the issue.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Standing
+/// What a row of an index is keyed by: the pull request, `#1358`, or the
+/// commit no pull request carries, `` `914a768` ``.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Subject(String);
+
+impl FromStr for Subject
 {
-    /// At least one hotpath check failed.
-    Regressed,
-    /// No hotpath check failed: nothing is filed.
-    Clear,
+    type Err = core::convert::Infallible;
+
+    /// Reads a row's first cell as written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        Ok(Self(text.to_owned()))
+    }
 }
 
-/// A commit's failed hotpath checks and the pull request they name.
+impl fmt::Display for Subject
+{
+    /// Writes the subject as an index's first cell holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+/// One function's regression in one failed check: what its index row states.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Regression
+{
+    /// The function, by its profiled name.
+    pub function: SiteName,
+    /// The crate its source lives in.
+    pub krate: Maybe<CrateDir, Unstated>,
+    /// The benchmark whose check failed.
+    pub series: Benchmark,
+    /// The check's page.
+    pub run: RunUrl,
+    /// The metric: `allocations` or `timing`.
+    pub metric: SummaryLine,
+    /// The before/after numbers: `` avg `1444 → 2558` **+77%** ``.
+    pub delta: SummaryLine,
+    /// The runner shift the check reads as, if it is one.
+    pub shift: Maybe<Shift, Unshifted>,
+}
+
+/// A commit's concluded hotpath checks and the pull request they name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Report
 {
@@ -176,259 +204,201 @@ pub struct Report
     pull: Maybe<Pull, Unpulled>,
     /// The failed checks, in the order GitHub lists them.
     failures: Vec<Failure>,
+    /// The passed checks' benchmarks, each with its page.
+    passed: BTreeMap<Benchmark, RunUrl>,
 }
 
 impl Report
 {
-    /// The report of `sha`'s failed checks.
+    /// The report of `sha`'s concluded checks.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the failed checks in their order, and each passed check's
+    ///   benchmark with its page, the first listed kept for a benchmark listed
+    ///   twice.
+    /// - provides: the report a run files.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the split is the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a failed, a passed and a second passed check of one
+    ///   benchmark; a failure kept as passed, or the later page kept, changes
+    ///   the rows.
+    /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
+    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         repository: Repository,
         sha: CommitSha,
         pull: Maybe<Pull, Unpulled>,
-        failures: Vec<Failure>,
+        checks: Vec<Concluded>,
     ) -> Self
     {
+        let mut failures = Vec::new();
+        let mut passed = BTreeMap::new();
+        for check in checks {
+            match check {
+                Concluded::Failed(failure) => failures.push(failure),
+                Concluded::Passed { benchmark, run } => {
+                    passed.entry(benchmark).or_insert(run);
+                },
+            }
+        }
         Self {
             repository,
             sha,
             pull,
             failures,
+            passed,
         }
     }
 
-    /// Whether any hotpath check failed.
+    /// The repository the checks ran in.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Standing::Regressed`] exactly when a failure is held.
-    /// - provides: the verdict the issue is filed by.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a commit with two failed checks and one with none;
-    ///   filing the clear one or not the other changes the invocations.
-    /// - witness: `tests::cli::a_failed_check_opens_the_issue`
-    /// - witness: `tests::cli::a_clear_commit_files_nothing`
-    #[spec(ensures: |ret| matches!(ret, Standing::Regressed) != self.failures.is_empty())]
+    /// trivial.
     #[must_use]
     #[inline]
-    pub fn standing(&self) -> Standing
+    pub const fn repository(&self) -> &Repository
     {
-        if self.failures.is_empty() {
-            Standing::Clear
-        }
-        else {
-            Standing::Regressed
-        }
+        &self.repository
     }
 
-    /// The title's opening that finds the subject's issue: `perf: #1358
-    /// regresses ` for a pull request, `perf: 914a768 regresses ` for a
-    /// commit none carries.
+    /// The commit the checks ran on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn sha(&self) -> &CommitSha
+    {
+        &self.sha
+    }
+
+    /// The benchmarks whose checks passed, each with its page.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn passed(&self) -> &BTreeMap<Benchmark, RunUrl>
+    {
+        &self.passed
+    }
+
+    /// The key of the report's rows: the pull request's number, or the
+    /// commit's short form in backquotes when no pull request carries it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`TITLE_PREFIX`], the pull request's number or the commit's
-    ///   short form, then ` regresses `.
-    /// - provides: the key of the one issue per pull request.
+    /// - ensures: `#<n>` for a pull request; `` `<short>` `` for a bare commit.
+    /// - provides: the first cell of every row this run writes, so a later run
+    ///   of the same pull request finds its row.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a pull request's opening and a bare commit's; a
-    ///   missing space or the branch in place of the number lets one pull
-    ///   request's issue match another's.
-    /// - witness: `tests::cli::a_later_run_updates_the_pull_request_issue`
+    /// - hypothesis: L3 — a pull request's subject and a bare commit's; the
+    ///   branch for the number, or the full commit, misses the earlier row.
     /// - witness: `tests::cli::a_commit_without_a_pull_request_is_filed_by_its_sha`
-    #[spec(ensures: |ret| ret.0.starts_with(TITLE_PREFIX) && ret.0.ends_with(" regresses "))]
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    #[spec(ensures: |ret| ret.0.starts_with('#') || ret.0.starts_with('`'))]
     #[must_use]
     #[inline]
-    pub fn key(&self) -> IssueKey
+    pub fn subject(&self) -> Subject
     {
-        IssueKey(match self.pull {
-            Maybe::Present(ref pull) => format!("{TITLE_PREFIX}{} regresses ", pull.number),
-            Maybe::Absent(_) => format!("{TITLE_PREFIX}{} regresses ", self.sha.short()),
+        Subject(match self.pull {
+            Maybe::Present(ref pull) => pull.number.to_string(),
+            Maybe::Absent(_) => format!("`{}`", self.sha.short()),
         })
     }
 
-    /// The issue's title: the key, then the regressed sites.
+    /// Each function the failed checks regressed, once per benchmark.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Report::key`] followed by each distinct site's short name
-    ///   in reading order, comma-separated, while the list stays within 120
-    ///   bytes, then `and <n> more` for the rest; the failed benchmarks' names
-    ///   when no site was read.
-    /// - provides: the title the issue is opened or retitled with.
+    /// - ensures: one regression per distinct function and failed benchmark,
+    ///   from the first site naming it, in reading order; its metric is the
+    ///   section heading after `Functions · `, its delta the site's line after
+    ///   its link, and its shift [`Failure::shift`] over the commit's failures.
+    /// - provides: the rows this run writes.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the walk is the clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a real regression's five sites across two checks, one
-    ///   repeated, and a check without sites; a repeated site, a lost one or an
-    ///   empty title changes it.
-    /// - witness: `tests::cli::a_failed_check_opens_the_issue`
-    /// - witness: `report::tests::a_long_list_of_sites_is_counted`
-    #[spec(ensures: |ret| ret.0.starts_with(self.key().0.as_str()))]
+    /// - hypothesis: L3 — two failed checks naming `decide` once each and a
+    ///   second site in one; a merged benchmark, a lost site or a link left in
+    ///   the delta changes the rows.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[must_use]
     #[inline]
-    pub fn title(&self) -> IssueTitle
+    pub fn regressions(&self) -> Vec<Regression>
     {
         let mut seen = BTreeSet::new();
-        let mut names: Vec<String> = Vec::new();
-        for site in self
-            .failures
-            .iter()
-            .flat_map(|failure| failure.sections.iter())
-            .flat_map(|section| section.sites.iter())
-        {
-            let name = site.name.short();
-            if seen.insert(name.clone()) {
-                names.push(name.to_string());
+        let mut regressions = Vec::new();
+        for failure in &self.failures {
+            let shift = failure.shift(&self.failures);
+            for section in &failure.sections {
+                for site in &section.sites {
+                    if !seen.insert((&site.name, &failure.benchmark)) {
+                        continue;
+                    }
+                    regressions.push(Regression {
+                        function: site.name.clone(),
+                        krate: site.krate.clone(),
+                        series: failure.benchmark.clone(),
+                        run: failure.run.clone(),
+                        metric: section.metric.metric(),
+                        delta: site.line.delta(),
+                        shift,
+                    });
+                }
             }
         }
-        if names.is_empty() {
-            names = self
-                .failures
-                .iter()
-                .map(|failure| failure.benchmark.to_string())
-                .collect();
-        }
-        let mut list = String::new();
-        let mut kept = 0_usize;
-        for name in &names {
-            let grown = list.len().saturating_add(name.len()).saturating_add(2);
-            if kept > 0 && grown > TITLE_SITES {
-                break;
-            }
-            if kept > 0 {
-                list.push_str(", ");
-            }
-            list.push_str(name);
-            kept = kept.saturating_add(1);
-        }
-        let rest = names.len().saturating_sub(kept);
-        if rest > 0 {
-            list.push_str(" and ");
-            list.push_str(&rest.to_string());
-            list.push_str(" more");
-        }
-        IssueTitle(format!("{}{list}", self.key().0))
+        regressions
     }
 
-    /// The labels the issue carries: [`KIND`], the pull request's areas and
-    /// the areas of the crates the sites live in.
+    /// The functions the failed checks regressed, by name, sorted, each once.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`KIND`] first, then the union of the pull request's `area:`
-    ///   labels and each site's crate tier, sorted, each once.
-    /// - provides: the labels triage routes by: the authoring lane's area and
-    ///   the area the regression shows in.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a pull request labelled `area:theory` regressing
-    ///   sites in `core-checker` and `surface-driver`; dropping the pull
-    ///   request's area or a site's changes the labels.
-    /// - witness: `tests::cli::a_failed_check_opens_the_issue`
-    #[spec(ensures: |ret| ret.first().map(String::as_str) == Some(KIND))]
+    /// trivial.
     #[must_use]
     #[inline]
-    pub fn labels(&self) -> Vec<String>
+    pub fn regressed(&self) -> BTreeSet<SiteName>
     {
-        let mut areas: BTreeSet<AreaLabel> = match self.pull {
-            Maybe::Present(ref pull) => pull.areas.clone(),
-            Maybe::Absent(_) => BTreeSet::new(),
-        };
-        for site in self
-            .failures
+        self.failures
             .iter()
             .flat_map(|failure| failure.sections.iter())
             .flat_map(|section| section.sites.iter())
-        {
-            if let Maybe::Present(ref krate) = site.krate
-                && let Maybe::Present(area) = krate.area()
-            {
-                areas.insert(area);
-            }
-        }
-        core::iter::once(KIND.to_owned())
-            .chain(areas.into_iter().map(|area| area.to_string()))
+            .map(|site| site.name.clone())
             .collect()
-    }
-}
-
-/// The opening of a title that finds the one issue of a subject.
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IssueKey(String);
-
-impl fmt::Display for IssueKey
-{
-    /// Writes the opening, its trailing space included.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(&self.0)
-    }
-}
-
-/// An issue's title.
-#[repr(transparent)]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct IssueTitle(String);
-
-impl fmt::Display for IssueTitle
-{
-    /// Writes the title.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        f.write_str(&self.0)
     }
 }
 
 impl fmt::Display for Report
 {
-    /// Writes the issue's body: the subject, each failed check with its run,
-    /// wall-time line and sites, and the `## Lint` heading the fix fills.
+    /// Writes the report a regression's comment carries: the subject, each
+    /// failed check with its run, wall-time line and sites.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a sentence naming the pull request, its branch and the commit
     ///   (or the commit alone), then one `##` section per failed check linking
-    ///   its run with its wall-time line and each metric's sites as a list,
-    ///   then `## Lint` with the question the fix answers; a clear report
-    ///   writes one sentence saying no check failed.
-    /// - provides: the body the issue carries and the job summary prints.
+    ///   its run with its wall-time line and each metric's sites as a list; a
+    ///   report without a failure writes one sentence saying no check failed.
+    /// - provides: the comment the guard appends and the job summary prints.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a real regression's two failed checks; a lost run
-    ///   link, wall line, site or the lint heading changes the asserted body.
-    /// - witness: `tests::cli::a_failed_check_opens_the_issue`
+    ///   link, wall line or site changes the asserted comment.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -457,8 +427,8 @@ impl fmt::Display for Report
         }
         writeln!(
             f,
-            "The check is not required, so nothing waited for it. The triage lane routes \
-             this issue to the authoring lane; a later failed run updates it."
+            "The check is not required, so nothing waited for it. The index above holds \
+             this regression's row."
         )?;
         for failure in &self.failures {
             writeln!(f, "\n## `hotpath / {}`\n", failure.benchmark)?;
@@ -473,13 +443,7 @@ impl fmt::Display for Report
                 }
             }
         }
-        writeln!(
-            f,
-            "\n## Lint\n\nThe fix states whether a quenchant dylint could have refused the \
-             pattern that regressed, as the rule it would check. When it could, the lint \
-             lands in quenchant and on gandr's lint wall at once and is named here; when \
-             it could not, one sentence says why."
-        )
+        Ok(())
     }
 }
 
@@ -489,10 +453,8 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::ListedHead;
-    use super::ListedLabel;
     use super::ListedPull;
     use super::PullNumber;
-    use super::Report;
     use super::pull_of;
 
     /// A listed pull request numbered `$number` whose head is `$sha`.
@@ -505,9 +467,6 @@ mod tests
                     branch: format!("branch-{}", $number),
                     sha: $sha.to_owned(),
                 },
-                labels: vec![ListedLabel {
-                    name: "area:theory".to_owned(),
-                }],
             }
         };
     }
@@ -530,42 +489,5 @@ mod tests
         )];
         assert!(matches!(pull_of(&sha, carried), Maybe::Present(_)));
         assert!(matches!(pull_of(&sha, Vec::new()), Maybe::Absent(_)));
-    }
-
-    #[test]
-    fn a_long_list_of_sites_is_counted()
-    {
-        let summary = (0_u32 .. 12)
-            .map(|index| {
-                format!(
-                    "⚠️ [`gandr_core_checker::module::site_number_{index}`](https://github.com/x/blob/y/crates/core-checker/src/module.rs#L1): avg `1 → 2` **+100%** · fails the check"
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let listed: crate::check::Listed = serde_json::from_value(serde_json::json!({
-            "name": "hotpath / gandr",
-            "status": "completed",
-            "conclusion": "failure",
-            "html_url": "https://github.com/gandr-lang/gandr/runs/1",
-            "summary": summary,
-        }))
-        .unwrap();
-        let Maybe::Present(failure) = listed.failure()
-        else {
-            panic!("a completed failed hotpath check is a failure");
-        };
-        let report = Report::new(
-            "gandr-lang/gandr".parse().unwrap(),
-            "914a768".parse().unwrap(),
-            Maybe::Absent(super::Unpulled),
-            vec![failure],
-        );
-        let title = report.title().to_string();
-        assert!(
-            title.starts_with("perf: 914a768 regresses module::site_number_0, "),
-            "{title}"
-        );
-        assert!(title.ends_with(" and 7 more"), "{title}");
     }
 }

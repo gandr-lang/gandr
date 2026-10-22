@@ -1,11 +1,14 @@
 #!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
+n=$(wc -l < "$FAKE_GH_LOG" | tr -d ' ')
 case "$1 $2" in
   'api --paginate') printf '%s\n' "$FAKE_CHECKS" ;;
   'api repos/'*) printf '%s' "${FAKE_PULLS:-[]}" ;;
   'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
-  'issue create') cat > "$FAKE_GH_BODY"; echo 'https://example.invalid/issues/7' ;;
-  'issue edit') cat > "$FAKE_GH_BODY" ;;
+  'issue create') cat > "$FAKE_GH_BODY.create-$n"; echo "https://example.invalid/issues/$n" ;;
+  'issue comment') cat > "$FAKE_GH_BODY.comment-$3"; echo "https://example.invalid/issues/$3#issuecomment-$n" ;;
+  'issue edit') cat > "$FAKE_GH_BODY.edit-$3" ;;
+  'issue close' | 'issue reopen') ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
