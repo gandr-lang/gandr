@@ -2,6 +2,7 @@
 //! fixpoint unfolding through admission and replay.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 
 use anodized::spec;
 use gandr_kernel_conversion_trace::ConversionDecision;
@@ -20,6 +21,7 @@ use gandr_kernel_core::replay;
 use gandr_kernel_core::stage_order::below;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -33,7 +35,9 @@ use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageId;
+use gandr_kernel_term::StagedPosition;
 use gandr_kernel_term::Standing;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
@@ -83,6 +87,109 @@ enum Placement
     Later,
     /// The family in its own parameter telescope.
     Parameter,
+    /// `T A ⇒ 1`: the family in a static function's domain, a term position.
+    StaticDomain,
+    /// `Path(T A, (), ())`: the family as a path type's carrier.
+    PathCarrier,
+    /// `Path(U, ⌜T A⌝, ⌜1⌝)`: the family quoted at a path type's endpoint.
+    PathEndpoint,
+    /// `⌜T A⌝ = ⌜1⌝`: the family quoted in a path universe.
+    PathUniverse,
+    /// `⌜T A⌝ ~> ⌜1⌝`: the family quoted in a flow universe.
+    FlowUniverse,
+    /// `Path(U, h, ⌜1⌝)`: the family quoted inside the endpoint `h`.
+    Held(Holder),
+}
+
+/// A value or computation former holding the quoted family `c = ⌜T A⌝`
+/// inside a path type's endpoint, a term position whatever the former.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holder
+{
+    /// `#{a = c}`.
+    Record,
+    /// `c ⊗ c`.
+    PathProduct,
+    /// `c ⊗~ c`.
+    FlowProduct,
+    /// `c :: nil`.
+    Cons,
+    /// `c c`, statically applied.
+    StaticApplication,
+    /// `refl c`.
+    Refl,
+    /// `stay c`.
+    Stay,
+    /// `inl c`.
+    Injection,
+    /// `lift c`.
+    Lift,
+    /// `⌜F (T A)⌝`.
+    QuotedComputation,
+    /// `thunk (c.a)`.
+    RecordProjection,
+    /// `thunk (c.0)`.
+    TupleProjection,
+    /// `thunk (x <- return c; return ())`.
+    Bind,
+    /// `thunk ⟨return c⟩`.
+    With,
+    /// `thunk (transport c c)`.
+    Transport,
+}
+
+/// `holder` around the quoted family, a value holding it: `own` is `T A`
+/// and `code` its quote.
+///
+/// # Specification
+/// trivial.
+fn held(
+    arena: &mut TermArena,
+    holder: Holder,
+    (own, code): (ValueTypeId, ValueId),
+) -> ValueId
+{
+    let unit = arena.value_unit();
+    let computation = match holder {
+        Holder::Record => {
+            return arena.value_record(BTreeMap::from([(
+                FieldLabel::from(String::from("a")),
+                code,
+            )]));
+        },
+        Holder::PathProduct => return arena.value_path_product(code, code),
+        Holder::FlowProduct => return arena.value_flow_product(code, code),
+        Holder::Cons => {
+            let nil = arena.value_list_nil();
+            return arena.value_list_cons(code, nil);
+        },
+        Holder::StaticApplication => return arena.value_static_application(code, code),
+        Holder::Refl => return arena.value_path_refl(code),
+        Holder::Stay => return arena.value_stay(code),
+        Holder::Injection => return arena.value_injection(Summand::from(0_usize), code),
+        Holder::Lift => return arena.value_lift(Level::zero(), code),
+        Holder::QuotedComputation => {
+            let returner = arena.comp_type_returner(own);
+            return arena.value_quote_computation(returner);
+        },
+        Holder::RecordProjection => {
+            arena.computation_record_projection(code, FieldLabel::from(String::from("a")))
+        },
+        Holder::TupleProjection => {
+            arena.computation_tuple_projection(code, Component::from(0_usize))
+        },
+        Holder::Bind => {
+            let returned = arena.computation_return(code);
+            let after = arena.computation_return(unit);
+            arena.computation_bind(returned, after)
+        },
+        Holder::With => {
+            let returned = arena.computation_return(code);
+            arena.computation_with(&[returned])
+        },
+        Holder::Transport => arena.computation_transport(code, code),
+    };
+    arena.value_thunk(computation)
 }
 
 /// A fixpoint at `Nat → F Nat` whose body exercises one stage rule.
@@ -378,6 +485,18 @@ fn placed(placement: Placement) -> Result<CheckedId, KernelError>
         Placement::Parameter => {
             parameters.push(own);
             unit
+        },
+        Placement::StaticDomain => arena.value_type_static_pi(own, unit),
+        Placement::PathCarrier => {
+            let point = arena.value_unit();
+            arena.value_type_path(own, point, point)
+        },
+        Placement::PathEndpoint => arena.value_type_path(universe, code, one),
+        Placement::PathUniverse => arena.value_type_path_universe(code, one),
+        Placement::FlowUniverse => arena.value_type_flow_universe(code, one),
+        Placement::Held(holder) => {
+            let held = held(arena, holder, (own, code));
+            arena.value_type_path(universe, held, one)
         },
     };
     let declaration = staging.data(
@@ -1207,8 +1326,36 @@ fn accessibility_is_decided_on_every_former()
             Placement::Parameter,
             KernelError::IndexOccurrence(OccurrenceSite::Parameter(ParameterPosition::from(1))),
         ),
+        (Placement::StaticDomain, KernelError::IndexOccurrence(field)),
+        (Placement::PathCarrier, KernelError::IndexOccurrence(field)),
+        (Placement::PathEndpoint, KernelError::IndexOccurrence(field)),
+        (Placement::PathUniverse, KernelError::IndexOccurrence(field)),
+        (Placement::FlowUniverse, KernelError::IndexOccurrence(field)),
     ] {
         assert_eq!(placed(placement).map(drop), Err(refusal), "{placement:?}");
+    }
+    for holder in [
+        Holder::Record,
+        Holder::PathProduct,
+        Holder::FlowProduct,
+        Holder::Cons,
+        Holder::StaticApplication,
+        Holder::Refl,
+        Holder::Stay,
+        Holder::Injection,
+        Holder::Lift,
+        Holder::QuotedComputation,
+        Holder::RecordProjection,
+        Holder::TupleProjection,
+        Holder::Bind,
+        Holder::With,
+        Holder::Transport,
+    ] {
+        assert_eq!(
+            placed(Placement::Held(holder)).map(drop),
+            Err(KernelError::IndexOccurrence(field)),
+            "{holder:?}"
+        );
     }
 }
 
@@ -1772,6 +1919,102 @@ fn a_structural_fixpoint_needs_an_arrow_to_recurse_on()
         ),
         "nor does a loop at F 1 check as partial: it never returns"
     );
+}
+
+/// Where a two-parameter recursion over `Nat` and `1` recurses.
+#[derive(Clone, Copy, Debug)]
+enum Telescope
+{
+    /// `Nat → 1 → F Nat`, on its first parameter.
+    First,
+    /// `1 → Nat → F Nat`, on its second.
+    Second,
+    /// `Π(u : 1). Nat → F Nat`, on its second, under a dependent binder.
+    UnderPi,
+}
+
+/// Admit the recursion `telescope` names: a case on the `Nat` parameter
+/// returning zero, or calling itself at the successor's field with the unit
+/// parameter handed on.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The kernel's refusal of the recursion.
+fn telescoped(
+    environment: &mut Environment,
+    nat: ConstantIndex,
+    telescope: Telescope,
+) -> Result<CheckedId, KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let nat_type = arena.value_type_data(nat, vec![]);
+    let one = arena.value_type_unit();
+    let returner = arena.comp_type_returner(nat_type);
+    let zero = arena.value_constructor(nat_type, ConstructorTag::from(0), vec![]);
+    let returned = arena.computation_return(zero);
+    // Under the successor's field `p`: `p` 0, the inner parameter 1, the
+    // outer 2, `rec` 3.
+    let field = arena.value_variable(DeBruijnIndex::from(0));
+    let recursive = arena.value_variable(DeBruijnIndex::from(3));
+    let forced = arena.computation_force(recursive);
+    let (classifier, scrutinee, arguments, evidence) = match telescope {
+        Telescope::First => {
+            let inner = arena.comp_type_arrow(one, returner);
+            let unit = arena.value_variable(DeBruijnIndex::from(1));
+            (
+                arena.comp_type_arrow(nat_type, inner),
+                DeBruijnIndex::from(1),
+                [field, unit],
+                FixpointEvidence::StructuralDescent,
+            )
+        },
+        Telescope::Second | Telescope::UnderPi => {
+            let inner = arena.comp_type_arrow(nat_type, returner);
+            let unit = arena.value_variable(DeBruijnIndex::from(2));
+            let classifier = match telescope {
+                Telescope::UnderPi => arena.comp_type_pi(one, inner),
+                Telescope::First | Telescope::Second => arena.comp_type_arrow(one, inner),
+            };
+            (
+                classifier,
+                DeBruijnIndex::from(0),
+                [unit, field],
+                FixpointEvidence::Staged {
+                    position: StagedPosition::from(1_usize),
+                },
+            )
+        },
+    };
+    let [first, second] = arguments;
+    let applied = arena.computation_application(forced, first);
+    let called = arena.computation_application(applied, second);
+    let on_successor = arena.computation_lambda(called);
+    let scrutinee = arena.value_variable(scrutinee);
+    let case = arena.computation_data_case(scrutinee, returner, vec![returned, on_successor]);
+    let inner = arena.computation_lambda(case);
+    let outer = arena.computation_lambda(inner);
+    let fixpoint = arena.computation_fixpoint(outer, evidence);
+    let declared = arena.value_type_thunk(classifier);
+    let value = arena.value_thunk(fixpoint);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// A recursion descends on the parameter its evidence names, wherever that
+/// parameter stands in the telescope: first before another arrow, second
+/// after an arrow, or second under a dependent binder.
+#[test]
+fn a_recursion_descends_on_the_parameter_its_evidence_names()
+{
+    for telescope in [Telescope::First, Telescope::Second, Telescope::UnderPi] {
+        let mut environment = Environment::new();
+        let nat = nat(&mut environment).position();
+        let admitted = telescoped(&mut environment, nat, telescope);
+        assert!(admitted.is_ok(), "{telescope:?}: {admitted:?}");
+    }
 }
 
 #[test]

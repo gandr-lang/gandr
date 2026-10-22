@@ -12,6 +12,8 @@ mod bridge_readmission;
 #[cfg(test)]
 mod codata;
 #[cfg(test)]
+mod conversion;
+#[cfg(test)]
 mod flow_readmission;
 #[cfg(test)]
 mod native_formers;
@@ -19,6 +21,8 @@ mod native_formers;
 mod quantified;
 #[cfg(test)]
 mod recursive_data;
+#[cfg(test)]
+mod refusals;
 #[cfg(test)]
 mod replay_laws;
 #[cfg(test)]
