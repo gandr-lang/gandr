@@ -5,7 +5,11 @@
 //! golden here is written out field by field, and a change to one is a change
 //! to every root built under it.
 
+use core::num::NonZeroU64;
+
 use gandr_storage_chunker::AlgorithmVersion;
+use gandr_storage_chunker::BoundaryEvent;
+use gandr_storage_chunker::BoundaryResidue;
 use gandr_storage_chunker::ByteCount;
 use gandr_storage_chunker::ChunkLimits;
 use gandr_storage_chunker::ChunkerError;
@@ -20,6 +24,8 @@ use gandr_storage_chunker::RecordCount;
 use gandr_storage_chunker::SeedPolicy;
 use gandr_storage_chunker::SeedSalt;
 use gandr_storage_chunker::TokenCap;
+use gandr_storage_chunker::TokenCount;
+use gandr_storage_chunker::TypedChunker;
 use gandr_storage_chunker::TypedChunkerParams;
 
 use crate::common::limits;
@@ -45,6 +51,66 @@ const fn unsupported(
 ) -> ChunkerError
 {
     ChunkerError::UnsupportedProfileValue { field, raw }
+}
+
+/// A profile rebuilt from what it reads back is the same profile, committing
+/// the same bytes, so a consumer that stores the choices rather than the
+/// commitment recovers the root it bound. The salted record-safe profile goes
+/// through its table, seed, normalization, boundary rule and limits, field by
+/// field. The typed profile goes through its kappa and cap as plain non-zero
+/// integers, and a scanner opened on it hands it back. A boundary event goes
+/// through its tokens and residue.
+#[test]
+fn a_profile_rebuilt_from_its_choices_commits_the_same_bytes()
+{
+    let salted = ChunkerParams::new(
+        GearTableVersion::V1,
+        SeedPolicy::PublicSalt(SeedSalt::from([7_u8; 32])),
+        NormalizationPolicy::PreserveBytes,
+        RecordBoundaryRule::BetweenRecords,
+        limits(
+            [4, 8, 16].map(ByteCount::from),
+            [1, 2, 3].map(RecordCount::from),
+        ),
+    );
+    let bounds = salted.limits();
+    let rebuilt = ChunkerParams::new(
+        salted.gear_table(),
+        salted.seed_policy(),
+        salted.normalization(),
+        salted.record_boundary_rule(),
+        limits(
+            [
+                bounds.min_bytes(),
+                bounds.target_bytes(),
+                bounds.max_bytes(),
+            ],
+            [
+                bounds.min_records(),
+                bounds.target_records(),
+                bounds.max_records(),
+            ],
+        ),
+    );
+    assert_eq!(rebuilt.commitment(), salted.commitment());
+    assert_ne!(
+        params(bounds).commitment(),
+        salted.commitment(),
+        "the salt is among the choices read back"
+    );
+
+    let typed = typed!(3_u64, 5_u64);
+    let non_zero = |raw: u64| NonZeroU64::new(raw).expect("a read-back constant is non-zero");
+    let again = TypedChunkerParams::new(
+        Kappa::from(non_zero(u64::from(typed.kappa()))),
+        TokenCap::from(non_zero(u64::from(typed.cap()))),
+    );
+    assert_eq!(again, typed);
+    assert_eq!(again.commitment(), typed.commitment());
+    assert_eq!(TypedChunker::new(&typed).params(), typed);
+
+    let event = BoundaryEvent::new(TokenCount::from(7), BoundaryResidue::from(9));
+    assert_eq!(BoundaryEvent::new(event.tokens(), event.residue()), event);
 }
 
 #[test]
