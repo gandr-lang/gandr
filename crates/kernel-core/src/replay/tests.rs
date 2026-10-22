@@ -2099,6 +2099,105 @@ fn a_returned_leaf_of_a_presented_term_reads_before_the_rules()
 }
 
 #[test]
+fn a_compared_pair_reads_presented_points_by_their_rules_1723()
+{
+    // #1723: `here(loop(x))` and `here(loop(unloop(loop(x))))` over the
+    // presented circle are one shared pair to the engine, their points one
+    // normal form; the kernel closes the closing once the points set aside
+    // are read by the rules, and not over a free circle, nor against
+    // `here(unloop(x))`, whose point no rule relates to `loop(x)`.
+    let (looped, unlooped) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
+    let x = RuleNode::Variable(RuleVariable::from(0_u32));
+    let rules = Presentation::new(alloc::vec![
+        PresentedRule::new(
+            [
+                RuleNode::Constructor(looped),
+                RuleNode::Constructor(unlooped),
+                x
+            ]
+            .into(),
+            [x].into(),
+        ),
+        PresentedRule::new(
+            [
+                RuleNode::Constructor(unlooped),
+                RuleNode::Constructor(looped),
+                x
+            ]
+            .into(),
+            [x].into(),
+        ),
+    ]);
+    let verdict = |presentation: Presentation, peaked: bool| {
+        let mut environment = Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let staged = staging
+            .data(
+                LevelSignature::monomorphic(),
+                Vec::new(),
+                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                kind,
+            )
+            .presented(presentation);
+        let _circle = environment.add_decl(staged).expect("the circle admits");
+        let mut arena = environment.arena().clone();
+        let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let point = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let word = arena.value_constructor(own, looped, alloc::vec![point]);
+        let left = arena.value_here(word);
+        let right = if peaked {
+            let back = arena.value_constructor(own, unlooped, alloc::vec![word]);
+            let peak = arena.value_constructor(own, looped, alloc::vec![back]);
+            arena.value_here(peak)
+        }
+        else {
+            let other = arena.value_constructor(own, unlooped, alloc::vec![point]);
+            arena.value_here(other)
+        };
+        let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque])
+            .presenting(Presentations::of(environment.entries()));
+        let mark = arena.watermark();
+        let verdict = run(
+            &mut arena,
+            &unfoldings,
+            ReplaySides::Values(left, right),
+            EngineClaim::Convertible,
+            &[SHARED],
+        );
+        assert_eq!(
+            arena.watermark(),
+            mark,
+            "the reading mints nothing it keeps"
+        );
+        verdict
+    };
+    let apart = refused(ReplayRefusal::Contradicted {
+        at: TracePosition::from(1),
+    });
+    assert_eq!(
+        verdict(rules.clone(), true),
+        KernelVerdict::Convertible,
+        "the points read to one normal form"
+    );
+    assert_eq!(
+        verdict(Presentation::default(), true),
+        apart,
+        "over a free circle the points stay apart"
+    );
+    assert_eq!(
+        verdict(rules, false),
+        apart,
+        "and no rule relates loop(x) to unloop(x)"
+    );
+}
+
+#[test]
 fn a_cong_chain_composing_to_the_identity_replays_as_its_path()
 {
     // `run q <- cong(inner, p); cong(outer, q)` against `return p`, read
