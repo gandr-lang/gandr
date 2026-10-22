@@ -107,7 +107,7 @@ fn a_later_position_extends_the_block_through_every_former()
             }),
         ),
         arena.value_recorded(Arc::from([RecordedMove::Sent(later), RecordedMove::Closed])),
-        arena.value_session_related(SessionRelation::Equivalence, nothing, later),
+        arena.value_session_related(SessionRelation::Equivalence, nothing, later, nothing),
     ];
     let pair = ComponentCount::from(2_usize);
     let computations = [

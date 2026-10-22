@@ -515,8 +515,14 @@ pub enum Former<'source, Node>
     /// Univalence `ua(e)` over its record; the forward map the core node
     /// carries is derived from the record and never written.
     Univalence(Node),
-    /// A session statement, `bisim(a, b)` or `sim(a, b)`, over its two codes.
-    SessionRelated(gandr_core_term::session::SessionRelation, Node, Node),
+    /// A session statement, `bisim(a, b)` or `sim(a, b)`, over its two codes,
+    /// with the payload paths `bisim(a, b, p)` writes when it writes any.
+    SessionRelated(
+        gandr_core_term::session::SessionRelation,
+        Node,
+        Node,
+        Option<Node>,
+    ),
     /// Directed reflexivity `stay(a)`.
     Stay(Node),
     /// Directed composition, `f then g`.

@@ -31,6 +31,17 @@
 //! codes the bridge erases a stay to the kernel's own stay and a composite to
 //! its sequence, which admission checks by conversion.
 //!
+//! # Payload paths
+//!
+//! `bisim(A, B, p)` owes a path for each pair of payload slots whose types
+//! do not convert, once, in the engine's pair order: `p` checks against
+//! `Path(Type, P, Q)` for one, the tuple of the paths for several. Each is
+//! read as its native certificate, as [`crate::product`] reads a component
+//! ([`CheckRefusal::ShapeMismatch`] for a path naming none), and the bridge
+//! passes them as the `SessionPath`'s payload paths, which admission checks
+//! against the owed slot pairs the evidence lists. Unpaid, the statement is
+//! [`CheckRefusal::SessionNotEquivalent`].
+//!
 //! # The run type
 //!
 //! `Run(S)` classifies the complete recorded runs of the session code `S`: a
@@ -126,9 +137,10 @@
 //! `Flow(Type, Old, New)` the engine decides and the kernel replays; riding
 //! it moves every old receipt the new protocol admits and refuses, by move,
 //! every one it does not. Equivalence is a `Path(Type, A, B)`, replayed the
-//! same way; it identifies the two codes, so every run of one is a run of the
-//! other by conversion alone.
+//! same way; without payload paths it identifies the two codes, so every run
+//! of one is a run of the other by conversion alone.
 
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -174,6 +186,7 @@ use crate::refusal::RunFault;
 use crate::refusal::RunStep;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
+use crate::session::PayloadPair;
 use crate::session::engine;
 use crate::session::related;
 use crate::view::ValueTypeView;
@@ -196,7 +209,8 @@ quenchant_shape::reason_enum! {
 }
 
 /// A session statement the judgement decided: the relation, the two quotes,
-/// the classifier the bridge erases it at and the engine's evidence.
+/// the classifier the bridge erases it at, the engine's evidence and the
+/// payload pairs its paths are owed for.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Statement
 {
@@ -205,8 +219,12 @@ pub struct Statement
     /// The native classifier: `Path_U(⌜A⌝, ⌜B⌝)` for a bisimilarity, the
     /// universe's `Flow(Type, ⌜A⌝, ⌜B⌝)` for a simulation.
     classifier: ValueTypeId,
-    /// The engine's pairs over the two protocols' node positions.
+    /// The engine's pairs over the two protocols' node positions, with the
+    /// slot pairs the payload paths cover.
     evidence: Arc<Evidence>,
+    /// The two payload types of each slot pair `evidence` lists, in its
+    /// order: what the payload paths relate.
+    owed: Arc<[(ValueTypeId, ValueTypeId)]>,
 }
 
 impl Statement
@@ -244,6 +262,19 @@ impl Statement
     pub const fn evidence(&self) -> &Arc<Evidence>
     {
         &self.evidence
+    }
+
+    /// The payload type pairs the statement's paths relate, one per slot
+    /// pair the evidence lists, in its order; empty when every pair
+    /// converts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn owed(&self) -> &[(ValueTypeId, ValueTypeId)]
+    {
+        &self.owed
     }
 }
 
@@ -457,12 +488,24 @@ fn sessions(
     Ok((left, right))
 }
 
+/// Two related sessions: the engine's evidence, and the payload pairs whose
+/// types do not convert, each pair of slots once, in the order of the
+/// engine's pairs.
+struct Owing
+{
+    /// The engine's pairs.
+    evidence: Evidence,
+    /// The pairs conversion does not close.
+    owed: Vec<PayloadPair>,
+}
+
 /// Relate two sessions by `relation`, payload pairs compared by conversion.
 ///
 /// # Specification
 /// - requires: both are session types of the context's arena.
 /// - ensures: the engine's evidence exactly when the engine relates the two
-///   protocols and every payload pair it visited converts; absent otherwise.
+///   protocols, with every payload pair it visited whose types do not convert,
+///   each pair of slots once; absent otherwise.
 /// - fails: as the engine and conversion raise it.
 /// - panics: none.
 ///
@@ -471,28 +514,73 @@ fn sessions(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a widened selection relates by subtyping, not by
-///   equivalence; a reversed pair does not relate.
+///   equivalence; a reversed pair does not relate; a pair of differing payloads
+///   is owed once however often the engine meets it.
 /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
 #[spec(ensures: |ret| match ret {
-    | Ok(Maybe::Present(ref evidence)) => !evidence.pairs.is_empty(),
+    | Ok(Maybe::Present(ref related)) => !related.evidence.pairs.is_empty(),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
 fn relation_evidence(
     context: &mut CheckingContext<'_>,
     (left, right): (&SessionType, &SessionType),
     relation: Relation,
-) -> Result<Maybe<Evidence, crate::session::related::Absent>, CheckRefusal>
+) -> Result<Maybe<Owing, crate::session::related::Absent>, CheckRefusal>
 {
     let Maybe::Present(decided) = related(left, right, relation)?
     else {
         return Ok(Maybe::Absent(crate::session::related::Absent::Unrelated));
     };
-    for (first, second) in decided.payloads {
+    let mut met = BTreeSet::new();
+    let mut owed = Vec::new();
+    for pair in decided.payloads {
+        if !met.insert(pair.slots) {
+            continue;
+        }
+        let (first, second) = pair.types;
         if equivalent(context, first, second)? != Agreement::Convertible {
-            return Ok(Maybe::Absent(crate::session::related::Absent::Unrelated));
+            owed.push(pair);
         }
     }
-    Ok(Maybe::Present(decided.evidence))
+    Ok(Maybe::Present(Owing {
+        evidence: decided.evidence,
+        owed,
+    }))
+}
+
+/// Relate two sessions by `relation` with every payload pair converting: the
+/// relation a simulation, a stay or a composite stands for.
+///
+/// # Specification
+/// - requires: both are session types of the context's arena.
+/// - ensures: the engine's evidence exactly when the engine relates the two
+///   protocols and every payload pair it visited converts; absent otherwise.
+/// - fails: as [`relation_evidence`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`relation_evidence`].
+/// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
+#[spec(ensures: |ret| match ret {
+    | Ok(Maybe::Present(ref evidence)) => !evidence.pairs.is_empty(),
+    | Ok(Maybe::Absent(_)) | Err(_) => true,
+})]
+fn converting_evidence(
+    context: &mut CheckingContext<'_>,
+    sessions: (&SessionType, &SessionType),
+    relation: Relation,
+) -> Result<Maybe<Evidence, crate::session::related::Absent>, CheckRefusal>
+{
+    Ok(match relation_evidence(context, sessions, relation)? {
+        Maybe::Present(related) if related.owed.is_empty() => Maybe::Present(related.evidence),
+        Maybe::Present(_) | Maybe::Absent(_) => {
+            Maybe::Absent(crate::session::related::Absent::Unrelated)
+        },
+    })
 }
 
 /// Decide the session statement `at` relating `(source, target)` by
@@ -502,12 +590,15 @@ fn relation_evidence(
 /// - requires: both operands checked against the value universe.
 /// - ensures: the engine's evidence and the native classifier over the quotes
 ///   the operands reduce to, exactly when both are session codes the engine
-///   relates with convertible payloads.
+///   relates; a bisimilarity owes a path for each payload pair whose types do
+///   not convert, its slots listed in the evidence and its types in
+///   [`Statement::owed`], and a simulation owes none.
 /// - provides: the decision `bisim`, `sim`, `stay` and `then` record.
 /// - fails: [`CheckRefusal::SessionCodeExpected`] at an operand that is no
 ///   session code; [`CheckRefusal::SessionNotEquivalent`] or
 ///   [`CheckRefusal::SessionNotSubtype`] at `at` for sessions the engine does
-///   not relate; the unfolding's and the engine's refusals.
+///   not relate, or for a simulation whose payloads do not convert; the
+///   unfolding's and the engine's refusals.
 /// - panics: none.
 ///
 /// # Errors
@@ -515,13 +606,17 @@ fn relation_evidence(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a protocol and its renamed unfolding are bisimilar, a
-///   widened selection is a supertype and not an equivalent, and the reverse
-///   simulation is refused.
+///   widened selection is a supertype and not an equivalent, the reverse
+///   simulation is refused, and a protocol over a type and over another is
+///   bisimilar owing a path between the two.
 /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
 /// - witness: `flow::tests::each_refusal_is_named`
+/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::SessionNotEquivalent { at: site } | CheckRefusal::SessionNotSubtype { at: site }) => site == at,
-    | Ok(ref statement) => statement.relation == relation,
+    | Ok(ref statement) => statement.relation == relation
+        && statement.owed.len() == statement.evidence.payloads.len()
+        && (relation == SessionRelation::Equivalence || statement.owed.is_empty()),
     | Err(_) => true,
 })]
 pub fn decide(
@@ -540,10 +635,16 @@ pub fn decide(
         },
         SessionRelation::Subtyping => (Relation::Subtype, CheckRefusal::SessionNotSubtype { at }),
     };
-    let Maybe::Present(evidence) = relation_evidence(context, (&left, &right), engine_relation)?
+    let Maybe::Present(Owing { mut evidence, owed }) =
+        relation_evidence(context, (&left, &right), engine_relation)?
     else {
         return Err(unrelated);
     };
+    if relation == SessionRelation::Subtyping && !owed.is_empty() {
+        return Err(unrelated);
+    }
+    evidence.payloads = owed.iter().map(|pair| pair.slots).collect();
+    let owed = owed.iter().map(|pair| pair.types).collect();
     let source = quoted(context, source)?;
     let target = quoted(context, target)?;
     let arena = context.arena_mut();
@@ -558,6 +659,7 @@ pub fn decide(
         relation,
         classifier,
         evidence: Arc::new(evidence),
+        owed,
     })
 }
 
@@ -579,6 +681,124 @@ pub fn identity(
         SessionRelation::Equivalence => arena.value_type_path(universe, source, target),
         SessionRelation::Subtyping => arena.value_type_flow(universe, source, target),
     }
+}
+
+/// The paths a bisimilarity owes: `Path(Type, ⌜P⌝, ⌜Q⌝)` for each owed pair of
+/// payload types, in the statement's order.
+///
+/// # Specification
+/// trivial.
+fn owed_paths(
+    arena: &mut CoreArena,
+    owed: &[(ValueTypeId, ValueTypeId)],
+) -> Vec<ValueTypeId>
+{
+    let universe = universe(arena);
+    owed.iter()
+        .map(|&(left, right)| {
+            let (left, right) = (arena.value_quote(left), arena.value_quote(right));
+            arena.value_type_path(universe, left, right)
+        })
+        .collect()
+}
+
+/// The type a bisimilarity's payload paths check against: the unit type when
+/// it owes none, the one path it owes alone, and the tuple of the paths in the
+/// statement's order for several.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn payload_paths(
+    arena: &mut CoreArena,
+    owed: &[(ValueTypeId, ValueTypeId)],
+) -> ValueTypeId
+{
+    match *owed_paths(arena, owed).as_slice() {
+        [one] => one,
+        ref several => arena.value_type_product(several),
+    }
+}
+
+/// Elaborate the payload paths of the bisimilarity at `at` to the native
+/// certificates the kernel checks, and record their tuple at the paths' node.
+///
+/// # Specification
+/// - requires: the statement at `at` was decided and recorded, and its payload
+///   paths checked against [`payload_paths`] of what it owes.
+/// - ensures: when the statement owes a path, the paths' node records a tuple
+///   of one native certificate per owed pair, in order; nothing is recorded
+///   when it owes none.
+/// - fails: [`CheckRefusal::ShapeMismatch`] at a path that names no closed
+///   certificate, wanting a universe path, as [`crate::product`] reads one; at
+///   several paths that read as no tuple through constants' definitions,
+///   wanting a product.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above; [`CheckRefusal::MachineInvariant`] for a node
+///   that is no recorded bisimilarity.
+///
+/// # Termination
+/// - reason: one `while` that only continues through a constant's definition.
+/// - measure: the admission position of the constant read; a definition only
+///   names constants admitted before its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one owed pair elaborates its path, a module-level
+///   equivalence read through its constant, to the native certificate the
+///   kernel replays, and a path a parameter binds is refused.
+/// - witness: `flow::tests::a_bisimulation_owes_a_path_per_differing_payload_pair`
+#[spec(ensures: |ret| ret.is_err() || match (context.arena().value(at), context.flows().get(&at)) {
+    | (Some(&Value::SessionRelated { payloads, .. }), Some(statement)) => statement.owed.is_empty()
+        || matches!(
+            context.natives().get(&payloads).and_then(|&native| context.arena().value(native)),
+            Some(Value::Tuple(natives)) if natives.len() == statement.owed.len()
+        ),
+    | _ => false,
+})]
+pub fn elaborate(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+) -> Result<(), CheckRefusal>
+{
+    let (Some(&Value::SessionRelated { payloads, .. }), Some(statement)) =
+        (context.arena().value(at), context.flows().get(&at))
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let owed = Arc::clone(&statement.owed);
+    let paths = owed_paths(context.arena_mut(), &owed);
+    let natives = match *paths.as_slice() {
+        [] => return Ok(()),
+        [one] => alloc::vec![crate::product::certificate(context, payloads, one)?],
+        ref several => {
+            let mut read = payloads;
+            while let Some(&Value::Constant(constant)) = context.arena().value(read)
+                && let Maybe::Present(body) = context.definitions().body(constant)
+            {
+                read = body;
+            }
+            let Some(&Value::Tuple(ref components)) = context.arena().value(read)
+            else {
+                let found = context.arena_mut().value_type_product(several);
+                return Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Value(payloads),
+                    wanted: ExpectedShape::Product,
+                    found: TypeNode::Value(found),
+                });
+            };
+            let components = components.to_vec();
+            components
+                .into_iter()
+                .zip(several)
+                .map(|(component, &path)| crate::product::certificate(context, component, path))
+                .collect::<Result<Vec<_>, _>>()?
+        },
+    };
+    let tuple = context.arena_mut().value_tuple(&natives);
+    context.record_native(payloads, tuple);
+    Ok(())
 }
 
 /// Decide and record the simulation a stay or a composite over session codes
@@ -1024,7 +1244,7 @@ pub fn ride(
         return Ok(fixed);
     }
     let (left, right) = sessions(context, (source, target))?;
-    if let Maybe::Absent(_) = relation_evidence(context, (&left, &right), Relation::Subtype)? {
+    if let Maybe::Absent(_) = converting_evidence(context, (&left, &right), Relation::Subtype)? {
         return Err(CheckRefusal::SessionNotSubtype { at: along });
     }
     Ok(Ride {
@@ -1171,7 +1391,8 @@ pub fn admit(
     }
     let (_, source, target) = endpoints(context, TermNode::Computation(at), flow)?;
     let (left, right) = sessions(context, (source, target))?;
-    let Maybe::Present(evidence) = relation_evidence(context, (&left, &right), Relation::Subtype)?
+    let Maybe::Present(evidence) =
+        converting_evidence(context, (&left, &right), Relation::Subtype)?
     else {
         return Err(CheckRefusal::MachineInvariant);
     };

@@ -1239,11 +1239,6 @@ where
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)
-                    | Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,
@@ -1254,6 +1249,16 @@ where
                 ) => {
                     pending.push((AnyNode::Value(first), reach));
                     pending.push((AnyNode::Value(second), reach));
+                },
+                Some(&Value::SessionRelated {
+                    source,
+                    target,
+                    payloads,
+                    ..
+                }) => {
+                    pending.push((AnyNode::Value(source), reach));
+                    pending.push((AnyNode::Value(target), reach));
+                    pending.push((AnyNode::Value(payloads), reach));
                 },
                 Some(&Value::Reify(ref frames)) => {
                     for frame in frames.iter() {

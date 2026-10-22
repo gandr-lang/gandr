@@ -1,0 +1,10 @@
+// A bisimilarity that leaves out the path its payloads owe.
+
+// The judges and the path between their verdicts' nestings.
+import "../../model/sessions/payload-paths.gandr" ;
+
+/// The two judges written without the path: their verdicts' payload types
+/// differ, so as written they are no equivalence.
+@[ refuses("SessionNotEquivalent") ]
+def unpaid : Path(Type, Judge.Right, Judge.Left) ;
+def unpaid = bisim(Judge.Right, Judge.Left) ;

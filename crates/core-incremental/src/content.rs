@@ -87,7 +87,7 @@
 //! signature content refuses term-bearing path
 //! classifiers just as it refuses quotes and decodes.
 //!
-//! Checkpoint sets use `GCKPT\0\0\x0f`; programs use `GPROG\0\0\x0a`. Their
+//! Checkpoint sets use `GCKPT\0\0\x10`; programs use `GPROG\0\0\x0a`. Their
 //! identities bind the checker, native declaration categories, effect and
 //! control content, support queries and refusal vocabulary. Identities of
 //! another version are rejected rather than reusing answers from a different
@@ -652,7 +652,7 @@ pub enum ContentNode
         value: NodeIndex,
     },
     /// A session statement over two session codes, retaining the relation it
-    /// claims.
+    /// claims, and the paths covering its differing payload pairs.
     SessionRelated
     {
         /// Equivalence or subtyping.
@@ -661,6 +661,8 @@ pub enum ContentNode
         source: NodeIndex,
         /// The target code.
         target: NodeIndex,
+        /// The payload paths, the empty tuple when none is written.
+        payloads: NodeIndex,
     },
     /// The identity flow at its point.
     Stay(NodeIndex),
@@ -1493,9 +1495,10 @@ impl ContentNode
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
             | Self::ListCase { list, on_nil, on_cons } => actual == Some(&[(list, V), (on_nil, M), (on_cons, M)][..]),
             | Self::Univalence(a, b)
-            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::SessionRelated { source: a, target: b, .. } | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
+            | Self::SessionRelated { source, target, payloads, .. } => actual == Some(&[(source, V), (target, V), (payloads, V)][..]),
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
             | Self::PathType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
             | Self::ElementTransport { motive, path, value } | Self::Ride { motive, flow: path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
@@ -1772,16 +1775,17 @@ impl ContentNode
                 ..
             }
             | Self::Transport(first, second)
-            | Self::SessionRelated {
-                source: first,
-                target: second,
-                ..
-            }
             | Self::Then(first, second)
             | Self::FlowProduct(first, second)
             | Self::FunctionFlow(first, second)
             | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
+            Self::SessionRelated {
+                source,
+                target,
+                payloads,
+                ..
+            } => Children::of(&[(source, V), (target, V), (payloads, V)]),
             Self::StaticLambda(body) => Children::of(&[(body, V)]).binding(ChildSlot(0), one),
             Self::PathRefl(body)
             | Self::Here(body)
@@ -3830,12 +3834,15 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 relation,
                 source,
                 target,
+                payloads,
             } => {
                 let source = self.discover(ArenaNode::Value(source));
+                let target = self.discover(ArenaNode::Value(target));
                 ContentNode::SessionRelated {
                     relation,
                     source,
-                    target: self.discover(ArenaNode::Value(target)),
+                    target,
+                    payloads: self.discover(ArenaNode::Value(payloads)),
                 }
             },
             Value::Stay(point) => ContentNode::Stay(self.discover(ArenaNode::Value(point))),
@@ -4784,10 +4791,12 @@ where
             relation,
             source,
             target,
+            payloads,
         } => ContentNode::SessionRelated {
             relation,
             source: image(source),
             target: image(target),
+            payloads: image(payloads),
         },
         ContentNode::Stay(point) => ContentNode::Stay(image(point)),
         ContentNode::Then(first, second) => {

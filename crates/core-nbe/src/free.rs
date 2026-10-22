@@ -1114,6 +1114,18 @@ Err(_) => false,
                         None,
                         None,
                     ],
+                    Value::SessionRelated {
+                        source,
+                        target,
+                        payloads,
+                        ..
+                    } => [
+                        Some((value(source), Lowering::NONE)),
+                        Some((value(target), Lowering::NONE)),
+                        Some((value(payloads), Lowering::NONE)),
+                        None,
+                        None,
+                    ],
                     Value::PathRefl(code)
                     | Value::Here(code)
                     | Value::Stay(code)
@@ -1125,11 +1137,6 @@ Err(_) => false,
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)
-                    | Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,

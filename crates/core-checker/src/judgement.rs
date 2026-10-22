@@ -1792,6 +1792,15 @@ enum Frame
         /// The statement.
         at: ValueId,
     },
+    /// Await a bisimilarity's payload paths, checked against the paths it
+    /// owes; they are then elaborated to native certificates.
+    SessionPayloads
+    {
+        /// The statement.
+        at: ValueId,
+        /// The identity it inhabits.
+        identity: ValueTypeId,
+    },
     /// Await the type a stay's point synthesised.
     StaySynthesised
     {
@@ -2522,6 +2531,7 @@ impl Frame
             Self::ForkChild { .. } => FrameRole::ForkChild,
             Self::ForkParent { .. } => FrameRole::ForkParent,
             Self::SessionStatement { .. } => FrameRole::SessionStatement,
+            Self::SessionPayloads { .. } => FrameRole::SessionPayloads,
             Self::StaySynthesised { .. } => FrameRole::StaySynthesised,
             Self::ThenFirst { .. } => FrameRole::ThenFirst,
             Self::ThenSecond { .. } => FrameRole::ThenSecond,
@@ -2665,6 +2675,7 @@ impl Frame
             | Self::ReceiveBody { .. }
             | Self::ForkParent { .. }
             | Self::SessionStatement { .. }
+            | Self::SessionPayloads { .. }
             | Self::StaySynthesised { .. }
             | Self::ThenFirst { .. }
             | Self::ThenSecond { .. }
@@ -3075,6 +3086,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ElementTransportPath { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::SessionStatement { .. }
+                | Frame::SessionPayloads { .. }
                 | Frame::StaySynthesised { .. }
                 | Frame::ThenFirst { .. }
                 | Frame::ThenSecond { .. }
@@ -8035,14 +8047,37 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     relation,
                     source,
                     target,
+                    payloads,
                 } = *self.value(at)?
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
                 let statement = crate::flow::decide(self.context, at, relation, (source, target))?;
-                self.context.record_flow(at, statement);
                 let identity =
                     crate::flow::identity(self.context.arena_mut(), relation, (source, target));
+                let unwritten = matches!(
+                    self.context.arena().value(payloads),
+                    Some(Value::Tuple(components)) if components.is_empty()
+                );
+                if unwritten && !statement.owed().is_empty() {
+                    return Err(CheckRefusal::SessionNotEquivalent { at });
+                }
+                let expected = (!unwritten).then(|| {
+                    crate::flow::payload_paths(self.context.arena_mut(), statement.owed())
+                });
+                self.context.record_flow(at, statement);
+                let Some(expected) = expected
+                else {
+                    return Ok(Step::Ascend(Produced::ValueType(identity.into())));
+                };
+                self.wait(Frame::SessionPayloads { at, identity });
+                Ok(Step::Descend(Goal::Value {
+                    term: payloads,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            (Frame::SessionPayloads { at, identity }, Produced::Checked) => {
+                crate::flow::elaborate(self.context, at)?;
                 Ok(Step::Ascend(Produced::ValueType(identity.into())))
             },
             (Frame::StaySynthesised { at, point }, Produced::ValueType(carrier)) => {
@@ -9032,6 +9067,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ForkProtocol { .. }
                 | Frame::ForkChild { .. }
                 | Frame::SessionStatement { .. }
+                | Frame::SessionPayloads { .. }
                 | Frame::RideMotive { .. }
                 | Frame::RideValue { .. }
                 | Frame::StayEndpoints { .. }

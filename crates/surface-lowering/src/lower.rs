@@ -2394,11 +2394,13 @@ enum Plan
     /// A first-class continuation's type over the computation types it runs
     /// from and to: `Stack(C, D)`.
     Stack(NodeIndex, NodeIndex),
-    /// A session statement, `bisim(A, B)` or `sim(A, B)`, over its two codes.
+    /// A session statement, `bisim(A, B)` or `sim(A, B)`, over its two codes,
+    /// and the payload paths `bisim(A, B, p)` writes.
     SessionRelated(
         gandr_core_term::session::SessionRelation,
         NodeIndex,
         NodeIndex,
+        Option<NodeIndex>,
     ),
     /// The identity flow at its point.
     Stay(NodeIndex),
@@ -13816,12 +13818,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Lowered::ValueType(id)
                 })
             }),
-            Plan::SessionRelated(relation, left, right) => self.value_at(left).and_then(|from| {
-                self.value_at(right).map(|to| {
-                    let id = sink.arena.value_session_related(relation, from, to);
-                    sink.value(id, origin)
+            Plan::SessionRelated(relation, left, right, paths) => {
+                self.value_at(left).and_then(|from| {
+                    self.value_at(right).and_then(|to| {
+                        let paths = match paths {
+                            Some(paths) => self.value_at(paths),
+                            None => Maybe::Present(sink.arena.value_tuple(&[])),
+                        };
+                        paths.map(|paths| {
+                            let id = sink.arena.value_session_related(relation, from, to, paths);
+                            sink.value(id, origin)
+                        })
+                    })
                 })
-            }),
+            },
             Plan::Stay(point) => self.value_at(point).map(|at| {
                 let id = sink.arena.value_stay(at);
                 sink.value(id, origin)

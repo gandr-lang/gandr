@@ -3583,6 +3583,19 @@ enum Frame
         relation: gandr_core_term::session::SessionRelation,
         /// The engine's pairs.
         evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+        /// The tuple of native certificates a bisimilarity's payload paths
+        /// elaborated to, absent when it owes none.
+        payloads: Option<ValueId>,
+    },
+    /// Await a bisimilarity's payload paths, then mint its certificate.
+    SessionPayloads
+    {
+        /// The statement.
+        at: ValueId,
+        /// The native classifier.
+        classifier: gandr_kernel_term::ValueTypeId,
+        /// The engine's pairs.
+        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
     },
     /// Await the carrier of an element path or flow type.
     PathCarrier
@@ -5238,11 +5251,24 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 else {
                     return Err(Refusal::MachineInvariant);
                 };
+                let payloads = if let Value::SessionRelated { payloads, .. } = *value
+                    && !decided.evidence().payloads.is_empty()
+                {
+                    let Some(&natives) = self.source.natives.get(&payloads)
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    Some(natives)
+                }
+                else {
+                    None
+                };
                 (
                     Frame::SessionCertificate {
                         at,
                         relation: decided.relation(),
                         evidence: alloc::sync::Arc::clone(decided.evidence()),
+                        payloads,
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
@@ -6719,10 +6745,19 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     relation,
                     ref evidence,
+                    payloads,
                 },
                 AnyNode::ValueType(classifier),
             ) => {
                 let evidence = alloc::sync::Arc::clone(evidence);
+                if let Some(payloads) = payloads {
+                    self.frames.push(Frame::SessionPayloads {
+                        at,
+                        classifier,
+                        evidence,
+                    });
+                    return self.argument(payloads);
+                }
                 let unit = target.value_tuple(&[]);
                 let image = match relation {
                     gandr_core_term::session::SessionRelation::Equivalence => {
@@ -6733,6 +6768,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     },
                 };
                 Ok(self.erased_value(at, image))
+            },
+            (
+                Frame::SessionPayloads {
+                    at,
+                    classifier,
+                    ref evidence,
+                },
+                AnyNode::Value(paths),
+            ) => {
+                let evidence = alloc::sync::Arc::clone(evidence);
+                Ok(self.erased_value(at, target.value_session_path(classifier, evidence, paths)))
             },
             (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
                 Ok(self.erased_value(at, target.value_injection(summand, body)))
@@ -7258,7 +7304,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::ForwardImages(_)
                 | Frame::FunctionFlowDomain { .. }
                 | Frame::FunctionFlowCodomain { .. }
-                | Frame::SigmaSplitScrutinee { .. },
+                | Frame::SigmaSplitScrutinee { .. }
+                | Frame::SessionPayloads { .. },
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (

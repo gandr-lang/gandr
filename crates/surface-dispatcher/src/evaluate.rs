@@ -2028,16 +2028,19 @@ fn references(
                         ..
                     }
                     | Value::ListCons(first, second)
-                    | Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)),
                 ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
+                },
+                Some(&Value::SessionRelated {
+                    source,
+                    target,
+                    payloads,
+                    ..
+                }) => {
+                    pending.extend([source, target, payloads].map(Node::Value));
                 },
                 Some(&Value::Tuple(ref components)) => {
                     pending.extend(components.iter().map(|&component| Node::Value(component)));

@@ -413,6 +413,10 @@ pub enum Value
     /// subtype of `b`. The checker decides it with the session engine and
     /// records the relation, and the kernel replays that relation as a native
     /// session path or session flow; it is inert, as a native certificate is.
+    /// `bisim(a, b, p)` relates two protocols whose payload types differ at
+    /// some pairs the relation meets: `p` is a path between the two types of
+    /// the one such pair, or a tuple of them, one per pair in the order the
+    /// relation meets them, each standing for a native certificate.
     SessionRelated
     {
         /// The identity claimed.
@@ -421,6 +425,10 @@ pub enum Value
         source: ValueId,
         /// The target code.
         target: ValueId,
+        /// The paths covering the payload pairs whose types differ: the empty
+        /// tuple when every pair's types are one, one path for one pair, a
+        /// tuple of paths for several.
+        payloads: ValueId,
     },
     /// Directed reflexivity `stay(a)`: the canonical element of `Flow(A, a,
     /// a)`.
@@ -2560,15 +2568,17 @@ fn equal_syntax(
                         relation: left_relation,
                         source: a,
                         target: b,
+                        payloads: p,
                     } = *matched_left_value
                         && let Value::SessionRelated {
                             relation: right_relation,
                             source: c,
                             target: d,
+                            payloads: q,
                         } = *matched_right_value
                         && left_relation == right_relation
                     {
-                        pending.extend([V(a, c), V(b, d)]);
+                        pending.extend([V(a, c), V(b, d), V(p, q)]);
                     }
                     else if let Value::Recorded(ref left) = *matched_left_value
                         && let Value::Recorded(ref right) = *matched_right_value
@@ -4542,8 +4552,10 @@ mod tests
             SessionRelation::Equivalence,
             SessionRelation::Subtyping,
         ]
-        .map(|relation| arena.value_session_related(relation, unit, unit));
-        cases.push((twin, same, alloc::vec![other], "a session identity"));
+        .map(|relation| arena.value_session_related(relation, unit, unit, unit));
+        let covered = arena.value_path_refl(unit);
+        let paid = arena.value_session_related(SessionRelation::Equivalence, unit, unit, covered);
+        cases.push((twin, same, alloc::vec![other, paid], "a session identity"));
         let moves = |chosen| {
             Arc::from([
                 RecordedMove::Sent(unit),

@@ -1133,11 +1133,14 @@ where
             value_type(domain),
             Slot::of(codomain, Admits::CompType, Binds::ONE),
         ]),
+        Former::SessionRelated(_, first, second, Some(paths)) => {
+            Vec::from([value(first), value(second), value(paths)])
+        },
         Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
         | Former::Funext(first, second)
         | Former::Equiv(first, second)
-        | Former::SessionRelated(_, first, second)
+        | Former::SessionRelated(_, first, second, None)
         | Former::Then(first, second)
         | Former::FlowProduct(first, second)
         | Former::FunctionFlow(first, second)
@@ -1991,6 +1994,8 @@ enum Bracket
     ListCons,
     /// A session equivalence, `bisim(a, b)`.
     Bisim,
+    /// A session equivalence with its payload paths, `bisim(a, b, p)`.
+    BisimPaid,
     /// A session simulation, `sim(a, b)`.
     Sim,
     /// Directed reflexivity, `stay(a)`.
@@ -2032,7 +2037,7 @@ impl Bracket
             Self::PathRefl => "refl(",
             Self::PathProduct => "pathProduct(",
             Self::ListCons => "cons(",
-            Self::Bisim => "bisim(",
+            Self::Bisim | Self::BisimPaid => "bisim(",
             Self::Sim => "sim(",
             Self::Stay => "stay(",
             Self::Back => "back(",
@@ -6347,6 +6352,10 @@ impl Walk<'_, '_>
                 Production("call_expression"),
                 Join::Bracket(Bracket::Univalence),
             )),
+            Former::SessionRelated(SessionRelation::Equivalence, _, _, Some(_)) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::BisimPaid),
+            )),
             Former::SessionRelated(SessionRelation::Equivalence, ..) => Some(writes(
                 Production("call_expression"),
                 Join::Bracket(Bracket::Bisim),
@@ -8597,7 +8606,7 @@ impl Walk<'_, '_>
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
             Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
-            Join::TypedSequence => Some(3_usize),
+            Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -8940,6 +8949,17 @@ impl Walk<'_, '_>
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
+                    },
+                    Bracket::BisimPaid => {
+                        let third = self.pop()?;
+                        let second = self.pop()?;
+                        let first = self.pop()?;
+                        let opener = self.leaf(bracket.opener())?;
+                        let comma = self.leaf(Glyphs(","))?;
+                        let comma = self.space_or_break(comma)?;
+                        let last = self.leaf(Glyphs(","))?;
+                        let last = self.space_or_break(last)?;
+                        items.extend([opener, first.doc, comma, second.doc, last, third.doc]);
                     },
                     Bracket::Here
                     | Bracket::Univalence

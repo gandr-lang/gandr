@@ -3238,12 +3238,15 @@ where
             relation,
             source,
             target,
+            payloads,
         }) => {
             let source = child(Root::Value(source));
+            let target = child(Root::Value(target));
             ContentNode::SessionRelated {
                 relation,
                 source,
-                target: child(Root::Value(target)),
+                target,
+                payloads: child(Root::Value(payloads)),
             }
         },
         Some(&Value::Stay(point)) => ContentNode::Stay(child(Root::Value(point))),

@@ -16,6 +16,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::FieldLabel;
 use quenchant_shape::shape::Maybe;
 
+use super::PayloadPair;
 use super::relate;
 use crate::CheckBudget;
 use crate::CheckingContext;
@@ -88,14 +89,21 @@ fn equivalence_sees_through_unfolding_and_payloads()
         ProtocolState::from(1_usize),
     );
     let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let slot = gandr_kernel_term::session::PayloadSlot;
     assert_eq!(
         relate(&context, left, unfolded, Relation::Equivalent),
-        Ok(Maybe::Present(alloc::vec![(integer, integer)])),
+        Ok(Maybe::Present(alloc::vec![PayloadPair {
+            slots: (slot(0), slot(1)),
+            types: (integer, integer),
+        }])),
         "the binder past the prefix unfolds to the folded body, payload by payload"
     );
     assert_eq!(
         relate(&context, left, right, Relation::Equivalent),
-        Ok(Maybe::Present(alloc::vec![(integer, string)])),
+        Ok(Maybe::Present(alloc::vec![PayloadPair {
+            slots: (slot(0), slot(0)),
+            types: (integer, string),
+        }])),
         "the shapes relate and the differing payload pair is handed to conversion"
     );
 }

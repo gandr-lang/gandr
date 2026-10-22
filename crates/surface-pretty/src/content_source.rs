@@ -512,7 +512,16 @@ impl Source for ContentSource<'_>
                 relation,
                 source,
                 target,
-            } => Former::SessionRelated(relation, source, target),
+                payloads,
+            } => Former::SessionRelated(
+                relation,
+                source,
+                target,
+                match self.nodes.get(usize::from(payloads)) {
+                    Some(&ContentNode::Tuple(ref components)) if components.is_empty() => None,
+                    _ => Some(payloads),
+                },
+            ),
             ContentNode::Stay(point) => Former::Stay(point),
             ContentNode::Then(first, second) => Former::Then(first, second),
             ContentNode::FlowProduct(first, second) => Former::FlowProduct(first, second),

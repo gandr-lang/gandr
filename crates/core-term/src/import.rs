@@ -255,11 +255,6 @@ impl Image
                 | Value::Then(ref mut first, ref mut second)
                 | Value::FlowProduct(ref mut first, ref mut second)
                 | Value::FunctionFlow(ref mut first, ref mut second)
-                | Value::SessionRelated {
-                    source: ref mut first,
-                    target: ref mut second,
-                    ..
-                }
                 | Value::Ua {
                     forward: ref mut first,
                     backward: ref mut second,
@@ -288,6 +283,18 @@ impl Image
                 Some(VT(path_type)),
                 Some(V(forward)),
                 Some(V(backward)),
+                None,
+                None,
+            ],
+            Self::Value(Value::SessionRelated {
+                ref mut source,
+                ref mut target,
+                ref mut payloads,
+                ..
+            }) => [
+                Some(V(source)),
+                Some(V(target)),
+                Some(V(payloads)),
                 None,
                 None,
             ],
