@@ -1,4 +1,6 @@
 /// `circuit_declaration`: an operation declared as a circuit of nodes.
+/// The checker does not reach this form yet; #1507 tracks it.
+@[ refuses("UndescribedMember.OperationFiller") ]
 oper split : (b : Bit) --> (_ : Bit, _ : Bit) {
   node : tee(b) --> (_, _);
 }

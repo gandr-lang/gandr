@@ -1,2 +1,5 @@
 /// `binary_expression.cmp.ne`: an inequality comparison.
-def different = 1 != 2 ;
+@[ checks ]
+def different() -> -F Bool {
+  return 1 != 2
+}

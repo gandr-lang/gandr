@@ -1,13 +1,30 @@
 /// `cons_pattern`: a path cons pattern: a step and the rest of the path, written with its glyph and in ASCII.
-def tell(p : Path(Circle, Base, Base)) -> -F Integer {
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+@[ checks ]
+def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
   case p {
-    here => 0,
-    loop ∷ q => 1
+    here => Z,
+    loop ∷ q => S(wind[<](q)),
+    back(loop) ∷ q => P(wind[<](q))
   }
 }
-def tellAscii(p : Path(Circle, Base, Base)) -> -F Integer {
+@[ checks ]
+def rec windAscii(p : Path(Circle, Base, Base)) -> -F Int {
   case p {
-    here => 0,
-    loop :: q => 1
+    here => Z,
+    loop :: q => S(windAscii[<](q)),
+    back(loop) :: q => P(windAscii[<](q))
   }
 }

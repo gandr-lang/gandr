@@ -1,2 +1,4 @@
 /// `path_type`: a path type.
+@[ checks ]
 def four : Path(Integer, 4, 4) ;
+def four = here(4) ;

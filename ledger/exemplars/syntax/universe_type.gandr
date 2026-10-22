@@ -1,2 +1,4 @@
 /// `universe_type`: the universe of types.
+@[ checks ]
 def code : Type ;
+def code = Integer ;

@@ -12,8 +12,10 @@
 //! - the file exists for its rule or attribute, and names one;
 //! - it opens with a `///` comment naming its rule or attribute in backticks;
 //! - it parses with no obligation left;
-//! - a rule's exemplar holds one item: one top-level form besides its attribute
-//!   blocks; a rule holding a glyph tile holds two, one per spelling;
+//! - a rule's exemplar holds one item of its rule: one top-level form, besides
+//!   attribute blocks, holding a tile the rule molds or the head a glyph of it
+//!   is spelled with in ASCII; a rule holding a glyph tile holds two, one per
+//!   spelling;
 //! - its tree holds a tile molded by its rule, or, for an attribute, the source
 //!   lowers, no declaration is refused and the attribute is filed on one. The
 //!   `doc` attribute is filed as documentation, so its exemplar's declaration
@@ -26,10 +28,20 @@
 //!   is the one the labeler reads, so an ASCII spelling added to it fails here
 //!   until its exemplar writes it.
 //!
-//! An attribute's exemplar may hold, besides the item it decorates, the
-//! declarations its payload names: `entry` names a world, `respects` a law,
-//! and the lowering refuses a name nothing declares. A world is no module
-//! member, so wrapping both in one module is not an option.
+//! An exemplar may hold, besides the items it shows, the declarations those
+//! items name: an attribute's payload names a world (`entry`) or a law
+//! (`respects`), and a rule's item may name a world, an effect, a theory or a
+//! module. The lowering refuses a name nothing declares, and the exemplar must
+//! settle. A world is no module member, so wrapping both in one module is not
+//! an option. Only the items holding the rule's tiles are counted.
+//!
+//! - Choice: count the forms holding a tile of the rule, so context is free and
+//!   a second showing of the form is still a finding.
+//! - Alternatives: one top-level form in all, which leaves an item naming a
+//!   world unable to settle; a refusal stated for the missing name, which
+//!   describes the exemplar, not the form.
+//! - Reversal: none needed while context cannot mold the rule; a context
+//!   declaration that does is a second item and fails.
 //!
 //! An internal rule has no exemplar: no source molds it.
 //!
@@ -199,11 +211,12 @@ pub enum ExemplarFault
         /// How many.
         count: usize,
     },
-    /// A rule's exemplar holds another number of items than it shows
-    /// spellings.
+    /// A rule's exemplar holds another number of items of its rule than it
+    /// shows spellings.
     Items
     {
-        /// How many top-level forms besides attribute blocks it holds.
+        /// How many top-level forms besides attribute blocks hold a tile of
+        /// the rule.
         count: usize,
         /// How many it should hold: one per spelling.
         expected: usize,
@@ -286,7 +299,7 @@ impl core::fmt::Display for ExemplarFault
                 noun: "obligation"
             }),
             Self::Items { count, expected } => {
-                write!(f, "holds {} where it shows {expected}", super::Counted {
+                write!(f, "holds {} of its rule where it shows {expected}", super::Counted {
                     count,
                     noun: "item"
                 })
@@ -572,10 +585,11 @@ fn listed(folder: &Path) -> Result<BTreeSet<PathBuf>, LedgerFault>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Ok` exactly when the file reads, opens with a comment naming the
-///   subject, parses with no obligation, holds one item per spelling of its
-///   rule, holds a tile of the subject's rule or files the subject's attribute,
-///   writes each spelling of a glyph rule, and, when its comment marks it
-///   parse-only, names a reason and is refused as a whole by the lowering.
+///   subject, parses with no obligation, holds one item of its rule per
+///   spelling (context declarations beside them are free), holds a tile of the
+///   subject's rule or files the subject's attribute, writes each spelling of a
+///   glyph rule, and, when its comment marks it parse-only, names a reason and
+///   is refused as a whole by the lowering.
 /// - fails: the first check that does not hold.
 /// - panics: none.
 ///
@@ -619,11 +633,36 @@ fn exemplar(
         Subject::Rule(rule) => glyphs_of(pbg, rule),
         Subject::Attribute(_) => Vec::new(),
     };
-    if let Subject::Rule(_) = subject {
+    if let Subject::Rule(rule) = subject {
+        molded(pbg, tree, rule)?;
+        // A form shows the rule when a tile inside it is molded by the rule or
+        // written as the head one of its glyphs is spelled with in ASCII; any
+        // other form is context the items name.
+        let shows = |form| {
+            tree.node(form)
+                .map(gandr_surface_syntax::Node::span)
+                .is_some_and(|outer| {
+                    tree.positions().any(|position| {
+                        tree.node(position).is_some_and(|node| {
+                            matches!(node.label(), NodeLabel::Tile(_))
+                                && node.span().start() >= outer.start()
+                                && node.span().end() <= outer.end()
+                        }) && (rule_of(pbg, tree, position) == Maybe::Present(rule)
+                            || tree.fragment(position).is_some_and(|fragment| {
+                                glyphs.iter().any(|entry| {
+                                    matches!(entry.ascii, Ascii::Head(head) if head.0 == <&str>::from(fragment))
+                                })
+                            }))
+                    })
+                })
+        };
         let items = tree
             .forms()
             .iter()
-            .filter(|&&form| rule_of(pbg, tree, form) != Maybe::Present(ATTRIBUTE_BLOCK))
+            .filter(|&&form| {
+                rule_of(pbg, tree, form) != Maybe::Present(ATTRIBUTE_BLOCK)
+                    && (rule == ATTRIBUTE_BLOCK || shows(form))
+            })
             .count();
         let expected = if glyphs.is_empty() { 1 } else { 2 };
         if items != expected {
@@ -641,7 +680,6 @@ fn exemplar(
     };
     match subject {
         Subject::Rule(rule) => {
-            molded(pbg, tree, rule)?;
             written(pbg, tree, rule, &glyphs)?;
             parse_only(pbg, tree, SourceText::from(text.as_str()))
         },
@@ -1185,7 +1223,7 @@ mod tests
         assert_eq!(named(&report), [
             "block.gandr: parses with 2 obligations left",
             "case_expression.gandr: does not open with a `///` comment naming rule `case_expression`",
-            "number.expression.gandr: holds 2 items where it shows 1",
+            "number.expression.gandr: holds 2 items of its rule where it shows 1",
             "doc.gandr: the attribute `doc` is filed on no declaration",
             "entry.gandr: the lowering refuses it: no declaration or binder answers `seat`",
         ]);
@@ -1215,7 +1253,7 @@ mod tests
         assert_eq!(named(&report), [
             "equivalence_type.gandr: writes no tile of rule `equivalence_type` as `<~>`",
             "isomorphism_type.gandr: writes no tile of rule `isomorphism_type` as `Iso`",
-            "universe_flow_type.gandr: holds 1 item where it shows 2",
+            "universe_flow_type.gandr: holds 1 item of its rule where it shows 2",
         ]);
     }
 

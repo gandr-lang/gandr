@@ -1,5 +1,14 @@
 /// `view_expression`: a call's place lent to a block, at the mode it asks.
-def raised() -> -F Unit {
-  hold xs = cons(1, nil);
-  xs.first() as w { resume(w, 2) }
+@[ checks ]
+def pair : List(Integer) ;
+def pair = cons(1, cons(2, nil)) ;
+module Places {
+  @[ checks ]
+  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+}
+@[ checks ]
+def raised() -> -F List(Integer) {
+  hold xs = pair;
+  xs.first() as w { resume(w, 2) };
+  pure xs
 }

@@ -1,7 +1,9 @@
 /// `codata_declaration`: a codatatype: its family head and one observation per destructor, at the unrestricted grade written with its glyph and in ASCII.
-codata Stream : Type {
+@[ checks ]
+codata Stream : Type[-] {
   ω head : Integer;
 }
-codata StreamAscii : Type {
+@[ checks ]
+codata StreamAscii : Type[-] {
   inf head : Integer;
 }

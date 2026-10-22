@@ -1,4 +1,9 @@
 /// `for_expression`: a for loop.
-def each(n : Integer) -> -F Unit {
-  for x in n { tick(x); }
+@[ checks ]
+def tick(n : Integer) -> -F Unit {
+  unit
+}
+@[ checks ]
+def each(xs : List(Integer)) -> -F Unit {
+  for x in xs { tick(x); }
 }

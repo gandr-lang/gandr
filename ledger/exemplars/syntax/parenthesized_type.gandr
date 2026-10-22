@@ -1,2 +1,4 @@
 /// `parenthesized_type`: a parenthesized type.
+@[ checks ]
 def later : +U (-F Integer) ;
+def later = thunk { return 1 } ;

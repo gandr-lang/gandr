@@ -1,4 +1,10 @@
 /// `constructor_pattern`: a constructor pattern with its fields.
+@[ checks ]
+data Stack : Type {
+  Empty : Stack;
+  Push : (x : Integer, rest : Stack) --> Stack;
+}
+@[ checks ]
 def first(xs : Stack) -> -F Integer {
   case xs {
     Push(x, rest) => return x,

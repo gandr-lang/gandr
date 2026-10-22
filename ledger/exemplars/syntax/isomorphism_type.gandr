@@ -1,3 +1,9 @@
 /// `isomorphism_type`: an isomorphism type, written with its glyph and as the call of `Iso`.
-def turned : Integer ≅ Integer ;
-def turnedAscii : Iso(Integer, Integer) ;
+@[ checks ]
+def turned(i : Integer ≅ Integer) -> -F Unit {
+  pure unit
+}
+@[ checks ]
+def turnedAscii(i : Iso(Integer, Integer)) -> -F Unit {
+  pure unit
+}

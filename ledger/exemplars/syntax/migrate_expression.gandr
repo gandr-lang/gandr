@@ -1,4 +1,15 @@
 /// `migrate_expression`: a migration of a block to a world.
+@[ checks ]
+world operator ;
+@[ checks ]
+world seat ;
+module Seat :> #{ mobile type Report, progress : Report } {
+  type Report = String;
+  @[ checks ]
+  def progress = "progress";
+}
+@[ checks ]
+@[ entry((operator, seat)) ]
 def moved() -> -F Seat.Report {
   migrate [seat] { pure Seat.progress }
 }

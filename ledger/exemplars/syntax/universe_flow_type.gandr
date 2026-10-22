@@ -1,3 +1,17 @@
 /// `universe_flow_type`: a flow between universe codes, written with its glyph and in ASCII.
+module Schema {
+  type Old = String * Integer;
+  type New = Integer * String;
+  @[ checks ]
+  def toNew(old : Old) -> -F New {
+    case old {
+      #{name, age} => (age, name)
+    }
+  }
+}
+@[ checks ]
 def shift : Schema.Old ⇝ Schema.New ;
+def shift = forward(Schema.toNew) ;
+@[ checks ]
 def shiftAscii : Schema.Old ~~> Schema.New ;
+def shiftAscii = forward(Schema.toNew) ;

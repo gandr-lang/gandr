@@ -1,4 +1,13 @@
 /// `instantiation_expression`: an instantiation: a callee with its instantiation arguments.
-def rec countdown(n : Integer) -> -F Integer {
-  become countdown[<](n)
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+@[ checks ]
+def rec countdown(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become countdown[<](p)
+  }
 }

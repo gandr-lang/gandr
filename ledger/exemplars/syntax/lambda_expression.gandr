@@ -1,2 +1,4 @@
 /// `lambda_expression`: a lambda.
-def add = thunk { fn (x : Integer, y : Integer) { return x + y } } ;
+@[ checks ]
+def double : Integer => Integer ;
+def double = fn (x : Integer) { return x + x } ;

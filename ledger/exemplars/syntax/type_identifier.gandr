@@ -1,2 +1,7 @@
 /// `type_identifier`: a named type.
-def zero : Nat ;
+module Counts {
+  type Count = Integer;
+  @[ checks ]
+  def zero : Count ;
+  def zero = 0 ;
+}

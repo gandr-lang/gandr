@@ -1,5 +1,7 @@
 /// `access_expression`: an access to a held cell under a name.
-def peek() -> -F Unit {
+@[ checks ]
+def bump() -> -F Integer {
   hold c = 0;
-  access c as v { pure unit }
+  access c as v { resume(v, v + 1) };
+  pure c
 }

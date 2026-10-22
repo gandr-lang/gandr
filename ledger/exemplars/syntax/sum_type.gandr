@@ -1,2 +1,4 @@
 /// `sum_type`: a sum type.
+@[ checks ]
 def either : Integer + String ;
+def either = +{.0 = 1} ;

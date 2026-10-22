@@ -1,2 +1,7 @@
 /// `at_type`: a type placed at a world.
-def report : Seat.Report at seat ;
+@[ checks ]
+world seat ;
+@[ checks ]
+def kept(n : Integer at seat) -> -F (Integer at seat) {
+  pure n
+}

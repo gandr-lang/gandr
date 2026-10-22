@@ -1,2 +1,10 @@
 /// `manifest_sort`: the binding a `with` fixes, a sort and the type it is.
-def counters : Model(Counter) with sort C = Integer + Unit ;
+@[ checks ]
+theory Counter {
+  sort C : Type;
+  oper zero : C;
+}
+@[ checks ]
+def countersOn(x : Type) -> -F Type {
+  return type(Model(Counter) with sort C = x)
+}

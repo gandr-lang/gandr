@@ -1,2 +1,4 @@
 /// `function_type`: a function type.
-def partial : Integer -> -F Integer ;
+@[ checks ]
+def twice : Type -> Type ;
+def twice = \Y. Y * Y ;
