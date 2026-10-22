@@ -1445,8 +1445,14 @@ pub type Resuming<Retired> =
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a submission retired part way leaves the session the
-///   resume it held, and the next submission resumes from it as it would have.
+///   resume it held, and the next submission resumes from it as it would have;
+///   unretired, a revision after its leading items judges only its own, a
+///   second revision after the same leading recalls the first's own items, a
+///   revision that departs is resumed whole, and a resume held after another
+///   leading of the same closure is not recalled.
 /// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+/// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+/// - witness: `tests::incremental::a_resume_held_after_other_leading_items_is_not_reused_1647`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|polled| match *polled {
     Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
     Polled::Retired(..) => true,

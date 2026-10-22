@@ -372,6 +372,58 @@ fn a_revision_after_its_leading_items_judges_only_its_own_776()
     assert_eq!(resumed_whole.checkpoints(), whole(&departed).checkpoints());
 }
 
+/// #1647: a resume held after one leading of a closure is not resumed after
+/// another leading of the same closure, whose order is its own: the
+/// revision's own items are judged afresh, and the checkpoints are a first
+/// revision's after that leading.
+#[test]
+fn a_resume_held_after_other_leading_items_is_not_reused_1647()
+{
+    let closure = [
+        def(Name("a"), Body::Int(1)),
+        def(Name("b"), read(Name("a"))),
+    ];
+    let mut leading_program = lower(&closure);
+    let (_, held_lead) =
+        lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    let (_, other_lead) =
+        lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    let (held_lead, other_lead) = (Arc::new(held_lead), Arc::new(other_lead));
+    let revision: Vec<Stmt> = closure
+        .iter()
+        .chain(&[def(Name("c"), read(Name("b")))])
+        .cloned()
+        .collect();
+    let held = resume_after(
+        Maybe::Absent(submitted::Absent::Fresh),
+        &held_lead,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+    let first = resume_after(
+        Maybe::Absent(submitted::Absent::Fresh),
+        &other_lead,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+    let resumed = resume_after(
+        Maybe::Present(held),
+        &other_lead,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        resumed.adoptions(),
+        [Adopted, Adopted, Judged],
+        "the own item is judged afresh after another leading"
+    );
+    assert_eq!(
+        resumed.checkpoints(),
+        first.checkpoints(),
+        "as a first revision after that leading records"
+    );
+}
+
 #[test]
 fn the_precision_probe_examines_real_adoptions()
 {
