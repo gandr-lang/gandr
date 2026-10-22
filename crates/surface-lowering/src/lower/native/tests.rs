@@ -2068,6 +2068,34 @@ fn a_listed_constructor_takes_the_answered_element_type_1602()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #1877: a tuple gave its members nothing of the product it is written at, so
+/// a constructor of a family with parameters among them was refused as
+/// unannotated. Each member takes the product's component at its place, the
+/// product written, answered or a list's element type.
+#[test]
+fn a_tuple_gives_its_members_the_product_s_components_1877()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def annotated = ((Some(1), None) : Maybe(Integer) * Maybe(Integer)) ;\n\
+         def returned(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {{ (None, Some(n)) }}\n\
+         def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ [(Some(1), None)] }}\n\
+         def nested = ((Some(1), (None, Some(2))) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["annotated", "returned", "listed", "nested"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_constructor_takes_its_slot_as_a_family_argument_421()
 {
