@@ -5024,10 +5024,12 @@ enum Position
 /// # Adequacy
 /// - hypothesis: L3 — runs beside a thunk, in a case arm, in an application
 ///   spine and in a definition's own value separate the region rule, the
-///   boundaries and the refusal.
+///   boundaries and the refusal; every former of the shared fixture, with no
+///   run beneath it, surveys to no region.
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
 /// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
 /// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
+/// - witness: `rewrite::tests::an_undecided_elaboration_keeps_every_former_but_the_run`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |regions| regions.values().all(|runs| !runs.is_empty())))]
 fn survey(
     arena: &CoreArena,
@@ -5418,6 +5420,7 @@ fn survey_computation(
 /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
 /// - witness: `rewrite::tests::a_run_in_no_computation_is_unenclosed`
 /// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
+/// - witness: `rewrite::tests::an_undecided_elaboration_keeps_every_former_but_the_run`
 #[spec(captures: [entry = arena.watermark(), held = carried.len(), minted = binds.len()],
     ensures: |ret| ret.is_err() || carried.len() >= held && binds.len() >= minted
         && (binds.len() > minted || carried.len() > held || ret == Ok(subject) && arena.watermark() == entry))]
