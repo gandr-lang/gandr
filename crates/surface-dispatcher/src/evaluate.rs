@@ -2925,20 +2925,24 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
         );
     }
 
-    /// The thunk declared as `name` is a thunk whose force, on every tier this
-    /// host has, runs until its 2²⁵ jumps are spent or its heap fills, without
+    /// The thunk declared as `name` in [`LOOPS`] is a thunk whose force, on
+    /// `tier`, runs until its 2²⁵ jumps are spent or its heap fills, without
     /// filling the frame region. Each pass gives its window back, so a pass
     /// holding a frame would fill the frames within those jumps;
     /// `gandr-core-sequent`'s loop suite holds the plain loop to that
-    /// contrast.
+    /// contrast. A tier this host lacks holds nothing to run.
     ///
     /// # Specification
     /// trivial.
     fn holds_no_frame(
-        program: &mut Program<'_>,
         name: SurfaceName<'_>,
+        tier: Tier,
     )
     {
+        if matches!(tier, Tier::Native) && !PATCHER {
+            return;
+        }
+        let mut program = program(LOOPS);
         let position = program
             .declarations
             .iter()
@@ -2946,56 +2950,94 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             .map(|(&constant, _)| constant)
             .expect("the program declares the name");
         let (returned, forced) = program.entries(position).expect("the declaration focuses");
-        let tiers: &[Tier] = if PATCHER {
-            &[Tier::Native, Tier::Executor]
-        }
-        else {
-            &[Tier::Executor]
+        let run = |root, fuel| {
+            gandr_runtime_emitter::evaluate_on(
+                tier,
+                &program.arena,
+                &program.definitions,
+                root,
+                Fuel::from(fuel),
+                &mut Store::new(),
+            )
         };
-        for &tier in tiers {
-            let run = |root, fuel| {
-                gandr_runtime_emitter::evaluate_on(
-                    tier,
-                    &program.arena,
-                    &program.definitions,
-                    root,
-                    Fuel::from(fuel),
-                    &mut Store::new(),
-                )
-            };
-            assert!(
-                matches!(
-                    run(returned, super::RUN_BUDGET),
-                    Ok(super::Outcome::Halted(_))
-                ),
-                "`{name}` is a thunk on {tier:?}"
-            );
-            let spent = run(forced, 1_usize << 25_u32);
-            assert!(
-                matches!(
-                    spent,
-                    Err(Declined::Exhausted(
-                        Status::FuelExhausted | Status::HeapExhausted
-                    ))
-                ),
-                "`{name}` holds no frame on {tier:?}: {spent:?}"
-            );
-        }
+        assert!(
+            matches!(
+                run(returned, super::RUN_BUDGET),
+                Ok(super::Outcome::Halted(_))
+            ),
+            "`{name}` is a thunk on {tier:?}"
+        );
+        let spent = run(forced, 1_usize << 25_u32);
+        assert!(
+            matches!(
+                spent,
+                Err(Declined::Exhausted(
+                    Status::FuelExhausted | Status::HeapExhausted
+                ))
+            ),
+            "`{name}` holds no frame on {tier:?}: {spent:?}"
+        );
     }
+
+    /// Four loops a pass of runs through: a statement, a bound statement, a
+    /// bound inner loop that breaks, and a `while` whose test always holds.
+    const LOOPS: &str = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+         def tick(n : Nat) -> -F Unit { return unit }\n\
+         def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
+         def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
+         def broken : +U (-F Nat) ;\ndef broken = thunk { loop { run u <- loop { break } ; continue } } ;\n\
+         def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
+
+    // One test per loop and tier: each spends its whole fuel, so the eight
+    // runs together passed the thirty-second bound on a loaded machine
+    // (#1857).
 
     #[test]
     fn a_loop_runs_in_constant_continuation()
     {
-        let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-             def tick(n : Nat) -> -F Unit { return unit }\n\
-             def spin : +U (-F Nat) ;\ndef spin = thunk { loop { tick(Zero); } } ;\n\
-             def bound : +U (-F Nat) ;\ndef bound = thunk { loop { run u <- tick(Zero) ; continue } } ;\n\
-             def broken : +U (-F Nat) ;\ndef broken = thunk { loop { run u <- loop { break } ; continue } } ;\n\
-             def tested : +U (-F Nat) ;\ndef tested = thunk { while 1 > 0 { tick(Zero) } ; return Zero } ;\n";
-        let mut program = program(source);
-        for name in ["spin", "bound", "broken", "tested"] {
-            holds_no_frame(&mut program, SurfaceName::from(name));
-        }
+        holds_no_frame(SurfaceName::from("spin"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_loop_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("spin"), Tier::Native);
+    }
+
+    #[test]
+    fn a_bound_loop_body_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("bound"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_bound_loop_body_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("bound"), Tier::Native);
+    }
+
+    #[test]
+    fn a_loop_bound_to_an_inner_break_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("broken"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_loop_bound_to_an_inner_break_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("broken"), Tier::Native);
+    }
+
+    #[test]
+    fn a_while_loop_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("tested"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_while_loop_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("tested"), Tier::Native);
     }
 
     /// The source of a function whose exits stand one and two matches deep
