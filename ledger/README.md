@@ -9,7 +9,7 @@ The language surface and its features, each checked by the gates. The syntax led
 - `features.sql`: the features ledger, the `sqlite3` dump of one table of what gandr implements, partly implements, plans and declines, each row with its evidence: the schema first, then one `INSERT` per row in `id` order. The database itself, `features.db`, is built from it and never tracked.
 - `exemplars/syntax/<rule>.gandr`: one exemplar per committed rule, opening with a `///` comment naming the rule; it holds one item whose tree holds a tile of the rule.
 - `exemplars/attributes/<name>.gandr`: one exemplar per attribute, opening with a `///` comment naming it; it lowers with the attribute filed on the item it decorates, beside any declaration its payload names.
-- `exemplars/features/<feature id>.gandr`: one focused program per row of the features ledger, named by the row's id, opening with a `///` comment naming it. Every declaration states `checks`, `runs` or `normalizes`, and every one settles; the directory is outside the corpus's fixture root, so an `owes` or `refuses` expectation is refused there.
+- `exemplars/features/<feature id>.gandr`: a focused program for a row of the features ledger that no corpus fixture shows, named by the row's id, opening with a `///` comment naming it. Every declaration states `checks`, `runs` or `normalizes`, and every one settles; the directory is outside the corpus's fixture root, so an `owes` or `refuses` expectation is refused there. A row a corpus fixture shows names that fixture as its exemplar instead, never a copy of it.
 
 The two kinds of exemplar are gated apart. A syntax or attribute exemplar shows a form, not a program: many stand where the checker's fragment does not reach yet (a shell block, a statement at the top level), so they are parsed and lowered and never checked. A features exemplar is a program, and it is checked and run.
 
@@ -27,7 +27,7 @@ How each row is read off the grammar, the notation a form is spelled in, why a r
 | `notability`, `compared_to` | `ordinary`, `notable`, `uncommon` or `unique`; the last two say against what |
 | `crate` | the owning crates, directory names under `crates/`, or a `contrib/` path |
 | `corpus` | witnesses: a fixture path under `crates/surface-corpus/`, or a test file from the root, `::item` naming a test in it |
-| `exemplar` | the row's features exemplar, `ledger/exemplars/features/<id>.gandr` |
+| `exemplar` | the program that shows the row: a `model/` or `strict/` corpus fixture, a path from the root, or `ledger/exemplars/features/<id>.gandr` where no fixture shows it; a `pathological/` fixture shows a refusal and is never one |
 | `issue` | tracker issues, `#n` separated by spaces |
 | `since` | the pull request that landed an implemented or partial row, or the commit before pull requests |
 
