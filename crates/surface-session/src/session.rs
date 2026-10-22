@@ -2020,13 +2020,15 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let submission = self.judge_with(
-            revision,
-            &Unit::single(),
-            ByteOffset::from(0_usize),
-            None,
-            |_| (),
-        )?;
+        let submission = self
+            .judge_with(
+                revision,
+                (&Unit::single(), ByteOffset::from(0_usize)),
+                None,
+                |_| (),
+                &Unretired,
+            )?
+            .whole();
         self.admit_into(submission)
     }
 
@@ -2065,7 +2067,9 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let submission = self.judge_with(revision, unit, base, Some(slot), |_| ())?;
+        let submission = self
+            .judge_with(revision, (unit, base), Some(slot), |_| (), &Unretired)?
+            .whole();
         self.admit_into(submission)
     }
 
@@ -2293,10 +2297,55 @@ impl<Store, Blocks> Session<Store, Blocks>
     {
         self.judge_with(
             revision,
-            &Unit::single(),
-            ByteOffset::from(0_usize),
+            (&Unit::single(), ByteOffset::from(0_usize)),
             None,
             read,
+            &Unretired,
+        )
+        .map(Polled::whole)
+    }
+
+    /// [`judge_reading`](Self::judge_reading), polling `retirement` before each
+    /// item the incremental pass adopts or judges.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: while every poll answers wanted, [`Polled::Whole`] with what
+    ///   [`judge_reading`](Self::judge_reading) answers. Retired before an
+    ///   item, [`Polled::Retired`]: the incremental session holds the resume it
+    ///   held, and the imports, snapshot and documentation the session holds
+    ///   are the last accepted revision's; the session holds no admission.
+    /// - provides: an editor's judgement that a newer revision overtakes stops
+    ///   at its next item, on whatever thread runs it.
+    /// - fails: as [`judge`](Self::judge).
+    /// - panics: only by propagating a panic of `read`.
+    /// - executable: none — as [`judge_reading`](Self::judge_reading).
+    ///
+    /// # Errors
+    /// As [`judge`](Self::judge).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a judgement retired part way leaves the next one
+    ///   judging what it would have with no retired one before it.
+    /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
+    #[inline]
+    pub fn judge_reading_retiring<'text, Read, Poll>(
+        &mut self,
+        revision: SourceText<'text>,
+        read: Read,
+        retirement: &Poll,
+    ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Read: FnOnce(&SyntaxTree<'text>),
+        Poll: Retirement,
+    {
+        self.judge_with(
+            revision,
+            (&Unit::single(), ByteOffset::from(0_usize)),
+            None,
+            read,
+            retirement,
         )
     }
 
@@ -2367,17 +2416,60 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Read: FnOnce(&SyntaxTree<'text>),
     {
-        self.judge_with(revision, unit, base, Some(slot), read)
+        self.judge_with(revision, (unit, base), Some(slot), read, &Unretired)
+            .map(Polled::whole)
     }
 
-    /// Judge `revision` as [`judge_unit_reading`](Self::judge_unit_reading)
+    /// [`judge_unit_reading`](Self::judge_unit_reading), polling `retirement`
+    /// before each item the incremental pass adopts or judges.
+    ///
+    /// # Specification
+    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
+    /// - ensures: while every poll answers wanted, [`Polled::Whole`] with what
+    ///   [`judge_unit_reading`](Self::judge_unit_reading) answers; retired
+    ///   before an item, as
+    ///   [`judge_reading_retiring`](Self::judge_reading_retiring) states.
+    /// - provides: as [`judge_reading_retiring`](Self::judge_reading_retiring),
+    ///   for a document that imports a sibling.
+    /// - fails: as [`judge`](Self::judge).
+    /// - panics: only by propagating a panic of `read`.
+    /// - executable: none — as
+    ///   [`judge_unit_reading`](Self::judge_unit_reading).
+    ///
+    /// # Errors
+    /// As [`judge`](Self::judge).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`judge_reading_retiring`](Self::judge_reading_retiring).
+    /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
+    #[inline]
+    pub fn judge_unit_reading_retiring<'text, Read, Poll>(
+        &mut self,
+        revision: SourceText<'text>,
+        (unit, base): (&Unit, ByteOffset),
+        slot: &'text ClosureSlot,
+        read: Read,
+        retirement: &Poll,
+    ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Read: FnOnce(&SyntaxTree<'text>),
+        Poll: Retirement,
+    {
+        self.judge_with(revision, (unit, base), Some(slot), read, retirement)
+    }
+
+    /// Judge `revision` as
+    /// [`judge_unit_reading_retiring`](Self::judge_unit_reading_retiring)
     /// does, its closure lowered whole without `slot`.
     ///
     /// # Specification
     /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
-    /// - ensures: as [`judge_unit_reading`](Self::judge_unit_reading); without
-    ///   a slot, the text is parsed through the form store and lowered whole;
-    ///   with one, a session with nothing submitted resumes from the
+    /// - ensures: as
+    ///   [`judge_unit_reading_retiring`](Self::judge_unit_reading_retiring);
+    ///   without a slot, the text is parsed through the form store and lowered
+    ///   whole; with one, a session with nothing submitted resumes from the
     ///   checkpoints the closure's items hold, and the first submission over
     ///   the closure keeps its items' checkpoints there.
     /// - fails: as [`judge`](Self::judge).
@@ -2392,17 +2484,19 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - hypothesis: L3 — as [`judge_unit_reading`](Self::judge_unit_reading).
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
-    fn judge_with<'text, Read>(
+    /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
+    fn judge_with<'text, Read, Poll>(
         &mut self,
         revision: SourceText<'text>,
-        unit: &Unit,
-        base: ByteOffset,
+        (unit, base): (&Unit, ByteOffset),
         slot: Option<&'text ClosureSlot>,
         read: Read,
-    ) -> Result<Submission<'text>, SessionFault<'text>>
+        retirement: &Poll,
+    ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
         Read: FnOnce(&SyntaxTree<'text>),
+        Poll: Retirement,
     {
         let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
@@ -2468,7 +2562,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             Lowered::Module { module, arena } => (module, arena),
             Lowered::Refused(refusal) => {
                 let composed = Composed::Refused(refusal);
-                return Ok(Submission {
+                return Ok(Polled::Whole(Submission {
                     root: self.root,
                     text: revision,
                     base,
@@ -2483,7 +2577,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                         Tables::Kept => tabled::Absent::RefusedWhole,
                         Tables::Unkept => tabled::Absent::Untabled,
                     }),
-                });
+                }));
             },
         };
         // economy: one arena copy per accepted revision, of the revision's own
@@ -2546,16 +2640,25 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
         };
         let submitted = match led {
-            Some(led) => self
+            Some(led) => self.incremental.submit_after_retiring(
+                &mut items,
+                led.leading(),
+                &mut Quiet,
+                retirement,
+            ),
+            None => self
                 .incremental
-                .submit_after(&mut items, led.leading(), &mut Quiet),
-            None => self.incremental.submit(&mut items, &mut Quiet),
+                .submit_retiring(&mut items, &mut Quiet, retirement),
         };
         let (census, persistence) = match submitted {
-            Ok(census) => (census, match Store::KEEPING {
+            Ok(Polled::Whole(census)) => (census, match Store::KEEPING {
                 Keeping::Kept => Persistence::Stored,
                 Keeping::Discarded => Persistence::Discarded,
             }),
+            // Retired before an item: the incremental session holds the resume
+            // it held, and the session keeps the imports, snapshot and
+            // documentation of the revision it last accepted.
+            Ok(Polled::Retired(retired, ())) => return Ok(Polled::Retired(retired, ())),
             Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
             // The incremental session keeps the new resume when persisting
             // fails; were it to hold none, there is no census to report, so
@@ -2578,7 +2681,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     .unwrap_or_default(),
             ),
         });
-        Ok(Submission {
+        Ok(Polled::Whole(Submission {
             root: self.root,
             text: revision,
             base,
@@ -2593,7 +2696,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             obligations,
             forms,
             table,
-        })
+        }))
     }
 
     /// Judge each of `candidates` — whole texts of the session's source, each

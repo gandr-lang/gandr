@@ -1258,6 +1258,43 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let _removed = std::fs::remove_dir_all(&directory);
 }
 
+/// #1547: a judgement retired before its first item leaves the session the
+/// resume it held, so the next judgement of the same revision judges and
+/// adopts what it would have with no retired one before it.
+#[test]
+fn a_retired_judgement_leaves_the_next_its_resume_1547()
+{
+    use gandr_core_checker::Polled;
+    let first = "def kept = 40 ;\ndef edited = 1 ;\ndef after = kept ;";
+    let second = "def kept = 40 ;\ndef edited = 2 ;\ndef after = kept ;";
+    let mut retiring = session(SourceRoot::Strict);
+    let _first = submit(&mut retiring, first);
+    assert!(
+        matches!(
+            retiring.judge_reading_retiring(
+                gandr_surface_syntax::SourceText::from(second),
+                |_| (),
+                &After(core::cell::Cell::new(0_usize)),
+            ),
+            Ok(Polled::Retired((), ()))
+        ),
+        "a judgement polled retired before its first item answers retired"
+    );
+    let after_retired = census(&submit(&mut retiring, second));
+    let mut plain = session(SourceRoot::Strict);
+    let _first = submit(&mut plain, first);
+    let unretired = census(&submit(&mut plain, second));
+    assert_eq!(
+        (after_retired.adopted, after_retired.judged),
+        (unretired.adopted, unretired.judged),
+        "the next judgement adopts and judges what it would with no retired one before it"
+    );
+    assert!(
+        usize::from(after_retired.adopted) > 0_usize,
+        "and resumes from the first revision's items: {after_retired:?}"
+    );
+}
+
 /// #776: each revision of a document laid out after its import closure shares
 /// the closure's items' images with the revision before it, and its edits are
 /// the document's own.
