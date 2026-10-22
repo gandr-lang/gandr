@@ -220,6 +220,13 @@ impl<'lowered> Sites<'lowered>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a captured stack resumed twice answers as it states:
+    ///   a frame whose owners are not found gives its copy none, and the second
+    ///   resumption reads a freed value.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     #[inline]
     #[must_use]
     pub fn owners(

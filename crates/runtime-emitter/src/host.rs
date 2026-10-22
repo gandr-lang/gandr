@@ -721,6 +721,14 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Errors
     /// [`Refusal::Operands`] for a code the function never pushes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a captured stack resumed twice and a handler resuming
+    ///   its stack twice answer as they state: a frame read as holding a value
+    ///   where it holds a window, or as another frame's window, resumes over
+    ///   the captured window or a short copy of it.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn window(
         &self,
         code: Word,
@@ -1047,7 +1055,10 @@ impl<'run, 'host> Calls<'run, 'host>
     /// - hypothesis: L2 — a captured stack resumed twice and a handler resuming
     ///   its stack twice answer as they state: a replay that gave its copy no
     ///   owner of its own, or moved the owners of a stack another owner keeps,
-    ///   frees a pair the second resumption returns.
+    ///   frees a pair the second resumption returns. A stack resumed below the
+    ///   frames it was captured from, whose inner frame answers to a frame the
+    ///   stack holds, answers as it states: a mark into the captured frames
+    ///   left where they were skips that frame.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn replay(
