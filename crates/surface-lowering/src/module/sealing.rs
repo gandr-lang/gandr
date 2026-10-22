@@ -528,8 +528,8 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read the type member `member`, `type T = τ ;` or the family `type T(a :
-    /// A, …) = τ ;`, of the module at `structure`, after the attribute blocks
-    /// written before it.
+    /// A, …) = τ ;`, written in `container` — a module's body or a source's
+    /// top level — after the attribute blocks written before it.
     ///
     /// The attributes are kept on the member's held slot, decorating the
     /// member's form: the member declares nothing, so they state the verdict
@@ -537,49 +537,49 @@ impl<'source> Collector<'_, 'source>
     /// component's witness carries the member's form as its expectation half.
     ///
     /// # Specification
-    /// - requires: `pieces` is the reading of `member`, a member form of the
-    ///   module at `structure` whose first tile past its attribute blocks is
-    ///   `type`.
-    /// - ensures: a member reading `type T = τ ;` is filed among the module's
-    ///   type members with a fresh held slot owning `τ` and carrying the
-    ///   member's attributes; one binding parameters is filed as a family, its
-    ///   slot owning the parameters' types too; a second member of an earlier
-    ///   one's name is refused naming the first; a member out of shape, or with
-    ///   an attribute block out of shape, is refused under the module's name at
-    ///   the member.
-    /// - provides: the type-member half of [`Self::member`].
-    /// - fails: never; a fault is filed rather than raised.
+    /// - requires: `pieces` is the reading of `member`, a form in `container`
+    ///   whose first tile past its attribute blocks is `type`.
+    /// - ensures: a member reading `type T = τ ;` is filed among the
+    ///   container's type members — the module's, or the source's top-level
+    ///   ones — with a fresh held slot owning `τ` and carrying the member's
+    ///   attributes; one binding parameters is filed as a family, its slot
+    ///   owning the parameters' types too; a second member of an earlier one's
+    ///   name in the same container is refused naming the first.
+    /// - provides: the type-member half of [`Self::member`] and of a source's
+    ///   top level.
+    /// - fails: a member out of shape, or with an attribute block out of shape,
+    ///   is refused at the member; a module's caller files it under the
+    ///   module's name.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] naming the module form, and an
+    /// attribute block's own refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a read member, a repeated one and a repaired one take
-    ///   their distinct outcomes, and an attributed one keeps its attributes.
+    ///   their distinct outcomes, and an attributed one keeps its attributes; a
+    ///   member at a source's top level is filed under the source.
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
     /// - witness: `tests::modules::an_unread_member_keeps_its_own_report`
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
-        captures: before = (
-            self.collected.slots.len(),
-            self.collected.structures.get(structure.0).map(|entry| entry.type_members.len()),
-        ),
+        captures: before = (self.collected.slots.len(), self.collected.top_types.len()),
         ensures: |_| {
             self.collected.slots.len() <= before.0.saturating_add(1)
-                && self.collected.structures.get(structure.0).map(|entry| entry.type_members.len())
-                    <= before.1.map(|count| count.saturating_add(1))
+                && self.collected.top_types.len() <= before.1.saturating_add(1)
         },
     )]
     pub(super) fn type_member(
         &mut self,
-        structure: StructureIndex,
+        container: Container,
         member: Placed,
         pieces: &Pieces,
-    )
+    ) -> Result<(), LoweringRefusal<'source>>
     {
-        let container = Container::Module(structure);
         if let Maybe::Present(repaired) = pieces.repair {
-            self.fault_at(structure, member, repaired.refusal(FormName::MODULE));
-            return;
+            return Err(repaired.refusal(FormName::MODULE));
         }
         let keyword = pieces
             .pieces
@@ -593,69 +593,33 @@ impl<'source> Collector<'_, 'source>
             .split_at_checked(keyword)
             .unwrap_or((&[], &pieces.pieces));
         let mut attributes = Vec::new();
-        if let Err(refusal) = self.read_attributes(
+        self.read_attributes(
             Cursor::new(blocks, member.span),
             member.node,
             &mut attributes,
-        ) {
-            self.fault_at(structure, member, refusal);
-            return;
-        }
+        )?;
         let mut cursor = Cursor::new(form, member.span);
         let _keyword = cursor.tile(TileName::TYPE);
         let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
-            self.fault_at(
-                structure,
-                member,
-                misplaced_in(FormName::MODULE, cursor.here()),
-            );
-            return;
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
-        let parameters = match Self::family_parameters(&mut cursor) {
-            Ok(parameters) => parameters,
-            Err(refusal) => {
-                self.fault_at(structure, member, refusal);
-                return;
-            },
-        };
+        let parameters = Self::family_parameters(&mut cursor)?;
         if let Maybe::Absent(_) = cursor.tile(TileName::EQUALS) {
-            self.fault_at(
-                structure,
-                member,
-                misplaced_in(FormName::MODULE, cursor.here()),
-            );
-            return;
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
-        let defined = match one_in(FormName::MODULE, cursor.operands()) {
-            Ok(defined) => defined,
-            Err(refusal) => {
-                self.fault_at(structure, member, refusal);
-                return;
-            },
-        };
+        let defined = one_in(FormName::MODULE, cursor.operands())?;
         let _semicolon = cursor.tile(TileName::SEMICOLON);
         if let Maybe::Present(_) = cursor.peek() {
-            self.fault_at(
-                structure,
-                member,
-                misplaced_in(FormName::MODULE, cursor.here()),
-            );
-            return;
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
         let name = self.name_of(named);
         let first = self
             .collected
-            .structures
-            .get(structure.0)
-            .and_then(|entry| {
-                entry
-                    .type_members
-                    .iter()
-                    .find(|earlier| earlier.name == name)
-                    .and_then(|earlier| self.collected.slots.get(earlier.held.0))
-                    .map(|earlier| earlier.named.span)
-            });
+            .type_members_in(container)
+            .find(|earlier| earlier.name == name)
+            .and_then(|earlier| self.collected.slots.get(earlier.held.0))
+            .map(|earlier| earlier.named.span);
         if let Some(first) = first {
             let refusal = LoweringRefusal::DuplicateDefinition {
                 span: named.span,
@@ -663,7 +627,7 @@ impl<'source> Collector<'_, 'source>
                 first,
             };
             let _held = self.refuse_held(container, name, member, named, refusal);
-            return;
+            return Ok(());
         }
         let held = self.held(container, name, member, named);
         if let Some(slot) = self.collected.slots.get_mut(held.0) {
@@ -685,13 +649,21 @@ impl<'source> Collector<'_, 'source>
             });
             super::TypeMeaning::Family(family)
         };
-        if let Some(entry) = self.collected.structures.get_mut(structure.0) {
-            entry.type_members.push(TypeComponent {
-                name,
-                meaning,
-                held,
-            });
+        let filed = TypeComponent {
+            name,
+            meaning,
+            held,
+        };
+        match container {
+            Container::Module(structure) => {
+                if let Some(entry) = self.collected.structures.get_mut(structure.0) {
+                    entry.type_members.push(filed);
+                }
+            },
+            Container::TopLevel(source) => self.collected.top_types.push((source, filed)),
         }
+
+        Ok(())
     }
 
     /// Match the abstract component `component`, at place `ordinal` in the

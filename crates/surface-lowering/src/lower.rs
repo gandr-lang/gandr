@@ -2864,6 +2864,10 @@ struct Lowerer<'run, 'source>
     /// Each type head that named a manifest type component, with the held
     /// slot owning that component's type.
     manifests: Vec<(SlotIndex, NodeIndex)>,
+    /// Each application of a type member with parameters, by its node, with
+    /// its span and the frame it is read under: the application answers as
+    /// the type it expands to, which the member's own body mints.
+    expansions: BTreeMap<NodeIndex, (ByteSpan, Frame)>,
     /// Each exported value component's full path, with the member's slot.
     exported: BTreeMap<NamePath, SlotIndex>,
     /// Each exported type component's full path, with what it reads.
@@ -4412,6 +4416,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             payload,
             scopes,
             manifests: Vec::new(),
+            expansions: BTreeMap::new(),
             exported: BTreeMap::new(),
             exported_types: BTreeMap::new(),
             witnessed: BTreeMap::new(),
@@ -5199,6 +5204,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             for record in &structure.stated_at {
                 seeds.push((record.node, Reading::ValueType(Frame::Outermost)));
+            }
+        }
+        for stated in self
+            .collected
+            .type_members_in(Container::TopLevel(from.source))
+        {
+            if let TypeMeaning::Manifest(defined) = stated.meaning {
+                seeds.push((defined.node, Reading::ValueType(Frame::Outermost)));
             }
         }
         for recorded in self
@@ -9851,14 +9864,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// The type member `name` names at `site`: one written before it in the
-    /// module its declaration belongs to, or in an enclosing one.
+    /// module its declaration belongs to, in an enclosing one, or at its
+    /// source's top level.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the nearest module outward from the container of the
-    ///   declaration owning `site` whose body declares a type member of the
-    ///   name, written wholly before `site`, answers it; a site no declaration
-    ///   owns, or a name no such member has, answers nothing.
+    /// - ensures: the nearest container outward from the container of the
+    ///   declaration owning `site` — its module, each module enclosing it, then
+    ///   its source's top level — that declares a type member of the name,
+    ///   written wholly before `site`, answers it, the last such of that
+    ///   container; a site no declaration owns, or a name no such member has,
+    ///   answers nothing.
     /// - provides: the body scope of a type member.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
     ///   allowance.
@@ -9872,6 +9888,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   its own module, and one naming a member it precedes, separate the
     ///   scope from the module's whole body.
     /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
+    /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(member)) => member.name == name
@@ -9893,25 +9910,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
             || self.collected.top(site.at.span.start()),
             |slot| slot.container,
         );
-        while let Container::Module(module) = container
-            && let Some(structure) = self.collected.structures.get(usize::from(module))
-        {
+        loop {
             self.fuel.spend()?;
-            let written = structure.type_members.iter().rev().find(|member| {
-                member.name == name
-                    && self
-                        .collected
-                        .slots
-                        .get(usize::from(member.held))
-                        .is_some_and(|held| held.introduced_by.span.end() <= site.at.span.start())
-            });
+            let written = self
+                .collected
+                .type_members_in(container)
+                .filter(|member| {
+                    member.name == name
+                        && self
+                            .collected
+                            .slots
+                            .get(usize::from(member.held))
+                            .is_some_and(|held| {
+                                held.introduced_by.span.end() <= site.at.span.start()
+                            })
+                })
+                .last();
             if let Some(&member) = written {
                 return Ok(Maybe::Present(member));
             }
+            let Container::Module(module) = container
+            else {
+                return Ok(Maybe::Absent(named::Absent::Unresolved));
+            };
+            let Some(structure) = self.collected.structures.get(usize::from(module))
+            else {
+                return Ok(Maybe::Absent(named::Absent::Unresolved));
+            };
             container = structure.container;
         }
-
-        Ok(Maybe::Absent(named::Absent::Unresolved))
     }
 
     /// Classify a qualified type reference `M.T`.
@@ -10531,6 +10558,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     start,
                     end: self.operands.len(),
                 };
+                let _first = self
+                    .expansions
+                    .insert(site.at.node, (site.at.span, site.reading.frame()));
                 return self.expansion(site, family, held, applied);
             },
             Ok(Maybe::Present(_) | Maybe::Absent(_)) => {},
@@ -12151,6 +12181,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .iter()
             .skip(from.structures)
             .flat_map(|structure| structure.types.iter().chain(&structure.type_members))
+            .chain(self.collected.type_members_in(Container::TopLevel(from.source)))
             .filter_map(|component| match component.meaning {
                 TypeMeaning::Manifest(defined) => Some(defined),
                 TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
@@ -13038,7 +13069,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.mint_codata(constant, arguments, sink, origin)
             },
             Plan::Expansion(family, arguments) => {
-                self.mint_expansion(family, arguments, sink, origin)
+                let expanded = self.mint_expansion(family, arguments, sink, origin);
+                if let Maybe::Present(Lowered::ValueType(ty)) = expanded
+                    && let Some(&(span, frame)) = self.expansions.get(&origin.node())
+                {
+                    let context = self
+                        .scope
+                        .telescope_names(frame, self.telescope_at(origin.node()))
+                        .into_iter()
+                        .map(|name| String::from(name.as_ref()))
+                        .collect();
+                    sink.origins.record_label(Label {
+                        span,
+                        labelled: Labelled::ValueType { ty, context },
+                    });
+                }
+                expanded
             },
             Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
             Plan::Case(case) => self.mint_case(case, sink, origin),
