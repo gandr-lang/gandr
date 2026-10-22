@@ -220,6 +220,7 @@ impl LoweringRefusal<'_>
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
+            | Self::RulesNeverComplete { .. }
             | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -272,6 +273,7 @@ impl LoweringRefusal<'_>
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
+            | Self::RulesNeverComplete { .. }
             | Self::AcrossHandler { .. }
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
@@ -590,7 +592,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 58_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 59_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -787,6 +789,10 @@ mod tests
                 span: empty,
                 first: empty,
             },
+            LoweringRefusal::RulesNeverComplete {
+                span: empty,
+                first: empty,
+            },
             LoweringRefusal::BareFeedback {
                 span: empty,
                 rule: empty,
@@ -883,6 +889,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

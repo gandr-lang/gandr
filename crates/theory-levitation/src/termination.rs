@@ -19,7 +19,10 @@
 //! left to right. The order is a simplification order, so a face it orients
 //! decreases every term the face rewrites, in any context, and a description
 //! all of whose faces it orients terminates. [`path_greater`] is the order on
-//! two terms.
+//! two terms, and [`embeds`] the homeomorphic embedding every simplification
+//! order contains: a term is above every other term embedding in it over the
+//! same variables, and by Kruskal's tree theorem every infinite sequence of
+//! terms over finitely many symbols holds a term embedding in a later one.
 //!
 //! **Choice.** A path order over the written faces, with the least precedence
 //! the faces need. A face's left side applies an operation to constructor
@@ -87,7 +90,8 @@
 //!   lexicographic path order.
 //! - Franz Baader and Tobias Nipkow. _Term Rewriting and All That_. Cambridge
 //!   University Press, 1998, § 5.4 — the order's definition, its
-//!   simplification-order property, and the critical-pair lemma.
+//!   simplification-order property, the homeomorphic embedding with Kruskal's
+//!   tree theorem, and the critical-pair lemma.
 //! - Jean-Pierre Jouannaud and Albert Rubio. "The Higher-Order Recursive Path
 //!   Ordering." LICS 1999 — the order on instantiations of metavariables.
 
@@ -97,6 +101,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
+use crate::boundary::EmbeddingStatus;
 use crate::boundary::PathOrderStatus;
 use crate::boundary::RuleIndex;
 use crate::code::Name;
@@ -476,7 +481,7 @@ pub fn path_greater(
     let metavariables = metavariables(&below);
     let higher =
         |node: &Node<'_>| matches!(node.symbol, Symbol::Var(name) if metavariables.contains(name));
-    let mut table = Table::new(&above, &below);
+    let mut table: Table<Comparison> = Table::new(&above, &below);
     let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
         (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results) => true,
         (Symbol::Op(left), Symbol::Op(right)) => precedence.rank(left) > precedence.rank(right),
@@ -484,7 +489,7 @@ pub fn path_greater(
     };
     // The first argument pair that differs, left to right, decides two
     // applications of one symbol.
-    let lexicographic = |table: &Table, node: &Node<'_>, other: &Node<'_>| {
+    let lexicographic = |table: &Table<Comparison>, node: &Node<'_>, other: &Node<'_>| {
         node.arguments()
             .zip(other.arguments())
             .map(|(left, right)| table.at(left, right))
@@ -494,7 +499,7 @@ pub fn path_greater(
     // A node covers a right-side node it is above, or one of its own
     // arguments is equal to or above: the comparison a metavariable passed
     // bare takes, which no base term is above.
-    let covers = |table: &Table, node: &Node<'_>, row: At, column: At| {
+    let covers = |table: &Table<Comparison>, node: &Node<'_>, row: At, column: At| {
         table.at(row, column).greater
             || node.arguments().any(|argument| {
                 let pair = table.at(argument, column);
@@ -542,6 +547,67 @@ pub fn path_greater(
         }
     }
     PathOrderStatus::from(table.at(At(0), At(0)).greater)
+}
+
+/// Whether `small` embeds homeomorphically in `big`, variables read up to
+/// renaming: `big` is `small` with applications wrapped around some of its
+/// subterms.
+///
+/// # Specification
+/// - ensures: positive exactly when some argument of `big` holds an embedding
+///   of `small`, or the two apply one symbol — one constructor, one operation,
+///   a results tuple, an instantiation each, or a variable each — to as many
+///   arguments, and each argument of `small` embeds in the argument of `big` at
+///   its place.
+/// - ensures: every term embeds in itself.
+/// - panics: none.
+/// - intension: one table of every node pair of the two terms, filled from the
+///   leaves up, so no comparison recurses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a term embeds in itself, in the term wrapping it in an
+///   application at the root, and in one wrapping a subterm of it below the
+///   root; a variable embeds in a term holding one and in no ground term; a
+///   term embeds in no smaller term and in no term applying another symbol at
+///   the node it would couple with. Dropping the diving case, coupling two
+///   symbols, or comparing variables by name changes one of them.
+/// - witness: `termination::tests::a_term_embeds_in_every_term_wrapping_it`
+#[spec(ensures: |ret| small != big || bool::from(ret))]
+#[inline]
+#[must_use]
+pub fn embeds(
+    small: &FreeTerm,
+    big: &FreeTerm,
+) -> EmbeddingStatus
+{
+    let inner = flatten(small);
+    let outer = flatten(big);
+    let mut table: Table<bool> = Table::new(&inner, &outer);
+    // One symbol each, a variable and an instantiation read up to renaming.
+    let couples = |node: &Node<'_>, other: &Node<'_>| {
+        node.arity == other.arity
+            && match (node.symbol, other.symbol) {
+                (Symbol::Ctor(left), Symbol::Ctor(right))
+                | (Symbol::Op(left), Symbol::Op(right)) => left == right,
+                (Symbol::Var(_), Symbol::Var(_))
+                | (Symbol::Results, Symbol::Results)
+                | (Symbol::Inst(_), Symbol::Inst(_)) => true,
+                _ => false,
+            }
+    };
+    for (row, node) in inner.iter().enumerate().rev() {
+        for (column, other) in outer.iter().enumerate().rev() {
+            let (row, column) = (At(row), At(column));
+            let dives = other.arguments().any(|argument| table.at(row, argument));
+            let coupled = couples(node, other)
+                && node
+                    .arguments()
+                    .zip(other.arguments())
+                    .all(|(left, right)| table.at(left, right));
+            table.set(row, column, dives || coupled);
+        }
+    }
+    EmbeddingStatus::from(table.at(At(0), At(0)))
 }
 
 /// The variables `nodes` instantiates: the metavariables of a rule whose right
@@ -667,20 +733,21 @@ struct Comparison
     greater: bool,
 }
 
-/// The comparison table of two flattened terms: how each node of the first
-/// compares with each node of the second.
+/// A table of two flattened terms: one cell per node of the first and node of
+/// the second, saying how the two compare or whether one embeds in the other.
 #[derive(Clone, Debug)]
-struct Table
+struct Table<T>
 {
     /// The second term's node count.
     columns: usize,
-    /// The comparisons, row by row.
-    pairs: Vec<Comparison>,
+    /// The cells, row by row.
+    pairs: Vec<T>,
 }
 
-impl Table
+impl<T: Copy + Default> Table<T>
 {
-    /// A table of `above`'s nodes by `below`'s, no pair yet equal or ordered.
+    /// A table of `above`'s nodes by `below`'s, every cell the default: no
+    /// pair yet equal, ordered or embedding.
     ///
     /// # Specification
     /// trivial.
@@ -691,7 +758,7 @@ impl Table
     {
         Self {
             columns: below.len(),
-            pairs: vec![Comparison::default(); above.len().saturating_mul(below.len())],
+            pairs: vec![T::default(); above.len().saturating_mul(below.len())],
         }
     }
 
@@ -703,7 +770,7 @@ impl Table
         &self,
         row: At,
         column: At,
-    ) -> Comparison
+    ) -> T
     {
         self.pairs
             .get(row.0.saturating_mul(self.columns).saturating_add(column.0))
@@ -719,7 +786,7 @@ impl Table
         &mut self,
         row: At,
         column: At,
-        comparison: Comparison,
+        comparison: T,
     )
     {
         let at = row.0.saturating_mul(self.columns).saturating_add(column.0);
@@ -1081,6 +1148,41 @@ mod tests
             orient_rules(&shadow),
             Termination::Oriented,
             "read with every variable at base type, β's first-order shadow orients"
+        );
+    }
+
+    #[test]
+    fn a_term_embeds_in_every_term_wrapping_it()
+    {
+        let nil = || FreeTerm::op("nil", []);
+        let par = |p, q| FreeTerm::op("par", [p, q]);
+        let nu = |p| FreeTerm::op("nu", [p]);
+        let seed = nu(par(nil(), var("q")));
+        let grown = nu(par(par(nil(), var("r")), var("s")));
+        assert!(bool::from(embeds(&seed, &seed)), "a term embeds in itself");
+        assert!(
+            bool::from(embeds(&seed, &grown)),
+            "a subterm wrapped below the root, the variables renamed"
+        );
+        assert!(
+            bool::from(embeds(&seed, &par(var("t"), seed.clone()))),
+            "the whole term wrapped at the root"
+        );
+        assert!(
+            !bool::from(embeds(&grown, &seed)),
+            "no term embeds in a smaller one"
+        );
+        assert!(
+            !bool::from(embeds(&seed, &nu(FreeTerm::op("cat", [nil(), var("q")])))),
+            "two symbols do not couple"
+        );
+        assert!(
+            bool::from(embeds(&var("x"), &succ(var("y")))),
+            "a variable embeds where one is"
+        );
+        assert!(
+            !bool::from(embeds(&var("x"), &succ(zero()))),
+            "and in no ground term"
         );
     }
 }

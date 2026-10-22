@@ -3695,10 +3695,10 @@ impl<'source> Collector<'_, 'source>
     ///   decoded — and held under the family's name otherwise; with no repair,
     ///   a refusal of the family's rules as one rewriting system
     ///   (`RulesUnoriented`, `RulesDiverge`, `RulesUncompleted`,
-    ///   `RulesUndecided`) is offered to the family's own slot, and every other
-    ///   diagnostic whose span lies inside `child`'s takes one held slot under
-    ///   the family's name, in report order; nothing for a child the
-    ///   description route did not describe.
+    ///   `RulesNeverComplete`, `RulesUndecided`) is offered to the family's own
+    ///   slot, and every other diagnostic whose span lies inside `child`'s
+    ///   takes one held slot under the family's name, in report order; nothing
+    ///   for a child the description route did not describe.
     /// - provides: member-local refusal beside native admission: a declined
     ///   member leaves its family and its siblings standing, a family whose
     ///   rules part is refused whole, and a malformed form is reported once, at
@@ -3751,6 +3751,7 @@ impl<'source> Collector<'_, 'source>
                 LoweringRefusal::RulesUnoriented { .. }
                     | LoweringRefusal::RulesDiverge { .. }
                     | LoweringRefusal::RulesUncompleted { .. }
+                    | LoweringRefusal::RulesNeverComplete { .. }
                     | LoweringRefusal::RulesUndecided { .. }
             ) && let Maybe::Present(owner) = self.collected.owner_of(child.node)
                 && let Some(slot) = self.collected.slots.get_mut(usize::from(owner))

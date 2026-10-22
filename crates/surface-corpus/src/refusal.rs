@@ -538,6 +538,9 @@ pub enum RefusalName
     /// Two rules of a block rewriting one term to two normal forms no rule
     /// the path order orients joins.
     RulesUncompleted,
+    /// Two rules of a block whose completion never ends: each rule it derives
+    /// wraps the one before where no rule rewrites the wrapping.
+    RulesNeverComplete,
     /// A critical pair of a block's rules the coincidence check's budget left
     /// undecided.
     RulesUndecided,
@@ -722,7 +725,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 197_usize] = [
+    pub const VOCABULARY: [Self; 198_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -841,6 +844,7 @@ impl RefusalName
         Self::RulesDiverge,
         Self::RulesOverlapSecondOrder,
         Self::RulesUncompleted,
+        Self::RulesNeverComplete,
         Self::RulesUndecided,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
@@ -990,6 +994,7 @@ impl RefusalName
         (Self::RulesDiverge, b"RulesDiverge") |
         (Self::RulesOverlapSecondOrder, b"RulesOverlapSecondOrder") |
         (Self::RulesUncompleted, b"RulesUncompleted") |
+        (Self::RulesNeverComplete, b"RulesNeverComplete") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
@@ -1304,6 +1309,7 @@ impl RefusalName
             Self::RulesDiverge => "RulesDiverge",
             Self::RulesOverlapSecondOrder => "RulesOverlapSecondOrder",
             Self::RulesUncompleted => "RulesUncompleted",
+            Self::RulesNeverComplete => "RulesNeverComplete",
             Self::RulesUndecided => "RulesUndecided",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
@@ -1551,6 +1557,8 @@ impl Refusal<'_>
         RefusalName::RulesOverlapSecondOrder) |
         (Self::Lowering(LoweringRefusal::RulesUncompleted { .. }),
         RefusalName::RulesUncompleted) |
+        (Self::Lowering(LoweringRefusal::RulesNeverComplete { .. }),
+        RefusalName::RulesNeverComplete) |
         (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
         RefusalName::RulesUndecided) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
@@ -1767,7 +1775,8 @@ impl Refusal<'_>
         RefusalName::RulesNonLinear) | (LoweringRefusal::RulesDiverge { .. },
         RefusalName::RulesDiverge) | (LoweringRefusal::RulesOverlapSecondOrder { .. },
         RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesUncompleted { .. },
-        RefusalName::RulesUncompleted) | (LoweringRefusal::RulesUndecided { .. },
+        RefusalName::RulesUncompleted) | (LoweringRefusal::RulesNeverComplete { .. },
+        RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
@@ -1837,6 +1846,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
         LoweringRefusal::RulesOverlapSecondOrder { .. } => RefusalName::RulesOverlapSecondOrder,
         LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,
+        LoweringRefusal::RulesNeverComplete { .. } => RefusalName::RulesNeverComplete,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,

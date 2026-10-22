@@ -577,6 +577,102 @@ fn a_family_generalizes_to_its_least_general_pattern()
 }
 
 #[test]
+fn a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping()
+{
+    let v = FreeTerm::var;
+    let nil = || FreeTerm::op("nil", []);
+    let par = |p: FreeTerm, q: FreeTerm| FreeTerm::op("par", [p, q]);
+    let cat = |p: FreeTerm, q: FreeTerm| FreeTerm::op("cat", [p, q]);
+    let nu = |p: FreeTerm| FreeTerm::op("nu", [p]);
+    let grows = |earlier: &(FreeTerm, FreeTerm), later: &(FreeTerm, FreeTerm)| {
+        bool::from(rule_keeps_growing(earlier, later, &[]))
+    };
+    // A scope-extrusion round: the seed under `nu` and beside `q`, extruded.
+    let round = |seed: FreeTerm| (nu(par(seed.clone(), v("q"))), par(seed, v("q")));
+    let first = round(nil());
+    let second = round(par(nil(), v("q'")));
+    let third = round(par(par(nil(), v("q'")), v("q''")));
+    assert!(grows(&first, &second), "the seed wrapped in `par(□, q')`");
+    assert!(
+        grows(&second, &third),
+        "and again, the inner variable renamed"
+    );
+    assert!(!grows(&second, &first), "no rule grows from a larger one");
+    assert!(!grows(&first, &round(nil())), "no rule grows from itself");
+    assert!(
+        !grows(&first, &round(par(FreeTerm::op("stop", []), v("r")))),
+        "a wrapping that does not hold the seed is no growth"
+    );
+    let two = |left: FreeTerm, right: FreeTerm| {
+        (
+            FreeTerm::op("f", [left.clone(), right.clone()]),
+            FreeTerm::op("g", [left, right]),
+        )
+    };
+    assert!(
+        !grows(
+            &two(nil(), nil()),
+            &two(par(nil(), v("r")), par(nil(), v("s")))
+        ),
+        "two subterms wrapped at once"
+    );
+    let beside = |x: &'static str, y: &'static str, seed: FreeTerm| {
+        (
+            FreeTerm::op("f", [v(x), v(y), seed.clone()]),
+            FreeTerm::op("g", [v(x), v(y), seed]),
+        )
+    };
+    assert!(
+        grows(
+            &beside("x", "y", nil()),
+            &beside("z", "w", par(nil(), v("r")))
+        ),
+        "the variables beside the seed renamed one to one"
+    );
+    assert!(
+        !grows(
+            &beside("x", "y", nil()),
+            &beside("z", "z", par(nil(), v("r")))
+        ),
+        "two variables merged"
+    );
+    let pair = round(cat(v("x"), v("y")));
+    assert!(
+        grows(&pair, &round(par(cat(v("x'"), v("y'")), v("r")))),
+        "a seed holding two variables, found renamed inside its wrapping"
+    );
+    assert!(
+        !grows(&pair, &round(par(cat(v("x'"), v("x'")), v("r")))),
+        "and not once the wrapping merges them"
+    );
+    // The block's own left sides, `nu(nil)` and `par(nu(p), q)`, and the two
+    // rules derived so far match no repetition, so the family grows on.
+    let mut lefts = alloc::vec![
+        nu(nil()),
+        par(nu(v("p")), v("q")),
+        first.0.clone(),
+        second.0.clone(),
+    ];
+    assert!(
+        bool::from(rule_keeps_growing(&first, &second, &lefts)),
+        "the family grows beside its rules"
+    );
+    let flattening = |depth: usize| {
+        (0 .. depth).fold(nil(), |inner, layer| {
+            par(inner, FreeTerm::var(alloc::format!("p{layer}")))
+        })
+    };
+    for depth in [3_usize, 4] {
+        lefts.push(flattening(depth));
+        assert!(
+            !bool::from(rule_keeps_growing(&first, &second, &lefts)),
+            "a rule rewriting the wrapping {depth} deep stops the family"
+        );
+        let _flattening = lefts.pop();
+    }
+}
+
+#[test]
 fn a_free_term_reads_back_through_the_alphabet()
 {
     let nested = FreeTerm::results([
