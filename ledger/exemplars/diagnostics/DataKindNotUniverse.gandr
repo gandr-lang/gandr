@@ -1,0 +1,5 @@
+/// `DataKindNotUniverse`: a data declaration's kind is not a value universe.
+@[ refuses("DataKindNotUniverse") ]
+data Odd : Integer {
+  Z : Odd;
+}

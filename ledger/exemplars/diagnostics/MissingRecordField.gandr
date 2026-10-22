@@ -1,0 +1,4 @@
+/// `MissingRecordField`: a record literal lacks a required field.
+@[ refuses("MissingRecordField") ]
+def r : #{ a : Integer, b : Integer } ;
+def r = #{.a = 1} ;

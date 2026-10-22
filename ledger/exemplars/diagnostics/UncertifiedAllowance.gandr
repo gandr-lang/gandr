@@ -1,0 +1,31 @@
+/// `UncertifiedAllowance`: univalence over a catalogue past the one the checker enumerates.
+theory Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def exchange(b : Bool) -> -F Bool {
+  case b {
+    true => +{.1 = unit},
+    false => +{.0 = unit}
+  }
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  e
+}
+
+@[ checks ]
+def raised = ua[
+  2,
+  4
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+
+@[ refuses("UncertifiedAllowance") ]
+def wide = ua[
+  1,
+  6
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;

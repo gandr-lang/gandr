@@ -1,0 +1,4 @@
+/// `CodataWithoutObservations`: a codata declaration that states no observation.
+@[ refuses("CodataWithoutObservations") ]
+codata Empty : Type[-] {
+}

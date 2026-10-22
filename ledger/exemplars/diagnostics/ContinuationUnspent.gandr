@@ -1,0 +1,25 @@
+/// `ContinuationUnspent`: an operation clause owing its continuation, which holds an obligation, finishing without resuming or abandoning it.
+module Cancel :> #{
+  type Join = !String. end,
+  notes : String
+} {
+  /// The path a task reads.
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ refuses("ContinuationUnspent") ]
+def dropped() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure unit
+  }
+}

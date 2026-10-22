@@ -1,0 +1,25 @@
+/// `ContinuationCaptured`: a continuation holding an obligation named where its end may run other than once.
+module Cancel :> #{
+  type Join = !String. end,
+  notes : String
+} {
+  /// The path a task reads.
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ refuses("ContinuationCaptured") ]
+def leaked() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => force thunk { k(unit) }
+  }
+}

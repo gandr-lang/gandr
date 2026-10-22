@@ -1,0 +1,9 @@
+/// `HandlerCoverage`: handler clauses do not cover their interface exactly.
+@[ refuses("HandlerCoverage") ]
+def asked() -> -F Integer {
+  handle c : Proc {
+    pure 1
+  } with {
+    pure(x) => pure x
+  }
+}

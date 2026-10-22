@@ -1,0 +1,30 @@
+/// `ContinuationAsValue`: a continuation holding an obligation read as a value, other than as what a resumption or an abandonment ends.
+module Cancel :> #{
+  type Join = !String. end,
+  notes : String
+} {
+  /// The path a task reads.
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ checks ]
+def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit {
+  j(unit)
+}
+
+@[ refuses("ContinuationAsValue") ]
+def handed() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => resume_stack(k)
+  }
+}

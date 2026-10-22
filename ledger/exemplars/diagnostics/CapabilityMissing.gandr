@@ -1,0 +1,38 @@
+/// `CapabilityMissing`: a migration with no capability for its world.
+module Seat :> #{
+  type Dispatch,
+  mobile type Report,
+  type Handoff,
+  type SeatEnd = ?Dispatch. mu turn. +{
+    report : !Report. &{ next : turn, retire : end },
+    handoff : !Handoff. end
+  },
+  task : Dispatch,
+  progress : Report,
+  notes : Handoff
+} {
+  type Dispatch = String;
+  type Report = String;
+  type Handoff = String;
+  /// The dispatch a seat receives.
+  @[ checks ]
+  def task = "task";
+  /// A report it sends.
+  @[ checks ]
+  def progress = "progress";
+  /// The notes it hands off.
+  @[ checks ]
+  def notes = "notes";
+}
+
+@[ checks ]
+world operator ;
+
+@[ checks ]
+world seat ;
+
+@[ refuses("CapabilityMissing") ]
+@[ entry(operator) ]
+def unheld() -> -F Seat.Report {
+  migrate [seat] { pure Seat.progress }
+}
