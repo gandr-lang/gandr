@@ -6,7 +6,6 @@
 //! every class of edit, at one thread and at several.
 
 use core::convert::Infallible;
-use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 
 use anodized::spec;
@@ -17,7 +16,6 @@ use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
-use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::compose;
@@ -39,6 +37,7 @@ use crate::common::backend;
 use crate::common::grammar;
 use crate::common::resumed;
 use crate::common::session;
+use crate::common::three;
 use crate::large::FormEdit;
 use crate::large::Position;
 use crate::large::edits;
@@ -151,18 +150,6 @@ fn agree(
         );
     }
     census
-}
-
-/// Three threads: wider than one, narrower than the host. The scripts mold at
-/// this width because a session defaults to every performance core, and
-/// scripts beside a workspace run each claiming every core oversubscribe the
-/// host until one outruns the per-test limit.
-///
-/// # Specification
-/// trivial.
-fn three() -> Width
-{
-    Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2)))
 }
 
 proptest! {
