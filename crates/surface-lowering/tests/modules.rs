@@ -2323,6 +2323,58 @@ fn a_repeated_type_member_is_refused_naming_the_first()
 }
 
 #[test]
+fn a_top_level_type_member_names_its_type_for_the_source_1834()
+{
+    let source = "type T = Integer; def value : T; def value = 1;";
+    let mut lowered = lower(source);
+    assert_eq!(
+        rows(&lowered),
+        [row("value", Role::Declared, Amounts::Completed)],
+        "a type member at the top level declares nothing of its own"
+    );
+    assert_eq!(
+        verdicts(&mut lowered),
+        [judged(1_usize, Judgement::Checked)],
+        "and the declaration naming it checks at the type it names"
+    );
+
+    let mistyped = "type T = Integer; def value : T; def value = \"one\";";
+    assert_eq!(
+        verdicts(&mut lower(mistyped)),
+        [judged(1_usize, Judgement::Mismatched)],
+        "a value of another type is refused at it"
+    );
+
+    let repeated = "type T = Integer; type T = String; def value : T; def value = 1;";
+    assert_eq!(
+        rows(&lower(repeated)),
+        [
+            row(
+                "T",
+                Role::Held,
+                Amounts::Refused(LoweringRefusal::DuplicateDefinition {
+                    span: span_of(repeated, "T", 1_usize),
+                    name: name("T"),
+                    first: span_of(repeated, "T", 0_usize),
+                })
+            ),
+            row("value", Role::Declared, Amounts::Completed),
+        ],
+        "a second member of the name is refused and the first still reads"
+    );
+
+    let early = "def value : T; def value = 1; type T = Integer;";
+    assert!(
+        matches!(rows(&lower(early)).as_slice(), [(
+            _,
+            Role::Declared,
+            Amounts::Refused(LoweringRefusal::UnresolvedTypeHead { .. })
+        )]),
+        "a declaration written before the member does not see it"
+    );
+}
+
+#[test]
 fn a_type_member_is_named_only_after_it_is_written()
 {
     let source = "module M { type T = Integer; def value : T; def value = 1; module N { def \

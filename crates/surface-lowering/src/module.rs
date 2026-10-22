@@ -1376,6 +1376,9 @@ pub struct Collected<'source>
     /// The type family members, `type F(a : A, …) = τ ;`, and the manifest
     /// family components signatures state, in the order they are matched.
     pub families: Vec<FamilyMember>,
+    /// The type members written at a source's top level, `type T = τ ;`, each
+    /// with its source, in source order.
+    pub top_types: Vec<(SourceIndex, TypeComponent<'source>)>,
     /// The parameters of each manifest family component a signature writes,
     /// `type F(a : A, …) = τ`, in reading order.
     pub parameter_lists: Vec<Vec<FamilyParameter>>,
@@ -1575,6 +1578,44 @@ impl<'source> Collected<'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Maybe::Absent(slot_owner::Absent::Unowned))
+    }
+
+    /// The type members written in `container`, in source order: a module's
+    /// body members, or a source's top-level ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the module's [`Structure::type_members`] for a
+    ///   module, and the entries of [`Self::top_types`] filed under the source
+    ///   for a top level; none for a module the collection has not opened.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the result is a borrowing iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a repeated member in a module and at a source's top
+    ///   level is each refused naming the first of its own container.
+    /// - witness: `tests::modules::a_repeated_type_member_is_refused_naming_the_first`
+    /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
+    #[inline]
+    pub fn type_members_in(
+        &self,
+        container: Container,
+    ) -> impl Iterator<Item = &TypeComponent<'source>>
+    {
+        let (structure, source) = match container {
+            Container::Module(structure) => (self.structures.get(structure.0), None),
+            Container::TopLevel(source) => (None, Some(source)),
+        };
+        structure
+            .into_iter()
+            .flat_map(|entry| entry.type_members.iter())
+            .chain(
+                self.top_types
+                    .iter()
+                    .filter(move |&&(filed, _)| Some(filed) == source)
+                    .map(|&(_, ref member)| member),
+            )
     }
 
     /// The mutual block whose run of slots holds `slot`.
@@ -2474,6 +2515,7 @@ pub fn begin_collection<'source>(
         decorated: Vec::new(),
         module_docs: Vec::new(),
         families: Vec::new(),
+        top_types: Vec::new(),
         parameter_lists: Vec::new(),
         models: Vec::new(),
         family_checks: BTreeMap::new(),
@@ -3286,27 +3328,30 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `child` is a written child of the root.
     /// - ensures: a declaration form is collected into its slot, a module into
-    ///   its structures and member slots, and an import into the import list;
-    ///   every other form refuses as a form of the wrong sort, and a repair the
-    ///   parser inserted as that repair.
+    ///   its structures and member slots, a type member written at the top
+    ///   level into the source's [`Collected::top_types`], and an import into
+    ///   the import list; every other form refuses as a form of the wrong sort,
+    ///   and a repair the parser inserted as that repair.
     /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
-    ///   a declaration, a module nor an import;
+    ///   a declaration, a module, a type member nor an import;
     ///   [`LoweringRefusal::MalformedForm`] for a repair; and every
-    ///   module-level fault [`Self::declaration`], [`Self::module`] and
-    ///   [`Self::import`] raise.
+    ///   module-level fault [`Self::declaration`], [`Self::module`],
+    ///   [`Self::type_member`] and [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
     /// As [`collect_source`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — declaration, nested-module and import children are
-    ///   collected; a value at the root is refused as the wrong sort.
+    /// - hypothesis: L3 — declaration, nested-module, top-level type member and
+    ///   import children are collected; a value at the root is refused as the
+    ///   wrong sort.
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_module_child_refuses_the_module`
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+    /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -3339,7 +3384,15 @@ impl<'source> Collector<'_, 'source>
             Shape::Form {
                 former: Former::Module,
                 ..
-            } => self.module(child),
+            } => {
+                let mut pieces = Pieces::new();
+                read_pieces(self.pbg, self.tree, child.node, &mut pieces)?;
+                if Self::opens_type_member(&pieces).0 {
+                    let top = self.collected.top(child.span.start());
+                    return self.type_member(top, child, &pieces);
+                }
+                self.module(child)
+            },
             Shape::Form {
                 former: Former::Import,
                 name,
@@ -6262,7 +6315,9 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         if Self::opens_type_member(pieces).0 {
-            self.type_member(structure, member, pieces);
+            if let Err(refusal) = self.type_member(container, member, pieces) {
+                self.fault_at(structure, member, refusal);
+            }
             return Ok(());
         }
         let cursor = Cursor::new(&pieces.pieces, member.span);
