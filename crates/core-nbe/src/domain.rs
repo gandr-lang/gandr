@@ -629,6 +629,16 @@ pub enum DomainValue
         /// The retained or reduced source face.
         face: TermFace,
     },
+    /// A recorded run; its moves and labels remain in the source arena.
+    Recorded
+    {
+        /// The source run providing the moves and their labels.
+        source: ValueId,
+        /// Evaluated payloads of the source's sends and receives, in order.
+        fields: crate::arena::FieldSpan,
+        /// The retained or reduced source face.
+        face: TermFace,
+    },
     /// A closed reflexivity or equivalence certificate, kept as raw syntax.
     /// Translator programs are not normalized by certificate conversion.
     PathCertificate
@@ -829,6 +839,7 @@ impl DomainValue
         | Self::PathCertificate { face, .. }
         | Self::Constructor { face, .. }
         | Self::Record { face, .. }
+        | Self::Recorded { face, .. }
         | Self::PathProduct { face, .. }
         | Self::Here { face, .. }
         | Self::Univalence { face, .. }
@@ -850,6 +861,7 @@ impl DomainValue
             Self::PathCertificate { face, .. }
             | Self::Constructor { face, .. }
             | Self::Record { face, .. }
+            | Self::Recorded { face, .. }
             | Self::PathProduct { face, .. }
             | Self::Here { face, .. }
             | Self::Univalence { face, .. }

@@ -1010,6 +1010,36 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             (
+                DomainValue::Recorded {
+                    source: left_source,
+                    fields: left_fields,
+                    ..
+                },
+                DomainValue::Recorded {
+                    source: right_source,
+                    fields: right_fields,
+                    ..
+                },
+            ) => {
+                let Some((left_fields, right_fields)) = recorded_payloads(
+                    self.core,
+                    self.domain,
+                    (left_source, left_fields),
+                    (right_source, right_fields),
+                )?
+                else {
+                    return Ok(Local::Disagree);
+                };
+                self.goals.extend(
+                    left_fields
+                        .iter()
+                        .zip(right_fields)
+                        .rev()
+                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                );
+                Ok(Local::Agree)
+            },
+            (
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             ) => Ok(
@@ -1278,6 +1308,7 @@ impl<'run> Walk<'run>
                 DomainValue::PathCertificate { .. }
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
@@ -1961,6 +1992,75 @@ pub fn equal_paths(
         }
     }
     Ok(gandr_core_term::CertificateEquality::Equal)
+}
+
+/// Two recorded runs' payloads, each in move order.
+pub type PayloadPairs<'domain> = (&'domain [DomainValueId], &'domain [DomainValueId]);
+
+/// The payload pairs two recorded runs compare, when their moves agree.
+///
+/// # Specification
+/// - requires: each source is the recorded run its span's payloads were
+///   evaluated from.
+/// - ensures: both runs' payloads in move order when the runs take the same
+///   actions with the same labels; `None` when an action or a label differs.
+/// - fails: [`ConversionFault::MachineInvariant`] for a source that is no
+///   recorded run or whose payload count differs from its span's; domain faults
+///   for dangling spans.
+/// - panics: none.
+///
+/// # Errors
+/// A `ConversionFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two runs that differ only in a payload compare it, and
+///   two that differ in a label disagree.
+/// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |paired| paired.is_none_or(|(one, other)| one.len() == other.len())))]
+pub fn recorded_payloads<'domain>(
+    core: &CoreArena,
+    domain: &'domain DomainArena,
+    (left, left_fields): (ValueId, crate::arena::FieldSpan),
+    (right, right_fields): (ValueId, crate::arena::FieldSpan),
+) -> Result<Option<PayloadPairs<'domain>>, ConversionFault>
+{
+    use gandr_core_term::session::RecordedMove;
+    let (
+        Some(&gandr_core_term::Value::Recorded(ref left_moves)),
+        Some(&gandr_core_term::Value::Recorded(ref right_moves)),
+    ) = (core.value(left), core.value(right))
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let left_fields = domain
+        .fields(left_fields)
+        .map_err(ConversionFault::Domain)?;
+    let right_fields = domain
+        .fields(right_fields)
+        .map_err(ConversionFault::Domain)?;
+    if left_moves.len() != right_moves.len() {
+        return Ok(None);
+    }
+    let mut carried = 0_usize;
+    for (one, other) in left_moves.iter().zip(right_moves.iter()) {
+        match (one, other) {
+            (&RecordedMove::Sent(_), &RecordedMove::Sent(_))
+            | (&RecordedMove::Received(_), &RecordedMove::Received(_)) => {
+                carried = carried
+                    .checked_add(1_usize)
+                    .ok_or(ConversionFault::MachineInvariant)?;
+            },
+            (&RecordedMove::Selected(ref one), &RecordedMove::Selected(ref other))
+            | (&RecordedMove::Offered(ref one), &RecordedMove::Offered(ref other))
+                if one == other => {},
+            (&RecordedMove::Closed, &RecordedMove::Closed) => {},
+            _ => return Ok(None),
+        }
+    }
+    if carried != left_fields.len() || carried != right_fields.len() {
+        return Err(ConversionFault::MachineInvariant);
+    }
+    Ok(Some((left_fields, right_fields)))
 }
 
 #[cfg(test)]

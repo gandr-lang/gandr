@@ -1,4 +1,6 @@
+use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 
@@ -14,11 +16,19 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::identity::back;
 use gandr_core_term::identity::cong;
 use gandr_core_term::identity::then;
+use gandr_core_term::session::PayloadCount;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionType;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
@@ -644,6 +654,195 @@ fn a_ride_along_a_canonical_flow_waits_on_a_stuck_operand_1707()
         CertificateEquality::Equal,
         "re-applied to the unfolded list, each head is negated and the spine kept"
     );
+}
+
+/// Negation as a universe equivalence of Bool with itself, with `true`,
+/// `false` and the decode `El y` of the motive's binder.
+///
+/// # Specification
+/// trivial.
+fn negation(core: &mut CoreArena) -> (ValueId, ValueId, ValueId, ValueTypeId)
+{
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let negated = [falsity, truth].map(|value| core.computation_return(value));
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let body = core.computation_case(bound, &negated);
+    let lambda = core.computation_lambda(body);
+    let not = core.value_thunk(lambda);
+    let path = core.value_equiv(not, not);
+    let element = core.value_type_element(bound, Level::zero());
+    (truth, falsity, path, element)
+}
+
+/// The run motive `Run(s)` of the session `syntax` writes over `payloads`.
+///
+/// # Specification
+/// trivial.
+fn run_motive(
+    core: &mut CoreArena,
+    syntax: Vec<ProtocolSyntax>,
+    payloads: &[ValueTypeId],
+) -> ValueTypeId
+{
+    let protocol = Protocol::new(
+        syntax,
+        ProtocolState::from(0_usize),
+        PayloadCount::from(payloads.len()),
+    )
+    .expect("the fixture's protocol is well formed");
+    let session = SessionType::new(Arc::new(protocol), Arc::from(payloads))
+        .expect("the fixture fills every slot");
+    let session = core.value_type_session(session);
+    let code = core.value_quote(session);
+    core.value_type_run(code)
+}
+
+#[test]
+fn a_recorded_run_moves_its_payloads_along_a_universe_path()
+{
+    // In the motive `y. Run(!El y. ?String. end)`, the sent payload is
+    // negated and the received string, whose type never reads the binder,
+    // is kept.
+    let mut core = CoreArena::new();
+    let (truth, falsity, path, element) = negation(&mut core);
+    let text = core.value_type_base(BaseType::String);
+    let five = literal(&mut core, Word::Five);
+    let motive = run_motive(
+        &mut core,
+        alloc::vec![
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(1_usize),
+                next: ProtocolState::from(2_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[element, text],
+    );
+    let run = |core: &mut CoreArena, sent: ValueId, received: ValueId| {
+        core.value_recorded(Arc::from([
+            RecordedMove::Sent(sent),
+            RecordedMove::Received(received),
+            RecordedMove::Closed,
+        ]))
+    };
+    let operand = run(&mut core, truth, five);
+    let transported = core.computation_path_transport(motive, path, operand);
+    let moved = run(&mut core, falsity, five);
+    let expected = core.computation_return(moved);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "the sent payload is negated, the received one kept, and every move kept"
+    );
+    let kept = core.computation_return(operand);
+    assert_eq!(
+        normalises_to(&mut core, transported, kept),
+        CertificateEquality::Different
+    );
+
+    // Along a path no rule reduces, the sent payload's transport is stuck and
+    // the rest of the run waits under its bind.
+    let held = stuck(&mut core, ConstantIndex::from(0_usize));
+    let transported = core.computation_path_transport(motive, held, operand);
+    let first = core.computation_path_transport(element, held, truth);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let waiting = run(&mut core, bound, five);
+    let waiting = core.computation_return(waiting);
+    let expected = core.computation_bind(first, waiting);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "a stuck payload holds the run under its bind"
+    );
+}
+
+#[test]
+fn a_recorded_run_keeps_its_choices_and_moves_its_payloads()
+{
+    // In the motive `y. Run(+{ left: !El y. end, right: !El y. end })`, the
+    // label chosen is kept and the payload sent after it is negated; two runs
+    // convert when their moves and payloads agree.
+    let mut core = CoreArena::new();
+    let (truth, falsity, path, element) = negation(&mut core);
+    let [left, right] = ["left", "right"].map(|label| FieldLabel::from(String::from(label)));
+    let motive = run_motive(
+        &mut core,
+        alloc::vec![
+            ProtocolSyntax::Select(BTreeMap::from([
+                (left.clone(), ProtocolState::from(1_usize)),
+                (right.clone(), ProtocolState::from(3_usize)),
+            ])),
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(2_usize),
+            },
+            ProtocolSyntax::End,
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(4_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[element],
+    );
+    let run = |core: &mut CoreArena, label: &FieldLabel, sent: ValueId| {
+        core.value_recorded(Arc::from([
+            RecordedMove::Selected(label.clone()),
+            RecordedMove::Sent(sent),
+            RecordedMove::Closed,
+        ]))
+    };
+    let operand = run(&mut core, &right, truth);
+    let transported = core.computation_path_transport(motive, path, operand);
+    let moved = run(&mut core, &right, falsity);
+    let expected = core.computation_return(moved);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "the label is kept and the payload after it negated"
+    );
+    let relabelled = run(&mut core, &left, falsity);
+    let relabelled = core.computation_return(relabelled);
+    assert_eq!(
+        normalises_to(&mut core, transported, relabelled),
+        CertificateEquality::Different
+    );
+
+    let unit = core.value_unit();
+    let again = core.value_injection(Side::Left.into(), unit);
+    let [one, other, negated, elsewhere] = [
+        operand,
+        run(&mut core, &right, again),
+        moved,
+        run(&mut core, &left, truth),
+    ];
+    let mut domain = DomainArena::new();
+    let [one, other, negated, elsewhere] =
+        evaluated(&core, &mut domain, [one, other, negated, elsewhere]);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut decided = |one, other| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(one, other),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(decided(one, other), MachineVerdict::Convertible);
+    assert_eq!(decided(one, negated), MachineVerdict::NotConvertible);
+    assert_eq!(decided(one, elsewhere), MachineVerdict::NotConvertible);
 }
 
 #[test]

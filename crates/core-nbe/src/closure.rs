@@ -552,6 +552,24 @@ pub enum CompBody
         /// How many components have moved once this continuation binds.
         moved: gandr_core_term::ComponentCount,
     },
+    /// After `moved` payloads of a recorded run moved, move the next in its
+    /// own payload type, or return the run of all of them: the continuation
+    /// `xᵢ. xᵢ₊₁ ← tr(Pᵢ₊₁, p, vᵢ₊₁); …; return run(…)` a run motive's reduct
+    /// binds each payload into. The payloads moved so far are the closure's
+    /// environment, the latest innermost.
+    Payloads
+    {
+        /// The run motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The path every payload moves along.
+        along: DomainValueId,
+        /// The run moved.
+        source: DomainValueId,
+        /// How many payloads have moved once this continuation binds.
+        moved: gandr_core_term::ComponentCount,
+        /// Where the walk of the run against its session stands.
+        at: RunPosition,
+    },
     /// Return the bound value injected at this summand: the continuation `x.
     /// return inj(x)` a sum motive's reduct binds the payload into.
     Inject(gandr_kernel_term::Summand),
@@ -686,6 +704,18 @@ impl From<Route> for usize
     {
         route.0
     }
+}
+
+/// Where a walk of a recorded run against its session stands: how many of
+/// the run's moves have been read, and the protocol state they leave the
+/// session at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RunPosition
+{
+    /// How many of the run's moves have been read.
+    pub read: usize,
+    /// The protocol state the session stands at after them.
+    pub state: gandr_core_term::session::ProtocolState,
 }
 
 /// Which image of a letter a [`CompBody::Conjugated`] continuation binds.

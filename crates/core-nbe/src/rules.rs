@@ -1628,7 +1628,7 @@ pub fn bind_step(
 #[spec(ensures: |ret| match value {
     DomainValue::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
         .map(|read| Neutrality::Neutral(neutral, read)),
-    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
+    DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Literal { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Injection { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } | DomainValue::Code { .. } | DomainValue::StaticLambda { .. } => ret == Ok(Neutrality::Former),
 })]
 fn value_neutrality(
     domain: &DomainArena,
@@ -1645,6 +1645,7 @@ fn value_neutrality(
         DomainValue::PathCertificate { .. }
         | DomainValue::Constructor { .. }
         | DomainValue::Record { .. }
+        | DomainValue::Recorded { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Here { .. }
         | DomainValue::Univalence { .. }
@@ -2323,6 +2324,33 @@ fn plan_values(
             )
         },
         (
+            DomainValue::Recorded {
+                source: left_source,
+                fields: left_fields,
+                ..
+            },
+            DomainValue::Recorded {
+                source: right_source,
+                fields: right_fields,
+                ..
+            },
+        ) => match crate::conv::recorded_payloads(
+            core,
+            domain,
+            (left_source, left_fields),
+            (right_source, right_fields),
+        )? {
+            None => Plan::Leaf(Settled::NotConvertible),
+            Some((&[], _)) => Plan::Leaf(Settled::Convertible),
+            Some((left_fields, right_fields)) => Plan::Decompose(
+                left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .map(|(a, b)| Subgoal::Values(*a, *b))
+                    .collect(),
+            ),
+        },
+        (
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
         ) => Plan::Shared(
@@ -2598,6 +2626,7 @@ fn plan_values(
             DomainValue::PathCertificate { .. }
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
+            | DomainValue::Recorded { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
             | DomainValue::Univalence { .. }

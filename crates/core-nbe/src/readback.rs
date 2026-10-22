@@ -718,6 +718,8 @@ enum Task
     },
     /// Assemble a record with the source's exact labels.
     Record(ValueId),
+    /// Assemble a recorded run with the source's exact moves and labels.
+    Recorded(ValueId),
     /// Assemble a nominal type with the source's declaration identity.
     DataType(ValueTypeId),
     /// Assemble a codata type with the source's declaration identity.
@@ -2223,6 +2225,9 @@ fn run(
         | Task::Record(source) => matches!(core.value(source), Some(Value::Record(fields))
             if entry_values.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Record(result)) if fields.keys().eq(result.keys())))),
+        | Task::Recorded(source) => matches!(core.value(source), Some(Value::Recorded(moves))
+            if machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Recorded(result))
+                if result.len() == moves.len() && result.iter().zip(moves.iter()).all(|(read, written)| read.kind() == written.kind())))),
         | Task::DataType(source) => matches!(core.value_type(source), Some(ValueType::Data { declaration, arguments })
             if entry_values.checked_sub(arguments.len()) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types.saturating_add(1)
@@ -2355,6 +2360,32 @@ fn step(
                 .zip(machine.values.drain(start ..))
                 .collect();
             machine.values.push(core.value_record(fields));
+            Ok(())
+        },
+        Task::Recorded(source) => {
+            let Some(&Value::Recorded(ref moves)) = core.value(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let carried = moves.iter().filter_map(crate::eval::carried).count();
+            let start = machine
+                .values
+                .len()
+                .checked_sub(carried)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let mut payloads = machine.values.drain(start ..);
+            let mut read = Vec::with_capacity(moves.len());
+            for movement in moves.iter() {
+                read.push(
+                    movement.try_map(|_written| {
+                        payloads.next().ok_or(ReadbackFault::MachineInvariant)
+                    })?,
+                );
+            }
+            drop(payloads);
+            machine
+                .values
+                .push(core.value_recorded(alloc::sync::Arc::from(read)));
             Ok(())
         },
         Task::DataType(source) => {
@@ -3631,6 +3662,19 @@ fn step_value(
                 return Err(ReadbackFault::MachineInvariant);
             }
             machine.tasks.push(Task::Record(source));
+            for &value in fields.iter().rev() {
+                machine.tasks.push(Task::Value { value, binders });
+            }
+            Ok(())
+        },
+        DomainValue::Recorded { source, fields, .. } => {
+            let fields = domain.fields(fields).map_err(ReadbackFault::Domain)?;
+            if !matches!(core.value(source), Some(Value::Recorded(moves))
+                if moves.iter().filter_map(crate::eval::carried).count() == fields.len())
+            {
+                return Err(ReadbackFault::MachineInvariant);
+            }
+            machine.tasks.push(Task::Recorded(source));
             for &value in fields.iter().rev() {
                 machine.tasks.push(Task::Value { value, binders });
             }

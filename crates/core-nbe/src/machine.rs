@@ -3584,6 +3584,7 @@ where
                 DomainValue::PathCertificate { .. }
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
+                | DomainValue::Recorded { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }

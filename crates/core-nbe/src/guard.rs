@@ -187,6 +187,8 @@ pub enum GuardTag
     StaticApply,
     /// A structural record in canonical label order.
     Record,
+    /// A recorded run's payloads in move order.
+    Recorded,
 }
 
 /// The FNV-1a 64-bit offset basis.

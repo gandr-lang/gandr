@@ -714,7 +714,7 @@ DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).ma
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), crate::ValueBody::ValueType(_) | crate::ValueBody::CompType(_) => ret == Err(ConversionFault::MachineInvariant) }),
 DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Tuple { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
-DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } => ret == Ok(Atom::Other(node)),
+DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainValue::Here { .. } | DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. } | DomainValue::Flow { .. } | DomainValue::Thunk { .. } | DomainValue::Lift { .. } => ret == Ok(Atom::Other(node)),
 }),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
         Node::ValueType(..) | Node::CompType(..) => ret == Ok(Atom::Other(node)),
@@ -871,7 +871,8 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                 };
                 Ok(Atom::Operator(body, Self::opened(lambda)))
             },
-            DomainValue::PathCertificate { .. }
+            DomainValue::Recorded { .. }
+            | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Here { .. }
             | DomainValue::Univalence { .. }
@@ -2112,7 +2113,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         fields: ArgumentFields::Held(fields.iter()),
                     })
                 },
-                DomainValue::PathCertificate { .. }
+                DomainValue::Recorded { .. }
+                | DomainValue::PathCertificate { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Here { .. }
                 | DomainValue::Univalence { .. }
