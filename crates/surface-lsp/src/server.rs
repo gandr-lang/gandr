@@ -9742,6 +9742,48 @@ mod tests
         );
     }
 
+    /// #1116: a parameter with a `///` run written before it carries that run
+    /// as its documentation; the list laid over lines labels as one line.
+    #[test]
+    fn signature_help_sends_a_parameter_s_documentation_1116()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":
+                {"textDocument":{"signatureHelp":{"signatureInformation":
+                {"parameterInformation":{"labelOffsetSupport":true}}}}}}}"#,
+            ),
+        );
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/documented.gandr","languageId":"gandr","version":1,
+                     "text":"def add(\n  /// The first.\n  a : Integer,\n  b : Integer\n) -> -F Integer { return a }\ndef f : +U (-F Integer) ;\ndef f = thunk { add(1, 2) } ;\n"}}}"#,
+            ),
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/signatureHelp","params":{
+                    "textDocument":{"uri":"file:///tmp/documented.gandr"},
+                    "position":{"line":6,"character":20}}}"#,
+                ),
+            ),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":9,"result":{"signatures":[{
+                    "label":"add(a : Integer, b : Integer) -> -F Integer",
+                    "parameters":[
+                        {"label":[4,15],"documentation":{"kind":"markdown","value":"The first."}},
+                        {"label":[17,28]}]}],
+                    "activeSignature":0,"activeParameter":0}}]"#
+            )),
+        );
+    }
+
     /// #843: a call typed up to its next argument without its `)`, as an
     /// editor that does not close brackets holds it, answers its head.
     #[test]
