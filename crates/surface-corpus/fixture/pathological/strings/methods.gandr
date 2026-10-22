@@ -1,7 +1,7 @@
 // What a method call may not do: read a string its hold no longer holds,
 // run inside a thunk that may run it other than once, write back to a string
-// no hold holds, lend a string already lent, or take a string on one path of
-// a match alone. A mode word is a receiver's alone.
+// no hold holds, lend a string already lent, or read a string after a match
+// one of whose arms took it. A mode word is a receiver's alone.
 
 // The lists; the byte lists; the string's methods.
 import "../../model/data/data-base.gandr" ;
@@ -46,15 +46,17 @@ def pushedWhileRead() -> -F Integer {
   access shared s as w { s.push(33) ; run bs <- bytes(w) ; count(bs) }
 }
 
-/// A string taken in one arm of a match and kept in the other: the arms do not
-/// yet join into a hold ended after the match (#1488).
-@[ refuses("HeldCaptured") ]
-def takenInOneArm(t : Repr) -> -F List(Integer) {
+/// A string read after a match one of whose arms took it: the match ends the
+/// hold on the path through that arm, so nothing after it reads the string
+/// (#1488).
+@[ refuses("HeldConsumed") ]
+def readAfterTakenInOneArm(t : Repr) -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  case t {
+  run xs <- case t -> -F List(Integer) {
     Inline(bs) => s.bytes(),
-    Shared(n, bs) => bs
-  }
+    Shared(n, bs) => pure bs
+  } ;
+  s.len()
 }
 
 /// A mode written on a parameter that is no receiver.

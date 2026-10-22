@@ -61,8 +61,9 @@
 //! `LinearUse::Moved`), a second read is [`AccessDefect::HeldCopied`], an
 //! abort after the move is [`AccessDefect::Moved`], and only `resume`, which
 //! writes a value back, ends the view. Exclusivity is the zone's at either
-//! grade: the slot is never captured by a thunk, a fixpoint, a branch, a
-//! handler, a first-class stack or a shift ([`AccessDefect::HeldCaptured`]),
+//! grade: the slot is never captured by a thunk, a fixpoint, a handler, a
+//! first-class stack or a shift, nor consumed in a fold's step or a lazy
+//! product's component ([`AccessDefect::HeldCaptured`]),
 //! and the hold stands at a pure returner, as a fork does, so no operation a
 //! handler could resume twice runs while it holds.
 //!
@@ -147,9 +148,12 @@
 //! A method whose receiver is consumed takes the held value itself, so the
 //! call ends the caller's hold: the consume form moves the value out of `x`
 //! and answers it, and `x` is spent for the rest of its scope. A read, an
-//! access or a second consume of `x` after it is [`AccessDefect::Consumed`],
-//! and so is a branch that consumes `x` beside one that does not, since the
-//! rest of the scope could read it on one path alone. The consume is the
+//! access or a second consume of `x` after it is [`AccessDefect::Consumed`].
+//! A case's arms are separate paths: each starts from `x` as the case found
+//! it, so one arm may consume `x` while another reads it, and after the case
+//! `x` is spent when any arm consumed it. An offer's arms must leave `x`
+//! alike, and one that consumes it beside one that does not is
+//! [`AccessDefect::Consumed`]. The consume is the
 //! exclusive lending's in what it excludes: a slot lent in either mode, or
 //! one a region keeps a shared view of, is [`AccessDefect::Lent`] or
 //! [`AccessDefect::Kept`]. The hold's own end closes the spent slot as it
@@ -249,6 +253,6 @@ pub enum AccessDefect
     /// thunk or a stack kept in no region as deep names one.
     KeptEscaped,
     /// A held slot is read, accessed or consumed after a consuming read
-    /// ended its hold, or consumed on one branch and not on another.
+    /// ended its hold, or consumed on one arm of an offer and not on another.
     Consumed,
 }

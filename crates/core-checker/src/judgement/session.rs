@@ -250,11 +250,26 @@ pub(super) struct Scope
     zones: usize,
 }
 
-/// Where one offer's zones stand on the run's zone stack: the zone as the
-/// offer found it at the mark, the zone its first arm left one above.
+/// Where one offer's or one case's zones stand on the run's zone stack: the
+/// zone as the former found it at the mark, the zone its arms left so far one
+/// above.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct ZoneMark(usize);
+
+/// How a case's arms leave the linear zone: one after another while the run
+/// holds no value, or each from the zone the case found and joined after the
+/// last while it holds one.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) enum Joining
+{
+    /// The run holds no value: each arm starts from the zone the one before
+    /// it left.
+    Threaded,
+    /// The run holds a value: each arm starts from the zone at the mark, and
+    /// a held value one arm consumed counts as consumed after the case.
+    Joined(ZoneMark),
+}
 
 /// One linear slot, read: who bound it, its declared type, its remaining
 /// use, the depth its type stands at and its position above the run's base.
@@ -652,9 +667,9 @@ impl Machine<'_, '_>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a branch consuming an outer hold is refused through
-    ///   it, and one reading the hold checks.
-    /// - witness: `judgement::access::tests::a_branch_reads_a_hold_but_consumes_none`
+    /// - hypothesis: L3 — a fold consuming an outer hold is refused through it,
+    ///   and a case whose arms consume it checks.
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     #[spec(ensures: |ret| match ret {
         | Ok(ref indices) => indices.is_sorted(),
         | Err(ref refusal) => matches!(*refusal, CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant),
@@ -682,9 +697,11 @@ impl Machine<'_, '_>
     /// a thunk, a fixpoint, a branching former, a first-class stack, a
     /// handler, a capability scope or a shift, while the run holds one. A
     /// branch may read a held value: a read copies, and each branch lends it
-    /// at most for its own extent. A branch consumes no held value: a consume
-    /// would end the hold on the paths through its arm alone, and the arms'
-    /// uses of a held slot are not joined. A capability scope's clause
+    /// at most for its own extent. A case's arms are separate paths, so an arm
+    /// may consume a held value: each arm starts from the hold as the case
+    /// found it, and the case leaves it consumed when any arm consumed it. A
+    /// fold's step runs once per element and a lazy product's components in
+    /// any number, so neither consumes one. A capability scope's clause
     /// receives the rest of its body as a continuation it may resume twice or
     /// drop, so the body names only residents that owe nothing: a held value,
     /// whose slot stands outside the scope, a received value and a shared
@@ -707,10 +724,10 @@ impl Machine<'_, '_>
     ///   [`LinearityDefect::ContinuationCaptured`] for an owed continuation it
     ///   names; [`CheckRefusal::Access`] naming [`AccessDefect::Escaped`] for a
     ///   view no region keeps, [`AccessDefect::HeldCaptured`] for a held value
-    ///   and for one a branch consumes, and [`AccessDefect::KeptEscaped`] for a
-    ///   variable kept deeper than the goal; a shift names the innermost
-    ///   resident the run holds, which its captured continuation may resume
-    ///   twice.
+    ///   and for one a fold or a lazy product consumes, and
+    ///   [`AccessDefect::KeptEscaped`] for a variable kept deeper than the
+    ///   goal; a shift names the innermost resident the run holds, which its
+    ///   captured continuation may resume twice.
     /// - panics: none.
     ///
     /// # Errors
@@ -727,7 +744,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::session::tests::a_scope_names_only_residents_that_owe_nothing_1336`
     /// - witness: `judgement::session::tests::a_clause_ends_a_continuation_holding_an_obligation_once_1334`
     /// - witness: `judgement::access::tests::a_thunk_naming_a_value_kept_at_a_region_binder_is_kept_there_1221`
-    /// - witness: `judgement::access::tests::a_branch_reads_a_hold_but_consumes_none`
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     #[spec(
         captures: [
             holding = self.context.depth(Zone::Linear) > self.sessions.base,
@@ -847,6 +864,19 @@ impl Machine<'_, '_>
         if by != Capture::Branch {
             self.owed_named(term, node, by)?;
         }
+        // A case's arms are separate paths it joins; a fold's step runs once
+        // per element, and a lazy product's components may run in any number.
+        let joins = if let CoreTerm::Computation(id) = term {
+            matches!(
+                *self.computation(id)?,
+                Computation::Case { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::ListCase { .. }
+            )
+        }
+        else {
+            false
+        };
         let scope = match goal {
             Goal::Computation { term, .. } => {
                 matches!(*self.computation(term)?, Computation::Scope { .. })
@@ -871,7 +901,7 @@ impl Machine<'_, '_>
         if !holding {
             return Ok(());
         }
-        if by == Capture::Branch {
+        if by == Capture::Branch && !joins {
             for index in self.free_consumed(term)? {
                 if let Resident::Held { .. } = self.resided(node, index)?.resident {
                     return Err(CheckRefusal::Access {
@@ -2253,6 +2283,167 @@ impl Machine<'_, '_>
             });
         }
         Ok(())
+    }
+
+    /// Open the arms of a case: while the run holds a value, keep the zone as
+    /// the case found it, for each arm to start from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Joining::Joined`] at the mark the found zone is kept at
+    ///   when a slot the run opened is held; [`Joining::Threaded`], nothing
+    ///   kept, otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case whose arms consume a held value one each
+    ///   checks, and a read after it of a value one arm consumed is refused.
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    #[spec(
+        captures: kept = self.sessions.zones.len(),
+        ensures: |ret| match ret {
+            Joining::Joined(mark) => mark.0 == kept && kept.checked_add(1) == Some(self.sessions.zones.len()),
+            Joining::Threaded => self.sessions.zones.len() == kept,
+        },
+    )]
+    pub(super) fn arms_opened(&mut self) -> Joining
+    {
+        if !self
+            .sessions
+            .opened
+            .iter()
+            .any(|opened| matches!(opened.resident, Resident::Held { .. }))
+        {
+            return Joining::Threaded;
+        }
+        let mark = ZoneMark(self.sessions.zones.len());
+        let found = self.context.binders().linear_zone();
+        self.sessions.zones.push(found);
+        Joining::Joined(mark)
+    }
+
+    /// End an arm of the case whose zones stand at `zones` with another to
+    /// come: fold the zone the arm left into the join, and give the next arm
+    /// each held slot as the case found it and every other slot as this arm
+    /// left it.
+    ///
+    /// # Specification
+    /// - requires: an arm of the case opened at `zones` checked.
+    /// - ensures: each held slot is at the use the case found it at; the join
+    ///   is kept above the found zone.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when no zone is kept at
+    ///   `zones` or the arm left another depth.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`].
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    #[spec(ensures: |ret| ret.is_err() || zones.0.checked_add(2) == Some(self.sessions.zones.len()))]
+    pub(super) fn arm_ended(
+        &mut self,
+        zones: ZoneMark,
+    ) -> Result<(), CheckRefusal>
+    {
+        let joined = self.arm_folded(zones)?;
+        let found = self
+            .sessions
+            .zones
+            .get(zones.0)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let base = usize::from(self.sessions.base);
+        let opened = &self.sessions.opened;
+        let next = joined.taking(found, |position, _| {
+            usize::from(position)
+                .checked_sub(base)
+                .and_then(|above| opened.get(above))
+                .is_some_and(|slot| matches!(slot.resident, Resident::Held { .. }))
+        });
+        self.context.binders().restore_linear(&next);
+        Ok(())
+    }
+
+    /// Join the arms of the case whose zones stand at `zones` after its last
+    /// arm: the zone that arm left, each held slot consumed when any arm
+    /// consumed it.
+    ///
+    /// # Specification
+    /// - requires: the last arm of the case opened at `zones` checked.
+    /// - ensures: the zone is the join and the case's zones are dropped.
+    /// - fails: as [`Self::arm_ended`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`].
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    #[spec(ensures: |ret| ret.is_err() || self.sessions.zones.len() == zones.0)]
+    pub(super) fn arms_joined(
+        &mut self,
+        zones: ZoneMark,
+    ) -> Result<(), CheckRefusal>
+    {
+        let joined = self.arm_folded(zones)?;
+        self.context.binders().restore_linear(&joined);
+        self.sessions.zones.truncate(zones.0);
+        Ok(())
+    }
+
+    /// The zone the arm just checked left, each held slot taken from the join
+    /// of the arms before it where one of them consumed it, kept as the join
+    /// above the zone the case found.
+    ///
+    /// # Specification
+    /// - requires: an arm of the case opened at `zones` checked.
+    /// - ensures: the join is kept one above `zones` and returned.
+    /// - fails: as [`Self::arm_ended`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arms_opened`].
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined|
+        zones.0.checked_add(1).and_then(|join| self.sessions.zones.get(join)) == Some(joined)))]
+    fn arm_folded(
+        &mut self,
+        zones: ZoneMark,
+    ) -> Result<LinearZone, CheckRefusal>
+    {
+        let left = self.context.binders().linear_zone();
+        let join = zones
+            .0
+            .checked_add(1)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let found = self
+            .sessions
+            .zones
+            .get(zones.0)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        if found.depth() != left.depth() {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let base = usize::from(self.sessions.base);
+        let opened = &self.sessions.opened;
+        let joined = match self.sessions.zones.get(join) {
+            Some(earlier) => left.taking(earlier, |position, theirs| {
+                theirs != LinearUse::Available
+                    && usize::from(position)
+                        .checked_sub(base)
+                        .and_then(|above| opened.get(above))
+                        .is_some_and(|slot| matches!(slot.resident, Resident::Held { .. }))
+            }),
+            None => left,
+        };
+        self.sessions.zones.truncate(join);
+        self.sessions.zones.push(joined.clone());
+        Ok(joined)
     }
 
     /// Judge, at the operation `at` handing on `payload` that `answerer`

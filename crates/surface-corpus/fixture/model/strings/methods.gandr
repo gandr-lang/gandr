@@ -59,3 +59,39 @@ def taken() -> -F List(Integer) {
   s.push(33);
   s.bytes()
 }
+
+/// A string taken in one arm of a match and kept in the other: each arm
+/// starts from the hold as the match found it, and the hold ends after the
+/// match (#1488).
+@[ checks ]
+def takenInOneArm(t : Repr) -> -F List(Integer) {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  case t {
+    Inline(bs) => s.bytes(),
+    Shared(n, bs) => bs
+  }
+}
+
+/// The arm that takes the string runs: `hi`'s bytes.
+@[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
+def takenOnInline() -> -F List(Integer) {
+  takenInOneArm(Inline((Nil : List(Integer))))
+}
+
+/// The arm that keeps the string runs: the matched string's bytes, and the
+/// hold's end drops `hi`.
+@[ runs("Cons(33, Nil)") ]
+def keptOnShared() -> -F List(Integer) {
+  takenInOneArm(Shared(1, (Cons(33, Nil) : List(Integer))))
+}
+
+/// A string taken in one arm and read in the other: the reading arm finds
+/// the string the match found, not the one the other arm took.
+@[ runs("3") ]
+def readWhereNotTaken() -> -F Integer {
+  hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
+  case Shared(1, (Nil : List(Integer))) {
+    Inline(bs) => { count(s.bytes()) },
+    Shared(n, bs) => s.len()
+  }
+}

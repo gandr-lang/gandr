@@ -1243,43 +1243,78 @@ fn a_consumed_hold_is_read_lent_or_consumed_no_more()
     );
 }
 
+/// #1488: a case's arms each take the hold from where the case found it, so
+/// both may consume it, or one consume it and the other read it; after the
+/// case the hold is spent when any arm consumed it. A fold's step runs once
+/// per element, so it consumes none.
 #[test]
-fn a_branch_reads_a_hold_but_consumes_none()
+fn a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);
     let list = arena.value_type_list(integer);
     let lists = arena.comp_type_returner(list);
-    let branched = |arena: &mut CoreArena, on_nil, on_cons| {
-        // hold c = 0; xs <- (return [0] : F (List Integer)); case xs { … }
+    // hold c = 0; xs <- (return [0] : F (List Integer)); rest
+    let held = |arena: &mut CoreArena, rest| {
         let zero = arena.value_literal(integer_literal());
         let nil = arena.value_list_nil();
         let cons = arena.value_list_cons(zero, nil);
         let returned = arena.computation_return(cons);
         let ascribed = arena.computation_ascribe(returned, lists);
+        let bound = arena.computation_bind(ascribed, rest);
+        hold(arena, bound)
+    };
+    let arm = |arena: &mut CoreArena, consumes| {
+        if consumes {
+            consume(arena, l0())
+        }
+        else {
+            copied(arena, l0()).1
+        }
+    };
+    // A case on a list only checks.
+    for (nil, cell) in [(false, false), (true, true), (true, false), (false, true)] {
+        let on_nil = arm(&mut arena, nil);
+        let on_cons = arm(&mut arena, cell);
         let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let case = arena.computation_list_case(xs, on_nil, on_cons);
-        let bound = arena.computation_bind(ascribed, case);
-        (case, hold(arena, bound))
-    };
-    let (_read, on_nil) = copied(&mut arena, l0());
-    let (_read, on_cons) = copied(&mut arena, l0());
-    let (_case, reads) = branched(&mut arena, on_nil, on_cons);
-    // A case on a list only checks.
+        let program = held(&mut arena, case);
+        assert_eq!(
+            checked(&mut arena, program, integers),
+            Ok(()),
+            "each arm starts from the hold the case found (empty arm consumes: {nil}, cell arm consumes: {cell})"
+        );
+    }
+    // hold c = 0; xs <- …;
+    // _ <- (case xs { [] => consume(c), _ :: _ => (c,).0 } : F Integer); (c,).0
+    let on_nil = consume(&mut arena, l0());
+    let (_kept, on_cons) = copied(&mut arena, l0());
+    let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let case = arena.computation_list_case(xs, on_nil, on_cons);
+    let typed = arena.computation_ascribe(case, integers);
+    let (read, after) = copied(&mut arena, l0());
+    let then = arena.computation_bind(typed, after);
+    let program = held(&mut arena, then);
     assert_eq!(
-        checked(&mut arena, reads, integers),
-        Ok(()),
-        "each branch reads the held value by copy"
+        checked(&mut arena, program, integers),
+        Err(CheckRefusal::Access {
+            at: CoreNode::Term(TermNode::Value(read)),
+            defect: AccessDefect::Consumed,
+        }),
+        "a read after the case finds the value one arm took"
     );
+    // hold c = 0; xs <- …; fold xs { [] => consume(c), _ _ => consume(c) }
     let on_nil = consume(&mut arena, l0());
     let on_cons = consume(&mut arena, l0());
-    let (case, consumes) = branched(&mut arena, on_nil, on_cons);
+    let xs = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let fold = arena.computation_list_fold(integer, integer, xs, on_nil, on_cons);
+    let program = held(&mut arena, fold);
     assert_eq!(
-        checked(&mut arena, consumes, integers),
-        Err(at(case, AccessDefect::HeldCaptured {
+        checked(&mut arena, program, integers),
+        Err(at(fold, AccessDefect::HeldCaptured {
             by: Capture::Branch
         })),
-        "a branch would end the hold on its own paths alone"
+        "a fold's step would consume the hold once per element"
     );
 }

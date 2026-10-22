@@ -1012,8 +1012,7 @@ fn checked(
             ),
             AccessDefect::Consumed => f.write_str(
                 "a method whose receiver is `consumed` takes the held value and ends its hold; \
-                 the value cannot be read, accessed or consumed after that call, nor taken on \
-                 one branch alone",
+                 the value cannot be read, accessed or consumed after that call",
             ),
         },
         CheckRefusal::Codata { fault, .. } => match fault {

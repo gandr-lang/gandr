@@ -851,6 +851,13 @@ impl Machine<'_, '_>
         }
         let constructors = former::signature(self.context, datatype)?;
         let owed = crate::loops::loops(self.context, datatype);
+        // While the run holds a value each arm starts from the zone the case
+        // found; an arm with another after it ends by handing that zone on.
+        let joining = self.arms_opened();
+        if let super::session::Joining::Joined(zones) = joining {
+            self.wait(Frame::ArmsJoined(zones));
+        }
+        let mut followed = false;
         if count != constructors.constructors().len() {
             for (position, &loop_arm) in owed.iter().enumerate().rev() {
                 let expected = crate::loops::arm_type(
@@ -903,10 +910,16 @@ impl Machine<'_, '_>
                     | &Computation::Memory(_)
                     | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
                 };
+                if let super::session::Joining::Joined(zones) = joining
+                    && followed
+                {
+                    self.wait(Frame::ArmEnded(zones));
+                }
                 self.wait(Frame::NativeNext(Goal::Computation {
                     term: arm,
                     direction: Direction::Check(expected),
                 }));
+                followed = true;
             }
         }
         for index in (0 .. constructors.constructors().len()).rev() {
@@ -966,10 +979,16 @@ impl Machine<'_, '_>
                 | &Computation::Memory(_)
                 | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
             };
+            if let super::session::Joining::Joined(zones) = joining
+                && followed
+            {
+                self.wait(Frame::ArmEnded(zones));
+            }
             self.wait(Frame::NativeNext(Goal::Computation {
                 term: branch,
                 direction: Direction::Check(expected),
             }));
+            followed = true;
             if identified == crate::recursion::Identified::Read {
                 self.wait(Frame::NativeForesee(expected));
             }
