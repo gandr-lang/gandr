@@ -1,3 +1,4 @@
 /// `form`: declares the spelling a source is laid out in.
 @[ form(sugared) ]
+@[ checks ]
 def answer = 42 ;

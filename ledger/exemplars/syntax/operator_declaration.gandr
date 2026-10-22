@@ -1,2 +1,3 @@
 /// `operator_declaration`: an operator fixity declaration: a fixity, a precedence and the operator's text.
+/// parse-only: the lowering refuses an operator declaration as a whole, out of its fragment; #1111 tracks it.
 op prefix 9 "!" ;

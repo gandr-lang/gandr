@@ -1,2 +1,4 @@
 /// `shell_word`: a shell word.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def listing = #!{ ls; } ;

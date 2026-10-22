@@ -1,2 +1,3 @@
 /// `telescope_expression`: a telescope with labelled fields.
+@[ checks ]
 def point = #{ .x = 1, .y = 2 } ;

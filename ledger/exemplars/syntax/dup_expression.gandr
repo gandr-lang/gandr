@@ -1,4 +1,6 @@
 /// `dup_expression`: a duplication of a shared endpoint.
+/// The checker does not reach this form yet; #1501 tracks it.
+@[ refuses("OutOfFragment.dup_expression") ]
 def duplicated() -> -F Unit {
   fork (seat : end) { close(seat) } as desk;
   dup(desk);

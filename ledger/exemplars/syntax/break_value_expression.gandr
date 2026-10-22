@@ -1,4 +1,5 @@
 /// `break_value_expression`: a break out of a loop with a value.
+@[ checks ]
 def found(n : Integer) -> -F Integer {
   loop { break(n) }
 }

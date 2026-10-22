@@ -1,2 +1,4 @@
 /// `union_type`: a union type.
+/// The checker does not reach this form yet; #1056 tracks it.
+@[ refuses("OutOfFragment.union_type") ]
 def either : Integer | String ;

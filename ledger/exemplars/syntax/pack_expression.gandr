@@ -1,2 +1,4 @@
 /// `pack_expression`: packing a value with the type it hides.
+/// The checker does not reach this form yet; #1108 tracks it.
+@[ refuses("OutOfFragment.pack_expression") ]
 def counter = pack [ Integer ] thunk { return #{ .seed = 7 } } ;

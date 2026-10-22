@@ -1,2 +1,4 @@
 /// `unknown_type`: the unknown type.
+/// The checker does not reach this form yet; #1503 tracks it.
+@[ refuses("OutOfFragment.unknown_type") ]
 def anything : ? ;

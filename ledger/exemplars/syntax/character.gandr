@@ -1,2 +1,4 @@
 /// `character`: a character.
+/// The checker does not reach this form yet; #1052 tracks it.
+@[ refuses("OutOfFragment.character") ]
 def letter = 'a' ;

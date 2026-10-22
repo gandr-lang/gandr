@@ -1,2 +1,3 @@
 /// `parenthesized_expression`: a parenthesized expression with its type.
+@[ checks ]
 def typed = (42 : Integer) ;

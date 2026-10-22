@@ -1,2 +1,4 @@
 /// `typed_number.expression`: a number with its type.
+/// The checker does not reach this form yet; #1109 tracks it.
+@[ refuses("OutOfFragment.typed_number") ]
 def half = 0.5f64 ;

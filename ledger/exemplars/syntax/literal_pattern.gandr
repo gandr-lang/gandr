@@ -1,4 +1,5 @@
 /// `literal_pattern`: a literal pattern.
+@[ checks ]
 def sign(n : Integer) -> -F Integer {
   case n {
     0 => return 0,

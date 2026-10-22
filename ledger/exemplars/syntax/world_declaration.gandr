@@ -1,2 +1,3 @@
 /// `world_declaration`: a world: a name a computation can be placed at.
+@[ checks ]
 world seat ;

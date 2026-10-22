@@ -1,4 +1,5 @@
 /// `wildcard`: the wildcard pattern, matching anything and binding nothing.
+@[ checks ]
 def ignore(n : Integer) -> -F Integer {
   case n {
     _ => return 0

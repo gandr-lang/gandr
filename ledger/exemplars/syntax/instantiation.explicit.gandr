@@ -1,4 +1,6 @@
 /// `instantiation.explicit`: an explicit instantiation of a named parameter.
+/// The checker does not reach this form yet; #1497 tracks it.
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec sized(n : Integer) -> -F Integer {
   return sized[size = 1](n)
 }

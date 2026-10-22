@@ -1,6 +1,7 @@
 /// `nested_module_member`: a module inside a module body.
 module Config {
   module limits {
+    @[ checks ]
     def soft = 10;
   }
 }

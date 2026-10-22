@@ -1,4 +1,5 @@
 /// `close_expression`: closing a session endpoint.
+@[ checks ]
 def finished() -> -F Unit {
   fork (seat : end) { close(seat) } as desk;
   close(desk)

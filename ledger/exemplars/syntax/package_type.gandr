@@ -1,2 +1,4 @@
 /// `package_type`: a package type: a type hiding its witnesses.
+/// The checker does not reach this form yet; #1108 tracks it.
+@[ refuses("OutOfFragment.package_type") ]
 def counter : package [ T ] T ;

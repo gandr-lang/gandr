@@ -1,2 +1,4 @@
 /// `constructor.expression`: a constructor.
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.constructor") ]
 def colour = Blue ;

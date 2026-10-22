@@ -1,2 +1,3 @@
 /// `unit.expression`: the unit value.
+@[ checks ]
 def nothing = unit ;

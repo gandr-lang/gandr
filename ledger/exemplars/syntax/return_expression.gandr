@@ -1,4 +1,5 @@
 /// `return_expression`: a return: the computation that returns a value.
+@[ checks ]
 def answer() -> -F Integer {
   return 42
 }
