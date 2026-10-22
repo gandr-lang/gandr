@@ -1,12 +1,17 @@
 use alloc::format;
+use alloc::vec::Vec;
 
 use gandr_core_checker::Verdict;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -203,21 +208,76 @@ fn supply_by_name_is_order_free()
 #[test]
 fn an_unsupplied_implicit_is_refused_with_its_slot_spelling()
 {
+    let source = format!("{SAME}def named : +U (Integer -> -F Integer) ;\ndef named = same ;\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("named")),
+            LoweringRefusal::ImplicitUnsupplied { function, implicit, .. }
+                if function == SurfaceName::from("same") && implicit == SurfaceName::from("a")
+        ),
+        "`same` standing as a value leaves its `a` unsupplied"
+    );
+}
+
+#[test]
+fn an_omitted_implicit_is_a_nominated_hole()
+{
+    // `first(5, unit)`: one nominated hole per omitted implicit, applied in
+    // the telescope's order, each recorded with the implicit it stands for;
+    // the checker solves both.
     let source = format!(
-        "{SAME}def called : () => Integer ;\ndef called = thunk {{ become same(3) }} ;\ndef named : +U (Integer -> -F Integer) ;\ndef named = same ;\n"
+        "{FIRST}def omitted : () => Integer ;\ndef omitted = thunk {{ become first(5, unit) }} ;\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
-    for name in ["called", "named"] {
-        assert!(
-            matches!(
-                refusal_of(&module, SurfaceName::from(name)),
-                LoweringRefusal::ImplicitUnsupplied { function, implicit, .. }
-                    if function == SurfaceName::from("same") && implicit == SurfaceName::from("a")
-            ),
-            "`{name}` leaves `same`'s `a` unsupplied"
-        );
+    let mut holes = Vec::new();
+    let mut pending = Vec::from([body_named(&module, SurfaceName::from("omitted"))]);
+    let mut computations = Vec::new();
+    while let Some(value) = pending.pop() {
+        match arena.value(value) {
+            Some(&Value::Thunk(computation)) => computations.push(computation),
+            Some(&Value::Hole(hole)) if hole.origin() == HoleOrigin::Nominated => {
+                holes.push((value, hole));
+            },
+            _ => {},
+        }
+        while let Some(computation) = computations.pop() {
+            match arena.computation(computation) {
+                Some(&Computation::Lambda(body)) => computations.push(body),
+                Some(&Computation::Application(function, argument)) => {
+                    computations.push(function);
+                    pending.push(argument);
+                },
+                _ => {},
+            }
+        }
     }
+    let named: Vec<Maybe<(SurfaceName<'_>, SurfaceName<'_>), _>> = holes
+        .iter()
+        .map(|&(at, _)| {
+            module
+                .origins()
+                .omitted(at)
+                .map(|omitted| (omitted.function(), omitted.implicit()))
+        })
+        .collect();
+    let (first, a, b) = (
+        SurfaceName::from("first"),
+        SurfaceName::from("a"),
+        SurfaceName::from("b"),
+    );
+    assert_eq!(
+        named,
+        [Maybe::Present((first, a)), Maybe::Present((first, b))],
+        "each omitted implicit is a hole naming it, in the telescope's order"
+    );
+    assert_ne!(
+        holes[0].1, holes[1].1,
+        "the two holes are distinct metavariables"
+    );
+    assert_checked(&module, &mut arena);
 }
 
 #[test]

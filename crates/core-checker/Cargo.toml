@@ -35,15 +35,18 @@ path = "tests/lib.rs"
 # which `ua_n` reads its range and alphabet from; alloc-only `once_cell`
 # cells hold each bound's catalogue and each stratum once per process. An
 # endpoint's session type is related to another through the session crate's
-# one relation engine. The pinned anodized facade supplies the executable
-# specifications; logic/BigInt stays disabled in this no_std library. Nothing
-# here names a surface crate: names, spans and syntax stay above the core.
+# one relation engine. A hole a call nominates for an omitted implicit is a
+# metavariable of the unifier's metacontext, solved by its solver. The pinned
+# anodized facade supplies the executable specifications; logic/BigInt stays
+# disabled in this no_std library. Nothing here names a surface crate: names,
+# spans and syntax stay above the core.
 # `hotpath` profiles checking and readmission for the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-session.workspace = true
 gandr-core-term.workspace = true
+gandr-core-unify.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true

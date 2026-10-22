@@ -1,18 +1,28 @@
 //! Residual conversion equations, restricted to bare owed code constants, and
-//! the collector a value declaration's judgement leaves them in.
+//! the collector a value declaration's judgement leaves them in, beside the
+//! metavariables it solves for the implicits its calls omit.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
+use gandr_core_term::hole::HoleId;
+use gandr_core_unify::MetaId;
+use gandr_core_unify::Metas;
+use gandr_core_unify::Reason;
+use gandr_core_unify::Side;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::TypeNode;
+use crate::Unsolved;
 
 quenchant_shape::reason_enum! {
     /// Why an equation cannot enter the residual fragment.
@@ -98,6 +108,20 @@ pub enum Deferred
     No,
 }
 
+/// What the solver made of a comparison whose side is the decode of a
+/// metavariable.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unified
+{
+    /// The solver bound the metavariables so the pair holds, or put the pair
+    /// in its store: the surrounding conjunction goes on.
+    Agreed,
+    /// No binding of the metavariables makes the pair hold.
+    Refuted,
+    /// No side is the decode of a metavariable: ordinary conversion decides.
+    Rigid,
+}
+
 /// Whether the running judgement may leave residuals.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Collecting
@@ -171,6 +195,13 @@ pub struct Deferrals
     pub residue: Residue,
     /// Per-occurrence transport, enabled only for a term-producing run.
     pub emission: super::output::Emission,
+    /// The metavariables of the running judgement: each hole a call
+    /// nominated for an implicit it omits, declared where the judgement met
+    /// it.
+    pub metas: Metas,
+    /// The nodes of the nominated holes the running judgement met, in the
+    /// order it met them.
+    pub nominated: Vec<ValueId>,
 }
 
 impl Deferrals
@@ -195,6 +226,7 @@ impl Deferrals
         captures: [owed = self.owed.len(), suspended = self.suspended.len()],
         ensures: self.collecting == collecting && self.residue.equations.is_empty()
             && self.residue.dependencies.is_empty()
+            && self.nominated.is_empty() && usize::from(self.metas.count()) == 0
             && self.owed.len() == owed && self.suspended.len() == suspended,
     )]
     pub fn open(
@@ -205,6 +237,8 @@ impl Deferrals
         self.collecting = collecting;
         self.residue = Residue::default();
         self.emission.restart();
+        self.metas = Metas::new();
+        self.nominated.clear();
     }
 
     /// Take what the running judgement left, leaving the residue empty.
@@ -346,5 +380,219 @@ impl Deferrals
             },
             Maybe::Absent(_) => Deferred::No,
         }
+    }
+
+    /// Declare the nominated hole `hole`, met at `at` under `scope`
+    /// intuitionistic binders, a metavariable of the running judgement.
+    ///
+    /// # Specification
+    /// - requires: `at` is the node of `hole`, which a call nominated.
+    /// - ensures: `hole` is a metavariable whose context holds `scope` binders,
+    ///   and `at` is met; a hole met before keeps its first context, and is not
+    ///   met twice.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call omitting an implicit declares its hole once,
+    ///   at the call's binders, and the solution stands in that context.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    #[spec(
+        captures: before = self.nominated.len(),
+        ensures: matches!(self.metas.meta(hole), Maybe::Present(_))
+            && self.nominated.len() <= before.saturating_add(1),
+    )]
+    pub fn nominate(
+        &mut self,
+        at: ValueId,
+        hole: HoleId,
+        scope: Binders,
+    )
+    {
+        if let Maybe::Present(_) = self.metas.declare(hole, scope) {
+            self.nominated.push(at);
+        }
+    }
+
+    /// The metavariable `side` is, or is the decode of, when the running
+    /// judgement declared one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded(
+        &self,
+        arena: &CoreArena,
+        side: Side,
+    ) -> Option<MetaId>
+    {
+        let hole = match side {
+            Side::Value(at) => at,
+            Side::ValueType(at) => match arena.value_type(at) {
+                Some(&ValueType::Element { code, .. }) => code,
+                _ => return None,
+            },
+            Side::CompType(at) => match arena.comp_type(at) {
+                Some(&CompType::Element { code, .. }) => code,
+                _ => return None,
+            },
+        };
+        match arena.value(hole) {
+            Some(&Value::Hole(hole)) => match self.metas.meta(hole) {
+                Maybe::Present(meta) => Some(meta),
+                Maybe::Absent(_) => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Why the solver left `meta` unbound: the reason of the first equation
+    /// in its store that waits on `meta`, names it, or has its decode at a
+    /// head; unforced when none does.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unsolved(
+        &self,
+        arena: &CoreArena,
+        meta: MetaId,
+    ) -> Unsolved
+    {
+        let named = |reason| match reason {
+            Reason::Pruning { meta: named, .. }
+            | Reason::Escape { meta: named }
+            | Reason::Occurs { meta: named }
+            | Reason::Scope { meta: named } => Some(named),
+            Reason::Unfolding
+            | Reason::Gradual
+            | Reason::Spine
+            | Reason::Outside
+            | Reason::Families
+            | Reason::Neutral
+            | Reason::Levels
+            | Reason::Linear
+            | Reason::Dangling
+            | Reason::Budget => None,
+        };
+        self.metas
+            .postponed()
+            .iter()
+            .find(|waiting| {
+                let equation = waiting.equation();
+                waiting.blockers().contains(&meta)
+                    || named(waiting.reason()) == Some(meta)
+                    || [equation.left(), equation.right()]
+                        .into_iter()
+                        .any(|side| self.decoded(arena, side) == Some(meta))
+            })
+            .map_or(Unsolved::Unforced, |waiting| {
+                Unsolved::from(waiting.reason())
+            })
+    }
+
+    /// Pose `left` against `right`, under `scope` intuitionistic binders, to
+    /// the solver when a side is the decode of a metavariable.
+    ///
+    /// # Specification
+    /// - requires: both nodes are weak-head types of the same family, read in
+    ///   the context of `scope` binders.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a side is
+    ///   the decode of a metavariable; otherwise the solver's run over the one
+    ///   equation: [`Unified::Refuted`] when it refutes it, and
+    ///   [`Unified::Agreed`] when it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decode of an omitted implicit against the type
+    ///   its argument synthesises binds it, the same decode against a second,
+    ///   different type is refuted, and a pair with no decode of a metavariable
+    ///   is left to conversion.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    /// - witness: `elaboration::tests::two_arguments_disagreeing_on_an_implicit_are_apart_1216`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> Unified
+    {
+        let (left, right) = match (left, right) {
+            (TypeNode::Value(left), TypeNode::Value(right)) => {
+                (Side::ValueType(left), Side::ValueType(right))
+            },
+            (TypeNode::Computation(left), TypeNode::Computation(right)) => {
+                (Side::CompType(left), Side::CompType(right))
+            },
+            (TypeNode::Value(_), TypeNode::Computation(_))
+            | (TypeNode::Computation(_), TypeNode::Value(_)) => return Unified::Rigid,
+        };
+        if self.nominated.is_empty()
+            || (self.decoded(arena, left).is_none() && self.decoded(arena, right).is_none())
+        {
+            return Unified::Rigid;
+        }
+        let equation = gandr_core_unify::Equation::new(scope, left, right);
+        match gandr_core_unify::solve(arena, &mut self.metas, &[equation]) {
+            gandr_core_unify::Verdict::Solved | gandr_core_unify::Verdict::Postponed => {
+                Unified::Agreed
+            },
+            gandr_core_unify::Verdict::Refuted(_) => Unified::Refuted,
+        }
+    }
+
+    /// Each nominated hole the running judgement met, with its solution and
+    /// the binders the solution is written under, or the node of the first
+    /// one the solver left unbound and why.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per hole met, its solution in its own context and
+    ///   that context's binders, when every one is bound; the first unbound
+    ///   one's node otherwise, with the reason of the first equation in the
+    ///   store that waits on it, names it or has its decode at a head, or
+    ///   [`Unsolved::Unforced`] when none does; nothing when the judgement met
+    ///   none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose argument forces its implicit answers the
+    ///   solution; one whose arguments force none answers the hole, unforced;
+    ///   one whose only solution names a binder of an argument's own lambda
+    ///   answers the hole and its escape.
+    /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
+    /// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
+    /// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
+    #[spec(ensures: |ret| ret.as_ref().map_or(!self.nominated.is_empty(), |solutions| {
+        solutions.len() == self.nominated.len()
+    }))]
+    pub fn solutions(
+        &self,
+        arena: &CoreArena,
+    ) -> Result<BTreeMap<HoleId, (ValueId, Binders)>, (ValueId, Unsolved)>
+    {
+        let mut solutions = BTreeMap::new();
+        for &at in &self.nominated {
+            let Some(meta) = self.decoded(arena, Side::Value(at))
+            else {
+                return Err((at, Unsolved::Dangling));
+            };
+            match (
+                arena.value(at),
+                self.metas.solution(meta),
+                self.metas.scope(meta),
+            ) {
+                (Some(&Value::Hole(hole)), Maybe::Present(solution), Maybe::Present(scope)) => {
+                    let _first = solutions.insert(hole, (solution, scope));
+                },
+                (_, Maybe::Present(_) | Maybe::Absent(_), Maybe::Present(_) | Maybe::Absent(_)) => {
+                    return Err((at, self.unsolved(arena, meta)));
+                },
+            }
+        }
+        Ok(solutions)
     }
 }

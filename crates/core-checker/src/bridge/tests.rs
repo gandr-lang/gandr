@@ -3971,6 +3971,149 @@ fn a_hole_is_refused_where_it_stands_and_its_filling_is_admitted()
     );
 }
 
+/// The polymorphic identity `(a : Type) -> El a -> F (El a)` and its body
+/// `thunk λ λ. return x`, and the call `thunk ((force #constant) implicit) 0`
+/// of the constant `constant` holding it.
+///
+/// # Specification
+/// trivial.
+fn identity_and_call(
+    arena: &mut CoreArena,
+    constant: ConstantIndex,
+) -> (
+    ValueTypeId,
+    ValueId,
+    impl Fn(&mut CoreArena, ValueId) -> ValueId + use<>,
+)
+{
+    let small = small(arena);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let returns_element = arena.comp_type_returner(element);
+    let arrow = arena.comp_type_arrow(element, returns_element);
+    let polymorphic = arena.comp_type_pi(small, arrow);
+    let returned = arena.computation_return(bound);
+    let inner = arena.computation_lambda(returned);
+    let outer = arena.computation_lambda(inner);
+    let call = move |arena: &mut CoreArena, implicit| {
+        let zero = arena.value_literal(integer_literal());
+        let identity = arena.value_constant(constant);
+        let head = arena.computation_force(identity);
+        let instantiated = arena.computation_application(head, implicit);
+        let applied = arena.computation_application(instantiated, zero);
+        arena.value_thunk(applied)
+    };
+    (
+        arena.value_type_thunk(polymorphic),
+        arena.value_thunk(outer),
+        call,
+    )
+}
+
+#[test]
+fn an_omitted_implicit_is_supplied_before_the_kernel_1216()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def id : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+    // def k  : U (F Integer) = thunk ((force id) ?a) 0 ;   `same(3)`
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let (identity_type, identity, call) =
+        identity_and_call(&mut arena, ConstantIndex::from(0_usize));
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let nominated = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let omitting = call(&mut arena, nominated);
+    let code = arena.value_quote(integer);
+    let supplied = call(&mut arena, code);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(
+            At(0),
+            Maybe::Present(identity_type),
+            Maybe::Present(identity),
+        ),
+        declaration(At(1), Maybe::Present(suspended), Maybe::Present(omitting)),
+    ]);
+    let verdict = report.judged()[1].verdict();
+    assert!(
+        matches!(verdict, Verdict::Checked { body, .. } if gandr_core_term::equal_certificate_syntax(&arena, body, supplied) == gandr_core_term::CertificateEquality::Equal),
+        "the implicit is solved from the argument and the body emitted with it supplied: {verdict:?}"
+    );
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(*entry.outcome(), Outcome::Defined { .. })),
+        "the kernel admits the supplied body, never offered a metavariable"
+    );
+}
+
+#[test]
+fn an_omitted_implicit_is_refused_unforced_or_apart_1216()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def id   : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+    // def pick : U ((a : Type) -> F Integer) = thunk λ. return 0 ;
+    // def free : U (F Integer) = thunk (force pick) ?a ;    nothing forces ?a
+    // def off  : U (F Unit) = thunk ((force id) ?b) 0 ;    0 is no unit
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let (identity_type, identity, call) =
+        identity_and_call(&mut arena, ConstantIndex::from(0_usize));
+    let small = small(&mut arena);
+    let returns_integer = arena.comp_type_returner(integer);
+    let picking = arena.comp_type_pi(small, returns_integer);
+    let picking = arena.value_type_thunk(picking);
+    let zero = arena.value_literal(integer_literal());
+    let returned = arena.computation_return(zero);
+    let pick = arena.computation_lambda(returned);
+    let pick = arena.value_thunk(pick);
+    let [first, second] = [0_u32, 1].map(|index| {
+        arena.value_hole(HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"))
+    });
+    let picked = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(picked);
+    let free = arena.computation_application(forced, first);
+    let free = arena.value_thunk(free);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let off = call(&mut arena, second);
+    let returns_unit = arena.comp_type_returner(unit);
+    let unit_suspended = arena.value_type_thunk(returns_unit);
+    let (report, _) = judge_and_readmit(&mut arena, &[
+        declaration(
+            At(0),
+            Maybe::Present(identity_type),
+            Maybe::Present(identity),
+        ),
+        declaration(At(1), Maybe::Present(picking), Maybe::Present(pick)),
+        declaration(At(2), Maybe::Present(suspended), Maybe::Present(free)),
+        declaration(At(3), Maybe::Present(unit_suspended), Maybe::Present(off)),
+    ]);
+    assert_eq!(
+        report.judged()[2].verdict(),
+        Verdict::Refused(CheckRefusal::ImplicitUnsolved {
+            at: first,
+            reason: crate::Unsolved::Unforced,
+        }),
+        "an implicit no comparison constrains is refused where the call nominated it"
+    );
+    assert!(
+        matches!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "an implicit the argument and the expected type disagree on is a type mismatch: {:?}",
+        report.judged()[3].verdict()
+    );
+}
+
 #[test]
 fn an_empty_ledger_readmits_an_artifact_resting_on_no_axiom()
 {

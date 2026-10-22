@@ -1482,7 +1482,8 @@ impl TypeTable
             // access a method call is, below the call, located at the call; nor
             // does a term of the bind a typed lambda parameter is read through,
             // located at the lambda; nor does a term of the law or the proof a
-            // derived rule mints, located at the statement's name.
+            // derived rule mints, located at the statement's name; nor does the
+            // hole an omitted implicit is nominated as, located at its call.
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
@@ -1493,6 +1494,7 @@ impl TypeTable
                             | Insertion::Method
                             | Insertion::Parameter
                             | Insertion::Derived
+                            | Insertion::Implicit
                     )
                 )
             {

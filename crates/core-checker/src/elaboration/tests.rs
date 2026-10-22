@@ -3,6 +3,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use gandr_core_term::Binders;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
@@ -37,6 +38,7 @@ use crate::fixture::Mode;
 use crate::fixture::integer_literal;
 use crate::fixture::term_recipe;
 use crate::fixture::typed_recipe;
+use crate::refusal::Unsolved;
 use crate::signature;
 
 /// A fixture admission position, distinct from counts.
@@ -1066,4 +1068,116 @@ fn a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837()
         "the fill's judgement reports the motive at the carrier's level: {family:?}"
     );
     assert_readmitted(&mut session);
+}
+
+/// A collector open for a value declaration, with the first nominated hole
+/// declared at no binder: the hole, its node and its decode.
+///
+/// # Specification
+/// trivial.
+fn nominated(
+    arena: &mut CoreArena,
+    deferrals: &mut super::Deferrals,
+) -> (gandr_core_term::hole::HoleId, ValueId, ValueTypeId)
+{
+    let hole = gandr_core_term::hole::HoleId::nominated(
+        gandr_core_term::hole::NominationIndex::from(0_u32),
+    )
+    .expect("the first nominated name");
+    let at = arena.value_hole(hole);
+    deferrals.open(super::Collecting::On);
+    deferrals.nominate(at, hole, Binders::NONE);
+    (hole, at, arena.value_type_element(at, Level::zero()))
+}
+
+#[test]
+fn an_omitted_implicit_is_solved_from_the_argument_1216()
+{
+    // `same(3)`: the decode of `a` against the type the argument synthesises
+    // binds `a` to that type's code. A pair neither side of which is a
+    // metavariable's decode is conversion's, and nothing is bound by it.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (hole, _, decoded) = nominated(&mut arena, &mut deferrals);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let rigid = (TypeNode::Value(integer), TypeNode::Value(unit));
+    assert_eq!(
+        deferrals.unify(&mut arena, Binders::NONE, rigid.0, rigid.1),
+        super::Unified::Rigid
+    );
+    assert_eq!(
+        deferrals.unify(
+            &mut arena,
+            Binders::NONE,
+            TypeNode::Value(decoded),
+            TypeNode::Value(integer)
+        ),
+        super::Unified::Agreed
+    );
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved.len() == 1
+            && solved.get(&hole).is_some_and(|&(code, scope)| {
+                scope == Binders::NONE
+                    && matches!(arena.value(code), Some(&Value::Quote(quoted)) if quoted == integer)
+            })),
+        "`a` is solved as the integers' code, at the binders it was declared under: {solutions:?}"
+    );
+}
+
+#[test]
+fn two_arguments_disagreeing_on_an_implicit_are_apart_1216()
+{
+    // `both(3, unit)`: the first argument binds `a` to the integers, and the
+    // second's type is refuted against the same decode.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (_, _, decoded) = nominated(&mut arena, &mut deferrals);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let [first, second] = [integer, unit].map(|argument| {
+        deferrals.unify(
+            &mut arena,
+            Binders::NONE,
+            TypeNode::Value(decoded),
+            TypeNode::Value(argument),
+        )
+    });
+    assert_eq!(first, super::Unified::Agreed);
+    assert_eq!(second, super::Unified::Refuted);
+}
+
+#[test]
+fn an_implicit_no_argument_forces_is_unsolved_1216()
+{
+    // `twice(3)`'s combination: met and declared, compared with nothing.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (_, at, _) = nominated(&mut arena, &mut deferrals);
+    assert_eq!(deferrals.solutions(&arena), Err((at, Unsolved::Unforced)));
+}
+
+#[test]
+fn an_implicit_solved_past_its_scope_escapes_1216()
+{
+    // `konst(fn (t) { fn (y) { return y } })`: under the lambda's binder the
+    // decode of `b`, declared outside it, meets the decode of `t`. The only
+    // solution names `t`, so the equation waits on its escape, and the
+    // refusal says so.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (_, at, decoded) = nominated(&mut arena, &mut deferrals);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded_bound = arena.value_type_element(bound, Level::zero());
+    assert_eq!(
+        deferrals.unify(
+            &mut arena,
+            Binders::ONE,
+            TypeNode::Value(decoded),
+            TypeNode::Value(decoded_bound)
+        ),
+        super::Unified::Agreed
+    );
+    assert_eq!(deferrals.solutions(&arena), Err((at, Unsolved::Escape)));
 }

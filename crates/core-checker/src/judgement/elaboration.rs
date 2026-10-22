@@ -340,6 +340,35 @@ impl Typings
             marks: body.marks,
         }
     }
+
+    /// This record with each judgement's and each endpoint's type read through
+    /// `retype`, given the binders it was recorded under.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same judgements, formations, endpoints, moves and marks,
+    ///   in order, each judgement's and endpoint's type replaced by what
+    ///   `retype` answers for it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body whose call omits an implicit keeps the type of
+    ///   the call's head at the solved implicit.
+    /// - witness: `module::tests::an_omitted_implicit_is_typed_at_its_solution_1216`
+    #[spec(
+        captures: [count = self.judged.len(), standing = self.endpoints.len()],
+        ensures: |ret| ret.judged.len() == count && ret.endpoints.len() == standing,
+    )]
+    pub(crate) fn retyped(
+        mut self,
+        mut retype: impl FnMut(TypeNode, BinderDepth) -> TypeNode,
+    ) -> Self
+    {
+        for typing in self.judged.iter_mut().chain(self.endpoints.iter_mut()) {
+            typing.ty = retype(typing.ty, typing.depth);
+        }
+        self
+    }
 }
 
 /// A total run's result: the term with its marks, its type and the marks'

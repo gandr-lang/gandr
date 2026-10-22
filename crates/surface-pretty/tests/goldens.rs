@@ -33,6 +33,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::NominationIndex;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
@@ -2148,6 +2149,48 @@ fn a_call_collects_its_arguments_up_to_the_depth_limit()
             Fidelity::Faithful
         ),
         "the innermost application past the limit heads the call"
+    );
+}
+
+/// A call omitting an implicit writes only what the source wrote: the hole
+/// the call nominated is left out of its arguments, and a call omitting its
+/// every argument writes empty parentheses. The same hole read as a type's
+/// code is a metavariable the checker left unsolved, which no source writes:
+/// `?`, approximate.
+#[test]
+fn a_call_leaves_out_the_implicits_it_omits_1216()
+{
+    let names = [Name::from("same"), Name::from("pick")];
+    let mut core = CoreArena::new();
+    let [first, second] = [0_u32, 1].map(|index| {
+        core.value_hole(HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"))
+    });
+    let three = integer(&mut core, Sign::NonNegative, Written("3"));
+    let call = |core: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = core.value_constant(ConstantIndex::from(constant));
+        let mut applied = core.computation_force(head);
+        for &argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        core.computation_lambda(applied)
+    };
+    let same = call(&mut core, 0, &[first, three]);
+    let pick = call(&mut core, 1, &[second]);
+    let decoded = core.value_type_element(first, Level::zero());
+    let source = CoreSource::new(&core, &names);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(same)),
+        faithful(Written("fn (a) { same(3) }"))
+    );
+    assert_eq!(
+        spelled(&source, body(pick)),
+        faithful(Written("fn (a) { pick() }"))
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::ValueType(decoded))),
+        approximate(Written("?")),
+        "an unsolved metavariable read as a type spells `?`"
     );
 }
 

@@ -345,6 +345,14 @@ path = "crates/core-session"
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
+# The metacontext and the solver an elaborator calls for the metavariables
+# it creates: the checker solves the holes a call nominates for the implicits
+# it omits.
+# consumers:
+# - core-checker
+[workspace.dependencies.gandr-core-unify]
+path = "crates/core-unify"
+
 # The support-keyed check-memo seam, generic over consumer-owned types.
 # consumers:
 # - core-checker

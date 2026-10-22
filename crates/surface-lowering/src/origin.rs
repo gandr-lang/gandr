@@ -153,7 +153,7 @@ quenchant_shape::reason_enum! {
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
 ///   return, classifier, match, fixpoint, endpoint, identity, nested, unwind,
-///   model, relation and parameter.
+///   model, relation, parameter and implicit.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -249,6 +249,10 @@ pub enum Insertion
     /// its lemmas mints, every one located at the statement's name: the
     /// source writes the rule, never the steps that prove it.
     Derived,
+    /// The hole an omitted implicit argument is nominated as, located at the
+    /// call: the source writes the call's explicit arguments, never the
+    /// implicit the checker solves for and supplies.
+    Implicit,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
@@ -534,6 +538,59 @@ pub enum ComponentName
     Labelled(FieldLabel),
 }
 
+/// The implicit a hole a call nominated stands for: the function the call
+/// applies and the implicit it omits, as written.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Omitted
+{
+    /// The function the call applies.
+    function: String,
+    /// The implicit the call omits.
+    implicit: String,
+}
+
+impl Omitted
+{
+    /// The implicit `implicit` of `function`, which a call omits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        function: String,
+        implicit: String,
+    ) -> Self
+    {
+        Self { function, implicit }
+    }
+
+    /// The function the call applies.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn function(&self) -> crate::resolve::SurfaceName<'_>
+    {
+        crate::resolve::SurfaceName::from(self.function.as_str())
+    }
+
+    /// The implicit the call omits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn implicit(&self) -> crate::resolve::SurfaceName<'_>
+    {
+        crate::resolve::SurfaceName::from(self.implicit.as_str())
+    }
+}
+
 /// Every minted core node's origin, by family, and the declaration origins.
 ///
 /// Each family is a vector of id-and-origin pairs held in mint order. Core ids
@@ -637,6 +694,10 @@ pub struct OriginTable
     /// Each relation written between two types, with the type it lowers to,
     /// in the order lowered.
     relations: Vec<(ValueTypeId, Relation)>,
+    /// The implicit each hole a call nominated stands for, by the hole,
+    /// ascending by id. The core carries no name; a refusal of the hole
+    /// reads it here.
+    omitted: Vec<(ValueId, Omitted)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -2023,6 +2084,66 @@ impl OriginTable
     pub fn framed(&self) -> &[(ByteSpan, Vec<String>)]
     {
         &self.framed
+    }
+
+    /// Record that the freshly minted hole `id` stands for `omitted`.
+    ///
+    /// # Specification
+    /// - requires: `id` follows every hole already recorded.
+    /// - ensures: the pair is appended, so the list stays ascending by id and
+    ///   [`Self::omitted`] finds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call omitting both implicits of `first` records one
+    ///   hole per implicit, each naming it.
+    /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    #[spec(
+        requires: self.omitted.last().is_none_or(|&(held, _)| held < id),
+        captures: before = self.omitted.len(),
+        ensures: before.checked_add(1_usize) == Some(self.omitted.len()),
+    )]
+    #[inline]
+    pub fn record_omitted(
+        &mut self,
+        id: ValueId,
+        omitted: Omitted,
+    )
+    {
+        self.omitted.push((id, omitted));
+    }
+
+    /// The implicit the hole `id` stands for, when a call nominated it.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded id is admissible input.
+    /// - ensures: the implicit recorded under an equal id, or the unrecorded
+    ///   absence, found by one search over the ascending ids.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_omitted`].
+    /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    #[spec(ensures: |ret| match self.omitted.binary_search_by_key(&id, |&(held, _)| held) {
+        | Ok(at) => matches!(ret, Maybe::Present(found) if self.omitted.get(at).is_some_and(|&(_, ref held)| held == found)),
+        | Err(_) => matches!(ret, Maybe::Absent(origin::Absent::Unrecorded)),
+    })]
+    #[inline]
+    pub fn omitted(
+        &self,
+        id: ValueId,
+    ) -> Maybe<&Omitted, origin::Absent>
+    {
+        self.omitted
+            .binary_search_by_key(&id, |&(held, _)| held)
+            .ok()
+            .and_then(|position| self.omitted.get(position))
+            .map_or(
+                Maybe::Absent(origin::Absent::Unrecorded),
+                |&(_, ref omitted)| Maybe::Present(omitted),
+            )
     }
 
     /// Record that the type head at `origin` stands for `ty`, a type minted

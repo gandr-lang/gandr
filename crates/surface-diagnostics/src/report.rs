@@ -95,6 +95,7 @@ use core::fmt;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Failure;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
@@ -128,6 +129,7 @@ use crate::locus::Label;
 use crate::locus::PrimaryLabel;
 use crate::locus::report_context;
 use crate::message::Plain;
+use crate::message::unsolved;
 use crate::model::AnnotationKind;
 use crate::model::Compared;
 use crate::model::Diagnostic;
@@ -1107,9 +1109,11 @@ impl fmt::Display for MessageText<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a refused declaration writes its refusal's plain message; a
-    ///   source refused as a whole says so, then the plain message; every other
-    ///   report writes its title, which is already the user's.
+    /// - ensures: a refused declaration writes its refusal's plain message, and
+    ///   an omitted implicit the solver left unbound names the implicit and the
+    ///   function its call wrote, where the origins record them; a source
+    ///   refused as a whole says so, then the plain message; every other report
+    ///   writes its title, which is already the user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1128,6 +1132,30 @@ impl fmt::Display for MessageText<'_>
     ) -> fmt::Result
     {
         match self.0 {
+            Subject::Refused {
+                refusal: refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, reason }),
+                origins,
+                ..
+            } => match origins.omitted(at) {
+                Maybe::Present(omitted) => {
+                    let (function, implicit) = (omitted.function(), omitted.implicit());
+                    match unsolved(reason) {
+                        Maybe::Present(why) => write!(
+                            f,
+                            "the solver cannot determine the implicit `{implicit}` this call to \
+                             `{function}` omits: {why}; supply it as `{function}[{implicit} = \
+                             …](…)`"
+                        ),
+                        Maybe::Absent(()) => write!(
+                            f,
+                            "the implicit `{implicit}` this call to `{function}` omits is \
+                             determined by neither its arguments nor the type it is checked \
+                             against; supply it as `{function}[{implicit} = …](…)`"
+                        ),
+                    }
+                },
+                Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
+            },
             Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
             Subject::Source(refusal) => write!(
                 f,

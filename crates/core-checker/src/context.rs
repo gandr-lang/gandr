@@ -2439,6 +2439,78 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.deferrals.defer(self.arena, left, right)
     }
 
+    /// Pose `left` against `right` to the solver when a side is the decode of
+    /// a metavariable, under the intuitionistic binders open now.
+    ///
+    /// # Specification
+    /// - requires: as [`crate::elaboration::Deferrals::unify`].
+    /// - ensures: its answer, posed at the current depth.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a depth past any binder
+    ///   count.
+    /// - panics: none.
+    /// - executable: none — the answer is
+    ///   [`crate::elaboration::Deferrals::unify`]'s, checked by its own
+    ///   specification; this call only reads the depth it is posed at.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::unify`].
+    /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+    /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+    pub(crate) fn unify(
+        &mut self,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> Result<crate::elaboration::Unified, CheckRefusal>
+    {
+        let scope = self.intuitionistic_scope()?;
+        Ok(self.deferrals.unify(self.arena, scope, left, right))
+    }
+
+    /// Declare the nominated hole `hole` at `at` a metavariable whose context
+    /// is the intuitionistic binders open now.
+    ///
+    /// # Specification
+    /// - requires: as [`crate::elaboration::Deferrals::nominate`].
+    /// - ensures: as it, at the current depth.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a depth past any binder
+    ///   count.
+    /// - panics: none.
+    /// - executable: none — the declaration is
+    ///   [`crate::elaboration::Deferrals::nominate`]'s, checked by its own
+    ///   specification; this call only reads the depth it is made at.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::nominate`].
+    /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+    pub(crate) fn nominate(
+        &mut self,
+        at: ValueId,
+        hole: gandr_core_term::hole::HoleId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let scope = self.intuitionistic_scope()?;
+        self.deferrals.nominate(at, hole, scope);
+        Ok(())
+    }
+
+    /// The intuitionistic binders open now, as the count a metavariable's
+    /// context and an equation are posed under.
+    ///
+    /// # Specification
+    /// trivial.
+    fn intuitionistic_scope(&self) -> Result<gandr_core_term::Binders, CheckRefusal>
+    {
+        u32::try_from(usize::from(self.depth(Zone::Intuitionistic)))
+            .map(gandr_core_term::Binders::from)
+            .map_err(|_overflow| CheckRefusal::MachineInvariant)
+    }
+
     /// Record a code occurrence that needs no universe transport.
     ///
     /// # Specification

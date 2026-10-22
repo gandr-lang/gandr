@@ -374,6 +374,11 @@ enum Rewrite
     Rotate(Binders),
     /// Replace every hole of the name, in the filling's family, by the filling.
     Fill(HoleId, Node),
+    /// Replace every value hole of the name by the value, written under the
+    /// count of binders: an occurrence that many binders deep takes it as it
+    /// stands, one deeper takes it raised past the binders between, and one
+    /// shallower stands.
+    Solve(HoleId, ValueId, Binders),
     /// Wrap every node the engine's sites name in the mark it names.
     Wrap,
     /// Replace every index outside the depth that counts into the engine's
@@ -603,6 +608,7 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
     /// - witness: `rewrite::tests::substitution_avoids_capture`
     /// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
+    /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len()],
         ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
@@ -680,6 +686,31 @@ impl<'arena> Engine<'arena>
         {
             let _previous = self.memo.insert((node, depth, rewrite), filling);
             self.results.push(filling);
+            return;
+        }
+        if let (Rewrite::Solve(hole, solution, scope), Node::Value(id)) = (rewrite, node)
+            && self.arena.value(id) == Some(&Value::Hole(hole))
+        {
+            match depth.0.checked_sub(scope.0) {
+                Some(0) => {
+                    let _previous = self
+                        .memo
+                        .insert((node, depth, rewrite), Node::Value(solution));
+                    self.results.push(Node::Value(solution));
+                },
+                Some(past) => {
+                    self.tasks.push(Task::Record(node, depth, rewrite));
+                    self.tasks.push(Task::Open(
+                        Node::Value(solution),
+                        Binders::NONE,
+                        Rewrite::Relocate(Offset::raise(Binders(past))),
+                    ));
+                },
+                None => {
+                    let _previous = self.memo.insert((node, depth, rewrite), node);
+                    self.results.push(node);
+                },
+            }
             return;
         }
         if rewrite == Rewrite::Rename
@@ -1104,6 +1135,7 @@ impl<'arena> Engine<'arena>
             | Rewrite::Instantiate(..)
             | Rewrite::Rotate(_)
             | Rewrite::Fill(..)
+            | Rewrite::Solve(..)
             | Rewrite::Wrap
             | Rewrite::Environment
             | Rewrite::Rename
@@ -1381,7 +1413,7 @@ impl<'arena> Engine<'arena>
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1))),
                 | Some(_) | None => ret == Occurrence::Answered(id),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel => {
+            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -1455,6 +1487,7 @@ impl<'arena> Engine<'arena>
                 Some(_) | None => Occurrence::Answered(id),
             },
             Rewrite::Fill(..)
+            | Rewrite::Solve(..)
             | Rewrite::Wrap
             | Rewrite::Elaborate
             | Rewrite::Rename
@@ -5017,6 +5050,114 @@ pub fn fill_hole(
         Rewrite::Fill(hole, term_node(filling)),
     );
     node_term(filled, subject)
+}
+
+/// Fill every value hole named `hole` in the value type `subject`, read under
+/// `under` binders, by `solution`, written under `scope` binders: a
+/// metavariable's solution read into a type that mentions it.
+///
+/// # Specification
+/// - requires: `subject` and `solution` are live in `arena`.
+/// - ensures: `subject` with each occurrence of the hole that stands under
+///   exactly `scope` binders, counting `under`, replaced by `solution`, and
+///   each deeper one by `solution` raised past the binders between; an
+///   occurrence shallower than `scope`, a computation hole and a hole of
+///   another name stand; `subject` itself when it holds no such hole.
+/// - provides: a type the checker recorded while a metavariable stood unsolved,
+///   read with its solution.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an occurrence at the scope, one a binder past it inside
+///   the type, one read shallower than the scope and a hole-free type separate
+///   the placement, the raise, the standing occurrence and identity reuse.
+/// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+#[spec(ensures: |ret| ret == subject || arena.value_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn fill_value_type_hole(
+    arena: &mut CoreArena,
+    (subject, under): (ValueTypeId, Binders),
+    hole: HoleId,
+    (solution, scope): (ValueId, Binders),
+) -> ValueTypeId
+{
+    match Engine::new(arena).run(
+        Node::ValueType(subject),
+        under,
+        Rewrite::Solve(hole, solution, scope),
+    ) {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// [`fill_value_type_hole`] at a value: a body whose holes stand for
+/// metavariables, read with their solutions.
+///
+/// # Specification
+/// - requires: as [`fill_value_type_hole`].
+/// - ensures: as [`fill_value_type_hole`], at a value.
+/// - provides: a body the checker judged with metavariables standing, read with
+///   their solutions; a solution mentioning another hole raises that hole's
+///   solution past the binders between their scopes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`fill_value_type_hole`].
+/// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+#[spec(ensures: |ret| ret == subject || arena.value(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn fill_value_hole(
+    arena: &mut CoreArena,
+    (subject, under): (ValueId, Binders),
+    hole: HoleId,
+    (solution, scope): (ValueId, Binders),
+) -> ValueId
+{
+    match Engine::new(arena).run(
+        Node::Value(subject),
+        under,
+        Rewrite::Solve(hole, solution, scope),
+    ) {
+        Node::Value(id) => id,
+        Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// [`fill_value_type_hole`] at a computation type.
+///
+/// # Specification
+/// - requires: as [`fill_value_type_hole`].
+/// - ensures: as [`fill_value_type_hole`], at a computation type.
+/// - provides: as [`fill_value_type_hole`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`fill_value_type_hole`].
+/// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
+#[spec(ensures: |ret| ret == subject || arena.comp_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn fill_comp_type_hole(
+    arena: &mut CoreArena,
+    (subject, under): (CompTypeId, Binders),
+    hole: HoleId,
+    (solution, scope): (ValueId, Binders),
+) -> CompTypeId
+{
+    match Engine::new(arena).run(
+        Node::CompType(subject),
+        under,
+        Rewrite::Solve(hole, solution, scope),
+    ) {
+        Node::CompType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::ValueType(_) => subject,
+    }
 }
 
 /// Wrap every term `sites` names, within `subject`, in its mark.

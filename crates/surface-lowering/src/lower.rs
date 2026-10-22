@@ -635,6 +635,7 @@ use crate::namespace::Trie;
 use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
+use crate::origin::Omitted;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
 use crate::resolve::Bound;
@@ -3183,10 +3184,19 @@ struct Lowerer<'run, 'source>
     /// Each head of a call of no arguments, beside the call: such a call is
     /// its head's force, so the force carries the call's origin.
     nullary: BTreeMap<NodeIndex, NodeIndex>,
-    /// The head of each call that supplies its callee's implicits by name,
-    /// `f[a = T](…)`: the one place a function with implicits is named
-    /// without refusal.
+    /// The head of each call that applies a function with implicits, each
+    /// supplied by name, `f[a = T](…)`, or nominated where the call omits it
+    /// (`Self::nominated`): the one place such a function is named without
+    /// refusal.
     supplied: BTreeSet<NodeIndex>,
+    /// Each operand an application passes for an implicit its call omits, by
+    /// its place among the operands, with the hole nominated for it: the
+    /// operand's node is the call's own, which no value lowers at, and the
+    /// application mints the hole there.
+    nominated: BTreeMap<usize, gandr_core_term::hole::HoleId>,
+    /// Each hole nominated for an omitted implicit, in the order nominated,
+    /// with the call that omits it: the hole's name counts them.
+    nominations: BTreeMap<gandr_core_term::hole::HoleId, implicit::Nomination<'source>>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// Each derived rule's minted type and proof, by slot: a `derive`
@@ -4517,6 +4527,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             type_read: BTreeSet::new(),
             nullary: BTreeMap::new(),
             supplied: BTreeSet::new(),
+            nominated: BTreeMap::new(),
+            nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
             presented: BTreeMap::new(),
@@ -9072,10 +9084,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         (arguments.start == start || (descends && arguments.start >= start))
                             && arguments.end == end
                             && self.reading(head) == Reading::Head(site.reading.frame())
-                            && self.operands.get(arguments.start ..).is_some_and(|appended| {
-                                appended.iter().all(|&argument| {
-                                    self.reading(argument) == Reading::Value(site.reading.frame())
-                                })
+                            && (arguments.start .. arguments.end).all(|position| {
+                                self.nominated.contains_key(&position)
+                                    || self.operands.get(position).is_some_and(|&argument| {
+                                        self.reading(argument) == Reading::Value(site.reading.frame())
+                                    })
                             })
                     },
                     | Some(&Plan::Constructor(constructed)) => {
@@ -12039,7 +12052,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `at` is a hole of the tree.
     /// - ensures: each hole is named by how many holes the text writes before
     ///   it, so distinct holes have distinct names.
-    /// - fails: the budget refusal for a hole past the last name.
+    /// - fails: the budget refusal for a hole past the last written name, the
+    ///   last below the nominated half ([`gandr_core_term::hole::HoleId`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -12066,8 +12080,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .binary_search(&(at.span.start(), at.node))
             .map_err(|_absent| exceeded)?;
         u32::try_from(place)
+            .ok()
             .map(gandr_core_term::hole::HoleId::from)
-            .map_err(|_overflow| exceeded)
+            .filter(|hole| hole.origin() == gandr_core_term::hole::HoleOrigin::Written)
+            .ok_or(exceeded)
     }
 
     /// Read the holes among the tree's nodes from `from` on into the holes
@@ -14682,11 +14698,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: `c(v1, …, vn)` mints as `app(… app(c, v1) …, vn)`, every
-    ///   application carrying the call's origin; a call through a joint
-    ///   fixpoint passes its argument injected at the called member's summand,
-    ///   the injection marked as the fixpoint's insertion; a call of no
-    ///   arguments is its head's own computation; nothing is minted when the
-    ///   head or an argument did not lower.
+    ///   application carrying the call's origin; an argument the call omits for
+    ///   an implicit is the hole nominated for it ([`Self::nominated`]), marked
+    ///   as an implicit's insertion; a call through a joint fixpoint passes its
+    ///   argument injected at the called member's summand, the injection marked
+    ///   as the fixpoint's insertion; a call of no arguments is its head's own
+    ///   computation; nothing is minted when the head or a written argument did
+    ///   not lower.
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
@@ -14699,8 +14717,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     #[spec(
-        captures: written = stretch(&self.operands, arguments),
+        captures: written = (arguments.start .. arguments.end)
+            .filter(|position| !self.nominated.contains_key(position))
+            .filter_map(|position| self.operands.get(position).copied())
+            .collect::<Vec<_>>(),
         ensures: |ret| match self.computation_at(head) {
             | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
             | Maybe::Present(called) => {
@@ -14711,7 +14733,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Maybe::Absent(reason) => Some(reason),
                     }) {
                     | Some(reason) => ret == Maybe::Absent(reason),
-                    | None if written.is_empty() => {
+                    | None if arguments.start == arguments.end => {
                         ret == Maybe::Present(Lowered::Computation(called))
                     },
                     | None => {
@@ -14733,16 +14755,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(called) => called,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let arguments = stretch(&self.operands, arguments);
-        for &argument in arguments {
-            if let Maybe::Absent(reason) = self.value_at(argument) {
+        for position in arguments.start .. arguments.end {
+            if !self.nominated.contains_key(&position)
+                && let Some(&argument) = self.operands.get(position)
+                && let Maybe::Absent(reason) = self.value_at(argument)
+            {
                 return Maybe::Absent(reason);
             }
         }
-        for &argument in arguments {
-            let mut passed = match self.value_at(argument) {
-                Maybe::Present(passed) => passed,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
+        for position in arguments.start .. arguments.end {
+            let mut passed = if let Some(&hole) = self.nominated.get(&position) {
+                let id = sink.arena.value_hole(hole);
+                sink.origins
+                    .record_value(id, origin.inserted(Insertion::Implicit));
+                if let Some(nomination) = self.nominations.get(&hole) {
+                    sink.origins.record_omitted(
+                        id,
+                        Omitted::new(
+                            String::from(nomination.function().as_ref()),
+                            String::from(nomination.implicit().as_ref()),
+                        ),
+                    );
+                }
+                id
+            }
+            else {
+                match self
+                    .operands
+                    .get(position)
+                    .map(|&argument| self.value_at(argument))
+                {
+                    Some(Maybe::Present(passed)) => passed,
+                    Some(Maybe::Absent(reason)) => return Maybe::Absent(reason),
+                    None => return Maybe::Absent(lowered::Absent::Unminted),
+                }
             };
             if let Some(&summand) = self.injected.get(&head) {
                 let injected = sink.arena.value_injection(summand, passed);
@@ -17338,7 +17384,8 @@ impl Sink<'_>
                 | Insertion::Words
                 | Insertion::Method
                 | Insertion::Parameter
-                | Insertion::Derived,
+                | Insertion::Derived
+                | Insertion::Implicit,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }

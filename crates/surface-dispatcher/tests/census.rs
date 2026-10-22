@@ -57,12 +57,15 @@ fn root(name: &Path) -> PathBuf
 }
 
 /// The honest set: the reasons whose `?` says what the checker knows. A hole
-/// is not among them: its `?` is written faithfully.
-const HONEST: [Unspelled; 4] = [
+/// is not among them: its `?` is written faithfully. An implicit a call omits
+/// is, where a refused declaration's type still holds it: the checker left it
+/// unsolved.
+const HONEST: [Unspelled; 5] = [
     Unspelled::Unreadable(Unreadable::UnknownType),
     Unspelled::Unreadable(Unreadable::Mark),
     Unspelled::Unreadable(Unreadable::Lift),
     Unspelled::Unreadable(Unreadable::NumericAtom),
+    Unspelled::Unreadable(Unreadable::Omitted),
 ];
 
 /// Where a presentation was read.

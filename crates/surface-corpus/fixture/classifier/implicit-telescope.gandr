@@ -4,8 +4,10 @@
 // parameters merge into one telescope, each after every parameter its type
 // names, ties kept in the written order; which ones are implicit is the
 // declaration's metadata, so the declared type is the one the function written
-// with every parameter explicit, in the merged order, has. Nothing is inferred
-// yet. What refuses is in `../pathological/classifier/implicit-telescope.gandr`.
+// with every parameter explicit, in the merged order, has. A call that omits
+// its implicits has each one solved from its arguments and the type it is
+// checked against (#1216). What refuses is in
+// `../pathological/classifier/implicit-telescope.gandr`.
 
 /// The identity at a type supplied by name.
 @[ checks ]
@@ -15,6 +17,11 @@ def same @[a : Type] (y : a) -> -F a { y }
 @[ runs("3") ]
 def sameRun : () => Integer ;
 def sameRun = thunk { become same[a = Integer](3) } ;
+
+/// `same` with its implicit omitted: the argument `3` determines `a`.
+@[ runs("3") ]
+def sameInferred : () => Integer ;
+def sameInferred = thunk { become same(3) } ;
 
 /// The first of two values of two types, both implicit.
 @[ checks ]
@@ -30,6 +37,11 @@ def firstRun = thunk { become first[a = Integer, b = Unit](5, unit) } ;
 @[ runs("5") ]
 def firstSwapped : () => Integer ;
 def firstSwapped = thunk { become first[b = Unit, a = Integer](5, unit) } ;
+
+/// `first` with both implicits omitted, each determined by its own argument.
+@[ runs("5") ]
+def firstInferred : () => Integer ;
+def firstInferred = thunk { become first(5, unit) } ;
 
 /// An implicit whose type names an explicit parameter written after it: the
 /// merge binds `t` first, so `x : t` reads it.
@@ -50,6 +62,28 @@ def kept @[i : Size, a : Type] (n : Integer, y : a) -> -F a { y }
 @[ runs("4") ]
 def keptRun : () => Integer ;
 def keptRun = thunk { become kept[a = Integer](0, 4) } ;
+
+/// `kept` with its implicit omitted: the stage binds no value, and the second
+/// argument determines `a`.
+@[ runs("4") ]
+def keptInferred : () => Integer ;
+def keptInferred = thunk { become kept(0, 4) } ;
+
+/// `same` called at a type the definition binds: the solution for `a` is the
+/// parameter `t`, which the call stands under.
+@[ checks ]
+def sameAt(t : Type, y : t) -> -F t { become same(y) }
+
+/// A function taking a function of a type and a value of it, the result type
+/// of that function implicit.
+@[ checks ]
+def konst @[b : Type] (f : (t : Type, t) => b) -> -F Integer { 1 }
+
+/// `konst` with its implicit omitted: the lambda returns an integer under its
+/// own binders, and `b` is solved as `Integer`, which names none of them.
+@[ runs("1") ]
+def konstInferred : () => Integer ;
+def konstInferred = thunk { become konst(fn (t) { fn (y) { 0 } }) } ;
 
 /// A function applied to the integer it is passed.
 @[ checks ]

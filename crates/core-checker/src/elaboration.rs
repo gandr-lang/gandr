@@ -168,6 +168,7 @@ pub(crate) use self::constraints::Deferrals;
 pub(crate) use self::constraints::Deferred;
 pub use self::constraints::Equation;
 pub(crate) use self::constraints::Residue;
+pub(crate) use self::constraints::Unified;
 pub(crate) use self::output::CodeUse;
 pub(crate) use self::output::Emission;
 use self::output::Transports;
