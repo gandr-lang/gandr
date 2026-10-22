@@ -526,11 +526,12 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # names exists — a `crate` a directory under `crates/` or a `contrib/` path, a
 # `corpus` entry a path from the root or under `crates/surface-corpus/` (a
 # `::item` suffix naming a test inside it), an `exemplar` a file outside
-# `pathological/`, which holds refusals; and every file under
-# `ledger/exemplars/features/` is named by a row. Every finding is printed
-# before the gate fails.
+# `pathological/`, which holds refusals; every file under
+# `ledger/exemplars/features/` is named by a row; and every implemented or
+# partial row outside the areas `exempt` lists, whose evidence is crate tests,
+# names an exemplar. Every finding is printed before the gate fails.
 ["check:ledger"]
-description = "The features ledger round-trips, keeps its constraints and names paths that exist"
+description = "The features ledger round-trips, keeps its constraints, names paths that exist and an exemplar for every language feature"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -576,11 +577,22 @@ while read -r file; do
   echo "$file: no row of the features ledger names it" >&2
   failed=1
 done < <(comm -23 "$tmp/files" "$tmp/named")
+exempt="'editor', 'workflow', 'storage', 'tooling', 'incremental', 'algorithms', 'machine', 'staging',
+  'kernel', 'conversion', 'runtime', 'syntax', 'printing', 'diagnostics', 'rewriting', 'corpus'"
+sqlite3 "$db" "
+  SELECT id || ': an implemented or partial row in the language area ' || area || ' names no exemplar'
+  FROM feature
+  WHERE status IN ('implemented', 'partial') AND exemplar IS NULL AND area NOT IN ($exempt)
+  ORDER BY id;" > "$tmp/unshown"
+if [ -s "$tmp/unshown" ]; then
+  cat "$tmp/unshown" >&2
+  failed=1
+fi
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1
 fi
-echo "ledger check OK: $(sqlite3 "$db" 'SELECT count(*) FROM feature;') rows round-trip, every path exists, every exemplar is named"
+echo "ledger check OK: $(sqlite3 "$db" 'SELECT count(*) FROM feature;') rows round-trip, every path exists, every exemplar is named, every language feature names one"
 '''
 
 ["check:tests"]
