@@ -376,7 +376,7 @@ fn fibre_code(
     let relation = relation(arena, cell.code)?;
     relation.witness(arena, context, cell.left, cell.right, cell.evidence)?;
     let fibre = relation.fiber(arena, context, cell.left, cell.right)?;
-    let fibre = fibre.native(arena)?;
+    let fibre = fibre.native(arena, crate::identity_recursion::Interfaces::NONE)?;
     Ok(arena.value_quote(fibre))
 }
 
@@ -526,7 +526,7 @@ impl Codata
                     };
                     let fibre = relation(arena, cell.code)?
                         .evaluate(arena, cell.left, cell.right)?
-                        .native(arena)?;
+                        .native(arena, crate::identity_recursion::Interfaces::NONE)?;
                     visit(arena, cell, fibre)?;
                     depth = depth.saturating_add(1);
                     let head = *head.get_or_insert(cell);

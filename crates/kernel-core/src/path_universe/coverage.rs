@@ -5,6 +5,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -18,6 +20,8 @@ use super::Direction;
 use super::PathError;
 use super::PatternPosition;
 use crate::encoding::ContentTable;
+use crate::env::AdmittedDeclaration;
+use crate::flow_universe::data_signature;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
@@ -31,10 +35,11 @@ use crate::rewrite::shift_value;
 /// # Specification
 /// - requires: the code root belongs to `arena`.
 /// - ensures: outer formers are Base, Product (the unit among them), a Sum of
-///   at least one summand, a List of a code among them, or Session; session
-///   graph structure and guards check. The empty sum is refused, as the retired
-///   empty type was. Native formation separately checks session payload codes
-///   in an empty term context.
+///   at least one summand, a List of a code among them, a data type
+///   [`data_signature`] reads from `entries` and reached again nowhere inside
+///   its own fields, or Session; session graph structure and guards check. The
+///   empty sum is refused, as the retired empty type was. Native formation
+///   separately checks session payload codes in an empty term context.
 /// - provides: code-shape inspection, never a checking verdict.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
 ///   `Budget`.
@@ -43,10 +48,17 @@ use crate::rewrite::shift_value;
 /// # Errors
 /// As `fails`.
 ///
+/// # Termination
+/// - reason: a worklist over the finite type graph, each node expanded once; a
+///   data type's declaration is held open until its fields are walked.
+/// - measure: the nodes not yet expanded.
+///
 /// # Adequacy
-/// - hypothesis: L3 — Bool, product and list codes admit; thunk codes refuse.
+/// - hypothesis: L3 — Bool, product, list and data codes admit; thunk codes and
+///   a data type holding itself refuse.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 /// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
+/// - witness: `path_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 #[spec(
     captures: before = allowance.0,
@@ -62,6 +74,7 @@ use crate::rewrite::shift_value;
 pub(super) fn code(
     arena: &TermArena,
     code: ValueId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, PathError>
 {
@@ -69,14 +82,33 @@ pub(super) fn code(
     else {
         return Err(PathError::UnsupportedCode(code));
     };
-    let mut pending = Vec::from([root]);
+    let mut pending = Vec::from([Walk::Visit(root)]);
+    // The data declarations whose fields are being walked.
+    let mut open = BTreeSet::new();
     let mut seen = BTreeSet::new();
-    while let Some(id) = pending.pop() {
+    while let Some(next) = pending.pop() {
         allowance.charge()?;
+        let id = match next {
+            Walk::Visit(id) => id,
+            Walk::Close(declaration) => {
+                if !open.remove(&declaration) {
+                    return Err(PathError::Arena);
+                }
+                continue;
+            },
+        };
+        let node = arena.value_type(id).ok_or(PathError::Arena)?;
+        // A first visit walks the whole of any cycle through the node, so a
+        // recursive type meets its own open declaration before a repeat is
+        // skipped.
+        if let &ValueType::Data { declaration, .. } = node
+            && open.contains(&declaration)
+        {
+            return Err(PathError::UnsupportedType(id));
+        }
         if !seen.insert(id) {
             continue;
         }
-        let node = arena.value_type(id).ok_or(PathError::Arena)?;
         match node {
             &ValueType::Base(_) => {},
             &ValueType::Session {
@@ -92,11 +124,24 @@ pub(super) fn code(
                 return Err(PathError::UnsupportedType(id));
             },
             &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
-                pending.extend(parts.iter().rev().copied());
+                pending.extend(parts.iter().rev().copied().map(Walk::Visit));
             },
-            &ValueType::List(element) => pending.push(element),
-            &ValueType::Data { .. }
-            | &ValueType::Record(_)
+            &ValueType::List(element) => pending.push(Walk::Visit(element)),
+            &ValueType::Data { .. } => {
+                let (declaration, constructors) =
+                    data_signature(arena, entries, id).ok_or(PathError::UnsupportedType(id))?;
+                open.insert(declaration);
+                pending.push(Walk::Close(declaration));
+                pending.extend(
+                    constructors
+                        .iter()
+                        .flatten()
+                        .rev()
+                        .copied()
+                        .map(Walk::Visit),
+                );
+            },
+            &ValueType::Record(_)
             | &ValueType::PathUniverse(..)
             | &ValueType::FlowUniverse(..)
             | &ValueType::Path { .. }
@@ -113,6 +158,15 @@ pub(super) fn code(
         }
     }
     Ok(root)
+}
+
+/// Code validation work.
+enum Walk
+{
+    /// Visit one type.
+    Visit(ValueTypeId),
+    /// Close this data declaration: its fields have all been visited.
+    Close(ConstantIndex),
 }
 
 /// A canonical constructor pattern with fresh rigid variables at base leaves
@@ -138,6 +192,12 @@ enum Cover
     /// Form every tuple of this many components' patterns, renaming base
     /// variables apart.
     Product(usize),
+    /// Form every application of this constructor of this data type to this
+    /// many fields' patterns, renaming base variables apart.
+    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// Join the patterns of this many constructors and close this data
+    /// declaration, which opened them.
+    Data(ConstantIndex, usize),
     /// The empty list, then each element pattern on top consed onto a fresh
     /// tail.
     List,
@@ -146,11 +206,13 @@ enum Cover
 /// Enumerate constructor coverage without enumerating base inhabitants.
 ///
 /// # Specification
-/// - requires: `root` is a validated closed first-order type.
+/// - requires: `root` is a validated closed first-order type over `entries`.
 /// - ensures: exactly one pattern per constructor choice; every base position
 ///   is a distinct rigid variable, including repeated base types in products. A
 ///   list unfolds one cell: the empty list, then each element pattern consed
-///   onto a fresh rigid tail, the element read past the tail's binder.
+///   onto a fresh rigid tail, the element read past the tail's binder. A data
+///   type covers as its constructors in tag order, each applied to its fields'
+///   patterns crossed as a product's.
 /// - provides: a symbolic universal boundary for a round-trip dialogue.
 /// - fails: `Arena`, `UnsupportedType` or `Budget`.
 /// - panics: none.
@@ -164,10 +226,12 @@ enum Cover
 /// - hypothesis: L3 — both Bool branches are required; a literal sample cannot
 ///   establish a Base round trip, while a generic product identity is admitted.
 ///   A product and a sum of three cover by position with distinct variables. A
-///   list of booleans covers as the empty list and two cells over one tail.
+///   list of booleans covers as the empty list and two cells over one tail. A
+///   shape covers as a circle over one variable and a rectangle over two.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 /// - witness: `path_universe::coverage::tests::n_ary_codes_cover_by_position`
 /// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
+/// - witness: `path_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
@@ -178,6 +242,7 @@ Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patter
                 Some(&ValueType::Base(_)) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 1 && matches!(arena.value(pattern.value), Some(&Value::Variable(index)) if u32::from(index) == 0)),
                 Some(&ValueType::List(_)) => patterns.len() >= 2 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 0 && matches!(arena.value(pattern.value), Some(&Value::ListNil))),
                 Some(&ValueType::Sum(..) | &ValueType::Product(..)) => !patterns.is_empty(),
+                Some(&ValueType::Data { .. }) => !patterns.is_empty() && patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Constructor { datatype, .. }) if datatype == root)),
                 _ => false,
             },
         Err(_) => true,
@@ -186,12 +251,15 @@ Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patter
 fn patterns(
     arena: &mut TermArena,
     root: ValueTypeId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<Vec<Pattern>, PathError>
 {
     let mut pending = Vec::from([Cover::Visit(root)]);
     let mut results = Vec::<Vec<Pattern>>::new();
     let mut table = ContentTable::new();
+    // The data declarations whose constructors are being covered.
+    let mut open = BTreeSet::new();
     while let Some(task) = pending.pop() {
         allowance.charge()?;
         match task {
@@ -217,8 +285,24 @@ fn patterns(
                         pending.push(Cover::List);
                         pending.push(Cover::Visit(element));
                     },
-                    &ValueType::Data { .. }
-                    | &ValueType::Record(_)
+                    &ValueType::Data { declaration, .. } => {
+                        if open.contains(&declaration) {
+                            return Err(PathError::UnsupportedType(id));
+                        }
+                        let (declaration, constructors) = data_signature(arena, entries, id)
+                            .ok_or(PathError::UnsupportedType(id))?;
+                        open.insert(declaration);
+                        pending.push(Cover::Data(declaration, constructors.len()));
+                        for (tag, fields) in constructors.iter().enumerate().rev() {
+                            pending.push(Cover::Constructor(
+                                id,
+                                ConstructorTag::from(tag),
+                                fields.len(),
+                            ));
+                            pending.extend(fields.iter().rev().copied().map(Cover::Visit));
+                        }
+                    },
+                    &ValueType::Record(_)
                     | &ValueType::Session { .. }
                     | &ValueType::PathUniverse(..)
                     | &ValueType::FlowUniverse(..)
@@ -251,8 +335,9 @@ fn patterns(
             },
             // Each step crosses the tuples so far with the next component's
             // patterns; the earlier components' base variables shift past the
-            // new component's, so every variable stays distinct.
-            Cover::Product(arity) => {
+            // new component's, so every variable stays distinct. A constructor
+            // crosses its fields the same way and applies itself to them.
+            Cover::Product(arity) | Cover::Constructor(_, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
                 for component in results.drain(start ..) {
@@ -283,11 +368,29 @@ fn patterns(
                 let joined = tuples
                     .into_iter()
                     .map(|(values, binders)| Pattern {
-                        value: arena.value_tuple(&values),
+                        value: match task {
+                            Cover::Constructor(datatype, tag, _) => {
+                                arena.value_constructor(datatype, tag, values)
+                            },
+                            Cover::Visit(_)
+                            | Cover::Sum(_)
+                            | Cover::Product(_)
+                            | Cover::Data(..)
+                            | Cover::List => arena.value_tuple(&values),
+                        },
                         binders: BinderDepth::from(binders),
                     })
                     .collect();
                 results.push(joined);
+            },
+            // The constructors' patterns in tag order, the data type closed.
+            Cover::Data(declaration, count) => {
+                let start = results.len().checked_sub(count).ok_or(PathError::Arena)?;
+                let joined = results.drain(start ..).flatten().collect();
+                results.push(joined);
+                if !open.remove(&declaration) {
+                    return Err(PathError::Arena);
+                }
             },
             // The element shifts past the tail's binder; the tail is the
             // innermost variable.
@@ -328,7 +431,8 @@ fn patterns(
 ///
 /// # Specification
 /// - requires: the translators are closed and checked at opposite arrows; every
-///   body `unfoldings` defines lives in `arena`.
+///   body `unfoldings` defines lives in `arena`; `source` is a code validated
+///   over `entries`.
 /// - ensures: every code-generated pattern replays `Convertible` under
 ///   `unfoldings`, so a translator may name a definition admitted before it; no
 ///   supplied dialogue chooses its own boundary, suppresses a pattern, or adds
@@ -356,14 +460,14 @@ fn patterns(
 })]
 pub fn round_trip(
     arena: &mut TermArena,
-    unfoldings: &Unfoldings,
+    (unfoldings, entries): (&Unfoldings, &[AdmittedDeclaration]),
     (source, direction): (ValueTypeId, Direction),
     (forward, backward): (ValueId, ValueId),
     dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
     budget: ReplayBudget,
 ) -> Result<(), PathError>
 {
-    let patterns = patterns(arena, source, &mut Allowance(u64::from(budget)))?;
+    let patterns = patterns(arena, source, entries, &mut Allowance(u64::from(budget)))?;
     if patterns.len() != dialogues.len() {
         return Err(PathError::Coverage(direction));
     }
@@ -400,7 +504,12 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Summand;
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::Value;
@@ -420,7 +529,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let triple = arena.value_type_product(&[integer, integer, integer]);
         let covered =
-            patterns(&mut arena, triple, &mut Allowance(u64::MAX)).expect("a product covers");
+            patterns(&mut arena, triple, &[], &mut Allowance(u64::MAX)).expect("a product covers");
         let [ref only] = *covered.as_slice()
         else {
             panic!("one pattern for a product of base types");
@@ -442,7 +551,8 @@ mod tests
 
         let unit = arena.value_type_unit();
         let choice = arena.value_type_sum(&[unit, unit, unit]);
-        let covered = patterns(&mut arena, choice, &mut Allowance(u64::MAX)).expect("a sum covers");
+        let covered =
+            patterns(&mut arena, choice, &[], &mut Allowance(u64::MAX)).expect("a sum covers");
         let summands = covered
             .iter()
             .map(|pattern| match arena.value(pattern.value) {
@@ -461,7 +571,7 @@ mod tests
 
         let empty = arena.value_type_empty();
         assert!(matches!(
-            patterns(&mut arena, empty, &mut Allowance(u64::MAX)),
+            patterns(&mut arena, empty, &[], &mut Allowance(u64::MAX)),
             Err(PathError::UnsupportedType(found)) if found == empty
         ));
     }
@@ -478,8 +588,98 @@ mod tests
         for root in [empty, holding] {
             let quoted = arena.value_quote(root);
             assert_eq!(
-                super::code(&arena, quoted, &mut Allowance(u64::MAX)),
+                super::code(&arena, quoted, &[], &mut Allowance(u64::MAX)),
                 Err(PathError::UnsupportedType(empty))
+            );
+        }
+    }
+
+    /// A data code covers as its constructors in tag order, each applied to
+    /// its own fields' variables, first field outermost; a data type holding
+    /// itself, and one the admitted prefix does not hold, is no code a path
+    /// carries.
+    #[test]
+    fn a_data_code_covers_as_its_constructors()
+    {
+        let mut environment = crate::env::Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = staging.arena().value_type_base(BaseType::Integer);
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![vec![integer], vec![integer, integer]],
+            kind,
+        );
+        let _shape = environment.add_decl(staged).expect("the shape admits");
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![Vec::new(), vec![own]],
+            kind,
+        );
+        let _naturals = environment.add_decl(staged).expect("the naturals admit");
+        let entries = environment.entries();
+        let mut arena = environment.arena().clone();
+
+        let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let quoted = arena.value_quote(shape);
+        assert_eq!(
+            super::code(&arena, quoted, entries, &mut Allowance(u64::MAX)),
+            Ok(shape),
+            "a shape is a code a path carries"
+        );
+        let covered =
+            patterns(&mut arena, shape, entries, &mut Allowance(u64::MAX)).expect("a shape covers");
+        let [ref circle, ref rectangle] = *covered.as_slice()
+        else {
+            panic!("one pattern per constructor");
+        };
+        for (pattern, tag, variables) in
+            [(circle, 0_usize, vec![0_u32]), (rectangle, 1, vec![1, 0])]
+        {
+            let Some(&Value::Constructor {
+                datatype,
+                tag: found,
+                ref fields,
+            }) = arena.value(pattern.value)
+            else {
+                panic!("a constructor pattern");
+            };
+            assert_eq!((shape, ConstructorTag::from(tag)), (datatype, found));
+            let indices = fields
+                .iter()
+                .map(|&field| match arena.value(field) {
+                    Some(&Value::Variable(index)) => u32::from(index),
+                    _ => panic!("a field of base type is a variable"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                u32::try_from(variables.len()).expect("a field count fits"),
+                u32::from(pattern.binders),
+                "one binder per base field"
+            );
+            assert_eq!(variables, indices, "the first field outermost");
+        }
+
+        let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        for (root, prefix) in [(naturals, entries), (shape, &[][..])] {
+            let quoted = arena.value_quote(root);
+            assert!(
+                matches!(
+                    super::code(&arena, quoted, prefix, &mut Allowance(u64::MAX)),
+                    Err(PathError::UnsupportedType(_))
+                ),
+                "a type holding itself, or one outside the prefix"
             );
         }
     }

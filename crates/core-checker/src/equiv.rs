@@ -8,16 +8,19 @@
 //! `U (B → F A)`, both translators are closed, `A` and `B` are codes of the
 //! native universe-path vocabulary, and both round trips return their input.
 //! The vocabulary is the unit type, the base atoms, sums of at least one
-//! summand, products of any arity and lists of a code in it. A round trip is
-//! decided at every pattern the code's coverage reaches: the unit value, a
-//! fresh variable at a base atom, each summand's patterns injected, each tuple
-//! of the components' patterns, an earlier component read past a later one's
-//! binders, and at a list the empty list, then each element pattern consed
-//! onto a fresh variable at the list, its tail, the element read past the
-//! tail's binder. At a pattern `p` standing under its binders, `x ← f p; g x`
-//! must convert to `return p`, every admitted definition unfolding and every
-//! binder read as a rigid variable. A tail is never unfolded: a round trip
-//! that converts with the tail rigid returns every list that cell begins.
+//! summand, products of any arity, lists of a code in it, and the free,
+//! unindexed data types whose fields are codes in it and that do not recur
+//! inside their own fields. A round trip is decided at every pattern the
+//! code's coverage reaches: the unit value, a fresh variable at a base atom,
+//! each summand's patterns injected, each tuple of the components' patterns,
+//! an earlier component read past a later one's binders, each constructor in
+//! tag order applied to its fields' patterns crossed as a tuple's, and at a
+//! list the empty list, then each element pattern consed onto a fresh variable
+//! at the list, its tail, the element read past the tail's binder. At a
+//! pattern `p` standing under its binders, `x ← f p; g x` must convert to
+//! `return p`, every admitted definition unfolding and every binder read as a
+//! rigid variable. A tail is never unfolded: a round trip that converts with
+//! the tail rigid returns every list that cell begins.
 //!
 //! A round trip that does not convert is [`CheckRefusal::RoundTripDistinct`]:
 //! the rule admits what it shows and refutes nothing it cannot. At a pattern
@@ -247,12 +250,12 @@ enum Task
 pub enum Vocabulary
 {
     /// The unit type, the base atoms, sums of at least one summand, products
-    /// and lists of a code in it: the vocabulary of the kernel's universe
-    /// paths.
+    /// and lists of a code in it: the vocabulary of the kernel's function
+    /// flows.
     Containers,
     /// Those and data types [`data_signature`] reads, not recurring inside
     /// their own fields, each field a code in it: the vocabulary of the
-    /// kernel's forward flows.
+    /// kernel's universe paths and forward flows.
     Data,
 }
 
@@ -386,7 +389,8 @@ pub fn translator(
 ///   the bridge erases.
 /// - fails: [`CheckRefusal::EquivUnsupported`] at `at` for open translators, a
 ///   code outside the unit type, the base atoms, sums of at least one summand,
-///   products and lists, or a coverage past the kernel's allowance;
+///   products, lists and the data types [`data_signature`] reads that do not
+///   recur inside their own fields, or a coverage past the kernel's allowance;
 ///   [`CheckRefusal::UncertifiedStratum`] at `at` naming the list when a round
 ///   trip does not convert at a pattern with a fresh tail;
 ///   [`CheckRefusal::RoundTripDistinct`] at `at` when one does not convert at
@@ -480,7 +484,7 @@ fn round_trips(
     (first, second): (ValueId, ValueId),
 ) -> Result<Vec<Vec<ConversionDecision<()>>>, CheckRefusal>
 {
-    let Maybe::Present(patterns) = coverage(context, code, Vocabulary::Containers)?
+    let Maybe::Present(patterns) = coverage(context, code, Vocabulary::Data)?
     else {
         return Err(CheckRefusal::EquivUnsupported {
             at,

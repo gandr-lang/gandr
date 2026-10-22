@@ -1584,7 +1584,10 @@ fn a_list_code_covers_one_cell_over_a_rigid_tail()
     let list = arena.value_type_list(bools.ty);
     let pair = arena.value_type_product(&[bools.ty, list]);
     let code = arena.value_quote(pair);
-    assert_eq!(super::code(&arena, code, ReplayBudget::DEFAULT), Ok(pair));
+    assert_eq!(
+        super::code(&arena, &[], code, ReplayBudget::DEFAULT),
+        Ok(pair)
+    );
 
     // The empty list, then one cell per boolean over the same rigid tail: the
     // identity's round trips replay there, so the path admits.

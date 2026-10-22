@@ -89,39 +89,29 @@ pub(super) fn code(
 ///
 /// # Specification
 /// - ensures: the declaration's position and its constructors' field types as
-///   declared, in tag order.
-/// - fails: `UnsupportedType` naming `id` for any other data type, an
-///   unadmitted position among them; `Arena` for a node that is no data type.
+///   declared, in tag order; nothing for any other data type, an unadmitted
+///   position among them, or a node that is no data type.
 /// - panics: none.
-///
-/// # Errors
-/// As `fails`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a shape of a circle and a rectangle reads two
 ///   constructors; a box whose field names its parameter, an indexed family and
-///   a type outside `entries` refuse.
+///   a type outside `entries` read nothing.
 /// - witness: `flow_universe::coverage::tests::a_data_code_covers_as_its_constructors`
-#[spec(ensures: |ret| match ret {
-    Ok((declaration, constructors)) => !constructors.is_empty()
-        && matches!(arena.value_type(id), Some(&ValueType::Data { declaration: held, .. }) if held == declaration),
-    Err(FlowError::UnsupportedType(ty)) => ty == id,
-    Err(FlowError::Arena) => true,
-    Err(_) => false,
-})]
-fn data_signature<'entries>(
+/// - witness: `path_universe::coverage::tests::a_data_code_covers_as_its_constructors`
+#[spec(ensures: |ret| ret.is_none_or(|(declaration, constructors)| !constructors.is_empty()
+    && matches!(arena.value_type(id), Some(&ValueType::Data { declaration: held, .. }) if held == declaration)))]
+pub fn data_signature<'entries>(
     arena: &TermArena,
     entries: &'entries [AdmittedDeclaration],
     id: ValueTypeId,
-) -> Result<(ConstantIndex, &'entries [Vec<ValueTypeId>]), FlowError>
+) -> Option<(ConstantIndex, &'entries [Vec<ValueTypeId>])>
 {
-    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(id)
+    let &ValueType::Data { declaration, .. } = arena.value_type(id)?
     else {
-        return Err(FlowError::Arena);
+        return None;
     };
-    let entry = entries
-        .get(usize::from(declaration))
-        .ok_or(FlowError::UnsupportedType(id))?;
+    let entry = entries.get(usize::from(declaration))?;
     let presentation = entry.declaration().presentation();
     let &DeclarationContent::Data {
         ref indices,
@@ -129,14 +119,14 @@ fn data_signature<'entries>(
         ..
     } = entry.content()
     else {
-        return Err(FlowError::UnsupportedType(id));
+        return None;
     };
     if constructors.is_empty()
         || !indices.is_empty()
         || !presentation.rules().is_empty()
         || presentation.cells().is_some()
     {
-        return Err(FlowError::UnsupportedType(id));
+        return None;
     }
     let mut reaches = Reaches::<LooseDepth>::new();
     if constructors
@@ -144,9 +134,9 @@ fn data_signature<'entries>(
         .flatten()
         .any(|&field| reaches.value_type_reach(arena, field) != LooseDepth::closed())
     {
-        return Err(FlowError::UnsupportedType(id));
+        return None;
     }
-    Ok((declaration, constructors))
+    Some((declaration, constructors))
 }
 
 /// Validate a type's complete first-order graph.
@@ -228,7 +218,8 @@ fn first_order(
             },
             &ValueType::List(element) => pending.push(Walk::Visit(element)),
             &ValueType::Data { .. } => {
-                let (declaration, constructors) = data_signature(arena, entries, id)?;
+                let (declaration, constructors) =
+                    data_signature(arena, entries, id).ok_or(FlowError::UnsupportedType(id))?;
                 open.insert(declaration);
                 pending.push(Walk::Close(declaration));
                 pending.extend(
@@ -409,7 +400,7 @@ pub(super) fn vocabulary(
         && matches!(arena.value_type(root), Some(&ValueType::Session { .. }))
     {
         allowance.charge()?;
-        return crate::path_universe::code(arena, code, budget).map_err(FlowError::Path);
+        return crate::path_universe::code(arena, entries, code, budget).map_err(FlowError::Path);
     }
     endpoint(arena, code, entries, allowance)
 }
@@ -535,7 +526,8 @@ fn patterns(
                     if open.contains(&declaration) {
                         return Err(FlowError::UnsupportedType(id));
                     }
-                    let (declaration, constructors) = data_signature(arena, entries, id)?;
+                    let (declaration, constructors) =
+                        data_signature(arena, entries, id).ok_or(FlowError::UnsupportedType(id))?;
                     open.insert(declaration);
                     pending.push(Cover::Data(declaration, constructors.len()));
                     for (tag, fields) in constructors.iter().enumerate().rev() {
@@ -780,7 +772,8 @@ fn natural(
                 }),
                 &ValueType::Data { .. },
             ) => {
-                let (_, constructors) = data_signature(arena, entries, at)?;
+                let (_, constructors) =
+                    data_signature(arena, entries, at).ok_or(FlowError::UnsupportedType(at))?;
                 let types = constructors
                     .get(usize::from(tag))
                     .filter(|types| types.len() == fields.len())

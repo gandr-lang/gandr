@@ -174,7 +174,7 @@ impl Relation
     {
         self.fibrant()?;
         let fiber = self.fiber(arena, context, left, right)?;
-        let ty = fiber.native(arena)?;
+        let ty = fiber.native(arena, super::Interfaces::NONE)?;
         check_value(arena, context, proof, ty)?;
         let root = self.node(self.root)?;
         let domain = root.source;

@@ -346,7 +346,7 @@ impl Relation
                     let target = arena.value_variable(DeBruijnIndex::from(0_u32));
                     let premise = self
                         .evaluate_at(arena, relation, source, target)?
-                        .native(arena)?;
+                        .native(arena, super::Interfaces::NONE)?;
                     Vec::from([RelatedPattern {
                         context: Vec::from([node.source, node.source, premise]),
                         left: arena.value_variable(DeBruijnIndex::from(2_u32)),
@@ -538,7 +538,7 @@ impl Relation
         let (component, budget) = position;
         let (argument, result) = self.function()?;
         let premise = self.fiber_at(arena, argument, context, arguments.left, arguments.right)?;
-        let premise = premise.native(arena)?;
+        let premise = premise.native(arena, super::Interfaces::NONE)?;
         check_value(arena, context, arguments.proof, premise)?;
         let left = apply(arena, functions.0, arguments.left);
         let right = apply(arena, functions.1, arguments.right);
@@ -580,7 +580,7 @@ impl Relation
             left_result.value,
             right_result.value,
         )?;
-        let ty = fiber.native(arena)?;
+        let ty = fiber.native(arena, super::Interfaces::NONE)?;
         if let Err(error) = check_value(arena, context, proof, ty) {
             return Err(match error {
                 RelationError::Typing(error) => RelationError::Pointwise(component, error),
@@ -738,7 +738,7 @@ impl Relation
             };
             let premise = self
                 .evaluate_at(arena, argument, pattern.left, pattern.right)?
-                .native(arena)?;
+                .native(arena, super::Interfaces::NONE)?;
             for (side, function, input, evaluation) in [
                 (EvaluationSide::Left, functions.0, pattern.left, left_result),
                 (
@@ -766,7 +766,7 @@ impl Relation
             }
             let output = self
                 .evaluate_at(arena, result, left_result.value, right_result.value)?
-                .native(arena)?;
+                .native(arena, super::Interfaces::NONE)?;
             owed.push(ComponentObligation {
                 context: pattern.context,
                 checks: Vec::from([
@@ -851,7 +851,7 @@ impl Relation
             let component = Component(position);
             let premise = self
                 .evaluate_at(arena, argument, pattern.left, pattern.right)?
-                .native(arena)?;
+                .native(arena, super::Interfaces::NONE)?;
             let left = apply(arena, functions.0, pattern.left);
             let right = apply(arena, functions.1, pattern.right);
             owed.push(ComponentObligation {
@@ -889,7 +889,7 @@ impl Relation
                         }
                         let output = self
                             .evaluate_at(arena, result, left_result.value, right_result.value)?
-                            .native(arena)?;
+                            .native(arena, super::Interfaces::NONE)?;
                         owed.push(ComponentObligation {
                             context: branch.context,
                             checks: Vec::from([

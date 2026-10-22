@@ -1,0 +1,28 @@
+// An equivalence between data types decided by computation, after the HoTT
+// book's § 2.10: a data type is covered as its constructors in tag order,
+// each applied to its fields' patterns, so two maps that move fields between
+// constructors and back return every pattern, and `equiv` makes them a path
+// between the two types. Transport along the path applies the map.
+
+// The shapes, the figures and `Shapes.toFigure`, the map from the one to the
+// other.
+import "./flow-data.gandr" ;
+
+/// The map back: each figure to its shape, the sides swapped back.
+@[ checks ]
+def toShape(figure : Figure) -> -F Shape {
+  case figure {
+    Round(r) => Circle(r),
+    Box(h, w) => Rect(w, h)
+  }
+}
+
+/// The shapes and the figures are one type, by the two round trips at each
+/// constructor.
+@[ checks ]
+def redrawing : Path(Type, Shape, Figure) ;
+def redrawing = equiv(Shapes.toFigure, toShape) ;
+
+/// A rectangle transported along the path is its figure, the sides swapped.
+@[ runs("Box(3, 2)") ]
+def boxed() -> -F Figure { become transport(\X. X, redrawing, Rect(2, 3)) }

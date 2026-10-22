@@ -1422,6 +1422,7 @@ where
                         ValueType::PathUniverse(..) => {
                             let endpoints = crate::path_universe::endpoints(
                                 arena,
+                                judgement.entries,
                                 id,
                                 crate::replay::ReplayBudget::DEFAULT,
                             )
@@ -2903,6 +2904,7 @@ where
                         )?;
                         let endpoints = crate::path_universe::endpoints(
                             arena,
+                            judgement.entries,
                             path_type,
                             crate::ReplayBudget::DEFAULT,
                         )
@@ -3049,6 +3051,7 @@ where
                     Value::PathRefl(code) => {
                         let endpoint = crate::path_universe::code(
                             arena,
+                            judgement.entries,
                             code,
                             crate::replay::ReplayBudget::DEFAULT,
                         )
@@ -3077,6 +3080,7 @@ where
                     } => {
                         let endpoints = crate::path_universe::endpoints(
                             arena,
+                            judgement.entries,
                             path_type,
                             crate::replay::ReplayBudget::DEFAULT,
                         )
@@ -4591,6 +4595,7 @@ where
                     let first_type = produced.value_type()?;
                     let endpoints = crate::path_universe::endpoints(
                         arena,
+                        judgement.entries,
                         first_type,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
@@ -4603,6 +4608,7 @@ where
                     let second_type = produced.value_type()?;
                     let second = crate::path_universe::endpoints(
                         arena,
+                        judgement.entries,
                         second_type,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
@@ -4698,7 +4704,7 @@ where
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
-                        &unfoldings,
+                        (&unfoldings, judgement.entries),
                         (endpoints.source, crate::path_universe::Direction::Source),
                         (forward, backward),
                         &evidence.source,
@@ -4707,7 +4713,7 @@ where
                     let result = source.and_then(|()| {
                         crate::path_universe::coverage::round_trip(
                             arena,
-                            &unfoldings,
+                            (&unfoldings, judgement.entries),
                             (endpoints.target, crate::path_universe::Direction::Target),
                             (backward, forward),
                             &evidence.target,
@@ -4723,6 +4729,7 @@ where
                     let path_type = produced.value_type()?;
                     let endpoints = crate::path_universe::endpoints(
                         arena,
+                        judgement.entries,
                         path_type,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
