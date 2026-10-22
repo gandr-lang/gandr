@@ -344,6 +344,7 @@ fn scope_tracks_binders()
     let then = top(&mut arena);
     let root = cut_against_unit(&mut arena, ConsumerNode::DataCase {
         branches: Box::from([branch]),
+        arities: Box::from([gandr_kernel_term::FieldCount::from(0_usize)]),
         then,
     });
     let free = check_command(&arena, root).expect("well formed");
@@ -395,6 +396,7 @@ fn non_value_argument_is_rejected()
     let then = top(&mut arena);
     let root = cut_against_unit(&mut arena, ConsumerNode::DataCase {
         branches: Box::from([capture]),
+        arities: Box::from([gandr_kernel_term::FieldCount::from(0_usize)]),
         then,
     });
     assert_eq!(
@@ -676,6 +678,7 @@ fn every_node_kind_declares_its_intrinsic_polarity()
         (
             ConsumerNode::DataCase {
                 branches: Box::from([]),
+                arities: Box::from([]),
                 then: ConsumerId::from(0_u32),
             },
             Some(Polarity::Positive),

@@ -229,7 +229,14 @@ fn two_parameter(
     let built = arguments(arena);
     let called = call(arena, recursive, &built);
     let on_successor = arena.computation_lambda(called);
-    let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let second = arena.computation_lambda(case);
     let first = arena.computation_lambda(second);
     let fixpoint = arena.computation_fixpoint(first, evidence);
@@ -358,7 +365,14 @@ fn through_predecessor(
             arena.computation_return(zero)
         };
         let scrutinee = var(arena, DeBruijnIndex::from(0));
-        let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            returner,
+            vec![on_zero, on_successor],
+            [0_usize, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
         arena.value_thunk(fixpoint)
@@ -502,10 +516,24 @@ fn two_deep(
     let called = call(arena, recursive, &[built]);
     let on_inner = arena.computation_lambda(called);
     let inner_scrutinee = var(arena, DeBruijnIndex::from(0));
-    let inner = arena.computation_data_case(inner_scrutinee, returner, vec![on_zero, on_inner]);
+    let inner = arena.computation_data_case(
+        inner_scrutinee,
+        returner,
+        vec![on_zero, on_inner],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let on_outer = arena.computation_lambda(inner);
     let outer_scrutinee = var(arena, DeBruijnIndex::from(0));
-    let outer = arena.computation_data_case(outer_scrutinee, returner, vec![on_zero, on_outer]);
+    let outer = arena.computation_data_case(
+        outer_scrutinee,
+        returner,
+        vec![on_zero, on_outer],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(outer);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -600,7 +628,14 @@ fn nullary_call(
     let on_successor = arm(arena, calling == CallingArm::Successor, 2);
     let on_successor = arena.computation_lambda(on_successor);
     let scrutinee = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -673,7 +708,14 @@ fn a_constructor_of_plain_fields_needs_a_value_below_the_stage()
     let on_node = arena.computation_return(child);
     let on_node = arena.computation_lambda(on_node);
     let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returner, vec![on_leaf, on_node]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        vec![on_leaf, on_node],
+        [1_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -865,7 +907,14 @@ fn map_declaration(arena: &mut CoreArena) -> Declaration
         arena.computation_lambda(rest_lambda)
     };
     let xs = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+    let case = arena.computation_data_case(
+        xs,
+        motive,
+        vec![on_nil, on_cons],
+        [0_usize, 2]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let g_lambda = arena.computation_lambda(fixpoint);
@@ -928,7 +977,12 @@ fn size_declaration(
     let on_node = arena.computation_bind(mapped, counted);
     let on_node = arena.computation_lambda(on_node);
     let t = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(t, returner, vec![on_node]);
+    let case = arena.computation_data_case(
+        t,
+        returner,
+        vec![on_node],
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -1007,7 +1061,14 @@ fn count_module(
     let zero = zero(arena);
     let on_zero = arena.computation_return(zero);
     let n = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(n, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        n,
+        returner,
+        vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);

@@ -264,7 +264,8 @@ pub fn respected(
         let word = letter(arena, owed);
         let words = arena.value_type_data(owed.words, Vec::new());
         let empty = arena.value_constructor(words, FreeCells::nil(), Vec::new());
-        let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches);
+        let carried =
+            gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
         let transported = arena.computation_path_transport(family, word, carried);
         let stayed = arena.computation_path_transport(family, empty, carried);
         let held = scrutinees(context, (point, &branches))?;
@@ -613,7 +614,7 @@ pub fn arm_type(
         gandr_core_term::strengthen_comp_type(arena, motive),
         Maybe::Present(_)
     );
-    let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches);
+    let carried = gandr_core_term::identity::answer_at(arena, point, motive, &branches, &arities);
     let left = if constant {
         carried
     }

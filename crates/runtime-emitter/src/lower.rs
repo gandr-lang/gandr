@@ -2909,7 +2909,9 @@ impl Lowering<'_>
                     self.tasks.push(Task::Bind(label));
                 }
             },
-            ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::DataCase {
+                ref branches, then, ..
+            } => {
                 let mut labels = Vec::with_capacity(branches.len());
                 for ordinal in 0 .. branches.len() {
                     let label = self.function.label();

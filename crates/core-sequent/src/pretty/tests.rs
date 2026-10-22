@@ -350,6 +350,10 @@ fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
     let nominal = arena
         .mint_consumer(ConsumerNode::DataCase {
             branches: Box::from([branch, constant]),
+            arities: Box::from([
+                gandr_kernel_term::FieldCount::from(0_usize),
+                gandr_kernel_term::FieldCount::from(0_usize),
+            ]),
             then: top,
         })
         .expect("children resolve");

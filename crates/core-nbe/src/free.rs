@@ -1272,6 +1272,7 @@ Err(_) => false,
                         scrutinee,
                         motive,
                         ref branches,
+                        ..
                     } => {
                         extra = ExtraChildren::Computations(branches.iter());
                         two(value(scrutinee), Reached::CompType(motive), Lowering::ONE)

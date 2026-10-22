@@ -1039,7 +1039,9 @@ pub fn mint_operation(
                 ref branches,
             } => {
                 let mut lowered = Vec::with_capacity(branches.len());
+                let mut arities = Vec::with_capacity(branches.len());
                 for &(fields, child) in branches {
+                    arities.push(gandr_kernel_term::FieldCount::from(fields.0));
                     let mut branch = minted.get(child.0).copied().flatten();
                     for _field in 0 .. fields.0 {
                         branch = branch.map(|body| {
@@ -1050,7 +1052,9 @@ pub fn mint_operation(
                     lowered.extend(branch);
                 }
                 let scrutinee = mint.variable(level, depth);
-                let case = mint.arena.computation_data_case(scrutinee, motive, lowered);
+                let case = mint
+                    .arena
+                    .computation_data_case(scrutinee, motive, lowered, arities);
                 mint.origins.record_elimination(case, family);
                 mint.computation(case)
             },

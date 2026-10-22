@@ -1415,7 +1415,7 @@ impl<'arena> CoreSource<'arena>
             name.as_ref() == primitive.name().as_ref() && usize::from(arity) == arguments.len(),
         | (Some(&Computation::Case { scrutinee, ref branches }), Former::Case { scrutinee: actual, arity }) =>
             actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
-        | (Some(&Computation::DataCase { scrutinee, motive, ref branches }), Former::DataCase { scrutinee: actual, motive: actual_motive, arity }) =>
+        | (Some(&Computation::DataCase { scrutinee, motive, ref branches, .. }), Former::DataCase { scrutinee: actual, motive: actual_motive, arity }) =>
             actual == CoreNode::Value(scrutinee) && actual_motive == CoreNode::CompType(motive) && usize::from(arity) == branches.len(),
         | (Some(&Computation::Split { scrutinee, arity, body, .. }), Former::Split { scrutinee: actual, arity: actual_arity, body: actual_body }) =>
             actual == CoreNode::Value(scrutinee) && usize::from(arity) == usize::from(actual_arity) && actual_body == CoreNode::Computation(body),
@@ -1562,6 +1562,7 @@ impl<'arena> CoreSource<'arena>
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => Former::DataCase {
                 scrutinee: value(scrutinee),
                 motive: CoreNode::CompType(motive),

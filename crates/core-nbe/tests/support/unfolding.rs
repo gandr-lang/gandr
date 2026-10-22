@@ -309,6 +309,7 @@ pub fn unfolded(
                         scrutinee,
                         motive,
                         ref branches,
+                        ..
                     } => {
                         pending.extend([CoreNode::Value(scrutinee), CoreNode::CompType(motive)]);
                         pending.extend(branches.iter().copied().map(CoreNode::Computation));

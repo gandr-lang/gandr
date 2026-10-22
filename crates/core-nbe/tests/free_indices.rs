@@ -957,6 +957,7 @@ fn computations() -> [Former; 27]
                     scrutinee,
                     motive,
                     Vec::from([branch]),
+                    Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
                 ))
             },
             intuitionistic: &[0, 1, 3],

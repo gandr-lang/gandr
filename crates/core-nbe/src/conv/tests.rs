@@ -768,7 +768,12 @@ fn two_cases_over_as_many_branches_compare_their_branches()
     let motive = core.comp_type_returner(unit_type);
     let produced = core.value_unit();
     let returned = core.computation_return(produced);
-    let data_case = core.computation_data_case(scrutinee, motive, Vec::from([returned]));
+    let data_case = core.computation_data_case(
+        scrutinee,
+        motive,
+        Vec::from([returned]),
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let data_case = domain.comp_closure_node(data_case, Environment::new());
     let case = Elimination::Case(domain.hold_branches([branch, branch]));
     let other_case = Elimination::Case(domain.hold_branches([branch, branch]));

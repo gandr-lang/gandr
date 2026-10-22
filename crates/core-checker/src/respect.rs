@@ -288,15 +288,16 @@ pub fn respected(
                 let Some(&Computation::DataCase {
                     motive,
                     ref branches,
+                    ref arities,
                     ..
                 }) = arena.computation(head)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                let branches = branches.clone();
+                let (branches, arities) = (branches.clone(), arities.clone());
                 (
-                    arena.computation_data_case(left, motive, branches.clone()),
-                    arena.computation_data_case(right, motive, branches),
+                    arena.computation_data_case(left, motive, branches.clone(), arities.clone()),
+                    arena.computation_data_case(right, motive, branches, arities),
                 )
             },
         };

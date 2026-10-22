@@ -525,8 +525,12 @@ enum Task
     /// Pop this many branches, one per summand, and the scrutinee and build
     /// the case.
     Case(NodeCount),
-    /// Pop the branches and the scrutinee and build the nominal case.
-    DataCase(NodeCount),
+    /// Pop the branches and the scrutinee and build the nominal case over
+    /// constructors of these field counts.
+    DataCase(
+        NodeCount,
+        alloc::boxed::Box<[gandr_kernel_term::FieldCount]>,
+    ),
     /// Pop the body and the scrutinee and build the split of this many
     /// components.
     Split(gandr_core_term::ComponentCount),
@@ -668,7 +672,7 @@ impl Unfocusing<'_>
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.values.len() >= labels.len(),
             | &Task::Recorded(ref moves) => self.values.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
-            | &Task::Case(branches) | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
+            | &Task::Case(branches) | &Task::DataCase(branches, _) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
         ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
@@ -897,7 +901,7 @@ impl Unfocusing<'_>
                 self.computations.push(cased);
                 Ok(())
             },
-            Task::DataCase(count) => {
+            Task::DataCase(count, arities) => {
                 let start = self
                     .computations
                     .len()
@@ -906,7 +910,12 @@ impl Unfocusing<'_>
                 let branches: Vec<ComputationId> = self.computations.drain(start ..).collect();
                 let scrutinee = self.pop_value()?;
                 let motive = self.core.comp_type_unknown();
-                let cased = self.core.computation_data_case(scrutinee, motive, branches);
+                let cased = self.core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    branches,
+                    arities.into_vec(),
+                );
                 self.computations.push(cased);
                 Ok(())
             },
@@ -1696,10 +1705,16 @@ impl Unfocusing<'_>
                         .push(Task::Command(arm.body, depth.under_producer()));
                 }
             },
-            ConsumerNode::DataCase { ref branches, then } => {
+            ConsumerNode::DataCase {
+                ref branches,
+                ref arities,
+                then,
+            } => {
                 self.tasks.push(Task::Spine(then, depth));
-                self.tasks
-                    .push(Task::DataCase(NodeCount::from(branches.len())));
+                self.tasks.push(Task::DataCase(
+                    NodeCount::from(branches.len()),
+                    arities.clone(),
+                ));
                 for &branch in branches.iter().rev() {
                     let node = self
                         .arena

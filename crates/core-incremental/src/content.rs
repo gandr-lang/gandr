@@ -446,6 +446,8 @@ pub enum ContentNode
         motive: NodeIndex,
         /// Ambient-scope branch functions, in constructor order.
         branches: Vec<NodeIndex>,
+        /// Each constructor's field count, in constructor order.
+        arities: Vec<gandr_kernel_term::FieldCount>,
     },
     /// A projection returning the selected record field.
     RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
@@ -1451,7 +1453,7 @@ impl ContentNode
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
             Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
-            Self::DataCase { scrutinee,motive,ref branches } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
+            Self::DataCase { scrutinee,motive,ref branches,.. } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
             Self::RecordProjection(record,_) | Self::TupleProjection(record,_) => ret.iter().eq([(record,V)]),
             | Self::Reify(ref frames) => ret.iter().eq(frames.iter().filter_map(|frame| match *frame {
                 gandr_core_term::control::StackFrame::Apply(value) => Some((value, V)),
@@ -1574,6 +1576,7 @@ impl ContentNode
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => Children::of(&[(scrutinee, V), (motive, C)])
                 .binding(ChildSlot(1), one)
                 .followed_by(branches, M),
@@ -3980,6 +3983,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 scrutinee,
                 motive,
                 ref branches,
+                ref arities,
             } => ContentNode::DataCase {
                 scrutinee: self.discover(ArenaNode::Value(scrutinee)),
                 motive: self.discover(ArenaNode::CompType(motive)),
@@ -3987,6 +3991,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .iter()
                     .map(|&branch| self.discover(ArenaNode::Computation(branch)))
                     .collect(),
+                arities: arities.clone(),
             },
             Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
                 self.discover(ArenaNode::Value(record)),
@@ -4559,10 +4564,12 @@ where
             scrutinee,
             motive,
             ref branches,
+            ref arities,
         } => ContentNode::DataCase {
             scrutinee: image(scrutinee),
             motive: image(motive),
             branches: branches.iter().map(|&branch| image(branch)).collect(),
+            arities: arities.clone(),
         },
         ContentNode::RecordProjection(record, ref label) => {
             ContentNode::RecordProjection(image(record), label.clone())

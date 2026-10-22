@@ -7054,11 +7054,12 @@ impl<'source> Lowerer<'_, 'source>
             scrutinee,
             motive,
             ref branches,
+            arities: ref constructors,
         }) = sink.arena.computation(root)
         else {
             return unminted;
         };
-        let branches = branches.clone();
+        let (branches, constructors) = (branches.clone(), constructors.clone());
         let mut all = branches.clone();
         let mut rewritten = Vec::new();
         for arm in &form.loops {
@@ -7088,7 +7089,13 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return unminted;
             };
-            let carried = gandr_core_term::identity::answer_at(sink.arena, at, motive, &branches);
+            let carried = gandr_core_term::identity::answer_at(
+                sink.arena,
+                at,
+                motive,
+                &branches,
+                &constructors,
+            );
             rewritten.clear();
             let instantiated = gandr_core_term::instantiate_computation_traced(
                 sink.arena,
@@ -7100,7 +7107,9 @@ impl<'source> Lowerer<'_, 'source>
             copies.extend_from_slice(&rewritten);
             all.push(instantiated);
         }
-        let extended = sink.arena.computation_data_case(scrutinee, motive, all);
+        let extended = sink
+            .arena
+            .computation_data_case(scrutinee, motive, all, constructors);
         if let Maybe::Present(family) = sink.origins.elimination(root) {
             sink.origins.record_elimination(extended, family);
         }
@@ -7680,7 +7689,9 @@ fn mint_test(
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let mut lowered_branches = Vec::with_capacity(branches.len());
+            let mut arities = Vec::with_capacity(branches.len());
             for &(arity, at) in branches {
+                arities.push(gandr_kernel_term::FieldCount::from(arity));
                 let Maybe::Present(mut branch) = child(at)
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
@@ -7691,9 +7702,9 @@ fn mint_test(
                 lowered_branches.push(branch);
             }
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-            let case = sink
-                .arena
-                .computation_data_case(scrutinee, motive, lowered_branches);
+            let case =
+                sink.arena
+                    .computation_data_case(scrutinee, motive, lowered_branches, arities);
             if let Maybe::Present(family) = eliminated {
                 sink.origins.record_elimination(case, family);
             }

@@ -598,7 +598,9 @@ impl Machine<'_, '_>
     ///   rules the case is read as that fixpoint when it is the marked case,
     ///   and as itself otherwise.
     /// - fails: non-data scrutinee, wrong coverage or absent declaration;
-    ///   [`CheckRefusal::IndexedCase`] for a scrutinee of an indexed family.
+    ///   [`CheckRefusal::IndexedCase`] for a scrutinee of an indexed family;
+    ///   [`CheckRefusal::MachineInvariant`] for arities other than the
+    ///   declaration's constructors' field counts, which no source writes.
     /// - panics: none.
     ///
     /// # Errors
@@ -608,7 +610,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
     ///   coverage; a dependent motive distinguishes its binder's scope; over
     ///   the circle a fixpoint's root case and a bare case are read apart; a
-    ///   vector scrutinee is refused by name.
+    ///   vector scrutinee is refused by name; a misstated arity is refused.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
@@ -664,12 +666,22 @@ impl Machine<'_, '_>
             });
         }
         let signature = former::signature(self.context, datatype)?;
-        let (motive, count) = match self.computation(term)? {
+        // reason: the arities are minted from the declaration, never written,
+        // and a runtime sizes the constructors' cells by them.
+        let (motive, count, stated) = match self.computation(term)? {
             &Computation::DataCase {
                 ref motive,
                 ref branches,
+                ref arities,
                 ..
-            } => (*motive, branches.len()),
+            } => (
+                *motive,
+                branches.len(),
+                arities
+                    .iter()
+                    .map(|&arity| usize::from(arity))
+                    .eq(signature.constructors().iter().map(alloc::vec::Vec::len)),
+            ),
             &Computation::Primitive { .. }
             | &Computation::Transport(..)
             | &Computation::PathTransport { .. }
@@ -714,6 +726,9 @@ impl Machine<'_, '_>
         if count != constructors && (looped == 0 || constructors.checked_add(looped) != Some(count))
         {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
+        }
+        if !stated {
+            return Err(CheckRefusal::MachineInvariant);
         }
         let respect = if signature.presentation().rules().is_empty() {
             Maybe::Absent(obligation::Absent::Free)
@@ -780,6 +795,7 @@ impl Machine<'_, '_>
                 ref scrutinee,
                 ref motive,
                 ref branches,
+                ..
             } => (*scrutinee, *motive, branches.len()),
             &Computation::Primitive { .. }
             | &Computation::Transport(..)

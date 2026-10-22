@@ -1066,6 +1066,7 @@ fn canonical(
                                 scrutinee,
                                 motive,
                                 ref branches,
+                                ref arities,
                             } => Computation::DataCase {
                                 scrutinee: value(scrutinee),
                                 motive,
@@ -1073,6 +1074,7 @@ fn canonical(
                                     .iter()
                                     .map(|branch| computation(*branch))
                                     .collect(),
+                                arities: arities.clone(),
                             },
                             Computation::RecordProjection(record, ref label) => {
                                 Computation::RecordProjection(value(record), label.clone())
@@ -1833,7 +1835,7 @@ impl Kernel
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
               }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
-              Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
+              Computation::DataCase {scrutinee,motive,ref branches,..} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
               Computation::PathTransport { motive, path, value } => ret.as_slice() == [Node::ValueType(motive), Node::Value(path), Node::Value(value)],
@@ -1950,6 +1952,7 @@ impl Kernel
                         ref scrutinee,
                         ref motive,
                         ref branches,
+                        ..
                     } => [Node::Value(*scrutinee), Node::CompType(*motive)]
                         .into_iter()
                         .chain(branches.iter().copied().map(Node::Computation))
@@ -2293,6 +2296,7 @@ impl Kernel
                         scrutinee,
                         motive,
                         ref branches,
+                        ..
                     } => {
                         let scrutinee = value(self, scrutinee);
                         let motive = self.comp_types[&motive];
@@ -5900,7 +5904,12 @@ fn native_records_cases_and_traces_agree()
     let motive = core.comp_type_returner(record_type);
     let named_data = core.value_constant(Name::Zero.constant());
     let named_record = core.value_constant(Name::One.constant());
-    let fired = core.computation_data_case(named_data, motive, Vec::from([branch]));
+    let fired = core.computation_data_case(
+        named_data,
+        motive,
+        Vec::from([branch]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let expected_record = core.computation_return(record);
     let projection = core.computation_record_projection(named_record, x.clone());
     let expected_unit = core.computation_return(unit);
@@ -5925,15 +5934,34 @@ fn native_records_cases_and_traces_agree()
     let different_result = core.computation_return(different_result);
     let result = core.computation_lambda(result);
     let different_result = core.computation_lambda(different_result);
-    let first_case = core.computation_data_case(rigid, dependent_motive, Vec::from([result]));
-    let repeated_case = core.computation_data_case(rigid, dependent_motive, Vec::from([result]));
-    let changed_case =
-        core.computation_data_case(rigid, dependent_motive, Vec::from([different_result]));
-    let empty_case = core.computation_data_case(rigid, dependent_motive, Vec::new());
+    let first_case = core.computation_data_case(
+        rigid,
+        dependent_motive,
+        Vec::from([result]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
+    let repeated_case = core.computation_data_case(
+        rigid,
+        dependent_motive,
+        Vec::from([result]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
+    let changed_case = core.computation_data_case(
+        rigid,
+        dependent_motive,
+        Vec::from([different_result]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
+    let empty_case = core.computation_data_case(rigid, dependent_motive, Vec::new(), Vec::new());
     let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let outer_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([outer]));
     let outer_motive = core.comp_type_returner(outer_type);
-    let outer_case = core.computation_data_case(rigid, outer_motive, Vec::from([result]));
+    let outer_case = core.computation_data_case(
+        rigid,
+        outer_motive,
+        Vec::from([result]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let under_binder = core.computation_lambda(first_case);
     let capturing_motive = core.computation_lambda(outer_case);
     let rigid_projection = core.computation_record_projection(rigid, x.clone());

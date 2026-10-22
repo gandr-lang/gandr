@@ -120,6 +120,7 @@ impl Erasure<'_, '_>
                         ref scrutinee,
                         ref motive,
                         ref branches,
+                        ..
                     } => {
                         self.frames
                             .extend(branches.iter().rev().copied().map(computation));
@@ -362,6 +363,7 @@ impl Erasure<'_, '_>
                         ref scrutinee,
                         ref motive,
                         ref branches,
+                        ..
                     } => {
                         let scrutinee = value(*scrutinee)?;
                         let motive = comp_type(*motive)?;

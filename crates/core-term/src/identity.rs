@@ -573,7 +573,8 @@ pub fn cong_lifted(
 ///
 /// # Specification
 /// - requires: `point` is a closed constructor term of the case's sort, and
-///   `branches` the case's branches at `motive`.
+///   `branches` the case's branches at `motive`, their constructors' field
+///   counts `arities`.
 /// - ensures: `v` exactly when `point` has no fields and the branch its tag
 ///   selects is `return v`, which stands in the case's own context; `⟨case
 ///   point { branches }⟩` otherwise. The two convert, since a case at a
@@ -600,6 +601,7 @@ pub fn answer_at(
     point: ValueId,
     motive: CompTypeId,
     branches: &[ComputationId],
+    arities: &[gandr_kernel_term::FieldCount],
 ) -> ValueId
 {
     if let Some(&crate::syntax::Value::Constructor {
@@ -611,7 +613,7 @@ pub fn answer_at(
     {
         return value;
     }
-    let answered = arena.computation_data_case(point, motive, branches.to_vec());
+    let answered = arena.computation_data_case(point, motive, branches.to_vec(), arities.to_vec());
     arena.value_returned(answered)
 }
 

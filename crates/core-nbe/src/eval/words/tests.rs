@@ -93,7 +93,12 @@ fn circle(core: &mut CoreArena) -> Circle
     let at_point = core.computation_return(point);
     let at_loop = core.computation_return(inverse);
     let scrutinee = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = core.computation_data_case(scrutinee, kept, vec![at_point, at_loop]);
+    let case = core.computation_data_case(
+        scrutinee,
+        kept,
+        vec![at_point, at_loop],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let lambda = core.computation_lambda(case);
     let flip = core.value_thunk(lambda);
     // Over two arguments, the case over the one at `over`, the other
@@ -103,7 +108,12 @@ fn circle(core: &mut CoreArena) -> Circle
         let kept_value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(other));
         let at_point = core.computation_return(kept_value);
         let at_loop = core.computation_return(named);
-        let case = core.computation_data_case(scrutinee, kept, vec![at_point, at_loop]);
+        let case = core.computation_data_case(
+            scrutinee,
+            kept,
+            vec![at_point, at_loop],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
         let inner = core.computation_lambda(case);
         let outer = core.computation_lambda(inner);
         core.value_thunk(outer)

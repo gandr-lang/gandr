@@ -1527,8 +1527,14 @@ fn data_case_selects_arm_returns_three()
         let inner = core.computation_lambda(first_returned);
         let double = core.computation_lambda(inner);
         let motive = core.comp_type_unknown();
-        let program =
-            core.computation_data_case(scrutinee, motive, alloc::vec![fieldless, single, double]);
+        let program = core.computation_data_case(
+            scrutinee,
+            motive,
+            alloc::vec![fieldless, single, double],
+            [0_usize, 1, 2]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         assert_eq!(
             expected,
             evaluated(&mut core, program),
@@ -1553,7 +1559,12 @@ fn data_case_on_non_ctor_is_stuck()
     let branch = core.computation_lambda(returned);
     let motive = core.comp_type_unknown();
     for scrutinee in [five, injected, beyond] {
-        let program = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
+        let program = core.computation_data_case(
+            scrutinee,
+            motive,
+            alloc::vec![branch],
+            [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
         let mut arena = CommandArena::new();
         let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
             .expect("a closed term focuses");
@@ -1706,7 +1717,14 @@ fn a_recursive_thunk_computes_through_its_own_binding()
     let step = core.computation_lambda(bound);
     let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let motive = core.comp_type_unknown();
-    let matched = core.computation_data_case(argument, motive, alloc::vec![base, step]);
+    let matched = core.computation_data_case(
+        argument,
+        motive,
+        alloc::vec![base, step],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let function = core.computation_lambda(matched);
     let recursive = core.computation_fixpoint(
         function,

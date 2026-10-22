@@ -884,6 +884,8 @@ enum Task
     {
         /// The number of branches.
         branches: NodeCount,
+        /// Each constructor's field count, in tag order.
+        arities: alloc::boxed::Box<[gandr_kernel_term::FieldCount]>,
         /// The continuation every branch returns to.
         continuation: ConsumerId,
     },
@@ -1301,6 +1303,7 @@ impl<'run> Focusing<'run>
             },
             Task::DataCase {
                 branches,
+                arities,
                 continuation,
             } => {
                 let scrutinee = self.pop_producer()?;
@@ -1313,6 +1316,7 @@ impl<'run> Focusing<'run>
                     self.producers.drain(start ..).collect();
                 let matcher = self.arena.mint_consumer(ConsumerNode::DataCase {
                     branches: thunks,
+                    arities,
                     then: continuation,
                 })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
@@ -2011,10 +2015,12 @@ impl<'run> Focusing<'run>
             Computation::DataCase {
                 scrutinee,
                 ref branches,
+                ref arities,
                 ..
             } => {
                 self.tasks.push(Task::DataCase {
                     branches: NodeCount::from(branches.len()),
+                    arities: alloc::boxed::Box::from(arities.as_slice()),
                     continuation,
                 });
                 self.tasks.push(Task::Value(scrutinee));

@@ -447,7 +447,14 @@ fn unwinding(arena: &mut CoreArena) -> (ValueId, ValueTypeId, gandr_core_term::C
     let called = arena.computation_application(forced, field);
     let recursing = arena.computation_lambda(called);
     let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(argument, motive, vec![returned, recursing, recursing]);
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        vec![returned, recursing, recursing],
+        [0_usize, 1, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(
         lambda,
@@ -477,8 +484,14 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
         let lettered = arena.computation_lambda(returned);
         // A bare case: its arms return at once, so at `Loop(Unloop(x))`
         // it returns while at `x` it is stuck on the variable.
-        let case =
-            arena.computation_data_case(scrutinee, motive, vec![returned, lettered, lettered]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            motive,
+            vec![returned, lettered, lettered],
+            [0_usize, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let body = arena.value_thunk(case);
         let declared = arena.value_type_thunk(motive);
         let (unwound, unwinding_type, _root) = unwinding(&mut arena);
@@ -571,8 +584,14 @@ fn a_fold_nesting_its_call_is_judged_on_the_bind_it_elaborates_to()
         };
         let (lettered, inverted) = (arm(looped, loops), arm(unlooped, 2_usize));
         let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case =
-            arena.computation_data_case(argument, motive, vec![returned, lettered, inverted]);
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            vec![returned, lettered, inverted],
+            [0_usize, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -667,7 +686,14 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
     };
     let (lettered, inverted) = (arm(1), arm(2));
     let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(argument, motive, vec![nil, lettered, inverted]);
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        vec![nil, lettered, inverted],
+        [0_usize, 1, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(
         lambda,
@@ -809,7 +835,12 @@ fn case_over(
     let mut branches = vec![arena.computation_return(answer)];
     branches.extend(arms.iter().map(|&arm| arena.computation_return(arm)));
     let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(scrutinee, motive, branches);
+    let case = arena.computation_data_case(
+        scrutinee,
+        motive,
+        branches,
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let pi = arena.comp_type_pi(carrier, motive);
     (arena.value_type_thunk(pi), arena.value_thunk(lambda))
@@ -919,10 +950,20 @@ fn nested_over(
     // the family's instance at the point, whose binder it ignores.
     let inner_motive = nested_motive(arena, (carrier, nested), None);
     let b = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let inner = arena.computation_data_case(b, inner_motive, vec![answer]);
+    let inner = arena.computation_data_case(
+        b,
+        inner_motive,
+        vec![answer],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let outer_motive = nested_motive(arena, (carrier, nested), Some(DeBruijnIndex::from(0_u32)));
     let a = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let outer = arena.computation_data_case(a, outer_motive, vec![inner]);
+    let outer = arena.computation_data_case(
+        a,
+        outer_motive,
+        vec![inner],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let body = arena.computation_lambda(outer);
     let body = arena.computation_lambda(body);
     let codomain = nested_motive(arena, (carrier, nested), Some(DeBruijnIndex::from(1_u32)));
@@ -1123,7 +1164,12 @@ fn a_loop_obligation_unfolds_the_arm_s_definitions()
         let named = arena.value_constant(ConstantIndex::from(3_usize));
         let branch = arena.computation_force(named);
         let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(scrutinee, motive, vec![branch]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            motive,
+            vec![branch],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let pi = arena.comp_type_pi(circle.carrier, motive);
         let declared = arena.value_type_thunk(pi);
@@ -1334,7 +1380,7 @@ fn an_absurd_case_rests_on_apart_endpoints_in_both_checkers()
         let path = arena.value_type_path(own, left, right);
         let motive = arena.comp_type_returner(empty);
         let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(scrutinee, motive, vec![]);
+        let case = arena.computation_data_case(scrutinee, motive, vec![], vec![]);
         let lambda = arena.computation_lambda(case);
         let arrow = arena.comp_type_arrow(path, motive);
         (lambda, arrow, case)
@@ -1482,7 +1528,14 @@ fn a_fold_rests_on_the_laws_of_the_rules_it_computes_apart()
         let looping = arm(turn);
         let unlooping = arm(unturn);
         let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, returner, vec![base, looping, unlooping]);
+        let case = arena.computation_data_case(
+            argument,
+            returner,
+            vec![base, looping, unlooping],
+            [0_usize, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -1609,9 +1662,14 @@ fn a_law_is_stated_bare_only_over_no_variable()
             arena.computation_lambda(returned)
         });
         let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(scrutinee, returner, vec![
-            base_arm, twist_arm, loop_arm, wrap_arm,
-        ]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            returner,
+            vec![base_arm, twist_arm, loop_arm, wrap_arm],
+            [0_usize, 1, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -1706,7 +1764,14 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
         let looping = arm();
         let unlooping = arm();
         let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, returner, vec![base, looping, unlooping]);
+        let case = arena.computation_data_case(
+            argument,
+            returner,
+            vec![base, looping, unlooping],
+            [0_usize, 1, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -1783,18 +1848,33 @@ fn dependent_data_parameters_and_case_motives()
     let branch_value = arena.value_constructor(branch_type, ConstructorTag::from(0_usize), vec![]);
     let returned = arena.computation_return(branch_value);
     let branch = arena.computation_lambda(returned);
-    let case = arena.computation_data_case(scrutinee, motive, vec![branch]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        motive,
+        vec![branch],
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let body = arena.value_thunk(case);
     let expected_type = arena.value_type_data(indexed, vec![scrutinee]);
     let expected = arena.comp_type_returner(expected_type);
     let expected = arena.value_type_thunk(expected);
-    let missing = arena.computation_data_case(scrutinee, motive, vec![]);
+    let missing = arena.computation_data_case(scrutinee, motive, vec![], vec![]);
     let missing_body = arena.value_thunk(missing);
+    // The branch's constructor has one field; a case stating none is minted
+    // wrong, never written.
+    let misstated = arena.computation_data_case(
+        scrutinee,
+        motive,
+        vec![branch],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
+    let misstated_body = arena.value_thunk(misstated);
     let declarations = [
         declaration,
         index_declaration,
         definition(ConstantIndex::from(2_usize), expected, body),
         definition(ConstantIndex::from(3_usize), expected, missing_body),
+        definition(ConstantIndex::from(4_usize), expected, misstated_body),
     ];
     let (report, crossed) = run(&mut arena, &declarations);
     assert!(
@@ -1810,6 +1890,11 @@ fn dependent_data_parameters_and_case_motives()
     assert_eq!(
         report.judged()[3].verdict(),
         Verdict::Refused(CheckRefusal::NonExhaustiveDataCase(missing))
+    );
+    assert_eq!(
+        report.judged()[4].verdict(),
+        Verdict::Refused(CheckRefusal::MachineInvariant),
+        "a case whose arities misstate its constructors' fields is refused"
     );
     assert!(crossed.audit().axioms().is_empty());
 }
@@ -2074,7 +2159,7 @@ fn empty_data_elimination_preserves_the_ambient_scope()
     let unit_type = arena.value_type_unit();
     let motive = arena.comp_type_returner(unit_type);
     let impossible = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(impossible, motive, vec![]);
+    let case = arena.computation_data_case(impossible, motive, vec![], vec![]);
     let lambda = arena.computation_lambda(case);
     let body = arena.value_thunk(lambda);
     let arrow = arena.comp_type_pi(datatype, motive);
@@ -2354,7 +2439,14 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     let returned = arena.computation_return(zero);
     let inner = arena.computation_lambda(returned);
     let both = arena.computation_lambda(inner);
-    let case = arena.computation_data_case(more, answer, vec![returned, both]);
+    let case = arena.computation_data_case(
+        more,
+        answer,
+        vec![returned, both],
+        [0_usize, 2]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let cased = arena.value_thunk(case);
     let thunked = arena.value_type_thunk(answer);
     let declarations = [

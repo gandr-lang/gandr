@@ -894,7 +894,14 @@ fn doubling(
     let bound = core.computation_bind(call, returned);
     let on_successor = core.computation_lambda(bound);
     let argument = core.value_variable(Zone::Intuitionistic, innermost());
-    let case = core.computation_data_case(argument, returner, Vec::from([on_zero, on_successor]));
+    let case = core.computation_data_case(
+        argument,
+        returner,
+        Vec::from([on_zero, on_successor]),
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let body = core.computation_lambda(case);
     core.computation_fixpoint(body, evidence)
 }
@@ -975,7 +982,14 @@ fn counting(
     let call = core.computation_application(leading, field);
     let on_successor = core.computation_lambda(call);
     let scrutinee = core.value_variable(Zone::Intuitionistic, innermost());
-    let case = core.computation_data_case(scrutinee, returner, Vec::from([on_zero, on_successor]));
+    let case = core.computation_data_case(
+        scrutinee,
+        returner,
+        Vec::from([on_zero, on_successor]),
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let staged = core.computation_lambda(case);
     let body = core.computation_lambda(staged);
     core.computation_fixpoint(body, gandr_kernel_term::FixpointEvidence::Staged {
@@ -2225,7 +2239,14 @@ fn native_records_and_cases_compute()
     let fields = [unit, left, right, pair, empty];
     let constructor =
         core.value_constructor(datatype, ConstructorTag::from(1_usize), Vec::from(fields));
-    let cased = core.computation_data_case(constructor, motive, Vec::from([alternate, selected]));
+    let cased = core.computation_data_case(
+        constructor,
+        motive,
+        Vec::from([alternate, selected]),
+        [5_usize, 5]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let (chain, environment) = nothing_unfolds();
     let definitions = Definitions::new(&chain, &environment, environment.root());
     let mut domain = DomainArena::new();
@@ -2287,10 +2308,24 @@ fn native_records_and_cases_compute()
     let absent =
         core.computation_record_projection(source, FieldLabel::from(String::from("absent")));
     let wrong_record = core.computation_record_projection(unit, labels[0].clone());
-    let wrong_data = core.computation_data_case(unit, motive, Vec::from([alternate, selected]));
+    let wrong_data = core.computation_data_case(
+        unit,
+        motive,
+        Vec::from([alternate, selected]),
+        [5_usize, 5]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let unknown =
         core.value_constructor(datatype, ConstructorTag::from(2_usize), Vec::from(fields));
-    let unknown = core.computation_data_case(unknown, motive, Vec::from([alternate, selected]));
+    let unknown = core.computation_data_case(
+        unknown,
+        motive,
+        Vec::from([alternate, selected]),
+        [5_usize, 5]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     for (term, fault) in [
         (absent, EvalFault::AbsentRecordField),
         (wrong_record, EvalFault::ProjectedNonRecord),
@@ -2592,7 +2627,12 @@ fn native_cases_reapply_when_head_unfolds()
     let branch = core.computation_lambda(returned);
     let data_reference = core.value_constant(ConstantIndex::from(0_usize));
     let record_reference = core.value_constant(ConstantIndex::from(1_usize));
-    let cased = core.computation_data_case(data_reference, motive, Vec::from([branch]));
+    let cased = core.computation_data_case(
+        data_reference,
+        motive,
+        Vec::from([branch]),
+        [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let projected = core.computation_record_projection(record_reference, label);
     let mut chain = DefinitionChain::new();
     for (constant, entry) in [(0_usize, 0_u32), (1, 1)] {

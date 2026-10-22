@@ -517,8 +517,14 @@ fn computation_comparison_preserves_every_child_role()
     let cased = left.computation_case(injected, &[returned_unit, returned_variable]);
     let unit_type = left.value_type_unit();
     let motive = left.comp_type_returner(unit_type);
-    let matched =
-        left.computation_data_case(unit, motive, alloc::vec![returned_unit, returned_variable]);
+    let matched = left.computation_data_case(
+        unit,
+        motive,
+        alloc::vec![returned_unit, returned_variable],
+        [0_usize, 0]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let recursive = left.computation_fixpoint(returned_unit, FixpointEvidence::StructuralDescent);
     let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
     let selected = left.computation_record_projection(variable, label("a"));
@@ -540,10 +546,14 @@ fn computation_comparison_preserves_every_child_role()
         other_returned_variable,
     ]);
     let erased = right.comp_type_unknown();
-    let other_matched = right.computation_data_case(other_unit, erased, alloc::vec![
-        other_returned_unit,
-        other_returned_variable
-    ]);
+    let other_matched = right.computation_data_case(
+        other_unit,
+        erased,
+        alloc::vec![other_returned_unit, other_returned_variable],
+        [0_usize, 0]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let other_recursive =
         right.computation_fixpoint(other_returned_unit, FixpointEvidence::StructuralDescent);
     let other_selected = right.computation_record_projection(other_variable, label("a"));
@@ -590,16 +600,28 @@ fn computation_comparison_preserves_every_child_role()
     ]);
     let changed_right_arm =
         right.computation_case(other_injected, &[other_returned_unit, other_returned_unit]);
-    let changed_match_scrutinee = right.computation_data_case(other_variable, erased, alloc::vec![
-        other_returned_unit,
-        other_returned_variable
-    ]);
-    let changed_branch = right.computation_data_case(other_unit, erased, alloc::vec![
-        other_returned_unit,
-        other_returned_unit
-    ]);
-    let dropped_branch =
-        right.computation_data_case(other_unit, erased, alloc::vec![other_returned_unit]);
+    let changed_match_scrutinee = right.computation_data_case(
+        other_variable,
+        erased,
+        alloc::vec![other_returned_unit, other_returned_variable],
+        [0_usize, 0]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let changed_branch = right.computation_data_case(
+        other_unit,
+        erased,
+        alloc::vec![other_returned_unit, other_returned_unit],
+        [0_usize, 0]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let dropped_branch = right.computation_data_case(
+        other_unit,
+        erased,
+        alloc::vec![other_returned_unit],
+        [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+    );
     let changed_evidence =
         right.computation_fixpoint(other_returned_unit, FixpointEvidence::Partial);
     let changed_recursive_body =

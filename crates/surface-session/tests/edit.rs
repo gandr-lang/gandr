@@ -945,7 +945,14 @@ fn native_snapshot(changed: Option<Leaf>) -> Snapshot
     for _ in 0_usize .. 4_usize {
         branch = arena.computation_lambda(branch);
     }
-    let case = arena.computation_data_case(constructor, motive, vec![branch; 4]);
+    let case = arena.computation_data_case(
+        constructor,
+        motive,
+        vec![branch; 4],
+        [4_usize, 4, 4, 4]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let case = arena.value_thunk(case);
     let projection =
         arena.computation_record_projection(record, FieldLabel::from(String::from("d")));

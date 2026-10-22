@@ -2426,7 +2426,8 @@ impl CoreArena
         self.alloc_value(Value::Record(fields))
     }
 
-    /// Eliminate nominal data with an explicit motive and field functions.
+    /// Eliminate nominal data with an explicit motive and field functions,
+    /// each constructor's branch taking `arities`' count of its fields.
     ///
     /// # Specification
     /// trivial.
@@ -2436,12 +2437,14 @@ impl CoreArena
         scrutinee: ValueId,
         motive: CompTypeId,
         branches: alloc::vec::Vec<ComputationId>,
+        arities: alloc::vec::Vec<gandr_kernel_term::FieldCount>,
     ) -> ComputationId
     {
         self.alloc_computation(Computation::DataCase {
             scrutinee,
             motive,
             branches,
+            arities,
         })
     }
 

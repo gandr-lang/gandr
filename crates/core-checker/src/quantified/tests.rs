@@ -173,7 +173,14 @@ fn helped(
     let called = call(arena, apply, &[h, argument]);
     let on_successor = arena.computation_lambda(called);
     let n = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(n, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        n,
+        returner,
+        vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);
@@ -565,7 +572,14 @@ fn looping(
     let bound = arena.computation_bind(called, recursed);
     let on_successor = arena.computation_lambda(bound);
     let n = var(arena, DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(n, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        n,
+        returner,
+        vec![on_zero, on_successor],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let body = arena.value_thunk(fixpoint);

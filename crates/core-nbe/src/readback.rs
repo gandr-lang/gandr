@@ -2481,10 +2481,15 @@ fn step(
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
-            let Computation::DataCase { ref branches, .. } = *matched_native_node
+            let Computation::DataCase {
+                ref branches,
+                ref arities,
+                ..
+            } = *matched_native_node
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
+            let arities = arities.clone();
             let start = machine
                 .comps
                 .len()
@@ -2495,7 +2500,7 @@ fn step(
             let branches = machine.comps.drain(start ..).collect();
             machine
                 .comps
-                .push(core.computation_data_case(scrutinee, motive, branches));
+                .push(core.computation_data_case(scrutinee, motive, branches, arities));
             Ok(())
         },
         Task::Projection(projector) => {

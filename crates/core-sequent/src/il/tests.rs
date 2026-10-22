@@ -217,6 +217,7 @@ fn minting_refuses_a_dangling_child()
         Err(MintRefusal::DanglingProducer(ProducerId::from(4_u32))),
         arena.mint_consumer(ConsumerNode::DataCase {
             branches: Box::from([ProducerId::from(4_u32)]),
+            arities: Box::from([gandr_kernel_term::FieldCount::from(0_usize)]),
             then: top,
         }),
         "a nominal match's branch dangles"
@@ -225,6 +226,7 @@ fn minting_refuses_a_dangling_child()
         Err(MintRefusal::DanglingConsumer(ConsumerId::from(6_u32))),
         arena.mint_consumer(ConsumerNode::DataCase {
             branches: Box::from([]),
+            arities: Box::from([]),
             then: ConsumerId::from(6_u32),
         }),
         "a nominal match's continuation dangles"

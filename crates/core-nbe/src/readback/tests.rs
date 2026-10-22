@@ -1117,7 +1117,14 @@ fn a_definition_s_own_recursion_reads_back_as_the_definition()
     let on_successor = core.computation_lambda(recurse);
     let scrutinee = core.value_variable(Zone::Intuitionistic, innermost());
     let motive = core.comp_type_returner(nat);
-    let cases = core.computation_data_case(scrutinee, motive, Vec::from([on_zero, on_successor]));
+    let cases = core.computation_data_case(
+        scrutinee,
+        motive,
+        Vec::from([on_zero, on_successor]),
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
     let lambda = core.computation_lambda(cases);
     let fixpoint = core.computation_fixpoint(
         lambda,

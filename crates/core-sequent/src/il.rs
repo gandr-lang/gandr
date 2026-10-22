@@ -613,6 +613,11 @@ pub enum ConsumerNode
     {
         /// One branch per constructor, in ordinal order.
         branches: Box<[ProducerId]>,
+        /// Each constructor's field count, in ordinal order, as its data
+        /// declaration states it: how many of its branch's curried objects
+        /// take fields, and the size of its cell. A loop arm after the
+        /// constructors' branches has none.
+        arities: Box<[gandr_kernel_term::FieldCount]>,
         /// The continuation each branch returns to.
         then: ConsumerId,
     },
@@ -1579,7 +1584,7 @@ impl CommandArena
                         producers.iter().all(|child| self.producer(*child).is_some())
                             && consumers.iter().all(|child| self.consumer(*child).is_some()),
                     | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
-                    | ConsumerNode::DataCase { ref branches, then } =>
+                    | ConsumerNode::DataCase { ref branches, then, .. } =>
                         branches.iter().all(|child| self.producer(*child).is_some()) && self.consumer(then).is_some(),
                     | ConsumerNode::Select { then, .. } => self.consumer(then).is_some(),
                     | ConsumerNode::ListFold { element, result, on_nil, on_cons, continuation } =>
@@ -1905,7 +1910,9 @@ where
                 )?;
             }
         },
-        ConsumerNode::DataCase { ref branches, then } => {
+        ConsumerNode::DataCase {
+            ref branches, then, ..
+        } => {
             fields(branches, core::slice::from_ref(&then), &mut each)?;
         },
         ConsumerNode::Select { then, .. } => each(NodeAddress::Consumer(then), at)?,

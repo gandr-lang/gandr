@@ -393,6 +393,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
         let matched = arena
             .mint_consumer(ConsumerNode::DataCase {
                 branches: Box::from([branch]),
+                arities: Box::from([gandr_kernel_term::FieldCount::from(2_usize)]),
                 then: top,
             })
             .expect("the branch resolves");
@@ -411,5 +412,56 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
             _ => Vec::new(),
         };
         assert_eq!(ownership.reuses(), expected.as_slice(), "{case}");
+    }
+}
+
+/// A branch over a one-field constructor that answers a function:
+/// `{force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨cocase {apply(y; α) ⇒ ⟨x0 |+ α0⟩} |−
+/// α0⟩} |− α0⟩}`. The object that takes the field runs once; the one past
+/// the constructor's field count is the branch's answer, which its caller may
+/// apply any number of times, unless the match states a second field.
+#[test]
+fn an_object_past_the_constructor_s_fields_may_run_many_times()
+{
+    for fields in [1_usize, 2] {
+        let mut arena = CommandArena::new();
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
+        let returned = alpha0(&mut arena);
+        let named = variable(&mut arena, Zone::Intuitionistic, x0());
+        let mut body = cut(&mut arena, named, returned);
+        let mut objects = Vec::new();
+        for _level in 0_u8 .. 2_u8 {
+            let object = arena
+                .mint_producer(ProducerNode::Cocase {
+                    arms: Box::from([CopatternArm {
+                        destructor: DestructorTag::Apply,
+                        body,
+                    }]),
+                })
+                .expect("the arm resolves");
+            objects.push(object);
+            body = arena
+                .mint_cut(Polarity::Negative, object, returned)
+                .expect("the children resolve");
+        }
+        let branch = arena
+            .mint_producer(ProducerNode::Thunk { body })
+            .expect("the body resolves");
+        let matched = arena
+            .mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([branch]),
+                arities: Box::from([FieldCount::from(fields)]),
+                then: top,
+            })
+            .expect("the branch resolves");
+        let scrutinee = variable(&mut arena, Zone::Intuitionistic, x0());
+        let root = cut(&mut arena, scrutinee, matched);
+
+        let ownership = read(&arena, &[NodeAddress::Command(root)]);
+
+        let (answer, taker) = (objects[0], objects[1]);
+        assert_eq!(ownership.runs(taker), Runs::Once, "{fields}");
+        let expected = if fields == 1 { Runs::Many } else { Runs::Once };
+        assert_eq!(ownership.runs(answer), expected, "{fields}");
     }
 }

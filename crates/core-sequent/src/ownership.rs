@@ -23,15 +23,17 @@
 //!   suspended body. The last two are its parent's to give; a node two parents
 //!   give different ones has no reading.
 //! - [`Runs`] says how often a suspension's body may run. A nominal match's
-//!   branch, the curried objects that take the branch's fields, and a thunk or
-//!   object cut straight against a frame run once and hand their captures to
-//!   their bodies; any other may run its body more than once, so the suspension
-//!   keeps one reference to each capture and the body duplicates each capture
-//!   it names on entry. A fold's cell branch and a handler's clauses are kept
-//!   the same way by the node that holds them. A stack's bind frame owns its
-//!   captures as any child does, one reference each: the stack that holds the
-//!   frame is the keeper, and every resumption copies the frame's window out of
-//!   it with a reference of its own.
+//!   branch, the curried objects that take its constructor's fields — as many
+//!   as the match's arity for that constructor states, so a function the branch
+//!   answers is not among them — and a thunk or object cut straight against a
+//!   frame run once and hand their captures to their bodies; any other may run
+//!   its body more than once, so the suspension keeps one reference to each
+//!   capture and the body duplicates each capture it names on entry. A fold's
+//!   cell branch and a handler's clauses are kept the same way by the node that
+//!   holds them. A stack's bind frame owns its captures as any child does, one
+//!   reference each: the stack that holds the frame is the keeper, and every
+//!   resumption copies the frame's window out of it with a reference of its
+//!   own.
 //! - [`Reuse`] pairs a match whose scrutinee dies in a branch with a
 //!   constructor of the scrutinee's size that the branch builds, reached
 //!   without crossing a body that may run more than once or a choice between
@@ -50,6 +52,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 
 use crate::boundary::NodeCount;
 use crate::il::CommandArena;
@@ -714,10 +717,14 @@ impl Ownership
                     }
                 }
             },
-            ConsumerNode::DataCase { ref branches, .. } => {
-                for (position, &branch) in branches.iter().enumerate() {
-                    let (body, size) = curried(arena, branch)?;
-                    if let Some(body) = body
+            ConsumerNode::DataCase {
+                ref branches,
+                ref arities,
+                ..
+            } => {
+                for (position, (&branch, &arity)) in branches.iter().zip(arities).enumerate() {
+                    let size = NodeCount::from(usize::from(arity));
+                    if let Some(body) = curried(arena, branch, arity)?
                         && let Some(built) =
                             self.built(arena, NodeAddress::Command(body), size, scratch)?
                     {
@@ -869,11 +876,14 @@ fn once(
     let mut chained = BTreeSet::new();
     for &node in reachable {
         if let NodeAddress::Consumer(id) = node
-            && let ConsumerNode::DataCase { ref branches, .. } =
-                *arena.consumer(id).ok_or(OwnershipRefusal::Dangling(node))?
+            && let ConsumerNode::DataCase {
+                ref branches,
+                ref arities,
+                ..
+            } = *arena.consumer(id).ok_or(OwnershipRefusal::Dangling(node))?
         {
-            for &branch in branches {
-                chain(arena, branch, &mut chained)?;
+            for (&branch, &arity) in branches.iter().zip(arities) {
+                chain(arena, branch, arity, &mut chained)?;
             }
         }
     }
@@ -947,15 +957,19 @@ fn once(
     Ok(once.difference(&many).copied().collect())
 }
 
-/// Add a nominal match's branch and the curried objects that take its fields
-/// to `chained`: `{force(α) ⇒ ⟨cocase {apply(x; α) ⇒ …} |− α0⟩}`, each
-/// level's body cutting the next object against its own continuation.
+/// Add a nominal match's branch and the `arity` curried objects that take
+/// its constructor's fields to `chained`: `{force(α) ⇒ ⟨cocase {apply(x; α)
+/// ⇒ …} |− α0⟩}`, each level's body cutting the next object against its own
+/// continuation. An object past the constructor's fields is the branch's
+/// answer, a function its caller may apply any number of times, and is left
+/// out.
 ///
 /// # Specification
 /// trivial.
 fn chain(
     arena: &CommandArena,
     branch: ProducerId,
+    arity: FieldCount,
     chained: &mut BTreeSet<ProducerId>,
 ) -> Result<(), OwnershipRefusal>
 {
@@ -966,7 +980,11 @@ fn chain(
     };
     chained.insert(branch);
     let mut at = body;
-    while let Some(object) = applied(arena, at)? {
+    for _field in 0 .. usize::from(arity) {
+        let Some(object) = applied(arena, at)?
+        else {
+            break;
+        };
         chained.insert(object);
         let Some(&ProducerNode::Cocase { ref arms }) = arena.producer(object)
         else {
@@ -1012,37 +1030,41 @@ fn applied(
     Ok((continuation && object).then_some(producer))
 }
 
-/// The innermost body of a nominal match's branch and how many fields its
-/// curried objects take.
+/// The body of a nominal match's branch under the `arity` curried objects
+/// that take its constructor's fields; none when the branch is no thunk of
+/// that many.
 ///
 /// # Specification
 /// trivial.
 fn curried(
     arena: &CommandArena,
     branch: ProducerId,
-) -> Result<(Option<CommandId>, NodeCount), OwnershipRefusal>
+    arity: FieldCount,
+) -> Result<Option<CommandId>, OwnershipRefusal>
 {
     let ProducerNode::Thunk { body } = *arena
         .producer(branch)
         .ok_or(OwnershipRefusal::Dangling(NodeAddress::Producer(branch)))?
     else {
-        return Ok((None, NodeCount::from(0_usize)));
+        return Ok(None);
     };
     let mut at = body;
-    let mut fields = 0_usize;
-    while let Some(object) = applied(arena, at)? {
+    for _field in 0 .. usize::from(arity) {
+        let Some(object) = applied(arena, at)?
+        else {
+            return Ok(None);
+        };
         let Some(&ProducerNode::Cocase { ref arms }) = arena.producer(object)
         else {
-            break;
+            return Ok(None);
         };
         let Some(arm) = arms.first()
         else {
-            break;
+            return Ok(None);
         };
         at = arm.body;
-        fields = fields.saturating_add(1);
     }
-    Ok((Some(at), NodeCount::from(fields)))
+    Ok(Some(at))
 }
 
 #[cfg(test)]
