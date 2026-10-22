@@ -725,3 +725,56 @@ fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
         "the corpus states runs the normaliser agrees with"
     );
 }
+
+/// #1677: a transport along an equivalence written in a function body,
+/// `transport-list.gandr`'s `flipped_inline`, normalises to what its run reads,
+/// as its twin along the named equivalence, `flipped_list`, does.
+#[test]
+fn a_transport_along_an_inline_equivalence_normalises_1677()
+{
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../surface-corpus/fixture/model/identity/transport-list.gandr");
+    let mut answers: BTreeMap<String, Compared> = BTreeMap::new();
+    let ControlFlow::Continue(_report) = Walk::new(vec![source]).visit_admitting(
+        &Pool::new(Width::SERIAL),
+        |step, admission| -> ControlFlow<Infallible> {
+            let (
+                Step::Source {
+                    composed:
+                        Composed::Settled {
+                            report,
+                            mut program,
+                            ..
+                        },
+                    ..
+                },
+                Maybe::Present(admission),
+            ) = (step, admission)
+            else {
+                return ControlFlow::Continue(());
+            };
+            let definitions = definitions_of(admission.verdicts());
+            let mut core = admission.arena().clone();
+            for declaration in report.declarations() {
+                let name = declaration.name().to_string();
+                if name == "flipped_inline" || name == "flipped_list" {
+                    let answer = compared(
+                        &mut program,
+                        &mut core,
+                        definitions.normaliser(),
+                        declaration.constant(),
+                    );
+                    answers.insert(name, answer);
+                }
+            }
+            ControlFlow::Continue(())
+        },
+    );
+    for name in ["flipped_list", "flipped_inline"] {
+        assert_eq!(
+            answers.get(name),
+            Some(&Compared::Exactly),
+            "`{name}` normalises to what its run reads"
+        );
+    }
+}

@@ -239,6 +239,7 @@ pub fn fused(
             | Elimination::Transport(_)
             | Elimination::ProductTransport(_)
             | Elimination::PathTransport { .. }
+            | Elimination::OperandTransport { .. }
             | Elimination::Ride { .. }
             | Elimination::TelescopeTransport { .. }
             | Elimination::Apply(_)

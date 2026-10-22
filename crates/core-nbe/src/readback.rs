@@ -634,6 +634,9 @@ enum Task
     /// Assemble element-path transport beneath a neutral path, from its
     /// motive and operand.
     PathTransport,
+    /// Assemble element-path transport beneath a neutral operand, from its
+    /// motive and path.
+    OperandTransport,
     /// Assemble a ride beneath a neutral flow, from its motive and operand.
     Ride,
     /// Assemble a telescope transport beneath a neutral path, from its motive,
@@ -2062,7 +2065,7 @@ fn run(
             && machine.comps.len() == entry_comps.saturating_add(1)
             && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
             && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
-        | Task::PathTransport | Task::Ride => machine.tasks.len() == entry_tasks
+        | Task::PathTransport | Task::OperandTransport | Task::Ride => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2) == Some(machine.values.len())
             && entry_value_types.checked_sub(1) == Some(machine.value_types.len())
             && machine.comps.len() == entry_comps.saturating_add(1)
@@ -2498,6 +2501,15 @@ fn step(
         Task::PathTransport => {
             let value = machine.pop_value()?;
             let path = machine.pop_value()?;
+            let motive = machine.pop_value_type()?;
+            machine
+                .comps
+                .push(core.computation_path_transport(motive, path, value));
+            Ok(())
+        },
+        Task::OperandTransport => {
+            let path = machine.pop_value()?;
+            let value = machine.pop_value()?;
             let motive = machine.pop_value_type()?;
             machine
                 .comps
@@ -4156,6 +4168,7 @@ fn step_neutral(
                         Elimination::Transport(_)
                         | Elimination::ProductTransport(_)
                         | Elimination::PathTransport { .. }
+                        | Elimination::OperandTransport { .. }
                         | Elimination::Ride { .. }
                         | Elimination::TelescopeTransport { .. }
                         | Elimination::Apply(_)
@@ -4583,6 +4596,19 @@ fn step_spine(
             machine.tasks.push(onward);
             machine.tasks.push(assemble);
             machine.tasks.push(Task::Value { value, binders });
+            machine.tasks.push(family);
+            Ok(())
+        },
+        // The operand is the head; the path is read above it.
+        Elimination::OperandTransport { motive, path } => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let family = fresh_motive(domain, machine, motive, binders)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::OperandTransport);
+            machine.tasks.push(Task::Value {
+                value: path,
+                binders,
+            });
             machine.tasks.push(family);
             Ok(())
         },

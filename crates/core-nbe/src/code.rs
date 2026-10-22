@@ -964,6 +964,7 @@ DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. } | DomainVa
                 | Elimination::Projection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::OperandTransport { .. }
                 | Elimination::Ride { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)

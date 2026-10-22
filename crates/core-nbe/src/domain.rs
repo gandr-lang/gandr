@@ -321,6 +321,17 @@ pub enum Elimination
         /// The transported value.
         value: DomainValueId,
     },
+    /// Transport along a canonical element path, waiting for a neutral
+    /// operand: the motive, a value type under one binder closed over the
+    /// environment it reads, and the path.
+    OperandTransport
+    {
+        /// The motive, closed over its environment; its own binder is not in
+        /// the capture.
+        motive: ValueClosureId,
+        /// The canonical path the operand moves along.
+        path: DomainValueId,
+    },
     /// A ride along a neutral flow: the motive, a value type under one binder
     /// closed over the environment it reads, and the value ridden.
     Ride

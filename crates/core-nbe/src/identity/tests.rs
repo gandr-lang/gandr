@@ -1,10 +1,13 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::convert::Infallible;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DefinitionChain;
 use gandr_core_term::DefinitionalEnvironment;
+use gandr_core_term::Transparency;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
@@ -16,6 +19,7 @@ use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StringLiteral;
@@ -27,9 +31,14 @@ use super::clause;
 use super::fibre;
 use crate::arena::DomainArena;
 use crate::arena::DomainValueId;
+use crate::domain::DomainComp;
+use crate::domain::Elimination;
+use crate::domain::Glued;
 use crate::eval::Definitions;
+use crate::eval::Evaluation;
 use crate::eval::Fuel;
 use crate::eval::LoweredChain;
+use crate::eval::Progress;
 use crate::eval::eval_computation;
 use crate::eval::eval_value;
 use crate::machine::MachineSettings;
@@ -462,6 +471,92 @@ fn transport_moves_a_list_through_a_universe_path()
         normalises_to(&mut core, empty, returned),
         CertificateEquality::Equal,
         "the empty list is carried unchanged"
+    );
+}
+
+#[test]
+fn transport_along_an_equivalence_waits_on_a_stuck_list_1677()
+{
+    // Negation as a universe equivalence of Bool with itself, in the motive
+    // `y. List(El y)`, over a list no rule reads yet: the transport waits on
+    // the list, and moves it once the list's definition unfolds.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let negated = [falsity, truth].map(|value| core.computation_return(value));
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let body = core.computation_case(bound, &negated);
+    let lambda = core.computation_lambda(body);
+    let not = core.value_thunk(lambda);
+    let path = core.value_equiv(not, not);
+    let element = core.value_type_element(bound, gandr_kernel_strata::Level::zero());
+    let motive = core.value_type_list(element);
+    let operand = stuck(&mut core, ConstantIndex::from(0_usize));
+    let transported = core.computation_path_transport(motive, path, operand);
+    assert_eq!(
+        normalises_to(&mut core, transported, transported),
+        CertificateEquality::Equal,
+        "along a canonical path, the transport of a list no rule reads reads back as itself"
+    );
+    let nil = core.value_list_nil();
+    let tail = core.value_list_cons(falsity, nil);
+    let list = core.value_list_cons(truth, tail);
+    let mut chain = DefinitionChain::new();
+    chain
+        .define(
+            ConstantIndex::from(0_usize),
+            GlobalIndex::from(0_u32),
+            Transparency::Manifest,
+            &[],
+        )
+        .expect("the list's definition is the chain's first");
+    let Ok(chain) = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(list));
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), transported)
+        .expect("the transport evaluates");
+    let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(evaluated)
+    else {
+        panic!("the transport waits on the list's definition");
+    };
+    let spine = Vec::from(
+        domain
+            .neutral(neutral)
+            .expect("the list's neutral resolves")
+            .spine(),
+    );
+    assert!(
+        matches!(spine.as_slice(), [Elimination::OperandTransport { .. }]),
+        "the transport waits on the list, not on the canonical path"
+    );
+    let head = eval_value(&core, &mut domain, definitions, ample(), list)
+        .expect("the list's body evaluates");
+    let (progress, _) = Evaluation::eliminate(definitions, head, &spine)
+        .resume(&core, &mut domain, ample())
+        .expect("the transport resumes on the unfolded list");
+    let Progress::Finished(Glued::Computation(answer)) = progress
+    else {
+        panic!("the transport finishes once the list unfolds");
+    };
+    let read = readback_computation(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        answer,
+    )
+    .expect("the moved list reads back");
+    let moved_tail = core.value_list_cons(truth, nil);
+    let moved = core.value_list_cons(falsity, moved_tail);
+    let expected = core.computation_return(moved);
+    let [read, expected] = [read, expected].map(|computation| core.value_thunk(computation));
+    assert_eq!(
+        equal_certificate_syntax(&core, read, expected),
+        CertificateEquality::Equal,
+        "re-applied to the unfolded list, each head is negated and the spine kept"
     );
 }
 

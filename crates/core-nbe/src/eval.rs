@@ -1309,6 +1309,15 @@ enum Task
     /// Transport the operand above the element path on the value stack in a
     /// motive.
     PathTransport(crate::arena::ValueClosureId),
+    /// Transport the operand on the value stack along the held canonical
+    /// element path, in a motive.
+    OperandTransport
+    {
+        /// The motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The canonical path.
+        path: DomainValueId,
+    },
     /// Ride the value above the flow on the value stack along it, in a
     /// motive.
     Ride(crate::arena::ValueClosureId),
@@ -2870,7 +2879,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2885,6 +2894,8 @@ impl<'run> Evaluation<'run>
                         matches!(tasks.next(), Some(Task::ProductTransport(held)) if *held == path) },
                     Elimination::PathTransport { motive, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::PathTransport(held)) if *held == motive) },
+                    Elimination::OperandTransport { motive, path } => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(&Task::OperandTransport { motive: held, path: along }) if held == motive && along == path) },
                     Elimination::Ride { motive, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Ride(held)) if *held == motive) },
                     Elimination::TelescopeTransport { motive, start, over, value } => { answer = Answer::Computation;
@@ -2962,7 +2973,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
             && !enclosing.is_empty(),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
@@ -3293,7 +3304,7 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
-            | Task::PathTransport(_) | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)), Some(DomainValue::Flow { .. })),
@@ -3835,6 +3846,11 @@ fn step(
             step_transport(core, domain, machine)
         },
         Task::PathTransport(motive) => step_path_transport(core, domain, machine, motive),
+        Task::OperandTransport { motive, path } => {
+            let value = machine.pop_value()?;
+            machine.values.extend([path, value]);
+            step_path_transport(core, domain, machine, motive)
+        },
         Task::Ride(motive) => step_ride(core, domain, machine, motive),
         Task::Flow { term } => {
             let flow = match core.value(term) {
@@ -5894,14 +5910,16 @@ fn step_transport(
 ///   motive along `ua(e)`, `equiv(f, g)` or a held transport returns the thunk
 ///   [`CompBody::TransportFunction`] holds, wherever [`function_parts`] reads
 ///   its motives; any other configuration over a stuck path stacks the
-///   transport on the path's spine.
+///   transport on the path's spine, and over a canonical path and a stuck
+///   operand on the operand's.
 /// - provides: transport's computation rules — identity on `here` and in a
 ///   constant motive, through the motive's constructors, the singleton's, and
 ///   along a word — and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand or a motive
 ///   closure holding no type; [`EvalFault::TransportedNonPath`] for a path that
-///   is neither reflexivity nor stuck; domain faults for dangling nodes;
-///   [`EvalFault::DanglingTerm`] for a family naming no core node.
+///   is neither reflexivity nor stuck over an operand that is not stuck; domain
+///   faults for dangling nodes; [`EvalFault::DanglingTerm`] for a family naming
+///   no core node.
 /// - panics: none.
 ///
 /// # Errors
@@ -5910,10 +5928,12 @@ fn step_transport(
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity, a constant motive, a stuck path in a product
 ///   motive over a tuple, a stuck path in a sum motive over an injection, a
-///   stuck path in the singleton over reflexivity, and a stuck path in a motive
-///   reading its binder each reach their own arm; dropping the reflexivity or
-///   the constant rule, reordering components, losing the summand or computing
-///   a family whose left endpoint moves changes the read-back term.
+///   stuck path in the singleton over reflexivity, a stuck path in a motive
+///   reading its binder, and a canonical path over a stuck operand each reach
+///   their own arm; dropping the reflexivity or the constant rule, reordering
+///   components, losing the summand, computing a family whose left endpoint
+///   moves or losing the transport a stuck operand waits on changes the
+///   read-back term.
 /// - witness: `identity::tests::transport_along_here_is_the_identity`
 /// - witness: `identity::tests::transport_in_a_constant_motive_returns_the_operand`
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
@@ -5921,6 +5941,7 @@ fn step_transport(
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::transport_moves_a_list_through_a_universe_path`
+/// - witness: `identity::tests::transport_along_an_equivalence_waits_on_a_stuck_list_1677`
 /// - witness: `eval::words::tests::a_word_appends_on_its_first_word`
 /// - witness: `identity::tests::transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive`
 /// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
@@ -6136,14 +6157,23 @@ fn step_path_transport(
     if words::appended(core, domain, machine, motive, (path, value))? == words::Moved::Stepped {
         return Ok(());
     }
-    let DomainValue::Neutral { neutral, .. } = carried
+    // A stuck path holds the transport on its spine; a canonical path waits
+    // on a stuck operand, which holds it on its own.
+    let grown = if let DomainValue::Neutral { neutral, .. } = carried {
+        extend_spine(domain, neutral, Elimination::PathTransport {
+            motive,
+            value,
+        })?
+    }
+    else if let Some(DomainValue::Neutral { neutral, .. }) = domain.value(value).copied() {
+        extend_spine(domain, neutral, Elimination::OperandTransport {
+            motive,
+            path,
+        })?
+    }
     else {
         return Err(EvalFault::TransportedNonPath);
     };
-    let grown = extend_spine(domain, neutral, Elimination::PathTransport {
-        motive,
-        value,
-    })?;
     machine
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
@@ -7185,6 +7215,10 @@ fn push_eliminations(
                 machine.tasks.push(Task::PathTransport(motive));
                 machine.tasks.push(Task::Supply(value));
             },
+            Elimination::OperandTransport { motive, path } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::OperandTransport { motive, path });
+            },
             Elimination::Ride { motive, value } => {
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Ride(motive));
@@ -7586,6 +7620,7 @@ fn read_through(
                 | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::PathTransport { .. }
+                | Elimination::OperandTransport { .. }
                 | Elimination::Ride { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
