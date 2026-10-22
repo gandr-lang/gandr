@@ -593,11 +593,14 @@ description = "A commit's hotpath checks, filed on each regressed function's iss
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
 
 # A landing's hotpath verdicts, read on main's push from each merged pull
-# request's `hotpath / <benchmark>` checks (the number from each landed
-# commit's `(#n)` suffix, the checks on the pull request's head). A merge
-# queue lands a stack in one push, so every commit after the push's base
-# (HOTPATH_PUSH_BEFORE) is read, through the compare API: the checkout holds
-# one commit. Each red check and each report that improves past its policy's
+# request's `hotpath / <benchmark>` checks (the number from each landing
+# merge's `(#n)` suffix, the checks on the pull request's head). A merge
+# queue lands a stack in one push, so every merge commit after the push's
+# base (HOTPATH_PUSH_BEFORE) is read, through the compare API: the checkout
+# holds one commit. Only a merge names its pull request: a branch commit the
+# merge brings may end its subject with an issue's number, as `(#1216)` did,
+# and is never read. A number that names no pull request is skipped with a
+# note. Each red check and each report that improves past its policy's
 # band is a row of the open `Hotpath: the landed deltas` tracking issue, whose
 # body the task edits in place; a red row links the issues of the functions
 # the pull request regressed, each holding the pull request's row (the hotpath
@@ -614,9 +617,11 @@ ledger_title='Hotpath: the landed deltas'
 before=${HOTPATH_PUSH_BEFORE:-}
 if [[ -n $before && ! $before =~ ^0+$ ]]; then
   landings=$(gh api "repos/$repo/compare/$before...$(git rev-parse HEAD)" \
-    --jq '.commits[] | "\(.sha[0:8]) \(.commit.message | split("\n") | first)"')
-else
+    --jq '.commits[] | select((.parents | length) > 1) | "\(.sha[0:8]) \(.commit.message | split("\n") | first)"')
+elif (( $(git cat-file -p HEAD | grep -c '^parent ') > 1 )); then
   landings="$(git rev-parse --short=8 HEAD) $(git log -1 --format=%s HEAD)"
+else
+  landings=
 fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -625,8 +630,11 @@ landed=0
 while IFS=' ' read -r commit subject; do
   [[ $subject =~ \(#([0-9]+)\)$ ]] || continue
   pr=${BASH_REMATCH[1]}
+  if ! head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2> /dev/null); then
+    echo "#$pr names no pull request; skipped"
+    continue
+  fi
   landed=$((landed + 1))
-  head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid)
   gh api --paginate "repos/$repo/commits/$head/check-runs" \
     --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, summary: (.output.summary // "")}' \
     | jq -s . > "$scratch/runs.json"
@@ -684,8 +692,9 @@ cat "$scratch/rows"
 # A landing's surviving mutants, read on main's push from each merged pull
 # request's mutants comment, the one the `report the mutants of the change`
 # lane last posted (`mutants:changed`, #1456). A merge queue lands a stack in
-# one push, so every commit after the push's base (MUTANTS_PUSH_BEFORE) is
-# read through the compare API, as `ci:hotpath-landed` reads them. Each pull
+# one push, so every merge commit after the push's base (MUTANTS_PUSH_BEFORE)
+# is read through the compare API, as `ci:hotpath-landed` reads them, and a
+# number that names no pull request is skipped with a note. Each pull
 # request whose report names a survivor gets one issue, `test: #<n> leaves <k>
 # mutant(s) alive`. A later landing of the same number updates it in place.
 # Its labels are kind:gap, the pull request's `area:` labels and the tier of
@@ -702,15 +711,21 @@ repo=${GH_REPO:?}
 before=${MUTANTS_PUSH_BEFORE:-}
 if [[ -n $before && ! $before =~ ^0+$ ]]; then
   landings=$(gh api "repos/$repo/compare/$before...$(git rev-parse HEAD)" \
-    --jq '.commits[] | .commit.message | split("\n") | first')
-else
+    --jq '.commits[] | select((.parents | length) > 1) | .commit.message | split("\n") | first')
+elif (( $(git cat-file -p HEAD | grep -c '^parent ') > 1 )); then
   landings=$(git log -1 --format=%s HEAD)
+else
+  landings=
 fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 while IFS= read -r subject; do
   [[ $subject =~ \(#([0-9]+)\)$ ]] || continue
   pr=${BASH_REMATCH[1]}
+  if ! gh pr view "$pr" --repo "$repo" --json number > /dev/null 2>&1; then
+    echo "#$pr names no pull request; skipped"
+    continue
+  fi
   gh api --paginate --slurp "repos/$repo/issues/$pr/comments" \
     | jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .body // ""' \
     > "$scratch/report.md"
