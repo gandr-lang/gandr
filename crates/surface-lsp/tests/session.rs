@@ -236,8 +236,13 @@ fn logged(messages: &[Value]) -> (Served, Vec<Value>, Vec<String>)
     let mut stream = input.as_ref();
     let mut output = Vec::new();
     let mut log = Vec::new();
-    let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
-        .expect("the streams carry the session");
+    let served = serve(
+        &mut stream,
+        &mut output,
+        &mut log,
+        (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+    )
+    .expect("the streams carry the session");
     let log = String::from_utf8(log).expect("the log is UTF-8");
     (
         served,
@@ -637,7 +642,12 @@ fn a_stream_closed_without_exit_ends_abruptly()
     let mut output = Vec::new();
     assert!(
         matches!(
-            serve(&mut cut, &mut output, &mut Vec::new(), Spelling::Unicode),
+            serve(
+                &mut cut,
+                &mut output,
+                &mut Vec::new(),
+                (Spelling::Unicode, &Pool::new(Width::SERIAL))
+            ),
             Err(TransportFault::Truncated)
         ),
         "a stream breaking inside a frame is a transport fault"
@@ -744,8 +754,13 @@ fn idled(quiet: &Value) -> Vec<Value>
         linger: core::time::Duration::from_secs(1),
     };
     let mut output = Vec::new();
-    let served = serve(&mut input, &mut output, &mut Vec::new(), Spelling::Unicode)
-        .expect("the streams carry the session");
+    let served = serve(
+        &mut input,
+        &mut output,
+        &mut Vec::new(),
+        (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+    )
+    .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
     written(&Body::from(output))
         .iter()
@@ -1174,8 +1189,13 @@ fn an_edit_that_changes_nothing_republishes_the_same_bytes()
         let mut stream = input.as_ref();
         let mut output = Vec::new();
         let mut log = Vec::new();
-        let served = serve(&mut stream, &mut output, &mut log, Spelling::Unicode)
-            .expect("the streams carry the session");
+        let served = serve(
+            &mut stream,
+            &mut output,
+            &mut log,
+            (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+        )
+        .expect("the streams carry the session");
         assert_eq!(served, Served::Clean);
         let mut frames_written = output.as_slice();
         let mut publications = Vec::new();

@@ -157,15 +157,18 @@ static CLOSURES: Mutex<Closures> = Mutex::new(Closures {
     clock: 0_u64,
 });
 
-/// The readmission the process holds for the closure laid out as `text` whose
-/// declarations' checkpoints are `checkpoints`.
+/// The readmission the process holds for the closure laid out as `text`,
+/// covering the longest run of leading items whose checkpoints are those of
+/// `checkpoints`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the readmission [`keep`] last held under a text equal to `text`
-///   byte for byte and checkpoints equal to `checkpoints` pointwise, now the
-///   one asked for last; `None` when the store holds none.
-/// - provides: the candidate a session's admission resumes the closure from.
+/// - ensures: of the readmissions [`keep`] holds under a text equal to `text`
+///   byte for byte and checkpoints equal pointwise to a leading run of
+///   `checkpoints`, the one under the longest run, now the one asked for last;
+///   `None` when the store holds none.
+/// - provides: the candidate a session's admission resumes the closure from,
+///   whether a whole admission of the closure or a retired one left it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause reads the store the call locks; the witness
@@ -173,8 +176,10 @@ static CLOSURES: Mutex<Closures> = Mutex::new(Closures {
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an edit to a document's own text resumes its closure, and
-///   an edit to a source of the closure does not.
+///   an edit to a source of the closure does not; an admission retired part way
+///   is resumed from where it stopped.
 /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
+/// - witness: `tests::session::a_retired_admission_leaves_what_it_crossed_to_the_next_1547`
 pub fn find(
     text: SourceText<'_>,
     checkpoints: &[ItemCheckpoint],
@@ -186,7 +191,10 @@ pub fn find(
     let found = closures
         .held
         .iter_mut()
-        .find(|held| held.text == <&str>::from(text) && held.checkpoints == checkpoints)
+        .filter(|held| {
+            held.text == <&str>::from(text) && checkpoints.starts_with(&held.checkpoints)
+        })
+        .max_by_key(|held| held.checkpoints.len())
         .map(|held| {
             held.used = now;
             Arc::clone(&held.admission)

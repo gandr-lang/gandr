@@ -1059,8 +1059,8 @@ fn main() -> ExitCode
 }
 
 /// Serve the language server over standard input and output until the
-/// session ends, its user's configuration naming `spelling`, and choose the
-/// exit code.
+/// session ends, its user's configuration naming `spelling`, its kernel
+/// admissions on a pool at the host's width, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
@@ -1088,7 +1088,7 @@ fn lsp(spelling: Spelling) -> ExitCode
         &mut input,
         &mut output,
         &mut log,
-        spelling,
+        (spelling, &Pool::new(Width::PerformanceCores)),
     ))
 }
 
@@ -1348,7 +1348,8 @@ fn reach_hub(
 }
 
 /// Run the engine hub on `socket`, lingering `linger` once its last client
-/// leaves, its workspace configured with `spelling`, and choose the exit code.
+/// leaves, its workspace configured with `spelling`, its kernel admissions on
+/// a pool at the host's width, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1385,7 +1386,7 @@ fn hub(
                 linger,
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
-                spelling,
+                (spelling, Pool::new(Width::PerformanceCores)),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),

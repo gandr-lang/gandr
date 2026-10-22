@@ -170,7 +170,11 @@ mod width;
 use std::path::PathBuf;
 
 use anodized::spec;
+pub use gandr_core_checker::Demand;
 pub use gandr_core_checker::HostGrant;
+pub use gandr_core_checker::Polled;
+pub use gandr_core_checker::Retirement;
+pub use gandr_core_checker::Unretired;
 pub use gandr_core_checker::worlds::WorldName;
 pub use gandr_core_term::effect::OperationName;
 pub use gandr_core_term::effect::host::AuthorityError;

@@ -68,30 +68,7 @@ gandr lsp --standalone
 gandr serve --linger-ms 600000
 ```
 
-`gandr lsp --capabilities` prints the `initialize` result as one line and exits; `gandr lsp` carries a session on standard input and output to the current directory's hub until `exit`, starting one when none runs; `gandr lsp --standalone` serves the session in its own process; `gandr serve` runs the hub itself, here lingering ten minutes after its last client. In memory:
-
-```rust
-use std::io::Cursor;
-
-use gandr_surface_lsp::Body;
-use gandr_surface_lsp::Served;
-use gandr_surface_lsp::Spelling;
-use gandr_surface_lsp::serve;
-use gandr_surface_lsp::write_frame;
-
-let mut input = Vec::new();
-for message in [
-    r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
-    r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#,
-    r#"{"jsonrpc":"2.0","method":"exit"}"#,
-] {
-    write_frame(&mut input, &Body::from(message.as_bytes().to_vec()))?;
-}
-let mut output = Vec::new();
-let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new(), Spelling::Unicode)?;
-assert_eq!(served, Served::Clean, "exit after shutdown ends the session cleanly");
-# Ok::<(), Box<dyn core::error::Error>>(())
-```
+`gandr lsp --capabilities` prints the `initialize` result as one line and exits; `gandr lsp` carries a session on standard input and output to the current directory's hub until `exit`, starting one when none runs; `gandr lsp --standalone` serves the session in its own process; `gandr serve` runs the hub itself, here lingering ten minutes after its last client. The crate-level example serves a session from `initialize` to `exit` in memory.
 
 The crate's tests run with `cargo nextest run -p gandr-surface-lsp`; the crate-level example runs with `cargo test -p gandr-surface-lsp --doc`.
 

@@ -67,6 +67,8 @@ use core::sync::atomic::Ordering;
 use std::sync::mpsc;
 
 use anodized::spec;
+use gandr_core_checker::Demand;
+use gandr_core_checker::Retirement;
 use quenchant_shape::shape::Maybe;
 
 use crate::pool::Pool;
@@ -148,6 +150,33 @@ impl Watch
         }
         else {
             Ok(())
+        }
+    }
+}
+
+impl Retirement for Watch
+{
+    type Retired = Retired;
+
+    /// Wanted while the job's generation stands, then [`Retired`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: answers as [`Watch::poll`]: retired exactly once a submission
+    ///   for the job's slot under another key has followed the job's own.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission run under a watch stops at its next
+    ///   declaration once its generation is retired.
+    /// - witness: `generation::tests::a_retired_slot_delivers_nothing`
+    #[inline]
+    #[spec(ensures: |ret| matches!(ret, Demand::Wanted) == self.poll().is_ok())]
+    fn demand(&self) -> Demand<Retired>
+    {
+        match self.poll() {
+            Ok(()) => Demand::Wanted,
+            Err(retired) => Demand::Retired(retired),
         }
     }
 }
@@ -247,6 +276,29 @@ pub struct Generations<'pool, Slot, Key, Output>
     sender: mpsc::Sender<Done<Slot, Output>>,
     /// Where the ends arrive.
     receiver: mpsc::Receiver<Done<Slot, Output>>,
+    /// What each job's end wakes, once it is sent.
+    wake: Wake,
+}
+
+/// What a job's end wakes once it is sent: the owner's loop, when it sleeps
+/// until something arrives.
+#[derive(Clone)]
+#[repr(transparent)]
+struct Wake(Option<Arc<dyn Fn() + Send + Sync>>);
+
+impl fmt::Debug for Wake
+{
+    /// Writes whether a wake is set.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_tuple("Wake").field(&self.0.is_some()).finish()
+    }
 }
 
 impl<'pool, Slot, Key, Output> Generations<'pool, Slot, Key, Output>
@@ -271,6 +323,35 @@ where
             running: 0,
             sender,
             receiver,
+            wake: Wake(None),
+        }
+    }
+
+    /// No slot, no job, on `pool`, each job's end waking `wake` once it can
+    /// be received.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Generations::new`], holding `wake`; every job submitted
+    ///   later calls `wake` once after its end is sent, so a
+    ///   [`Generations::ready`] the wake prompts receives it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an owner that sleeps until woken receives every
+    ///   delivery it is woken for.
+    /// - witness: `generation::tests::a_woken_owner_finds_the_end_ready`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.current.is_empty() && ret.running == 0 && ret.wake.0.is_some())]
+    pub fn waking(
+        pool: &'pool Pool,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self
+    {
+        Self {
+            wake: Wake(Some(wake)),
+            ..Self::new(pool)
         }
     }
 
@@ -326,6 +407,7 @@ where
             previous.retired.store(true, Ordering::Release);
         }
         let sender = self.sender.clone();
+        let wake = self.wake.clone();
         let run = move || {
             let ended = std::panic::catch_unwind(AssertUnwindSafe(|| job(&watch)))
                 .map_or_else(Ended::Panicked, |ran| {
@@ -338,6 +420,9 @@ where
                 generation,
                 ended,
             }));
+            if let Wake(Some(ref wake)) = wake {
+                wake();
+            }
         };
         self.running = self.running.saturating_add(1);
         match self.pool.standing() {
@@ -345,6 +430,31 @@ where
             Maybe::Absent(_) => run(),
         }
         Submitted::Started
+    }
+
+    /// Retire `slot`'s current generation, submitting nothing in its place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot has no current generation; its last job's [`Watch`]
+    ///   answers [`Retired`] from now on, and its result is never delivered. A
+    ///   slot with no generation is left as it is.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a retired slot's running job stops and delivers
+    ///   nothing, beside another slot's delivery.
+    /// - witness: `generation::tests::a_retired_slot_delivers_nothing`
+    #[inline]
+    #[spec(ensures: !self.current.contains_key(slot))]
+    pub fn retire(
+        &mut self,
+        slot: &Slot,
+    )
+    {
+        if let Some(current) = self.current.remove(slot) {
+            current.retired.store(true, Ordering::Release);
+        }
     }
 
     /// The next result whose generation is still current, waiting for the
@@ -462,6 +572,8 @@ mod tests
     use core::sync::atomic::Ordering;
     use std::sync::mpsc;
 
+    use gandr_core_checker::Demand;
+    use gandr_core_checker::Retirement;
     use quenchant_shape::shape::Maybe;
 
     use super::Delivered;
@@ -635,5 +747,64 @@ mod tests
         generations.submit("a", 1, |_| panic!("the job's own panic"));
         let answer = generations.wait();
         panic!("delivery answered {answer:?} past the job's panic");
+    }
+
+    /// #1547: an owner that sleeps until a job's wake finds the job's end
+    /// ready, so a loop woken by an admission never misses its delivery.
+    #[test]
+    fn a_woken_owner_finds_the_end_ready()
+    {
+        let pool = four();
+        let (woke, woken) = mpsc::channel();
+        let mut generations: Generations<'_, u32, u32, u32> = Generations::waking(
+            &pool,
+            Arc::new(move || {
+                let _sent = woke.send(());
+            }),
+        );
+        for job in 0_u32 .. 64_u32 {
+            let _started = generations.submit(job, job, move |_| Ok(job));
+            woken.recv().unwrap();
+            assert_eq!(
+                delivered(generations.ready()),
+                Delivered {
+                    slot: job,
+                    key: job,
+                    output: job,
+                },
+                "the woken owner receives the end at once"
+            );
+        }
+    }
+
+    /// #1547: a slot retired with nothing in its place stops its running job
+    /// and delivers nothing, while another slot's result is delivered.
+    #[test]
+    fn a_retired_slot_delivers_nothing()
+    {
+        let pool = four();
+        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let (started, began) = mpsc::channel();
+        let _first = generations.submit("a", 1, move |watch| {
+            started.send(()).unwrap();
+            loop {
+                if let Demand::Retired(retired) = Retirement::demand(watch) {
+                    return Err(retired);
+                }
+                std::thread::yield_now();
+            }
+        });
+        began.recv().unwrap();
+        let _second = generations.submit("b", 1, |_| Ok(2));
+        generations.retire(&"a");
+        assert_eq!(delivered(generations.wait()), Delivered {
+            slot: "b",
+            key: 1,
+            output: 2,
+        });
+        assert!(
+            matches!(generations.wait(), Maybe::Absent(delivery::Absent::Idle)),
+            "the retired slot's job stopped and delivered nothing"
+        );
     }
 }

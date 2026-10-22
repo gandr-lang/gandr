@@ -333,6 +333,35 @@ impl Deadlines
         }
     }
 
+    /// Disarm the deadline of each document a line of `log`, settled after its
+    /// synchronisation, names that holds nothing back now.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no document whose line holds nothing has a deadline; every
+    ///   other deadline is kept as it was, never re-armed.
+    /// - provides: the deadline of a document whose admission's correction
+    ///   replaced what its publication held back.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Deadlines::note`].
+    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    #[spec(ensures: log.iter().all(|logged| logged.holding().0 || !self.0.contains_key(logged.uri())))]
+    #[inline]
+    pub fn settled(
+        &mut self,
+        log: &[Logged],
+    )
+    {
+        for logged in log {
+            if !logged.holding().0 {
+                let _disarmed = self.0.remove(logged.uri());
+            }
+        }
+    }
+
     /// The earliest deadline, when one is armed.
     ///
     /// # Specification
@@ -396,6 +425,9 @@ pub enum Met<'later>
     /// Another connection kept a checked fill of a document this connection
     /// holds a copy of.
     Proposed,
+    /// A kernel admission the loop's connection started ended, and waits to
+    /// be settled.
+    Admitted,
     /// The client's stream closed at a frame boundary.
     Closed,
 }
@@ -412,6 +444,8 @@ enum Read
     Edited(Vec<PathBuf>),
     /// A checked fill of a document the loop's connection holds was kept.
     Proposed,
+    /// An admission the loop's connection started ended.
+    Admitted,
     /// The stream closed at a frame boundary.
     Closed,
     /// The stream failed.
@@ -437,7 +471,7 @@ fn queue(
     read: Read,
     queued: &mut VecDeque<Classified>,
     (changed, edited): (&mut BTreeSet<PathBuf>, &mut BTreeSet<PathBuf>),
-    proposed: &mut Proposed,
+    (proposed, admitted): (&mut Proposed, &mut Woken),
 ) -> Option<End>
 {
     match read {
@@ -457,6 +491,10 @@ fn queue(
             *proposed = Proposed(true);
             None
         },
+        Read::Admitted => {
+            *admitted = Woken(true);
+            None
+        },
         Read::Closed => Some(End::Closed),
         Read::Fault(fault) => Some(End::Fault(fault)),
     }
@@ -466,6 +504,11 @@ fn queue(
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Proposed(bool);
+
+/// Whether an admission ended since the loop last said so.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Woken(bool);
 
 /// Where a paced loop takes what it meets: its reader's messages and a
 /// watch's changes.
@@ -551,6 +594,17 @@ impl Changes
     {
         let _sent = self.0.send(Read::Proposed);
     }
+
+    /// Tell the loop an admission its connection started ended; nothing once
+    /// the loop ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn admitted(&self)
+    {
+        let _sent = self.0.send(Read::Admitted);
+    }
 }
 
 /// Serve `input` through `visit`: each message read, each deadline passed,
@@ -567,12 +621,13 @@ impl Changes
 ///   repeats, and handed to `visit` as [`Met::Changed`] before the next
 ///   message, the files another connection's editor changed as [`Met::Edited`]
 ///   after them, and the fills another connection kept as one [`Met::Proposed`]
-///   after those; while nothing waits, each document whose deadline in the
-///   [`Deadlines`] `visit` arms passes is handed to `visit` as [`Met::Quiet`],
-///   disarmed; a stream closed at a frame boundary, or ended by `exit`, is
-///   [`Met::Closed`] once every message before it was handed over, whether or
-///   not a watch still holds a handle. The first break `visit` returns is
-///   returned.
+///   after those, and the admissions its connection started that ended, through
+///   [`Changes::admitted`], as one [`Met::Admitted`] after that; while nothing
+///   waits, each document whose deadline in the [`Deadlines`] `visit` arms
+///   passes is handed to `visit` as [`Met::Quiet`], disarmed; a stream closed
+///   at a frame boundary, or ended by `exit`, is [`Met::Closed`] once every
+///   message before it was handed over, whether or not a watch still holds a
+///   handle. The first break `visit` returns is returned.
 /// - provides: the loop of [`crate::serve`] and of each hub connection, the
 ///   later messages a request is withdrawn by, and the hub's watch's way in.
 /// - fails: the first [`TransportFault`] of the stream, once every message
@@ -639,12 +694,14 @@ where
         let mut changed: BTreeSet<PathBuf> = BTreeSet::new();
         let mut edited: BTreeSet<PathBuf> = BTreeSet::new();
         let mut proposed = Proposed::default();
+        let mut admitted = Woken::default();
         let mut end: Option<End> = None;
         loop {
             if queued.is_empty()
                 && changed.is_empty()
                 && edited.is_empty()
                 && proposed == Proposed(false)
+                && admitted == Woken(false)
                 && end.is_none()
             {
                 loop {
@@ -664,7 +721,7 @@ where
                                 frame,
                                 &mut queued,
                                 (&mut changed, &mut edited),
-                                &mut proposed,
+                                (&mut proposed, &mut admitted),
                             );
                             break;
                         },
@@ -684,15 +741,18 @@ where
                     }
                 }
             }
-            while end.is_none()
-                && let Ok(frame) = frames.try_recv()
-            {
-                end = queue(
+            // What a watch or an admission hands over after the stream's end
+            // is read too, so an admission that ended is settled before the
+            // frames still queued.
+            while let Ok(frame) = frames.try_recv() {
+                if let Some(ended) = queue(
                     frame,
                     &mut queued,
                     (&mut changed, &mut edited),
-                    &mut proposed,
-                );
+                    (&mut proposed, &mut admitted),
+                ) {
+                    let _first = end.get_or_insert(ended);
+                }
             }
             if !changed.is_empty() {
                 let paths: Vec<PathBuf> = core::mem::take(&mut changed).into_iter().collect();
@@ -711,6 +771,13 @@ where
             if proposed == Proposed(true) {
                 proposed = Proposed(false);
                 if let ControlFlow::Break(ended) = visit(Met::Proposed, &mut deadlines)? {
+                    return Ok(ended);
+                }
+                continue;
+            }
+            if admitted == Woken(true) {
+                admitted = Woken(false);
+                if let ControlFlow::Break(ended) = visit(Met::Admitted, &mut deadlines)? {
                     return Ok(ended);
                 }
                 continue;
@@ -773,6 +840,7 @@ pub mod tests
                 super::Read::Message(_)
                 | super::Read::Edited(_)
                 | super::Read::Proposed
+                | super::Read::Admitted
                 | super::Read::Closed
                 | super::Read::Fault(_) => None,
             })
@@ -984,7 +1052,8 @@ pub mod tests
                 super::Met::Quiet(_)
                 | super::Met::Changed(_)
                 | super::Met::Edited(_)
-                | super::Met::Proposed => core::ops::ControlFlow::Continue(()),
+                | super::Met::Proposed
+                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break("closed"),
             })
         })
@@ -1031,7 +1100,8 @@ pub mod tests
                 super::Met::Quiet(_)
                 | super::Met::Changed(_)
                 | super::Met::Edited(_)
-                | super::Met::Proposed => core::ops::ControlFlow::Continue(()),
+                | super::Met::Proposed
+                | super::Met::Admitted => core::ops::ControlFlow::Continue(()),
                 super::Met::Closed => core::ops::ControlFlow::Break(()),
             })
         })

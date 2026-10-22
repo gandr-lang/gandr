@@ -6,8 +6,9 @@
 //! molds only the forms it touched; its report is the dispatcher's
 //! composition of the whole text, which is what `gandr check` prints for it.
 //! The diagnostics are read off the judgement, before the kernel is offered
-//! the revision; [`admit`] runs the admission afterwards and names a kernel
-//! disagreement, should it find one, as the diagnostic that replaces them.
+//! the revision; [`admission`] takes the admission afterwards, and [`settle`]
+//! names a kernel disagreement, should it find one, as the diagnostic that
+//! replaces them.
 //!
 //! # Every synchronisation judges the document, publishes, then admits
 //!
@@ -19,44 +20,45 @@
 //! takes up every top-level form the change left unchanged and molds the rest,
 //! and its judgement is the dispatcher's composition of the whole text, so the
 //! published diagnostics are what `gandr check` prints for it. Once the
-//! diagnostics are written, `serve` asks `Server::admit` to run the kernel
-//! admission the judgement left, so the client reads the reports before the
-//! kernel has re-derived the revision's acceptances. A disagreement the
-//! admission finds is published at the document's version in place of the
-//! reports, as one error at the origin naming the fault. A token request reads
-//! the text's one [`Reading`](crate::reading::Reading), which parses it again
-//! once per change.
+//! diagnostics are written, `serve` asks `Server::admit` to start the kernel
+//! admission the judgement left on the driver's pool, and reads the next frame
+//! while the kernel re-derives the revision's acceptances. A later revision of
+//! the document retires the admission before its next declaration; what it
+//! crossed is kept in the process's closure store, and the next admission
+//! resumes from it. An admission that ended settles into the document's
+//! session on the serving thread before the next frame, and a disagreement it
+//! finds is published at the document's version in place of the reports, as
+//! one error at the origin naming the fault. A token request reads the text's
+//! one [`Reading`](crate::reading::Reading), which parses it again once per
+//! change.
 //!
 //! **The log.** Each synchronisation writes one line to the log `serve` is
 //! given — `<uri> at version <n>: <molded>/<forms> forms molded,
 //! <judged>/<items> items judged, <wall> ms, admitted in <wall> ms,
 //! <crossed>/<declarations> declarations crossed` — naming the forms the parse
 //! molded, the items the incremental checker judged, the recheck's wall from
-//! the judgement to the diagnostics, the admission's wall after them, and the
-//! declarations the admission offered the kernel again, the rest resumed from
-//! the readmission of the document's import closure; a document refused whole
-//! has nothing to admit, and its line ends at the recheck's wall. A line the
-//! log refuses is dropped; the protocol never depends on it. Over a generated
-//! document of two thousand forms, one edit molds one to eight forms and
-//! publishes what opening the edited text publishes; an edit to a document's
-//! own text after the first offers the kernel its own declarations alone.
+//! the judgement to the diagnostics, the admission's wall, and the declarations
+//! the admission offered the kernel again, the rest resumed from a readmission
+//! the process holds; the line is written once its admission settles. A
+//! document refused whole has nothing to admit, and its line ends at the
+//! recheck's wall; a synchronisation whose admission a later revision retired
+//! ends `, admission retired`. A line the log refuses is dropped; the protocol
+//! never depends on it. Over a generated document of two thousand forms, one
+//! edit molds one to eight forms and publishes what opening the edited text
+//! publishes; an edit to a document's own text after the first offers the
+//! kernel its own declarations alone.
 //!
 //! **Alternatives.** Full synchronisation alone ships the whole buffer per
 //! keystroke and leaves the session nothing a change names; it stays as the
 //! change that names no range. The timing line could go to `window/logMessage`,
 //! which a client shows in its own channel, at the cost of a notification per
 //! change on the protocol stream; the server's log is where an operator reads
-//! it without touching the protocol. The admission runs on the serving thread
-//! after the publication, so it delays the next frame's read but never the
-//! diagnostics. Running it on a worker that the next change cancels would take
-//! it off the next keystroke too, at the cost of a session shared across
-//! threads.
+//! it without touching the protocol.
 //!
 //! **Reversal.** A client sending many small changes per notification, measured
 //! paying a line index per change, would batch them into one pass over the
 //! text; a client that reads only the protocol stream moves the timing line to
-//! `window/logMessage`; a measured wait of the next change on the admission
-//! moves the admission to a cancellable worker.
+//! `window/logMessage`.
 //!
 //! # Diagnostics are the model's
 //!
@@ -163,6 +165,8 @@ use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::Polled;
+use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
@@ -183,8 +187,10 @@ use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::ClosureSlot;
+use gandr_surface_session::Detached;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::Laying;
+use gandr_surface_session::Ran;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
 use gandr_surface_session::Submission;
@@ -372,7 +378,7 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
 ///
 /// # Specification
 /// - requires: constructed by [`recheck`], its admission's wall added by
-///   [`admit`].
+///   [`settle`].
 /// - ensures: names the census and the walls of one synchronisation.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; the recheck and
@@ -441,6 +447,9 @@ quenchant_shape::reason_enum! {
             /// The kernel did not re-derive a declaration the checker
             /// accepted, and the admission exported nothing.
             Disagreed,
+            /// A later revision of the document retired the admission before
+            /// it ended; the next one resumes from what it crossed.
+            Retired,
         }
     }
 }
@@ -453,8 +462,9 @@ impl fmt::Display for Timing
     /// - requires: nothing.
     /// - ensures: `<molded>/<forms> forms molded, <judged>/<items> items
     ///   judged, <wall> ms`, the judgement replaced by why none was made, then
-    ///   `, admitted in <wall> ms` when the admission ran and `,
-    ///   <crossed>/<judged> declarations crossed` when it exported.
+    ///   `, admitted in <wall> ms` when the admission ran, `, admission
+    ///   retired` when a later revision retired it, and `, <crossed>/<judged>
+    ///   declarations crossed` when it exported.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither its written bytes nor
     ///   its sink's failure state.
@@ -494,6 +504,7 @@ impl fmt::Display for Timing
                     wall.as_secs_f64() * 1_000.0_f64
                 )?;
             },
+            Maybe::Absent(admitted::Absent::Retired) => f.write_str(", admission retired")?,
             Maybe::Absent(
                 admitted::Absent::Pending
                 | admitted::Absent::Unadmitted
@@ -507,6 +518,25 @@ impl fmt::Display for Timing
                 crossing.crossed, crossing.judged
             ),
             Maybe::Absent(_) => Ok(()),
+        }
+    }
+}
+
+impl Timing
+{
+    /// The timing of a synchronisation whose admission a later revision
+    /// retired before it ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn retired(self) -> Self
+    {
+        Self {
+            admitted: Maybe::Absent(admitted::Absent::Retired),
+            crossed: Maybe::Absent(admitted::Absent::Retired),
+            ..self
         }
     }
 }
@@ -762,19 +792,174 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// Run the admission the document's latest recheck left in its `session`.
+/// A rechecked document's kernel admission, taken off its session to run on
+/// a pool thread, with the timing of the recheck that left it.
+///
+/// # Specification
+/// - requires: constructed by [`admission`].
+/// - ensures: the timing is the recheck's, its admission pending.
+/// - panics: none.
+/// - executable: none — a carrier; [`Admitting::run`] and [`settle`] carry the
+///   executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`settle`].
+/// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
+#[derive(Debug)]
+pub struct Admitting
+{
+    /// The admission, off its session.
+    detached: Detached,
+    /// The recheck's timing.
+    timing: Timing,
+}
+
+/// An admission that ran whole, to settle into its document's session.
+///
+/// # Specification
+/// - requires: constructed by [`Admitting::run`].
+/// - ensures: carries the run's wall beside what it made.
+/// - panics: none.
+/// - executable: none — a carrier; [`settle`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`settle`].
+/// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
+#[derive(Debug)]
+pub struct Finished
+{
+    /// What the admission made.
+    ran: Ran,
+    /// The recheck's timing.
+    timing: Timing,
+    /// How long the run took.
+    wall: Duration,
+}
+
+/// Take the admission the document's latest recheck left in its `session`.
 ///
 /// # Specification
 /// - requires: `timing` is the timing of the recheck that judged the session's
 ///   latest revision.
-/// - ensures: when the recheck left an admission pending, it runs, and the
-///   timing carries its wall and, when it exported, how many declarations it
-///   offered the kernel of those judged; a kernel disagreement is one error at
-///   the origin naming the fault `submit` would have reported, to publish in
-///   place of the recheck's diagnostics. Otherwise nothing runs and the timing
-///   is returned as it was.
-/// - provides: the second half of every synchronisation, run after its
-///   diagnostics are published.
+/// - ensures: when the recheck left an admission pending and the session holds
+///   it, [`Taken::Running`] with `timing`, the session holding none after; when
+///   it left one pending and the session holds none, [`Taken::Unrun`] with
+///   `timing`, nothing admitted; otherwise [`Taken::Unrun`] with `timing` as it
+///   was.
+/// - provides: the first half of every admission, on the serving thread.
+/// - fails: never; nothing to run is [`Taken::Unrun`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`settle`].
+/// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
+#[spec(ensures: |ret| match ret {
+    Taken::Running(ref admitting) => admitting.timing == timing,
+    Taken::Unrun(ref unrun) => unrun.forms == timing.forms && unrun.judged == timing.judged
+        && unrun.wall == timing.wall
+        && !matches!(unrun.admitted, Maybe::Absent(admitted::Absent::Pending)),
+})]
+pub fn admission(
+    session: &mut DocumentSession,
+    timing: Timing,
+) -> Taken
+{
+    let (&mut Ok(ref mut session), Maybe::Absent(admitted::Absent::Pending)) =
+        (session, timing.admitted)
+    else {
+        return Taken::Unrun(Timing {
+            admitted: match timing.admitted {
+                Maybe::Absent(admitted::Absent::Pending) => {
+                    Maybe::Absent(admitted::Absent::Unadmitted)
+                },
+                admitted @ (Maybe::Present(_) | Maybe::Absent(_)) => admitted,
+            },
+            ..timing
+        });
+    };
+    match session.admission() {
+        Maybe::Present(detached) => Taken::Running(Admitting { detached, timing }),
+        Maybe::Absent(_) => Taken::Unrun(Timing {
+            admitted: Maybe::Absent(admitted::Absent::Unadmitted),
+            crossed: Maybe::Absent(admitted::Absent::Unadmitted),
+            ..timing
+        }),
+    }
+}
+
+/// What taking a recheck's admission found: the admission to run, or the
+/// timing to log because there is none.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per synchronisation, matched at once and moved into its job; boxing the \
+              admission would allocate per keystroke beside the job's own to shrink the timing"
+)]
+#[derive(Debug)]
+pub enum Taken
+{
+    /// The admission, off its session.
+    Running(Admitting),
+    /// Nothing to run; the line's timing as it stands.
+    Unrun(Timing),
+}
+
+impl Admitting
+{
+    /// Run the admission, polling `retirement` before each declaration it
+    /// offers the kernel.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Detached::run`], the whole run carrying its wall.
+    /// - provides: the half of an admission that runs on a pool thread while
+    ///   the server reads the next frame.
+    /// - fails: never; a disagreement is in the answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change during an admission retires it at its next
+    ///   declaration, and the next admission resumes from what it crossed.
+    /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+    #[inline]
+    #[spec(
+        captures: [timing = self.timing],
+        ensures: |ret| match ret {
+            Polled::Whole(ref finished) => finished.timing == timing,
+            Polled::Retired(..) => true,
+        },
+    )]
+    pub fn run<Poll>(
+        self,
+        retirement: &Poll,
+    ) -> Polled<Finished, Poll::Retired, ()>
+    where
+        Poll: Retirement,
+    {
+        let started = Instant::now();
+        match self.detached.run(retirement) {
+            Polled::Whole(ran) => Polled::Whole(Finished {
+                ran,
+                timing: self.timing,
+                wall: started.elapsed(),
+            }),
+            Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+        }
+    }
+}
+
+/// Settle `finished` into the document's `session`, the admission its latest
+/// recheck left.
+///
+/// # Specification
+/// - requires: `finished` ran the admission [`admission`] took from `session`,
+///   and no later recheck replaced the revision it judged.
+/// - ensures: the timing carries the admission's wall, the run's and the
+///   settling's, and, when it exported, how many declarations it offered the
+///   kernel of those judged; a kernel disagreement is one error at the origin
+///   naming the fault `submit` would have reported, to publish in place of the
+///   recheck's diagnostics.
+/// - provides: the second half of every synchronisation, run once its admission
+///   ended.
 /// - fails: never; a disagreement is a diagnostic.
 /// - panics: none.
 ///
@@ -786,53 +971,50 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
 /// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
-#[spec(ensures: |ret| ret.timing.forms == timing.forms && ret.timing.judged == timing.judged
-    && ret.timing.wall == timing.wall
-    && match timing.admitted {
-        Maybe::Absent(admitted::Absent::Pending) => matches!(ret.timing.admitted, Maybe::Present(_)),
-        Maybe::Present(_) | Maybe::Absent(admitted::Absent::Unadmitted | admitted::Absent::Disagreed) =>
-            ret.timing.admitted == timing.admitted && ret.timing.crossed == timing.crossed
-                && matches!(ret.fault, Maybe::Absent(_)),
-    })]
+#[spec(
+    captures: before = finished.timing,
+    ensures: |ret| ret.timing.forms == before.forms
+        && ret.timing.judged == before.judged
+        && ret.timing.wall == before.wall
+        && matches!(ret.timing.admitted, Maybe::Present(_)),
+)]
 #[must_use]
-pub fn admit(
+pub fn settle(
     session: &mut DocumentSession,
-    timing: Timing,
+    finished: Finished,
 ) -> Admitted
 {
-    let unchanged = Admitted {
-        fault: Maybe::Absent(agreed::Absent::Agreed),
-        timing,
-    };
-    let (&mut Ok(ref mut session), Maybe::Absent(admitted::Absent::Pending)) =
-        (session, timing.admitted)
-    else {
-        return unchanged;
-    };
+    let Finished { ran, timing, wall } = finished;
     let started = Instant::now();
-    let (fault, crossed) = match session.admit() {
-        Ok(Maybe::Present(admitted)) => (
-            Maybe::Absent(agreed::Absent::Agreed),
-            Maybe::Present(Crossing {
-                crossed: usize::from(admitted.crossed()),
-                judged: usize::from(admitted.judged()),
-            }),
-        ),
-        Ok(Maybe::Absent(_)) => (
+    let (fault, crossed) = session.as_mut().map_or(
+        (
             Maybe::Absent(agreed::Absent::Agreed),
             Maybe::Absent(admitted::Absent::Unadmitted),
         ),
-        Err(disagreement) => (
-            Maybe::Present(Diagnostic::at_origin(
-                SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
-            )),
-            Maybe::Absent(admitted::Absent::Disagreed),
-        ),
-    };
+        |session| match session.settle(ran) {
+            Ok(Maybe::Present(admitted)) => (
+                Maybe::Absent(agreed::Absent::Agreed),
+                Maybe::Present(Crossing {
+                    crossed: usize::from(admitted.crossed()),
+                    judged: usize::from(admitted.judged()),
+                }),
+            ),
+            Ok(Maybe::Absent(_)) => (
+                Maybe::Absent(agreed::Absent::Agreed),
+                Maybe::Absent(admitted::Absent::Unadmitted),
+            ),
+            Err(disagreement) => (
+                Maybe::Present(Diagnostic::at_origin(
+                    SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
+                )),
+                Maybe::Absent(admitted::Absent::Disagreed),
+            ),
+        },
+    );
     Admitted {
         fault,
         timing: Timing {
-            admitted: Maybe::Present(started.elapsed()),
+            admitted: Maybe::Present(wall.saturating_add(started.elapsed())),
             crossed,
             ..timing
         },
@@ -1315,11 +1497,12 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Reached;
-    use super::admit;
+    use super::admission;
     use super::admitted;
     use super::grammar;
     use super::open;
     use super::recheck;
+    use super::settle;
     use super::toolkit;
     use super::trial;
     use crate::position::Character;
@@ -2000,7 +2183,14 @@ mod tests
             Maybe::Absent(admitted::Absent::Pending),
             "the diagnostics exist before the kernel is offered the revision"
         );
-        let admission = admit(&mut session, rechecked.timing);
+        let super::Taken::Running(admitting) = admission(&mut session, rechecked.timing)
+        else {
+            panic!("the recheck left its admission");
+        };
+        let admission = settle(
+            &mut session,
+            admitting.run(&gandr_surface_dispatcher::Unretired).whole(),
+        );
         assert!(
             matches!(admission.fault, Maybe::Absent(_)),
             "the kernel agrees"
@@ -2019,9 +2209,9 @@ mod tests
             ),
             "the admission adds its wall and keeps the recheck's"
         );
-        assert_eq!(
-            admit(&mut session, admission.timing).timing,
-            admission.timing,
+        assert!(
+            matches!(super::admission(&mut session, admission.timing),
+                super::Taken::Unrun(unrun) if unrun == admission.timing),
             "an admitted synchronisation is not admitted again"
         );
         let refused = recheck(
@@ -2038,7 +2228,8 @@ mod tests
             Maybe::Absent(admitted::Absent::Unadmitted),
             "a revision refused whole leaves nothing to admit"
         );
-        assert_eq!(admit(&mut session, refused.timing).timing, refused.timing);
+        assert!(matches!(super::admission(&mut session, refused.timing),
+            super::Taken::Unrun(unrun) if unrun == refused.timing));
     }
 
     #[test]
