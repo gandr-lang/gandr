@@ -1,17 +1,18 @@
 //! The faces that claim the process's terminal, each run as a child test of
 //! this binary on a pseudo-terminal: `script` gives the child one, and the
 //! parent types its keys once the face has entered the alternate screen, which
-//! it does after the terminal is raw.
+//! it does after the terminal is raw. Linux's `script` is util-linux's, and
+//! macOS's is the BSD one, which spells the child differently ([`script`]).
 
 use std::io::IsTerminal as _;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::io::Read as _;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::io::Write as _;
 use std::process::Command;
 use std::process::Stdio;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use anodized::spec;
 use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_repl::Ended;
@@ -20,19 +21,19 @@ use gandr_surface_tui::Heard;
 use gandr_surface_tui::follow;
 
 /// The escape sequence a face writes on entering the alternate screen.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const ALTERNATE_SCREEN: &[u8] = b"\x1b[?1049h";
 
 /// One test of this binary, by its path.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 struct Child(&'static str);
 
 /// The bytes typed on the child's terminal once its face is up.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 struct Keys(&'static [u8]);
 
 /// The terminal's settings, as `stty -g` prints them.
@@ -79,12 +80,61 @@ fn the_side_view_completes_and_restores_its_settings()
     assert_eq!(Following::default().hear(&frame), Heard::Detached);
 }
 
+/// util-linux's `script`, set to run `child` of this binary on a fresh
+/// pseudo-terminal, keeping no typescript and exiting with the child's status
+/// (`--return`). It takes the child as one shell command after `--command`,
+/// before the typescript's file.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+fn script(child: Child) -> Command
+{
+    let binary = std::env::current_exe().expect("the test binary is named");
+    let command = format!(
+        "'{}' --exact {} --ignored --test-threads=1 --color=never",
+        binary.display(),
+        child.0
+    );
+    let mut script = Command::new("script");
+    let _set = script.args([
+        "--quiet",
+        "--return",
+        "--command",
+        command.as_str(),
+        "/dev/null",
+    ]);
+    script
+}
+
+/// The BSD `script` macOS ships, set to run `child` of this binary on a fresh
+/// pseudo-terminal, keeping no typescript. It takes the child as the words
+/// after the typescript's file, run without a shell, and always exits with the
+/// child's status.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "macos")]
+fn script(child: Child) -> Command
+{
+    let binary = std::env::current_exe().expect("the test binary is named");
+    let mut script = Command::new("script");
+    let _set = script.args(["-q", "/dev/null"]).arg(binary).args([
+        "--exact",
+        child.0,
+        "--ignored",
+        "--test-threads=1",
+        "--color=never",
+    ]);
+    script
+}
+
 /// What the test harness reports when `child` runs on a pseudo-terminal and
 /// `keys` are typed once the face has entered the alternate screen.
 ///
 /// # Specification
-/// - requires: `script` from util-linux is on the path; the test binary can be
-///   started again.
+/// - requires: `script` is on the path, util-linux's on Linux and the BSD one
+///   on macOS; the test binary can be started again.
 /// - ensures: the child's whole terminal output, escape sequences included,
 ///   holding the harness's report of the one test it ran.
 /// - provides: the pseudo-terminal observer of the faces that claim a terminal.
@@ -98,27 +148,14 @@ fn the_side_view_completes_and_restores_its_settings()
 ///   completed; a lost key leaves the run waiting and a wrong ending fails it.
 /// - witness: `tests::terminal::the_terminal_face_reads_its_keys_and_restores_a_terminal`
 /// - witness: `tests::terminal::the_side_view_claims_and_restores_a_terminal`
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[spec(ensures: |ref ret| ret.contains("1 passed"))]
 fn on_a_terminal(
     child: Child,
     keys: Keys,
 ) -> String
 {
-    let binary = std::env::current_exe().expect("the test binary is named");
-    let command = format!(
-        "'{}' --exact {} --ignored --test-threads=1 --color=never",
-        binary.display(),
-        child.0
-    );
-    let mut script = Command::new("script")
-        .args([
-            "--quiet",
-            "--return",
-            "--command",
-            command.as_str(),
-            "/dev/null",
-        ])
+    let mut script = script(child)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -160,7 +197,7 @@ fn on_a_terminal(
 /// The terminal face claims a real terminal: keys typed on it reach the loop
 /// through the keyboard, `:quit` ends the run completed, and the terminal's
 /// settings are restored.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_terminal_face_reads_its_keys_and_restores_a_terminal()
 {
@@ -177,7 +214,7 @@ fn the_terminal_face_reads_its_keys_and_restores_a_terminal()
 
 /// The side view claims a real terminal, completes when the hub's stream
 /// ends, detaches, and restores the terminal's settings.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn the_side_view_claims_and_restores_a_terminal()
 {
