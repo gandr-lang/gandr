@@ -1,0 +1,3 @@
+/// `OutOfFragment.Unannotated`: a form out of the fragment: the form needs a type the source does not state.
+@[ refuses("OutOfFragment.Unannotated") ]
+def unstated = +{.err = "no"} ;

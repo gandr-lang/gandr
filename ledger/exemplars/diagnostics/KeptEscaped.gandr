@@ -1,0 +1,5 @@
+/// `KeptEscaped`: a capability scope's answer naming a value kept in the scope's region.
+@[ refuses("KeptEscaped") ]
+def stash @[r : Region] (k : (() => Integer) at r) -> -F (() => Integer) {
+  pure thunk { force k }
+}

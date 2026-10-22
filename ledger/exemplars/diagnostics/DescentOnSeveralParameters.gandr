@@ -1,0 +1,17 @@
+/// `DescentOnSeveralParameters`: a recursive definition whose claims descend on two parameters.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("DescentOnSeveralParameters") ]
+def rec both(m : Nat, n : Nat) -> -F Nat {
+  case m {
+    Zero => case n {
+      Zero => Zero,
+      Succ(q) => both[<](m, q)
+    },
+    Succ(p) => both[<](p, n)
+  }
+}

@@ -1,0 +1,6 @@
+/// `UndescribedMember.OperationFiller`: a member the description does not read: an operation written with a circuit body.
+@[ refuses("UndescribedMember.OperationFiller") ]
+oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
+  node : zip(stream, state) --> (next, out2);
+  feed : (next) --> (state);
+}

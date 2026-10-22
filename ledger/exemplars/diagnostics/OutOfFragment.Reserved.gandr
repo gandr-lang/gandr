@@ -1,0 +1,14 @@
+/// `OutOfFragment.Reserved`: a form parsed so it can be declined by name: a recursive call claiming both descent and productivity.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
+def rec both(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become both[<, >](p)
+  }
+}

@@ -1,0 +1,6 @@
+/// `OutOfFragment.NonContractive`: a form out of the fragment: the form is a `mu` whose body is a `mu` or a recursion variable, so the protocol recurses before any action.
+@[ refuses("OutOfFragment.NonContractive") ]
+def recursion_before_any_action() -> -F Unit {
+  fork (seat : mu turn. turn) { close(seat) } as desk;
+  close(desk)
+}

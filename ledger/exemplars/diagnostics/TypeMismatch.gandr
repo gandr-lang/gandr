@@ -1,0 +1,3 @@
+/// `TypeMismatch`: a synthesised type that does not convert to the expected one.
+@[ refuses("TypeMismatch") ]
+def mixed = ([1, "two"] : List(Integer));

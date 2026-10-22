@@ -1,0 +1,6 @@
+/// `LinearResidue`: a half of a fork that finished with an endpoint unconsumed.
+@[ refuses("LinearResidue") ]
+def seat_left_open() -> -F Unit {
+  fork (seat : end) { pure unit } as desk;
+  close(desk)
+}

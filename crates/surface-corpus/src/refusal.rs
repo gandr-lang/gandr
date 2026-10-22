@@ -1034,6 +1034,40 @@ impl RefusalName
         Self::NotAHandle,
     ];
 
+    /// Every name no form qualifies: the vocabulary, in its order, then each
+    /// `OutOfFragment` name qualified by a named reading, each model
+    /// component's fault and each member's. A name qualified by a form is not
+    /// among them: the forms are the grammar's, and the syntax ledger lists
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the vocabulary first, in its order; then the named readings;
+    ///   no name twice.
+    /// - provides: the names the diagnostics ledger pairs with exemplars.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every name read back from its spelling is the name; a
+    ///   lost family or reading is a name the diagnostics ledger cannot pair.
+    /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+    #[spec(ensures: |ret| ret.starts_with(&Self::VOCABULARY) && ret.iter().enumerate().all(|(at, name)| !ret.get(.. at).is_some_and(|before| before.contains(name))))]
+    #[inline]
+    #[must_use]
+    pub fn closed() -> Vec<Self>
+    {
+        Self::VOCABULARY
+            .into_iter()
+            .chain(
+                readings()
+                    .into_iter()
+                    .map(|tag| Self::OutOfFragment(Qualifier::Named(tag))),
+            )
+            .chain(MODEL_FAULTS.map(|fault| Self::UnstatedComponent(model_tag(fault))))
+            .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
+            .collect()
+    }
+
     /// The name as a `refuses` payload spells it: the name of the variant it
     /// names, and the qualifier of one named by the feature it refuses.
     ///
@@ -1500,49 +1534,42 @@ impl RefusalName
             let (head, rest) = written.split_once('.')?;
             let tagged = |tags: &[Tag]| tags.iter().copied().find(|tag| tag.0 == rest);
             match head {
-                "OutOfFragment" => tagged(
-                    &crossed()
-                        .into_iter()
-                        .map(boundary_tag)
-                        .chain([RUN_TARGET])
-                        .chain(FORMERS.into_iter().map(former_tag))
-                        .collect::<Vec<Tag>>(),
-                )
-                .map(Qualifier::Named)
-                .or_else(|| {
-                    let (form, at) = rest
-                        .split_once('.')
-                        .map_or((rest, None), |(form, at)| (form, Some(at)));
-                    let form = TREE_SITTER_NAMED_KINDS
-                        .iter()
-                        .chain(PBG_ONLY_KINDS)
-                        .find(|&&kind| kind == form)
-                        .map(|&kind| FormName::from(NamedKind(kind)))?;
-                    at.map_or_else(
-                        || {
-                            (FragmentFeature::of(
-                                form,
-                                FragmentSort::Value,
-                                FragmentBoundary::Unadmitted,
-                            ) == FragmentFeature::Form(form))
-                            .then_some(Qualifier::Form(form))
-                        },
-                        |at| {
-                            SORTS
-                                .into_iter()
-                                .find(|&sort| {
-                                    sort_tag(sort).0 == at
-                                        && FragmentFeature::of(
-                                            form,
-                                            sort,
-                                            FragmentBoundary::Unadmitted,
-                                        ) == FragmentFeature::FormAt(form, sort)
-                                })
-                                .map(|sort| Qualifier::FormAt(form, sort_tag(sort)))
-                        },
-                    )
-                })
-                .map(Self::OutOfFragment),
+                "OutOfFragment" => tagged(&readings())
+                    .map(Qualifier::Named)
+                    .or_else(|| {
+                        let (form, at) = rest
+                            .split_once('.')
+                            .map_or((rest, None), |(form, at)| (form, Some(at)));
+                        let form = TREE_SITTER_NAMED_KINDS
+                            .iter()
+                            .chain(PBG_ONLY_KINDS)
+                            .find(|&&kind| kind == form)
+                            .map(|&kind| FormName::from(NamedKind(kind)))?;
+                        at.map_or_else(
+                            || {
+                                (FragmentFeature::of(
+                                    form,
+                                    FragmentSort::Value,
+                                    FragmentBoundary::Unadmitted,
+                                ) == FragmentFeature::Form(form))
+                                .then_some(Qualifier::Form(form))
+                            },
+                            |at| {
+                                SORTS
+                                    .into_iter()
+                                    .find(|&sort| {
+                                        sort_tag(sort).0 == at
+                                            && FragmentFeature::of(
+                                                form,
+                                                sort,
+                                                FragmentBoundary::Unadmitted,
+                                            ) == FragmentFeature::FormAt(form, sort)
+                                    })
+                                    .map(|sort| Qualifier::FormAt(form, sort_tag(sort)))
+                            },
+                        )
+                    })
+                    .map(Self::OutOfFragment),
                 "UnstatedComponent" => {
                     tagged(&MODEL_FAULTS.map(model_tag)).map(Self::UnstatedComponent)
                 },
@@ -1664,6 +1691,32 @@ fn crossed() -> [FragmentBoundary; 14_usize]
         FragmentBoundary::Held,
         FragmentBoundary::View,
     ]
+}
+
+/// The tags an `OutOfFragment` name is qualified by when no form qualifies it:
+/// each boundary a form crosses, the run target and each former the checker
+/// declines.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each crossed boundary's tag, in order, then the run target, then
+///   each former's tag.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every qualified spelling of these tags reads back as its
+///   name, and every closed name is among them; a lost tag is a name no payload
+///   spells.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+#[spec(ensures: |ret| ret.len() == crossed().len().saturating_add(1).saturating_add(FORMERS.len()) && ret.get(crossed().len()) == Some(&RUN_TARGET))]
+fn readings() -> Vec<Tag>
+{
+    crossed()
+        .into_iter()
+        .map(boundary_tag)
+        .chain([RUN_TARGET])
+        .chain(FORMERS.into_iter().map(former_tag))
+        .collect()
 }
 
 /// The qualifier of the feature a form out of the fragment refuses.
@@ -2756,8 +2809,10 @@ mod tests
         use super::MEMBER_FAULTS;
         use super::MODEL_FAULTS;
         use super::Qualifier;
+        use super::RUN_TARGET;
         use super::Refusal;
         use super::SORTS;
+        use super::boundary_tag;
         use super::crossed;
         use super::former_tag;
         use super::member_tag;
@@ -2787,11 +2842,24 @@ mod tests
                 }
             }
         }
-        minted.extend(
-            FORMERS.map(|former| RefusalName::OutOfFragment(Qualifier::Named(former_tag(former)))),
-        );
-        minted.extend(MODEL_FAULTS.map(|fault| RefusalName::UnstatedComponent(model_tag(fault))));
-        minted.extend(MEMBER_FAULTS.map(|fault| RefusalName::UndescribedMember(member_tag(fault))));
+        let closed: alloc::collections::BTreeSet<RefusalName> =
+            RefusalName::closed().into_iter().collect();
+        let families = FORMERS
+            .map(|former| RefusalName::OutOfFragment(Qualifier::Named(former_tag(former))))
+            .into_iter()
+            .chain(MODEL_FAULTS.map(|fault| RefusalName::UnstatedComponent(model_tag(fault))))
+            .chain(MEMBER_FAULTS.map(|fault| RefusalName::UndescribedMember(member_tag(fault))))
+            .chain(
+                crossed()
+                    .into_iter()
+                    .map(boundary_tag)
+                    .chain([RUN_TARGET])
+                    .map(|tag| RefusalName::OutOfFragment(Qualifier::Named(tag))),
+            );
+        for name in families {
+            assert!(closed.contains(&name), "the closed names hold {name}");
+        }
+        minted.extend(RefusalName::closed());
         let literals: alloc::vec::Vec<StringLiteral> = minted
             .iter()
             .map(|name| StringLiteral::new(name.to_string()))

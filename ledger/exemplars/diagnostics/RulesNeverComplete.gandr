@@ -1,0 +1,10 @@
+/// `RulesNeverComplete`: two rules of a block whose completion never ends.
+@[ refuses("RulesNeverComplete") ]
+theory Extrusion {
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : Proc) --> Proc;
+  rule gc : nu(nil()) ==> nil();
+  rule scope : par(nu(p), q) ==> nu(par(p, q));
+}

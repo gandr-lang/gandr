@@ -1,0 +1,3 @@
+/// `RegionAsValue`: a definition's region binder named as a value.
+@[ refuses("RegionAsValue") ]
+def named @[r : Region] (k : (() => Integer) at r) -> -F Integer { pure r }

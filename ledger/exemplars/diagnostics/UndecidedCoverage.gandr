@@ -1,0 +1,14 @@
+/// `UndecidedCoverage`: a leaf of a match's tree is one of its pattern holes.
+@[ checks ]
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+@[ refuses("UndecidedCoverage") ]
+def classify(c : Color) -> -F Integer {
+  case c {
+    ?branch => 1
+  }
+}

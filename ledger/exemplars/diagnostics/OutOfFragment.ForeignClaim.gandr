@@ -1,0 +1,10 @@
+/// `OutOfFragment.ForeignClaim`: a form out of the fragment: the form is a descent claim, `f[<]`, whose head names a function other than the recursive one it is written in.
+rec {
+  /// Even when its predecessor is odd; a plain definition claims no
+  /// descent.
+  @[ refuses("OutOfFragment.ForeignClaim") ]
+  def even(n: Integer) -> -F Bool { return odd[<](n) }
+  /// Odd when its predecessor is even, refused for the same reason.
+  @[ refuses("OutOfFragment.ForeignClaim") ]
+  def odd(n: Integer) -> -F Bool { return even[<](n) }
+}

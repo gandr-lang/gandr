@@ -1,0 +1,32 @@
+/// `CorollaCardinality`: two species with different numbers of elements at a corolla.
+theory Rig {
+  sort R : Type;
+  oper plus : (x : R, y : R) --> (z : R);
+  oper times : (x : R, y : R) --> (z : R);
+}
+
+theory Semi {
+  sort S : Type;
+  oper mul : (x : S, y : S) --> (z : S);
+}
+
+@[ checks ]
+def widen(b : Bool) -> -F (Unit + Unit + Unit + Unit) {
+  case b {
+    true => +{.0 = unit},
+    false => +{.1 = unit}
+  }
+}
+
+@[ checks ]
+def narrow(e : Unit + Unit + Unit + Unit) -> -F Bool {
+  case e {
+    +{.0 = u} => +{.0 = u},
+    +{.1 = u} => +{.1 = u},
+    +{.2 = u} => +{.0 = u},
+    +{.3 = u} => +{.1 = u}
+  }
+}
+
+@[ refuses("CorollaCardinality") ]
+def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;

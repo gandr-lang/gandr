@@ -1,0 +1,9 @@
+/// `WithoutK`: a path matched against reflexivity, `here`.
+@[ refuses("WithoutK") ]
+def uip(n: Integer, p: Path(Integer, n, n), q: Path(Integer, n, n)) -> -F(Path(
+  Path(Integer, n, n),
+  p,
+  q
+)) {
+  case p { here => case q { here => return here(p) } }
+}

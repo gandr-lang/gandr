@@ -1,0 +1,7 @@
+/// `UnknownConstant`: a constant naming no declaration the checker holds a type for.
+/// `b` names nothing, so the checker holds no type for it.
+@[ refuses("UnresolvedName") ]
+def b = c ;
+
+@[ refuses("UnknownConstant") ]
+def a = b ;

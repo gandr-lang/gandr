@@ -1,0 +1,5 @@
+/// `AbsentRecordField`: a projection names no field in its operand's record type.
+@[ refuses("AbsentRecordField") ]
+def absent_selected(r : #{n : Integer, s : String}) -> -F Integer {
+  r.z
+}

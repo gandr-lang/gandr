@@ -89,6 +89,7 @@ use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use crate::expectation;
+use crate::expectation::Expectations;
 use crate::expectation::Membership;
 use crate::expectation::Outcome;
 use crate::expectation::Stated;
@@ -1184,8 +1185,7 @@ pub fn settle_after<'source>(
     let mut declarations = Vec::with_capacity(module.declarations().len());
     declarations.extend_from_slice(earlier);
     for lowered in later {
-        let expectations =
-            expectation::read(root, attributes(module.attributes(), lowered), arena)?;
+        let expectations = expected(root, arena, module, lowered)?;
         let (produced, owed) = match lowered.outcome() {
             DeclarationOutcome::Refused(refusal) => {
                 (Produced::Unlowered(refusal), ObligationCount::from(0_usize))
@@ -1514,6 +1514,41 @@ fn attributes<'table>(
         }
     };
     first.iter().chain(second.iter())
+}
+
+/// What the declaration `lowered` of `module` states under `root`: the
+/// expectations among the attributes filed on its signature and its
+/// definition, their payloads read out of `arena`.
+///
+/// # Specification
+/// - requires: `lowered` is a declaration of `module`, and `arena` the arena
+///   its lowering minted the payloads into.
+/// - ensures: the expectation reader's reading of the declaration's entries,
+///   the signature's before the definition's.
+/// - provides: the stated side of the settle comparison, for a reader that
+///   settles nothing.
+/// - fails: as the expectation reader.
+/// - panics: none.
+///
+/// # Errors
+/// [`SettleFault::UnreadablePayload`] when a payload is not its schema's
+/// literal of `arena`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every settled fixture reads its expectations here; a lost
+///   entry or a payload read out of another arena unsettles them.
+/// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[spec(ensures: |ref ret| ret.as_ref().map_or_else(|fault| matches!(*fault, SettleFault::UnreadablePayload { .. }), |_| true))]
+#[inline]
+pub fn expected(
+    root: CorpusRoot,
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    lowered: &LoweredDeclaration<'_>,
+) -> Result<Expectations, SettleFault>
+{
+    expectation::read(root, attributes(module.attributes(), lowered), arena)
 }
 
 #[cfg(test)]

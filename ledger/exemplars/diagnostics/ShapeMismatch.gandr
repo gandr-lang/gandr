@@ -1,0 +1,5 @@
+/// `ShapeMismatch`: a type of another former than the rule requires.
+@[ refuses("ShapeMismatch") ]
+def single_is_not_its_member : Integer;
+
+def single_is_not_its_member = (1,);

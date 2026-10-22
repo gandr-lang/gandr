@@ -1,0 +1,14 @@
+/// `UnmarkedSelfReference`: a recursive definition's own name written without a descent claim.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("UnmarkedSelfReference") ]
+def rec bare(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become bare(p)
+  }
+}

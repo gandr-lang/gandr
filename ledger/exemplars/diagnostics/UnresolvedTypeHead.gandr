@@ -1,0 +1,3 @@
+/// `UnresolvedTypeHead`: a type head no table entry answers.
+@[ refuses("UnresolvedTypeHead") ]
+def counted : Natural ;

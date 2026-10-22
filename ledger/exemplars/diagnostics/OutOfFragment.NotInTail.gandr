@@ -1,0 +1,3 @@
+/// `OutOfFragment.NotInTail`: a form out of the fragment: the form is a function exit, `return` or `become`, a loop exit, `break` or `continue`, or a loop, standing where no path through a function's, a lambda's or a thunk's body passes.
+@[ refuses("OutOfFragment.NotInTail") ]
+def returned = return Zero ;

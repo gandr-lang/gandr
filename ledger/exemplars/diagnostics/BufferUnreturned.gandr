@@ -1,0 +1,12 @@
+/// `BufferUnreturned`: a receive or an allocation ending with the buffer it placed live never handed back.
+@[ refuses("BufferUnreturned") ]
+def neverFreed() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    pure unit
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}

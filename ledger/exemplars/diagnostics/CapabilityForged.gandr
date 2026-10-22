@@ -1,0 +1,9 @@
+/// `CapabilityForged`: a term standing at a capability type that is no capability hypothesis.
+def peek(c : Cap {read}) -> -F [Fs] String {
+  become c.read("notes")
+}
+
+@[ refuses("CapabilityForged") ]
+def forged() -> -F [Fs] String {
+  become peek("fs")
+}

@@ -1,0 +1,6 @@
+/// `ViewUnended`: an exclusive access's body ending with its view neither resumed nor aborted.
+@[ refuses("ViewUnended") ]
+def unended() -> -F Unit {
+  hold c = 0;
+  access c as v { pure unit }
+}

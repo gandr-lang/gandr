@@ -1,0 +1,14 @@
+/// `UnguardedCorecursion`: a productivity claim standing outside a copattern arm.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("UnguardedCorecursion") ]
+def rec ahead(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become ahead[>](p)
+  }
+}

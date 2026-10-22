@@ -1,0 +1,3 @@
+/// `UnrestrictedEndpoint`: a declaration whose type is a session type.
+@[ refuses("UnrestrictedEndpoint") ]
+def session_receive : ?Integer. end;

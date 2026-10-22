@@ -1,0 +1,15 @@
+/// `SessionNotEquivalent`: a `bisim` relating two protocols that are not bisimilar.
+module Evolution {
+  type SeatEnd = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end
+  };
+  type SeatEnd′ = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end,
+    pause : !String. turn
+  };
+  @[ refuses("SessionNotEquivalent") ]
+  def same : Path(Type, SeatEnd, SeatEnd′) ;
+  def same = bisim(SeatEnd, SeatEnd′) ;
+}

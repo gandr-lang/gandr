@@ -303,6 +303,7 @@ mod settle;
 
 pub use crate::expectation::ExpectationFault;
 pub use crate::expectation::ExpectationSchema;
+pub use crate::expectation::Expectations;
 pub use crate::expectation::Membership;
 pub use crate::expectation::NORMAL_FORM_ARROW;
 pub use crate::expectation::Outcome;
@@ -327,6 +328,7 @@ pub use crate::settle::Produced;
 pub use crate::settle::SettleFault;
 pub use crate::settle::Settlement;
 pub use crate::settle::Surviving;
+pub use crate::settle::expected;
 pub use crate::settle::produced_refusal;
 pub use crate::settle::ran;
 pub use crate::settle::settle;

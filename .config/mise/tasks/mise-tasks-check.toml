@@ -503,17 +503,21 @@ echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
 # and the rules match by name, each exemplar parses with no obligation and
 # holds a tile of its rule, and each attribute exemplar lowers with its
 # attribute filed. Every features exemplar states only `checks`, `runs` or
-# `normalizes`. Every finding is printed, `<file>: <fault>`.
+# `normalizes`. Every refusal name no form qualifies, and the reserved and
+# unadmitted boundaries, have an exemplar (`ledger/exemplars/diagnostics`)
+# holding a declaration refused with it, or a row of the owed table with its
+# reason or issue. Every finding is printed, `<file>: <fault>`.
 ["check:syntax-exemplars"]
-description = "One verified exemplar per committed rule and attribute of the syntax ledger, and every features exemplar exhibiting"
+description = "One verified exemplar per committed rule and attribute of the syntax ledger, every features exemplar exhibiting, and every refusal name an exemplar or an owed row"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
 
-# Every exemplar under `ledger/exemplars` (syntax, attributes and features),
-# settled as an author runs them. `ledger/` is a fixture root, so each
-# declaration states what the checker makes of it: `checks`, `runs` or
+# Every exemplar under `ledger/exemplars` (syntax, attributes, features and
+# diagnostics), settled as an author runs them. `ledger/` is a fixture root, so
+# each declaration states what the checker makes of it: `checks`, `runs` or
 # `normalizes` where it holds, `refuses` where the checker does not reach the
-# form yet. `check:syntax-exemplars` refuses `owes` and `refuses` in a features
-# exemplar, which exhibits what holds.
+# form yet or where a diagnostics exemplar shows the refusal.
+# `check:syntax-exemplars` refuses `owes` and `refuses` in a features exemplar,
+# which exhibits what holds.
 ["check:exemplars"]
 description = "Every exemplar settles under `gandr test`"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars"

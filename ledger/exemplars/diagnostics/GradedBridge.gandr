@@ -1,0 +1,5 @@
+/// `GradedBridge`: a bridge graded other than the default the fragment admits.
+@[ refuses("GradedBridge") ]
+def graded : Type ;
+
+def graded = +U[1] (-F Integer) ;

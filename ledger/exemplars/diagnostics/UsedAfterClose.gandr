@@ -1,0 +1,6 @@
+/// `UsedAfterClose`: an endpoint acted on after it was closed.
+@[ refuses("UsedAfterClose") ]
+def seat_closed_twice() -> -F Unit {
+  fork (seat : end) { close(seat); close(seat) } as desk;
+  close(desk)
+}

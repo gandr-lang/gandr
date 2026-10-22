@@ -1,0 +1,6 @@
+/// `IllFormedDescription`: a description the description check refuses.
+@[ refuses("IllFormedDescription") ]
+theory Past {
+  shape Square : 4 { far = {1, 4}; };
+  sort Cell : Type;
+}

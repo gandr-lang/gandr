@@ -1,0 +1,17 @@
+/// `UndescribedMember.ParallelRedexes`: a member the description does not read: a circuit rule rewriting two redexes at once.
+@[ refuses("UndescribedMember.ParallelRedexes") ]
+theory Nat {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong2 : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : q(y) ==> (y′);
+    node : add(x′, y′) --> (z);
+  };
+}

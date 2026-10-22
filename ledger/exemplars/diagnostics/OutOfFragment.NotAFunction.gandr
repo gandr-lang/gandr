@@ -1,0 +1,10 @@
+/// `OutOfFragment.NotAFunction`: a form out of the fragment: the form is `cong` at a constructor, which is not a function.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+@[ refuses("OutOfFragment.NotAFunction") ]
+def cong_at_point : Path(Circle, Base, Base) ;
+
+def cong_at_point = cong(Base, loop) ;

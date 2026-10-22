@@ -1,0 +1,15 @@
+/// `SessionNotSubtype`: a `sim` whose source does not simulate its target.
+module Evolution {
+  type SeatEnd = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end
+  };
+  type SeatEnd′ = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end,
+    pause : !String. turn
+  };
+  @[ refuses("SessionNotSubtype") ]
+  def narrowed : Flow(Type, SeatEnd′, SeatEnd) ;
+  def narrowed = sim(SeatEnd′, SeatEnd) ;
+}

@@ -1,0 +1,6 @@
+/// `Unreachable`: code after a statement every path of which exits.
+@[ refuses("Unreachable") ]
+def early(n : Nat) -> -F Nat {
+  run m <- return n ;
+  return m
+}

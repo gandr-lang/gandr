@@ -1,0 +1,5 @@
+/// `EndpointMismatch`: reflexivity met a path type whose endpoints its point does not both convert to.
+@[ refuses("EndpointMismatch") ]
+def etaSwapped(e : Integer * Integer) -> -F Path(Integer * Integer, (e.1, e.0), e) {
+  here(e)
+}

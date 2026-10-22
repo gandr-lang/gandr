@@ -1,0 +1,22 @@
+/// `OutOfFragment.Arity`: a form out of the fragment: the form is a former of this sort, offered a number of operands it does not take.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+data U : Type {
+  NatC : U;
+  Arrow : (a : U, b : U) --> U;
+}
+
+@[ checks ]
+def rec el(u : U) -> -F Type {
+  case u {
+    NatC => return Nat,
+    Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
+  }
+}
+
+@[ refuses("OutOfFragment.Arity") ]
+def unapplied(c : U) -> -F el { return c }
