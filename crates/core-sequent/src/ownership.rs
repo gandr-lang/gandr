@@ -768,6 +768,13 @@ impl Ownership
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a branch pairs the constructor it rebuilds, through a
+    ///   `μ` run where it stands, the binder after it, a single-arm match and a
+    ///   constructor of another field count around it, and pairs nothing past a
+    ///   thunk, a call, a suspended `μ` or a choice of arms.
+    /// - witness: `ownership::tests::a_branch_rebuilding_its_scrutinee_reuses_the_cell`
     fn built(
         &self,
         arena: &CommandArena,
@@ -1095,6 +1102,11 @@ enum Extent
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `Ownership::built`: a call stops the pairing, and the
+///   branch's own cuts, the binder and the single-arm match do not.
+/// - witness: `ownership::tests::a_branch_rebuilding_its_scrutinee_reuses_the_cell`
 fn extent(
     arena: &CommandArena,
     id: CommandId,
@@ -1129,6 +1141,12 @@ fn extent(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `Ownership::built`: a `μ` cut against a covariable or,
+///   positively, against a binder pairs its constructor; a negative cut against
+///   a binder pairs none.
+/// - witness: `ownership::tests::a_branch_rebuilding_its_scrutinee_reuses_the_cell`
 fn ran(
     arena: &CommandArena,
     cut: CommandId,

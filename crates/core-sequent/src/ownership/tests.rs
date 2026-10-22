@@ -345,10 +345,19 @@ fn a_linear_name_is_never_counted()
 /// that may run many times, one inside a thunk forced once, whose body runs
 /// in a window of its own, and one built after a call — a map's element
 /// function, which may capture the window and replay it — pair nothing.
+///
+/// The walk to the constructor: a `μ` a positive cut against a binder runs
+/// where it stands, and so does the binder's body after it; a negative one
+/// suspends the `μ` and pairs nothing. A constructor of another field count
+/// on the way is passed over for the one inside it. A single-arm match is
+/// passed through; one of two arms is a choice, and pairs nothing.
 #[test]
 fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
 {
-    for case in ["dead", "named", "kept", "forced", "ran", "called"] {
+    for case in [
+        "dead", "named", "kept", "forced", "ran", "called", "let", "by-name", "after", "wrapped",
+        "split", "chosen",
+    ] {
         let mut arena = CommandArena::new();
         let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
         let returned = alpha0(&mut arena);
@@ -371,6 +380,20 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
             })
             .expect("the fields resolve");
         let mut body = cut(&mut arena, point, returned);
+        // reason: `⟨μα.c |± μ̃z.⟨z |+ α0⟩⟩`, the constructor in `c`.
+        let bound = |arena: &mut CommandArena, body: CommandId, polarity: Polarity| {
+            let ran = arena
+                .mint_producer(ProducerNode::Mu { body })
+                .expect("the body resolves");
+            let named = variable(arena, Zone::Intuitionistic, x0());
+            let passed = cut(arena, named, returned);
+            let binder = arena
+                .mint_consumer(ConsumerNode::MuTilde { body: passed })
+                .expect("the body resolves");
+            arena
+                .mint_cut(polarity, ran, binder)
+                .expect("the children resolve")
+        };
         match case {
             "kept" => {
                 let kept = arena
@@ -398,6 +421,73 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
                     .mint_producer(ProducerNode::Mu { body })
                     .expect("the body resolves");
                 body = cut(&mut arena, ran, returned);
+            },
+            "let" => body = bound(&mut arena, body, Polarity::Positive),
+            "by-name" => body = bound(&mut arena, body, Polarity::Negative),
+            // reason: `⟨μα.⟨x0 |+ α0⟩ |+ μ̃z. body⟩`: the constructor after the
+            // `μ` it binds.
+            "after" => {
+                let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                let first = cut(&mut arena, named, returned);
+                let ran = arena
+                    .mint_producer(ProducerNode::Mu { body: first })
+                    .expect("the body resolves");
+                let binder = arena
+                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, ran, binder);
+            },
+            // reason: `⟨Q(P(x0, x1)) |+ α0⟩`.
+            "wrapped" => {
+                let outer = arena
+                    .mint_producer(ProducerNode::Constructor {
+                        tag: ConstructorTag::Data {
+                            tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                            arity: ProducerArity::from(1_usize),
+                            family: None,
+                        },
+                        producers: Box::from([point]),
+                        consumers: Box::from([]),
+                    })
+                    .expect("the field resolves");
+                body = cut(&mut arena, outer, returned);
+            },
+            // reason: `⟨x0 |+ case {() ⇒ body}⟩` and `⟨x0 |+ case {A ⇒ body; B ⇒
+            // ⟨x0 |+ α0⟩}⟩`.
+            "split" | "chosen" => {
+                let mut arms = Vec::from([PatternArm {
+                    constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
+                    body,
+                }]);
+                if case == "chosen" {
+                    let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                    let other = cut(&mut arena, named, returned);
+                    arms = Vec::from([
+                        PatternArm {
+                            constructor: ConstructorTag::Data {
+                                tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                                arity: ProducerArity::ZERO,
+                                family: None,
+                            },
+                            body,
+                        },
+                        PatternArm {
+                            constructor: ConstructorTag::Data {
+                                tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                                arity: ProducerArity::ZERO,
+                                family: None,
+                            },
+                            body: other,
+                        },
+                    ]);
+                }
+                let matched = arena
+                    .mint_consumer(ConsumerNode::Case {
+                        arms: Box::from(arms),
+                    })
+                    .expect("the arms resolve");
+                let named = variable(&mut arena, Zone::Intuitionistic, x0());
+                body = cut(&mut arena, named, matched);
             },
             // reason: `⟨x1 |− apply(x0; μ̃z. body)⟩`: the constructor waits on
             // the call's answer.
@@ -450,7 +540,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
 
         assert_eq!(ownership.runs(branch), Runs::Once, "{case}");
         let expected = match case {
-            "dead" | "ran" => Vec::from([Reuse {
+            "dead" | "ran" | "let" | "after" | "wrapped" | "split" => Vec::from([Reuse {
                 matched: root,
                 branch: NodeCount::from(0_usize),
                 built: point,

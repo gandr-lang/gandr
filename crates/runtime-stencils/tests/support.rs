@@ -140,12 +140,13 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// second operation whose clause answers without resuming, so that clause's
 /// answer is what the first resumption answers; a split and a nominal match
 /// that each rebuild their dying scrutinee, so a reuse token built into with
-/// the wrong fields or never built into answers wrongly, and a split whose
-/// scrutinee a thunk also holds, so a shared cell overwritten in place
-/// changes what the thunk answers; and a nominal branch answering a function
-/// past its constructor's two fields, applied where the match stands, so a
-/// branch run in place that took the application's frame for a field answers
-/// the function unapplied.
+/// the wrong fields or never built into answers wrongly; a split that builds
+/// a triple before the pair it rebuilds, so a token the triple took would
+/// write three fields into the pair's cell; a split whose scrutinee a thunk
+/// also holds, so a shared cell overwritten in place changes what the thunk
+/// answers; and a nominal branch answering a function past its constructor's
+/// two fields, applied where the match stands, so a branch run in place that
+/// took the application's frame for a field answers the function unapplied.
 ///
 /// # Specification
 /// trivial.
@@ -750,6 +751,30 @@ pub fn named() -> Vec<Named>
     push(
         "x <- return (1, 2); split x { (a, b) ⇒ return (b, a) }",
         "⟨pair(2, 1) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let pair = core.value_tuple(&[one, two]);
+    let bound = core.computation_return(pair);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let triple = core.value_tuple(&[first, second, first]);
+    let made = core.computation_return(triple);
+    let later = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let held = innermost(&mut core);
+    let rebuilt = core.value_tuple(&[later, held]);
+    let answered = core.computation_return(rebuilt);
+    let rest = core.computation_bind(made, answered);
+    let scrutinee = innermost(&mut core);
+    let split = core.computation_split(scrutinee, 2_usize.into(), rest);
+    let root = core.computation_bind(bound, split);
+    push(
+        "x <- return (1, 2); split x { (a, b) ⇒ t <- return (a, b, a); return (b, t) }",
+        "⟨pair(2, tuple(1, 2, 1)) |+ ★⟩",
         core,
         root,
     );

@@ -747,6 +747,14 @@ fn run_emitted(
 ///
 /// # Errors
 /// As [`evaluate_on_with_host`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — every named program run natively answers what the
+///   interpreter answers, and a returned body leaves the window region where it
+///   found it; a run that answered nothing, or gave the code no window region,
+///   changes both.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::count::a_returned_body_gives_its_window_back`
 fn run(
     code: Code<'_>,
     parts: Parts<'_, '_>,
