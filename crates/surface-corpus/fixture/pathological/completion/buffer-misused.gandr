@@ -105,3 +105,20 @@ def receivedReturnedTwice() -> -F Unit {
     oper free(b, k) => k(unit)
   }
 }
+
+/// A buffer freed in one arm of a case and kept in the other, refused at the
+/// arm that keeps it (#1792).
+@[ refuses("BufferUnreturned") ]
+def freedInOneArm(flag : Bool) -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    case flag {
+      true => r.free(b),
+      false => pure unit
+    }
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}
