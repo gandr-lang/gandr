@@ -203,6 +203,8 @@ impl FormedCompType
 /// - fails: [`CheckRefusal::OutOfFragment`] naming the first unadmitted former
 ///   the walk meets; the code's refusal for a decode, among them
 ///   [`CheckRefusal::SortMismatch`] and [`CheckRefusal::LevelMismatch`];
+///   [`CheckRefusal::OpenSessionPayload`] for a session type whose payload
+///   reads a binder outside it, anywhere but a run's protocol;
 ///   [`CheckRefusal::DanglingNode`] for an id the arena does not hold.
 /// - panics: none.
 /// - intension: one machine run under the context's allowance; the binders
@@ -224,6 +226,7 @@ impl FormedCompType
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+/// - witness: `judgement::tests::a_session_payload_reads_a_binder_only_in_a_run_protocol_1728`
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth

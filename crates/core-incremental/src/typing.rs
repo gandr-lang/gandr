@@ -874,6 +874,9 @@ pub enum Refusal
     SessionNotSubtype(Site),
     /// A session statement or flow over something other than a session code.
     SessionCodeExpected(Site),
+    /// A session type whose payload reads a binder outside it, outside a
+    /// run's protocol.
+    OpenSessionPayload(Site),
     /// A ride whose motive uses the moving endpoint other than covariantly.
     NonCovariantMotive(Site),
     /// A ride whose motive the checker cannot move.
@@ -1491,7 +1494,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CapabilityAmplified(Mismatch::Computation { at, .. }) = matched_left_value && let Refusal::CapabilityAmplified { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::CapabilityOutsideAuthority { at, capability } = matched_left_value && let Refusal::CapabilityOutsideAuthority { at: projected, capability: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *stored == self.value_type(capability) }
  else if let CheckRefusal::CapabilityEscaped { at, found } = matched_left_value && let Refusal::CapabilityEscaped { at: projected, found: ref stored } = *matched_right_value { projected == self.term_site(at) && *stored == self.type_node(found) }
- else if let (CheckRefusal::CapabilityConsumable(at), &Refusal::CapabilityConsumable(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let (CheckRefusal::CapabilityConsumable(at), &Refusal::CapabilityConsumable(projected)) | (CheckRefusal::OpenSessionPayload { at }, &Refusal::OpenSessionPayload(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::CapabilityUngranted { declared, .. } = matched_left_value && let Refusal::CapabilityUngranted(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(declared)) }
  else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) | (CheckRefusal::ForwardUnsupported { at }, &Refusal::ForwardUnsupported(projected)) | (CheckRefusal::Boundary { at }, &Refusal::Boundary(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
@@ -1856,6 +1859,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::SessionCodeExpected { at } => {
                 Refusal::SessionCodeExpected(self.site(ArenaNode::Value(at)))
+            },
+            CheckRefusal::OpenSessionPayload { at } => {
+                Refusal::OpenSessionPayload(self.site(ArenaNode::ValueType(at)))
             },
             CheckRefusal::NonCovariantMotive { at } => {
                 Refusal::NonCovariantMotive(self.site(ArenaNode::Computation(at)))

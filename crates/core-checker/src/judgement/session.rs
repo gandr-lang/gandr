@@ -1295,6 +1295,7 @@ impl Machine<'_, '_>
             | CheckRefusal::SessionNotEquivalent { .. }
             | CheckRefusal::SessionNotSubtype { .. }
             | CheckRefusal::SessionCodeExpected { .. }
+            | CheckRefusal::OpenSessionPayload { .. }
             | CheckRefusal::NonCovariantMotive { .. }
             | CheckRefusal::RideUnsupported { .. }
             | CheckRefusal::RunNotAdmitted { .. }

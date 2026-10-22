@@ -6590,6 +6590,10 @@ where
             writer.tag(Tag(66));
             write_site(writer, at)?;
         },
+        Refusal::OpenSessionPayload(at) => {
+            writer.tag(Tag(84));
+            write_site(writer, at)?;
+        },
         Refusal::NonCovariantMotive(at) => {
             writer.tag(Tag(67));
             write_site(writer, at)?;
@@ -6810,6 +6814,7 @@ where
                     | Refusal::SessionNotEquivalent(_) => 64,
                     | Refusal::SessionNotSubtype(_) => 65,
                     | Refusal::SessionCodeExpected(_) => 66,
+                    | Refusal::OpenSessionPayload(_) => 84,
                     | Refusal::NonCovariantMotive(_) => 67,
                     | Refusal::RideUnsupported(_) => 68,
                     | Refusal::RunNotAdmitted { .. } => 69,
@@ -7128,6 +7133,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         64 => Refusal::SessionNotEquivalent(read_site(reader)?),
         65 => Refusal::SessionNotSubtype(read_site(reader)?),
         66 => Refusal::SessionCodeExpected(read_site(reader)?),
+        84 => Refusal::OpenSessionPayload(read_site(reader)?),
         67 => Refusal::NonCovariantMotive(read_site(reader)?),
         68 => Refusal::RideUnsupported(read_site(reader)?),
         70 => Refusal::ForwardUnsupported(read_site(reader)?),
@@ -7847,6 +7853,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::SessionNotEquivalent(_)
             | Refusal::SessionNotSubtype(_)
             | Refusal::SessionCodeExpected(_)
+            | Refusal::OpenSessionPayload(_)
             | Refusal::NonCovariantMotive(_)
             | Refusal::RideUnsupported(_)
             | Refusal::RunNotAdmitted { .. }

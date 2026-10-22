@@ -2610,6 +2610,7 @@ fn every_refusal() -> Vec<Refusal>
         Refusal::SessionNotEquivalent(at),
         Refusal::SessionNotSubtype(at),
         Refusal::SessionCodeExpected(at),
+        Refusal::OpenSessionPayload(at),
         Refusal::NonCovariantMotive(at),
         Refusal::RideUnsupported(at),
         Refusal::ForwardUnsupported(at),

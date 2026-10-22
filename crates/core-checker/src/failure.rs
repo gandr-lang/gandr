@@ -256,6 +256,8 @@ pub enum FrameRole
     FormElement,
     /// A static Pi waits on its classifiers' formation.
     FormStaticPi,
+    /// A run type waits on its protocol's check.
+    RunProtocol,
     /// A list cell's head is being checked.
     PairSecond,
     /// A static application waits on its head's type.
@@ -440,6 +442,7 @@ impl fmt::Display for FrameRole
             Self::FormLift => "FormLift",
             Self::FormElement => "FormElement",
             Self::FormStaticPi => "FormStaticPi",
+            Self::RunProtocol => "RunProtocol",
             Self::PairSecond => "PairSecond",
             Self::StaticSpine => "StaticSpine",
             Self::StaticArgument => "StaticArgument",

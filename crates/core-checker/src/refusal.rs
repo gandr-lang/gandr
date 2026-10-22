@@ -1107,6 +1107,15 @@ pub enum CheckRefusal
         /// The code.
         at: ValueId,
     },
+    /// A session type whose payload reads a binder outside it, formed
+    /// anywhere but a run's protocol: a session's payload codes form in the
+    /// empty term context, so a payload can name no variable a motive or a
+    /// telescope binds around it.
+    OpenSessionPayload
+    {
+        /// The session type.
+        at: ValueTypeId,
+    },
     /// A ride whose motive reads its code variable anywhere but a covariant
     /// position: a flow moves forward only, so no ride derives its reverse.
     NonCovariantMotive
@@ -1231,7 +1240,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1301,6 +1310,7 @@ impl CheckRefusal
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }
+            | Self::OpenSessionPayload { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
@@ -1511,6 +1521,7 @@ impl CheckRefusal
             | Self::SessionNotEquivalent { .. }
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }
+            | Self::OpenSessionPayload { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RideUnsupported { .. }
             | Self::RunNotAdmitted { .. }

@@ -2142,6 +2142,10 @@ enum Frame
     /// then be a static classifier — a universe or a static Pi — at its weak
     /// head.
     FormStaticPi(ValueTypeId),
+    /// A run type waits on its protocol's check. A run stays on the checker's
+    /// side, so a session type formed beneath this frame may read a binder
+    /// outside it, as no session type elsewhere may.
+    RunProtocol,
     /// A list cell, or a pair checked against a dependent pair, waits on its
     /// first component's check; the second then checks against the second
     /// factor, read at the first component for a dependent pair.
@@ -2487,6 +2491,7 @@ impl Frame
             Self::FormLift(_) => FrameRole::FormLift,
             Self::FormElement(_) => FrameRole::FormElement,
             Self::FormStaticPi(_) => FrameRole::FormStaticPi,
+            Self::RunProtocol => FrameRole::RunProtocol,
             Self::PairSecond { .. } => FrameRole::PairSecond,
             Self::StaticSpine { .. } => FrameRole::StaticSpine,
             Self::StaticArgument { .. } => FrameRole::StaticArgument,
@@ -2629,6 +2634,7 @@ impl Frame
             | Self::FormLift(_)
             | Self::FormElement(_)
             | Self::FormStaticPi(_)
+            | Self::RunProtocol
             | Self::PairSecond { .. }
             | Self::StaticSpine { .. }
             | Self::StaticArgument { .. }
@@ -3096,6 +3102,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FormLift(_)
                 | Frame::FormElement(_)
                 | Frame::FormStaticPi(_)
+                | Frame::RunProtocol
                 | Frame::PairSecond { .. }
                 | Frame::StaticSpine { .. }
                 | Frame::StaticArgument { .. }
@@ -6403,9 +6410,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   of the first; a static Pi forms both classifiers, then awaits their
     ///   check as static classifiers; a path type and a flow type form their
     ///   carrier, open or closed, then check each endpoint against it, source
-    ///   first; a run type checks its protocol against the value universe; a
-    ///   session type forms each payload, then awaits their check as no session
-    ///   types; a capability forms the payload and reply of every operation its
+    ///   first; a run type checks its protocol against the value universe
+    ///   beneath a run frame; a session type forms each payload, then awaits
+    ///   their check as no session types — its payloads read no binder outside
+    ///   it unless a run frame waits beneath it, a run staying on the checker's
+    ///   side; a capability forms the payload and reply of every operation its
     ///   authority grants, and is refused when consumable. A former formed at
     ///   once leaves the frames as found, but for a data type, a record, a
     ///   product, a sum, a session type and a capability, which queue their
@@ -6417,7 +6426,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`CheckRefusal::CapabilityConsumable`] for a consumable capability,
     ///   whose linear zone no former binds into;
     ///   [`CheckRefusal::OutOfFragment`] naming [`UnadmittedFormer::Stage`] for
-    ///   a staged type whose stage this judgement did not mint.
+    ///   a staged type whose stage this judgement did not mint;
+    ///   [`CheckRefusal::OpenSessionPayload`] for a session type whose payload
+    ///   reads a binder outside it, no run frame waiting.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -6425,6 +6436,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the public faces.
     /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
     /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
+    /// - witness: `judgement::tests::a_session_payload_reads_a_binder_only_in_a_run_protocol_1728`
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
@@ -6485,6 +6497,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             ValueTypeView::Run(protocol) => {
                 let universe = crate::flow::universe(self.context.arena_mut());
+                self.wait(Frame::RunProtocol);
                 Ok(Step::Descend(Goal::Value {
                     term: protocol,
                     direction: Direction::Check(universe),
@@ -6551,6 +6564,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             ValueTypeView::Session(session) => {
+                let reach = crate::code::loose_reach(
+                    self.context.arena(),
+                    crate::refusal::CoreNode::Type(TypeNode::Value(at)),
+                )?;
+                if usize::from(reach) != 0
+                    && !self
+                        .frames
+                        .iter()
+                        .any(|waiting| matches!(waiting.frame, Frame::RunProtocol))
+                {
+                    return Err(CheckRefusal::OpenSessionPayload { at });
+                }
                 let owner = self.owner;
                 self.frames
                     .extend(session.payloads().iter().rev().map(|&payload| Waiting {
@@ -7401,7 +7426,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Frame::Reset { .. }
                 | Frame::ThunkBody
                 | Frame::ReturnValue
-                | Frame::InjectionPayload,
+                | Frame::InjectionPayload
+                | Frame::RunProtocol,
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::Checked)),
             (Frame::ReturnValue, Produced::ValueType(result)) => {
@@ -8805,6 +8831,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::SessionNotEquivalent { .. }
                     | CheckRefusal::SessionNotSubtype { .. }
                     | CheckRefusal::SessionCodeExpected { .. }
+                    | CheckRefusal::OpenSessionPayload { .. }
                     | CheckRefusal::NonCovariantMotive { .. }
                     | CheckRefusal::RideUnsupported { .. }
                     | CheckRefusal::RunNotAdmitted { .. }
@@ -8967,6 +8994,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FormUnder { .. }
                 | Frame::FormLift(_)
                 | Frame::FormStaticPi(_)
+                | Frame::RunProtocol
                 | Frame::PairSecond { .. }
                 | Frame::StaticOperand { .. }
                 | Frame::Unknowing(_)
