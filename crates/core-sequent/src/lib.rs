@@ -8,10 +8,11 @@
 //!   [`CommandArena::truncate_to`] the rollback a refused build takes.
 //!   Covariables are de Bruijn indices ([`CovariableIndex`]); nothing mints a
 //!   continuation name.
-//! - [`focus_computation`], [`focus_value`] and [`focus_top_value`] translate
-//!   core terms into the IL, recording each created command's [`FocusOrigin`]
-//!   in a [`Provenance`] table; [`unfocus_command`] and [`unfocus_value`] read
-//!   the IL back, their left inverse.
+//! - [`focus_computation`], [`focus_value`], [`focus_top_value`] and
+//!   [`focus_definition`] translate core terms into the IL, recording each
+//!   created command's [`FocusOrigin`] in a [`Provenance`] table;
+//!   [`unfocus_command`] and [`unfocus_value`] read the IL back, their left
+//!   inverse.
 //! - [`check_command`] is the typed-IL check: reference integrity, arity, focus
 //!   and polarity, answering a command's [`FreeSet`].
 //! - [`render_command`], [`render_producer`] and [`render_consumer`] write the
@@ -127,6 +128,7 @@ pub use crate::focus::FocusOrigin;
 pub use crate::focus::FocusRefusal;
 pub use crate::focus::Provenance;
 pub use crate::focus::focus_computation;
+pub use crate::focus::focus_definition;
 pub use crate::focus::focus_top_value;
 pub use crate::focus::focus_value;
 pub use crate::identity::MotiveHead;

@@ -452,7 +452,42 @@ fn each_focus_entry_rolls_back_dangling_inputs()
     );
     assert_eq!(before, arena);
     assert_eq!(origins, provenance);
+    assert_eq!(
+        Err(FocusRefusal::DanglingValue(value)),
+        focus_definition(&core, value, &mut arena, &mut provenance)
+    );
+    assert_eq!(before, arena);
+    assert_eq!(origins, provenance);
     assert_eq!(Some(FocusOrigin::Return), provenance.origin(earlier));
+}
+
+/// A computed value `⟨return ()⟩` focuses to the `μ` that runs its
+/// computation against the `μ`'s own covariable; the value it computes
+/// focuses to itself, no `μ`.
+#[test]
+fn a_computed_value_focuses_to_the_capture_that_runs_it()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let computed = core.value_returned(returned);
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let capture = focus_definition(&core, computed, &mut arena, &mut provenance)
+        .expect("a computed value focuses");
+    let plain =
+        focus_definition(&core, unit, &mut arena, &mut provenance).expect("a value focuses");
+    assert_eq!(
+        (
+            alloc::string::String::from("μα. ⟨() |+ α0⟩"),
+            alloc::string::String::from("()")
+        ),
+        (
+            crate::pretty::render_producer(&arena, capture),
+            crate::pretty::render_producer(&arena, plain)
+        ),
+        "the computed value runs under its capture, the value stands as itself"
+    );
 }
 
 /// Both result stacks reject every non-singleton shape and pop in LIFO
