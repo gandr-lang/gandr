@@ -25,8 +25,7 @@ def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> -F Path
 /// Adding a loop, carried along `loopsAreIntegers`, adds one: the integer
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
-def funRun : () => Int ;
-def funRun = thunk {
+def funRun() -> -F Int {
   run g <- transport(\X. X => X, loopsAreIntegers, fn (l) { loopOn(l) }) ;
   g(S(S(Z)))
-} ;
+}

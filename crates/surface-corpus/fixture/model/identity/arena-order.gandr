@@ -132,19 +132,18 @@ def walk(r : #{ids : Type, start : ids, next : ids => ids, label : ids => Intege
 
 /// The consumer walks the first order to `c`.
 @[ runs("3") ]
-def walkedABC : () => Integer ;
-def walkedABC = thunk { become walk(builtABC) } ;
+def walkedABC() -> -F Integer { become walk(builtABC) }
 
 /// The consumer walks the second order to `c` alike.
 @[ runs("3") ]
-def walkedBAC : () => Integer ;
-def walkedBAC = thunk { become walk(builtBAC) } ;
+def walkedBAC() -> -F Integer { become walk(builtBAC) }
 
 /// The consumer reads both orders alike by construction, along the path
 /// between the arenas.
 @[ checks ]
-def walkedAlike : () => Path(Integer, walk(builtABC), walk(builtBAC)) ;
-def walkedAlike = thunk { become cong(walk, oneArena) } ;
+def walkedAlike() -> -F Path(Integer, walk(builtABC), walk(builtBAC)) {
+  become cong(walk, oneArena)
+}
 
 /// The labels left at their ids are not the other order's: an id names a
 /// node only within its arena.

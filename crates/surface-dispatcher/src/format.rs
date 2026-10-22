@@ -904,8 +904,13 @@ mod tests
                        \n\
                        def none : () => Nat ;\n\
                        def none = thunk { Zero } ;\n";
+        // The thunk rewrite alone: the function form would merge each signed
+        // thunk, which a witness of its own pins.
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
+            rewrites: gandr_surface_format::Selection::Only(&[
+                gandr_surface_format::RewriteName::InsertedThunk,
+            ]),
             ..FormatOptions::default()
         };
         let format = |text: &str, checker: Option<&dyn gandr_surface_format::Elaborate>| {

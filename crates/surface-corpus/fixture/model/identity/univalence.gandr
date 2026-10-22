@@ -157,8 +157,7 @@ def uaBeta(
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[ runs("S(Z)") ]
-def uaBetaRun : () => Int ;
-def uaBetaRun = thunk { transport(\X. X, ua(winding), loop) } ;
+def uaBetaRun() -> -F Int { transport(\X. X, ua(winding), loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
@@ -173,8 +172,7 @@ def windingBeta(x : Path(Circle, Base, Base)) -> -F Path(
 
 /// A loop carried to the integers runs to its winding number.
 @[ runs("S(Z)") ]
-def windingRun : () => Int ;
-def windingRun = thunk { transport(\X. X, loopsAreIntegers, loop) } ;
+def windingRun() -> -F Int { transport(\X. X, loopsAreIntegers, loop) }
 
 /// `ua` after `idtoequiv` is the path, owed: no rule converts `ua` of the
 /// packaged transport with the path, even at reflexivity, where both sides

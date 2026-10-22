@@ -349,31 +349,31 @@ mod tests
             hinted("fixture/surface/control-flow.gandr", 1 .. 1_000),
             [
                 "27:8 : Nat",
-                "39:8 : Nat",
-                "42:13 : Nat",
-                "59:13 : Nat",
-                "103:13 : Nat",
-                "118:10 : Nat",
-                "121:11 : Nat",
-                "122:19 : Integer",
-                "122:22 : Stack(-F [Div] Unit, -F [Div] Nat)",
-                "154:8 : Nat",
-                "157:13 : Nat",
-                "177:8 : Nat",
-                "184:8 : Nat",
-                "184:17 : Nat",
+                "38:8 : Nat",
+                "41:13 : Nat",
+                "57:13 : Nat",
+                "97:13 : Nat",
+                "111:10 : Nat",
+                "114:11 : Nat",
+                "115:19 : Integer",
+                "115:22 : Stack(-F [Div] Unit, -F [Div] Nat)",
+                "146:8 : Nat",
+                "149:13 : Nat",
+                "167:8 : Nat",
+                "174:8 : Nat",
+                "174:17 : Nat",
             ],
             "each `run`, `for`, pattern and handler binder, an unread one among them (#1439), and \
              no parameter, use or constructor"
         );
         assert_eq!(
             hinted("fixture/surface/typed-bind.gandr", 1 .. 1_000),
-            ["26:35 : Nat"],
+            ["25:35 : Nat"],
             "the lambda's binder, and no annotated `run`"
         );
         assert_eq!(
-            hinted("fixture/surface/control-flow.gandr", 177 .. 178),
-            ["177:8 : Nat"],
+            hinted("fixture/surface/control-flow.gandr", 167 .. 168),
+            ["167:8 : Nat"],
             "a window holds the hints inside it alone"
         );
         assert_eq!(

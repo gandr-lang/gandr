@@ -17,8 +17,7 @@ def next(n : Nat) -> -F Nat {
 
 /// The bind runs: `next` binds the successor and returns the next one.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : () => Nat ;
-def three = thunk { become next(Succ(Zero)) } ;
+def three() -> -F Nat { become next(Succ(Zero)) }
 
 /// A suspended function is named at its written type and called.
 @[ checks ]

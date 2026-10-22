@@ -16,8 +16,7 @@ def around(n : Integer) -> -F List(Maybe(Integer)) {
 /// The same list ending a thunk whose signature writes the value function
 /// space it returns.
 @[ checks ]
-def suspended : () => List(Maybe(Integer)) ;
-def suspended = thunk { [None, Some(2)] } ;
+def suspended() -> -F List(Maybe(Integer)) { [None, Some(2)] }
 
 /// Lists in a list: each inner list takes the element type the outer one
 /// answers, and gives its own to its constructors.

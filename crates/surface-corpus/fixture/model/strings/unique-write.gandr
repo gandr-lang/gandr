@@ -40,29 +40,26 @@ def holders(s : Repr) -> -F Integer {
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies : +U (-F [Div] Integer) ;
-def aloneCopies = thunk { run s <- force long ; become copies(pushInPlace(s, 33)) } ;
+def aloneCopies() -> -F [Div] Integer { run s <- force long ; become copies(pushInPlace(s, 33)) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
-def aloneHolders : +U (-F [Div] Integer) ;
-def aloneHolders = thunk {
+def aloneHolders() -> -F [Div] Integer {
   run s <- force long ;
   run w <- pushInPlace(s, 33) ;
   become holders(written(w))
-} ;
+}
 
 /// On a copy it writes the buffer the original reads too: the written buffer
 /// still has two holders, so the original would see the write. This is the
 /// write a grade must keep from a shared string.
 @[ runs("2") ]
-def sharedHolders : +U (-F [Div] Integer) ;
-def sharedHolders = thunk {
+def sharedHolders() -> -F [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- pushInPlace(c, 33) ;
   become holders(written(w))
-} ;
+}
 
 /// Under a grade-one hold the string is made in place, so the write that reads
 /// no count, through the hold's exclusive view, copies nothing.

@@ -30,8 +30,7 @@ def first(n : Nat) -> -F [Div] Nat {
 
 /// The value the `break` left with, one further.
 @[ runs("Succ(Succ(Zero))") ]
-def first_zero : +U (-F [Div] Nat) ;
-def first_zero = thunk { become first(Zero) } ;
+def first_zero() -> -F [Div] Nat { become first(Zero) }
 
 /// Each arm of a case leaves the loop with its own value.
 @[ checks ]
@@ -47,8 +46,7 @@ def pick(n : Nat) -> -F [Div] Nat {
 
 /// The successor arm leaves with the predecessor.
 @[ runs("Succ(Succ(Zero))") ]
-def pick_two : +U (-F [Div] Nat) ;
-def pick_two = thunk { become pick(Succ(Succ(Zero))) } ;
+def pick_two() -> -F [Div] Nat { become pick(Succ(Succ(Zero))) }
 
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
 @[ checks ]
@@ -63,8 +61,7 @@ def leave(n : Nat) -> -F [Div] Nat {
 
 /// One is a successor, so its predecessor is returned.
 @[ runs("Zero") ]
-def leave_one : +U (-F [Div] Nat) ;
-def leave_one = thunk { become leave(Succ(Zero)) } ;
+def leave_one() -> -F [Div] Nat { become leave(Succ(Zero)) }
 
 /// A loop whose body hands the rest of the run to another function.
 @[ checks ]
@@ -74,8 +71,7 @@ def hand(n : Nat) -> -F [Div] Nat {
 
 /// The handed-on call returns at once.
 @[ runs("Succ(Zero)") ]
-def hand_one : +U (-F [Div] Nat) ;
-def hand_one = thunk { become hand(Succ(Zero)) } ;
+def hand_one() -> -F [Div] Nat { become hand(Succ(Zero)) }
 
 /// A `while` that returns from its first pass when its condition holds.
 @[ checks ]
@@ -86,13 +82,11 @@ def until_done(n : Integer) -> -F [Div] Integer {
 
 /// Three is above zero, so the loop returns it.
 @[ runs("3") ]
-def until_three : +U (-F [Div] Integer) ;
-def until_three = thunk { become until_done(3) } ;
+def until_three() -> -F [Div] Integer { become until_done(3) }
 
 /// Zero is not above zero, so the loop never runs.
 @[ runs("0") ]
-def until_none : +U (-F [Div] Integer) ;
-def until_none = thunk { become until_done(0) } ;
+def until_none() -> -F [Div] Integer { become until_done(0) }
 
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
 @[ checks ]
@@ -108,8 +102,7 @@ def sift(n : Nat) -> -F [Div] Nat {
 
 /// Zero breaks at once.
 @[ runs("Zero") ]
-def sift_zero : +U (-F [Div] Nat) ;
-def sift_zero = thunk { become sift(Zero) } ;
+def sift_zero() -> -F [Div] Nat { become sift(Zero) }
 
 /// A loop inside a handler's body leaves with its value to the body.
 @[ checks ]
@@ -125,8 +118,7 @@ def handled(n : Nat) -> -F [Div] Nat {
 
 /// The loop's value, through the `pure` clause.
 @[ runs("Succ(Succ(Zero))") ]
-def handled_zero : +U (-F [Div] Nat) ;
-def handled_zero = thunk { become handled(Zero) } ;
+def handled_zero() -> -F [Div] Nat { become handled(Zero) }
 
 @[ refuses("OutsideLoop") ]
 def stray(n : Nat) -> -F Nat {
@@ -162,14 +154,12 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
 
 /// The search returns from the second cell (#283).
 @[ runs("Succ(Zero)") ]
-def find_one : () => Nat ;
-def find_one = thunk { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) } ;
+def find_one() -> -F Nat { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) }
 
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given (#283).
 @[ runs("Succ(Zero)") ]
-def find_none : () => Nat ;
-def find_none = thunk { become find_succ(cons(Zero, nil), Succ(Zero)) } ;
+def find_none() -> -F Nat { become find_succ(cons(Zero, nil), Succ(Zero)) }
 
 /// A `for` ending a body runs it on every cell and returns unit (#283).
 @[ checks ]

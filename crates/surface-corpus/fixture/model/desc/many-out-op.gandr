@@ -23,8 +23,7 @@ data NatDiv : Type {
 
 /// Five by two runs to two remainder one, both outputs bound.
 @[ runs("(Succ(Succ(Zero)), Succ(Zero))") ]
-def five_by_two : () => NatDiv * NatDiv ;
-def five_by_two = thunk {
+def five_by_two() -> -F (NatDiv * NatDiv) {
   run (quot, rem) <- divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero)));
   (quot, rem)
-} ;
+}

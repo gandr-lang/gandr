@@ -60,39 +60,30 @@ def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F [Div] List(
 
 /// `hi`, two bytes and the zero: inline.
 @[ runs("Inside") ]
-def hiPlace : () => Place ;
-def hiPlace = thunk {
-  become place(own((Cons(104, Cons(105, Nil)) : List(Integer))))
-} ;
+def hiPlace() -> -F Place { become place(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
-def fullPlace : +U (-F [Div] Place) ;
-def fullPlace = thunk {
+def fullPlace() -> -F [Div] Place {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   become place(own(cs))
-} ;
+}
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
-def spilledPlace : +U (-F [Div] Place) ;
-def spilledPlace = thunk {
+def spilledPlace() -> -F [Div] Place {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   become place(own(cs))
-} ;
+}
 
 /// Inline or on the heap, a string reads as its owned bytes.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiBytes : () => List(Integer) ;
-def hiBytes = thunk {
-  become bytes(own((Cons(104, Cons(105, Nil)) : List(Integer))))
-} ;
+def hiBytes() -> -F List(Integer) { become bytes(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
-def spilledCount : +U (-F [Div] Integer) ;
-def spilledCount = thunk {
+def spilledCount() -> -F [Div] Integer {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   run s <- own(cs) ;
   become count(bytes(s))
-} ;
+}

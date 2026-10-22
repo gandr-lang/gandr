@@ -78,5 +78,4 @@ def pair(v : Vinf, w : Vinf) -> -F Vinf {
 
 /// The rank of the set whose one member is the empty set.
 @[ checks ]
-def ranked : +U (-F Ord) ;
-def ranked = thunk { run v <- single(zero); rank(v) } ;
+def ranked() -> -F Ord { run v <- single(zero); rank(v) }

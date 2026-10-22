@@ -100,8 +100,7 @@ module Endo : Model(Monoid) {
 
 /// The included multiplication, run at the model: add one, then double.
 @[ runs("8") ]
-def composed : () => Integer ;
-def composed = thunk {
+def composed() -> -F Integer {
   run h <- Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) ;
   become h(3)
-} ;
+}

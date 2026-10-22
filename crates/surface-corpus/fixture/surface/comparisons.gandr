@@ -13,13 +13,11 @@ def unlessZero(n : Integer) -> -F [Div] Integer {
 
 /// Three is not zero, so the loop returns it.
 @[ runs("3") ]
-def unlessZeroThree : +U (-F [Div] Integer) ;
-def unlessZeroThree = thunk { become unlessZero(3) } ;
+def unlessZeroThree() -> -F [Div] Integer { become unlessZero(3) }
 
 /// Zero is zero, so the loop never runs.
 @[ runs("0") ]
-def unlessZeroZero : +U (-F [Div] Integer) ;
-def unlessZeroZero = thunk { become unlessZero(0) } ;
+def unlessZeroZero() -> -F [Div] Integer { become unlessZero(0) }
 
 /// Its argument when that is at most zero, else zero.
 @[ checks ]
@@ -30,8 +28,7 @@ def atMostZero(n : Integer) -> -F [Div] Integer {
 
 /// Zero is at most zero, so the loop returns it.
 @[ runs("0") ]
-def atMostZeroZero : +U (-F [Div] Integer) ;
-def atMostZeroZero = thunk { become atMostZero(0) } ;
+def atMostZeroZero() -> -F [Div] Integer { become atMostZero(0) }
 
 /// Its argument when that is at least one, else zero.
 @[ checks ]
@@ -42,10 +39,8 @@ def atLeastOne(n : Integer) -> -F [Div] Integer {
 
 /// One is at least one, so the loop returns it.
 @[ runs("1") ]
-def atLeastOneOne : +U (-F [Div] Integer) ;
-def atLeastOneOne = thunk { become atLeastOne(1) } ;
+def atLeastOneOne() -> -F [Div] Integer { become atLeastOne(1) }
 
 /// Zero is not at least one, so the loop never runs.
 @[ runs("0") ]
-def atLeastOneZero : +U (-F [Div] Integer) ;
-def atLeastOneZero = thunk { become atLeastOne(0) } ;
+def atLeastOneZero() -> -F [Div] Integer { become atLeastOne(0) }

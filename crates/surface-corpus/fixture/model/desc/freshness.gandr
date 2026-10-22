@@ -39,10 +39,7 @@ def rec conditions(chain : Theory) -> -F Integer {
 
 /// `Pi` states one condition.
 @[ runs("1") ]
-def stated : () => Integer ;
-def stated = thunk {
-  case Pi {
-    Presents(sorts, opers, rules) => become conditions(rules),
-    _ => 0
-  }
-} ;
+def stated() -> -F Integer { case Pi {
+  Presents(sorts, opers, rules) => become conditions(rules),
+  _ => 0
+} }

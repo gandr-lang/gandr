@@ -50,8 +50,7 @@ def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> -F Integer
 
 /// The last entry of `triple`, observed.
 @[ runs("3") ]
-def tripled : () => Integer ;
-def tripled = thunk { become third(triple) } ;
+def tripled() -> -F Integer { become third(triple) }
 
 /// The one entry of a lazy product of one is its one projection.
 @[ checks ]
@@ -61,8 +60,7 @@ def only(m : +U &{get : -F Integer}) -> -F Integer {
 
 /// The only entry of `single`, observed.
 @[ runs("1") ]
-def singled : () => Integer ;
-def singled = thunk { become only(single) } ;
+def singled() -> -F Integer { become only(single) }
 
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.
@@ -79,8 +77,7 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer {
 
 /// The last component of `chained`, observed by its position.
 @[ runs("3") ]
-def lasted : () => Integer ;
-def lasted = thunk { become last(chained) } ;
+def lasted() -> -F Integer { become last(chained) }
 
 @[ refuses("OutOfFragment.WrongSort") ]
 def unthunked : -F Integer & -F Integer ;

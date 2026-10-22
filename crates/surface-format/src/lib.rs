@@ -101,6 +101,7 @@
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
 //! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
 //! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
+//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> -F B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
@@ -168,6 +169,16 @@
 //! - Reversal: a lowering that writes the bind for a nested call and the thunk
 //!   around a checked computation itself, so the two spellings lower alike and
 //!   the core comparison suffices.
+//!
+//! A signature at a suspended returner and the thunk defining it after it
+//! are the two halves of one function form: `def f : () => B ; def f = thunk
+//! { c } ;` is written `def f() -> -F B { c }` in either form, as the
+//! presentation printer writes such a declaration. The merge reads two
+//! top-level forms where every other rewrite reads one; both spellings lower
+//! to the same thunk at the same type, and a declaration whose merged form
+//! lowers or elaborates otherwise keeps its halves and is formatted again,
+//! unreported. A thunk holding a comment, a graded one and a definition the
+//! source writes as anything but a thunk keep their halves.
 //!
 //! A source that imports a sibling is lowered beside it: alone, every
 //! declaration that reads an imported name is refused and none could be
@@ -243,6 +254,8 @@ mod leaf;
 mod linear;
 
 mod meaning;
+
+mod merge;
 
 mod rewrite;
 
@@ -741,11 +754,14 @@ pub fn declared_form(
 /// - hypothesis: L3 — a source importing the declaration its signature names is
 ///   sugared beside the import and kept alone; a linear run is written away
 ///   where the checker elaborates both spellings alike, withdrawn where it
-///   elaborates them otherwise, and kept where it refuses the source.
+///   elaborates them otherwise, and kept where it refuses the source; a
+///   signature and its thunk merge into one function form, and keep their
+///   halves where the thunk is commented, graded or no thunk.
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
 /// - witness: `tests::rewrite::a_linear_run_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::the_runs_ending_a_block_are_written_away_together`
+/// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format_beside(
@@ -852,14 +868,17 @@ pub fn format_beside(
             grammar,
             tree,
             &flat,
-            Some(rewrite::Rewrites {
-                chosen,
-                withdrawn: &[],
-                motives: &any,
-                tails: &every,
-                runs: &unlisted,
-                thunks: &unthunked,
-            }),
+            (
+                Some(rewrite::Rewrites {
+                    chosen,
+                    withdrawn: &[],
+                    motives: &any,
+                    tails: &every,
+                    runs: &unlisted,
+                    thunks: &unthunked,
+                }),
+                &merge::Apart::default(),
+            ),
             &layout,
             ending,
         )?;
@@ -876,6 +895,8 @@ pub fn format_beside(
     let mut stuck = Vec::new();
     let mut fresh: Vec<NodeKey> = Vec::new();
     let mut retried: Vec<ByteSpan> = Vec::new();
+    let mut apart = merge::Apart::default();
+    let mut parted: Vec<ByteSpan> = Vec::new();
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -889,7 +910,7 @@ pub fn format_beside(
             }),
             (Some(_) | None, _) => None,
         };
-        let laid = write(grammar, tree, &flat, rewrites, &layout, ending)?;
+        let laid = write(grammar, tree, &flat, (rewrites, &apart), &layout, ending)?;
         let text = SourceText::from(laid.text.as_str());
         let Some(ref lowered) = lowered
         else {
@@ -917,8 +938,10 @@ pub fn format_beside(
                 let before = withdrawn.len();
                 // A declaration elaborating otherwise with its thunks left out
                 // keeps them, unreported, and is tried again: there the checker
-                // inserts none.
+                // inserts none. One still elaborating otherwise merged into its
+                // function form is laid out apart again, unreported.
                 retried.clear();
+                parted.clear();
                 stuck.clear();
                 for declaration in differing {
                     let forms = forms_of(tree, &declaration.keys);
@@ -927,6 +950,13 @@ pub fn format_beside(
                         && thunks.kept(&forms) == thunk::Thunk::Inserted
                     {
                         retried.extend(forms);
+                        continue;
+                    }
+                    if forms
+                        .iter()
+                        .any(|form| laid.merged.binary_search(form).is_ok())
+                    {
+                        parted.extend(forms);
                         continue;
                     }
                     fresh.clear();
@@ -946,8 +976,9 @@ pub fn format_beside(
                         reports.push(declaration.withdrawal);
                     }
                 }
-                if !retried.is_empty() {
+                if !retried.is_empty() || !parted.is_empty() {
                     thunks.keep(&retried);
+                    apart.keep(&parted);
                     continue;
                 }
                 if withdrawn.len() == before {
@@ -1140,6 +1171,9 @@ struct Written<'source>
     leaves: Vec<Leaf<'source>>,
     /// The top-level forms a rewrite respelled, in order.
     respelled: Vec<NodeIndex>,
+    /// The spans of the signatures and definitions merged into one form,
+    /// ascending.
+    merged: Vec<ByteSpan>,
     /// The path composites kept, no motive derived for them, in order.
     unspelled: Vec<ByteSpan>,
 }
@@ -1166,7 +1200,8 @@ impl Written<'_>
 
 /// The source whose leaves are `flat` written at `layout`, each clean form
 /// respelled by `rewrites` — the rewrites chosen and the spans they do not
-/// enter — when given.
+/// enter — when given, and each signature merged with the definition after
+/// it where the rewrites merge them and `apart` does not hold them.
 ///
 /// # Specification
 /// trivial.
@@ -1174,7 +1209,7 @@ fn write<'source>(
     grammar: &Pbg,
     tree: &SyntaxTree<'source>,
     flat: &leaf::Leaves<'source>,
-    rewrites: Option<rewrite::Rewrites<'_, 'source>>,
+    (rewrites, apart): (Option<rewrite::Rewrites<'_, 'source>>, &merge::Apart),
     layout: &LayoutOptions,
     ending: Ending,
 ) -> Result<Written<'source>, FormatError>
@@ -1185,8 +1220,12 @@ fn write<'source>(
     let mut pieces = Vec::new();
     let mut written: Vec<Leaf<'source>> = Vec::with_capacity(flat.leaves.len());
     let mut respelled = Vec::new();
+    let mut merged = Vec::new();
     let mut unspelled = Vec::new();
-    for unit in units(&flat.leaves) {
+    let units = units(&flat.leaves);
+    let mut at = 0_usize;
+    while let Some(unit) = units.get(at) {
+        at = at.saturating_add(1);
         let Some(first) = unit.leaves.first()
         else {
             continue;
@@ -1205,7 +1244,7 @@ fn write<'source>(
             }
         }
         let start = text.len();
-        let span = unit.span;
+        let mut span = unit.span;
         let Owner::Form(form) = first.owner
         else {
             text.push_str(<&str>::from(first.text));
@@ -1214,20 +1253,54 @@ fn write<'source>(
         };
         let laid = match flat.integrity(form) {
             Integrity::Clean => {
-                let (respelling, kept) = rewrites.map_or_else(
-                    || (Respelled::Kept, rewrite::Unspelled::default()),
-                    |rewrites| rewrite::respell(grammar, tree, form, unit.leaves, rewrites),
-                );
+                let (changed, kept) = respelled_form(grammar, tree, form, unit.leaves, rewrites);
                 unspelled.extend(kept.0);
-                let leaves = match respelling {
-                    Respelled::Changed(ref leaves) => {
+                let own = changed.as_deref().unwrap_or(unit.leaves);
+                let paired = rewrites
+                    .filter(|chosen| chosen.chosen.pairing() == merge::Pairing::Merged)
+                    .and_then(|chosen| {
+                        let next = units.get(at)?;
+                        let Owner::Form(defined) = next.leaves.first()?.owner
+                        else {
+                            return None;
+                        };
+                        if flat.integrity(defined) != Integrity::Clean
+                            || next.joins != Joins::OwnLine
+                            || merge::candidate(next.leaves) == merge::Pairing::Apart
+                        {
+                            return None;
+                        }
+                        let spans = [tree.node(form)?.span(), tree.node(defined)?.span()];
+                        if spans.iter().any(|&span| {
+                            chosen.withdrawn.contains(&span)
+                                || apart.pairing(span) == merge::Pairing::Apart
+                        }) {
+                            return None;
+                        }
+                        let (definition, also) =
+                            respelled_form(grammar, tree, defined, next.leaves, Some(chosen));
+                        let leaves = merge::merged(
+                            own,
+                            (next.leaves, definition.as_deref().unwrap_or(next.leaves)),
+                        )?;
+                        Some((leaves, also, defined, spans, next.span))
+                    });
+                if let Some((leaves, also, defined, spans, end)) = paired {
+                    unspelled.extend(also.0);
+                    respelled.extend([form, defined]);
+                    merged.extend(spans);
+                    span = span.join(end);
+                    at = at.saturating_add(1);
+                    text.push_str(&layout::lay_out(&leaves, layout, ending.spelling())?);
+                    written.extend_from_slice(&leaves);
+                }
+                else {
+                    if changed.is_some() {
                         respelled.push(form);
-                        leaves.as_slice()
-                    },
-                    Respelled::Kept => unit.leaves,
-                };
-                text.push_str(&layout::lay_out(leaves, layout, ending.spelling())?);
-                written.extend_from_slice(leaves);
+                    }
+                    text.push_str(&layout::lay_out(own, layout, ending.spelling())?);
+                    written.extend_from_slice(own);
+                }
                 Layout::Formatted
             },
             Integrity::Repaired => {
@@ -1250,13 +1323,39 @@ fn write<'source>(
     if !text.is_empty() {
         text.push_str(breaks);
     }
+    merged.sort_unstable();
     Ok(Written {
         text,
         pieces,
         leaves: written,
         respelled,
+        merged,
         unspelled,
     })
+}
+
+/// The leaves of the clean top-level form `form` of `tree`, whose leaves
+/// are `leaves`, respelled by `rewrites` when given and some rewrite applies,
+/// beside the path composites it kept.
+///
+/// # Specification
+/// trivial.
+fn respelled_form<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    form: NodeIndex,
+    leaves: &[Leaf<'source>],
+    rewrites: Option<rewrite::Rewrites<'_, 'source>>,
+) -> (Option<Vec<Leaf<'source>>>, rewrite::Unspelled)
+{
+    let (respelling, kept) = rewrites.map_or_else(
+        || (Respelled::Kept, rewrite::Unspelled::default()),
+        |rewrites| rewrite::respell(grammar, tree, form, leaves, rewrites),
+    );
+    match respelling {
+        Respelled::Changed(leaves) => (Some(leaves), kept),
+        Respelled::Kept => (None, kept),
+    }
 }
 
 /// One top-level unit of the source: a form, or a comment or shebang at the

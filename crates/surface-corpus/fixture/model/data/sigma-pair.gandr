@@ -24,8 +24,7 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The tag of `tagged`.
 @[ runs("3") ]
-def tag : () => Integer ;
-def tag = thunk { become tag_of(tagged) } ;
+def tag() -> -F Integer { become tag_of(tagged) }
 
 /// The first component of a dependent pair, selected by its label.
 @[ checks ]
@@ -35,8 +34,7 @@ def index_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The index of `tagged`.
 @[ runs("3") ]
-def index : () => Integer ;
-def index = thunk { become index_of(tagged) } ;
+def index() -> -F Integer { become index_of(tagged) }
 
 /// A pair whose second component is a loop at its first.
 @[ checks ]
@@ -131,8 +129,7 @@ def tagged_around = (here(3), here((MkIx : Ix(3)))) ;
 
 /// Five, carried along `both` through the constant family.
 @[ checks ]
-def moved : () => Integer ;
-def moved = thunk { transport(\s. Integer, both, 5) } ;
+def moved() -> -F Integer { transport(\s. Integer, both, 5) }
 
 /// A later entry's type may apply the earlier one: the type printed for the
 /// pair, `Path(Integer, e.0(0), 0)` at its second entry, reads back to it

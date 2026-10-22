@@ -96,5 +96,4 @@ def heardRun() -> -F Run(Ask.Decoded) {
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[ runs("recorded(received(Yes), closed)") ]
-def decodedRun : () => Run(Ask.Decoded) ;
-def decodedRun = thunk { become heardRun() } ;
+def decodedRun() -> -F Run(Ask.Decoded) { become heardRun() }

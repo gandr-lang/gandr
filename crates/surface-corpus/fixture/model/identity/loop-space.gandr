@@ -27,8 +27,7 @@ def rec spinWords(n : Int) -> -F Words {
 
 /// Two successors spin twice around.
 @[ runs("Loop(Loop(Nil))") ]
-def spun : () => Words ;
-def spun = thunk { become spinWords(S(S(Z))) } ;
+def spun() -> -F Words { become spinWords(S(S(Z))) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
 @[ checks ]

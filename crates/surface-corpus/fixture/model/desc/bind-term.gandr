@@ -55,10 +55,7 @@ def rec derived(chain : Theory) -> -F Integer {
 /// the atoms compared by name, the laws would not overlap and none would be
 /// derived.
 @[ runs("2") ]
-def derivations : () => Integer ;
-def derivations = thunk {
-  case Alpha {
-    Presents(sorts, opers, rules) => become derived(rules),
-    _ => 0
-  }
-} ;
+def derivations() -> -F Integer { case Alpha {
+  Presents(sorts, opers, rules) => become derived(rules),
+  _ => 0
+} }

@@ -8606,12 +8606,11 @@ mod tests
                 "21:9 `w` variable declaration+value",
                 "21:15 `m` variable value",
                 "27:4 `tag` function declaration",
-                "28:4 `tag` function declaration",
-                "28:25 `tag_of` function computation",
-                "28:32 `tagged` function value",
+                "27:33 `tag_of` function computation",
+                "27:40 `tagged` function value",
             ],
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
-             the `tagged` passed to it is a value; both halves of `tag` declare"
+             the `tagged` passed to it is a value; `tag`, one function form, declares once"
         );
         assert_eq!(
             read("data-base.gandr", 22 ..= 25),

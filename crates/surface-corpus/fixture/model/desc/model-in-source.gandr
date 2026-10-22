@@ -41,7 +41,4 @@ def countingModel = (Integer, (thunk { 0 }, thunk { fn (n) { return n + 1 } })) 
 /// The syntax model's successor at its zero builds the data's one: the
 /// module's operations run.
 @[ runs("S(Z)") ]
-def one : () => N ;
-def one = thunk {
-  become SyntaxNat.succ(SyntaxNat.zero())
-} ;
+def one() -> -F N { become SyntaxNat.succ(SyntaxNat.zero()) }

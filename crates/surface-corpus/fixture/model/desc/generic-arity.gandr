@@ -35,14 +35,12 @@ def arity(presented : Theory) -> -F Integer {
 
 /// The generic program run on `Monoid`: two operations, `mul` and `one`.
 @[ runs("2") ]
-def counted : () => Integer ;
-def counted = thunk { become arity(Monoid) } ;
+def counted() -> -F Integer { become arity(Monoid) }
 
 /// `sign` is an ordinary name now that the block's keyword is `theory` (#729):
 /// a definition so named runs the generic program as `counted` does.
 @[ runs("2") ]
-def sign : () => Integer ;
-def sign = thunk { become arity(Monoid) } ;
+def sign() -> -F Integer { become arity(Monoid) }
 
 /// A type computed from a presentation: a `case` over `Theory` whose arms return
 /// the quotes `Integer` and `Unit`. The type language gains no `case`; the call
@@ -58,8 +56,7 @@ def counted_at(presented : Theory) -> -F Type {
 /// `counted_at(Monoid)` as a type: the closed call runs to `Integer`, so the
 /// count of `Monoid`'s operations inhabits it.
 @[ runs("2") ]
-def typed : () => counted_at(Monoid) ;
-def typed = thunk { become arity(Monoid) } ;
+def typed() -> -F counted_at(Monoid) { become arity(Monoid) }
 
 /// On a binder the call cannot run: `counted_at(presented)` stays rigid, and
 /// its two occurrences are one type.

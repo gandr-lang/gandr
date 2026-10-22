@@ -50,8 +50,7 @@ def idDecoded = thunk { fn (x) { return x } } ;
 
 /// The identity applied at its decoded type.
 @[ runs("Succ(Zero)") ]
-def appliedDecoded : +U (-F Nat) ;
-def appliedDecoded = thunk { idDecoded(Succ(Zero)) } ;
+def appliedDecoded() -> -F Nat { idDecoded(Succ(Zero)) }
 
 /// The same identity where the plain arrow between naturals is expected: the
 /// decode is a dependent arrow whose codomain, `elPi(toNat(x))`, runs to

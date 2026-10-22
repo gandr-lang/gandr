@@ -30,5 +30,4 @@ def viaFamily = viaArrow ;
 
 /// The function read at the plain arrow applies there.
 @[ runs("Succ(Zero)") ]
-def appliedArrow : +U (-F Nat) ;
-def appliedArrow = thunk { viaArrow(Succ(Zero)) } ;
+def appliedArrow() -> -F Nat { viaArrow(Succ(Zero)) }

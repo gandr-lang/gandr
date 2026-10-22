@@ -4018,6 +4018,31 @@ fn a_function_definition_spells_whole_941()
     );
 }
 
+/// A suspended computation at a suspended returner spells whole as the
+/// function form of no parameter that declares it, its body two columns in
+/// (#1449).
+#[test]
+fn a_suspended_returner_spells_whole_1449()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let ty = core.value_type_thunk(returns_nat);
+    let unit = core.value_unit();
+    let bare = core.computation_return(unit);
+    let suspended = core.value_thunk(bare);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        declared_whole(&source, (ty, suspended), PageWidth::from(100_u32)),
+        Maybe::Present((
+            String::from("def down() -> -F Nat {\n  unit\n}"),
+            Fidelity::Faithful
+        )),
+        "a suspended returner is written with no parameter"
+    );
+}
+
 /// A definition over region binders spells whole with its telescope,
 /// `@[r : Region]`, before its parameters, and each type kept at a binder
 /// names it; a binder below the greatest one kept at is written though

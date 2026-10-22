@@ -40,10 +40,8 @@ module B = MkCounter(Seed) ;
 
 /// One step of the first application, at its own abstract type.
 @[ runs("1") ]
-def a_once : () => A.T ;
-def a_once = thunk { become A.step(A.seed) } ;
+def a_once() -> -F (A.T) { become A.step(A.seed) }
 
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
-def b_twice : () => Integer ;
-def b_twice = thunk { run one <- B.step(B.seed) ; become B.read(B.step(one)) } ;
+def b_twice() -> -F Integer { run one <- B.step(B.seed) ; become B.read(B.step(one)) }

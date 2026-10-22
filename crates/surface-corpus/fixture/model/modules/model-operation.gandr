@@ -33,11 +33,10 @@ module Counted : Model(Counting) {
 
 /// Two steps from the start, read out through the model's operations.
 @[ runs("2") ]
-def counted_two : () => Integer ;
-def counted_two = thunk {
+def counted_two() -> -F Integer {
   run one <- Counted.next(Counted.zero) ;
   become Counted.read(Counted.next(one))
-} ;
+}
 
 /// A sum, the theory of `nat-add.gandr`'s signature
 /// `#{ type M = Integer, zero : M, add : (M, M) => M }`: two inputs, written

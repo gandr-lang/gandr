@@ -1276,6 +1276,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "short-alias",
             "linear-run",
             "inserted-thunk",
+            "function-form",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -1404,6 +1405,100 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
             "{body}"
         );
     }
+}
+
+/// A signature at a suspended returner and the thunk defining it after it
+/// are written as the function form that declares them, in either form: a
+/// `become`, a statement block and a computation alike. A thunk holding a
+/// comment, a graded one and a definition of a value keep their halves
+/// (#1449).
+#[test]
+fn a_signed_thunk_merges_into_its_function_form_1449()
+{
+    let grammar = grammar();
+    let source = "def twice(n : Integer) -> -F Integer { return (n + n) }\n\
+                  \n\
+                  /// Becomes a call.\n\
+                  @[ runs(\"2\") ]\n\
+                  def becomes : +U (-F Integer) ;\n\
+                  def becomes = thunk { become twice(1) } ;\n\
+                  \n\
+                  def block : () => Integer ;\n\
+                  def block = thunk { run m <- twice(1) ; return m } ;\n\
+                  \n\
+                  def pair : () => Integer * Integer ;\n\
+                  def pair = thunk { return (1, 2) } ;\n\
+                  \n\
+                  def commented : () => Integer ;\n\
+                  def commented = thunk {\n  // kept\n  become twice(2)\n} ;\n\
+                  \n\
+                  def graded : +U[1] (-F Integer) ;\n\
+                  def graded = thunk[1] { become twice(3) } ;\n\
+                  \n\
+                  def value : Integer ;\n\
+                  def value = 3 ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        def twice(n : Integer) -> -F Integer { return (n + n) }
+
+        /// Becomes a call.
+        @[ runs("2") ]
+        def becomes() -> -F Integer { become twice(1) }
+
+        def block() -> -F Integer { run m <- twice(1) ; m }
+
+        def pair() -> -F (Integer * Integer) { (1, 2) }
+
+        def commented : () => Integer ;
+        def commented = thunk {
+          // kept
+          become twice(2)
+        } ;
+
+        def graded : +U[1] (-F Integer) ;
+        def graded = thunk[1] { become twice(3) } ;
+
+        def value : Integer ;
+        def value = 3 ;
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+    expect![[r#"
+        def twice(n : Integer) -> -F Integer { return (n + n) }
+
+        /// Becomes a call.
+        @[ runs("2") ]
+        def becomes() -> -F Integer { become twice(1) }
+
+        def block() -> -F Integer { run m <- twice(1) ; return m }
+
+        def pair() -> -F #{Integer, Integer} { return #{1, 2} }
+
+        def commented : +U (-F Integer) ;
+        def commented = thunk {
+          // kept
+          become twice(2)
+        } ;
+
+        def graded : +U[1] (-F Integer) ;
+        def graded = thunk[1] { become twice(3) } ;
+
+        def value : Integer ;
+        def value = 3 ;
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
 }
 
 /// The rewrites' sweep: every corpus source formats into either form, the

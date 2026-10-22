@@ -23,5 +23,4 @@ def cong_wrap(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(Box, Wr
 
 /// Reflexivity at four carried along the wrapper by a run.
 @[ checks ]
-def wrapped : () => Path(Box, Wrap(4), Wrap(4));
-def wrapped = thunk { become cong_wrap(4, 4, here(4)) };
+def wrapped() -> -F Path(Box, Wrap(4), Wrap(4)) { become cong_wrap(4, 4, here(4)) }

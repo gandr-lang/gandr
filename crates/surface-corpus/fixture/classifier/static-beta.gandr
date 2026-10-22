@@ -27,8 +27,7 @@ def sum(p : apply(twice, Integer)) -> -F Integer {
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.
 @[ runs("3") ]
-def sumRun : () => Integer ;
-def sumRun = thunk { become sum((1, 2)) } ;
+def sumRun() -> -F Integer { become sum((1, 2)) }
 
 /// A pair returned at an operator's type.
 @[ checks ]
@@ -38,5 +37,4 @@ def doubled(n : Integer) -> -F twice(Integer) {
 
 /// `doubled` runs to the pair the operator's reduct types.
 @[ runs("(4, 4)") ]
-def doubledRun : () => twice(Integer) ;
-def doubledRun = thunk { become doubled(4) } ;
+def doubledRun() -> -F twice(Integer) { become doubled(4) }
