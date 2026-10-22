@@ -87,6 +87,7 @@ use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_dispatcher::tabled;
+use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
@@ -128,6 +129,8 @@ use crate::inlay::hint_at;
 use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::markup::Markup;
+use crate::missing::UNRESOLVED_NAME;
+use crate::missing::additions;
 use crate::paste::copied;
 use crate::position::Position;
 use crate::position::Range;
@@ -4381,6 +4384,11 @@ impl Server
                                     self.peer,
                                     (params.range, &params.context.diagnostics),
                                 ));
+                                offered.extend(workspace.import_additions(
+                                    &params.text_document.uri,
+                                    self.peer,
+                                    (params.range, &params.context.diagnostics),
+                                ));
                                 self.edited(workspace, Answer::Actions(offered))
                             },
                             Maybe::Absent(_) => Answer::Nothing,
@@ -5525,25 +5533,8 @@ impl Workspace
             return Answer::Nothing;
         };
         let path = named_path(&uri.path());
-        let mut reached: BTreeSet<&Path> = BTreeSet::new();
-        let mut at = 0_usize;
-        while hovering
-            .table()
-            .source_text(SourceIndex::from(at))
-            .is_some()
-        {
-            reached.extend(hovering.source_path(SourceIndex::from(at)));
-            at = at.saturating_add(1_usize);
-        }
         let mut files = self.files.borrow_mut();
-        let unimported: Vec<Unimported<'_>> = files
-            .declared(grammar)
-            .filter(|&(source, _)| source != path.as_path() && !reached.contains(source))
-            .map(|(source, names)| Unimported {
-                path: source,
-                names,
-            })
-            .collect();
+        let sources = unimported(&mut files, grammar, hovering, &path);
         let text = document.text.source();
         let index = LineIndex::new(<&str>::from(text).into());
         let import = |file: &Path| {
@@ -5560,10 +5551,84 @@ impl Workspace
             (uri, position),
             presented,
             Elsewhere {
-                sources: &unimported,
+                sources: &sources,
                 import: &import,
             },
         ))
+    }
+
+    /// The quick fixes importing a source for each name `asked` meets that the
+    /// copy of the document at `uri` that `peer` is answered from writes and
+    /// nothing in scope declares.
+    ///
+    /// # Specification
+    /// - requires: `diagnostics` are the request's, each as the client sent it.
+    /// - ensures: nothing for an unknown document, a copy that is not the
+    ///   latest, one whose session or grammar did not build, or one published
+    ///   with no [`UNRESOLVED_NAME`] diagnostic whose range meets `asked`;
+    ///   otherwise [`additions`] over the latest copy's text and the
+    ///   diagnostics last published for it, with the sources [`unimported`]
+    ///   reads and each imported by the edit [`Reading::imported`] writes into
+    ///   the copy.
+    /// - provides: the missing imports of `textDocument/codeAction`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`additions`], through the request, the edit
+    ///   leaving a document that checks.
+    /// - witness: `server::tests::an_unresolved_name_is_offered_the_import_declaring_it_1116`
+    #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
+    fn import_additions(
+        &self,
+        uri: &DocumentUri,
+        peer: Peer,
+        (asked, diagnostics): (Range, &[Value]),
+    ) -> Vec<CodeAction>
+    {
+        let (Maybe::Present(document), Some((version, published))) =
+            (self.view(uri, peer), self.published(uri))
+        else {
+            return Vec::new();
+        };
+        if version != document.version
+            || !published.iter().any(|refusal| {
+                refusal.code.as_deref() == Some(UNRESOLVED_NAME)
+                    && refusal.range.start <= asked.end
+                    && asked.start <= refusal.range.end
+            })
+        {
+            return Vec::new();
+        }
+        let Ok(grammar) = grammar()
+        else {
+            return Vec::new();
+        };
+        let Ok(hovering) = document.hovering(uri, &self.shadowing(peer))
+        else {
+            return Vec::new();
+        };
+        let path = named_path(&uri.path());
+        let mut files = self.files.borrow_mut();
+        let sources = unimported(&mut files, grammar, hovering, &path);
+        let text = document.text.source();
+        let index = LineIndex::new(<&str>::from(text).into());
+        let import = |file: &Path| {
+            document
+                .text
+                .reading()
+                .imported(text, &index, &path, &[file.to_path_buf()])
+        };
+        additions(
+            uri,
+            grammar,
+            (published, text),
+            (asked, diagnostics),
+            Elsewhere {
+                sources: &sources,
+                import: &import,
+            },
+        )
     }
 
     /// The quick fixes that fill each written hole `asked` meets in the copy of
@@ -7285,6 +7350,51 @@ fn differs_from_disk(
     Differs(std::fs::read(path).map_or(true, |disk| disk != <&str>::from(text).as_bytes()))
 }
 
+/// The sources under the roots `files` walks that the document at `path`, whose
+/// copy keeps `hovering`, neither is nor imports, each with the names its file
+/// declares as `grammar` reads them.
+///
+/// # Specification
+/// - requires: `path` is named as [`named_path`] names it, and `hovering` was
+///   read off the document's copy.
+/// - ensures: each source [`Files::declared`] answers, in its order, but `path`
+///   and every source the copy's import closure reads.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one walk of the roots, and one pass over the closure's sources.
+/// - executable: none — the clause would walk the roots again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source the closure reads is never answered, one it does
+///   not is.
+/// - witness: `server::tests::completion_offers_a_folder_name_with_its_import`
+fn unimported<'files>(
+    files: &'files mut Files,
+    grammar: &Pbg,
+    hovering: &Hovering,
+    path: &Path,
+) -> Vec<Unimported<'files>>
+{
+    let mut reached: BTreeSet<&Path> = BTreeSet::new();
+    let mut at = 0_usize;
+    while hovering
+        .table()
+        .source_text(SourceIndex::from(at))
+        .is_some()
+    {
+        reached.extend(hovering.source_path(SourceIndex::from(at)));
+        at = at.saturating_add(1_usize);
+    }
+    files
+        .declared(grammar)
+        .filter(|&(source, _)| source != path && !reached.contains(source))
+        .map(|(source, names)| Unimported {
+            path: source,
+            names,
+        })
+        .collect()
+}
+
 /// The range of `form`, the form under `document`'s caret in the revision
 /// its session judged.
 ///
@@ -8891,6 +9001,99 @@ mod tests
                 "additionalTextEdits": null,
                 "data": {"uri": uri("typing.gandr")}})],
             "once imported, the name is offered once, as the closure declares it"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn an_unresolved_name_is_offered_the_import_declaring_it_1116()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-autoimport-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        std::fs::write(
+            directory.join("lonely/far.gandr"),
+            "def faraway : Integer ;\ndef faraway = 7 ;\n",
+        )
+        .expect("the source is written");
+        let uri = format!("file://{}", directory.join("typing.gandr").display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {},
+                "workspaceFolders": [{"uri": format!("file://{}", directory.display()),
+                    "name": "scratch"}]}});
+        let _initialized = send(&mut server, Json(&initialize.to_string()));
+        let _ready = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+        );
+        let typing = "def near : Integer ;\ndef near = faraway ;\n";
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": typing}}});
+        let judged =
+            send(&mut server, Json(&open.to_string()))[0_usize]["params"]["diagnostics"].clone();
+        let refused = Value::Array(
+            judged
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|diagnostic| diagnostic["code"] == "UnresolvedName")
+                .cloned()
+                .collect(),
+        );
+        let ask = |server: &mut Connected, line: u32| {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 2_i32,
+                "method": "textDocument/codeAction", "params": {"textDocument": {"uri": uri},
+                "range": {"start": {"line": line, "character": 14_u32},
+                "end": {"line": line, "character": 14_u32}},
+                "context": {"diagnostics": judged}}});
+            send(server, Json(&request.to_string()))
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|message| message["id"] == 2_i32)
+                .and_then(|answer| answer["result"].as_array().cloned())
+                .map(|actions| {
+                    actions
+                        .into_iter()
+                        .filter(|action| {
+                            action["title"]
+                                .as_str()
+                                .is_some_and(|title| title.starts_with("Import"))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            ask(&mut server, 1_u32),
+            [serde_json::json!({"title": "Import `./lonely/far.gandr`",
+                "kind": "quickfix", "diagnostics": refused, "isPreferred": true,
+                "edit": {"changes": {&uri: [{"range": {"start": {"line": 0_i32, "character": 0_i32},
+                    "end": {"line": 0_i32, "character": 0_i32}},
+                    "newText": "import \"./lonely/far.gandr\" ;\n\n"}]}}})],
+            "the one source declaring the refused name is offered its import, preferred"
+        );
+        assert_eq!(
+            ask(&mut server, 0_u32),
+            [Value::Null; 0],
+            "a range elsewhere is offered no import"
+        );
+        let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+            "params": {"textDocument": {"uri": uri, "version": 2_i32},
+                "contentChanges": [{"text": format!("import \"./lonely/far.gandr\" ;\n\n{typing}")}]}});
+        assert_eq!(
+            send(&mut server, Json(&change.to_string()))[0_usize]["params"]["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|diagnostic| diagnostic["severity"] == 1_i32)
+                .count(),
+            0_usize,
+            "the document checks with the import made"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

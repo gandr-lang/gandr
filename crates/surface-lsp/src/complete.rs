@@ -324,7 +324,7 @@ pub struct Elsewhere<'held>
 ///   family in a type and a constructor in a pattern, and a module's member
 ///   nowhere.
 /// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
-fn unimported_as(
+pub fn unimported_as(
     category: Category,
     declared: &Declared,
     names: &[Declared],
