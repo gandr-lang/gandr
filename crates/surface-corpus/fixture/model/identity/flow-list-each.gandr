@@ -1,0 +1,42 @@
+// A flow between list types by a translator that recurses into the tail,
+// after directed univalence (Gratzer, Weinberger and Buchholtz, _Directed
+// univalence in simplicial homotopy type theory_, arXiv:2407.09146,
+// Definition 1.2): at one cell the image binds the translator's own image of
+// the rigid tail, and the cell it returns over that image and the head's
+// leaves is natural, so the translator is natural at every list.
+
+/// A list of records migrated by riding each cell along the records' flow.
+module Cells {
+  type Old = String * Integer;
+  type New = Integer * String;
+  /// The records' translator: the fields swapped.
+  @[ checks ]
+  def swap(old : Old) -> -F New {
+    case old {
+      #{name, age} => (age, name)
+    }
+  }
+  /// The flow between the records, by their translator.
+  @[ checks ]
+  def renamed : Flow(Type, Old, New) ;
+  def renamed = forward(swap) ;
+  /// The lists' translator: the list ridden along the records' flow.
+  @[ checks ]
+  def each(olds : List(Old)) -> -F List(New) {
+    become ride(\X. List(X), renamed, olds)
+  }
+  /// At one cell the image is the swapped head before the translator's own
+  /// image of the tail, so the lists' flow forwards by it.
+  @[ checks ]
+  def everyone : Flow(Type, List(Old), List(New)) ;
+  def everyone = forward(each) ;
+  /// A list ridden along the lists' flow.
+  @[ checks ]
+  def moved(olds : List(Old)) -> -F List(New) {
+    become ride(\X. X, everyone, olds)
+  }
+  /// Two records migrated by a run.
+  @[ runs("cons((36, \"ada\"), cons((41, \"alan\"), nil))") ]
+  def two : () => List(New) ;
+  def two = thunk { become moved(cons(("ada", 36), cons(("alan", 41), nil))) } ;
+}

@@ -101,7 +101,7 @@ impl TrackingIssue
     /// A universe equivalence outside the decided codes.
     pub const EQUIV: Self = Self(1316);
     /// A `forward` outside the decided codes.
-    pub const FORWARD: Self = Self(1317);
+    pub const FORWARD: Self = Self(1835);
     /// A ride the checker cannot move.
     pub const RIDE: Self = Self(1318);
     /// A declaration naming a session, which the kernel does not replay.

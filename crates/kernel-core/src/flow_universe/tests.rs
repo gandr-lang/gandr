@@ -693,6 +693,89 @@ fn a_list_flow_moves_its_tail_unread()
     );
 }
 
+/// A list flow's cell image may bind the translator's own image of the tail
+/// after the cell's leaves: the kernel replays the translator at the cell
+/// against that image bound after the translator at the tail. The extra
+/// binder is a cell's alone, and the tail's image stands only where a list
+/// may.
+#[test]
+fn a_list_flow_recurses_into_its_tail()
+{
+    let mut arena = TermArena::new();
+    let text = arena.value_type_base(BaseType::String);
+    let texts = arena.value_type_list(text);
+    let code = arena.value_quote(texts);
+    let sample = arena.value_literal(Literal::Text(StringLiteral::new("leaf".into())));
+    let nil = arena.value_list_nil();
+    let one = arena.value_list_cons(sample, nil);
+    let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let identity = returning(&mut arena, tail);
+
+    // Beneath the tail's image `r`, the head stands at two and `r` at zero.
+    let image = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let head = arena.value_variable(DeBruijnIndex::from(2_u32));
+    let cell = arena.value_list_cons(head, image);
+    let sampled = arena.value_list_cons(sample, image);
+    let action = apply(&mut arena, identity, one);
+    let recursion = apply(&mut arena, identity, nil);
+    let returned = arena.computation_return(sampled);
+    let bound = arena.computation_bind(recursion, returned);
+    let (claim, dialogue) = engine(&arena, action, bound);
+    assert_eq!(claim, EngineClaim::Convertible);
+    let recursive = (
+        opened(&mut arena, cell, BinderDepth::from(3_u32)),
+        dialogue
+            .0
+            .into_iter()
+            .map(portable)
+            .collect::<ImageDialogue>(),
+    );
+    let empty = image_of(&mut arena, identity, nil);
+    let images = vec![empty.clone(), recursive.clone()];
+    let kept = forward(&mut arena, (code, code), identity, images);
+    admit(&mut arena, kept).expect("the identity over its own image of the tail");
+    computes(&mut arena, kept, one, one);
+
+    let early = (
+        opened(&mut arena, nil, BinderDepth::from(1_u32)),
+        empty.1.clone(),
+    );
+    let forged = forward(&mut arena, (code, code), identity, vec![
+        early.clone(),
+        recursive.clone(),
+    ]);
+    assert_eq!(
+        admit(&mut arena, forged),
+        Err(KernelError::Flow(FlowError::NonNatural(early.0))),
+        "the empty list has no tail to recurse into"
+    );
+
+    let misplaced = arena.value_list_cons(image, image);
+    let misplaced = (
+        opened(&mut arena, misplaced, BinderDepth::from(3_u32)),
+        recursive.1,
+    );
+    let forged = forward(&mut arena, (code, code), identity, vec![empty, misplaced]);
+    assert_eq!(
+        admit(&mut arena, forged),
+        Err(KernelError::Flow(FlowError::NonNatural(image))),
+        "the tail's image stands at a string position"
+    );
+}
+
+/// The empty list's image of a list translator, with its dialogue.
+///
+/// # Specification
+/// trivial.
+fn image_of(
+    arena: &mut TermArena,
+    translator: ValueId,
+    nil: ValueId,
+) -> (ValueId, ImageDialogue)
+{
+    image(arena, translator, (nil, nil), nil, BinderDepth::default())
+}
+
 /// **Permanent.** A translator that returns one string literal for every
 /// string maps an infinite Base leaf to a constant: no leaf-natural image
 /// exists, and forward admission refuses the literal by name.
