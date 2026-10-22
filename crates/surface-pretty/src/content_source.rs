@@ -700,8 +700,9 @@ impl Source for ContentSource<'_>
     ///   a lazy product's components, a record's or a record type's fields in
     ///   label order, a session type's payloads in slot order, a family's
     ///   arguments, a constructor's fields, a primitive's arguments, a case's
-    ///   or a data case's branches, a handler's clauses or an offer's arms;
-    ///   none past them, for another node, or past the table.
+    ///   or a data case's branches, a handler's clauses, an offer's arms or a
+    ///   recorded run's payloads in move order; none past them, for another
+    ///   node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -714,6 +715,7 @@ impl Source for ContentSource<'_>
     ///   fields read every component in order and nothing past them; a base
     ///   type reads none.
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     #[spec(ensures: |ret| ret.is_none() || self.nodes.get(usize::from(node)).is_some())]
     #[inline]
     fn component(
@@ -755,6 +757,13 @@ impl Source for ContentSource<'_>
             ContentNode::Session(SessionAction::Offer { ref arms, .. }) => {
                 arms.values().nth(at).copied()
             },
+            ContentNode::Recorded(ref moves) => moves
+                .iter()
+                .filter_map(|step| match step.payload() {
+                    Maybe::Present(payload) => Some(payload),
+                    Maybe::Absent(_) => None,
+                })
+                .nth(at),
             ContentNode::RecordProjection(..)
             | ContentNode::TupleProjection(..)
             | ContentNode::Reify(_)
@@ -793,7 +802,6 @@ impl Source for ContentSource<'_>
             | ContentNode::Forward(_)
             | ContentNode::FunctionFlow(..)
             | ContentNode::FlowProduct(..)
-            | ContentNode::Recorded(_)
             | ContentNode::Ride { .. }
             | ContentNode::FlowType { .. }
             | ContentNode::RunType(_)

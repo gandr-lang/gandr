@@ -276,6 +276,7 @@ default-features = false
 # - surface-dispatcher
 # - surface-lowering (dev)
 # - surface-render-terminal (dev)
+# - surface-pretty (dev)
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
