@@ -48,6 +48,11 @@ impl fmt::Display for IssueNumber
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an updated issue is printed by its number; an empty
+    ///   write changes the line.
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     #[inline]
     fn fmt(
         &self,
@@ -79,6 +84,12 @@ impl fmt::Display for Filed
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opened issue's line and an updated one's; an empty
+    ///   write changes both.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     #[inline]
     fn fmt(
         &self,
@@ -557,6 +568,11 @@ fn file_function(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an opened issue labelled with its kind and its crate's
+///   area; a lost, empty or other label changes the `gh` invocation.
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 fn labels(krate: &Maybe<CrateDir, Unstated>) -> Vec<String>
 {
     let area = match *krate {

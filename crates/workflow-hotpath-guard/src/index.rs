@@ -66,6 +66,11 @@ impl IssueTitle
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opened issue's title; a lost name changes the `gh`
+    ///   invocation.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[must_use]
     #[inline]
     pub fn of(function: &SiteName) -> Self
@@ -108,6 +113,11 @@ impl fmt::Display for IssueTitle
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opened issue's title; an empty write changes the
+    ///   `gh` invocation.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -189,6 +199,11 @@ impl Key
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later run of the same pull request finds its row;
+    ///   an empty key appends a second one.
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     fn borrowed(&self) -> RowKey<'_>
     {
         RowKey {
@@ -204,6 +219,11 @@ impl Row
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later run of the same pull request finds its row;
+    ///   an empty key appends a second one.
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     fn key(&self) -> RowKey<'_>
     {
         RowKey {
@@ -248,6 +268,12 @@ impl Row
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later run keeps its row's comment link; a lost link
+    ///   changes the row.
+    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `index::tests::a_changed_set_of_functions_owes_a_comment`
     fn comment(&self) -> Maybe<String, Unstated>
     {
         let cell = self.cells.get(6).map_or("", String::as_str);
@@ -551,6 +577,12 @@ impl Index
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hand-folded index's open row, its settled rows and
+    ///   a series it has no row in; matching another subject or series, or a
+    ///   settled row, changes the standing.
+    /// - witness: `index::tests::an_open_row_keeps_the_issue_open_and_an_accepted_one_settles`
     #[must_use]
     #[inline]
     pub fn standing_in(
@@ -645,6 +677,11 @@ impl fmt::Display for Index
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hand-folded index written back unchanged; an empty
+    ///   write changes it.
+    /// - witness: `index::tests::a_hand_folded_index_keeps_its_rows`
     #[inline]
     fn fmt(
         &self,
@@ -686,6 +723,11 @@ impl Run<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new row's commit cell; another or an empty cell
+    ///   changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     fn commit(&self) -> String
     {
         format!(
@@ -710,6 +752,11 @@ impl FromStr for CommentUrl
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the address `gh` prints for a posted comment lands in
+    ///   the row's report cell; a lost address changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -723,6 +770,11 @@ impl fmt::Display for CommentUrl
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the row's report cell links the posted comment; an
+    ///   empty write changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -751,6 +803,11 @@ impl fmt::Display for With<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a report cell recording two functions; an empty write
+    ///   changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,

@@ -37,6 +37,11 @@ impl fmt::Display for PullNumber
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report names its pull request; an empty write
+    ///   changes the report.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -260,6 +265,12 @@ impl FromStr for Subject
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a subject read and written back, and an index's
+    ///   standing in one pull request's series; a lost subject changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `index::tests::an_open_row_keeps_the_issue_open_and_an_accepted_one_settles`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -273,6 +284,12 @@ impl fmt::Display for Subject
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a subject read and written back, and a new row's
+    ///   first cell; an empty write changes both.
+    /// - witness: `check::tests::a_name_reads_back_as_written`
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[inline]
     fn fmt(
         &self,
@@ -374,6 +391,11 @@ impl Report
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new row's commit cell links into the repository;
+    ///   another repository changes the row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[must_use]
     #[inline]
     pub const fn repository(&self) -> &Repository
@@ -385,6 +407,11 @@ impl Report
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new row's commit cell; another commit changes the
+    ///   row.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     #[must_use]
     #[inline]
     pub const fn sha(&self) -> &CommitSha
@@ -396,6 +423,11 @@ impl Report
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a passing check fixes its open row; no passed check,
+    ///   or one of another benchmark, leaves it open.
+    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
     #[must_use]
     #[inline]
     pub const fn passed(&self) -> &BTreeMap<Benchmark, RunUrl>
@@ -511,6 +543,11 @@ impl Report
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a benchmark that failed and passed in one run; an
+    ///   empty or other set fixes the row it regressed.
+    /// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
     #[must_use]
     #[inline]
     pub fn regressed(&self) -> BTreeSet<SiteName>
