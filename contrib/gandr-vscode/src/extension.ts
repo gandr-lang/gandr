@@ -3,12 +3,14 @@ import type { Location, Position } from "vscode-languageclient/node";
 import * as vscode from "vscode";
 
 import { IMPORT_DROP, ImportDrop } from "./drop";
+import { registerInputMethod } from "./input/method";
 import { GandrLanguageClient } from "./lsp/client";
 import { COPIED_SOURCES, IMPORT_PASTE, ImportPaste } from "./paste";
 
 export async function activate(context: vscode.ExtensionContext) {
   const languageClient = GandrLanguageClient.create();
   context.subscriptions.push(languageClient);
+  registerInputMethod(context);
   context.subscriptions.push(
     vscode.commands.registerCommand("gandr.toggleForm", () => toggleForm(languageClient)),
   );

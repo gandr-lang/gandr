@@ -910,6 +910,28 @@ run = [
   "aube exec -- tsc -p ./ --noEmit",
   "oxlint --config ../../.oxlintrc.json --deny-warnings src",
   "aube run compile",
+  "node --test 'dist/src/**/*.test.js'",
   "aube run bundle",
   "aube run package",
 ]
+
+# The input method's command table is generated from three pinned sources the
+# generator reads by digest (`contrib/gandr-vscode/scripts/input-table.mts`):
+# regenerated into a temporary file and compared with the committed
+# `src/input/table.json` byte for byte. A source is fetched once into
+# `target/input-sources/` and refused when its digest differs from the pin.
+["check:input-table"]
+description = "The committed input table is the one its pinned sources generate"
+dir = "contrib/gandr-vscode"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp)
+trap 'rm -f "$fresh"' EXIT
+node scripts/input-table.mts "$fresh"
+if ! diff -u src/input/table.json "$fresh"; then
+  echo 'input table check FAILED: the committed table is not its sources'"'"'; run `node scripts/input-table.mts src/input/table.json` in contrib/gandr-vscode' >&2
+  exit 1
+fi
+echo 'input table check OK: the committed table is its sources'"'"''
+'''

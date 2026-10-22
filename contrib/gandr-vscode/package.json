@@ -75,6 +75,12 @@
           "default": "invoked",
           "markdownDescription": "When the expected syntax shows as ghost text."
         },
+        "gandr.inputMethod.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "language-overridable",
+          "markdownDescription": "Offer a glyph for each `\\`-command written: `\\to` offers `→`, `\\r` the arrows and the commands that continue it. On for gandr; set it under a language (`\"[markdown]\": { \"gandr.inputMethod.enabled\": true }`) for others."
+        },
         "gandr.presentation.form": {
           "type": "string",
           "enum": [
@@ -106,6 +112,11 @@
           "default": null,
           "markdownDescription": "How a hover and a diagnostic write a construct that has a glyph, as `gandr --spelling` chooses it. Unset, the server follows the user's configuration file."
         }
+      }
+    },
+    "configurationDefaults": {
+      "[gandr]": {
+        "gandr.inputMethod.enabled": true
       }
     },
     "colors": [
@@ -348,6 +359,13 @@
         "language": "gandr",
         "scopeName": "source.gandr",
         "path": "./syntaxes/gandr.tmLanguage.json"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "acceptSelectedSuggestion",
+        "key": "space",
+        "when": "suggestWidgetVisible && textInputFocus && gandr.inputMethod.active"
       }
     ],
     "languages": [

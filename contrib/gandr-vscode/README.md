@@ -11,6 +11,7 @@ Language support for `.gandr` sources. The extension registers the `gandr` langu
 - [Hover colours](#hover-colours)
 - [Drop to import](#drop-to-import)
 - [Paste with imports](#paste-with-imports)
+- [Unicode input](#unicode-input)
 - [Develop the extension](#develop-the-extension)
 
 ## Requirements
@@ -118,6 +119,12 @@ Drag `.gandr` files from the Explorer into a gandr editor, holding Shift, and ea
 
 Copy text from one gandr editor and paste it into another, and the paste control offers _Paste with gandr imports_: the pasted text, plus an `import "…" ;` line for each source declaring a name it uses that the document does not import yet. A name declared in the text copied, or bound inside it, needs no import. The editor's plain paste stays the default; set `"editor.pasteAs.preferences": ["text.updateImports.gandr"]` to make the imports the default. A paste into the document copied from adds nothing.
 
+## Unicode input
+
+Type a `\`-command and the suggest list offers its glyphs: `\to` offers `→`, `\lambda` `λ`, `\::` `∷`. A command that others continue lists them beneath its glyphs, each with the glyphs it leads to: accepting `\r-` writes the command and asks again, so a fork completes one step at a time. Space, Enter or Tab accepts the selected suggestion, a glyph replacing the command; a space typed after a command that offers glyphs accepts its first, so write a lambda's binder as `\x.`, as the formatter does. The method is on for gandr; `"[gandr]": { "gandr.inputMethod.enabled": false }` turns it off, and the same setting under another language turns it on there.
+
+The commands are Agda's input method and the TeX names it inherits, read from public sources each pinned by digest: Agda's `agda-input.el` (MIT), the W3C character entity list's LaTeX and unicode-math names (W3C Software Notice and License), and the commands the LaTeX kernel declares at one symbol, such as `\to` beside `\rightarrow` (LPPL). `src/input/table.json` names them with their licences; `node scripts/input-table.mts src/input/table.json` regenerates it, and `mise run check:input-table` fails while the committed table differs.
+
 ## Develop the extension
 
 `mise exec -- aube run watch` recompiles on every change into `dist/src`. To run the extension without installing it, bundle once and start an Extension Development Host:
@@ -127,4 +134,4 @@ mise exec -- aube run vscode:prepublish
 code --extensionDevelopmentPath="$PWD"
 ```
 
-Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, bundles, and packages the extension; a deprecation fails that gate.
+Formatting and linting run with the repository's treefmt pass: oxfmt formats the TypeScript and JSON, and type-aware oxlint applies its rules and the TypeScript checker under the strict `tsconfig.json`. `mise run check:extension` from the repository root type-checks, lints, compiles, runs the `node:test` suites under `src/`, bundles, and packages the extension; a deprecation fails that gate.
