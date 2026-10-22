@@ -32,6 +32,7 @@
 //!   half that is not a function tail refuses its telescope at the declaration.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -79,6 +80,21 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The parameter is written as its name alone.
             Unwritten,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a parameter's type classifies no argument written for it.
+    pub mod unclosed {
+        /// The reason the type classifies nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The parameter is written as its name alone.
+            Unwritten,
+            /// The type names a parameter written before it, which an argument
+            /// replaces only where the call is read.
+            Dependent,
         }
     }
 }
@@ -483,6 +499,133 @@ impl<'source> Collector<'_, 'source>
                 .filter_map(|&position| entries.get(usize::from(position)).copied())
                 .collect(),
         ))
+    }
+
+    /// The written type of each explicit parameter of the function whose
+    /// header `header` stands just past the name of, in written order, when
+    /// the type names no parameter of the function.
+    ///
+    /// # Specification
+    /// - requires: `header` stands just past a declaration's name.
+    /// - ensures: past an implicit telescope `[ … ]` when one is written, one
+    ///   entry per parameter of the parenthesised list: `x : T` its `T`, or
+    ///   [`unclosed::Absent::Dependent`] when `T` names an entry of the
+    ///   telescope or a parameter before `x`; a bare `x`
+    ///   [`unclosed::Absent::Unwritten`]; a receiver's mode word skipped. None
+    ///   when no parameter list follows, or one is out of shape. `header` is
+    ///   left where it was.
+    /// - provides: [`super::Collected::parameters`], the type each argument of
+    ///   a call checks against.
+    /// - fails: never: a type whose pieces do not read counts as naming one.
+    /// - panics: none.
+    /// - executable: none — the cursor offers no count of its pieces to bound
+    ///   the result by.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor argument takes its classifier from the
+    ///   parameter at its place; one at a parameter whose type names the one
+    ///   before it takes none.
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    pub(super) fn explicit_parameters(
+        &self,
+        header: &Cursor<'_>,
+    ) -> Vec<Maybe<Placed, unclosed::Absent>>
+    {
+        let mut cursor = header.clone();
+        let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+            loop {
+                match cursor.read() {
+                    Maybe::Present(Piece::Tile { label, .. })
+                        if label == TileName::BRACKET_CLOSE =>
+                    {
+                        break;
+                    },
+                    Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => {
+                        let _fresh = bound.insert(self.name_of(at));
+                    },
+                    Maybe::Present(_) => {},
+                    Maybe::Absent(_) => return Vec::new(),
+                }
+            }
+        }
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
+            return Vec::new();
+        }
+        let mut parameters = Vec::new();
+        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+            let declared = match cursor.tile(TileName::COLON) {
+                Maybe::Present(_) => {
+                    if let Maybe::Absent(_) = cursor.tile(TileName::SHARED)
+                        && let Maybe::Absent(_) = cursor.tile(TileName::CONSUMED)
+                    {
+                        let _mode = cursor.tile(TileName::IDENTIFIER);
+                    }
+                    match cursor.read() {
+                        Maybe::Present(Piece::Operand(typed)) => self.closed(typed, &bound),
+                        Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => return Vec::new(),
+                    }
+                },
+                Maybe::Absent(_) => Maybe::Absent(unclosed::Absent::Unwritten),
+            };
+            parameters.push(declared);
+            let _fresh = bound.insert(self.name_of(written));
+            let _comma = cursor.tile(TileName::COMMA);
+        }
+        if let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
+            return Vec::new();
+        }
+
+        parameters
+    }
+
+    /// The type written at `typed`, when it names none of `names`, anywhere
+    /// inside it.
+    ///
+    /// # Specification
+    /// - ensures: `typed` at once for no names; otherwise
+    ///   [`unclosed::Absent::Dependent`] when an identifier or a type variable
+    ///   written in the form spells one of `names`, or a piece of it does not
+    ///   read, and `typed` otherwise. A name the form binds itself counts as
+    ///   named: the answer errs toward naming.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the tiles are read from the tree, which a predicate
+    ///   over the answer would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `List(a)` names `a`; `List(Integer)` names nothing.
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    fn closed(
+        &self,
+        typed: Placed,
+        names: &BTreeSet<SurfaceName<'source>>,
+    ) -> Maybe<Placed, unclosed::Absent>
+    {
+        if names.is_empty() {
+            return Maybe::Present(typed);
+        }
+        let mut scratch = Pieces::new();
+        let mut pending = alloc::vec![typed.node];
+        while let Some(next) = pending.pop() {
+            if read_pieces(self.pbg, self.tree, next, &mut scratch).is_err() {
+                return Maybe::Absent(unclosed::Absent::Dependent);
+            }
+            for piece in &scratch.pieces {
+                match *piece {
+                    Piece::Operand(operand) => pending.push(operand.node),
+                    Piece::Tile { label, at }
+                        if (label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE)
+                            && names.contains(&self.name_of(at)) =>
+                    {
+                        return Maybe::Absent(unclosed::Absent::Dependent);
+                    },
+                    Piece::Tile { .. } => {},
+                }
+            }
+        }
+
+        Maybe::Present(typed)
     }
 
     /// The name the key `node` of a group's entry `k : T` binds, when the key

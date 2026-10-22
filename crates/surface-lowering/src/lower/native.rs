@@ -985,6 +985,10 @@ pub(super) enum Classifier
     /// The constructor is written as an argument of a data family: the
     /// family's parameter at its place, under the arguments before it.
     Slot(Argued),
+    /// The constructor is written as an argument of a call naming a
+    /// declaration: the type the declaration writes for the parameter at its
+    /// place, closed.
+    Parameter(NodeIndex),
     /// The constructor is written in a field of another: the field's declared
     /// type, read under the family's parameters and the fields before it, with
     /// those replaced by the arguments of the other's classifier and the fields
@@ -1942,17 +1946,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   family with parameters, the value type the answer of its position
     ///   returns — a tail's, or a `pure`'s or `return`'s operand's — else its
     ///   place in the data family application it is an argument of, the
-    ///   constructor then awaiting that application's mint; else the one the
-    ///   constructor around it gives the field it stands in; else, for a family
-    ///   without, the one the lowering inserts. A field typed by the family
-    ///   over its own parameters takes the constructor's classifier, and one
-    ///   typed by a parameter the argument a written classifier gives it.
+    ///   constructor then awaiting that application's mint; else, written as an
+    ///   argument of a call naming a declaration, the type the declaration
+    ///   writes for the parameter at its place, when that type names no other
+    ///   parameter; else the one the constructor around it gives the field it
+    ///   stands in; else, for a family without, the one the lowering inserts. A
+    ///   field typed by the family over its own parameters takes the
+    ///   constructor's classifier, and one typed by a parameter the argument a
+    ///   written classifier gives it.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
     ///   unannotated refusal for a constructor of a family with parameters
-    ///   whose position states no type and that stands at no data family's
-    ///   argument place.
+    ///   whose position states no type, that stands at no data family's
+    ///   argument place, and that is passed at no parameter whose stated type
+    ///   names no other parameter.
     /// - panics: none.
     ///
     /// # Errors
@@ -1964,11 +1972,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   asserted as the exact plan's core node or refusal; a parameterised
     ///   family at a signed thunk's tail, under a `run` and as a definition,
     ///   its recursive field and its parameter field classified with it; and
-    ///   one written as a data family's argument, classified by its place.
+    ///   one written as a data family's argument, classified by its place; one
+    ///   passed to a parameter stating a closed type, classified by it.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -2003,16 +2013,18 @@ impl<'source> Lowerer<'_, 'source>
             self.classifiers.get(&site.at.node),
             answered,
             self.argued.get(&site.at.node),
+            self.parameter_typed.get(&site.at.node),
             self.inherited.get(&site.at.node),
         ) {
             (Some(&written), ..) => Classifier::Written(written),
             (None, ..) if arguments == 0 => Classifier::Inserted,
             (None, Some(&answer), ..) => Classifier::Answered { answer, frame },
-            (None, None, Some(&argued), _) => {
+            (None, None, Some(&argued), ..) => {
                 let _first = self.awaiting.insert(site.at.node);
                 Classifier::Slot(argued)
             },
-            (None, None, None, Some(&inherited)) => {
+            (None, None, None, Some(&declared), _) => Classifier::Parameter(declared.node),
+            (None, None, None, None, Some(&inherited)) => {
                 // A field's classifier reads the constructor around it, which
                 // mints this one once that classifier and the fields before
                 // it are.
@@ -2021,7 +2033,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 inherited
             },
-            (None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
+            (None, None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
         let family = self
             .collected
@@ -2069,6 +2081,69 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         Ok(())
+    }
+
+    /// Record, for each argument of the call at `site`, the type the
+    /// declaration its head names writes for the parameter at its place.
+    ///
+    /// # Specification
+    /// - requires: `site` is a call read under `frame`, `head` its head and
+    ///   `applied` its arguments in the operand store.
+    /// - ensures: when `head` is a bare name of a declaration written with a
+    ///   parameter list, each argument at a parameter written with a type maps
+    ///   to that type in [`Lowerer::parameter_typed`], read by a constructor
+    ///   written there as [`Classifier::Parameter`]; nothing changes for any
+    ///   other head, a binder's name among them.
+    /// - fails: never: a name the head's own reading refuses is refused there.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list and a bare constructor passed to a function of
+    ///   a closed parameter type, and a local function's name, which classifies
+    ///   nothing.
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    #[spec(
+        captures: before = self.parameter_typed.len(),
+        ensures: self.parameter_typed.len() >= before,
+    )]
+    pub(super) fn parameters_classify(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+        applied: Stretch,
+    )
+    {
+        let named = self.tree.node(head.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Name,
+                    ..
+                })
+            )
+        });
+        if !named {
+            return;
+        }
+        let name = self.name_at(head);
+        let Ok(Maybe::Present(Resolved::Declaration { constant, .. })) =
+            self.resolve_name(site, frame, name)
+        else {
+            return;
+        };
+        let slot = SlotIndex::from(usize::from(constant));
+        let Some(parameters) = self.collected.parameters.get(&slot)
+        else {
+            return;
+        };
+        for (position, declared) in (applied.start .. applied.end).zip(parameters) {
+            if let Maybe::Present(declared) = *declared
+                && let Some(&argument) = self.operands.get(position)
+            {
+                let _first = self.parameter_typed.insert(argument, declared);
+            }
+        }
     }
 
     /// The classifier the field `at` of the constructor written at `around`
@@ -6285,6 +6360,24 @@ impl<'source> Lowerer<'_, 'source>
             Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Parameter(declared) => {
+                // The parameter's type is read under its own declaration's
+                // parameters; only a closed one reads alike where the
+                // constructor stands.
+                let Maybe::Present(id) = self.value_type_at(declared)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let closed = sink.arena.value_type_support(id).is_some_and(|support| {
+                    [Zone::Intuitionistic, Zone::Linear]
+                        .into_iter()
+                        .all(|zone| support.indices(zone).next().is_none())
+                });
+                if !closed {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                }
+                id
             },
             Classifier::Answered { answer, frame } => {
                 let mark = sink.arena.watermark();

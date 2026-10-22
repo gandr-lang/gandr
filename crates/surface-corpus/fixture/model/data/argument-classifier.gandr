@@ -1,0 +1,53 @@
+// A constructor written as a call's argument takes its classifier from the
+// parameter it is passed to: the type the called declaration writes for that
+// parameter, when the type mentions no parameter before it. A list passed to
+// a function then needs no annotation (#1833).
+
+// The lists.
+import "./data-base.gandr" ;
+
+/// The length of a list of integers.
+@[ checks ]
+def rec listLength(xs : List(Integer)) -> -F Integer {
+  case xs {
+    Nil => 0,
+    Cons(_, rest) => {
+      run counted <- listLength[<](rest);
+      counted + 1
+    }
+  }
+}
+
+/// Two integers passed bare: the list is a `List(Integer)` by the parameter
+/// it is passed to, the inner one by its field (#1833).
+@[ runs("2") ]
+def pairLength : () => Integer ;
+def pairLength = thunk { become listLength(Cons(1, Cons(2, Nil))) } ;
+
+/// The empty list passed bare.
+@[ runs("0") ]
+def emptyLength : () => Integer ;
+def emptyLength = thunk { become listLength(Nil) } ;
+
+/// The same pair under an annotation, as it was written before.
+@[ runs("2") ]
+def annotatedLength : () => Integer ;
+def annotatedLength = thunk { become listLength((Cons(1, Cons(2, Nil)) : List(Integer))) } ;
+
+/// A colour and a list of colours, each argument classified by its own
+/// parameter.
+@[ checks ]
+def rec tally(c : Color, cs : List(Color)) -> -F Integer {
+  case cs {
+    Nil => 0,
+    Cons(_, rest) => {
+      run counted <- tally[<](c, rest);
+      counted + 1
+    }
+  }
+}
+
+/// The second argument classified by the second parameter (#1833).
+@[ runs("3") ]
+def colours : () => Integer ;
+def colours = thunk { become tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) } ;
