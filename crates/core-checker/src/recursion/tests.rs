@@ -445,6 +445,55 @@ fn a_result_follows_the_parameter_it_recurses_on()
         "{:?}",
         verdicts[2]
     );
+
+    // The same predecessor called on `Succ p`, a value it rebuilds rather
+    // than a variable at a stage, returns at none, and the recursion on its
+    // result is refused at the top.
+    let mut arena = CoreArena::new();
+    let mut declarations = through_predecessor(&mut arena, Returning::Field);
+    let rebuilt = {
+        let field = var(&mut arena, DeBruijnIndex::from(0));
+        let successor = succ(&mut arena, field);
+        let head = arena.value_constant(ConstantIndex::from(1));
+        let predecessor = call(&mut arena, head, &[successor]);
+        let recursive = var(&mut arena, DeBruijnIndex::from(3));
+        let bound = var(&mut arena, DeBruijnIndex::from(0));
+        let recursed = call(&mut arena, recursive, &[bound]);
+        let bind = arena.computation_bind(predecessor, recursed);
+        let on_successor = arena.computation_lambda(bind);
+        let nat = data(&mut arena, ConstantIndex::from(0), vec![]);
+        let returner = arena.comp_type_returner(nat);
+        let on_zero = {
+            let zero = zero(&mut arena);
+            arena.computation_return(zero)
+        };
+        let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
+        let case = arena.computation_data_case(
+            scrutinee,
+            returner,
+            vec![on_zero, on_successor],
+            [0_usize, 1]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        );
+        let lambda = arena.computation_lambda(case);
+        let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
+        arena.value_thunk(fixpoint)
+    };
+    let declared = unary(&mut arena);
+    declarations[2] = define(ConstantIndex::from(2), declared, rebuilt);
+    let (verdicts, _) = judge(&mut arena, &declarations);
+    assert!(
+        matches!(
+            verdicts[2],
+            Verdict::Refused(CheckRefusal::StageNotBelow {
+                found: Standing::Top,
+                ..
+            })
+        ),
+        "{:?}",
+        verdicts[2]
+    );
 }
 
 #[test]

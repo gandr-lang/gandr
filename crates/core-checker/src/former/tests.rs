@@ -53,6 +53,36 @@ fn a_branch_binds_a_field_only_where_its_result_names_it()
     );
 }
 
+/// A field stands below its declaration's universe: a box of types at the
+/// smallest universe is refused at the field, and the same box one
+/// universe up forms.
+#[test]
+fn a_field_above_its_declaration_s_universe_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = Level::zero().succ().expect("the successor of zero");
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let boxed = ConstantIndex::from(0_usize);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let refused = context.adopt_data(
+        boxed,
+        Arc::new(DataSignature::new(vec![], vec![vec![small]], small)),
+    );
+    assert!(
+        matches!(
+            refused,
+            Err(CheckRefusal::DataFieldLevel { field, kind }) if field == small && kind == small
+        ),
+        "a type of types is no field at the smallest universe: {refused:?}"
+    );
+    let formed = context.adopt_data(
+        boxed,
+        Arc::new(DataSignature::new(vec![], vec![vec![small]], large)),
+    );
+    assert!(formed.is_ok(), "one universe up it forms: {formed:?}");
+}
+
 #[test]
 fn a_later_field_reads_its_parameters_past_the_earlier_fields()
 {

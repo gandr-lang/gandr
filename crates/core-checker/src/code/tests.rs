@@ -239,6 +239,55 @@ fn a_closed_returned_code_runs_to_the_quote_it_returns()
     );
 }
 
+/// A step whose redex stands under binders is certified with those binders
+/// read as rigid variables: an unfolding by a dialogue the machine decides
+/// there, and a run, which the machine cannot run under a binder, by its
+/// reading alone.
+#[test]
+fn a_step_under_binders_is_certified_with_the_binders_rigid()
+{
+    use super::Derivation;
+
+    // def Same : Type -> Type = \A. A ;
+    // def pick : U (Integer + Unit -> F Type) =
+    //     thunk λ. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let same = arena.value_static_lambda(bound);
+    let integer_code = arena.value_quote(integer);
+    let unit_code = arena.value_quote(unit_type);
+    let to_integer = arena.computation_return(integer_code);
+    let to_unit = arena.computation_return(unit_code);
+    let case = arena.computation_case(bound, &[to_integer, to_unit]);
+    let pick = arena.computation_lambda(case);
+    let pick = arena.value_thunk(pick);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), same);
+    definitions.define(ConstantIndex::from(1_usize), pick);
+    // Same applied to a binder, and pick applied to a left injection of one.
+    let operator = arena.value_constant(ConstantIndex::from(0_usize));
+    let applied = arena.value_static_application(operator, bound);
+    let head = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let injected = arena.value_injection(gandr_core_term::Summand::from(0_usize), bound);
+    let call = arena.computation_application(forced, injected);
+    let run = arena.value_returned(call);
+    for (code, derivation) in [(applied, Derivation::Dialogue), (run, Derivation::Reading)] {
+        let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+        else {
+            panic!("{code:?} steps under its binder");
+        };
+        let certificate = definitions.certify(&arena, step).unwrap();
+        assert_eq!(
+            (certificate.derivation(), certificate.redex()),
+            (derivation, code),
+            "{code:?} is certified at the redex under its binder"
+        );
+    }
+}
+
 /// A model type's family field read at a binder, `tm(g)` under the `Σ` that
 /// binds `tm`, decodes `↑((force tm) g)`: a run stuck on a binder. Each weak
 /// head of such a decode asked the machine to run it, minting the claim it
@@ -695,6 +744,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
                 unit,
                 returns_decoded,
                 Vec::from([returns_unit]),
+                Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
             )),
             5,
             "a data case's motive binds one",
@@ -704,6 +754,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
                 five,
                 returns_integer,
                 Vec::from([returns_unit]),
+                Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
             )),
             6,
             "a data case's scrutinee",

@@ -31,6 +31,7 @@ use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::PathEvidence;
@@ -110,8 +111,18 @@ fn a_later_position_extends_the_block_through_every_former()
     ];
     let pair = ComponentCount::from(2_usize);
     let computations = [
-        arena.computation_data_case(later, returns_unit, Vec::from([finishes])),
-        arena.computation_data_case(nothing, returns_later, Vec::from([finishes])),
+        arena.computation_data_case(
+            later,
+            returns_unit,
+            Vec::from([finishes]),
+            Vec::from([FieldCount::from(0_usize)]),
+        ),
+        arena.computation_data_case(
+            nothing,
+            returns_later,
+            Vec::from([finishes]),
+            Vec::from([FieldCount::from(0_usize)]),
+        ),
         arena.computation_record_projection(later, label()),
         arena.computation_tuple_projection(later, Component::from(0_usize)),
         arena.computation_abandon(later),
@@ -258,4 +269,66 @@ fn a_later_position_extends_the_block_through_every_former()
             arena.value_type(field)
         );
     }
+}
+
+/// A session's payload is sent as well as received, so a family it names
+/// stands where no stage reaches and is refused at the field; a payload
+/// naming nothing of the block is admitted.
+#[test]
+fn a_family_named_by_a_session_payload_is_refused_at_its_field()
+{
+    use gandr_core_term::session::PayloadCount;
+    use gandr_core_term::session::PayloadSlot;
+    use gandr_core_term::session::Protocol;
+    use gandr_core_term::session::ProtocolState;
+    use gandr_core_term::session::ProtocolSyntax;
+    use gandr_core_term::session::SessionType;
+
+    use super::Accessibility;
+    use super::Block;
+    use super::occurrences;
+
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let unit = arena.value_type_unit();
+    // `?P. end`
+    let protocol = Protocol::new(
+        alloc::vec![
+            ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        ProtocolState::from(0_usize),
+        PayloadCount::from(1_usize),
+    )
+    .expect("the protocol is well formed");
+    let protocol = Arc::new(protocol);
+    let mut receiving = |payload| {
+        let session = SessionType::new(Arc::clone(&protocol), Arc::from([payload]))
+            .expect("one payload for one slot");
+        arena.value_type_session(session)
+    };
+    let naming = receiving(own);
+    let plain = receiving(unit);
+    let earlier: BTreeMap<ConstantIndex, Accessibility> = BTreeMap::new();
+    let block = Block::lone(ConstantIndex::from(0_usize));
+    let declared =
+        |field| DataSignature::new(Vec::new(), alloc::vec![alloc::vec![field]], universe);
+    assert!(
+        occurrences(&arena, (&block, &[], &earlier), &declared(plain)).is_ok(),
+        "a payload naming nothing of the block is admitted"
+    );
+    let refused = occurrences(&arena, (&block, &[], &earlier), &declared(naming));
+    assert!(
+        matches!(
+            refused,
+            Err(crate::refusal::CheckRefusal::NegativeOccurrence(
+                gandr_kernel_term::OccurrenceSite::Field { tag, field }
+            )) if usize::from(tag) == 0 && usize::from(field) == 0
+        ),
+        "a payload naming the family is refused at its field: {refused:?}"
+    );
 }

@@ -128,6 +128,66 @@ fn a_definition_abstracting_no_region_reads_as_declared()
     );
 }
 
+/// A call of a definition over a region binder checks with the binder
+/// placed where the call stands: a plain argument, which may be kept
+/// anywhere, is accepted at the parameter kept at that region.
+#[test]
+fn a_call_of_a_definition_over_a_region_checks_where_it_stands()
+{
+    use gandr_kernel_term::ConstantIndex;
+
+    use crate::context::CheckBudget;
+    use crate::context::CheckingContext;
+    use crate::declaration::Declaration;
+    use crate::declaration::OriginToken;
+    use crate::module::Judged;
+    use crate::module::Verdict;
+    use crate::module::check_module;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    // def f : U ((x : Integer at r) -> F ()) = λx. return () ;
+    let kept = arena.value_type_kept(integer, Region::Bound(RegionBinder::from(0_u32)));
+    let over_region = arena.comp_type_arrow(kept, returns_unit);
+    let over_region = arena.value_type_thunk(over_region);
+    let empty = arena.value_unit();
+    let returned = arena.computation_return(empty);
+    let ignoring = arena.computation_lambda(returned);
+    let ignoring = arena.value_thunk(ignoring);
+    // def g : U ((x : Integer) -> F ()) = λx. (force f) x ;
+    let plain = arena.comp_type_arrow(integer, returns_unit);
+    let plain = arena.value_type_thunk(plain);
+    let callee = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(callee);
+    let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let call = arena.computation_application(forced, argument);
+    let calling = arena.computation_lambda(call);
+    let calling = arena.value_thunk(calling);
+    let declarations =
+        [(0_usize, over_region, ignoring), (1, plain, calling)].map(|(at, declared, body)| {
+            Declaration::new(
+                ConstantIndex::from(at),
+                Maybe::Present(declared),
+                Maybe::Present(body),
+                OriginToken::from(at),
+            )
+        });
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let verdicts: Vec<Verdict> = check_module(&mut context, &declarations)
+        .judged()
+        .iter()
+        .map(Judged::verdict)
+        .collect();
+    assert!(
+        verdicts
+            .iter()
+            .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
+        "the definition and its call both check: {verdicts:?}"
+    );
+}
+
 /// A binder kept under a thunk's answer, a list, a product, a sum, an arrow
 /// or a dependent arrow, or held by a capability, is placed at the region the
 /// argument shows at the same position; an argument whose shape parts ways

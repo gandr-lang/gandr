@@ -478,12 +478,26 @@ fn each_refusal_is_named()
     let truncated = run(&mut arena, &[RecordedMove::Received(Word::Task)]);
     let short = declaration(At(7), narrow_run, truncated);
     let (unsession, _) = statement(&mut arena, At(8), SessionRelation::Subtyping, (number, end));
+    // A run that sends where the protocol receives, and one that moves on
+    // after its close.
+    let crossed = run(&mut arena, &[RecordedMove::Sent(Word::Task)]);
+    let wrong_way = declaration(At(9), narrow_run, crossed);
+    let overrun = run(&mut arena, &[
+        RecordedMove::Received(Word::Task),
+        RecordedMove::Selected(Branch::Report.label()),
+        RecordedMove::Sent(Word::Progress),
+        RecordedMove::Offered(Branch::Retire.label()),
+        RecordedMove::Closed,
+        RecordedMove::Received(Word::Task),
+    ]);
+    let past_end = declaration(At(10), narrow_run, overrun);
     let report = judged(&mut arena, &[
-        apart, reversed, sub, flipped, keep, dropped, backward, short, unsession,
+        apart, reversed, sub, flipped, keep, dropped, backward, short, unsession, wrong_way,
+        past_end,
     ]);
     let symmetric_at = symmetric;
     assert_eq!(
-        [0, 1, 3, 5, 6, 7, 8].map(|position| verdict(&report, At(position))),
+        [0, 1, 3, 5, 6, 7, 8, 9, 10].map(|position| verdict(&report, At(position))),
         [
             Some(Verdict::Refused(CheckRefusal::SessionNotEquivalent {
                 at: unequal
@@ -508,6 +522,14 @@ fn each_refusal_is_named()
             })),
             Some(Verdict::Refused(CheckRefusal::SessionCodeExpected {
                 at: number
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: crossed,
+                fault: RunFault::WrongDirection(RunStep::from(0_u32)),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: overrun,
+                fault: RunFault::ResumeAfterEnd(RunStep::from(5_u32)),
             })),
         ],
         "each refusal names the engine's relation, the variance or the move: {report:?}"

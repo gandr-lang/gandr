@@ -1007,6 +1007,54 @@ fn offer_arms_leaving_different_endpoints_are_refused()
     );
 }
 
+/// A selection names a label the protocol offers, and an offer answers
+/// exactly the labels the protocol offers: a label it lacks and arms that
+/// miss one are each refused by that defect on the acting end.
+#[test]
+fn a_selection_or_offer_off_the_protocol_s_labels_is_refused()
+{
+    let mut arena = CoreArena::new();
+    // &{ a : end, b : end }
+    let protocol = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Offer(BTreeMap::from([
+                (label(Spelled("a")), ProtocolState::from(1_usize)),
+                (label(Spelled("b")), ProtocolState::from(2_usize)),
+            ])),
+            ProtocolSyntax::End,
+            ProtocolSyntax::End,
+        ],
+        &[],
+    );
+    let mut program = Program::new(&mut arena);
+    let first = program.close();
+    let second = program.close();
+    let both = program.offer(&[(Spelled("a"), first), (Spelled("b"), second)]);
+    let only_a = program.close();
+    let one = program.offer(&[(Spelled("a"), only_a)]);
+    let parent_closed = program.close();
+    let stray = program.select(Spelled("z"), parent_closed);
+    let parent_closed = program.close();
+    let parent = program.select(Spelled("a"), parent_closed);
+    let labelled = fork(&mut arena, protocol, both, stray);
+    let armed = fork(&mut arena, protocol, one, parent);
+    for (exchange, side, defect) in [
+        (labelled, ForkSide::Parent, ProtocolDefect::Label),
+        (armed, ForkSide::Child, ProtocolDefect::Arms),
+    ] {
+        let refused = check_unit(&mut arena, exchange);
+        assert!(
+            matches!(
+                refused,
+                Err(CheckRefusal::SessionMismatch { endpoint, defect: named, .. })
+                    if endpoint == Endpoint { fork: exchange, side } && named == defect
+            ),
+            "{defect:?} on the {side:?} end: {refused:?}"
+        );
+    }
+}
+
 /// Offer arms that leave the endpoint open agree when they leave it at
 /// convertible states, so the child's leftover endpoint is what is refused,
 /// and disagree when they leave it at different states.
@@ -1221,6 +1269,58 @@ fn a_delegated_endpoint_leaves_its_sender()
     );
 }
 
+/// An end its sender has already closed is no end to delegate: the send
+/// naming it is refused, at the payload, as acting on a closed end.
+#[test]
+fn a_closed_endpoint_is_not_delegated()
+{
+    let mut arena = CoreArena::new();
+    let protocol = delegating(&mut arena);
+    let ended = end(&mut arena);
+    let inner_child = Program::new(&mut arena).close();
+    // `fork (e : end) { close(e) } as d ; close(d) ; send(c, d) ; close(c)`
+    let sent = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let mut program = Program::new(&mut arena);
+    let close_outer = program.act(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(1_u32),
+    });
+    let closed_first = program.act(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let send = program.then(
+        SessionAction::Send {
+            endpoint: DeBruijnIndex::from(1_u32),
+            payload: sent,
+        },
+        close_outer,
+    );
+    let inner_parent = program.arena.computation_bind(closed_first, send);
+    let inner = fork(&mut arena, ended, inner_child, inner_parent);
+    let parent = Program::new(&mut arena).receive(|program| {
+        let outer = program.close();
+        program.then(
+            SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            },
+            outer,
+        )
+    });
+    let exchange = fork(&mut arena, protocol, inner, parent);
+    assert_eq!(
+        check_unit(&mut arena, exchange),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(sent)),
+            defect: LinearityDefect::Closed {
+                endpoint: Endpoint {
+                    fork: inner,
+                    side: ForkSide::Parent,
+                },
+            },
+        }),
+        "a closed end is not the sender's to send"
+    );
+}
+
 #[test]
 fn a_received_endpoint_is_acted_on_and_must_be_closed()
 {
@@ -1243,6 +1343,47 @@ fn a_received_endpoint_is_acted_on_and_must_be_closed()
             }) if at == parent && fork == parent
         ),
         "a received end is the receiver's to close: {refused:?}"
+    );
+}
+
+/// A linear variable nothing binds is unbound in the linear zone, and a
+/// buffer read as a value, rather than returned, is refused by its
+/// placement.
+#[test]
+fn a_linear_read_of_nothing_or_of_a_buffer_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let stray = arena.value_variable(Zone::Linear, DeBruijnIndex::from(3_u32));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        crate::judgement::synthesise_value(&mut context, stray).map(|_| ()),
+        Err(CheckRefusal::UnboundIndex {
+            at: stray,
+            zone: Zone::Linear,
+            index: DeBruijnIndex::from(3_u32),
+            depth: gandr_core_term::BinderDepth::default(),
+        }),
+        "no linear binder is open"
+    );
+    let ring = ring(&mut arena);
+    let mut read = None;
+    let (copied, placed) = allocated(&mut arena, &ring, |arena, live| {
+        read = Some(live);
+        let single = arena.value_tuple(&[live]);
+        let projected =
+            arena.computation_tuple_projection(single, gandr_kernel_term::Component::from(0_usize));
+        let empty = arena.value_unit();
+        let finished = arena.computation_return(empty);
+        arena.computation_bind(projected, finished)
+    });
+    let read = read.expect("the read was minted");
+    assert_eq!(
+        check_ring(&mut arena, ring, copied),
+        Err(CheckRefusal::Linearity {
+            at: CoreNode::Term(TermNode::Value(read)),
+            defect: LinearityDefect::BufferRead { site: placed },
+        }),
+        "a buffer is returned, never read"
     );
 }
 
@@ -1446,6 +1587,62 @@ fn a_held_value_is_captured_by_a_branch_only()
     }
 }
 
+/// A buffer is read by a branch only, whose arms each return it; a world's
+/// capability and a clause's continuation are captured by nothing, each
+/// refused by its own name with its capturer.
+#[test]
+fn a_buffer_capability_or_continuation_capture_is_refused_by_its_name()
+{
+    use gandr_core_term::world::World;
+
+    let mut arena = CoreArena::new();
+    let at = seat(&mut arena);
+    let node = CoreNode::Term(TermNode::Computation(at));
+    let buffer = Resident::Buffer { at };
+    assert_eq!(
+        captured(node, buffer, Capture::Branch),
+        Ok(()),
+        "a branch returns the buffer in each arm"
+    );
+    for by in [
+        Capture::Branch,
+        Capture::Thunk,
+        Capture::Recursion,
+        Capture::Stack,
+        Capture::Continuation,
+    ] {
+        if by != Capture::Branch {
+            assert_eq!(
+                captured(node, buffer, by),
+                Err(CheckRefusal::Linearity {
+                    at: node,
+                    defect: LinearityDefect::BufferRead { site: at },
+                }),
+                "{by:?} reads a buffer it cannot return"
+            );
+        }
+        assert_eq!(
+            captured(node, Resident::Capability { world: World::Host }, by),
+            Err(CheckRefusal::Located {
+                at: node,
+                defect: crate::worlds::LocatedDefect::CapabilityCaptured {
+                    world: World::Host,
+                    by,
+                },
+            }),
+            "{by:?} captures a world's capability"
+        );
+        assert_eq!(
+            captured(node, Resident::Continuation { clause: at }, by),
+            Err(CheckRefusal::Linearity {
+                at: node,
+                defect: LinearityDefect::ContinuationCaptured { clause: at, by },
+            }),
+            "{by:?} captures a continuation"
+        );
+    }
+}
+
 /// A type formed at an intuitionistic depth reads unchanged at that depth and
 /// shifted past every binder opened since.
 #[test]
@@ -1499,6 +1696,8 @@ fn a_type_is_read_shifted_past_the_binders_opened_since_it_was_formed()
     );
 }
 
+/// A forked child, which no region bounds, receives nothing kept in a region
+/// nor a capability living in one; and a fork's protocol is a session type.
 #[test]
 fn a_fork_carries_nothing_kept_in_a_region()
 {
@@ -1546,6 +1745,35 @@ fn a_fork_carries_nothing_kept_in_a_region()
             defect: crate::access::AccessDefect::KeptEscaped,
         }),
         "a child no region bounds receives nothing kept in one"
+    );
+    let capability = arena.value_type_capability(
+        gandr_core_term::effect::EffectRow::default(),
+        gandr_core_term::effect::capability::CapabilityGrade::Durable,
+        gandr_core_term::effect::capability::Region::Scoped(
+            gandr_core_term::effect::capability::RegionDepth::from(1_u32),
+        ),
+    );
+    let authorised = receiving(&mut arena, capability);
+    let authorised_fork = fork(&mut arena, authorised, received, sent);
+    assert!(
+        matches!(
+            check_unit(&mut arena, authorised_fork),
+            Err(CheckRefusal::CapabilityEscaped { at: TermNode::Computation(at), .. })
+                if at == authorised_fork
+        ),
+        "a child no region bounds receives no capability living in one"
+    );
+    let unprotocolled = fork(&mut arena, string, received, sent);
+    assert!(
+        matches!(
+            check_unit(&mut arena, unprotocolled),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(at),
+                wanted: crate::refusal::ExpectedShape::Session,
+                ..
+            }) if at == unprotocolled
+        ),
+        "a fork's protocol is a session type"
     );
 }
 

@@ -874,6 +874,26 @@ fn a_case_over_the_circle_owes_its_loop_377()
         let constant = ConstantIndex::from(position.saturating_add(3));
         declarations.push(definition(constant, declared, body));
     }
+    // The family `x ↦ Unit → F (Path(S, x, x))`, dependent and no returner,
+    // owed at the loop and refused with an arm for the loop alike.
+    let unit = arena.value_type_unit();
+    let behind = arena.comp_type_arrow(unit, looped);
+    let answered = arena.computation_return(circle.empty);
+    let answered = arena.computation_lambda(answered);
+    for (constant, branches) in [(7_usize, 1_usize), (8, 2)] {
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = arena.computation_data_case(
+            scrutinee,
+            behind,
+            vec![answered; branches],
+            [0_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+        );
+        let lambda = arena.computation_lambda(case);
+        let pi = arena.comp_type_pi(circle.carrier, behind);
+        let declared = arena.value_type_thunk(pi);
+        let body = arena.value_thunk(lambda);
+        declarations.push(definition(ConstantIndex::from(constant), declared, body));
+    }
     let (report, crossed) = run(&mut arena, &declarations);
     assert!(
         matches!(
@@ -905,6 +925,19 @@ fn a_case_over_the_circle_owes_its_loop_377()
             ),
             "and the kernel re-derives it: {:?}",
             crossed.readmitted()[position].outcome()
+        );
+    }
+    for position in [7_usize, 8] {
+        assert!(
+            matches!(
+                report.judged()[position].verdict(),
+                Verdict::Refused(CheckRefusal::LoopNotRespected {
+                    reason: gandr_core_checker::LoopRespect::Apart,
+                    ..
+                })
+            ),
+            "a dependent family that is no returner carries no loop: {:?}",
+            report.judged()[position].verdict()
         );
     }
 }
@@ -2449,12 +2482,27 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     );
     let cased = arena.value_thunk(case);
     let thunked = arena.value_type_thunk(answer);
+    // `Pairs (a : Type) : Nat -> Nat -> Type { Mk : Pairs(a, Z, Z); }`: a
+    // parameter before two indices.
+    let paired = ConstantIndex::from(5_usize);
+    let pairs = Declaration::data(
+        paired,
+        DataSignature::new(vec![kind], vec![vec![]], kind)
+            .indexed(vec![nat, nat], vec![vec![zero, zero]])
+            .into(),
+        OriginToken::from(5_usize),
+    );
+    let code = arena.value_quote(nat);
+    let at_zeros = arena.value_type_data(paired, vec![code, zero, zero]);
+    let made = arena.value_constructor(at_zeros, zeroth, vec![]);
     let declarations = [
         naturals,
         counts,
         definition(ConstantIndex::from(2_usize), at_one, more),
         definition(ConstantIndex::from(3_usize), at_two, overstated),
         definition(ConstantIndex::from(4_usize), thunked, cased),
+        pairs,
+        definition(ConstantIndex::from(6_usize), at_zeros, made),
     ];
     let (report, crossed) = run(&mut arena, &declarations);
     assert_eq!(report.judged()[1].verdict(), Verdict::Data);
@@ -2487,6 +2535,16 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         crossed.readmitted()[2].outcome()
     );
     assert!(crossed.audit().axioms().is_empty());
+    assert!(
+        matches!(report.judged()[6].verdict(), Verdict::Checked { .. }),
+        "`Mk` stands at its family's parameter and both its indices: {:?}",
+        report.judged()[6].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[6].outcome(), Outcome::Defined { .. }),
+        "and the kernel admits it there: {:?}",
+        crossed.readmitted()[6].outcome()
+    );
     let family = gandr_kernel_term::StructuredName::from(vec![
         gandr_kernel_term::NameSegment::from_text(String::from("Count")).unwrap(),
     ]);

@@ -1233,6 +1233,7 @@ pub fn admit(
 ///   paused run is refused at its pause and a truncated one at its end.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::each_refusal_is_named`
+/// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == at,
     | Ok(_) | Err(_) => true,
@@ -1361,8 +1362,10 @@ fn step(index: gandr_core_session::MoveIndex) -> RunStep
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a paused run and a truncated one name distinct faults.
+/// - hypothesis: L3 — a paused run, a truncated one, one moving the wrong way
+///   and one moving past its close name distinct faults.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `flow::tests::each_refusal_is_named`
 #[spec(ensures: |ret| matches!(ret, CheckRefusal::RunNotAdmitted { at: site, .. } if site == at)
     || ret == CheckRefusal::MachineInvariant)]
 fn replay_refusal(

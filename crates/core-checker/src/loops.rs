@@ -205,8 +205,8 @@ pub fn loops(
 /// # Adequacy
 /// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path(Circle,
 ///   Base, x)` is refused at its loop while the same arm at `Path(Circle, x,
-///   x)` and `Base => loop` there are admitted, and a non-dependent case owes
-///   nothing.
+///   x)` and `Base => loop` there are admitted, a non-dependent case owes
+///   nothing, and a dependent family that is no returner is refused.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn respected(
@@ -576,6 +576,7 @@ fn presented_set(
 ///   `Path(Circle, Base, Base)` read through its constant family, and a
 ///   dependent arm at the wrong endpoints is refused.
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
+/// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
 pub fn arm_type(
     context: &mut CheckingContext<'_>,

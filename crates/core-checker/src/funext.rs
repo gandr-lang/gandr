@@ -648,6 +648,7 @@ fn first_order(
 /// - witness: `funext::tests::a_higher_order_argument_is_decided_under_the_quantifier`
 /// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
 /// - witness: `funext::tests::a_function_coordinate_keeps_distinct_sides_inside_sums_and_pairs`
+/// - witness: `funext::tests::an_atom_covers_as_one_variable_and_a_dependent_or_bare_thunk_as_nothing`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref patterns)) => !patterns.is_empty()
         && patterns.iter().all(|pattern| context.arena().value(pattern.left).is_some() && context.arena().value(pattern.right).is_some()),

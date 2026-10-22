@@ -258,6 +258,56 @@ fn a_function_coordinate_keeps_distinct_sides_inside_sums_and_pairs()
     }
 }
 
+/// A base atom is covered by one fresh variable read alike on both sides; a
+/// suspended dependent arrow, whose result may read its argument, and a
+/// suspended returner, which takes no argument, are covered by nothing.
+#[test]
+fn an_atom_covers_as_one_variable_and_a_dependent_or_bare_thunk_as_nothing()
+{
+    use gandr_kernel_term::BaseType;
+
+    use super::outside;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let returns = arena.comp_type_returner(integer);
+    let dependent = arena.comp_type_pi(integer, returns);
+    let dependent = arena.value_type_thunk(dependent);
+    let bare = arena.value_type_thunk(returns);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for atom in [integer, string] {
+        let Ok(Maybe::Present(patterns)) = super::coverage(&mut context, atom)
+        else {
+            panic!("an atom is covered");
+        };
+        let [ref pattern] = *patterns
+        else {
+            panic!("one pattern covers an atom: {patterns:?}");
+        };
+        assert_eq!(
+            (pattern.binders, pattern.left, pattern.coordinates.len()),
+            (1, pattern.right, 0),
+            "one binder, read alike on both sides, no function coordinate"
+        );
+        assert!(
+            matches!(
+                context.arena().value(pattern.left),
+                Some(&gandr_core_term::Value::Variable { zone: Zone::Intuitionistic, index })
+                    if index == DeBruijnIndex::from(0_u32)
+            ),
+            "the binder is the innermost variable"
+        );
+    }
+    for function in [dependent, bare] {
+        assert_eq!(
+            super::coverage(&mut context, function),
+            Ok(Maybe::Absent(outside::Absent::Former)),
+            "a function type the rule does not lay out is covered by nothing"
+        );
+    }
+}
+
 #[test]
 fn pointwise_equal_functions_relate_by_computation()
 {

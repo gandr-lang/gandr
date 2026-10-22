@@ -209,6 +209,7 @@ pub fn kind_level(
 /// - witness: `tests::recursive_data::readmission_agrees_with_the_checker_on_every_occurrence_class`
 /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole_in_both_checkers`
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+/// - witness: `former::tests::a_field_above_its_declaration_s_universe_is_refused`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
     && (matches!(context.data_in_scope(position), Maybe::Absent(_))
         || context.data_signatures().contains_key(&position)

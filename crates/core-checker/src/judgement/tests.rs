@@ -4008,6 +4008,23 @@ fn each_rule_a_refusal_stood_inside_is_named_by_its_own_role()
     let lambda = arena.computation_lambda(fine);
     let arrow = arena.comp_type_arrow(integer, returns_integer);
     let ascribed = arena.computation_ascribe(lambda, arrow);
+    let unformed = arena.value_type_element(stray, Level::zero());
+    let unformed_return = arena.comp_type_returner(unformed);
+    let unformed_pi = arena.comp_type_pi(unformed, returns_integer);
+    let unformed_sigma = arena.value_type_sigma(unformed, integer);
+    let unformed_sigma = arena.comp_type_returner(unformed_sigma);
+    let unformed_codomain = arena.comp_type_pi(integer, unformed_return);
+    let unformed_run = arena.value_type_run(stray);
+    let unformed_run = arena.comp_type_returner(unformed_run);
+    let stay_zero = arena.value_stay(zero);
+    let from_list = arena.comp_type_arrow(list, returns_integer);
+    let from_list = arena.value_type_thunk(from_list);
+    let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let [on_nil, on_cons] = [(bad, fine), (fine, bad)].map(|(nil_arm, cons_arm)| {
+        let case = arena.computation_list_case(head, nil_arm, cons_arm);
+        let lambda = arena.computation_lambda(case);
+        arena.value_thunk(lambda)
+    });
     let bodies = [
         (arena.computation_bind(bad, fine), FrameRole::BindBound),
         (arena.computation_bind(fine, bad), FrameRole::BindBody),
@@ -4092,8 +4109,41 @@ fn each_rule_a_refusal_stood_inside_is_named_by_its_own_role()
             FrameRole::ScopeSubject,
         ),
         (
-            arena.computation_data_case(stray, returns_integer, Vec::from([fine])),
+            arena.computation_data_case(
+                stray,
+                returns_integer,
+                Vec::from([fine]),
+                Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
+            ),
             FrameRole::NativeCase,
+        ),
+        (
+            arena.computation_ascribe(fine, unformed_return),
+            FrameRole::Ascription,
+        ),
+        (
+            arena.computation_ascribe(fine, unformed_pi),
+            FrameRole::FormPi,
+        ),
+        (
+            arena.computation_ascribe(fine, unformed_sigma),
+            FrameRole::FormSigma,
+        ),
+        (
+            arena.computation_ascribe(fine, unformed_codomain),
+            FrameRole::FormBinder,
+        ),
+        (
+            arena.computation_ascribe(fine, unformed_run),
+            FrameRole::RunProtocol,
+        ),
+        (
+            arena.computation_list_fold(unformed, integer, nil, fine, fine),
+            FrameRole::ListFold(FoldPremise::Element),
+        ),
+        (
+            arena.computation_list_fold(integer, unformed, nil, fine, fine),
+            FrameRole::ListFold(FoldPremise::Result),
         ),
     ];
     let thunks = bodies.map(|(body, role)| (arena.value_thunk(body), suspended, role));
@@ -4141,6 +4191,18 @@ fn each_rule_a_refusal_stood_inside_is_named_by_its_own_role()
             arena.value_static_application(stray, zero),
             integer,
             FrameRole::StaticSpine,
+        ),
+        (
+            arena.value_function_flow(stray, zero),
+            path,
+            FrameRole::ArrowDomain,
+        ),
+        (on_nil, from_list, FrameRole::ListCaseNil),
+        (on_cons, from_list, FrameRole::ListCaseCons),
+        (
+            arena.value_then(stay_zero, stray),
+            path,
+            FrameRole::ThenSecond,
         ),
     ];
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -4298,5 +4360,173 @@ fn a_transported_tuple_reads_its_components_transports()
         read,
         [0_usize, 1].map(|index| Some(Computation::TupleProjection(other, Component::from(index)))),
         "any other inhabitant reads its projections"
+    );
+}
+
+/// A transport, or a telescope transport, along a path whose type is
+/// unknown has no endpoints to move between and is refused for wanting a
+/// path type; a run of a computation that returns nothing is refused for
+/// wanting a returner.
+#[test]
+fn a_transport_along_an_unknown_path_and_a_run_of_a_function_are_refused_by_shape()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let zero = arena.value_literal(integer_literal());
+    let unknown_path = arena.value_hole(HoleId::from(0_u32));
+    let transport = arena.computation_path_transport(integer, unknown_path, zero);
+    let pi = arena.comp_type_arrow(integer, returns_integer);
+    let telescope = arena.comp_type_arrow(integer, pi);
+    let telescoped =
+        arena.computation_telescope_transport(telescope, unknown_path, zero, zero, zero);
+    let returned = arena.computation_return(zero);
+    let lambda = arena.computation_lambda(returned);
+    let function = arena.computation_ascribe(lambda, pi);
+    let ran = arena.value_run(function);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for at in [transport, telescoped] {
+        assert!(
+            matches!(
+                synthesise_comp(&mut context, at),
+                Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(refused),
+                    wanted: ExpectedShape::Path,
+                    ..
+                }) if refused == at
+            ),
+            "{at:?} follows a path of no known type"
+        );
+    }
+    let synthesised = synthesise_value(&mut context, ran).map(|_| ());
+    assert!(
+        matches!(
+            synthesised,
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(refused),
+                wanted: ExpectedShape::Returner,
+                ..
+            }) if refused == function
+        ),
+        "a function run as a value returns nothing: {synthesised:?}"
+    );
+}
+
+/// Each former reading its classifier as one shape refuses another by that
+/// shape's name: a lazy pair of one component at a lazy product of two, an
+/// element transport and a native transport along an integer, a native
+/// path equivalence at an atom, a list case, a data case and a field
+/// projection on an integer, and a constructor, a record and a recorded run
+/// at one; a dependent pair has no third component.
+#[test]
+fn each_former_refuses_a_classifier_of_another_shape_by_name()
+{
+    use alloc::sync::Arc;
+
+    use gandr_kernel_term::PathEvidence;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let zero = arena.value_literal(integer_literal());
+    let fine = arena.computation_return(zero);
+    let one_part = arena.computation_with(&[fine]);
+    let two_parts = arena.comp_type_with(&[returns_integer, returns_integer]);
+    let along_integer = arena.computation_path_transport(integer, zero, zero);
+    let natively_along_integer = arena.computation_transport(zero, zero);
+    let equivalence = arena.value_path_equiv(
+        integer,
+        zero,
+        zero,
+        Arc::new(PathEvidence {
+            source: Vec::new(),
+            target: Vec::new(),
+        }),
+    );
+    let list_case = arena.computation_list_case(zero, fine, fine);
+    let constructed = arena.value_constructor(
+        integer,
+        gandr_kernel_term::ConstructorTag::from(0_usize),
+        Vec::from([zero]),
+    );
+    let label = || gandr_kernel_term::FieldLabel::from(alloc::string::String::from("x"));
+    let record = arena.value_record(alloc::collections::BTreeMap::from([(label(), zero)]));
+    let data_case = arena.computation_data_case(
+        zero,
+        returns_integer,
+        Vec::from([fine]),
+        Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
+    );
+    let field = arena.computation_record_projection(zero, label());
+    let recorded = arena.value_recorded(Arc::from([]));
+    let sigma = arena.value_type_sigma(integer, integer);
+    let pair = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let third =
+        arena.computation_tuple_projection(pair, gandr_kernel_term::Component::from(2_usize));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let refused_shape = |result: Result<(), CheckRefusal>| match result {
+        Err(CheckRefusal::ShapeMismatch { at, wanted, .. }) => Some((at, wanted)),
+        _ => None,
+    };
+    let two_parts = form_comp_type(&mut context, two_parts).expect("the lazy product forms");
+    let returns_integer =
+        form_comp_type(&mut context, returns_integer).expect("the returner forms");
+    let formed_integer = form_value_type(&mut context, integer).expect("the atom forms");
+    let rows = [
+        (
+            check_comp(&mut context, one_part, two_parts).map(|_| ()),
+            (TermNode::Computation(one_part), ExpectedShape::With),
+        ),
+        (
+            synthesise_comp(&mut context, along_integer).map(|_| ()),
+            (TermNode::Computation(along_integer), ExpectedShape::Path),
+        ),
+        (
+            synthesise_comp(&mut context, natively_along_integer).map(|_| ()),
+            (TermNode::Value(zero), ExpectedShape::PathUniverse),
+        ),
+        (
+            synthesise_value(&mut context, equivalence).map(|_| ()),
+            (TermNode::Value(equivalence), ExpectedShape::PathUniverse),
+        ),
+        (
+            check_comp(&mut context, list_case, returns_integer).map(|_| ()),
+            (TermNode::Value(zero), ExpectedShape::List),
+        ),
+        (
+            check_value(&mut context, constructed, formed_integer).map(|_| ()),
+            (TermNode::Value(constructed), ExpectedShape::Data),
+        ),
+        (
+            check_value(&mut context, record, formed_integer).map(|_| ()),
+            (TermNode::Value(record), ExpectedShape::Record),
+        ),
+        (
+            check_comp(&mut context, data_case, returns_integer).map(|_| ()),
+            (TermNode::Computation(data_case), ExpectedShape::Data),
+        ),
+        (
+            synthesise_comp(&mut context, field).map(|_| ()),
+            (TermNode::Computation(field), ExpectedShape::Record),
+        ),
+        (
+            check_value(&mut context, recorded, formed_integer).map(|_| ()),
+            (TermNode::Value(recorded), ExpectedShape::Run),
+        ),
+    ];
+    for (result, wanted) in rows {
+        assert_eq!(
+            refused_shape(result),
+            Some(wanted),
+            "{wanted:?}: {result:?}"
+        );
+    }
+    // A dependent pair has two components and no third.
+    let sigma = form_value_type(&mut context, sigma).expect("the dependent pair forms");
+    context.binders().open(Zone::Intuitionistic, sigma.id());
+    assert_eq!(
+        synthesise_comp(&mut context, third).map(|_| ()),
+        Err(CheckRefusal::AbsentTupleComponent(third)),
+        "a dependent pair has no third component"
     );
 }

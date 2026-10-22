@@ -1608,6 +1608,7 @@ const fn refusal(
 /// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
 /// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `occurrence::tests::a_family_named_by_a_session_payload_is_refused_at_its_field`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|refusal| matches!(refusal,
     CheckRefusal::CrossBlockReference { .. }
     | CheckRefusal::NegativeOccurrence(_)

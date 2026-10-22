@@ -7225,6 +7225,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   region to a definition over `@[r : Region]` reads its parameter at
     ///   that region.
     /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
+    /// - witness: `regioned::tests::a_call_of_a_definition_over_a_region_checks_where_it_stands`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |placed| match *placed {
         Maybe::Present(placed) => self.context.arena().value_type(placed).is_some(),
         Maybe::Absent(_) => true,
@@ -7392,6 +7393,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     /// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
+    /// - witness: `judgement::tests::a_transport_along_an_unknown_path_and_a_run_of_a_function_are_refused_by_shape`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::FamilyArity { expected, actual, .. }) => {
             u32::from(expected) < u32::from(actual)
@@ -9136,6 +9138,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   first-order fragment; mismatched classifiers report their original
     ///   site.
     /// - witness: `bridge::tests::native_path_module_round_trips`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| match ret {
         Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))))),
         Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
@@ -9182,6 +9185,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — reflexivity against a path type, the unknown type and
     ///   an atom separates the three readings.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found }) => site == at && wanted == ExpectedShape::Path && found == TypeNode::Value(classifier),
         | Ok(PathReading::Known { .. } | PathReading::Unknown(_)) | Err(_) => true,
@@ -9532,6 +9536,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   the native rule.
     /// - witness: `bridge::tests::native_lists_check_and_round_trip`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|&element| self.context.arena().value_type(element).is_some()))]
     fn list_expected(
         &mut self,

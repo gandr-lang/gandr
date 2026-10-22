@@ -754,12 +754,16 @@ fn a_located_hypothesis_is_usable_only_at_its_world()
     });
     let here = arena.computation_bind(held, read_here);
     let there = arena.computation_bind(held, read_there);
+    // x <- hold report; y <- leta x in return x; return y
+    let passed = arena.computation_bind(read_here, read);
+    let passed = arena.computation_bind(held, passed);
     let [operator, seat] = worlds();
     let module = [
         operator,
         seat,
         entry_point(&mut arena, At(2), string, here).entered(operating()),
         entry_point(&mut arena, At(3), string, there).entered(operating()),
+        entry_point(&mut arena, At(4), string, passed).entered(operating()),
     ];
     let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
     assert!(
@@ -772,6 +776,10 @@ fn a_located_hypothesis_is_usable_only_at_its_world()
             bound: world(OPERATOR),
         })),
         "and not at the seat's"
+    );
+    assert!(
+        matches!(verdicts.get(4), Some(&Verdict::Checked { .. })),
+        "an opening whose body synthesises gives its type past the opened value"
     );
 }
 

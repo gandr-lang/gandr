@@ -2041,8 +2041,9 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
     assert_eq!(decoded.declarations().len(), 1);
 }
 
-/// Every effect and control former a pure body may not hold is refused by
-/// its own name at its own node, whichever it is.
+/// Every effect, memory and control former a pure body may not hold, and
+/// the reified stack and recorded run that only control and sessions mint,
+/// is refused by its own name at its own node, whichever it is.
 #[test]
 fn each_effect_former_is_refused_by_name_where_it_stands()
 {
@@ -2076,6 +2077,12 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
             arena.computation_scope(interface, returned, returned, [].into()),
             UnadmittedFormer::Scope,
         ),
+        (
+            arena.computation_memory(gandr_core_term::memory::MemoryForm::Consume {
+                held: DeBruijnIndex::from(0_u32),
+            }),
+            UnadmittedFormer::Memory,
+        ),
     ];
     for (computation, former) in rows {
         let at = CoreNode::Term(TermNode::Computation(computation));
@@ -2085,6 +2092,140 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
             "{former:?} is refused by name, at its node"
         );
     }
+    let values = [
+        (
+            arena.value_reify(alloc::sync::Arc::from([])),
+            UnadmittedFormer::Reify,
+        ),
+        (
+            arena.value_recorded(alloc::sync::Arc::from([])),
+            UnadmittedFormer::Run,
+        ),
+    ];
+    for (value, former) in values {
+        let at = CoreNode::Term(TermNode::Value(value));
+        assert_eq!(
+            erase(&mut arena, at).1,
+            Err(Refusal::OutOfFragment { at, former }),
+            "{former:?} is refused by name, at its node"
+        );
+    }
+}
+
+/// Each type the kernel has no former for is refused by its own name at its
+/// own node: a capability, a buffer, a stage, a region, a value held at a
+/// world, a flow above the smallest universe and the unknown type; a decoded
+/// code that is a reified stack, a linear endpoint, a hole or no code at all
+/// is refused where it stands, and a marked code decodes as what it marks.
+#[test]
+fn each_type_outside_the_kernel_is_refused_by_name_where_it_stands()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::MarkIndex;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldType;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let region = Region::Scoped(RegionDepth::from(1_u32));
+    let at_type = |id| CoreNode::Type(TypeNode::Value(id));
+    let one = Level::zero().succ().expect("one is below the top");
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let code = arena.value_quote(integer);
+    let unadmitted = |at, former| Refusal::OutOfFragment { at, former };
+    let capability =
+        arena.value_type_capability(EffectRow::default(), CapabilityGrade::Durable, region);
+    let buffer = arena.value_type_buffer();
+    let staged = arena.value_type_staged(integer, Stage::At(StageId::from(0_usize)));
+    let kept = arena.value_type_kept(integer, region);
+    let located = arena.value_type_world(WorldType::At {
+        inner: integer,
+        world: World::Host,
+    });
+    let higher = arena.value_type_flow(large, code, code);
+    let unknown = arena.value_type_unknown();
+    let unknown_computation = arena.comp_type_unknown();
+    let stack = arena.value_reify(Arc::from([]));
+    let endpoint = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+    let hole = arena.value_hole(HoleId::from(0_u32));
+    let pair = arena.value_tuple(&[code, code]);
+    let decoded = |arena: &mut CoreArena, code| {
+        CoreNode::Type(TypeNode::Value(
+            arena.value_type_element(code, Level::zero()),
+        ))
+    };
+    let rows = [
+        (
+            at_type(capability),
+            unadmitted(at_type(capability), UnadmittedFormer::Capability),
+        ),
+        (
+            at_type(buffer),
+            unadmitted(at_type(buffer), UnadmittedFormer::Buffer),
+        ),
+        (
+            at_type(staged),
+            unadmitted(at_type(staged), UnadmittedFormer::Stage),
+        ),
+        (
+            at_type(kept),
+            unadmitted(at_type(kept), UnadmittedFormer::Scope),
+        ),
+        (at_type(located), Refusal::Located {
+            at: at_type(located),
+        }),
+        (
+            at_type(higher),
+            unadmitted(at_type(higher), UnadmittedFormer::HigherFlow),
+        ),
+        (at_type(unknown), Refusal::Unknown {
+            at: at_type(unknown),
+        }),
+        (
+            CoreNode::Type(TypeNode::Computation(unknown_computation)),
+            Refusal::Unknown {
+                at: CoreNode::Type(TypeNode::Computation(unknown_computation)),
+            },
+        ),
+        (
+            decoded(&mut arena, stack),
+            unadmitted(
+                CoreNode::Term(TermNode::Value(stack)),
+                UnadmittedFormer::Reify,
+            ),
+        ),
+        (decoded(&mut arena, endpoint), Refusal::Session {
+            at: CoreNode::Term(TermNode::Value(endpoint)),
+        }),
+        (decoded(&mut arena, hole), Refusal::Hole {
+            at: CoreNode::Term(TermNode::Value(hole)),
+            hole: HoleId::from(0_u32),
+        }),
+        (decoded(&mut arena, pair), Refusal::MachineInvariant),
+    ];
+    for (at, refusal) in rows {
+        assert_eq!(erase(&mut arena, at).1, Err(refusal), "{at:?}");
+    }
+    let marked = arena.value_mark(MarkIndex::from(0_u32), code);
+    let marked = decoded(&mut arena, marked);
+    let (target, image) = erase(&mut arena, marked);
+    let Ok(AnyNode::ValueType(image)) = image
+    else {
+        panic!("a decoded mark erases to a type, not {image:?}");
+    };
+    assert_eq!(
+        target.value_type(image),
+        Some(&gandr_kernel_term::ValueType::Base(BaseType::Integer)),
+        "a marked code decodes as what it marks"
+    );
 }
 
 /// A list case, an application, a telescope transport and a marked

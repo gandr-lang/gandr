@@ -159,6 +159,55 @@ fn a_partial_fixpoint_states_div_in_every_row_it_ends_in()
     );
 }
 
+/// A dependent arrow states `Div` where its codomain does, and gains it
+/// there otherwise; a decode no definition unfolds has no returner to
+/// state it in and is refused for wanting one.
+#[test]
+fn a_dependent_arrow_states_div_in_its_codomain_and_a_stuck_decode_is_refused()
+{
+    use gandr_kernel_strata::Level;
+
+    use crate::refusal::ExpectedShape;
+    use crate::refusal::TermNode;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let pure = arena.comp_type_returner(unit);
+    let stated_row = diverging(&mut arena, unit);
+    let at = again(&mut arena);
+    let pi = arena.comp_type_pi(unit, pure);
+    let stated_pi = arena.comp_type_pi(unit, stated_row);
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let stuck = arena.comp_type_element(code, Level::zero());
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let answer = stated(&mut context, at, pi);
+    let Ok(Divergence::Unstated(rebuilt)) = answer
+    else {
+        panic!("a dependent arrow to a pure returner does not state `Div`: {answer:?}");
+    };
+    assert_eq!(
+        equal_comp_type_syntax(context.arena(), rebuilt, stated_pi),
+        CertificateEquality::Equal,
+        "the codomain gains `Div`"
+    );
+    assert_eq!(
+        stated(&mut context, at, stated_pi),
+        Ok(Divergence::Stated),
+        "a dependent arrow whose codomain holds `Div` states it"
+    );
+    assert!(
+        matches!(
+            stated(&mut context, at, stuck),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(refused),
+                wanted: ExpectedShape::Returner,
+                ..
+            }) if refused == at
+        ),
+        "a stuck decode has no returner"
+    );
+}
+
 #[test]
 fn a_fixpoint_that_never_recurses_needs_no_entry()
 {

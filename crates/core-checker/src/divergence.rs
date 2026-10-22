@@ -154,6 +154,7 @@ pub fn require(
 ///   component stating the entry and one not, and a returner already holding
 ///   it, each asserted as the exact answer.
 /// - witness: `divergence::tests::a_partial_fixpoint_states_div_in_every_row_it_ends_in`
+/// - witness: `divergence::tests::a_dependent_arrow_states_div_in_its_codomain_and_a_stuck_decode_is_refused`
 #[spec(ensures: |ret| match ret {
     | Ok(Divergence::Unstated(rebuilt)) => rebuilt != expected,
     | Ok(Divergence::Stated) | Err(_) => true,

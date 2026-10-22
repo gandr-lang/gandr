@@ -767,9 +767,9 @@ fn a_path_code_is_closed_first_order_and_inhabited()
     }
 }
 
-/// A stack, a staged type, a kept type, a capability's operations and a
-/// value held at a world each stand at the level of what they carry; a world
-/// capability, a buffer and a run stand at zero; a family or codata
+/// A stack, a staged type, a kept type, a capability's operations, a value
+/// held at a world and a flow each stand at the level of what they carry; a
+/// world capability, a buffer and a run stand at zero; a family or codata
 /// declaration not in scope is refused by name.
 #[test]
 fn each_carrying_former_stands_at_the_level_of_what_it_carries()
@@ -802,6 +802,7 @@ fn each_carrying_former_stands_at_the_level_of_what_it_carries()
     .expect("one operation");
     let one = Level::zero().succ().expect("one is below the top");
     let session = arena.value_unit();
+    let unit_code = arena.value_quote(unit);
     let rows = [
         (
             arena.value_type_stack(returns_small, returns_unit),
@@ -832,8 +833,13 @@ fn each_carrying_former_stands_at_the_level_of_what_it_carries()
                 inner: small,
                 world: World::Host,
             }),
-            one,
+            one.clone(),
             "a value held at a world",
+        ),
+        (
+            arena.value_type_flow(small, unit_code, unit_code),
+            one,
+            "a flow over types",
         ),
         (
             arena.value_type_world(WorldType::Capability(World::Host)),
