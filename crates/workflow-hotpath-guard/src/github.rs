@@ -300,9 +300,10 @@ struct Touched
 ///   <function>`, opened when it had none, carrying its row (see
 ///   [`Index::record`]), with the report appended first as a comment when
 ///   [`Index::owes`] says one is owed; each function with an open row of the
-///   report's subject in a passing series has that row marked fixed; each
-///   touched issue is closed when it stands settled and was open, reopened when
-///   it stands open and was closed.
+///   report's subject in a passing series has that row marked fixed, unless a
+///   failed check of the same series regressed the function; each touched issue
+///   is closed when it stands settled and was open, reopened when it stands
+///   open and was closed.
 /// - provides: one issue per function, its body the index of its regressions.
 /// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
 ///   not the JSON this crate reads.
@@ -314,16 +315,18 @@ struct Touched
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` holding no issue, one holding a function's
-///   issue with the pull request's open row, a passing rerun, a shift, and a
-///   settled issue meeting a new regression; a second issue, a comment per
-///   rerun, an open row left after the pass or an issue left in the wrong state
-///   changes the recorded invocations.
+///   issue with the pull request's open row, a passing rerun, a shift, a
+///   settled issue meeting a new regression, and a series both failed and
+///   passed; a second issue, a comment per rerun, an open row left after the
+///   pass, a regressed row fixed, or an issue left in the wrong state changes
+///   the recorded invocations.
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
 /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
 /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_clear_commit_files_nothing`
+/// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
 #[inline]
 pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 {
@@ -401,12 +404,12 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
             continue;
         };
         let index = Index::read(&issue.body);
-        let owed = report.passed().keys().any(|series| {
-            index.standing_in(&subject, series) == Standing::Open
-                && !regressions.iter().any(|regression| {
-                    regression.function == function && &regression.series == series
-                })
-        });
+        // A function a failed check regressed is touched already; its own
+        // filing keeps that series' row open.
+        let owed = report
+            .passed()
+            .keys()
+            .any(|series| index.standing_in(&subject, series) == Standing::Open);
         if owed {
             touched
                 .entry(function.clone())
@@ -443,6 +446,7 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
+/// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
 fn file_function(
     function: &SiteName,
     mut entry: Touched,

@@ -709,9 +709,11 @@ impl SummaryLine
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a site's `avg` delta beside its `total` one, a wall
-    ///   line, a decimal change and a line without one; reading the second
-    ///   delta, dropping the decimal or the sign changes the shift.
+    ///   line, a decimal change, a doubled sign, a second decimal and a line
+    ///   without one; reading the second delta, dropping the decimal or the
+    ///   sign, or reading a malformed span changes the shift.
     /// - witness: `check::tests::a_uniform_timing_shift_is_a_runner_shift`
+    /// - witness: `check::tests::a_delta_is_one_signed_number_of_at_most_one_decimal`
     #[inline]
     pub fn percent(&self) -> Maybe<Percent, Unstated>
     {
@@ -1080,8 +1082,25 @@ Wall time `313.23 ms → 401.90 ms` **+28%**
             Maybe::Absent(Unshifted),
             "a call count moved"
         );
+        let unmarked = read("gandr-timing", &SHIFTED.replace("319 → 319", "319 → 325"));
+        assert_eq!(
+            unmarked.shift(&[]),
+            Maybe::Absent(Unshifted),
+            "a call count moved, its cell without a percentage"
+        );
         let real = read("gandr-timing", &SHIFTED.replace("**+31%**", "**+45%**"));
         assert_eq!(real.shift(&[]), Maybe::Absent(Unshifted), "+28 against +45");
+        let flat = read(
+            "gandr-timing",
+            &SHIFTED
+                .replace("**+28%**", "**+0%**")
+                .replace("**+31%**", "**+0.5%**"),
+        );
+        assert_eq!(
+            flat.shift(&[]),
+            Maybe::Absent(Unshifted),
+            "a shift is a slowdown: a flat wall time is none"
+        );
         let decimal = read("gandr-timing", &SHIFTED.replace("**+31%**", "**+30.5%**"));
         assert_eq!(
             decimal.shift(&[]),
@@ -1092,6 +1111,26 @@ Wall time `313.23 ms → 401.90 ms` **+28%**
         );
         assert_eq!(Percent(305).to_string(), "+30.5");
         assert_eq!(Percent(-50).to_string(), "-5");
+    }
+
+    #[test]
+    fn a_delta_is_one_signed_number_of_at_most_one_decimal()
+    {
+        let percent = |line: &str| SummaryLine(line.into()).percent();
+        assert_eq!(
+            percent("avg `1 → 2` **+31%**"),
+            Maybe::Present(Percent(310))
+        );
+        assert_eq!(percent("**-2.5%**"), Maybe::Present(Percent(-25)));
+        assert_eq!(
+            percent("avg **+-5%**, total **3.25%**, wall **+4.0%**"),
+            Maybe::Present(Percent(40)),
+            "a doubled sign and a second decimal are not deltas"
+        );
+        assert_eq!(
+            percent("**Functions · %** and **.5%**"),
+            Maybe::Absent(super::Unstated)
+        );
     }
 
     #[test]
