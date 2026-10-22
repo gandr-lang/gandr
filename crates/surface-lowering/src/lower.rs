@@ -552,6 +552,7 @@ use crate::attribute::AttributeTable;
 use crate::attribute::PayloadForm;
 use crate::attribute::PayloadVerdict;
 use crate::attribute::RegisteredAttribute;
+use crate::attribute::members;
 use crate::attribute::names;
 use crate::attribute::payload;
 use crate::attribute::payload_form;
@@ -15068,7 +15069,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in &module.attributes {
                 self.fuel.spend()?;
                 match self.read_attribute(written, &mut seen, arena) {
-                    Ok(Filing::Filed { entry, named }) => {
+                    Ok(Filing::Filed {
+                        entry,
+                        named,
+                        members: _,
+                    }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             self.asked.extend(
                                 (usize::from(module.first) .. usize::from(module.end))
@@ -15159,7 +15164,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
                 match self.read_attribute(&written, &mut seen, arena) {
-                    Ok(Filing::Filed { entry, named }) => {
+                    Ok(Filing::Filed {
+                        entry,
+                        named,
+                        members,
+                    }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
                         }
@@ -15168,6 +15177,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let attribute = entry.name();
                         table.file(key, entry);
                         table.file_named(key, attribute, named);
+                        if !members.is_empty() {
+                            table.file_interface(key, members);
+                        }
                     },
                     Ok(Filing::Unlowered) => {},
                     Err(refusal) => {
@@ -15530,8 +15542,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   where a word schema stands is admitted only when it spells one of the
     ///   schema's words, filed with no value, and is ill-typed as another word
     ///   otherwise; a `respects` or `entry` payload is admitted only when it
-    ///   names declarations, which the filing carries, and is ill-typed as
-    ///   another value otherwise.
+    ///   names declarations, and an `identity` payload only when it names two
+    ///   or three, which the filing carries, and each is ill-typed as another
+    ///   value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -15552,10 +15565,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
+    /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
         ensures: |ret| match ret.as_ref() {
-            | Ok(&Filing::Filed { ref entry, ref named }) => {
+            | Ok(&Filing::Filed { ref entry, ref named, ref members }) => {
                 seen.len() == before.saturating_add(1_usize)
                     && seen.last() == Some(&(entry.name(), written.span))
                     && entry.span() == written.span
@@ -15572,6 +15586,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | _ => false,
                     }
                     && named.is_empty() == (entry.schema() != AttributeSchema::Names)
+                    && members.is_empty() == (entry.schema() != AttributeSchema::Interface)
+                    && (members.is_empty() || (2_usize ..= 3_usize).contains(&members.len()))
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -15644,32 +15660,45 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 });
             },
         }
-        let (value, named) = match written.payload {
-            Payload::Unwritten => (Maybe::Absent(payload::Absent::Marker), Vec::new()),
+        let (value, named, members) = match written.payload {
+            Payload::Unwritten => (
+                Maybe::Absent(payload::Absent::Marker),
+                Vec::new(),
+                Vec::new(),
+            ),
             Payload::Written(_) if matches!(schema, AttributeSchema::Word(_)) => {
-                (Maybe::Absent(payload::Absent::Word), Vec::new())
+                (Maybe::Absent(payload::Absent::Word), Vec::new(), Vec::new())
             },
             Payload::Written(placed) => {
                 let Maybe::Present(value) = self.value_at(placed.node)
                 else {
                     return Ok(Filing::Unlowered);
                 };
-                let named = if schema == AttributeSchema::Names {
-                    let Maybe::Present(named) = names(arena, value)
-                    else {
-                        return Err(LoweringRefusal::IllTypedPayload {
-                            span: placed.span,
-                            name,
-                            expected: schema,
-                            written: form,
-                        });
-                    };
-                    named
-                }
-                else {
-                    Vec::new()
+                let read = match schema {
+                    AttributeSchema::Names => match names(arena, value) {
+                        Maybe::Present(named) => Maybe::Present((named, Vec::new())),
+                        Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                    AttributeSchema::Interface => match members(arena, value) {
+                        Maybe::Present(members) => Maybe::Present((Vec::new(), members)),
+                        Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                    AttributeSchema::Marker
+                    | AttributeSchema::Integer
+                    | AttributeSchema::Text
+                    | AttributeSchema::MarkerOr(_)
+                    | AttributeSchema::Word(_) => Maybe::Present((Vec::new(), Vec::new())),
                 };
-                (Maybe::Present(value), named)
+                let Maybe::Present((named, members)) = read
+                else {
+                    return Err(LoweringRefusal::IllTypedPayload {
+                        span: placed.span,
+                        name,
+                        expected: schema,
+                        written: form,
+                    });
+                };
+                (Maybe::Present(value), named, members)
             },
         };
         seen.push((name, written.span));
@@ -15677,6 +15706,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(Filing::Filed {
             entry: AttributeEntry::new(name, schema, value, written.span),
             named,
+            members,
         })
     }
 
@@ -16797,15 +16827,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Filing
 {
-    /// The entry to file, and the declarations a `respects` or `entry`
-    /// payload names: empty for every other attribute, and never empty for
-    /// those two, whose payload names at least one.
+    /// The entry to file, the declarations a `respects` or `entry` payload
+    /// names and the members an `identity` payload names: each empty for
+    /// every other attribute, and never empty for its own, whose payload
+    /// names at least one, an `identity`'s two or three.
     Filed
     {
         /// The entry.
         entry: AttributeEntry,
         /// The declarations its payload names, in written order.
         named: Vec<ConstantIndex>,
+        /// The interface members its payload names, as the components the
+        /// payload lowered them to, in written order.
+        members: Vec<ValueId>,
     },
     /// Nothing: the payload did not lower, which only a payload that itself
     /// refused leaves behind.

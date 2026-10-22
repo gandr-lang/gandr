@@ -212,9 +212,10 @@ impl AtomInterface
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the same atom with and without its law reads the
-    ///   relation's evidence as an identity only with it.
+    ///   relation's evidence as an identity only with it, and refuses it by
+    ///   name without.
     /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_keeps_its_neutral_fibre`
+    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[inline]
     #[must_use]
     pub const fn lawful(
@@ -270,9 +271,9 @@ impl AtomInterface
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a stated law makes the relation's evidence an
-    ///   identity, and its absence keeps the atom's own fibre.
+    ///   identity, and its absence refuses that evidence by name.
     /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_keeps_its_neutral_fibre`
+    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[inline]
     pub const fn law(&self) -> Maybe<ValueId, law::Absent>
     {

@@ -46,6 +46,7 @@ use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::AscriptionForm;
+use gandr_surface_lowering::AttributeSchema;
 use gandr_surface_lowering::Coerced;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::Ending;
@@ -59,6 +60,8 @@ use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
+use gandr_surface_lowering::PayloadForm;
+use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
@@ -1895,6 +1898,64 @@ fn a_component_check_carries_its_members_expectation()
         )),
         "an expectation no component's check reads states nothing, and is refused where it \
              is written, got {found:?}"
+    );
+}
+
+#[test]
+fn a_sealed_atom_reads_the_identity_its_type_member_states()
+{
+    let stated = |payload: &str| {
+        format!(
+            "def rel(a : Integer, b : Integer) -> -F Type {{ return Integer }}\ndef refl(a : \
+             Integer) -> -F Integer {{ return 0 }}\ndef law = 0;\nmodule M :> #{{ type T, seed : \
+             T }} {{ @[ identity({payload}) ] type T = Integer; def seed = 7; }}"
+        )
+    };
+    for (payload, count) in [("(rel, refl, law)", 3_usize), ("(rel, refl)", 2_usize)] {
+        let source = stated(payload);
+        let lowered = lower(source.as_str());
+        let atom = declaration(&lowered, "M.T", Role::Abstract);
+        let named: Vec<Option<ConstantIndex>> = ["rel", "refl", "law"]
+            .into_iter()
+            .take(count)
+            .map(|path| Some(declaration(&lowered, path, Role::Declared).constant()))
+            .collect();
+        let read: Vec<Option<ConstantIndex>> = lowered
+            .module
+            .interface(atom)
+            .iter()
+            .map(|&member| match lowered.arena.value(member) {
+                Some(&Value::Constant(constant)) => Some(constant),
+                Some(_) | None => None,
+            })
+            .collect();
+        assert_eq!(
+            read, named,
+            "the atom reads the {count} declarations its member's `identity` names, in order"
+        );
+    }
+    let plain = lower("module M :> #{ type T, seed : T } { type T = Integer; def seed = 7; }");
+    assert!(
+        plain
+            .module
+            .interface(declaration(&plain, "M.T", Role::Abstract))
+            .is_empty(),
+        "an atom whose member states no identity reads none"
+    );
+    let source = stated("(rel, refl, law, law)");
+    let found = rows(&lower(source.as_str()));
+    assert!(
+        found.contains(&row(
+            "M.T",
+            Role::Abstract,
+            Amounts::Refused(LoweringRefusal::IllTypedPayload {
+                span: span_of(source.as_str(), "(rel, refl, law, law)", 0_usize),
+                name: RegisteredAttribute::IDENTITY,
+                expected: AttributeSchema::Interface,
+                written: PayloadForm::OtherValue,
+            })
+        )),
+        "four names are no interface, refused at the payload: {found:?}"
     );
 }
 

@@ -1938,11 +1938,11 @@ fn a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers()
 }
 
 #[test]
-fn an_atom_stating_no_law_keeps_its_neutral_fibre()
+fn an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name()
 {
-    // The same atom whose interface states no law: its identity is its own
-    // neutral fibre, so the relation's evidence is no identity there, and
-    // reflexivity still is.
+    // The same atom whose interface states no law: the relation is no
+    // identity without it, so its evidence offered as an identity is refused
+    // by name at the atom, and reflexivity still is an identity.
     let mut arena = CoreArena::new();
     let module = interfaced_atom_module(&mut arena, Stated::Lawless);
     let (report, _) = judge_and_readmit(&mut arena, &module);
@@ -1955,10 +1955,10 @@ fn an_atom_stating_no_law_keeps_its_neutral_fibre()
             Verdict::Data,
             Verdict::Checked { .. },
             Verdict::Checked { .. },
-            Verdict::Refused(CheckRefusal::TypeMismatch(_)),
+            Verdict::Refused(CheckRefusal::AtomTransport { atom, .. }),
             Verdict::Checked { .. },
             ..
-        ]),
+        ] if *atom == ConstantIndex::from(3_usize)),
         "the relation's evidence is refused where no law makes it an identity: {verdicts:?}"
     );
 }

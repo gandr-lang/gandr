@@ -2027,33 +2027,32 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// The interface the atom at `atom` relates its elements by, with its
-    /// kind, when the atom was admitted with one stating a law.
+    /// kind, when the atom was admitted with one.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the interface and kind exactly when an abstract type was
-    ///   admitted at `atom` with an interface stating a law.
+    ///   admitted at `atom` with an interface, whether or not it states a law.
     /// - provides: the identity system an identity at the atom reads.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a lawful atom's identity reads its relation; an atom
-    ///   stating no interface, or one stating no law, keeps its neutral fibre.
+    /// - hypothesis: L3 — a lawful atom's identity reads its relation, a
+    ///   lawless one refuses the relation's evidence by name, and an atom
+    ///   stating no interface keeps its neutral fibre.
     /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
-    /// - witness: `bridge::tests::an_atom_stating_no_law_keeps_its_neutral_fibre`
-    #[spec(ensures: |ret| matches!(ret, Some((interface, _)) if matches!(interface.law(), Maybe::Present(_))) || ret.is_none())]
-    pub(crate) fn lawful_interface(
+    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    #[spec(ensures: |ret| ret.is_some() == self.sealed.get(&atom).is_some_and(|sealed| matches!(sealed.declared.interface(), Maybe::Present(_))))]
+    pub(crate) fn interface_of(
         &self,
         atom: ConstantIndex,
     ) -> Option<(crate::declaration::AtomInterface, ValueTypeId)>
     {
         let sealed = self.sealed.get(&atom)?;
         match sealed.declared.interface() {
-            Maybe::Present(interface) if matches!(interface.law(), Maybe::Present(_)) => {
-                Some((interface, sealed.declared.kind()))
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => None,
+            Maybe::Present(interface) => Some((interface, sealed.declared.kind())),
+            Maybe::Absent(_) => None,
         }
     }
 

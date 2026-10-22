@@ -163,6 +163,7 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::AbstractType;
+use gandr_core_checker::AtomInterface;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
@@ -3490,8 +3491,9 @@ impl gandr_surface_format::Elaborate for Elaborating
 ///   names and the entry its `entry` attribute names; a data declaration
 ///   carries its native signature and a codata declaration its decoded one,
 ///   each shared with the lowered module, a sealed abstract type its kind,
-///   representation, extent, site and mobility, and a world declaration nothing
-///   but its position. A refused declaration is not offered.
+///   representation, extent, site, mobility and the interface its type member's
+///   `identity` attribute names, and a world declaration nothing but its
+///   position. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -3526,7 +3528,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Codata(index) =>
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Codata(ref held) if module.codata(index) == Maybe::Present(held)),
                 DeclarationOutcome::Abstract(sealing) =>
-                    *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing)),
+                    *actual.content() == gandr_core_checker::DeclarationContent::Abstract(abstract_type(sealing, module.interface(lowered))),
                 DeclarationOutcome::World =>
                     *actual.content() == gandr_core_checker::DeclarationContent::World,
                 DeclarationOutcome::Refused(_) => false,
@@ -3573,7 +3575,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             DeclarationOutcome::Abstract(sealing) => {
                 declarations.push(Declaration::abstract_type(
                     lowered.constant(),
-                    abstract_type(sealing),
+                    abstract_type(sealing, module.interface(lowered)),
                     OriginToken::from(usize::from(lowered.origin())),
                 ));
                 continue;
@@ -3607,13 +3609,23 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 
 /// The checker's abstract type for the sealing the lowering recorded: its
 /// kind, representation and extent, at the site its sealing module and
-/// component number, mobile exactly when its signature marks it.
+/// component number, mobile exactly when its signature marks it, relating
+/// its elements by the `members` its type member's `identity` names.
 ///
 /// # Specification
 /// trivial.
-fn abstract_type(sealing: Sealing) -> AbstractType
+///
+/// # Adequacy
+/// - hypothesis: L3 — three members, two and none give a lawful, a lawless and
+///   a plain atom, which read the relation's evidence apart.
+/// - witness: `compose::tests::a_sealed_atom_s_identity_decides_what_its_relation_s_evidence_is`
+/// - witness: `compose::tests::a_sealed_module_settles_its_abstract_type`
+fn abstract_type(
+    sealing: Sealing,
+    members: &[ValueId],
+) -> AbstractType
 {
-    AbstractType::new(
+    let sealed = AbstractType::new(
         sealing.kind,
         sealing.representation,
         sealing.extent,
@@ -3625,7 +3637,14 @@ fn abstract_type(sealing: Sealing) -> AbstractType
     .marked(match sealing.mark {
         Mark::Unmarked => Mobility::Immobile,
         Mark::Mobile => Mobility::Mobile,
-    })
+    });
+    match *members {
+        [relation, reflexivity] => sealed.interfaced(AtomInterface::new(relation, reflexivity)),
+        [relation, reflexivity, law] => {
+            sealed.interfaced(AtomInterface::new(relation, reflexivity).lawful(law))
+        },
+        _ => sealed,
+    }
 }
 
 /// What [`readmitted`] answers: the readmission or the first disagreement,
@@ -5162,6 +5181,65 @@ def h = 1 ;"#,
             ],
             "the atom crosses as the kernel's abstract type, ahead of the definitions that read \
              it; the leak does not cross"
+        );
+    }
+
+    #[test]
+    fn a_sealed_atom_s_identity_decides_what_its_relation_s_evidence_is()
+    {
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let sealed = |name: &str, identity: &str| {
+            format!(
+                "module {name} :> #{{ type T, origin : T, other : T }} {{ {identity} type T = \
+                 Unit ; def origin = unit ; def other = unit ; }}\ndef evidence{name} : \
+                 Path({name}.T, {name}.origin, {name}.other) ;\ndef evidence{name} = unit ;\n"
+            )
+        };
+        let source = [
+            "def related(a : Unit, b : Unit) -> -F Type { return Unit }\n".to_owned(),
+            "def reflexive(a : Unit) -> -F related(a, a) { return unit }\n".to_owned(),
+            "def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(#{ y : Unit, s : \
+             related(a, y) }, (b, r), (a, reflexive(a))) { return (unit, unit) }\n"
+                .to_owned(),
+            sealed("Lawful", "@[ identity((related, reflexive, contraction)) ]"),
+            sealed("Lawless", "@[ identity((related, reflexive)) ]"),
+            sealed("Bare", ""),
+        ]
+        .concat();
+        let Ok(Composed::Settled { report, .. }) = compose(
+            &grammar,
+            CorpusRoot::Fixture,
+            SourceText::from(source.as_str()),
+            &mut lowerings,
+        )
+        else {
+            panic!("the three sealed modules settle");
+        };
+        let mut evidence: Vec<(String, Outcome)> = report
+            .declarations()
+            .iter()
+            .map(|declaration| (declaration.name().to_string(), declaration.outcome()))
+            .collect();
+        evidence.retain(|&(ref name, _)| name.starts_with("evidence"));
+        assert_eq!(
+            evidence,
+            vec![
+                (
+                    "evidenceLawful".to_owned(),
+                    Outcome::Checks(gandr_core_checker::ObligationCount::from(0_usize))
+                ),
+                (
+                    "evidenceLawless".to_owned(),
+                    Outcome::Refuses(RefusalName::AtomTransport)
+                ),
+                (
+                    "evidenceBare".to_owned(),
+                    Outcome::Refuses(RefusalName::TypeMismatch)
+                ),
+            ],
+            "the relation's evidence is a path at a lawful atom, refused by name at an atom \
+             stating no law, and no path at an atom stating no identity"
         );
     }
 

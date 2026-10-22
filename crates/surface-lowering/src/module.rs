@@ -9491,6 +9491,39 @@ impl<'source> LoweredModule<'source>
             .unwrap_or_default()
     }
 
+    /// The relation, reflexivity and, when stated, transport law the
+    /// `identity` attribute of `declaration`'s type member names: what the
+    /// checker's abstract type carries as the interface its atom relates its
+    /// elements by.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the members filed under the declaration's signature form,
+    ///   which for a sealed atom is the type member it reads; the empty slice
+    ///   for a declaration no `identity` attribute decorates.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the receiver's attribute table read
+    ///   at the declaration's key, which a clause may not compare against.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an atom whose member names three declarations, one
+    ///   whose member names two and one whose member states no identity
+    ///   separate the three answers.
+    /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
+    #[inline]
+    #[must_use]
+    pub fn interface(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[ValueId]
+    {
+        match declaration.signature() {
+            Maybe::Present(key) => self.attributes.interface(key),
+            Maybe::Absent(_) => &[],
+        }
+    }
+
     /// The bound of each stage binder `declaration`'s telescope writes, in
     /// written order: what the checker's declaration carries as the stages
     /// its signature is quantified over.

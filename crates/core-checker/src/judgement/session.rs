@@ -1232,6 +1232,7 @@ impl Machine<'_, '_>
             | CheckRefusal::AbstractKindNotUniverse(_)
             | CheckRefusal::RepresentationAboveKind { .. }
             | CheckRefusal::NotAnAbstractType(_)
+            | CheckRefusal::AtomTransport { .. }
             | CheckRefusal::SealSiteRepeated(_)
             | CheckRefusal::DataArgumentArity(_)
             | CheckRefusal::UnknownConstructor { .. }

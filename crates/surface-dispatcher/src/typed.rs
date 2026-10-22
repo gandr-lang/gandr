@@ -6686,9 +6686,10 @@ mod tests
             .collect();
         assert_eq!(
             keyed,
-            ["Counter.T", "Counter.T", "Counter.T"],
+            ["Counter.T", "Counter.T", "Type", "Counter.T"],
             "every declaration keyed in the source reads the atom by its path, never the \
-             representation; the abstract type itself carries no form key"
+             representation; the type member reads as the atom, at its kind, as a transparent \
+             module's member reads as its witness"
         );
     }
 

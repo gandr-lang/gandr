@@ -2170,6 +2170,70 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
 }
 
 #[test]
+fn an_atom_interface_round_trips_with_and_without_its_law()
+{
+    use crate::content::AbstractRoots;
+    use crate::content::InterfaceRoots;
+    let checkpoints = |law: Maybe<NodeIndex, gandr_core_checker::law::Absent>| {
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Abstract(AbstractRoots {
+                kind: NodeIndex::from(0_usize),
+                representation: NodeIndex::from(1_usize),
+                extent: gandr_kernel_term::SealExtent::from(0_usize),
+                site: gandr_core_checker::SealSite::new(
+                    gandr_core_checker::SealingSite::from(0_usize),
+                    gandr_core_checker::ComponentOrdinal::from(0_usize),
+                ),
+                mobility: gandr_core_checker::worlds::Mobility::Immobile,
+                interface: Maybe::Present(InterfaceRoots {
+                    relation: NodeIndex::from(2_usize),
+                    reflexivity: NodeIndex::from(3_usize),
+                    law,
+                }),
+            }),
+            &[
+                ContentNode::Product(Vec::new()),
+                ContentNode::Base(BaseType::Integer),
+                ContentNode::Tuple(Vec::new()),
+                ContentNode::Tuple(vec![NodeIndex::from(2_usize)]),
+                ContentNode::Tuple(vec![NodeIndex::from(2_usize), NodeIndex::from(3_usize)]),
+            ],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    let lawful = checkpoints(Maybe::Present(NodeIndex::from(4_usize)));
+    let lawless = checkpoints(Maybe::Absent(gandr_core_checker::law::Absent::Unstated));
+    let round_trip = |checkpoints: &Checkpoints, which: &str| {
+        let bytes = encode_checkpoints(checkpoints).expect("an interfaced atom encodes");
+        assert_eq!(
+            decode_checkpoints(Bytes(bytes.as_ref())),
+            Ok(checkpoints.clone()),
+            "{which} decodes to itself"
+        );
+        bytes
+    };
+    let lawful_bytes = round_trip(&lawful, "a lawful interface");
+    let lawless_bytes = round_trip(&lawless, "a lawless one");
+    assert_ne!(
+        lawful_bytes.as_ref(),
+        lawless_bytes.as_ref(),
+        "dropping the law changes the content"
+    );
+}
+
+#[test]
 fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
 {
     use gandr_kernel_term::StageBinder;
@@ -2515,6 +2579,10 @@ fn every_refusal() -> Vec<Refusal>
             kind: ty(),
         },
         Refusal::NotAnAbstractType(reference.clone()),
+        Refusal::AtomTransport {
+            at,
+            atom: reference.clone(),
+        },
         Refusal::SealSiteRepeated(SealSite::new(
             SealingSite::from(1_usize),
             ComponentOrdinal::from(2_usize),

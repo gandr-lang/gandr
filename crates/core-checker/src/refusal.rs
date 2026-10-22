@@ -581,6 +581,18 @@ pub enum CheckRefusal
     /// A sealed atom names no admitted abstract type: none was declared at
     /// the position, or its declaration was refused.
     NotAnAbstractType(ConstantIndex),
+    /// An introduction checked at the identity of a sealed atom whose
+    /// interface states its relation and reflexivity but no transport law:
+    /// without the law the relation is no identity, so the identity stays
+    /// the atom's own neutral fibre and nothing introduces it but
+    /// reflexivity.
+    AtomTransport
+    {
+        /// The introduction.
+        at: ValueId,
+        /// The atom's admission position.
+        atom: ConstantIndex,
+    },
     /// Two abstract types claimed one sealing site. The producer issues one
     /// site per abstract component of each ascription, so this is its fault.
     SealSiteRepeated(SealSite),
@@ -1218,7 +1230,7 @@ impl CheckRefusal
         | Self::Undecided { .. }
         | Self::LoopUndecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
-        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
         | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
@@ -1260,6 +1272,7 @@ impl CheckRefusal
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
+            | Self::AtomTransport { .. }
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }
             | Self::ConstructorArity(_)
@@ -1471,6 +1484,7 @@ impl CheckRefusal
             | Self::AbstractKindNotUniverse(_)
             | Self::RepresentationAboveKind { .. }
             | Self::NotAnAbstractType(_)
+            | Self::AtomTransport { .. }
             | Self::SealSiteRepeated(_)
             | Self::DataArgumentArity(_)
             | Self::UnknownConstructor { .. }

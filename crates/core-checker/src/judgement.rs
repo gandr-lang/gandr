@@ -4829,7 +4829,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         // An introduction checked at an identity of the unit type checks at
         // the unit type, and one at an identity of a lawful atom at the
         // relation between its endpoints, the atom's identity system,
-        // whether its own rule or its synthesis reads it.
+        // whether its own rule or its synthesis reads it; at a lawless one
+        // it is refused, the relation being no identity without its law.
         if matches!(
             *self.value(term)?,
             Value::Tuple(_)
@@ -4840,7 +4841,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Value::Quote(_)
                 | Value::ListNil
                 | Value::ListCons(..)
-        ) && let Some(fibre) = self.identity_fibre(expected)?
+        ) && let Some(fibre) = self.identity_fibre(term, expected)?
         {
             expected = fibre;
             entered = fibre;
@@ -6265,10 +6266,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
         Ok(arena.value_type_product(&paths))
     }
 
-    /// The fibre an introduction checked at an identity reads: at the unit
-    /// type, the unit type, the empty tuple of paths as a tuple at a product
-    /// is a tuple of paths; at a lawful atom past its seal, the relation its
-    /// interface states, between the two endpoints.
+    /// The fibre the introduction `term` checked at an identity reads: at the
+    /// unit type, the unit type, the empty tuple of paths as a tuple at a
+    /// product is a tuple of paths; at a lawful atom past its seal, the
+    /// relation its interface states, between the two endpoints.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
@@ -6277,8 +6278,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   right⟩)` at the atom's kind's level when it is an atom whose interface
     ///   states a law; nothing otherwise, an atom inside its seal reading as
     ///   its representation.
-    /// - fails: the unfolding's refusal; [`CheckRefusal::MachineInvariant`] for
-    ///   an atom whose kind is no universe.
+    /// - fails: [`CheckRefusal::AtomTransport`] at `term` when `A`'s weak head
+    ///   is an atom whose interface states no law; the unfolding's refusal;
+    ///   [`CheckRefusal::MachineInvariant`] for an atom whose kind is no
+    ///   universe.
     /// - panics: none.
     ///
     /// # Errors
@@ -6286,12 +6289,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the relation's evidence between two points of a
-    ///   lawful atom checks at their identity, `()` at an identity of the unit
-    ///   type between two variables, and the kernel admits both.
+    ///   lawful atom checks at their identity and is refused by name at a
+    ///   lawless one, `()` checks at an identity of the unit type between two
+    ///   variables, and the kernel admits each identity checked.
     /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+    /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibre| fibre.is_none_or(|fibre| self.context.arena().value_type(fibre).is_some())))]
     fn identity_fibre(
         &mut self,
+        term: ValueId,
         expected: ValueTypeId,
     ) -> Result<Option<ValueTypeId>, CheckRefusal>
     {
@@ -6313,10 +6319,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Ok(None);
         };
-        let Some((interface, kind)) = self.context.lawful_interface(atom)
+        let Some((interface, kind)) = self.context.interface_of(atom)
         else {
             return Ok(None);
         };
+        if let Maybe::Absent(_) = interface.law() {
+            return Err(CheckRefusal::AtomTransport { at: term, atom });
+        }
         let Some(&gandr_core_term::ValueType::Universe { ref level, .. }) =
             self.context.arena().value_type(kind)
         else {
@@ -8926,6 +8935,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::AbstractKindNotUniverse(_)
                     | CheckRefusal::RepresentationAboveKind { .. }
                     | CheckRefusal::NotAnAbstractType(_)
+                    | CheckRefusal::AtomTransport { .. }
                     | CheckRefusal::SealSiteRepeated(_)
                     | CheckRefusal::DataArgumentArity(_)
                     | CheckRefusal::UnknownConstructor { .. }

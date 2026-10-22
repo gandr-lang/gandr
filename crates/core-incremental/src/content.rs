@@ -2538,6 +2538,7 @@ impl DeclarationRoots
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
     /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    /// - witness: `content::tests::an_abstract_type_s_interface_roots_are_renumbered_with_it`
     #[spec(ensures: |ret| ret.iter().map(|(_, sort)| sort).eq(self.iter().map(|(_, sort)| sort))
         && ret.iter().map(|(root, _)| root).eq(self.iter().map(|(root, _)| image(root))))]
     pub(crate) fn renumbered<Image>(

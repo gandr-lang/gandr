@@ -658,6 +658,10 @@ fn checked(
         CheckRefusal::NotAnAbstractType(_) => {
             f.write_str("this names an abstract type that was not admitted")
         },
+        CheckRefusal::AtomTransport { .. } => f.write_str(
+            "this abstract type's identity attribute names no transport law, so its relation \
+             cannot stand for its identity",
+        ),
         CheckRefusal::SealSiteRepeated(_) => {
             f.write_str("internal error: one abstract component was sealed twice")
         },
@@ -1445,6 +1449,10 @@ mod tests
                 kind: value_type,
             },
             CheckRefusal::NotAnAbstractType(ConstantIndex::from(0_usize)),
+            CheckRefusal::AtomTransport {
+                at: value,
+                atom: ConstantIndex::from(0_usize),
+            },
             CheckRefusal::SealSiteRepeated(SealSite::new(
                 SealingSite::from(0_usize),
                 ComponentOrdinal::from(0_usize),
