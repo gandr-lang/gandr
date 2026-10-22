@@ -760,7 +760,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } |
-        CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+        CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -775,6 +775,7 @@ fn checked(
         | CheckRefusal::DataArgumentArity(at)
         | CheckRefusal::AbstractKindNotUniverse(at)
         | CheckRefusal::CapabilityConsumable(at)
+        | CheckRefusal::OpenSessionPayload { at }
         | CheckRefusal::RuleNotPresentable { kind: at, .. } => {
             (spanned(origins.value_type(at)), UNNAMED)
         },
@@ -1602,6 +1603,9 @@ impl fmt::Display for Checked
             ),
             | CheckRefusal::CapabilityConsumable(_) => f.write_str(
                 "a consumable capability belongs in the linear zone, which admits no binder",
+            ),
+            | CheckRefusal::OpenSessionPayload { .. } => f.write_str(
+                "a session type's payloads read no variable bound outside it, but in a run's protocol",
             ),
             | CheckRefusal::CapabilityUngranted { constant, .. } => write!(
                 f,
@@ -2616,6 +2620,7 @@ mod tests
             CheckRefusal::DataArgumentArity(value_type),
             CheckRefusal::AbstractKindNotUniverse(value_type),
             CheckRefusal::CapabilityConsumable(value_type),
+            CheckRefusal::OpenSessionPayload { at: value_type },
             CheckRefusal::RuleNotPresentable {
                 kind: value_type,
                 refusal: RuleRefusal {
@@ -3245,6 +3250,7 @@ mod tests
                         | CheckRefusal::DataArgumentArity(_)
                         | CheckRefusal::AbstractKindNotUniverse(_)
                         | CheckRefusal::CapabilityConsumable(_)
+                        | CheckRefusal::OpenSessionPayload { .. }
                         | CheckRefusal::RuleNotPresentable { .. }
                         | CheckRefusal::DataFieldLevel { .. }
                         | CheckRefusal::RepresentationAboveKind { .. }

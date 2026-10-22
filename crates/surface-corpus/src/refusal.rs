@@ -484,6 +484,9 @@ pub enum RefusalName
     SessionNotSubtype,
     /// A session statement or flow over something other than a session code.
     SessionCodeExpected,
+    /// A session type whose payload reads a binder outside it, outside a
+    /// run's protocol.
+    OpenSessionPayload,
     /// A ride whose motive uses the moving endpoint other than covariantly.
     NonCovariantMotive,
     /// A ride whose motive the checker cannot move.
@@ -832,7 +835,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 195_usize] = [
+    pub const VOCABULARY: [Self; 196_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -890,6 +893,7 @@ impl RefusalName
         Self::SessionNotEquivalent,
         Self::SessionNotSubtype,
         Self::SessionCodeExpected,
+        Self::OpenSessionPayload,
         Self::NonCovariantMotive,
         Self::RideUnsupported,
         Self::RunNotAdmitted,
@@ -1226,6 +1230,7 @@ impl RefusalName
         | (Self::SessionNotEquivalent, b"SessionNotEquivalent")
         | (Self::SessionNotSubtype, b"SessionNotSubtype")
         | (Self::SessionCodeExpected, b"SessionCodeExpected")
+        | (Self::OpenSessionPayload, b"OpenSessionPayload")
         | (Self::NonCovariantMotive, b"NonCovariantMotive")
         | (Self::RideUnsupported, b"RideUnsupported")
         | (Self::RunNotAdmitted, b"RunNotAdmitted")
@@ -1364,6 +1369,7 @@ impl RefusalName
             Self::SessionNotEquivalent => "SessionNotEquivalent",
             Self::SessionNotSubtype => "SessionNotSubtype",
             Self::SessionCodeExpected => "SessionCodeExpected",
+            Self::OpenSessionPayload => "OpenSessionPayload",
             Self::NonCovariantMotive => "NonCovariantMotive",
             Self::RideUnsupported => "RideUnsupported",
             Self::RunNotAdmitted => "RunNotAdmitted",
@@ -2092,6 +2098,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::SessionNotEquivalent { .. }), RefusalName::SessionNotEquivalent)
         | (Self::Checking(CheckRefusal::SessionNotSubtype { .. }), RefusalName::SessionNotSubtype)
         | (Self::Checking(CheckRefusal::SessionCodeExpected { .. }), RefusalName::SessionCodeExpected)
+        | (Self::Checking(CheckRefusal::OpenSessionPayload { .. }), RefusalName::OpenSessionPayload)
         | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
         | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
         | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
@@ -2468,6 +2475,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::SessionNotEquivalent { .. }, RefusalName::SessionNotEquivalent)
         | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
         | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
+        | (CheckRefusal::OpenSessionPayload { .. }, RefusalName::OpenSessionPayload)
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
@@ -2602,6 +2610,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::SessionNotEquivalent { .. } => RefusalName::SessionNotEquivalent,
         CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
         CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
+        CheckRefusal::OpenSessionPayload { .. } => RefusalName::OpenSessionPayload,
         CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
         CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,

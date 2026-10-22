@@ -27,3 +27,11 @@ def protocol = sim(Seat.SeatEnd, type(?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{ next : turn, retire : end },
   handoff : !(Seat.Handoff). end
 })) ;
+
+/// A run's protocol may read the binder of the motive it stands in, where a
+/// quote may not: a run stays on the checker's side, so its payloads are no
+/// codes the kernel forms, and the run moves along a path (#1728).
+@[ checks ]
+def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> -F Run(?(Seat.Dispatch). end) {
+  transport(\X. Run(?X. end), here(Seat.Dispatch), served)
+}

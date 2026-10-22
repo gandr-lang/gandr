@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -17,6 +18,12 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::session::PayloadCount;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::SessionType;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
@@ -65,6 +72,7 @@ use crate::fixture::term_recipe;
 use crate::fixture::text_literal;
 use crate::fixture::type_recipe;
 use crate::fixture::typed_recipe;
+use crate::formation::FormedValueType;
 use crate::formation::form_comp_type;
 use crate::formation::form_value_type;
 use crate::refusal::CheckRefusal;
@@ -3712,6 +3720,58 @@ fn a_transport_along_a_path_at_a_dependent_pair_reads_its_motive_at_the_target()
             Err(CheckRefusal::TypeMismatch(_))
         ),
         "the operand checks at the motive over the source pair"
+    );
+}
+
+/// Beneath a binder of `Type`, a session receiving a decode of the binder is
+/// refused by name, since a session's payload codes form in the empty term
+/// context; as the protocol of a run, which stays on the checker's side, the
+/// same session forms, and so does one whose payload reads no binder (#1728).
+#[test]
+fn a_session_payload_reads_a_binder_only_in_a_run_protocol_1728()
+{
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(bound, Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let mut receiving = |payload: ValueTypeId| {
+        let protocol = Protocol::new(
+            alloc::vec![
+                ProtocolSyntax::Receive {
+                    payload: PayloadSlot::from(0_usize),
+                    next: ProtocolState::from(1_usize),
+                },
+                ProtocolSyntax::End,
+            ],
+            ProtocolState::from(0_usize),
+            PayloadCount::from(1_usize),
+        )
+        .unwrap();
+        let session =
+            SessionType::new(Arc::new(protocol), Arc::from([payload].as_slice())).unwrap();
+        arena.value_type_session(session)
+    };
+    let open = receiving(decoded);
+    let closed = receiving(integer);
+    let protocol = arena.value_quote(open);
+    let run = arena.value_type_run(protocol);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.binders().open(Zone::Intuitionistic, universe);
+    assert_eq!(
+        form_value_type(&mut context, open).map(FormedValueType::id),
+        Err(CheckRefusal::OpenSessionPayload { at: open }),
+        "a session over the binder is no code the kernel forms"
+    );
+    assert_eq!(
+        form_value_type(&mut context, run).map(FormedValueType::id),
+        Ok(run),
+        "the same session as a run's protocol forms"
+    );
+    assert_eq!(
+        form_value_type(&mut context, closed).map(FormedValueType::id),
+        Ok(closed),
+        "a session over a closed payload forms beneath the binder"
     );
 }
 

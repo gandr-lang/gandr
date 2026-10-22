@@ -772,6 +772,10 @@ fn checked(
         CheckRefusal::SessionCodeExpected { .. } => {
             f.write_str("a session identity relates two session types")
         },
+        CheckRefusal::OpenSessionPayload { .. } => f.write_str(
+            "a session type's payload names a variable bound outside it, which only a run's \
+             protocol may",
+        ),
         CheckRefusal::NonCovariantMotive { .. } => f.write_str(
             "a flow runs one way: `ride` may use the moving endpoint only where a run of it \
              would be produced",
@@ -1854,6 +1858,7 @@ mod tests
             CheckRefusal::SessionNotEquivalent { at: value },
             CheckRefusal::SessionNotSubtype { at: value },
             CheckRefusal::SessionCodeExpected { at: value },
+            CheckRefusal::OpenSessionPayload { at: value_type },
             CheckRefusal::NonCovariantMotive { at: computation },
             CheckRefusal::RideUnsupported { at: computation },
             CheckRefusal::RunNotAdmitted {

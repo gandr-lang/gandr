@@ -236,7 +236,19 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 /// The label of a checker refusal's primary locus.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a nonempty, single-line label naming what the refused bytes are,
+///   chosen by the refusal's variant and, where it carries a defect, a fault or
+///   the form it could not synthesise, by that.
+/// - provides: [`Culprit::of`] for a checker refusal.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type mismatch renders its own label, neither empty nor
+///   its failure class. Other variants' wording is not pinned.
+/// - witness: `tests::diagnostics::refusals_of_one_class_label_what_their_locus_is`
+#[spec(ensures: |ret| !ret.0.is_empty())]
 const fn checked(refusal: CheckRefusal) -> Culprit
 {
     Culprit(match refusal {
@@ -396,6 +408,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::CapabilityOutsideAuthority { .. } => "an operation its capability withholds",
         CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",
         CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
+        CheckRefusal::OpenSessionPayload { .. } => "a session payload open over a binder",
         CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
         CheckRefusal::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
         CheckRefusal::SessionNotSubtype { .. } => "a protocol that does not simulate the target",

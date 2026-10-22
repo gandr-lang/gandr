@@ -87,6 +87,7 @@ fn every_role_has_its_own_name()
         FrameRole::FormLift,
         FrameRole::FormElement,
         FrameRole::FormStaticPi,
+        FrameRole::RunProtocol,
         FrameRole::PairSecond,
         FrameRole::StaticSpine,
         FrameRole::StaticArgument,

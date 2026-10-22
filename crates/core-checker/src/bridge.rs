@@ -579,6 +579,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::SessionNotEquivalent { .. }
         | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }
+        | CheckRefusal::OpenSessionPayload { .. }
         | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::RunNotAdmitted { .. }
