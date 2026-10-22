@@ -440,6 +440,14 @@ pub struct Runtime
     /// The freed blocks waiting to be reused, by size in words, count word
     /// included; each links the next through its count word, null ending it.
     free: [*mut Word; FREE_CLASSES],
+    /// The window region's first word: a window below it, the entry window
+    /// or a replayed frame's, is never given back.
+    window_base: *mut Word,
+    /// One past the window region's last live word: the next window's
+    /// address.
+    window_top: *mut Word,
+    /// One past the window region's last word.
+    window_limit: *mut Word,
 }
 
 impl Runtime
@@ -491,6 +499,9 @@ impl Runtime
             observed: Word::ZERO,
             globals: core::ptr::null_mut(),
             free: [core::ptr::null_mut(); FREE_CLASSES],
+            window_base: core::ptr::null_mut(),
+            window_top: core::ptr::null_mut(),
+            window_limit: core::ptr::null_mut(),
         }
     }
 
@@ -718,6 +729,46 @@ impl Runtime
         self.heap_top
     }
 
+    /// Give the run's closure entries the window region `[base, limit)`,
+    /// empty until the first entry. A record given none has an empty region,
+    /// and its first closure entry takes the heap exit.
+    ///
+    /// # Specification
+    /// - requires: `base` is at or below `limit` and the words between are the
+    ///   run's, apart from the heap and the frame region.
+    /// - ensures: [`Self::window_top`] is `base`.
+    /// - executable: none — the pointers' validity is the caller's to keep.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure entered and returned from leaves the
+    ///   region's top where it found it, and every corpus program runs its
+    ///   entries in the region.
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    #[inline]
+    pub const fn set_windows(
+        &mut self,
+        base: *mut Word,
+        limit: *mut Word,
+    )
+    {
+        self.window_base = base;
+        self.window_top = base;
+        self.window_limit = limit;
+    }
+
+    /// One past the window region's last live word: where the next closure
+    /// entry's window goes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn window_top(&self) -> *mut Word
+    {
+        self.window_top
+    }
+
     /// The code-word jumps the run did not take.
     ///
     /// # Specification
@@ -772,7 +823,8 @@ impl Runtime
         Ok(block.wrapping_add(1))
     }
 
-    /// Allocate `words` words at the heap's top, with no count: a window.
+    /// Allocate `words` words at the heap's top, with no count: a window a
+    /// replay copies out.
     ///
     /// # Specification
     /// - requires: as [`Self::reserve`].

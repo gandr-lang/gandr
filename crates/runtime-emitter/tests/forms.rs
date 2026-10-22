@@ -679,7 +679,7 @@ fn forms() -> Vec<Form>
                 )
             },
             ends: Ends::Declined(|declined| {
-                matches!(*declined, Declined::Exhausted(Status::HeapExhausted))
+                matches!(*declined, Declined::Exhausted(Status::FuelExhausted))
             }),
         },
     ])

@@ -116,6 +116,10 @@ stencils! {
     AliasTop => stencil_alias_top,
     /// `stencil_ret`.
     Ret => stencil_ret,
+    /// `stencil_leave`: a closure body's return, its window given back.
+    Leave => stencil_leave,
+    /// `stencil_release`: a tail call's window given back before the call.
+    Release => stencil_release,
     /// `stencil_closure`.
     Closure => stencil_closure,
     /// `stencil_enter_apply`.

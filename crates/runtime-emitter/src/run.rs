@@ -275,12 +275,17 @@ struct Buffers
     frames: Vec<Word>,
     /// The entry window.
     window: Vec<Word>,
+    /// The window region every closure entry's window is taken from:
+    /// capacity only, every slot written before it is read.
+    windows: Vec<Word>,
 }
 
 /// The heap region's bound, in words: past it the run declines.
 const HEAP_BOUND: usize = 1 << 25;
 /// The frame region's bound, in words: past it the run declines.
 const FRAME_BOUND: usize = 1 << 23;
+/// The window region's bound, in words: past it the run declines.
+const WINDOW_BOUND: usize = 1 << 24;
 
 std::thread_local! {
     /// The calling thread's regions.
@@ -288,6 +293,7 @@ std::thread_local! {
         heap: Vec::with_capacity(HEAP_BOUND),
         frames: Vec::with_capacity(FRAME_BOUND),
         window: Vec::new(),
+        windows: Vec::with_capacity(WINDOW_BOUND),
     });
 }
 
@@ -795,6 +801,8 @@ fn run(
             Word::from_pointer(&raw mut calls),
         );
         runtime.set_globals(table);
+        let windows = buffers.windows.as_mut_ptr();
+        runtime.set_windows(windows, windows.wrapping_add(buffers.windows.capacity()));
         let answer = match code {
             #[cfg(gandr_patcher)]
             // SAFETY: the entry is a copy the emitter patched in a region the

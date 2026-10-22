@@ -1738,17 +1738,14 @@ fn a_recursive_thunk_computes_through_its_own_binding()
     );
 }
 
-/// Three loops that never end run until their heap fills, each pass
-/// allocating its window, without filling the frame region: `fix x. force
-/// x`; `fix o. fix i. force o`, an inner loop left for the outer one, as a
-/// `break` commuted to the outer `continue` leaves it; and `(fix f. λn. fix
-/// k. (force f) n) ()`, a function tail-calling itself from inside a loop.
-/// The contrast `fix x. (y ← force x; return y)` holds one frame a pass and
-/// fills the frame region first, so a held frame outruns the first loop's
-/// window. The nested loop and the tail call allocate more a pass than a
-/// held frame adds — each, holding one, still fills the heap first — so
-/// their rows pin only that they run to an exhausted region other than the
-/// frames.
+/// Three loops that never end run until their 2²⁵ jumps are spent, filling
+/// no region: `fix x. force x`; `fix o. fix i. force o`, an inner loop left
+/// for the outer one, as a `break` commuted to the outer `continue` leaves
+/// it; and `(fix f. λn. fix k. (force f) n) ()`, a function tail-calling
+/// itself from inside a loop. Each pass's window is given back as its call
+/// begins, so neither the heap nor the window region grows. The contrast
+/// `fix x. (y ← force x; return y)` holds one frame a pass, and the window
+/// it resumes in, and fills the frame region within the same jumps.
 #[test]
 fn a_loop_holds_no_frame_across_its_iterations()
 {
@@ -1776,11 +1773,11 @@ fn a_loop_holds_no_frame_across_its_iterations()
     );
     let unit = core.value_unit();
     let calling = core.computation_application(recursive, unit);
-    for (program, shape, frames_fill) in [
-        (plain, "a loop", false),
-        (holding, "a loop holding a frame", true),
-        (nested, "a nested loop", false),
-        (calling, "a tail call inside a loop", false),
+    for (program, shape, exhausted) in [
+        (plain, "a loop", Status::FuelExhausted),
+        (holding, "a loop holding a frame", Status::FramesExhausted),
+        (nested, "a nested loop", Status::FuelExhausted),
+        (calling, "a tail call inside a loop", Status::FuelExhausted),
     ] {
         let mut arena = CommandArena::new();
         let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
@@ -1789,17 +1786,11 @@ fn a_loop_holds_no_frame_across_its_iterations()
             &arena,
             &Definitions::new(),
             command,
-            Fuel::from(1_usize << 28_u32),
-        );
-        assert_eq!(
-            frames_fill,
-            matches!(run, Err(Declined::Exhausted(Status::FramesExhausted))),
-            "{shape}: {}",
-            fingerprint(&run)
+            Fuel::from(1_usize << 25_u32),
         );
         assert!(
-            matches!(run, Err(Declined::Exhausted(_))),
-            "{shape} never ends: {}",
+            matches!(run, Err(Declined::Exhausted(status)) if status == exhausted),
+            "{shape} runs out by {exhausted:?}: {}",
             fingerprint(&run)
         );
     }

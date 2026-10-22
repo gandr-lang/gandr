@@ -44,7 +44,9 @@
 //! holding the next block, and the next allocation of that size takes it
 //! before the bump pointer moves. A block of [`FREE_CLASSES`] words or more,
 //! and a stack, whose size its header does not hold, are never reused; a
-//! window is allocated by the bump pointer alone and holds no count. The
+//! window holds no count: a closure entry takes it from the window region, a
+//! stack its body's return gives it back to, and a window a replay copies out
+//! is allocated by the bump pointer and never reused. The
 //! alternative, a count inside the header, needs bits the header has none of:
 //! its four fields fill the word.
 

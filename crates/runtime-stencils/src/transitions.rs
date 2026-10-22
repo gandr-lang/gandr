@@ -639,6 +639,104 @@ pub extern "rust-preserve-none" fn stencil_ret(
     resume!(code, runtime, heap, frame, resumed, value)
 }
 
+/// Return from a closure body to the covariable its entry bound in slot A:
+/// give the body's window back to the window region, then deliver as
+/// [`stencil_ret`] does. The window region is a stack: every window above
+/// the body's was allocated by an entry after it, and every frame that resumes
+/// in one of them sits above the body's mark, which the return pops, so the
+/// region's top moves down to the body's window. A window outside the region
+/// — the entry window, a replayed frame's copy — is left where it is.
+///
+/// # Specification
+/// - requires: slot A holds the mark the body's entry bound, at or above the
+///   base; the window in reach is the body's own.
+/// - ensures: the window region's top is the body's window when the region
+///   holds it, and is unchanged otherwise; control resumes at the popped
+///   frame's code in its window, one unit of fuel spent; or the fuel exit is
+///   taken.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closure entered and returned from leaves the region's
+///   top where it found it; and the agreement differential, every corpus body
+///   returning through this stencil, where a window given back while a frame
+///   still resumes in it changes the answer.
+/// - witness: `tests::count::a_returned_body_gives_its_window_back`
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_leave(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    _frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    // SAFETY: the lowering assigned slot A inside the window, bound to the
+    // entry's mark.
+    let mark = unsafe { *slot }.to_pointer::<Word>();
+    let frame = mark.wrapping_sub(2);
+    // SAFETY: two words below a mark above the sentinel are a frame.
+    let code = unsafe { *frame };
+    // SAFETY: as above.
+    let resumed = unsafe { *frame.wrapping_add(1) }.to_pointer::<Word>();
+    // SAFETY: the runtime record outlives the run.
+    let base = unsafe { (*runtime).window_base };
+    // SAFETY: as above.
+    let top = unsafe { (*runtime).window_top };
+    if base <= environment && environment < top {
+        // SAFETY: as above.
+        unsafe {
+            (*runtime).window_top = environment;
+        }
+    }
+    resume!(code, runtime, heap, frame, resumed, value)
+}
+
+/// Give the window in reach back to the window region before a tail call:
+/// the call that follows is the body's last act and reads its operands from
+/// the window before the callee's entry takes the region's top, which may be
+/// the window's own words.
+///
+/// # Specification
+/// - requires: the next instruction is a call whose continuation is the body's
+///   own return, already loaded, and nothing after it writes the window.
+/// - ensures: the window region's top is the window in reach when the region
+///   holds it, and is unchanged otherwise.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thunk forcing a second as its last act leaves the
+///   region empty once the second returns; and the agreement differential over
+///   the corpus's recursions and loops, where a window given back early changes
+///   the answer.
+/// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
+/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_release(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    // SAFETY: the runtime record outlives the run.
+    let base = unsafe { (*runtime).window_base };
+    // SAFETY: as above.
+    let top = unsafe { (*runtime).window_top };
+    if base <= environment && environment < top {
+        // SAFETY: as above.
+        unsafe {
+            (*runtime).window_top = environment;
+        }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
 /// Allocate a closure entering at code operand A whose header's low 32 bits
 /// are operand B: its flavour in the tag, its capture count in the arity.
 /// The captures are the words pushed before it, the first pushed first, which
@@ -705,8 +803,9 @@ pub extern "rust-preserve-none" fn stencil_closure(
     )
 }
 
-/// Generate a closure entry: allocate a window of A slots, copy the closure's
-/// B captures into its first slots, and bind the entry's own binders above.
+/// Generate a closure entry: allocate a window of A slots at the window
+/// region's top, copy the closure's B captures into its first slots, and bind
+/// the entry's own binders above.
 macro_rules! entry {
     (
         $name:ident,
@@ -738,25 +837,29 @@ macro_rules! entry {
             $value: Word,
         ) -> Word
         {
-            let next = heap.wrapping_add(operand!(runtime, A));
             // SAFETY: the runtime record outlives the run.
-            let limit = unsafe { (*runtime).heap_limit };
-            if next > limit {
+            let $window = unsafe { (*runtime).window_top };
+            let next = $window.wrapping_add(operand!(runtime, A));
+            // SAFETY: as above.
+            if next > unsafe { (*runtime).window_limit } {
                 become hole_heap_exhausted(runtime, heap, $frames, environment, $value)
             }
+            // SAFETY: as above.
+            unsafe {
+                (*runtime).window_top = next;
+            }
             let $closure = environment;
-            let $window = heap;
             let $at = operand!(runtime, B);
             let mut index = 0_usize;
             while index < $at {
                 // SAFETY: the closure holds B captures after its two words.
                 let capture = unsafe { *$closure.wrapping_add(index.wrapping_add(2)) };
-                // SAFETY: the window fits below the heap's limit.
+                // SAFETY: the window fits below the window region's limit.
                 unsafe { *$window.wrapping_add(index) = capture };
                 index = index.wrapping_add(1);
             }
             $bind
-            become hole_next(runtime, next, $frames, $window, $value)
+            become hole_next(runtime, heap, $frames, $window, $value)
         }
     };
 }
