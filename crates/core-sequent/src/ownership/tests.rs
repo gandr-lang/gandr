@@ -340,12 +340,15 @@ fn a_linear_name_is_never_counted()
 /// {apply(x; α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨P(x0, x1) |+ α0⟩} |− α0⟩} |−
 /// α0⟩}; ★)⟩`. The branch and its curried objects run once, and the branch
 /// rebuilds a constructor of the scrutinee's two fields where the scrutinee
-/// is dead, so the two pair. A branch that names its scrutinee, and a
-/// constructor inside a body that may run many times, pair nothing.
+/// is dead, so the two pair, and still pair through a `μ` its cut runs where
+/// it stands. A branch that names its scrutinee, a constructor inside a body
+/// that may run many times, one inside a thunk forced once, whose body runs
+/// in a window of its own, and one built after a call — a map's element
+/// function, which may capture the window and replay it — pair nothing.
 #[test]
 fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
 {
-    for case in ["dead", "named", "kept"] {
+    for case in ["dead", "named", "kept", "forced", "ran", "called"] {
         let mut arena = CommandArena::new();
         let top = arena.mint_consumer(ConsumerNode::Top).expect("a leaf");
         let returned = alpha0(&mut arena);
@@ -368,11 +371,54 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
             })
             .expect("the fields resolve");
         let mut body = cut(&mut arena, point, returned);
-        if case == "kept" {
-            let kept = arena
-                .mint_producer(ProducerNode::Thunk { body })
-                .expect("the body resolves");
-            body = cut(&mut arena, kept, returned);
+        match case {
+            "kept" => {
+                let kept = arena
+                    .mint_producer(ProducerNode::Thunk { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, kept, returned);
+            },
+            "forced" => {
+                let forced = arena
+                    .mint_producer(ProducerNode::Thunk { body })
+                    .expect("the body resolves");
+                let force = arena
+                    .mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Force,
+                        producers: Box::from([]),
+                        consumers: Box::from([returned]),
+                    })
+                    .expect("the frame resolves");
+                body = arena
+                    .mint_cut(Polarity::Negative, forced, force)
+                    .expect("the children resolve");
+            },
+            "ran" => {
+                let ran = arena
+                    .mint_producer(ProducerNode::Mu { body })
+                    .expect("the body resolves");
+                body = cut(&mut arena, ran, returned);
+            },
+            // reason: `⟨x1 |− apply(x0; μ̃z. body)⟩`: the constructor waits on
+            // the call's answer.
+            "called" => {
+                let answered = arena
+                    .mint_consumer(ConsumerNode::MuTilde { body })
+                    .expect("the body resolves");
+                let argument = variable(&mut arena, Zone::Intuitionistic, x0());
+                let apply = arena
+                    .mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: Box::from([argument]),
+                        consumers: Box::from([answered]),
+                    })
+                    .expect("the frame resolves");
+                let function = variable(&mut arena, Zone::Intuitionistic, x1());
+                body = arena
+                    .mint_cut(Polarity::Negative, function, apply)
+                    .expect("the children resolve");
+            },
+            _ => {},
         }
         for _field in 0_u8 .. 2_u8 {
             let object = arena
@@ -404,7 +450,7 @@ fn a_branch_rebuilding_its_scrutinee_reuses_the_cell()
 
         assert_eq!(ownership.runs(branch), Runs::Once, "{case}");
         let expected = match case {
-            "dead" => Vec::from([Reuse {
+            "dead" | "ran" => Vec::from([Reuse {
                 matched: root,
                 branch: NodeCount::from(0_usize),
                 built: point,

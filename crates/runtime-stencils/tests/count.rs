@@ -295,3 +295,105 @@ fn a_released_object_drops_what_it_holds()
         "the field freed with the pair is the next block taken"
     );
 }
+
+/// A constructor's instruction writing `fields` pushed fields into the reuse
+/// token in hand.
+///
+/// # Specification
+/// trivial.
+fn rebuilt(fields: Words) -> Instruction
+{
+    let header = Header::new(
+        Kind::Tuple,
+        Tag::try_from(0_usize).expect("a zero tag fits"),
+        Arity::try_from(fields.0).expect("the arity fits"),
+        Family::UNNAMED,
+    );
+    instruction(StencilId::CtorInto, header.matched(), Word::ZERO)
+}
+
+/// Who else holds a matched scrutinee.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holders
+{
+    /// The match holds its last owner.
+    None,
+    /// Another owner keeps it.
+    Another,
+}
+
+/// A one-field tuple over an empty one matched with the pair in slot 1 and
+/// its field bound in slot 2, another holder duplicating the pair first,
+/// then given up as a reuse token in slot 3 and rebuilt over its field.
+///
+/// # Specification
+/// trivial.
+fn rebuild(holders: Holders) -> Ran
+{
+    let mut program = vec![
+        tuple(Words(0)),
+        slotted(StencilId::Bind, Words(0)),
+        bare(StencilId::Push),
+        tuple(Words(1)),
+        slotted(StencilId::Bind, Words(1)),
+        instruction(StencilId::Field, Word::from(2_usize), Word::ZERO),
+    ];
+    if holders == Holders::Another {
+        program.push(slotted(StencilId::Dup, Words(1)));
+    }
+    program.extend([
+        instruction(StencilId::Reuse, Word::from(1_usize), Word::from(3_usize)),
+        slotted(StencilId::Var, Words(2)),
+        bare(StencilId::Push),
+        slotted(StencilId::Var, Words(3)),
+        rebuilt(Words(1)),
+        bare(StencilId::Halt),
+    ]);
+    run(&program)
+}
+
+/// A scrutinee at its last owner is rebuilt in its own block: its binder
+/// took the field with no count changed, and the heap's top is unmoved.
+#[test]
+fn a_unique_scrutinee_is_rebuilt_in_its_own_block()
+{
+    let ran = rebuild(Holders::None);
+    assert_eq!(
+        ran.at(Words(3)),
+        ran.answer,
+        "the rebuilt pair is the matched pair's block"
+    );
+    assert_eq!(5, ran.allocated, "the empty tuple and the one pair");
+    assert_eq!(COUNT_ONE, ran.heap[2], "the rebuilt pair counts one owner");
+    assert_eq!(
+        COUNT_ONE, ran.heap[0],
+        "the field moved: one owner, the rebuilt pair"
+    );
+}
+
+/// A scrutinee another owner keeps leaves its block to that owner, counted
+/// one fewer, and the rebuilt constructor takes a fresh block, the field
+/// counted once for each pair holding it.
+#[test]
+fn a_shared_scrutinee_is_rebuilt_in_a_fresh_block()
+{
+    let ran = rebuild(Holders::Another);
+    assert_eq!(
+        ran.at(Words(6)),
+        ran.answer,
+        "the rebuilt pair is a fresh block"
+    );
+    assert_eq!(8, ran.allocated, "the empty tuple and two pairs");
+    assert_eq!(
+        COUNT_ONE, ran.heap[2],
+        "the matched pair keeps its other owner"
+    );
+    assert_eq!(
+        Word::from(2_usize),
+        ran.heap[0],
+        "the field is held by both pairs"
+    );
+}

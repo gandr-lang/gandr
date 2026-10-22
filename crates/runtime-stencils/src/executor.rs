@@ -102,6 +102,8 @@ stencils! {
     Ctor3 => stencil_ctor3,
     /// `stencil_ctor_n`.
     CtorN => stencil_ctor_n,
+    /// `stencil_ctor_into`: a constructor written into a reuse token.
+    CtorInto => stencil_ctor_into,
     /// `stencil_match`.
     Match => stencil_match,
     /// `stencil_field`.
@@ -184,6 +186,8 @@ stencils! {
     DupFields => stencil_dup_fields,
     /// `stencil_drop`.
     Drop => stencil_drop,
+    /// `stencil_reuse`: a match's scrutinee given up as a reuse token.
+    Reuse => stencil_reuse,
     /// `stencil_answer_frame`: the aborted accesses' answer frames' shared
     /// stub.
     AnswerFrame => stencil_answer_frame,

@@ -349,6 +349,76 @@ pub extern "rust-preserve-none" fn stencil_ctor_n(
     )
 }
 
+/// Build a constructor over as many pushed fields as its header's arity into
+/// the reuse token in hand: a dying scrutinee's block of the constructor's
+/// size, or zero when the scrutinee had another owner. Operand A is the
+/// header's low 32 bits, operand B its family field.
+///
+/// # Specification
+/// - requires: the fields were pushed just below the frame region's top; the
+///   value in hand is zero or an object of the constructor's arity whose one
+///   owner gave its fields up.
+/// - ensures: the value register holds the token's object rewritten with the
+///   header and the fields, popped, its count left at one; or, for a zero
+///   token, as [`stencil_ctor_n`].
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a unique scrutinee's block is the rebuilt constructor's,
+///   the heap's top unmoved, and a shared scrutinee leaves its block and the
+///   constructor takes a fresh one.
+/// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+/// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_ctor_into(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let low = operand!(runtime, A);
+    let count = low.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
+    let (object, next) = if value == Word::ZERO {
+        allocate!(
+            runtime,
+            heap,
+            frames,
+            environment,
+            value,
+            count.wrapping_add(1)
+        )
+    }
+    else {
+        (value.to_pointer::<Word>(), heap)
+    };
+    let header = low | operand!(runtime, B).wrapping_shl(layout::FAMILY_SHIFT);
+    // SAFETY: the object's block is the run's, fresh or the token's.
+    unsafe {
+        *object = Word::from(header);
+    }
+    let fields = frames.wrapping_sub(count);
+    let mut index = 0_usize;
+    while index < count {
+        // SAFETY: the lowering pushed the fields below the top.
+        let field = unsafe { *fields.wrapping_add(index) };
+        // SAFETY: the object's block spans the constructor's fields.
+        unsafe {
+            *object.wrapping_add(index.wrapping_add(1)) = field;
+        }
+        index = index.wrapping_add(1);
+    }
+    become hole_next(
+        runtime,
+        next,
+        fields,
+        environment,
+        Word::from_pointer(object),
+    )
+}
+
 /// Test the constructor in hand against one case arm: the arm on a match,
 /// the next test otherwise. Operand A is the arm's header's low 32 bits,
 /// operand B its family field.
@@ -2018,6 +2088,83 @@ pub extern "rust-preserve-none" fn stencil_drop(
         unsafe {
             *count = Word(held.0.wrapping_sub(1));
         }
+    }
+    become hole_next(runtime, heap, frames, environment, value)
+}
+
+/// Give up the match's scrutinee in slot A, whose binders took its fields,
+/// as a reuse token in slot B: at its last owner the block itself, its
+/// fields moved to the binders and nothing freed; otherwise zero, each field
+/// counting one owner more and the scrutinee one fewer.
+///
+/// # Specification
+/// - requires: slots A and B lie inside the window; slot A addresses a tuple,
+///   an injection, a constructor or a head whose fields the arm's binders hold.
+/// - ensures: slot B holds the scrutinee when its count was one, its count left
+///   at one; else zero, the fields counted as [`stencil_dup_fields`] and the
+///   scrutinee as [`stencil_drop`] count them, short of a release; the value in
+///   hand is unchanged.
+/// - executable: none — a stencil runs only inside a chain of tail calls whose
+///   state no predicate can observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a unique scrutinee's block is the rebuilt constructor's,
+///   the heap's top unmoved, and a shared scrutinee leaves its block and the
+///   constructor takes a fresh one.
+/// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+/// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
+#[unsafe(no_mangle)]
+pub extern "rust-preserve-none" fn stencil_reuse(
+    runtime: *mut Runtime,
+    heap: *mut Word,
+    frames: *mut Word,
+    environment: *mut Word,
+    value: Word,
+) -> Word
+{
+    let slot = environment.wrapping_add(operand!(runtime, A));
+    let token = environment.wrapping_add(operand!(runtime, B));
+    // SAFETY: the lowering assigned slot A inside the window.
+    let scrutinee = unsafe { *slot };
+    let object = scrutinee.to_pointer::<Word>();
+    let count = object.wrapping_sub(1);
+    // SAFETY: an object is preceded by its count word.
+    let held = unsafe { *count };
+    if held == layout::COUNT_ONE {
+        // SAFETY: the lowering assigned slot B inside the window.
+        unsafe {
+            *token = scrutinee;
+        }
+        become hole_next(runtime, heap, frames, environment, value)
+    }
+    // SAFETY: a value addresses its header.
+    let header = usize::from(unsafe { *object });
+    let arity = header.wrapping_shr(layout::ARITY_SHIFT) & layout::ARITY_MASK;
+    let mut index = 1_usize;
+    while index <= arity {
+        // SAFETY: the object holds `arity` fields after its header.
+        let field = unsafe { *object.wrapping_add(index) };
+        let counted = field.to_pointer::<Word>().wrapping_sub(1);
+        // SAFETY: a field of these kinds is an object, preceded by its count
+        // word.
+        let owners = unsafe { *counted };
+        if owners != layout::COUNT_IMMORTAL {
+            // SAFETY: as above.
+            unsafe {
+                *counted = Word(owners.0.wrapping_add(1));
+            }
+        }
+        index = index.wrapping_add(1);
+    }
+    if held != layout::COUNT_IMMORTAL {
+        // SAFETY: as above; another owner keeps the scrutinee.
+        unsafe {
+            *count = Word(held.0.wrapping_sub(1));
+        }
+    }
+    // SAFETY: the lowering assigned slot B inside the window.
+    unsafe {
+        *token = Word::ZERO;
     }
     become hole_next(runtime, heap, frames, environment, value)
 }

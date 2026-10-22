@@ -135,10 +135,17 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// owner of that pair frees it; a captured stack resumed twice below the
 /// frames it was captured from, whose inner frame answers to a frame the
 /// stack holds, so a replay that left that frame's mark where the stack was
-/// captured skips the frame; and a handler whose first clause resumes its
-/// stack and pairs what the resumption answers, where the resumed body
-/// performs a second operation whose clause answers without resuming, so
-/// that clause's answer is what the first resumption answers.
+/// captured skips the frame; a handler whose first clause resumes its stack
+/// and pairs what the resumption answers, where the resumed body performs a
+/// second operation whose clause answers without resuming, so that clause's
+/// answer is what the first resumption answers; a split and a nominal match
+/// that each rebuild their dying scrutinee, so a reuse token built into with
+/// the wrong fields or never built into answers wrongly, and a split whose
+/// scrutinee a thunk also holds, so a shared cell overwritten in place
+/// changes what the thunk answers; and a nominal branch answering a function
+/// past its constructor's two fields, applied where the match stands, so a
+/// branch run in place that took the application's frame for a field answers
+/// the function unapplied.
 ///
 /// # Specification
 /// trivial.
@@ -724,6 +731,95 @@ pub fn named() -> Vec<Named>
     push(
         "r <- handle { a <- first 1; b <- second 2; return (a, b) } with { return v ⇒ return (v, 0); first p k ⇒ x <- resume k { return p }; return (x, 5); second q k ⇒ return (q, 9) }; return (r, 7)",
         "⟨pair(pair(pair(2, 9), 5), 7) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let pair = core.value_tuple(&[one, two]);
+    let bound = core.computation_return(pair);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let swapped = core.value_tuple(&[second, first]);
+    let answered = core.computation_return(swapped);
+    let scrutinee = innermost(&mut core);
+    let split = core.computation_split(scrutinee, 2_usize.into(), answered);
+    let root = core.computation_bind(bound, split);
+    push(
+        "x <- return (1, 2); split x { (a, b) ⇒ return (b, a) }",
+        "⟨pair(2, 1) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let pair = core.value_tuple(&[one, two]);
+    let bound = core.computation_return(pair);
+    let kept = innermost(&mut core);
+    let held = core.computation_return(kept);
+    let thunk = core.value_thunk(held);
+    let suspended = core.computation_return(thunk);
+    let second = innermost(&mut core);
+    let thunked = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let rebuilt = core.value_tuple(&[second, thunked]);
+    let answered = core.computation_return(rebuilt);
+    let scrutinee = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let split = core.computation_split(scrutinee, 2_usize.into(), answered);
+    let rest = core.computation_bind(suspended, split);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "x <- return (1, 2); t <- return thunk { return x }; split x { (a, b) ⇒ return (b, t) }",
+        "⟨pair(2, {force(α) ⇒ ⟨pair(1, 2) |+ α0⟩}) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let seven = integer(&mut core, Integer(7));
+    let datatype = core.value_type_data(0_usize.into(), Vec::new());
+    let scrutinee = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+    let first = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let argument = innermost(&mut core);
+    let paired = core.value_tuple(&[first, argument]);
+    let answered = core.computation_return(paired);
+    let answer = core.computation_lambda(answered);
+    let second = core.computation_lambda(answer);
+    let branch = core.computation_lambda(second);
+    let motive = core.comp_type_unknown();
+    let cased = core.computation_data_case(scrutinee, motive, vec![branch], vec![2_usize.into()]);
+    let root = core.computation_application(cased, seven);
+    push(
+        "(case C(1, 2) { C ⇒ fn a. fn b. fn z. return (a, z) }) 7",
+        "⟨pair(1, 7) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let datatype = core.value_type_data(0_usize.into(), Vec::new());
+    let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+    let bound = core.computation_return(built);
+    let scrutinee = innermost(&mut core);
+    let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = innermost(&mut core);
+    let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+    let answered = core.computation_return(rebuilt);
+    let inner = core.computation_lambda(answered);
+    let branch = core.computation_lambda(inner);
+    let motive = core.comp_type_unknown();
+    let cased = core.computation_data_case(scrutinee, motive, vec![branch], vec![2_usize.into()]);
+    let root = core.computation_bind(bound, cased);
+    push(
+        "x <- return C(1, 2); case x { C ⇒ fn a. fn b. return C(b, a) }",
+        "⟨ctor[0](2, 1) |+ ★⟩",
         core,
         root,
     );

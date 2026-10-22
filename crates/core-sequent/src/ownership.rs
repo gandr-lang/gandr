@@ -35,9 +35,10 @@
 //!   resumption copies the frame's window out of it with a reference of its
 //!   own.
 //! - [`Reuse`] pairs a match whose scrutinee dies in a branch with a
-//!   constructor of the scrutinee's size that the branch builds, reached
-//!   without crossing a body that may run more than once or a choice between
-//!   arms.
+//!   constructor of the scrutinee's size that the branch builds in the window
+//!   it runs in: reached through no choice between arms and no suspension but a
+//!   `μ` its cut runs where it stands, a nominal branch's curried objects being
+//!   the match's to take apart where it stands.
 //!
 //! # Boundaries
 //!
@@ -53,6 +54,7 @@ use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldCount;
+use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::NodeCount;
 use crate::il::CommandArena;
@@ -754,8 +756,15 @@ impl Ownership
     }
 
     /// The first constructor of `size` fields reached from `from` through
-    /// edges that run once and choose no arm, in edge order; none for a
-    /// nullary head, which has no cell.
+    /// edges that run once, choose no arm and stay in the window `from` runs
+    /// in, in edge order; none for a nullary head, which has no cell. A
+    /// suspension's body runs in a window of its own, out of the token's
+    /// reach, so the walk stops at a thunk, a fixpoint, an object and a `μ`
+    /// other than one a cut runs where it stands. It stops too at every
+    /// command that may run code outside the window — a call, a nominal
+    /// match's branch, a fold, a selection, an effect or a delimiter — since
+    /// that code may capture the window and replay it more than once, and
+    /// each replay would build into the one block the token names.
     ///
     /// # Specification
     /// trivial.
@@ -776,25 +785,53 @@ impl Ownership
         pending.push(from);
         let mut built = None;
         while let Some(node) = pending.pop() {
-            if let NodeAddress::Producer(id) = node
-                && let ProducerNode::Constructor {
-                    ref producers,
-                    ref consumers,
-                    ..
-                } = *arena.producer(id).ok_or(OwnershipRefusal::Dangling(node))?
-                && producers.len().saturating_add(consumers.len()) == size
-            {
-                built = Some(id);
-                break;
+            let mut inline = None;
+            match node {
+                NodeAddress::Producer(id) => {
+                    match *arena.producer(id).ok_or(OwnershipRefusal::Dangling(node))? {
+                        ProducerNode::Constructor {
+                            ref producers,
+                            ref consumers,
+                            ..
+                        } if producers.len().saturating_add(consumers.len()) == size => {
+                            built = Some(id);
+                            break;
+                        },
+                        ProducerNode::Thunk { .. }
+                        | ProducerNode::Fixpoint { .. }
+                        | ProducerNode::Cocase { .. }
+                        | ProducerNode::Mu { .. } => continue,
+                        ProducerNode::Constructor { .. }
+                        | ProducerNode::Variable { .. }
+                        | ProducerNode::Constant(_)
+                        | ProducerNode::Literal(_)
+                        | ProducerNode::Code(_)
+                        | ProducerNode::Primitive { .. }
+                        | ProducerNode::Reify(_) => {},
+                    }
+                },
+                NodeAddress::Command(id) => {
+                    if extent(arena, id)? == Extent::Beyond {
+                        continue;
+                    }
+                    inline = ran(arena, id)?;
+                },
+                NodeAddress::Consumer(_) => {},
             }
             self.edges(arena, node, scratch)?;
             // reason: a node with one arm chooses nothing; a once-run
             // suspension's single body is that arm.
             let single = scratch.edges.len() == 1;
             for edge in scratch.edges.iter().rev() {
+                let next = match inline {
+                    Some((mu, body)) if edge.node == NodeAddress::Producer(mu) => {
+                        NodeAddress::Command(body)
+                    },
+                    Some(_) | None => edge.node,
+                };
                 match edge.share {
-                    Share::Alone => pending.push(edge.node),
-                    Share::Arm if single => pending.push(edge.node),
+                    Share::Alone => pending.push(next),
+                    Share::Arm if single => pending.push(next),
                     Share::Arm | Share::Kept => {},
                 }
             }
@@ -1035,6 +1072,83 @@ fn applied(
         Some(_) | None => false,
     };
     Ok((continuation && object).then_some(producer))
+}
+
+/// How far the code a command runs reaches.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Extent
+{
+    /// Only code of the command's own window.
+    Window,
+    /// Code that may run outside the window: a call, a nominal match's
+    /// branch, a selection, a fold or a control command.
+    Beyond,
+}
+
+/// How far the command `id` reaches: its own window for a cut against a
+/// covariable, a binder, a structural match or the top; beyond it for a cut
+/// against a destructor, a nominal match, a selection or a fold, and for
+/// every control command.
+///
+/// # Specification
+/// trivial.
+fn extent(
+    arena: &CommandArena,
+    id: CommandId,
+) -> Result<Extent, OwnershipRefusal>
+{
+    let CommandNode::Cut { consumer, .. } = *arena
+        .command(id)
+        .ok_or(OwnershipRefusal::Dangling(NodeAddress::Command(id)))?
+    else {
+        return Ok(Extent::Beyond);
+    };
+    Ok(match arena.consumer(consumer) {
+        Some(
+            &(ConsumerNode::Covariable(_)
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::Top),
+        ) => Extent::Window,
+        Some(
+            &(ConsumerNode::Destructor { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. }),
+        )
+        | None => Extent::Beyond,
+    })
+}
+
+/// The `μ` that the cut `cut` runs where it stands, and its body: every
+/// cut's but the by-name side of a negative cut against a binder, which
+/// suspends it.
+///
+/// # Specification
+/// trivial.
+fn ran(
+    arena: &CommandArena,
+    cut: CommandId,
+) -> Result<Option<(ProducerId, CommandId)>, OwnershipRefusal>
+{
+    let dangling = OwnershipRefusal::Dangling(NodeAddress::Command(cut));
+    let CommandNode::Cut {
+        polarity,
+        producer,
+        consumer,
+    } = *arena.command(cut).ok_or(dangling)?
+    else {
+        return Ok(None);
+    };
+    let ProducerNode::Mu { body } = *arena.producer(producer).ok_or(dangling)?
+    else {
+        return Ok(None);
+    };
+    let binds = matches!(arena.consumer(consumer), Some(ConsumerNode::MuTilde { .. }));
+    Ok((!(binds && polarity == Polarity::Negative)).then_some((producer, body)))
 }
 
 /// The body of a nominal match's branch under the `arity` curried objects
