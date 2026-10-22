@@ -1321,6 +1321,15 @@ enum Task
     /// Ride the value above the flow on the value stack along it, in a
     /// motive.
     Ride(crate::arena::ValueClosureId),
+    /// Ride the operand on the value stack along the held canonical flow, in
+    /// a motive.
+    OperandRide
+    {
+        /// The motive, closed over its environment.
+        motive: crate::arena::ValueClosureId,
+        /// The canonical flow.
+        flow: DomainValueId,
+    },
     /// Assemble a flow introduction from its evaluated parts.
     Flow
     {
@@ -2879,7 +2888,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. })),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2898,6 +2907,8 @@ impl<'run> Evaluation<'run>
                         matches!(tasks.next(), Some(&Task::OperandTransport { motive: held, path: along }) if held == motive && along == path) },
                     Elimination::Ride { motive, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Ride(held)) if *held == motive) },
+                    Elimination::OperandRide { motive, flow } => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(&Task::OperandRide { motive: held, flow: along }) if held == motive && along == flow) },
                     Elimination::TelescopeTransport { motive, start, over, value } => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == start) && matches!(tasks.next(), Some(Task::Supply(held)) if *held == over)
                         && matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::TelescopeTransport(held)) if *held == motive) },
@@ -2973,7 +2984,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `machine::tests::a_held_endpoint_unfolds_by_a_recorded_step`
     /// - witness: `machine::tests::a_held_endpoint_under_an_elimination_unfolds_the_call_it_waits_on_361`
     #[spec(
-        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
+        requires: matches!(inner.first(), Some(Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint { .. }))
             && !enclosing.is_empty(),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32
@@ -3304,7 +3315,7 @@ fn run(
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
-            | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
+            | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::OperandRide { .. } | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)), Some(DomainValue::Flow { .. })),
@@ -3852,6 +3863,11 @@ fn step(
             step_path_transport(core, domain, machine, motive)
         },
         Task::Ride(motive) => step_ride(core, domain, machine, motive),
+        Task::OperandRide { motive, flow } => {
+            let value = machine.pop_value()?;
+            machine.values.extend([flow, value]);
+            step_ride(core, domain, machine, motive)
+        },
         Task::Flow { term } => {
             let flow = match core.value(term) {
                 Some(&(Value::Stay(part) | Value::Forward(part))) => {
@@ -6540,14 +6556,15 @@ fn held_family(
 ///   part after it, as the kernel's reduct binds it. A session simulation
 ///   returns the run unchanged — the checker admitted it by the protocol's
 ///   simulation, and runs move between related sessions as themselves. Any
-///   other configuration over a stuck flow stacks the ride on the flow's spine.
+///   other configuration over a stuck flow stacks the ride on the flow's spine,
+///   and over a canonical flow a stuck operand holds the ride on its own.
 /// - provides: the ride's computation rules, the same table the kernel replays,
 ///   and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, a flow of
 ///   the wrong part count or a motive closure holding no type;
-///   [`EvalFault::RodeUncomputed`] for a canonical flow no row moves the value
-///   along; domain faults for dangling nodes; [`EvalFault::DanglingTerm`] for a
-///   family naming no core node.
+///   [`EvalFault::RodeUncomputed`] for a canonical flow no row moves a
+///   canonical value along; domain faults for dangling nodes;
+///   [`EvalFault::DanglingTerm`] for a family naming no core node.
 /// - panics: none.
 ///
 /// # Errors
@@ -6565,6 +6582,7 @@ fn held_family(
 /// - witness: `identity::tests::a_function_flow_rides_in_variance_order`
 /// - witness: `identity::tests::a_flow_product_rides_a_pair_componentwise`
 /// - witness: `identity::tests::a_stuck_part_holds_the_parts_after_it`
+/// - witness: `identity::tests::a_ride_along_a_canonical_flow_waits_on_a_stuck_operand_1707`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.comps.len() == comps.saturating_add(1_usize) && machine.tasks.len() == tasks && machine.values.len() == values.saturating_sub(2_usize))
@@ -6841,11 +6859,17 @@ fn step_ride(
         },
         _ => {},
     }
-    let DomainValue::Neutral { neutral, .. } = carried
+    // A stuck flow holds the ride on its spine; a canonical flow waits on a
+    // stuck operand, which holds it on its own.
+    let grown = if let DomainValue::Neutral { neutral, .. } = carried {
+        extend_spine(domain, neutral, Elimination::Ride { motive, value })?
+    }
+    else if let Some(DomainValue::Neutral { neutral, .. }) = domain.value(value).copied() {
+        extend_spine(domain, neutral, Elimination::OperandRide { motive, flow })?
+    }
     else {
         return Err(EvalFault::RodeUncomputed);
     };
-    let grown = extend_spine(domain, neutral, Elimination::Ride { motive, value })?;
     machine
         .comps
         .push(domain.comp_neutral(grown, CompTermFace::Reduced));
@@ -7223,6 +7247,10 @@ fn push_eliminations(
                 answer = Answer::Computation;
                 machine.tasks.push(Task::Ride(motive));
                 machine.tasks.push(Task::Supply(value));
+            },
+            Elimination::OperandRide { motive, flow } => {
+                answer = Answer::Computation;
+                machine.tasks.push(Task::OperandRide { motive, flow });
             },
             Elimination::TelescopeTransport {
                 motive,
@@ -7622,6 +7650,7 @@ fn read_through(
                 | Elimination::PathTransport { .. }
                 | Elimination::OperandTransport { .. }
                 | Elimination::Ride { .. }
+                | Elimination::OperandRide { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Apply(_)
                 | Elimination::Force

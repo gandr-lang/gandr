@@ -342,6 +342,17 @@ pub enum Elimination
         /// The ridden value.
         value: DomainValueId,
     },
+    /// A ride along a canonical flow, waiting for a neutral operand: the
+    /// motive, a value type under one binder closed over the environment it
+    /// reads, and the flow.
+    OperandRide
+    {
+        /// The motive, closed over its environment; its own binder is not in
+        /// the capture.
+        motive: ValueClosureId,
+        /// The canonical flow the operand rides.
+        flow: DomainValueId,
+    },
     /// Transport over a two-entry telescope along a neutral path: the motive,
     /// a computation type whose own arrows bind the telescope, closed over the
     /// environment it reads, and the start, the identity over the path and

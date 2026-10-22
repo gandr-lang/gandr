@@ -2,7 +2,7 @@
 // Weinberger and Buchholtz, _Directed univalence in simplicial homotopy type
 // theory_, arXiv:2407.09146, Definition 1.2): a translator's image may only
 // move the source's leaves, so one that writes a literal where a leaf stood
-// is refused.
+// is refused, and so is one whose image rides a list's tail again.
 
 /// A record migrated by a translator that drops a field's value.
 module Schema {
@@ -19,4 +19,33 @@ module Schema {
   @[ refuses("ForwardUnsupported") ]
   def scrub : Flow(Type, Old, New) ;
   def scrub = forward(anonymise) ;
+}
+
+/// A list of records migrated by riding each cell along the records' flow.
+module Cells {
+  type Old = String * Integer;
+  type New = Integer * String;
+  /// The records' translator: the fields swapped.
+  @[ checks ]
+  def swap(old : Old) -> -F New {
+    case old {
+      #{name, age} => (age, name)
+    }
+  }
+  /// The flow between the records, by their translator.
+  @[ checks ]
+  def renamed : Flow(Type, Old, New) ;
+  def renamed = forward(swap) ;
+  /// The lists' translator: the list ridden along the records' flow.
+  @[ checks ]
+  def each(olds : List(Old)) -> -F List(New) {
+    become ride(\X. List(X), renamed, olds)
+  }
+  /// At one cell the image rides the rigid tail again, which is no leaf of
+  /// the source, so no flow forwards by it until a recursive image is
+  /// certified (#1698). The ride waits on the tail rather than faulting
+  /// (#1707).
+  @[ refuses("ForwardUnsupported") ]
+  def everyone : Flow(Type, List(Old), List(New)) ;
+  def everyone = forward(each) ;
 }
