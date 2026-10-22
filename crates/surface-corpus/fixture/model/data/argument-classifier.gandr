@@ -21,18 +21,15 @@ def rec listLength(xs : List(Integer)) -> -F Integer {
 /// Two integers passed bare: the list is a `List(Integer)` by the parameter
 /// it is passed to, the inner one by its field (#1833).
 @[ runs("2") ]
-def pairLength : () => Integer ;
-def pairLength = thunk { become listLength(Cons(1, Cons(2, Nil))) } ;
+def pairLength() -> -F Integer { become listLength(Cons(1, Cons(2, Nil))) }
 
 /// The empty list passed bare.
 @[ runs("0") ]
-def emptyLength : () => Integer ;
-def emptyLength = thunk { become listLength(Nil) } ;
+def emptyLength() -> -F Integer { become listLength(Nil) }
 
 /// The same pair under an annotation, as it was written before.
 @[ runs("2") ]
-def annotatedLength : () => Integer ;
-def annotatedLength = thunk { become listLength((Cons(1, Cons(2, Nil)) : List(Integer))) } ;
+def annotatedLength() -> -F Integer { become listLength((Cons(1, Cons(2, Nil)) : List(Integer))) }
 
 /// A colour and a list of colours, each argument classified by its own
 /// parameter.
@@ -49,5 +46,4 @@ def rec tally(c : Color, cs : List(Color)) -> -F Integer {
 
 /// The second argument classified by the second parameter (#1833).
 @[ runs("3") ]
-def colours : () => Integer ;
-def colours = thunk { become tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) } ;
+def colours() -> -F Integer { become tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) }

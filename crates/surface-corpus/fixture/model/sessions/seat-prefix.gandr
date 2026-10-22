@@ -22,8 +22,7 @@ def reporting = recorded(received(Seat.task), selected(report), sent(Seat.progre
 
 /// On the machine the prefix reads back as the moves it records.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"))") ]
-def shown : () => Prefix(Seat.SeatEnd) ;
-def shown = thunk { reporting } ;
+def shown() -> -F Prefix(Seat.SeatEnd) { reporting }
 
 /// A run the seat completed is a prefix too.
 @[ checks ]

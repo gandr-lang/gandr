@@ -20,8 +20,7 @@ def width(band : Band) -> -F Integer {
 
 /// The set's band is six tenths wide.
 @[ runs("600000") ]
-def setWidth : () => Integer ;
-def setWidth = thunk { become width(setBand) } ;
+def setWidth() -> -F Integer { become width(setBand) }
 
 /// A pair of one type, a synonym with a parameter.
 type Twice(a : Type) = a * a ;

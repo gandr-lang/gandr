@@ -28,13 +28,11 @@ def retired = recorded(received("task"), selected(report), sent("progress"), off
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
 @[ checks ]
-def kept : () => Prefix(Evolution.Kept) ;
-def kept = thunk { become ride(\X. Prefix(X), Evolution.keep, reported) } ;
+def kept() -> -F Prefix(Evolution.Kept) { become ride(\X. Prefix(X), Evolution.keep, reported) }
 
 /// `Kept` offers no `retire`: refused at that move (#1318).
 @[ refuses("RunNotAdmitted") ]
-def dropped : () => Prefix(Evolution.Kept) ;
-def dropped = thunk { become ride(\X. Prefix(X), Evolution.keep, retired) } ;
+def dropped() -> -F Prefix(Evolution.Kept) { become ride(\X. Prefix(X), Evolution.keep, retired) }
 
 /// A play the checker cannot read may yet take `retire`: refused (#1318).
 @[ refuses("RunNotAdmitted") ]
