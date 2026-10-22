@@ -19,11 +19,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. `hotpath` profiles the overlap enumeration and
+# normalization for the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-spec-combinators.workspace = true
+hotpath = { workspace = true, optional = true }
 quenchant-shape.workspace = true
 
 # The spine suite runs one law suite over the tracelet replay and the
@@ -34,6 +36,12 @@ gandr-kernel-core.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes-tools.workspace = true
 proptest.workspace = true
+
+[features]
+default = []
+# The overlap queries and normalization timed and their allocations counted
+# for the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
 
 [lints]
 workspace = true
