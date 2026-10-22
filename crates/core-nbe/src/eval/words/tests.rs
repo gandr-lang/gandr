@@ -499,3 +499,195 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
         "a call returning the empty word moved along a path is the path"
     );
 }
+
+/// A letter of a word over the one loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Letter
+{
+    /// The loop.
+    Loop,
+    /// Its inverse.
+    Inverse,
+}
+
+impl Letter
+{
+    /// The inverse letter.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn inverted(self) -> Self
+    {
+        match self {
+            Self::Loop => Self::Inverse,
+            Self::Inverse => Self::Loop,
+        }
+    }
+}
+
+/// How an endpoint of a path family over `S` reads the family's binder.
+#[derive(Clone, Copy, Debug)]
+enum Endpoint
+{
+    /// The point, never reading the binder.
+    Fixed,
+    /// The binder itself.
+    Moving,
+    /// `⟨flip(y)⟩`, a call on the binder.
+    Flipped,
+}
+
+/// What an endpoint makes of the word a transport runs along: nothing where
+/// it is fixed, the word where it moves, and each letter's image under `flip`
+/// — its loop arm, the inverse letter — where it is the call.
+///
+/// # Specification
+/// trivial.
+fn imaged(
+    endpoint: Endpoint,
+    word: &[Letter],
+) -> Vec<Letter>
+{
+    match endpoint {
+        Endpoint::Fixed => Vec::new(),
+        Endpoint::Moving => word.to_vec(),
+        Endpoint::Flipped => word.iter().map(|letter| letter.inverted()).collect(),
+    }
+}
+
+/// A word a transport reads: the path it runs along, or the operand it moves.
+#[derive(Clone, Copy, Debug)]
+enum Along
+{
+    /// The word spelled by its letters.
+    Spelled(&'static [Letter]),
+    /// The constant `loop`, whose body is the word of the loop's letter.
+    Named,
+}
+
+/// The word spelled by `letters`, the first letter outermost.
+///
+/// # Specification
+/// trivial.
+fn spelled(
+    core: &mut CoreArena,
+    letters: &[Letter],
+) -> ValueId
+{
+    let own = core.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+    letters.iter().rev().fold(
+        core.value_constructor(own, ConstructorTag::from(0_usize), Vec::new()),
+        |tail, letter| {
+            let tag = match *letter {
+                Letter::Loop => ConstructorTag::from(1_usize),
+                Letter::Inverse => ConstructorTag::from(2_usize),
+            };
+            core.value_constructor(own, tag, vec![tail])
+        },
+    )
+}
+
+/// `letters` in the free group's normal form: each letter met beside its
+/// inverse cancels with it.
+///
+/// # Specification
+/// trivial.
+fn reduced(letters: impl IntoIterator<Item = Letter>) -> Vec<Letter>
+{
+    let mut kept = Vec::new();
+    for letter in letters {
+        if kept.last() == Some(&letter.inverted()) {
+            let _cancelled = kept.pop();
+        }
+        else {
+            kept.push(letter);
+        }
+    }
+    kept
+}
+
+/// Transport along a word in `y. Path(S, l(y), r(y))`, each endpoint fixed,
+/// the binder or a call on it, is conjugation: `l(w)⁻¹ · v · r(w)`, an
+/// endpoint's image of the word as [`imaged`] reads it, and the named `loop`,
+/// as path or as operand, reads as its letter. The answer is checked against
+/// the word the free group computes, and against that word with one more
+/// letter.
+#[test]
+fn transport_along_a_word_conjugates_by_its_moving_endpoints()
+{
+    let paths = [
+        Along::Spelled(&[]),
+        Along::Spelled(&[Letter::Loop]),
+        Along::Spelled(&[Letter::Inverse]),
+        Along::Spelled(&[Letter::Loop, Letter::Loop]),
+        Along::Spelled(&[Letter::Loop, Letter::Inverse]),
+        Along::Named,
+    ];
+    let operands = [
+        Along::Spelled(&[]),
+        Along::Spelled(&[Letter::Inverse]),
+        Along::Named,
+    ];
+    let families = [
+        (Endpoint::Fixed, Endpoint::Moving),
+        (Endpoint::Moving, Endpoint::Fixed),
+        (Endpoint::Moving, Endpoint::Moving),
+        (Endpoint::Fixed, Endpoint::Fixed),
+        (Endpoint::Flipped, Endpoint::Fixed),
+        (Endpoint::Fixed, Endpoint::Flipped),
+        (Endpoint::Flipped, Endpoint::Moving),
+        (Endpoint::Moving, Endpoint::Flipped),
+        (Endpoint::Flipped, Endpoint::Flipped),
+    ];
+    for (left, right) in families {
+        for path in paths {
+            for operand in operands {
+                let mut core = CoreArena::new();
+                let circle = circle(&mut core);
+                let chain = chain(&circle, Count::Recorded);
+                let moving = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                let flip = core.value_constant(ConstantIndex::from(FLIP));
+                let forced = core.computation_force(flip);
+                let applied = core.computation_application(forced, moving);
+                let flipped = core.value_returned(applied);
+                let at = |endpoint| match endpoint {
+                    Endpoint::Fixed => circle.point,
+                    Endpoint::Moving => moving,
+                    Endpoint::Flipped => flipped,
+                };
+                let family = core.value_type_path(circle.carrier, at(left), at(right));
+                let mut read = |word| match word {
+                    Along::Spelled(letters) => (spelled(&mut core, letters), letters),
+                    Along::Named => (circle.named, &[Letter::Loop][..]),
+                };
+                let (along, word) = read(path);
+                let (held, moved) = read(operand);
+                let expected = reduced(
+                    imaged(left, word)
+                        .iter()
+                        .rev()
+                        .map(|letter| letter.inverted())
+                        .chain(moved.iter().copied())
+                        .chain(imaged(right, word)),
+                );
+                let transported = core.computation_path_transport(family, along, held);
+                let answer = spelled(&mut core, &expected);
+                let answer = core.computation_return(answer);
+                let longer = reduced(expected.iter().copied().chain([Letter::Loop]));
+                let longer = spelled(&mut core, &longer);
+                let longer = core.computation_return(longer);
+                assert_eq!(
+                    [
+                        decided(&core, &chain, (transported, answer)),
+                        decided(&core, &chain, (transported, longer)),
+                    ],
+                    [
+                        Some(MachineVerdict::Convertible),
+                        Some(MachineVerdict::NotConvertible),
+                    ],
+                    "{left:?} {right:?} {path:?} {operand:?}"
+                );
+            }
+        }
+    }
+}
