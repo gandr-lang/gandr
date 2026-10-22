@@ -127,6 +127,13 @@ impl fmt::Display for Acceptance
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a verdict holding a `|` reads back escaped, and an
+    ///   accepted landing's row carries the verdict whole; an empty or
+    ///   unescaped cell changes both.
+    /// - witness: `report::tests::a_ticked_accepted_verdict_accepts_its_benchmark`
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[inline]
     fn fmt(
         &self,
@@ -477,6 +484,13 @@ impl Report
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a landing whose body accepts `gandr` alone, failing
+    ///   `gandr` alone and beside `gandr-timing`: reading its benchmark as
+    ///   unaccepted files the accepted regression and comments on its issue.
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
+    /// - witness: `tests::cli::an_unaccepted_benchmark_beside_an_accepted_one_still_files`
     fn accepted(
         &self,
         benchmark: &Benchmark,
