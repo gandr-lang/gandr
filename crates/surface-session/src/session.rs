@@ -357,6 +357,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::documentation;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
@@ -1548,6 +1549,10 @@ pub struct Session<Store, Blocks>
     documentation: BTreeMap<NodeKey, DocumentationText>,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
+    /// The rule blocks' decisions kept across the session's lowerings, so
+    /// that a revision deciding a block it left as it was answers it from the
+    /// last decision.
+    decisions: Decisions,
     /// Every form of the latest parsed revision, by identity.
     forms: FormStore,
     /// The threads a revision's changed forms are molded on.
@@ -1795,6 +1800,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             snapshot: Snapshot::default(),
             documentation: BTreeMap::new(),
             lowerings: LoweringCount::default(),
+            decisions: Decisions::held(),
             forms: FormStore::default(),
             threads: Width::PerformanceCores.threads(),
             admission: Maybe::Absent(admission::Absent::Idle),
@@ -1899,13 +1905,14 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
     {
         let mut lowerings = LoweringCount::default();
+        let mut decisions = Decisions::held();
         let mut forms = FormStore::default();
         let threads = Width::PerformanceCores.threads();
         let (parsed, _census) = forms
             .parse(&grammar, revision, threads)
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
-        let lowering =
-            lower_parsed(&grammar, parsed, &mut lowerings).map_err(SessionFault::Compose)?;
+        let lowering = lower_parsed(&grammar, parsed, &mut lowerings, &mut decisions)
+            .map_err(SessionFault::Compose)?;
         let (imports, snapshot, documentation, restored) = match lowering.into_lowered() {
             Lowered::Refused(_) => (
                 Imports::empty(),
@@ -1955,6 +1962,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 snapshot,
                 documentation,
                 lowerings,
+                decisions,
                 forms,
                 threads,
                 admission: Maybe::Absent(admission::Absent::Idle),
@@ -2527,20 +2535,32 @@ impl<Store, Blocks> Session<Store, Blocks>
                 Some(judged) => {
                     let led = closure.led(root);
                     let onto = led.map_or_else(|| judged.arena(), Led::arena);
-                    lower_onto_closure(judged, onto, parsed, unit, &mut self.lowerings).map(
-                        |(lowering, checking)| {
-                            // The incremental pass starts after the closure's
-                            // items only over the arena it left them in.
-                            let led = match checking {
-                                Checking::After(_) => led,
-                                Checking::Whole => None,
-                            };
-                            (lowering, checking, led)
-                        },
+                    lower_onto_closure(
+                        judged,
+                        onto,
+                        parsed,
+                        unit,
+                        &mut self.lowerings,
+                        &mut self.decisions,
                     )
+                    .map(|(lowering, checking)| {
+                        // The incremental pass starts after the closure's
+                        // items only over the arena it left them in.
+                        let led = match checking {
+                            Checking::After(_) => led,
+                            Checking::Whole => None,
+                        };
+                        (lowering, checking, led)
+                    })
                 },
-                None => lower_resumed_unit(closure.lowering(), parsed, unit, &mut self.lowerings)
-                    .map(|lowering| (lowering, Checking::Whole, None)),
+                None => lower_resumed_unit(
+                    closure.lowering(),
+                    parsed,
+                    unit,
+                    &mut self.lowerings,
+                    &mut self.decisions,
+                )
+                .map(|lowering| (lowering, Checking::Whole, None)),
             }
             .map_err(SessionFault::Compose)?;
             (lowering, checking, led, forms)
@@ -2551,8 +2571,14 @@ impl<Store, Blocks> Session<Store, Blocks>
                 .parse(&self.grammar, revision, self.threads)
                 .map_err(parse_fault)?;
             read(parsed.tree());
-            let lowering = lower_parsed_unit(&self.grammar, parsed, unit, &mut self.lowerings)
-                .map_err(SessionFault::Compose)?;
+            let lowering = lower_parsed_unit(
+                &self.grammar,
+                parsed,
+                unit,
+                &mut self.lowerings,
+                &mut self.decisions,
+            )
+            .map_err(SessionFault::Compose)?;
             (lowering, Checking::Whole, None, forms)
         };
         let mut obligations = lowering.obligations().to_vec();
@@ -3819,10 +3845,19 @@ fn try_candidate<'text>(
     let (parsed, census, _closure) = parse_held_laid(grammar, forms, candidate, laid_out, threads)
         .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
     let lowering = match laying {
-        Laying::Alone => lower_parsed(grammar, parsed, &mut LoweringCount::default()),
-        Laying::Member { unit, .. } => {
-            lower_parsed_unit(grammar, parsed, unit, &mut LoweringCount::default())
-        },
+        Laying::Alone => lower_parsed(
+            grammar,
+            parsed,
+            &mut LoweringCount::default(),
+            &mut Decisions::none(),
+        ),
+        Laying::Member { unit, .. } => lower_parsed_unit(
+            grammar,
+            parsed,
+            unit,
+            &mut LoweringCount::default(),
+            &mut Decisions::none(),
+        ),
     }
     .map_err(SessionFault::Compose)?;
     let mut obligations = lowering.obligations().to_vec();

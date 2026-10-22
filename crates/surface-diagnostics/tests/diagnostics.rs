@@ -1009,6 +1009,7 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
         parsed(),
         &unit,
         &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .expect("the document lowers");
     assert!(
@@ -1026,10 +1027,15 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
         (&HostGrant::UNBOUNDED, checking),
         ByteOffset::from(0_usize),
     ));
-    let Lowered::Module { module, arena } =
-        lower_parsed_unit(&pbg, parsed(), &unit, &mut LoweringCount::default())
-            .expect("the unit lowers")
-            .into_lowered()
+    let Lowered::Module { module, arena } = lower_parsed_unit(
+        &pbg,
+        parsed(),
+        &unit,
+        &mut LoweringCount::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
     else {
         panic!("the unit is one module");
     };

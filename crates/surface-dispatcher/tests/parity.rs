@@ -805,6 +805,7 @@ fn read(
         &mut arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .ok()?;
     let owned = constant_names(&module);
@@ -1050,6 +1051,7 @@ fn apart(
             &mut arena,
             LoweringBudget::DEFAULT,
             Recognition::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         else {
             return parted;

@@ -1168,7 +1168,13 @@ impl TypeTable
     ) -> Result<Self, ComposeFault<'source>>
     {
         let source = parsed.tree().source();
-        let lowering = lower_parsed_unit(grammar, parsed, unit, &mut LoweringCount::default())?;
+        let lowering = lower_parsed_unit(
+            grammar,
+            parsed,
+            unit,
+            &mut LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
+        )?;
         Ok(Self::typed(source, lowering, Checking::Whole, unit, base))
     }
 
@@ -1214,6 +1220,7 @@ impl TypeTable
             parsed,
             unit,
             &mut LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )?;
         Ok(Self::typed(source, lowering, checking, unit, base))
     }

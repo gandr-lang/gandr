@@ -620,6 +620,7 @@ fn export(
         &mut arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
     ) {
         Ok(module) => module,
         Err(refusal) => {

@@ -61,7 +61,7 @@ fn a_declared_single_output_operation_lets_its_rule_become_a_cell()
 {
     let descriptions = descriptions(NAT_ADD);
     assert_eq!(descriptions.diagnostics, []);
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     assert_eq!(cells.diagnostics, []);
     let [ref declaration] = *cells.declarations.as_slice()
     else {
@@ -99,7 +99,7 @@ fn a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output()
             .len(),
         2
     );
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     assert_eq!(cells.diagnostics, []);
     let store = &cells.declarations[0].store;
     assert_eq!(store.len(), CellCount::from(2_usize));
@@ -119,7 +119,7 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
     let source = "data NatDiv2 : Type { Zero : NatDiv2; oper divmod(m : NatDiv2, n : NatDiv2) -> (q : NatDiv2, r : NatDiv2); rule divmod(Zero, n) ==> Zero; }";
     let descriptions = descriptions(source);
     assert_eq!(descriptions.diagnostics, []);
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     let [ref rule] = *cells.diagnostics.as_slice()
     else {
         panic!("the rule alone declines: {:?}", cells.diagnostics)
@@ -167,7 +167,7 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
     ] {
         let descriptions = descriptions(source);
         assert_eq!(descriptions.diagnostics, [], "{source}");
-        let cells = elaborate_desc_cells(&descriptions.declarations);
+        let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
         let [ref refusal] = *cells.diagnostics.as_slice()
         else {
             panic!("one refusal in {source}: {:?}", cells.diagnostics)
@@ -205,15 +205,18 @@ fn a_copied_variable_is_refused_at_its_second_occurrence()
 #[test]
 fn a_source_with_no_declarations_elaborates_to_no_stores()
 {
-    let cells = elaborate_desc_cells(&descriptions("pure ()").declarations);
+    let cells = elaborate_desc_cells(
+        &descriptions("pure ()").declarations,
+        &mut Decisions::none(),
+    );
     assert_eq!(cells, CellReport::default());
 }
 
 #[test]
 fn cell_identities_are_a_deterministic_function_of_the_source()
 {
-    let first = elaborate_desc_cells(&descriptions(NAT_ADD).declarations);
-    let second = elaborate_desc_cells(&descriptions(NAT_ADD).declarations);
+    let first = elaborate_desc_cells(&descriptions(NAT_ADD).declarations, &mut Decisions::none());
+    let second = elaborate_desc_cells(&descriptions(NAT_ADD).declarations, &mut Decisions::none());
     assert_eq!(first, second);
     assert!(
         first.declarations[0]
@@ -227,18 +230,20 @@ fn cell_identities_are_a_deterministic_function_of_the_source()
 #[test]
 fn declaration_order_is_the_cell_order()
 {
-    let original = elaborate_desc_cells(&descriptions(NAT_ADD).declarations);
+    let original =
+        elaborate_desc_cells(&descriptions(NAT_ADD).declarations, &mut Decisions::none());
     let swapped = elaborate_desc_cells(
         &descriptions(
             r#"data NatAdd : Type {
-        Zero : NatAdd;
-        Succ : (n : NatAdd) --> NatAdd;
-        oper add(m : NatAdd, n : NatAdd) -> NatAdd;
-        rule add(Succ(m), n) ==> Succ(add(m, n));
-        rule add(Zero, n) ==> n;
-    }"#,
+    Zero : NatAdd;
+    Succ : (n : NatAdd) --> NatAdd;
+    oper add(m : NatAdd, n : NatAdd) -> NatAdd;
+    rule add(Succ(m), n) ==> Succ(add(m, n));
+    rule add(Zero, n) ==> n;
+        }"#,
         )
         .declarations,
+        &mut Decisions::none(),
     );
     let first = &original.declarations[0].store;
     let second = &swapped.declarations[0].store;
@@ -258,7 +263,7 @@ fn a_face_declared_twice_is_one_cell()
         "data Idem : Type { Zero : Idem; oper f(x : Idem) -> Idem; rule f(Zero) ==> Zero; rule f(Zero) ==> Zero; }",
     );
     assert_eq!(descriptions.declarations[0].description.rules.len(), 2);
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     assert_eq!(cells.diagnostics, []);
     assert_eq!(cells.declarations[0].store.len(), CellCount::from(2_usize));
     assert_eq!(
@@ -279,7 +284,7 @@ fn a_single_redex_block_reaches_the_cell_layer_behind_the_gate()
         }"#,
     );
     assert_eq!(descriptions.diagnostics, []);
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     assert_eq!(cells.diagnostics, []);
     assert_eq!(cells.declarations[0].store.len(), CellCount::from(2_usize));
     assert_eq!(cells.declarations[1].store.len(), CellCount::from(1_usize));
@@ -310,7 +315,7 @@ fn a_two_redex_body_declines_with_both_occurrences()
     }"#,
     );
     assert_eq!(descriptions.diagnostics, []);
-    let cells = elaborate_desc_cells(&descriptions.declarations);
+    let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
     let [CircuitCell::Refused(ref index)] = *cells.declarations[0].circuits.as_slice()
     else {
         panic!("the composite gate declines")
@@ -367,7 +372,7 @@ fn each_cell_fault_is_refused_by_its_own_member_fault()
             [],
             "{member} passes the description route"
         );
-        let cells = elaborate_desc_cells(&descriptions.declarations);
+        let cells = elaborate_desc_cells(&descriptions.declarations, &mut Decisions::none());
         let [ref diagnostic] = *cells.diagnostics.as_slice()
         else {
             panic!("{member} alone declines: {:?}", cells.diagnostics)

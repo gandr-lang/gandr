@@ -1191,6 +1191,7 @@ fn lower<'text>(
                 parsed,
                 &component.unit,
                 &mut lowerings,
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
             ))
         },
         Ok(_) => None,

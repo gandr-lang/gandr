@@ -79,9 +79,11 @@ use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::WhiskeredCell;
 use quenchant_shape::shape::Maybe;
 
+use crate::coincide::Block;
 use crate::coincide::CoherenceFault;
 use crate::coincide::Coincidence;
-use crate::coincide::decide;
+use crate::coincide::Decisions;
+use crate::coincide::Members;
 use crate::coincide::orient_block;
 use crate::coincide::rewriting_store;
 use crate::description::DescribedDeclaration;
@@ -261,15 +263,17 @@ pub struct CellReport
     pub diagnostics: Vec<CellDiagnostic>,
 }
 
-/// Elaborate descriptions through the cell gate, preserving every refusal.
+/// Elaborate descriptions through the cell gate, preserving every refusal,
+/// each block's rules decided through `decisions`.
 ///
 /// # Specification
 /// - requires: operation provenance corresponds to the supplied descriptions.
 /// - ensures: each declaration owns one store; a declined face never enters it;
 ///   readable siblings are elaborated independently in source order; a
 ///   declaration the gate declined nothing of has its rules decided as one
-///   rewriting system (`coincide::decide`), a refusal among the diagnostics at
-///   the rule that shows it, and every other declaration is unexamined.
+///   rewriting system (`coincide::decide`, from the decision `decisions` kept
+///   for the block when it kept one), a refusal among the diagnostics at the
+///   rule that shows it, and every other declaration is unexamined.
 /// - panics: none.
 ///
 /// Missing external provenance is located at its owning declaration, rather
@@ -294,7 +298,10 @@ pub struct CellReport
         && (cells.declined_faces.is_empty() || cells.coincidence == Coincidence::Unexamined)))]
 #[inline]
 #[must_use]
-pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
+pub fn elaborate_desc_cells(
+    declarations: &[DescribedDeclaration],
+    decisions: &mut Decisions,
+) -> CellReport
 {
     let mut report = CellReport {
         declarations: Vec::with_capacity(declarations.len()),
@@ -419,9 +426,16 @@ pub fn elaborate_desc_cells(declarations: &[DescribedDeclaration]) -> CellReport
             Coincidence::Orthogonal
         }
         else {
-            match decide(
+            let block = Block {
                 reading,
-                declaration.at.span,
+                at: declaration.at.span,
+                members: match declaration.presentation {
+                    Maybe::Present(_) => Members::Theory,
+                    Maybe::Absent(_) => Members::Data,
+                },
+            };
+            match decisions.decide(
+                block,
                 &mut store,
                 &admitted_faces,
                 &mut presented,

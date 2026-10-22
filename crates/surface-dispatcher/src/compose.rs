@@ -230,6 +230,7 @@ use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Resolution;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
@@ -982,6 +983,7 @@ mod lowering
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Onto;
     use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::coincide::Decisions;
     use gandr_surface_lowering::lower_unit;
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
@@ -991,7 +993,8 @@ mod lowering
     use super::Unheld;
 
     /// Lower the sources `unit` lays out in `tree` into `arena` against the
-    /// empty outermost scope, counting each of them in `lowerings`.
+    /// empty outermost scope, each rule block decided through `decisions`,
+    /// counting each of them in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` was molded under `grammar`.
@@ -1023,6 +1026,7 @@ mod lowering
         unit: &Unit,
         arena: &mut CoreArena,
         lowerings: &mut LoweringCount,
+        decisions: &mut Decisions,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
         *lowerings = LoweringCount(lowerings.0.saturating_add(unit.sources().len()));
@@ -1033,6 +1037,7 @@ mod lowering
             arena,
             LoweringBudget::DEFAULT,
             Recognition::default(),
+            decisions,
         )
     }
 
@@ -1087,8 +1092,9 @@ mod lowering
     }
 
     /// Lower `tree`, a document laid after `closure`'s tree, as `unit` lays
-    /// it out, into `arena`, resuming `closure`'s lowering; each source after
-    /// the closure's counted in `lowerings`.
+    /// it out, into `arena`, resuming `closure`'s lowering, its rule blocks
+    /// decided through `decisions`; each source after the closure's counted
+    /// in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` lays a document's parse after `closure`'s tree, and
@@ -1117,6 +1123,7 @@ mod lowering
         unit: &Unit,
         arena: &mut CoreArena,
         lowerings: &mut LoweringCount,
+        decisions: &mut Decisions,
     ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
     {
         let after = unit
@@ -1124,13 +1131,14 @@ mod lowering
             .len()
             .saturating_sub(closure.unit().sources().len());
         *lowerings = LoweringCount(lowerings.0.saturating_add(after));
-        closure.resume(tree, unit, arena)
+        closure.resume(tree, unit, arena, decisions)
     }
 
     /// Lower `tree`, a document laid after `closure`'s tree, as `unit` lays
     /// it out, after the nodes of `arena`, resuming `closure`'s lowering on a
-    /// copy of `origins`; each source after the closure's counted in
-    /// `lowerings` unless the tree is left to the whole lowering.
+    /// copy of `origins`, its rule blocks decided through `decisions`; each
+    /// source after the closure's counted in `lowerings` unless the tree is
+    /// left to the whole lowering.
     ///
     /// # Specification
     /// - requires: as [`ClosureLowering::resume_onto`].
@@ -1160,9 +1168,10 @@ mod lowering
         arena: &mut CoreArena,
         origins: &CarriedOrigins,
         lowerings: &mut LoweringCount,
+        decisions: &mut Decisions,
     ) -> Result<Onto<'held>, LoweringRefusal<'held>>
     {
-        let answer = closure.resume_onto(tree, unit, arena, origins);
+        let answer = closure.resume_onto(tree, unit, arena, origins, decisions);
         if !matches!(answer, Ok(Onto::Whole)) {
             let after = unit
                 .sources()
@@ -1304,11 +1313,16 @@ pub fn lower_source<'source>(
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
     let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
-    lower_parsed(grammar, parsed, lowerings)
+    lower_parsed(
+        grammar,
+        parsed,
+        lowerings,
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
 }
 
 /// Lower one source the parser has committed: [`lower_source`] past its
-/// parse.
+/// parse, each rule block decided through `decisions`.
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar `parsed` was committed under.
@@ -1349,9 +1363,10 @@ pub fn lower_parsed<'source>(
     grammar: &Pbg,
     parsed: ParseResult<'source>,
     lowerings: &mut LoweringCount,
+    decisions: &mut Decisions,
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
-    lower_parsed_unit(grammar, parsed, &Unit::single(), lowerings)
+    lower_parsed_unit(grammar, parsed, &Unit::single(), lowerings, decisions)
 }
 
 /// Parse and lower the sources `unit` lays end to end in `source`:
@@ -1391,11 +1406,12 @@ pub fn lower_unit_source<'source>(
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
     let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
-    lower_parsed_unit(grammar, parsed, unit, lowerings)
+    lower_parsed_unit(grammar, parsed, unit, lowerings, &mut Decisions::none())
 }
 
 /// Lower the sources `unit` lays end to end in the tree `parsed` committed:
-/// [`lower_unit_source`] past its parse.
+/// [`lower_unit_source`] past its parse, each rule block decided through
+/// `decisions`.
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar `parsed` was committed under,
@@ -1426,12 +1442,13 @@ pub fn lower_parsed_unit<'source>(
     parsed: ParseResult<'source>,
     unit: &Unit,
     lowerings: &mut LoweringCount,
+    decisions: &mut Decisions,
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
     let obligations = parsed.obligations().to_vec();
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
-    let lowered = match lowering::lower(grammar, &tree, unit, &mut arena, lowerings) {
+    let lowered = match lowering::lower(grammar, &tree, unit, &mut arena, lowerings, decisions) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
             return Err(ComposeFault::Lowering(refusal));
@@ -1495,7 +1512,8 @@ pub fn lower_closure(
     lowering::suspend(grammar, text, unit, lowerings)
 }
 
-/// [`lower_parsed_unit`] over `parsed`, resuming `closure`'s lowering.
+/// [`lower_parsed_unit`] over `parsed`, resuming `closure`'s lowering, each
+/// rule block of the document decided through `decisions`.
 ///
 /// `parsed` is a document parsed alone and laid after `closure`'s tree; the
 /// closure's sources are not lowered again.
@@ -1531,12 +1549,13 @@ pub fn lower_resumed_unit<'held>(
     parsed: ParseResult<'held>,
     unit: &Unit,
     lowerings: &mut LoweringCount,
+    decisions: &mut Decisions,
 ) -> Result<Lowering<'held>, ComposeFault<'held>>
 {
     let obligations = parsed.obligations().to_vec();
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
-    let lowered = match lowering::resume(closure, &tree, unit, &mut arena, lowerings) {
+    let lowered = match lowering::resume(closure, &tree, unit, &mut arena, lowerings, decisions) {
         Ok(module) => Lowered::Module { module, arena },
         Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
             return Err(ComposeFault::Lowering(refusal));
@@ -1868,6 +1887,8 @@ pub enum Checking<'closure>
 /// document's nodes after `onto`'s, so that the document is judged on a copy
 /// of `judged`'s state.
 ///
+/// Each rule block of the document is decided through `decisions`.
+///
 /// # Specification
 /// - requires: as [`lower_resumed_unit`] over [`JudgedClosure::lowering`];
 ///   `onto` is `judged`'s arena ([`JudgedClosure::arena`]) or a copy that more
@@ -1904,6 +1925,7 @@ pub fn lower_onto_closure<'held>(
     parsed: ParseResult<'held>,
     unit: &Unit,
     lowerings: &mut LoweringCount,
+    decisions: &mut Decisions,
 ) -> Result<(Lowering<'held>, Checking<'held>), ComposeFault<'held>>
 {
     let closure = judged.lowering();
@@ -1915,32 +1937,31 @@ pub fn lower_onto_closure<'held>(
         let (ref carried, ref binds) = judgement.elaborated;
         closure.carrying(carried, binds)
     });
-    let (lowered, checking) =
-        match lowering::resume_onto(closure, &tree, unit, &mut arena, origins, lowerings) {
-            Ok(Onto::Resumed(module)) => {
-                (Lowered::Module { module, arena }, Checking::After(judged))
-            },
-            Ok(Onto::Whole) => {
-                let mut whole = CoreArena::new();
-                match lowering::resume(closure, &tree, unit, &mut whole, lowerings) {
-                    Ok(module) => (
-                        Lowered::Module {
-                            module,
-                            arena: whole,
-                        },
-                        Checking::Whole,
-                    ),
-                    Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-                        return Err(ComposeFault::Lowering(refusal));
+    let (lowered, checking) = match lowering::resume_onto(
+        closure, &tree, unit, &mut arena, origins, lowerings, decisions,
+    ) {
+        Ok(Onto::Resumed(module)) => (Lowered::Module { module, arena }, Checking::After(judged)),
+        Ok(Onto::Whole) => {
+            let mut whole = CoreArena::new();
+            match lowering::resume(closure, &tree, unit, &mut whole, lowerings, decisions) {
+                Ok(module) => (
+                    Lowered::Module {
+                        module,
+                        arena: whole,
                     },
-                    Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
-                }
-            },
-            Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-                return Err(ComposeFault::Lowering(refusal));
-            },
-            Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
-        };
+                    Checking::Whole,
+                ),
+                Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+                    return Err(ComposeFault::Lowering(refusal));
+                },
+                Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+            }
+        },
+        Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+            return Err(ComposeFault::Lowering(refusal));
+        },
+        Err(refusal) => (Lowered::Refused(refusal), Checking::Whole),
+    };
     Ok((
         Lowering {
             obligations,
@@ -3951,11 +3972,22 @@ mod tests
                 .expect("the document parses")
                 .after(closure.tree(), SourceText::from(text.as_str()))
                 .expect("the document lays after its closure");
-            let whole =
-                lower_parsed_unit(&pbg, parsed.clone(), &unit, &mut LoweringCount::default())
-                    .expect("the whole unit lowers");
-            let resumed_lowering = lower_resumed_unit(&closure, parsed, &unit, &mut lowerings)
-                .expect("the document lowers resumed");
+            let whole = lower_parsed_unit(
+                &pbg,
+                parsed.clone(),
+                &unit,
+                &mut LoweringCount::default(),
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
+            )
+            .expect("the whole unit lowers");
+            let resumed_lowering = lower_resumed_unit(
+                &closure,
+                parsed,
+                &unit,
+                &mut lowerings,
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
+            )
+            .expect("the document lowers resumed");
             assert_eq!(
                 module(resumed_lowering),
                 module(whole),
@@ -4071,9 +4103,15 @@ mod tests
                 .expect("the document parses")
                 .after(closure.tree(), text)
                 .expect("the document lays after its closure");
-            let (lowering, checking) =
-                lower_onto_closure(judged, judged.arena(), parsed, unit, lowerings)
-                    .expect("the document lowers");
+            let (lowering, checking) = lower_onto_closure(
+                judged,
+                judged.arena(),
+                parsed,
+                unit,
+                lowerings,
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
+            )
+            .expect("the document lowers");
             assert!(
                 matches!(checking, Checking::After(_)),
                 "the document is judged after the closure"
@@ -4250,8 +4288,14 @@ mod tests
                 "to one artifact"
             );
             let (whole_module, whole_arena) = module(
-                lower_parsed_unit(&pbg, parsed(), &unit, &mut LoweringCount::default())
-                    .expect("the whole unit lowers"),
+                lower_parsed_unit(
+                    &pbg,
+                    parsed(),
+                    &unit,
+                    &mut LoweringCount::default(),
+                    &mut gandr_surface_lowering::coincide::Decisions::none(),
+                )
+                .expect("the whole unit lowers"),
             );
             let whole = judge_member(
                 CorpusRoot::Strict,
@@ -5831,7 +5875,16 @@ def h = 1 ;"#,
         };
         let mut lowerings = LoweringCount::default();
         assert!(
-            engine(lower_parsed_unit(&ours, foreign(), &alone(), &mut lowerings).err()),
+            engine(
+                lower_parsed_unit(
+                    &ours,
+                    foreign(),
+                    &alone(),
+                    &mut lowerings,
+                    &mut gandr_surface_lowering::coincide::Decisions::none()
+                )
+                .err()
+            ),
             "lowered whole"
         );
         let closure = Arc::new(
@@ -5844,15 +5897,31 @@ def h = 1 ;"#,
             .expect("the closure is held"),
         );
         assert!(
-            engine(lower_resumed_unit(&closure, foreign(), &alone(), &mut lowerings).err()),
+            engine(
+                lower_resumed_unit(
+                    &closure,
+                    foreign(),
+                    &alone(),
+                    &mut lowerings,
+                    &mut gandr_surface_lowering::coincide::Decisions::none()
+                )
+                .err()
+            ),
             "resumed on a closure, which lowers a tree it does not extend whole"
         );
         let judged = JudgedClosure::new(closure, &HostGrant::UNBOUNDED, CorpusRoot::Fixture)
             .expect("the closure lowers to its end");
         assert!(
             engine(
-                lower_onto_closure(&judged, judged.arena(), foreign(), &alone(), &mut lowerings)
-                    .err()
+                lower_onto_closure(
+                    &judged,
+                    judged.arena(),
+                    foreign(),
+                    &alone(),
+                    &mut lowerings,
+                    &mut gandr_surface_lowering::coincide::Decisions::none()
+                )
+                .err()
             ),
             "onto a judged closure, which leaves a tree it does not extend whole"
         );
@@ -5894,9 +5963,15 @@ def h = 1 ;"#,
             .expect("the closure is held"),
         );
         let alone_parsed = || parse(&ours, own).expect("the source parses");
-        let resumed = lower_resumed_unit(&closure, alone_parsed(), &alone(), &mut lowerings)
-            .expect("a refusal is no fault")
-            .into_lowered();
+        let resumed = lower_resumed_unit(
+            &closure,
+            alone_parsed(),
+            &alone(),
+            &mut lowerings,
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
+        )
+        .expect("a refusal is no fault")
+        .into_lowered();
         assert!(refused(&resumed), "resumed alone: {resumed:?}");
         let judged = JudgedClosure::new(
             Arc::clone(&closure),
@@ -5910,6 +5985,7 @@ def h = 1 ;"#,
             alone_parsed(),
             &alone(),
             &mut lowerings,
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         .expect("a refusal is no fault");
         let whole = whole.into_lowered();
@@ -5928,6 +6004,7 @@ def h = 1 ;"#,
             laid,
             &pair(ByteOffset::from(closure_text.len())),
             &mut lowerings,
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         .expect("a refusal is no fault");
         let after = after.into_lowered();
@@ -6007,9 +6084,15 @@ def h = 1 ;"#,
                 .expect("the document parses")
                 .after(closure.tree(), text)
                 .expect("the document lays after its closure");
-            let (lowering, checking) =
-                lower_onto_closure(&held, held.arena(), laid, &unit, &mut lowerings)
-                    .expect("the document lowers");
+            let (lowering, checking) = lower_onto_closure(
+                &held,
+                held.arena(),
+                laid,
+                &unit,
+                &mut lowerings,
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
+            )
+            .expect("the document lowers");
             assert!(
                 matches!(checking, Checking::After(_)),
                 "the document is lowered after the closure"
@@ -6030,6 +6113,7 @@ def h = 1 ;"#,
                 parse(&grammar, text).expect("the unit parses"),
                 &unit,
                 &mut lowerings,
+                &mut gandr_surface_lowering::coincide::Decisions::none(),
             )
             .expect("the unit lowers")
             .into_lowered()
@@ -6124,6 +6208,7 @@ def h = 1 ;"#,
             parse(&grammar, SourceText::from(text.as_str())).expect("the component parses"),
             &pair(base),
             &mut LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         .expect("the component lowers");
         let shares: Vec<(Vec<String>, usize, usize)> = judge_component(
@@ -6226,6 +6311,7 @@ def h = 1 ;"#,
             parse(&grammar, SourceText::from(text.as_str())).expect("the component parses"),
             &unit,
             &mut LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         .expect("the component lowers");
         let unreached: Vec<Vec<&str>> = judge_component(

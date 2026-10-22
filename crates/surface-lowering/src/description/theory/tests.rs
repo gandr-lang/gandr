@@ -475,7 +475,10 @@ fn the_cat_shape_laws_are_written_faces()
         ],
         "each law is a face between the terms it writes, in order"
     );
-    let cells = crate::desc_cells::elaborate_desc_cells(&report.declarations);
+    let cells = crate::desc_cells::elaborate_desc_cells(
+        &report.declarations,
+        &mut crate::coincide::Decisions::none(),
+    );
     assert_eq!(
         cells
             .diagnostics
@@ -842,7 +845,11 @@ fn an_observed_feed_is_kept_beside_its_cut_open_wiring()
         "the fed port is a boundary variable of the cut-open wiring"
     );
     assert_eq!(
-        crate::desc_cells::elaborate_desc_cells(&report.declarations).diagnostics,
+        crate::desc_cells::elaborate_desc_cells(
+            &report.declarations,
+            &mut crate::coincide::Decisions::none()
+        )
+        .diagnostics,
         [],
         "the cut-open wiring is a cell the layer admits"
     );
