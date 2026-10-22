@@ -468,6 +468,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::AbstractKindNotUniverse(_)) => "abstract-kind-not-universe",
         Typing::Refused(Refusal::RepresentationAboveKind { .. }) => "representation-above-kind",
         Typing::Refused(Refusal::NotAnAbstractType(_)) => "not-an-abstract-type",
+        Typing::Refused(Refusal::AtomTransport { .. }) => "atom-transport",
         Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
         Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
         Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",

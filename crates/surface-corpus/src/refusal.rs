@@ -398,6 +398,8 @@ pub enum RefusalName
     RepresentationAboveKind,
     /// The checker reports `NotAnAbstractType`.
     NotAnAbstractType,
+    /// The checker reports `AtomTransport`.
+    AtomTransport,
     /// The checker reports `SealSiteRepeated`.
     SealSiteRepeated,
     /// The checker reports `DataArgumentArity`.
@@ -835,7 +837,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 196_usize] = [
+    pub const VOCABULARY: [Self; 197_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -847,6 +849,7 @@ impl RefusalName
         Self::AbstractKindNotUniverse,
         Self::RepresentationAboveKind,
         Self::NotAnAbstractType,
+        Self::AtomTransport,
         Self::SealSiteRepeated,
         Self::DataArgumentArity,
         Self::UnknownConstructor,
@@ -1164,6 +1167,7 @@ impl RefusalName
         | (Self::AbstractKindNotUniverse, b"AbstractKindNotUniverse")
         | (Self::RepresentationAboveKind, b"RepresentationAboveKind")
         | (Self::NotAnAbstractType, b"NotAnAbstractType")
+        | (Self::AtomTransport, b"AtomTransport")
         | (Self::SealSiteRepeated, b"SealSiteRepeated")
         | (Self::DataArgumentArity, b"DataArgumentArity")
         | (Self::UnknownConstructor, b"UnknownConstructor")
@@ -1290,6 +1294,7 @@ impl RefusalName
             Self::AbstractKindNotUniverse => "AbstractKindNotUniverse",
             Self::RepresentationAboveKind => "RepresentationAboveKind",
             Self::NotAnAbstractType => "NotAnAbstractType",
+            Self::AtomTransport => "AtomTransport",
             Self::SealSiteRepeated => "SealSiteRepeated",
             Self::DataArgumentArity => "DataArgumentArity",
             Self::UnknownConstructor => "UnknownConstructor",
@@ -2100,6 +2105,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::AbstractKindNotUniverse(_)), RefusalName::AbstractKindNotUniverse)
         | (Self::Checking(CheckRefusal::RepresentationAboveKind { .. }), RefusalName::RepresentationAboveKind)
         | (Self::Checking(CheckRefusal::NotAnAbstractType(_)), RefusalName::NotAnAbstractType)
+        | (Self::Checking(CheckRefusal::AtomTransport { .. }), RefusalName::AtomTransport)
         | (Self::Checking(CheckRefusal::SealSiteRepeated(_)), RefusalName::SealSiteRepeated)
         | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
         | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
@@ -2424,6 +2430,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
         | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
         | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
+        | (CheckRefusal::AtomTransport { .. }, RefusalName::AtomTransport)
         | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
         | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
         | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
@@ -2551,6 +2558,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
         CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
         CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,
+        CheckRefusal::AtomTransport { .. } => RefusalName::AtomTransport,
         CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
         CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
         CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,

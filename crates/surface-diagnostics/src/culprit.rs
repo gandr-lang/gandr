@@ -264,6 +264,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::LoopUndecided { .. } => "a case whose loop obligation ran past its budget",
         CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
         CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
+        CheckRefusal::AtomTransport { .. } => "an identity of an atom stating no transport law",
         CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",
         CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
         CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",

@@ -8,6 +8,9 @@
 extend-exclude = ["target/", "treefmt.toml", "mise.lock", "Cargo.lock", "crates/surface-parser/tests/recovery/"]
 
 [default]
+# The attribute registry's near-miss witness misspells `identity` on purpose,
+# one edit away, to assert that the misspelling suggests the attribute.
+extend-ignore-re = ['"identiy"']
 
 # Standing rule: an unwanted rewrite is fixed by growing this allowlist, never
 # by rewording the prose. Grown from this repo's own vocabulary.

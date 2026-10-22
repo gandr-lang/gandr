@@ -801,6 +801,15 @@ pub enum Refusal
     },
     /// A sealed atom names a position no abstract type was admitted at.
     NotAnAbstractType(Reference),
+    /// An introduction checked at the identity of a sealed atom whose
+    /// interface states no transport law.
+    AtomTransport
+    {
+        /// The introduction.
+        at: Site,
+        /// The atom.
+        atom: Reference,
+    },
     /// A sealing site minted a second atom.
     SealSiteRepeated(gandr_core_checker::SealSite),
     /// A run with no computation enclosing it to run before.
@@ -1351,6 +1360,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::AbstractKindNotUniverse(at) = matched_left_value && let Refusal::AbstractKindNotUniverse(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::RepresentationAboveKind {representation,kind} = matched_left_value && let Refusal::RepresentationAboveKind {representation:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(representation)) && *stored == self.value_type(kind) }
  else if let CheckRefusal::NotAnAbstractType(constant) = matched_left_value && let Refusal::NotAnAbstractType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
+ else if let CheckRefusal::AtomTransport {at,atom} = matched_left_value && let Refusal::AtomTransport {at:projected,atom:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.layout.resolve(atom) }
  else if let CheckRefusal::SealSiteRepeated(site) = matched_left_value && let Refusal::SealSiteRepeated(projected) = *matched_right_value { site == projected }
  else if let CheckRefusal::DataArgumentArity(at) = matched_left_value && let Refusal::DataArgumentArity(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::DataFieldLevel {field,kind} = matched_left_value && let Refusal::DataFieldLevel {field:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(field)) && *stored == self.value_type(kind) }
@@ -1555,6 +1565,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::NotAnAbstractType(constant) => {
                 Refusal::NotAnAbstractType(self.layout.resolve(constant))
+            },
+            CheckRefusal::AtomTransport { at, atom } => Refusal::AtomTransport {
+                at: self.site(ArenaNode::Value(at)),
+                atom: self.layout.resolve(atom),
             },
             CheckRefusal::SealSiteRepeated(site) => Refusal::SealSiteRepeated(site),
             CheckRefusal::DataArgumentArity(at) => {

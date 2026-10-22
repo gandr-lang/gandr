@@ -1,0 +1,15 @@
+/// `AtomTransport`: a sealed type states a relation and its reflexivity but no
+/// transport law, so the relation's evidence is no path between its points.
+@[ checks ]
+def related(a : Unit, b : Unit) -> -F Type { return Unit }
+@[ checks ]
+def reflexive(a : Unit) -> -F related(a, a) { return unit }
+module Point :> #{ type T, origin : T, other : T } {
+  @[ identity((related, reflexive)) ]
+  type T = Unit;
+  def origin = unit;
+  def other = unit;
+}
+@[ refuses("AtomTransport") ]
+def origin_other : Path(Point.T, Point.origin, Point.other) ;
+def origin_other = unit ;

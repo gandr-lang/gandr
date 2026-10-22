@@ -517,6 +517,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::AbstractKindNotUniverse(_)
         | CheckRefusal::RepresentationAboveKind { .. }
         | CheckRefusal::NotAnAbstractType(_)
+        | CheckRefusal::AtomTransport { .. }
         | CheckRefusal::SealSiteRepeated(_)
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }

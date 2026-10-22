@@ -1,0 +1,20 @@
+/// `identity`: names the relation, its reflexivity and its transport law a
+/// sealed type's identity is.
+@[ checks ]
+def related(a : Unit, b : Unit) -> -F Type { return Unit }
+@[ checks ]
+def reflexive(a : Unit) -> -F related(a, a) { return unit }
+@[ checks ]
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(
+  #{ y : Unit, s : related(a, y) },
+  (b, r),
+  (a, reflexive(a))
+) {
+  return (unit, unit)
+}
+module Point :> #{ type T, origin : T } {
+  @[ identity((related, reflexive, contraction)) ]
+  @[ checks ]
+  type T = Unit;
+  def origin = unit;
+}

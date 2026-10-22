@@ -4959,6 +4959,7 @@ fn read_operation_side(reader: &mut Reader<'_>)
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
+/// - witness: `codec::tests::an_atom_interface_round_trips_with_and_without_its_law`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
@@ -6210,6 +6211,11 @@ where
             writer.tag(Tag(50));
             write_reference(writer, reference)?;
         },
+        Refusal::AtomTransport { at, ref atom } => {
+            writer.tag(Tag(85));
+            write_site(writer, at)?;
+            write_reference(writer, atom)?;
+        },
         Refusal::SealSiteRepeated(site) => {
             writer.tag(Tag(51));
             writer.count(Count(usize::from(site.sealing())))?;
@@ -6848,6 +6854,7 @@ where
                     | Refusal::AbstractKindNotUniverse(_) => 48,
                     | Refusal::RepresentationAboveKind { .. } => 49,
                     | Refusal::NotAnAbstractType(_) => 50,
+                    | Refusal::AtomTransport { .. } => 85,
                     | Refusal::SealSiteRepeated(_) => 51,
                     | Refusal::NotOver { .. } => 52,
                     | Refusal::UaUncertified { .. } => 53,
@@ -6943,6 +6950,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             kind: read_type(reader)?,
         },
         50 => Refusal::NotAnAbstractType(read_reference(reader)?),
+        85 => Refusal::AtomTransport {
+            at: read_site(reader)?,
+            atom: read_reference(reader)?,
+        },
         51 => {
             let sealing = gandr_core_checker::SealingSite::from(reader.count()?.0);
             let component = gandr_core_checker::ComponentOrdinal::from(reader.count()?.0);
@@ -7891,6 +7902,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::EffectSignatureConflict { .. }
             | Refusal::AbstractKindNotUniverse(_)
             | Refusal::NotAnAbstractType(_)
+            | Refusal::AtomTransport { .. }
             | Refusal::SealSiteRepeated(_)
             | Refusal::UnenclosedRun { .. }
             | Refusal::Linearity { .. }

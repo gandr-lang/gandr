@@ -1930,6 +1930,76 @@ fn open_roots_project_under_their_own_supports()
 }
 
 #[test]
+fn an_abstract_type_s_interface_roots_are_renumbered_with_it()
+{
+    use super::AbstractRoots;
+    use super::DeclarationRoots;
+    use super::InterfaceRoots;
+
+    let index = NodeIndex::from;
+    // An unreached entry comes first, so no root keeps its raw index.
+    let raw = [
+        ContentNode::Base(BaseType::String),
+        ContentNode::Product(Vec::new()),
+        ContentNode::Base(BaseType::Integer),
+        ContentNode::Tuple(Vec::new()),
+        ContentNode::Tuple(vec![index(3_usize)]),
+        ContentNode::Tuple(vec![index(3_usize), index(4_usize)]),
+    ];
+    let sealed = crate::fixture::item_content(
+        Reference::Unoccupied,
+        &DeclarationRoots::Abstract(AbstractRoots {
+            kind: index(1_usize),
+            representation: index(2_usize),
+            extent: gandr_kernel_term::SealExtent::from(0_usize),
+            site: gandr_core_checker::SealSite::new(
+                gandr_core_checker::SealingSite::from(0_usize),
+                gandr_core_checker::ComponentOrdinal::from(0_usize),
+            ),
+            mobility: gandr_core_checker::worlds::Mobility::Immobile,
+            interface: Maybe::Present(InterfaceRoots {
+                relation: index(3_usize),
+                reflexivity: index(4_usize),
+                law: Maybe::Present(index(5_usize)),
+            }),
+        }),
+        &raw,
+    );
+    let DeclarationRoots::Abstract(AbstractRoots {
+        interface:
+            Maybe::Present(InterfaceRoots {
+                relation,
+                reflexivity,
+                law: Maybe::Present(law),
+            }),
+        ..
+    }) = *sealed.declaration()
+    else {
+        panic!("an abstract type keeps its interface and its law");
+    };
+    assert_eq!(
+        [
+            sealed.debruijn(relation),
+            sealed.debruijn(reflexivity),
+            sealed.debruijn(law)
+        ],
+        [
+            Ok(vec![ContentNode::Tuple(Vec::new())]),
+            Ok(vec![
+                ContentNode::Tuple(vec![index(1_usize)]),
+                ContentNode::Tuple(Vec::new()),
+            ]),
+            Ok(vec![
+                ContentNode::Tuple(vec![index(1_usize), index(2_usize)]),
+                ContentNode::Tuple(Vec::new()),
+                ContentNode::Tuple(vec![index(1_usize)]),
+            ]),
+        ],
+        "an abstract type's renumbered interface roots name its relation, reflexivity and law"
+    );
+}
+
+#[test]
 fn debruijn_projection_reports_index_overflow()
 {
     use gandr_core_term::Zone;

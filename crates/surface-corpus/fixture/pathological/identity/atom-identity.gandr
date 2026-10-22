@@ -1,0 +1,30 @@
+// The twin of the model's `originOther`: an atom whose type member states a
+// relation and its reflexivity but no transport law. Without the law the
+// relation is no identity system (Univalent Foundations Program, _Homotopy
+// Type Theory_, 2013, §5.8, Theorem 5.8.2), so the atom's identity stays its
+// own and the relation's evidence is no path between its points.
+
+// The relation, its reflexivity and its transport law over the unit type.
+import "../../model/identity/atom-identity.gandr" ;
+
+/// The unit type sealed, stating the relation and its reflexivity alone.
+module Lawless :> #{ type T, origin : T, other : T } {
+  /// The sealed points, whose interface names no transport law.
+  @[ identity((related, reflexivity)) ]
+  @[ checks ]
+  type T = Unit;
+
+  /// One point.
+  @[ checks ]
+  def origin = unit;
+
+  /// Another point.
+  @[ checks ]
+  def other = unit;
+}
+
+/// The relation's evidence between two sealed points, refused: the interface
+/// names no transport law (#1784).
+@[ refuses("AtomTransport") ]
+def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) ;
+def lawlessOriginOther = unit ;

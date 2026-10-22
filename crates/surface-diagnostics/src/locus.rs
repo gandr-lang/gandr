@@ -760,6 +760,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } |
+        CheckRefusal::AtomTransport { .. } |
         CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -899,6 +900,7 @@ fn checked(
         | CheckRefusal::ForwardUnsupported { at }
         | CheckRefusal::StageNotBelow { at, .. }
         | CheckRefusal::StagesDisagree { at, .. }
+        | CheckRefusal::AtomTransport { at, .. }
         | CheckRefusal::Boundary { at } => (spanned(origins.value(at)), UNNAMED),
         CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
@@ -1204,6 +1206,7 @@ impl fmt::Display for Checked
             CheckRefusal::AbstractKindNotUniverse(_) => f.write_str("an abstract type's kind must be a value universe"),
             CheckRefusal::RepresentationAboveKind {..} => f.write_str("a sealed representation exceeds its abstract type's universe"),
             CheckRefusal::NotAnAbstractType(constant) => write!(f,"declaration {} is not an abstract type",usize::from(constant)),
+            CheckRefusal::AtomTransport {atom,..} => write!(f,"abstract type {} states no transport law, so its relation is no identity",usize::from(atom)),
             CheckRefusal::SealSiteRepeated(site) => write!(f,"{site} was sealed twice"),
             CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
             CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
@@ -2640,6 +2643,10 @@ mod tests
                 tag: 3_usize.into(),
             },
             CheckRefusal::ConstructorArity(value),
+            CheckRefusal::AtomTransport {
+                at: value,
+                atom: 6_usize.into(),
+            },
             CheckRefusal::MissingRecordField {
                 at: value,
                 expected: value_type,
@@ -3256,6 +3263,7 @@ mod tests
                         | CheckRefusal::StaticClassifierExpected { .. } => spans[2_usize],
                         CheckRefusal::UnknownConstructor { .. }
                         | CheckRefusal::ConstructorArity(_)
+                        | CheckRefusal::AtomTransport { .. }
                         | CheckRefusal::MissingRecordField { .. }
                         | CheckRefusal::CapabilityForged { .. }
                         | CheckRefusal::DependentStack { .. }

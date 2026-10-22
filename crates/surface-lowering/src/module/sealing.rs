@@ -702,13 +702,14 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `structure`'s body is read, and `component` is abstract with
     ///   the written kind `kind`.
     /// - ensures: under an opaque ascription the component's abstract slot
-    ///   records the member as its representation and the component reads as
-    ///   its atom; under a transparent one the component reads as the member's
-    ///   type, and a witness slot owning the kind checks that type at it,
-    ///   unless the component is a sort a model derives, which states no kind
-    ///   to check. A component no member supplies, or a family member supplies,
-    ///   files its refusal on the abstract slot, so a later component and a
-    ///   client reading it inherit the refusal, or on a held slot under a
+    ///   records the member as its representation, takes the member's
+    ///   expectation and attributes, owning their payloads, and the component
+    ///   reads as its atom; under a transparent one the component reads as the
+    ///   member's type, and a witness slot owning the kind checks that type at
+    ///   it, unless the component is a sort a model derives, which states no
+    ///   kind to check. A component no member supplies, or a family member
+    ///   supplies, files its refusal on the abstract slot, so a later component
+    ///   and a client reading it inherit the refusal, or on a held slot under a
     ///   transparent ascription. An opaque ascription's component at a static
     ///   arrow refuses its abstract slot as a kinded form whatever the member:
     ///   an abstract operator is an atom at a kind no universe is, which the
@@ -719,12 +720,14 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a sealed component, a strengthened one, a component
-    ///   no member supplies and a sealed operator, each asserted as the exact
-    ///   slot and reading.
+    ///   no member supplies, a sealed operator and a sealed component whose
+    ///   member states an identity, each asserted as the exact slot and
+    ///   reading.
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::a_transparent_abstract_component_reads_its_type_member`
     /// - witness: `tests::modules::an_abstract_component_with_no_type_member_is_refused_by_name`
     /// - witness: `tests::modules::a_kinded_type_component_forms_at_its_classifier`
+    /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = types.len(),
         ensures: |_| types.len() <= before.saturating_add(1),
@@ -801,6 +804,21 @@ impl<'source> Collector<'_, 'source>
             let operator = matches!(kind, Maybe::Present(written) if matches!(self.kind_form(written), Ok(KindForm::Arrow)));
             match represented {
                 Some(represented) if !operator => {
+                    // The atom reads its member's attributes, as a
+                    // transparent component's witness does: an `identity`
+                    // among them states the interface the atom is admitted
+                    // with, and an expectation the atom's verdict. Its
+                    // payloads resolve from the atom, which owns them.
+                    let (expectation, attributes) = self.member_expectation(represented.held);
+                    for written in &attributes {
+                        if let super::Payload::Written(payload) = written.payload {
+                            self.collected.own(payload.node, atom);
+                        }
+                    }
+                    if let Some(slot) = self.collected.slots.get_mut(atom.0) {
+                        slot.signature = expectation;
+                        slot.attributes = attributes;
+                    }
                     if let Some(recorded) = self.collected.abstracts.get_mut(&atom) {
                         recorded.representation = Maybe::Present(represented);
                     }
@@ -979,7 +997,8 @@ impl<'source> Collector<'_, 'source>
     ///   member's attributes, taken out of the member, when `held` names a
     ///   slot; nothing otherwise.
     /// - provides: the expectation of the witness [`Self::abstract_component`]
-    ///   and [`Self::family_component`] file.
+    ///   and [`Self::family_component`] file, and of the atom a sealed abstract
+    ///   component files.
     /// - fails: never.
     /// - panics: none.
     ///

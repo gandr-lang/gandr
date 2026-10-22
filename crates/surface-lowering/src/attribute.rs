@@ -16,17 +16,19 @@
 //! byte-identical forms in two sources of one unit are filed apart by their
 //! sources (#596).
 //!
-//! # Every schema but `respects` and `entry` is inert
+//! # Every schema but `respects`, `entry` and `identity` is inert
 //!
 //! The lowered term is neither read nor written by the attribute pass: a
 //! payload lowers to its own core value, filed here, and nothing about the
-//! decorated declaration's core term depends on it. `respects` and `entry`
-//! are the semantic attributes: a `respects` payload names the laws a fold
-//! rests on, and an `entry` payload the worlds a declaration is judged at and
-//! migrates to, which the table keeps beside the entry as constants and the
-//! checker's declaration carries. The term is still untouched; what changes
-//! is the evidence the declaration is admitted on, or the world it is judged
-//! at.
+//! decorated declaration's core term depends on it. `respects`, `entry` and
+//! `identity` are the semantic attributes: a `respects` payload names the
+//! laws a fold rests on, an `entry` payload the worlds a declaration is
+//! judged at and migrates to, which the table keeps beside the entry as
+//! constants and the checker's declaration carries, and an `identity`
+//! payload on a sealed module's type member the relation, reflexivity and
+//! optional transport law its atom is admitted with. The term is still
+//! untouched; what changes is the evidence the declaration is admitted on,
+//! the world it is judged at, or what a path at the atom is.
 //!
 //! # An unknown name gets a bounded suggestion
 //!
@@ -50,7 +52,8 @@
 //! The registry is closed: `checks` and `explicit_exits` take no payload,
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
 //! integer, `refuses`, `runs`, `normalizes` and `doc` a text, `respects` and
-//! `entry` one declared name or a tuple of them, and `form` one bare word,
+//! `entry` one declared name or a tuple of them, `identity` a tuple of two or
+//! three declared names, and `form` one bare word,
 //! `explicit` or `sugared`. The attribute block
 //! admits one payload per attribute and refuses an attribute written twice,
 //! so several laws are one tuple, `respects((a, b))`, in the order of the
@@ -247,6 +250,46 @@ pub fn names(
     }
 }
 
+/// The relation, reflexivity and, when stated, transport law an `identity`
+/// payload names, as the components the payload lowered them to.
+///
+/// # Specification
+/// - requires: `payload` is the lowered value of a payload the
+///   [`AttributeSchema::Interface`] schema admitted.
+/// - ensures: the components of `payload`, in written order, when it is a tuple
+///   of two or three declared names; [`names::Absent::Unnamed`] for any other
+///   value, a lone name included.
+/// - fails: never — an unnamed payload is an absence, not an error.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pair, a triple, a lone name, four names and a pair
+///   holding a non-name separate the answers.
+/// - witness: `attribute::tests::an_identity_payload_names_two_or_three_declarations`
+#[spec(ensures: |ref ret| match *ret {
+    | Maybe::Present(ref members) => (2_usize ..= 3_usize).contains(&members.len())
+        && members.iter().all(|&member| matches!(arena.value(member), Some(&Value::Constant(_)))),
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn members(
+    arena: &CoreArena,
+    payload: ValueId,
+) -> Maybe<Vec<ValueId>, names::Absent>
+{
+    match arena.value(payload) {
+        Some(&Value::Tuple(ref items))
+            if (2_usize ..= 3_usize).contains(&items.len())
+                && items
+                    .iter()
+                    .all(|&item| matches!(arena.value(item), Some(&Value::Constant(_)))) =>
+        {
+            Maybe::Present(items.to_vec())
+        },
+        _ => Maybe::Absent(names::Absent::Unnamed),
+    }
+}
+
 /// The furthest an unknown attribute name may sit from a registered one and
 /// still be answered with it.
 ///
@@ -302,6 +345,11 @@ impl RegisteredAttribute
     pub const FORM: Self = Self("form");
     /// The words `form` takes.
     pub const FORMS: &'static [&'static str] = &["explicit", "sugared"];
+    /// `identity`: the abstract type sealing the type member it decorates
+    /// relates its elements by the relation its payload names first, with
+    /// the reflexivity it names second and, when it names a third, the
+    /// transport law that makes the relation the atom's identity.
+    pub const IDENTITY: Self = Self("identity");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -378,6 +426,9 @@ pub enum AttributeSchema
     MarkerOr(&'static str),
     /// One declared name, or a tuple of declared names.
     Names,
+    /// A tuple of two or three declared names: a relation, its reflexivity
+    /// and, when stated, its transport law.
+    Interface,
     /// One bare word among those named, read as written and never lowered as
     /// a value.
     Word(&'static [&'static str]),
@@ -401,6 +452,10 @@ impl fmt::Display for AttributeSchema
             Self::Text => f.write_str("a text payload"),
             Self::MarkerOr(option) => write!(f, "no payload or the text \"{option}\""),
             Self::Names => f.write_str("a declared name or a tuple of declared names"),
+            Self::Interface => f.write_str(
+                "a tuple of two or three declared names: a relation, its reflexivity and \
+                 optionally its transport law",
+            ),
             Self::Word(words) => {
                 f.write_str("one of the words")?;
                 for (index, word) in words.iter().enumerate() {
@@ -510,7 +565,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 11_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 12_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -531,6 +586,7 @@ const REGISTRY: [(&str, AttributeSchema); 11_usize] = [
         RegisteredAttribute::FORM.0,
         AttributeSchema::Word(RegisteredAttribute::FORMS),
     ),
+    (RegisteredAttribute::IDENTITY.0, AttributeSchema::Interface),
 ];
 
 impl AttributeRegistry
@@ -695,9 +751,9 @@ impl AttributeRegistry
 ///   the marker-or-option schema; a text spelling no option by the text schema
 ///   alone; a bare word by the names schema, as the one name it declares, and
 ///   by the word schema, read as one of its words; a word spelling none by no
-///   schema; any other value exactly by the names schema; every other pair is
-///   refused, and the refusal is the missing one exactly when nothing was
-///   written for a schema that takes something.
+///   schema; any other value exactly by the names and interface schemas; every
+///   other pair is refused, and the refusal is the missing one exactly when
+///   nothing was written for a schema that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
 /// - fails: never — a refusal is a verdict here, not an error.
@@ -717,6 +773,7 @@ impl AttributeRegistry
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
                 | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
+                | (AttributeSchema::Interface, PayloadForm::OtherValue)
                 | (AttributeSchema::Word(_), PayloadForm::Word)
         );
         let missing = matches!(form, PayloadForm::Absent)
@@ -725,6 +782,7 @@ impl AttributeRegistry
                 AttributeSchema::Integer
                     | AttributeSchema::Text
                     | AttributeSchema::Names
+                    | AttributeSchema::Interface
                     | AttributeSchema::Word(_)
             );
         matches!(ret, PayloadVerdict::Admitted) == admitted
@@ -745,11 +803,13 @@ pub const fn payload_verdict(
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
         | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
+        | (AttributeSchema::Interface, PayloadForm::OtherValue)
         | (AttributeSchema::Word(_), PayloadForm::Word) => PayloadVerdict::Admitted,
         (
             AttributeSchema::Integer
             | AttributeSchema::Text
             | AttributeSchema::Names
+            | AttributeSchema::Interface
             | AttributeSchema::Word(_),
             PayloadForm::Absent,
         ) => PayloadVerdict::Missing,
@@ -790,6 +850,14 @@ pub const fn payload_verdict(
             PayloadForm::Integer
             | PayloadForm::Text
             | PayloadForm::OtherText
+            | PayloadForm::OtherWord,
+        )
+        | (
+            AttributeSchema::Interface,
+            PayloadForm::Integer
+            | PayloadForm::Text
+            | PayloadForm::OtherText
+            | PayloadForm::Word
             | PayloadForm::OtherWord,
         )
         | (
@@ -1075,8 +1143,10 @@ impl AttributeEntry
 }
 
 /// Every attributed declaration's entries, keyed by the declaration form's
-/// cross-tree key, and the laws a `respects` entry and the worlds an `entry`
-/// entry names under the same key.
+/// cross-tree key.
+///
+/// The laws a `respects` entry, the worlds an `entry` entry and the interface
+/// an `identity` entry names are kept under the same key.
 ///
 /// # Specification
 /// - requires: producers file entries under the intended declaration's key.
@@ -1105,6 +1175,9 @@ pub struct AttributeTable
     /// Declaration key to the worlds its `entry` entry names, its home first,
     /// in the order the payload names them.
     worlds: BTreeMap<UnitKey, Vec<ConstantIndex>>,
+    /// Type member key to the relation, reflexivity and transport law its
+    /// `identity` entry names, in that order, as the payload's components.
+    interfaces: BTreeMap<UnitKey, Vec<ValueId>>,
 }
 
 impl AttributeTable
@@ -1121,6 +1194,7 @@ impl AttributeTable
             entries: BTreeMap::new(),
             laws: BTreeMap::new(),
             worlds: BTreeMap::new(),
+            interfaces: BTreeMap::new(),
         }
     }
 
@@ -1330,6 +1404,67 @@ impl AttributeTable
         }
     }
 
+    /// File `members`, the relation, reflexivity and, when stated, transport
+    /// law the `identity` entry filed under the type member `key` names.
+    ///
+    /// # Specification
+    /// - requires: an `identity` entry naming `members` is filed under `key`;
+    ///   the attribute pass refuses a second `identity` for one member, so
+    ///   `key` holds no interface yet.
+    /// - ensures: [`Self::interface`] at `key` answers `members`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an interface filed under one key is read back from it
+    ///   and from no other.
+    /// - witness: `attribute::tests::an_identity_payload_names_two_or_three_declarations`
+    #[spec(
+        captures: count = members.len(),
+        ensures: self.interfaces.get(&key).is_some_and(|held| held.len() == count),
+    )]
+    #[inline]
+    pub fn file_interface(
+        &mut self,
+        key: UnitKey,
+        members: Vec<ValueId>,
+    )
+    {
+        let _replaced = self.interfaces.insert(key, members);
+    }
+
+    /// The relation, reflexivity and, when stated, transport law the
+    /// `identity` entry filed under the type member `key` names, in that
+    /// order, as the values its payload lowered them to.
+    ///
+    /// # Specification
+    /// - requires: nothing — a key holding no interface is admissible input, a
+    ///   type member sealed with no identity of its own.
+    /// - ensures: exactly the members filed under `key`; the empty slice when
+    ///   none were.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a filed key and an unfiled one separate the two
+    ///   answers.
+    /// - witness: `attribute::tests::an_identity_payload_names_two_or_three_declarations`
+    #[spec(
+        ensures: |ret| match self.interfaces.get(&key) {
+            | Some(members) => core::ptr::eq(&raw const *ret, &raw const *members.as_slice()),
+            | None => ret.is_empty(),
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn interface(
+        &self,
+        key: UnitKey,
+    ) -> &[ValueId]
+    {
+        self.interfaces.get(&key).map_or(&[], Vec::as_slice)
+    }
+
     /// The worlds the `entry` entry filed under `key` names, its home first,
     /// in the order it names them.
     ///
@@ -1426,6 +1561,7 @@ mod tests
     use super::PayloadForm;
     use super::PayloadVerdict;
     use super::edit_distance;
+    use super::members;
     use super::names;
     use super::payload;
     use super::payload_verdict;
@@ -1525,6 +1661,7 @@ mod tests
             ("respects", AttributeSchema::Names),
             ("entry", AttributeSchema::Names),
             ("form", AttributeSchema::Word(&["explicit", "sugared"])),
+            ("identity", AttributeSchema::Interface),
         ];
 
         for (spelling, schema) in expected {
@@ -1578,6 +1715,7 @@ mod tests
             ("respect", "respects"),
             ("entri", "entry"),
             ("forms", "form"),
+            ("identiy", "identity"),
         ];
 
         for (written, nearest) in expected {
@@ -1680,6 +1818,7 @@ mod tests
             (AttributeSchema::Text, [M, I, A, A, I, I, I]),
             (AttributeSchema::MarkerOr("effects"), [A, I, A, I, I, I, I]),
             (AttributeSchema::Names, [M, I, I, I, A, I, A]),
+            (AttributeSchema::Interface, [M, I, I, I, I, I, A]),
             (AttributeSchema::Word(&["explicit", "sugared"]), [
                 M, I, I, I, A, I, I,
             ]),
@@ -1733,6 +1872,48 @@ mod tests
             "the laws filed under a key are read back from it"
         );
         assert!(table.laws(unfiled).is_empty(), "and from no other");
+    }
+
+    #[test]
+    fn an_identity_payload_names_two_or_three_declarations()
+    {
+        let mut arena = CoreArena::new();
+        let [relation, reflexivity, law, extra] =
+            [3_usize, 5, 8, 13].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let pair = arena.value_tuple(&[relation, reflexivity]);
+        let triple = arena.value_tuple(&[relation, reflexivity, law]);
+        assert_eq!(
+            members(&arena, pair),
+            Maybe::Present(vec![relation, reflexivity]),
+            "a relation and its reflexivity are an interface stating no law"
+        );
+        assert_eq!(
+            members(&arena, triple),
+            Maybe::Present(vec![relation, reflexivity, law]),
+            "a third name is its law, the members kept in written order"
+        );
+        let unit = arena.value_unit();
+        let single = arena.value_tuple(&[relation]);
+        let quadruple = arena.value_tuple(&[relation, reflexivity, law, extra]);
+        let mixed = arena.value_tuple(&[relation, unit]);
+        for unnamed in [relation, single, quadruple, mixed, unit] {
+            assert_eq!(
+                members(&arena, unnamed),
+                Maybe::Absent(names::Absent::Unnamed),
+                "a lone name, one name too few or too many, or a non-name is no interface"
+            );
+        }
+        let mut table = AttributeTable::new();
+        let filed = keyed(SourceIndex::default(), NodeDigest::from([1_u8; 32_usize]));
+        let unfiled = keyed(SourceIndex::default(), NodeDigest::from([2_u8; 32_usize]));
+        table.file_interface(filed, vec![relation, reflexivity, law]);
+        assert_eq!(
+            table.interface(filed),
+            [relation, reflexivity, law].as_slice(),
+            "the interface filed under a type member is read back from it"
+        );
+        assert!(table.interface(unfiled).is_empty(), "and from no other");
+        assert!(table.laws(filed).is_empty(), "and is no law of the member");
     }
 
     #[test]
@@ -1850,6 +2031,7 @@ mod tests
             AttributeSchema::Text,
             AttributeSchema::MarkerOr("all"),
             AttributeSchema::Names,
+            AttributeSchema::Interface,
             AttributeSchema::Word(&["explicit", "implicit"]),
         ]
         .iter()
