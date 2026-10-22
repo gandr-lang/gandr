@@ -1963,7 +1963,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 55_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 62_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2218,6 +2218,31 @@ mod tests
                 span: s(101_usize, 102_usize),
                 first: s(0_usize, 1_usize),
             },
+            LoweringRefusal::RulesOverlapSecondOrder {
+                span: s(103_usize, 104_usize),
+                first: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::NonExhaustiveMatch {
+                span: s(105_usize, 106_usize),
+            },
+            LoweringRefusal::DescentOnSeveralParameters {
+                span: s(107_usize, 108_usize),
+                staged: SurfaceName::from("n"),
+                claimed: SurfaceName::from("m"),
+            },
+            LoweringRefusal::UndescribedMember {
+                span: s(109_usize, 110_usize),
+                fault: crate::description::MemberFault::Reversible,
+            },
+            LoweringRefusal::WithoutK {
+                span: s(111_usize, 112_usize),
+            },
+            LoweringRefusal::DirectedCell {
+                span: s(113_usize, 114_usize),
+            },
+            LoweringRefusal::CellNotALoop {
+                span: s(115_usize, 116_usize),
+            },
         ]
     }
 
@@ -2283,6 +2308,14 @@ mod tests
             s(95_usize, 96_usize),
             s(97_usize, 98_usize),
             s(99_usize, 100_usize),
+            s(101_usize, 102_usize),
+            s(103_usize, 104_usize),
+            s(105_usize, 106_usize),
+            s(107_usize, 108_usize),
+            s(109_usize, 110_usize),
+            s(111_usize, 112_usize),
+            s(113_usize, 114_usize),
+            s(115_usize, 116_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -2369,6 +2402,73 @@ mod tests
             &FormFault::ExtraOperand,
             &FormFault::MisplacedTile,
         ]));
+        assert_apart(&render(&[
+            &FragmentBoundary::Reserved,
+            &FragmentBoundary::Unadmitted,
+            &FragmentBoundary::WrongSort,
+            &FragmentBoundary::Arity(OperandCount::from(2_usize)),
+            &FragmentBoundary::Indexed,
+            &FragmentBoundary::Unannotated,
+            &FragmentBoundary::NonUniform,
+            &FragmentBoundary::ForeignClaim,
+            &FragmentBoundary::NotAFunction,
+            &FragmentBoundary::NotInTail,
+            &FragmentBoundary::JoinsBlock,
+            &FragmentBoundary::EmptyList,
+            &FragmentBoundary::Endpoint,
+            &FragmentBoundary::NonContractive,
+            &FragmentBoundary::Held,
+            &FragmentBoundary::View,
+        ]));
+        let ill_formed = |kind: crate::WfKind, second: Maybe<SurfaceName<'static>, _>| {
+            LoweringRefusal::IllFormedDescription {
+                span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                kind,
+                subjects: [Maybe::Present(SurfaceName::from("a")), second],
+            }
+            .to_string()
+        };
+        let named = Maybe::Present(SurfaceName::from("b"));
+        assert_apart(
+            &[
+                crate::WfKind::OutOfSignatureRule,
+                crate::WfKind::UnboundRhsVariable,
+                crate::WfKind::ArityDoesNotCompose,
+                crate::WfKind::DeclaresDerivedMetadata,
+                crate::WfKind::DerivedBoundaryMismatch,
+                crate::WfKind::CyclicCircuitWiring,
+                crate::WfKind::UnknownRewritePort,
+                crate::WfKind::CircuitDerivationBudget,
+                crate::WfKind::DuplicateSortName,
+                crate::WfKind::UnknownResultSort,
+                crate::WfKind::UnknownVarSort,
+                crate::WfKind::SortPolarityDisagreement,
+                crate::WfKind::MisplacedResults,
+                crate::WfKind::NonRepresentableBinder,
+                crate::WfKind::SplitCircuitOutputs,
+                crate::WfKind::DuplicateFaceName,
+                crate::WfKind::FaceOutsideShape,
+                crate::WfKind::UnsortedBinding,
+                crate::WfKind::MisplacedAbstraction,
+                crate::WfKind::AtomResult,
+                crate::WfKind::NonAtomAbstraction,
+                crate::WfKind::UnknownFreshness,
+                crate::WfKind::Capture,
+            ]
+            .map(|kind| ill_formed(kind, named)),
+        );
+        let unspelled = ill_formed(
+            crate::WfKind::OutOfSignatureRule,
+            Maybe::Absent(crate::description_subject::Absent::Unnamed),
+        );
+        assert_apart(&[
+            ill_formed(crate::WfKind::OutOfSignatureRule, named),
+            unspelled.clone(),
+        ]);
+        assert!(
+            unspelled.contains("`a`") && !unspelled.contains("`b`"),
+            "a rule whose applied symbol is unspelled names only the rule: {unspelled}"
+        );
         assert_apart(&render(&[
             &AscriptionForm::Kinded,
             &AscriptionForm::Parameterized,

@@ -1671,6 +1671,30 @@ fn a_constructor_named_twice_is_refused()
 }
 
 #[test]
+fn a_data_family_named_as_a_builtin_type_is_refused_at_its_name()
+{
+    for (source, name) in [
+        ("data Integer : Type { I : Integer; }\n", "Integer"),
+        ("data Unit : Type { U : Unit; }\n", "Unit"),
+    ] {
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source), &mut arena);
+        let start = source.find(name).unwrap();
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::ShadowedBuiltin {
+                span: crate::fixture::span(
+                    gandr_surface_syntax::ByteOffset::from(start),
+                    gandr_surface_syntax::ByteOffset::from(start.saturating_add(name.len())),
+                ),
+                name: SurfaceName::from(name),
+            },
+            "`{name}` is the grammar's own type, not a family to declare"
+        );
+    }
+}
+
+#[test]
 fn a_constructor_applies_to_its_fields()
 {
     let mut arena = CoreArena::new();
@@ -2334,6 +2358,45 @@ fn literal_patterns_compare_and_branch()
 }
 
 #[test]
+fn literal_and_nullary_patterns_nest_under_a_constructor()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{COLOR}{MAYBE}def small(m : Maybe(Integer)) -> -F Integer {{ case m {{ Some(0) => return 10, Some(_) => return 11, None => return 12 }} }}\ndef flag(m : Maybe(Bool)) -> -F Integer {{ case m {{ Some(true) => return 1, Some(false) => return 0, None => return 2 }} }}\ndef hue(m : Maybe(Color)) -> -F Integer {{ case m {{ Some(Red) => return 1, Some(_) => return 2, None => return 3 }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let count = |name: &str, kind: fn(&Computation) -> bool| {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter(|&at| arena.computation(at).is_some_and(kind))
+        .count()
+    };
+    let compares = |at: &Computation| matches!(*at, Computation::Primitive { .. });
+    let cases = |at: &Computation| matches!(*at, Computation::Case { .. });
+    let data_cases = |at: &Computation| matches!(*at, Computation::DataCase { .. });
+    assert_eq!(
+        count("small", compares),
+        1_usize,
+        "the nested literal compares once"
+    );
+    assert_eq!(
+        count("flag", cases),
+        1_usize,
+        "the nested booleans branch on one case"
+    );
+    assert_eq!(
+        count("hue", data_cases),
+        2_usize,
+        "the outer case on the option and the nested one on the colour"
+    );
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+}
+
+#[test]
 fn a_pattern_hole_leaves_its_leaf_stuck()
 {
     let mut arena = CoreArena::new();
@@ -2402,6 +2465,40 @@ fn patterns_outside_the_fragment_are_declined_by_name()
             ..
         }
     ));
+}
+
+#[test]
+fn a_misnamed_or_misshapen_pattern_is_refused_by_name()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data Pair : Type {{ P : (a : Integer, b : Integer) --> Pair; }}\ndef twice(p : Pair) -> -F Integer {{ case p {{ P(a, a) => return a }} }}\ndef unknown(m : Maybe(Integer)) -> -F Integer {{ case m {{ Nope(x) => return x, _ => return 1 }} }}\ndef wide(m : Maybe(Integer)) -> -F Integer {{ case m {{ Some(x, y) => return x, None => return 1 }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("twice")),
+            LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("a")
+        ),
+        "a pattern binds each name once"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("unknown")),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("Nope")
+        ),
+        "a pattern's head names a constructor"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("wide")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            } if count == OperandCount::from(2_usize)
+        ),
+        "a constructor pattern binds its constructor's fields, no more"
+    );
 }
 
 #[test]

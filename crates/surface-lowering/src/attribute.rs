@@ -1827,4 +1827,54 @@ mod tests
             "a key the table holds nothing for reads as the empty list"
         );
     }
+
+    /// Every schema and every payload form renders a message of its own, and
+    /// a word schema lists each word it admits.
+    #[test]
+    fn every_schema_and_payload_form_renders_its_own_message()
+    {
+        use alloc::string::String;
+        use alloc::string::ToString;
+        use alloc::vec::Vec;
+
+        let apart = |messages: &[String]| {
+            for (position, message) in messages.iter().enumerate() {
+                for other in messages.iter().skip(position.saturating_add(1)) {
+                    assert_ne!(message, other, "two renderings alike read as one");
+                }
+            }
+        };
+        let schemas: Vec<String> = [
+            AttributeSchema::Marker,
+            AttributeSchema::Integer,
+            AttributeSchema::Text,
+            AttributeSchema::MarkerOr("all"),
+            AttributeSchema::Names,
+            AttributeSchema::Word(&["explicit", "implicit"]),
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        apart(&schemas);
+        assert!(
+            schemas
+                .last()
+                .is_some_and(|words| words.contains("`explicit`, `implicit`")),
+            "a word schema lists its words: {schemas:?}"
+        );
+        let forms: Vec<String> = [
+            PayloadForm::Absent,
+            PayloadForm::Integer,
+            PayloadForm::Text,
+            PayloadForm::OtherText,
+            PayloadForm::Word,
+            PayloadForm::OtherWord,
+            PayloadForm::OtherValue,
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        apart(&forms);
+        assert_eq!(usize::from(EditDistance::from(3_usize)), 3_usize);
+    }
 }

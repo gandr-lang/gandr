@@ -900,6 +900,75 @@ fn a_pack_of_no_module_is_refused()
     );
 }
 
+/// A theory one of whose components is a model of another packs the module
+/// giving it with the member module its component names, and the record
+/// checks at the outer theory's models.
+#[test]
+fn a_pack_reads_a_nested_model_from_its_member_module()
+{
+    let source = "theory Answering {\n  oper answer : Integer;\n}\ntheory Faceted {\n  oper inner : \
+                  Model(Answering);\n}\nmodule Facts : Model(Faceted) {\n  module inner : \
+                  Model(Answering) { def answer = 41; }\n}\ndef packed : Model(Faceted) ;\ndef \
+                  packed = pack Facts at Model(Faceted) ;\n";
+    let mut lowered = lower(source);
+    let packed = super::declaration(&lowered, "packed", Role::Declared).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&(packed, Judgement::Checked)),
+        "the nested record checks at the outer theory's models: {judgements:?}"
+    );
+}
+
+/// A pack of a module that gives no member a component of the theory names
+/// is refused naming that component: an operation, the carrier sort, or the
+/// member module of a nested model.
+#[test]
+fn a_pack_of_a_module_missing_a_component_is_refused_naming_it()
+{
+    let counter = "theory Counter {\n  sort C : Type;\n  oper start : () --> C;\n}\n";
+    let faceted = "theory Answering {\n  oper answer : Integer;\n}\ntheory Faceted {\n  oper inner \
+                   : Model(Answering);\n}\n";
+    for (theory, module, model, missing) in [
+        (
+            counter,
+            "module Bare : #{ type C = Integer } {\n  type C = Integer;\n}\n",
+            "Counter",
+            "start",
+        ),
+        (
+            counter,
+            "module Bare {\n  def start() -> -F Integer { 0 }\n}\n",
+            "Counter",
+            "C",
+        ),
+        (
+            faceted,
+            "module Bare {\n  def other = 1;\n}\n",
+            "Faceted",
+            "inner",
+        ),
+    ] {
+        let source = format!(
+            "{theory}{module}def packed : Model({model}) ;\ndef packed = pack Bare at \
+             Model({model}) ;\n"
+        );
+        let found = rows(&lower(source.as_str()));
+        let refused = Amounts::Refused(LoweringRefusal::UnknownMember {
+            span: span_of(source.as_str(), "Bare", 1_usize),
+            module: name("Bare"),
+            member: name(missing),
+        });
+        assert!(
+            found
+                .iter()
+                .any(|&(ref path, role, amounts)| path == "packed"
+                    && role == Role::Declared
+                    && amounts == refused),
+            "a module giving no `{missing}` does not pack: {found:?}"
+        );
+    }
+}
+
 /// A pattern at a theory's models names the fields of the record by the
 /// components' names, whatever pairs the record nests: a consumer reads the
 /// start, the step and the reading of any counter, and reads a packed one.

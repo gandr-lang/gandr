@@ -3068,6 +3068,21 @@ fn duplicate_module_member_definition_is_rejected()
 }
 
 #[test]
+fn a_module_opened_twice_in_one_container_is_refused()
+{
+    let opened = "module M { module n { def a = 1; } module n { def b = 2; } }";
+    let rows_of = rows(&lower(opened));
+    assert!(
+        rows_of.iter().any(|&(_, _, ref amounts)| matches!(
+            *amounts,
+            Amounts::Refused(LoweringRefusal::DuplicateDefinition { name: refused, .. })
+                if refused == name("n")
+        )),
+        "the second module named `n` is refused: {rows_of:?}"
+    );
+}
+
+#[test]
 fn a_dangling_member_signature_is_an_obligation()
 {
     let source = "module M : #{} { def missing : Integer; }";

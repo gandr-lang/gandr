@@ -1125,6 +1125,60 @@ fn a_call_reads_a_dependent_result_through_either_spelling_812()
     }
 }
 
+/// A call reads a path result its callee's signature states with no binder,
+/// through the value-function alias `A => B` and through the plain arrow
+/// `+U (A -> -F B)` it stands for.
+#[test]
+fn a_call_reads_a_non_dependent_result_through_either_spelling()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
+            "def sugared : Int => Path(Int, Z, Z) ;\n",
+            "def thunked : +U (Int -> -F Path(Int, Z, Z)) ;\n",
+            "def overSugared(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  cong(up, sugared(a)) then here(S(Z))\n}\n",
+            "def overThunked(a : Int) -> -F Path(Int, S(Z), S(Z)) {\n  cong(up, thunked(a)) then here(S(Z))\n}\n",
+        )),
+        &mut arena,
+    );
+    for name in ["overSugared", "overThunked"] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` reads its call's path type: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+}
+
+/// A recursive call's descent reads its path result under a uniform leading
+/// parameter, which the call passes through unchanged.
+#[test]
+fn a_descent_reads_its_path_result_past_a_leading_parameter()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n}\n",
+            "def up(n : Int) -> -F Int {\n  S(n)\n}\n",
+            "def rec descend(k : Int, b : Int) -> -F Path(Int, b, b) {\n  case b {\n    Z => here(Z),\n    S(x) => cong(up, descend[<](k, x)) then here(S(x))\n  }\n}\n",
+        )),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "descend".into()),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "the descent's path type reads its own argument past `k`: {:?}",
+        outcome_of(&module, "descend".into())
+    );
+}
+
 /// #791: before the fix, a `cong` whose answer is synthesised read its map's
 /// codomain only off `+U (A -> -F B)`, so a parameter stated as `A => B`, the
 /// same type, refused the operation as unannotated.
@@ -1858,4 +1912,58 @@ fn component_names(source: SourceText<'_>) -> Vec<String>
         .collect();
     named.sort_unstable();
     named
+}
+
+/// A call nested in a call's argument reads, as an endpoint, as the value
+/// each call returns, at every level of the spine; a value with no nested
+/// computation along its spine is itself.
+#[test]
+fn an_endpoint_reads_each_nested_call_along_its_spine_as_returned()
+{
+    use gandr_kernel_term::ConstantIndex;
+
+    let mut arena = CoreArena::new();
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let call = |arena: &mut CoreArena, head: usize, argument| {
+        let constant = arena.value_constant(ConstantIndex::from(head));
+        let forced = arena.computation_force(constant);
+        arena.computation_application(forced, argument)
+    };
+    let inner = call(&mut arena, 1_usize, variable);
+    let nested_inner = arena.value_nested(inner);
+    let outer = call(&mut arena, 0_usize, nested_inner);
+    let written = arena.value_nested(outer);
+
+    let read = super::as_endpoint(&mut arena, written);
+    let Some(&Value::Returned(spine)) = arena.value(read)
+    else {
+        panic!("the outer call reads as returned: {:?}", arena.value(read));
+    };
+    let Some(&Computation::Application(_, argument)) = arena.computation(spine)
+    else {
+        panic!("the spine stays an application");
+    };
+    let Some(&Value::Returned(argued)) = arena.value(argument)
+    else {
+        panic!(
+            "the nested argument reads as returned: {:?}",
+            arena.value(argument)
+        );
+    };
+    assert_eq!(
+        arena.computation(argued),
+        arena.computation(inner),
+        "the inner call itself is unchanged"
+    );
+    assert_eq!(
+        super::as_endpoint(&mut arena, variable),
+        variable,
+        "a value with nothing nested is its own endpoint"
+    );
+    let returned = arena.value_returned(inner);
+    assert_eq!(
+        super::as_endpoint(&mut arena, returned),
+        returned,
+        "a returned call with nothing nested under it is kept as written"
+    );
 }

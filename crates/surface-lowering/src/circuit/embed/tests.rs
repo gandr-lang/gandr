@@ -99,6 +99,27 @@ fn a_body_binding_one_port_twice_is_not_a_wiring()
 }
 
 #[test]
+fn every_wiring_error_renders_what_it_refused()
+{
+    use alloc::string::ToString as _;
+
+    let term = CircuitWiringError::ArgumentIsNotAPort("Zero".into()).to_string();
+    let results = CircuitWiringError::ResultsAreNotAPort.to_string();
+    let obstruction = WiringObstruction::FanIn {
+        wire: Wire::from(1_usize),
+        first: Edge::from(0_usize),
+        second: Edge::from(1_usize),
+    };
+    let fanned = CircuitWiringError::NotAWiring(obstruction).to_string();
+    assert!(term.contains("`Zero`"), "{term}");
+    assert!(
+        fanned.ends_with(obstruction.to_string().as_str()),
+        "{fanned}"
+    );
+    assert!(term != results && results != fanned && fanned != term);
+}
+
+#[test]
 fn a_rule_body_embeds_in_a_body_that_contains_it()
 {
     let pattern = CircuitBody::new([operation("f", "x", "y")], "y");

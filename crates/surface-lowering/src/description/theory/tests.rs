@@ -2399,3 +2399,43 @@ fn a_where_clause_states_each_condition_on_its_rule()
         "the rule capturing `a` is refused with the condition it lacks: {diagnostic:?}"
     );
 }
+
+/// Each member the parser reads whole but writes wrongly is refused at that
+/// member by the fault its reader names: a classifier no universe answers,
+/// a shape's face listing points without a separator, a feed of no wires,
+/// and a node or a rule producing no output.
+#[test]
+fn each_malformed_member_is_refused_by_its_fault()
+{
+    let output = DescriptionFault::Signature(SignatureFault::MissingOutput);
+    let rows = [
+        (
+            "theory T { sort Tm : Type+; sort S : Kind; }",
+            DescriptionFault::TypeShape,
+        ),
+        (
+            "theory T { sort Tm : Type+; shape Q : 4 { a = {0 1}; }; }",
+            DescriptionFault::Malformed,
+        ),
+        (
+            "theory T { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { feed : (t) --> (); node n : f(t) --> (u); }; }",
+            DescriptionFault::Malformed,
+        ),
+        (
+            "theory T { sort Tm : Type+; oper f : (t : Tm) --> Tm; rule r : (t : Tm) ==> (u : Tm) { node n : f(t) --> (); }; }",
+            output.clone(),
+        ),
+        (
+            "theory T { sort Tm : Type+; rule r : (t : Tm) ==> () { }; }",
+            output,
+        ),
+    ];
+    for (source, fault) in rows {
+        let report = described(source);
+        let [ref diagnostic] = *report.diagnostics.as_slice()
+        else {
+            panic!("`{source}`: one refusal: {:?}", report.diagnostics)
+        };
+        assert_eq!(diagnostic.fault, fault, "`{source}`");
+    }
+}

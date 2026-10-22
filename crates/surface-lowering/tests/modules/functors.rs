@@ -557,3 +557,57 @@ fn a_type_component_binds_the_argument_type_of_its_own_name()
          {judgements:?}"
     );
 }
+
+#[test]
+fn a_manifest_parameter_component_reads_the_arguments_type()
+{
+    let source = "module Plain { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T = \
+                  Integer, seed : T }) { def get = S.seed ; }\nmodule O = Over(Plain) ;\ndef g : \
+                  Integer ;\ndef g = O.get ;\n";
+    let mut lowered = lower(source);
+    let g = declaration(&lowered, "g", Role::Declared).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&judged(g, Judgement::Checked))
+            && judgements.iter().all(|&(_, judgement)| matches!(
+                judgement,
+                Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+            )),
+        "a manifest component `T = Integer` reads the argument's `T`, so the seed is an \
+         integer: {judgements:?}"
+    );
+}
+
+#[test]
+fn an_application_copies_the_modules_nested_in_its_body()
+{
+    let source = "module Plain { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T, \
+                  seed : T }) { module inner { module deeper { def kept = S.seed ; } } }\nmodule \
+                  O = Over(Plain) ;\ndef g : Plain.T ;\ndef g = O.inner.deeper.kept ;\n";
+    let mut lowered = lower(source);
+    let g = declaration(&lowered, "g", Role::Declared).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.contains(&judged(g, Judgement::Checked)),
+        "the instance's nested modules project, two deep, to the argument's seed: \
+         {judgements:?}"
+    );
+}
+
+#[test]
+fn an_application_named_twice_is_refused_naming_the_first()
+{
+    let source = "module Plain { type T = Integer ; def seed = 1 ; }\nmodule Over(S : #{ type T, \
+                  seed : T }) { def get = S.seed ; }\nmodule O = Over(Plain) ;\nmodule O = \
+                  Over(Plain) ;\n";
+    let found = rows(&lower(source));
+    assert!(
+        found.iter().any(|&(_, _, amounts)| amounts
+            == Amounts::Refused(LoweringRefusal::DuplicateDefinition {
+                span: span_of(source, "O", 3_usize),
+                name: name("O"),
+                first: span_of(source, "O", 1_usize),
+            })),
+        "the second application of `O` is refused at its name: {found:?}"
+    );
+}

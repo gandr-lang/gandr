@@ -2415,6 +2415,142 @@ mod tests
     }
 
     #[test]
+    fn a_carried_type_keeps_its_origin_and_its_labels()
+    {
+        use gandr_kernel_term::ConstantIndex;
+
+        use super::ComponentName;
+        use super::SplitComponent;
+
+        let mut arena = CoreArena::new();
+        let mut table = OriginTable::new();
+        let [pair, copied_pair] = [(); 2].map(|()| arena.value_type_unit());
+        let [arrow, copied_arrow] = [(); 2].map(|()| arena.comp_type_returner(pair));
+        let unit = arena.value_unit();
+        let [case, rebuilt_case] = [(); 2].map(|()| arena.computation_return(unit));
+        assert!(
+            pair != copied_pair && arrow != copied_arrow && case != rebuilt_case,
+            "each copy is a node of its own"
+        );
+        table.record_value_type(pair, at(NodeIndex::from(1_usize)));
+        table.record_pair(pair, at(NodeIndex::from(2_usize)));
+        table.record_second(pair, at(NodeIndex::from(3_usize)));
+        table.record_comp_type(arrow, at(NodeIndex::from(4_usize)));
+        table.record_arrow(arrow, at(NodeIndex::from(5_usize)));
+        table.record_elimination(case, ConstantIndex::from(7_usize));
+        table.carry(
+            &[
+                Carried::ValueType(pair, copied_pair),
+                Carried::CompType(arrow, copied_arrow),
+                Carried::Computation(case, rebuilt_case),
+            ],
+            &[],
+        );
+        assert_eq!(
+            table.value_type(copied_pair),
+            Maybe::Present(at(NodeIndex::from(1_usize)))
+        );
+        assert!(
+            table
+                .pairs()
+                .contains(&(copied_pair, at(NodeIndex::from(2_usize))))
+                && table
+                    .seconds()
+                    .contains(&(copied_pair, at(NodeIndex::from(3_usize)))),
+            "a copied pair type keeps both its labels"
+        );
+        assert_eq!(
+            table.comp_type(copied_arrow),
+            Maybe::Present(at(NodeIndex::from(4_usize)))
+        );
+        assert!(
+            table
+                .arrows()
+                .contains(&(copied_arrow, at(NodeIndex::from(5_usize)))),
+            "a copied arrow keeps its binder"
+        );
+        assert_eq!(
+            table.elimination(rebuilt_case),
+            Maybe::Present(ConstantIndex::from(7_usize)),
+            "a rebuilt case still names the family it eliminates"
+        );
+
+        let named = ComponentName::Written(at(NodeIndex::from(8_usize)));
+        table.place_component(case, SplitComponent::from(1_usize), named.clone());
+        assert_eq!(
+            table.component(case, SplitComponent::from(1_usize)),
+            Maybe::Present(&named)
+        );
+        assert_eq!(
+            table.component(case, SplitComponent::from(0_usize)),
+            Maybe::Absent(origin::Absent::Unrecorded),
+            "a component no split placed answers nothing"
+        );
+        assert_eq!(usize::from(SplitComponent::from(1_usize)), 1_usize);
+        assert_eq!(usize::from(super::ClausePlace::from(2_usize)), 2_usize);
+    }
+
+    #[test]
+    fn a_rebuilt_action_carries_its_endpoint_and_arm_labels_and_no_other()
+    {
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_kernel_term::FieldLabel;
+
+        use super::Label;
+        use super::Labelled;
+
+        let mut arena = CoreArena::new();
+        let mut table = OriginTable::new();
+        let unit = arena.value_unit();
+        let [action, other, rebuilt] = [(); 3].map(|()| arena.computation_return(unit));
+        let written = |labelled| Label {
+            span: at(NodeIndex::from(1_usize)).span(),
+            labelled,
+        };
+        let arm = FieldLabel::from(alloc::string::String::from("left"));
+        table.record_label(written(Labelled::Endpoint(action)));
+        table.record_label(written(Labelled::Branch {
+            action,
+            label: arm.clone(),
+        }));
+        table.record_label(written(Labelled::Endpoint(other)));
+        table.record_label(written(Labelled::Value(unit)));
+        table.relabel_action(action, rebuilt);
+        let labelled: alloc::vec::Vec<Labelled> = table
+            .labels()
+            .iter()
+            .map(|label| label.labelled.clone())
+            .collect();
+        assert_eq!(
+            labelled,
+            [
+                Labelled::Endpoint(rebuilt),
+                Labelled::Branch {
+                    action: rebuilt,
+                    label: arm,
+                },
+                Labelled::Endpoint(other),
+                Labelled::Value(unit),
+            ],
+            "the endpoint and the arm move to the rebuilt action; the rest stay"
+        );
+
+        table.record_elimination(rebuilt, ConstantIndex::from(3_usize));
+        table.record_elimination(action, ConstantIndex::from(4_usize));
+        let mut eliminated: alloc::vec::Vec<_> = table.eliminations().collect();
+        eliminated.sort_unstable();
+        let mut expected = [
+            (rebuilt, ConstantIndex::from(3_usize)),
+            (action, ConstantIndex::from(4_usize)),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            eliminated, expected,
+            "each case names the family it eliminates"
+        );
+    }
+
+    #[test]
     fn a_declaration_token_resolves_to_its_own_origin()
     {
         let mut table = OriginTable::new();

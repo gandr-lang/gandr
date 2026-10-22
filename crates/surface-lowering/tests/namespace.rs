@@ -2104,6 +2104,59 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     );
 }
 
+/// A closure whose own sources refuse the unit halts where the refusal
+/// stands: it holds no module of its own, and a document resumed after it
+/// answers the refusal the whole unit answers.
+#[test]
+fn a_closure_whose_unit_refuses_halts_and_answers_the_refusal()
+{
+    let pbg = grammar();
+    let base = SourceText::from("def one = 1 ;");
+    let refusing = SourceText::from(
+        "import \"./base.gandr\" as B ;\nimport \"./base.gandr\" as B ;\ndef c = ? ;",
+    );
+    let twice = [
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+    ];
+    let (text, unit) = laid(&[(base, &[]), (refusing, &twice)]);
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        text.clone(),
+        unit.clone(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    assert!(
+        format!("{closure:?}").starts_with("ClosureLowering"),
+        "the closure debugs as itself"
+    );
+    assert!(
+        closure.alone().is_none(),
+        "a halted closure holds no module of its own"
+    );
+    let tree = parsed(&pbg, SourceText::from(text.as_str()));
+    let expected = lower_unit(
+        &pbg,
+        &tree,
+        &unit,
+        &mut CoreArena::new(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    );
+    assert!(
+        expected.is_err(),
+        "two imports of one alias refuse the unit"
+    );
+    assert_eq!(
+        closure.resume(&tree, &unit, &mut CoreArena::new(), &mut Decisions::none()),
+        expected
+    );
+}
+
 /// #776: a closure's own module is the leading declarations its importer
 /// lowers to, ids included. Onto the closure's own arena the document lowers
 /// exactly as the whole unit does; onto that arena with more nodes minted after
@@ -2427,6 +2480,71 @@ fn an_unresolved_import_refuses_its_source()
             )
         ),
         "every declaration of the source is refused, naming the import"
+    );
+}
+
+#[test]
+fn an_import_closing_a_cycle_refuses_its_source()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[(
+        SourceText::from("import \"./self.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;"),
+        &[ImportTarget::Cycle],
+    )]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    assert!(
+        matches!(
+            module.declarations(),
+            [declaration] if matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::ImportCycle { span, .. })
+                    if span == bytes(0_usize, 23_usize)
+            )
+        ),
+        "every declaration of the source is refused, naming the import on the cycle"
+    );
+}
+
+#[test]
+fn a_constructor_an_import_binds_again_refuses_its_family()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from("data Bit : Type { O : Bit; I : Bit; }"),
+            &[],
+        ),
+        (
+            SourceText::from("import \"./base.gandr\" ;\ndata Other : Type { O : Other; }"),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let refused: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { name, .. }) =
+                declaration.outcome()
+            {
+                Some((
+                    String::from(declaration.name().as_ref()),
+                    String::from(name.as_ref()),
+                ))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        Vec::from([(String::from("Other"), String::from("O"))]),
+        "the importer's family is refused at its constructor `O`, which the base binds"
     );
 }
 

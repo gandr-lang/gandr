@@ -3690,4 +3690,43 @@ mod tests
             }
         }
     }
+
+    /// Every repair renders a message of its own, and the ones that name a
+    /// tile spell it.
+    #[test]
+    fn every_repair_renders_its_own_message()
+    {
+        use alloc::string::ToString as _;
+
+        use gandr_surface_syntax::ClosingClass;
+
+        let stray = Repair::Keyword(super::StrayKeyword {
+            written: TileName("def"),
+            offer: super::Offer::Unspelled,
+        });
+        let unended = Repair::Unended(super::Ending::Tile(TileName("end")));
+        let messages = [
+            Repair::Grout(GroutShape::Convex),
+            Repair::Grout(GroutShape::Prefix),
+            Repair::Grout(GroutShape::Infix),
+            stray,
+            Repair::GhostClose(ClosingClass::Paren),
+            Repair::GhostClose(ClosingClass::Bracket),
+            Repair::GhostClose(ClosingClass::Brace),
+            unended,
+            Repair::Unended(super::Ending::Unnamed),
+        ]
+        .map(|repair| repair.to_string());
+        for (position, message) in messages.iter().enumerate() {
+            for other in messages.iter().skip(position.saturating_add(1)) {
+                assert_ne!(message, other, "two repairs rendering alike read as one");
+            }
+        }
+        assert_eq!(
+            Repair::Grout(GroutShape::Postfix).to_string(),
+            Repair::Grout(GroutShape::Prefix).to_string(),
+            "a missing operand reads alike on either side"
+        );
+        assert!(stray.to_string().contains("`def`") && unended.to_string().contains("`end`"));
+    }
 }

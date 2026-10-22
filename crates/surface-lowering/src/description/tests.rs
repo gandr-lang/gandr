@@ -1119,3 +1119,42 @@ fn parameterized_observations_retain_both_port_boundaries()
         "ap", "b"
     )]);
 }
+
+/// Every member fault renders a message no other renders, so a declined
+/// member says which of the description route's limits it met.
+#[test]
+fn every_member_fault_renders_its_own_message()
+{
+    use alloc::string::ToString as _;
+
+    let messages = [
+        MemberFault::HigherOrderField,
+        MemberFault::DependentField,
+        MemberFault::TypeShape,
+        MemberFault::NativeDecode,
+        MemberFault::OperationFiller,
+        MemberFault::HigherCell,
+        MemberFault::Reversible,
+        MemberFault::NoOutput,
+        MemberFault::AggregatedOutput,
+        MemberFault::LhsNotOperation,
+        MemberFault::EmptyOperation,
+        MemberFault::NestedOperation,
+        MemberFault::UnrepresentableOperation,
+        MemberFault::ResultArity,
+        MemberFault::MixedPolarity,
+        MemberFault::UnderivedWiring,
+        MemberFault::ParallelRedexes,
+        MemberFault::OffBoundary,
+        MemberFault::AtomOccurrence,
+    ]
+    .map(|fault| fault.to_string());
+    for (position, message) in messages.iter().enumerate() {
+        for other in messages.iter().skip(position.saturating_add(1)) {
+            assert_ne!(
+                message, other,
+                "two member faults rendering alike read as one"
+            );
+        }
+    }
+}

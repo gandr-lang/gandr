@@ -672,3 +672,36 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
         "an abstraction answers nowhere"
     );
 }
+
+/// Substitution rebuilds every node kind a rule term holds and replaces
+/// only the variables the map names, keeping the rest and every atom.
+#[test]
+fn substitution_rebuilds_every_node_and_replaces_only_mapped_variables()
+{
+    use alloc::collections::BTreeMap;
+
+    use gandr_theory_levitation::FreeTerm;
+    use gandr_theory_levitation::Name;
+
+    let written = |x: &str| {
+        FreeTerm::op("f", [
+            FreeTerm::ctor("C", [FreeTerm::var(x), FreeTerm::var("y")]),
+            FreeTerm::results([FreeTerm::var(x)]),
+            FreeTerm::inst("t", [FreeTerm::var(x)]),
+            FreeTerm::abs(
+                "a",
+                FreeTerm::op("g", [FreeTerm::var(x), FreeTerm::var("a")]),
+            ),
+        ])
+    };
+    let x = Name::from("x");
+    let by = BTreeMap::from([(&x, FreeTerm::var("z"))]);
+    assert!(
+        super::substitute(&written("x"), &by) == written("z"),
+        "every `x` under every node kind reads `z`; `y` and the atom stay"
+    );
+    assert!(
+        super::substitute(&written("x"), &BTreeMap::new()) == written("x"),
+        "an empty map leaves the term as written"
+    );
+}

@@ -20655,6 +20655,62 @@ mod tests
     }
 
     #[test]
+    fn a_dotted_builtin_path_reads_as_its_primitive()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from("def d = int.div ;\n"), &mut arena);
+        assert!(
+            matches!(
+                arena.value(body_of(outcomes(&module)[0])),
+                Some(&Value::Primitive { .. })
+            ),
+            "`int.div` projects no module: it names the builtin primitive"
+        );
+    }
+
+    /// A name nothing declares, written inside any former, refuses the
+    /// declaration with the refusal of the name itself, located where it is
+    /// written: no former around it answers in its place.
+    #[test]
+    fn a_name_nothing_declares_refuses_through_every_former_around_it()
+    {
+        let rows = [
+            "def a : #{x : Zz} ;",
+            "def a : #{x : Integer, y : Zz} ;",
+            "def a : Integer * Zz ;",
+            "def a : List(Zz) ;",
+            "def a : +U (Zz -> -F Integer) ;",
+            "def a : +U (Integer -> -F Zz) ;",
+            "def a : (x : Zz) => Integer ;",
+            "def a : (x : Integer) => Zz ;",
+            "def a : Zz => Integer ;",
+            "def a : Path(Zz, 1, 1) ;",
+            "def a = (1, zz) ;",
+            "def a = [1, zz] ;",
+            "def a = thunk { return zz } ;",
+            "def a = thunk { run x <- pure zz ; return x } ;",
+            "def a = thunk { fn (x) { return zz } } ;",
+            "def a = thunk { case 1 { 1 => return zz, _ => return 0 } } ;",
+        ];
+        for source in rows {
+            let refused = refusal(SourceText::from(source));
+            let (LoweringRefusal::UnresolvedName { span, name }
+            | LoweringRefusal::UnresolvedTypeHead { span, name, .. }) = refused
+            else {
+                panic!("`{source}` is refused at its name, not {refused:?}");
+            };
+            let spelled = (
+                source.get(usize::from(span.start()) .. usize::from(span.end())),
+                name,
+            );
+            assert!(
+                matches!(spelled, (Some(written), name) if written.eq_ignore_ascii_case("zz") && name.as_ref() == written),
+                "`{source}` names the unresolved name where it is written: {spelled:?}"
+            );
+        }
+    }
+
+    #[test]
     fn an_undefined_type_head_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -21468,6 +21524,62 @@ mod tests
         );
     }
 
+    /// A call in a type passing one argument that runs and one that does
+    /// not binds the run ahead and raises the other past the bind, so it
+    /// still reads what was written.
+    #[test]
+    fn a_call_in_a_type_raises_its_plain_arguments_past_the_runs_it_binds()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def pick(t : Type, n : Integer) -> -F Type { return t } def take(g : +U \
+                 (Integer -> -F Type), w : pick(g(2), 7)) -> -F Integer { return 1 }",
+            ),
+            &mut arena,
+        );
+        let declared = declared_of(outcomes(&module)[1]);
+        let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared)
+        else {
+            panic!("a function's type is a thunk");
+        };
+        let mut domains = Vec::new();
+        while let Some(&CompType::Pi { domain, codomain } | &CompType::Arrow { domain, codomain }) =
+            arena.comp_type(at)
+        {
+            domains.push(domain);
+            at = codomain;
+        }
+        let [_, argued] = *domains
+        else {
+            panic!("two parameters: {domains:?}");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(argued)
+        else {
+            panic!("a call where a type is read decodes");
+        };
+        let Some(&Value::Returned(called)) = arena.value(code)
+        else {
+            panic!("the code is what the call returns");
+        };
+        let Some(&Computation::Bind(_, outer)) = arena.computation(called)
+        else {
+            panic!(
+                "the running argument is bound ahead: {:?}",
+                arena.computation(called)
+            );
+        };
+        let Some(&Computation::Application(_, last)) = arena.computation(outer)
+        else {
+            panic!("the outer call applies its head");
+        };
+        assert_eq!(
+            arena.value(last),
+            Some(&Value::Literal(integer(SourceFragment::from("7")))),
+            "the plain argument is passed as written, past the bind"
+        );
+    }
+
     #[test]
     fn a_lambda_in_value_position_is_nested_and_marked_inserted()
     {
@@ -21992,6 +22104,55 @@ mod tests
     }
 
     #[test]
+    fn a_tree_of_layout_alone_is_an_empty_module_and_a_repaired_root_is_refused()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let lowered = |tree: &SyntaxTree<'static>| {
+            let mut arena = CoreArena::new();
+            lower_module(
+                &pbg,
+                tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .map(|module| module.declarations().len())
+        };
+        let mut made = Handmade::new(&pbg, SourceText::from("  "));
+        let space = made.raw(
+            gandr_surface_syntax::NodeLabel::Space,
+            at(0_usize, 2_usize),
+            &[],
+        );
+        assert_eq!(
+            lowered(&made.finish(space)),
+            Ok(0_usize),
+            "a tree that is only layout lowers to a module of no declarations"
+        );
+        let mut made = Handmade::new(&pbg, SourceText::from(""));
+        let ghost = made.raw(
+            gandr_surface_syntax::NodeLabel::GhostClose {
+                sort: gandr_surface_syntax::GroutSort::from(0_u16),
+                class: gandr_surface_syntax::ClosingClass::Brace,
+            },
+            at(0_usize, 0_usize),
+            &[],
+        );
+        assert_eq!(
+            lowered(&made.finish(ghost)),
+            Err(LoweringRefusal::MalformedForm {
+                span: at(0_usize, 0_usize),
+                form: FormName::ROOT,
+                fault: FormFault::Repaired(Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Brace
+                )),
+            }),
+            "a root the parser had to repair is malformed, not empty"
+        );
+    }
+
+    #[test]
     fn a_tree_of_another_grammar_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -22177,6 +22338,37 @@ mod tests
             FailureClass::MalformedSource,
             "an ill-typed payload is the author's mistake"
         );
+    }
+
+    #[test]
+    fn a_names_payload_holding_other_than_names_is_refused_at_the_payload()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (source, payload) in [
+            (
+                "def p : Integer ;\n@[ respects((p, 1)) ] def r = 1 ;\n",
+                at(30_usize, 36_usize),
+            ),
+            (
+                "def p : Integer ;\n@[ respects([p]) ] def r = 1 ;\n",
+                at(30_usize, 33_usize),
+            ),
+        ] {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            assert_eq!(
+                outcomes(&module).last().copied(),
+                Some(DeclarationOutcome::Refused(
+                    LoweringRefusal::IllTypedPayload {
+                        span: payload,
+                        name: registered(SurfaceName::from("respects")),
+                        expected: AttributeSchema::Names,
+                        written: crate::attribute::PayloadForm::OtherValue,
+                    }
+                )),
+                "a value that is not a name or a tuple of names is no list of names: {source}"
+            );
+        }
     }
 
     #[test]
