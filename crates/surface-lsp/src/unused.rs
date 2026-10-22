@@ -2,12 +2,13 @@
 //! refers to, and each import no name is read through, as a hint the editor
 //! fades.
 //!
-//! The binders are the judgement's own, kept beside its verdicts: a lambda's
-//! or a bind's binder no variable reads, written in a declaration the checker
-//! accepted. Leaving a linear binder or a consumable capability unused is the
-//! checker's refusal, so an accepted declaration holds none; a refused one is
-//! not answered. A name starting with `_` says it is meant to go unused and
-//! is not marked.
+//! The binders are the composition's, kept beside the judgement's verdicts: a
+//! lambda's or a bind's binder no variable reads, written in a declaration the
+//! checker judged, refused or not. Such a binder lives in the intuitionistic
+//! zone and may always be dropped; a linear binder is some other opener's,
+//! and is never marked. The one exception is a consumable capability: the
+//! checker refuses its type, and a declaration so refused is not answered. A
+//! name starting with `_` says it is meant to go unused and is not marked.
 //!
 //! The imports are the lowering's: each path import of the document that no
 //! name lookup was answered through, whether the name was read unqualified,

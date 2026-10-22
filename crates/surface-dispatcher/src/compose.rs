@@ -164,6 +164,7 @@ use std::sync::OnceLock;
 use anodized::spec;
 use gandr_core_checker::AbstractType;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
@@ -2503,33 +2504,37 @@ fn share<'source>(
 }
 
 /// The binders a lambda or a bind of `arena` opens in the declarations
-/// `report` accepted, written where `own` holds, that no use of `module`
-/// reads, ascending and once each.
+/// `report` judged, written where `own` holds, that no use of `module` reads,
+/// ascending and once each.
 ///
 /// Every other opener — a capability scope, a placement, a split — binds into
 /// the linear zone, and a name one of those records is not answered for a
-/// lambda or a bind recording it too. A declaration is accepted when the
-/// checker formed or checked it; leaving a consumable capability unused is the
-/// checker's refusal, so an accepted declaration's lambda and bind binders may
-/// all be dropped. An owed, suspended or refused declaration answers nothing.
-/// Both halves of an accepted declaration are read. A use is a written
-/// variable, or a name the lowering resolved to the binder: a type naming it
-/// among them.
+/// lambda or a bind recording it too. A lambda or a bind binds into the
+/// intuitionistic zone, which drops a binder freely, so its binders may all be
+/// dropped whatever the judgement made of their declaration: accepted, owed,
+/// suspended or refused. The one binder such an opener could hold that may
+/// not be dropped is a consumable capability, which never forms: the checker
+/// refuses its type as [`CheckRefusal::CapabilityConsumable`], and a
+/// declaration so refused answers nothing. Nor does one the lowering refused
+/// or the corpus guarded. Both halves of an answered declaration are read. A
+/// use is a written variable, or a name the lowering resolved to the binder: a
+/// type naming it among them.
 ///
 /// # Specification
 /// - ensures: every span returned is a written binder of `module`'s origins
 ///   whose every opener is a lambda or a bind, `own` holds of it, no written
 ///   variable and no binder resolution reads it, and it lies within a half of a
-///   declaration `report` reports as judged `Data`, `Checked` or `Synthesised`;
-///   the spans ascend without repeats.
+///   declaration `report` reports as judged, other than refused as
+///   [`CheckRefusal::CapabilityConsumable`]; the spans ascend without repeats.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — parameters, `run` binders, pattern variables and lambda
 ///   binders used and unused, a binder read only in a type, a constructor's
-///   telescope, a handled capability, a refused declaration's binders and a
-///   placement's.
+///   telescope, a handled capability, a placement's binders, refused
+///   declarations' binders before and after their refusal, and a consumable
+///   capability's declaration.
 /// - witness: `compose::tests::each_binder_no_variable_reads_is_unused`
 #[spec(ensures: |ref ret| ret.windows(2).all(|pair| matches!(*pair, [first, second] if first < second)))]
 fn unused_binders(
@@ -2539,23 +2544,28 @@ fn unused_binders(
     own: impl Fn(ByteSpan) -> bool,
 ) -> Vec<ByteSpan>
 {
-    let accepted: BTreeSet<ConstantIndex> = report
+    let answered: BTreeSet<ConstantIndex> = report
         .declarations()
         .iter()
-        .filter(|declaration| {
-            matches!(
-                declaration.produced(),
-                Produced::Judged(
-                    Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
-                )
-            )
+        .filter(|declaration| match declaration.produced() {
+            Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_),
+            ) => true,
+            Produced::Judged(Verdict::Refused(refusal)) => {
+                !matches!(refusal, CheckRefusal::CapabilityConsumable(_))
+            },
+            Produced::Unlowered(_) | Produced::Guarded(_) => false,
         })
         .map(DeclarationReport::constant)
         .collect();
     let extents: Vec<ByteSpan> = module
         .declarations()
         .iter()
-        .filter(|declaration| accepted.contains(&declaration.constant()))
+        .filter(|declaration| answered.contains(&declaration.constant()))
         .flat_map(|declaration| {
             let halves = declaration.halves();
             [halves.signature, halves.definition]
@@ -5444,19 +5454,21 @@ def h = 1 ;"#,
                 "def seat_left_open(n : Integer) -> -F Unit {\n  fork (seat : end) { pure unit } as \
                  desk;\n  close(desk)\n}\n"
             ),
-            [""; 0],
-            "a fork's unused end is the checker's refusal, and a refused declaration answers \
-             nothing: not the end, nor the unused parameter beside it"
+            ["1:n"],
+            "a fork's unused end is the checker's refusal and no lambda's or bind's, but the \
+             refused declaration's unused parameter may be dropped (#1504)"
         );
         assert_eq!(
             unused(&corpus("pathological/control/capability-drop.gandr")),
             [""; 0],
-            "an unused consumable capability is the checker's refusal too"
+            "an unused consumable capability is the checker's refusal, and its declaration \
+             answers nothing"
         );
         assert_eq!(
             unused(&corpus("pathological/completion/buffer-misused.gandr")),
-            [""; 0],
-            "each misused buffer is refused, so neither declaration's binders are answered"
+            ["26:first", "40:copied"],
+            "each misused buffer is refused, yet a `run` binder no use reads may be dropped, \
+             even one whose own head the checker refused (#1504)"
         );
         assert_eq!(
             unused(&corpus("surface/control-flow.gandr")),
