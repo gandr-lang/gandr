@@ -1,0 +1,13 @@
+/// `NonExhaustiveMatch`: a match some scrutinee value reaches no arm of.
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) <=> x;
+  rule P(S(x)) <=> x;
+}
+
+@[ refuses("NonExhaustiveMatch") ]
+def unmatched(n : Int) -> -F Empty {
+  case n {}
+}

@@ -1,0 +1,4 @@
+/// `IllTypedPayload`: an attribute payload whose form its schema does not admit.
+@[ refuses("IllTypedPayload") ]
+@[doc(42)]
+def f = 42;

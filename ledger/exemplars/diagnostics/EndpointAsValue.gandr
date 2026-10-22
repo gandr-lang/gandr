@@ -1,0 +1,6 @@
+/// `EndpointAsValue`: an endpoint read as a value outside an action.
+@[ refuses("EndpointAsValue") ]
+def seat_returned() -> -F Unit {
+  fork (seat : end) { pure seat } as desk;
+  close(desk)
+}

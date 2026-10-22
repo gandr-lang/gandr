@@ -1,0 +1,15 @@
+/// `ProjectionFromApplication`: a path read off a functor application rather than off its binding.
+module MkCounter(S : #{ type T, zero : T, next : T => T }) :> #{
+  type T,
+  seed : T,
+  step : T => T
+} {
+  type T = S.T;
+  def seed = S.zero;
+  def step = S.next;
+}
+
+@[ refuses("ProjectionFromApplication") ]
+def projected : Integer ;
+
+def projected = MkCounter(Seed).seed ;

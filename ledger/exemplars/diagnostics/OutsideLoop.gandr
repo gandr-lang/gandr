@@ -1,0 +1,11 @@
+/// `OutsideLoop`: a `break` or a `continue` on no path through a loop's body.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("OutsideLoop") ]
+def stray(n : Nat) -> -F Nat {
+  break(n)
+}

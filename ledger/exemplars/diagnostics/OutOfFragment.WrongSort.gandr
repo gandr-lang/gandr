@@ -1,0 +1,3 @@
+/// `OutOfFragment.WrongSort`: a form out of the fragment: the form is a former of the fragment, but not of the sort its position demands.
+@[ refuses("OutOfFragment.WrongSort") ]
+def pure_unknown : -F ?;

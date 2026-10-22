@@ -1,0 +1,5 @@
+/// `ForwardUnsupported`: a `forward` whose translator the rule cannot image.
+@[ refuses("ForwardUnsupported") ]
+def lift(t : Type, f : t => t) -> -F Flow(Type, t, t) {
+  forward(f)
+}

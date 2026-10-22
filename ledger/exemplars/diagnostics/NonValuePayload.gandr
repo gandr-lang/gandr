@@ -1,0 +1,4 @@
+/// `NonValuePayload`: an attribute payload that is not a value.
+@[ refuses("NonValuePayload") ]
+@[doc(#!{ echo hi; })]
+def f = 42;

@@ -10,6 +10,7 @@ The language surface and its features, each checked by the gates. The syntax led
 - `exemplars/syntax/<rule>.gandr`: one exemplar per committed rule, opening with a `///` comment naming the rule; it holds one item holding a tile of the rule, two for a glyph rule, beside any declaration its items name.
 - `exemplars/attributes/<name>.gandr`: one exemplar per attribute, opening with a `///` comment naming it; it lowers with the attribute filed on the item it decorates, beside any declaration its payload names.
 - `exemplars/features/<feature id>.gandr`: a focused program for a row no corpus fixture shows, named by the row's id, opening with a `///` comment naming it. Every declaration states `checks`, `runs` or `normalizes` and settles; `owes` and `refuses` are findings there. A row a fixture shows names that fixture, never a copy.
+- `exemplars/diagnostics/<name>.gandr`: one per refusal name no form qualifies and per reserved or unadmitted boundary, refused with it; a name without one has a row of the gate's owed table, its reason or issue.
 
 `ledger/` is a fixture root, so an exemplar states what the checker makes of its form, `refuses` included where the checker does not reach it yet, its comment naming the issue that would settle it.
 
@@ -43,7 +44,7 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | `cargo run --package gandr-lang -- ledger exemplars ledger/exemplars` | verifies every exemplar, printing `<file>: <fault>` for each that does not hold |
 | `cargo run --package gandr-lang -- test ledger/exemplars` | settles every exemplar |
 | `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory and fails, printing the difference, while either differs from the committed file |
-| `mise run check:syntax-exemplars` | fails while a committed rule or an attribute has no exemplar, a file names neither, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
+| `mise run check:syntax-exemplars` | fails while a committed rule, an attribute or a refusal has no exemplar or owed row, a file names none, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |
 | `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |

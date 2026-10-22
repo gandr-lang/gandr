@@ -1,0 +1,18 @@
+/// `PointwiseDistinct`: a function extensionality whose functions disagree at some covering input.
+@[ checks ]
+def not(b : Unit + Unit) -> -F (Unit + Unit) {
+  case b {
+    +{.0 = u} => +{.1 = u},
+    +{.1 = u} => +{.0 = u}
+  }
+}
+
+@[ checks ]
+def same(b : Unit + Unit) -> -F (Unit + Unit) {
+  b
+}
+
+@[ refuses("PointwiseDistinct") ]
+def not_identity : Path(Unit + Unit => Unit + Unit, not, same) ;
+
+def not_identity = funext(not, same) ;

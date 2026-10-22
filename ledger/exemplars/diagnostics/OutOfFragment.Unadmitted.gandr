@@ -1,0 +1,3 @@
+/// `OutOfFragment.Unadmitted`: a form the grammar parses and the fragment has no reading of: a match of no arms written with its answer.
+@[ refuses("OutOfFragment.case_expression") ]
+def stated(x : Void) -> -F Integer { case x -> -F Integer {} }

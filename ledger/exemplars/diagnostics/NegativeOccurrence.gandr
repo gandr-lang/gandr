@@ -1,0 +1,11 @@
+/// `NegativeOccurrence`: a data declaration's own family occurs under a function's domain where no stage reaches it.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+@[ refuses("NegativeOccurrence") ]
+data Lop(a : Type) : Type {
+  MkLop : (f : Lop(Two) => Two) --> Lop(a);
+}

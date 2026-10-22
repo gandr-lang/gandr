@@ -1,0 +1,11 @@
+/// `ViewMoved`: an abort of a view whose value held at grade one a read moved out.
+@[ checks ]
+def succ(n : Integer) -> -F Integer {
+  pure n + 1
+}
+
+@[ refuses("ViewMoved") ]
+def moved_then_aborted() -> -F Integer {
+  hold[1] c = 0;
+  access c as v { run n <- succ(v) ; abort(v) ; pure n } unwind { pure unit }
+}

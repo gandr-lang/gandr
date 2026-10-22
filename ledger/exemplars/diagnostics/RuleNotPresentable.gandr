@@ -1,0 +1,7 @@
+/// `RuleNotPresentable`: a data declaration's rules do not present its type.
+@[ refuses("RuleNotPresentable") ]
+data Tally : Type {
+  Empty : Tally;
+  Mark : (n : Integer) --> Tally;
+  rule Mark(Empty) ==> Empty;
+}

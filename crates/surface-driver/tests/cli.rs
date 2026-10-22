@@ -797,13 +797,13 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
     let clean = ran(gandr(&[ledger, exemplars, &committed]));
     assert_eq!(code(&clean), Code(0_i32), "{}", stdout(&clean));
     assert!(
-        stdout(&clean).ends_with(" exhibiting, 0 findings\n"),
+        stdout(&clean).ends_with(" owed, 0 findings\n"),
         "{}",
         stdout(&clean)
     );
 
     let scratch = Scratch::new(Path::new("exemplars"));
-    for folder in ["syntax", "attributes"] {
+    for folder in ["syntax", "attributes", "diagnostics"] {
         for entry in std::fs::read_dir(committed.join(folder)).expect("the folder lists") {
             let source = entry.expect("the entry reads").path();
             let name = source.file_name().expect("an exemplar is a file");
@@ -819,13 +819,13 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
     assert_eq!(code(&found), Code(1_i32), "{}", stderr(&found));
     assert!(
         stdout(&found).starts_with(&format!(
-            "{}: names no committed rule or registered attribute\n",
+            "{}: names nothing the ledger lists\n",
             stray.display()
         )),
         "{}",
         stdout(&found)
     );
-    assert!(stdout(&found).ends_with(" exhibiting, 1 finding\n"));
+    assert!(stdout(&found).ends_with(" owed, 1 finding\n"));
 }
 
 #[test]

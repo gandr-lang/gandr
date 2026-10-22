@@ -1,0 +1,4 @@
+/// `MissingPayload`: an attribute whose schema takes a payload, written with none.
+@[ refuses("MissingPayload") ]
+@[doc]
+def f = 42;

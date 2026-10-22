@@ -1,0 +1,9 @@
+/// `FunextUnsupported`: a function extensionality past the first-order boundary, where no finite coverage decides it.
+@[ refuses("FunextUnsupported") ]
+def open(f : Unit + Unit => Unit + Unit) -> -F Path(
+  Unit + Unit => Unit + Unit,
+  f,
+  f
+) {
+  funext(f, f)
+}

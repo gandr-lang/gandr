@@ -1,0 +1,18 @@
+/// `RuleNotRespected`: a case over a presented type is not shown to respect one of the type's rules.
+@[ checks ]
+data Int : Type {
+  Z : Int;
+  S : (x : Int) --> Int;
+  P : (x : Int) --> Int;
+  rule S(P(x)) ==> x;
+  rule P(S(x)) ==> x;
+}
+
+@[ refuses("RuleNotRespected") ]
+def rec tell(n : Int) -> -F Int {
+  case n {
+    Z => Z,
+    S(x) => S(tell[<](x)),
+    P(x) => S(tell[<](x))
+  }
+}

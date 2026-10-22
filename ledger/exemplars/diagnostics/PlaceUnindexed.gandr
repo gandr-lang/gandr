@@ -1,0 +1,6 @@
+/// `PlaceUnindexed`: an access at a place naming a held value whose type is no list.
+@[ refuses("PlaceUnindexed") ]
+def unindexed() -> -F Integer {
+  hold c = 0;
+  access shared c[0] as w { pure w }
+}

@@ -1,0 +1,3 @@
+/// `UnresolvedName`: a term name no binder or earlier declaration answers.
+@[ refuses("UnresolvedName") ]
+def broken = missing ;

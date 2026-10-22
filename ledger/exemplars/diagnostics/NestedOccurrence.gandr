@@ -1,0 +1,16 @@
+/// `NestedOccurrence`: a data declaration's own family occurs nested where no stage reaches it.
+@[ checks ]
+data Two : Type {
+  L : Two;
+  R : Two;
+}
+
+@[ checks ]
+data Test(a : Type) : Type {
+  MkTest : (probe : a => Two) --> Test(a);
+}
+
+@[ refuses("NestedOccurrence") ]
+data Rose : Type {
+  Node : (kids : Test(Rose)) --> Rose;
+}

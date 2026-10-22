@@ -26,8 +26,8 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - `ExpectationSchema` and `expectation_schema::Absent`: the five schemas, matched by the registry's names.
 - `Runner`, `RunSpelling` and `ran::Absent`: the run a `runs` outcome is compared against, asked of the caller, accepted or refused, and the line a `normalizes` outcome is compared against.
 - `normalized_call`, `normalized_call::Absent` and `NORMAL_FORM_ARROW`: the call a `normalizes` line reads, why a line reads none, and what separates a call from its normal form.
-- `Stated`, `Outcome`, `ExpectationFault` and `Membership`: what a declaration states, and why an expectation states nothing.
-- `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views.
+- `Stated`, `Outcome`, `ExpectationFault`, `Membership` and `Expectations`: what a declaration states, and why an expectation states nothing; `expected`: one lowered declaration's expectations, read without settling.
+- `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary and producer refusal views; `RefusalName::closed`: every name no form qualifies.
 - `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Settlement` and `Surviving`: the settle comparison; `settle_after`: a module settled after its leading declarations' reports.
 - `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts` and `Seal`: the report and its counts.
 

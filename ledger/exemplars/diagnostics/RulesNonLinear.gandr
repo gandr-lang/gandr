@@ -1,0 +1,7 @@
+/// `RulesNonLinear`: a rule of a block whose left side names one variable twice.
+@[ refuses("RulesNonLinear") ]
+theory Idempotent {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule idem : mul(x, x) ==> x;
+}

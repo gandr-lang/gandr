@@ -1,0 +1,6 @@
+/// `ViewReadOnly`: a resume or an abort naming a shared view.
+@[ refuses("ViewReadOnly") ]
+def written() -> -F Unit {
+  hold c = 0;
+  access shared c as w { resume(w, 1) }
+}

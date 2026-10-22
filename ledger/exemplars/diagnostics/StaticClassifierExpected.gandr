@@ -1,0 +1,5 @@
+/// `StaticClassifierExpected`: a static Pi over a type that classifies no codes.
+module Indexed : #{ type Hom : Integer -> Integer } {
+  @[ refuses("StaticClassifierExpected") ]
+  type Hom(n : Integer) = Integer;
+}

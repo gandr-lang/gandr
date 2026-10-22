@@ -1,0 +1,13 @@
+/// `BufferRead`: a placed buffer read other than by the send, the operation or the resumption that returns it.
+@[ refuses("BufferRead") ]
+def readWhileHeld() -> -F Unit {
+  handle r : Ring {
+    run b <- r.alloc(4096);
+    run copied : Buf <- pure b;
+    r.free(b)
+  } with {
+    pure(x) => pure x,
+    oper alloc(n, b, k) => k(b),
+    oper free(b, k) => k(unit)
+  }
+}

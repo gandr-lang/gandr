@@ -1,0 +1,5 @@
+/// `StrayReceiverMode`: a receiver mode word on a parameter that is no method's receiver.
+@[ refuses("StrayReceiverMode") ]
+def lent(t : shared Repr) -> -F Integer {
+  pure 0
+}

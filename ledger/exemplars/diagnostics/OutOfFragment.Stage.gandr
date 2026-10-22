@@ -1,0 +1,5 @@
+/// `OutOfFragment.Stage`: a former the checker does not admit: a stage the kernel cannot read.
+@[ refuses("OutOfFragment.Stage") ]
+def integerAt @[i : Size] (n : Integer[i]) -> -F Integer {
+  n
+}

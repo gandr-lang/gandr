@@ -1,0 +1,12 @@
+/// `LoopNotRespected`: a case over a sort its words loop at is not shown to respect one of the loops.
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+@[ refuses("LoopNotRespected") ]
+def contractible(x : Circle) -> -F Path(Circle, Base, x) {
+  case x {
+    Base => here(Base)
+  }
+}

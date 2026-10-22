@@ -1,0 +1,7 @@
+/// `EndpointUsedTwice`: an endpoint named twice in one action.
+@[ refuses("EndpointUsedTwice") ]
+def seat_sent_over_itself() -> -F Unit {
+  fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
+  recv(desk) as task;
+  close(desk)
+}

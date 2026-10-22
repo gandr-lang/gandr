@@ -1,0 +1,6 @@
+/// `HeldCopied`: a value held at grade one copied.
+@[ refuses("HeldCopied") ]
+def read_held() -> -F Integer {
+  hold[1] c = 0;
+  pure c
+}

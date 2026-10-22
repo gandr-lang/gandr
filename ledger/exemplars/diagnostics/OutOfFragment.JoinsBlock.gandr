@@ -1,0 +1,15 @@
+/// `OutOfFragment.JoinsBlock`: a form out of the fragment: the form is a match written with an answer, `case e -> T { … }`, whose arms continue the block after the statement it is bound by, because one of them exits.
+@[ checks, form(explicit) ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ refuses("OutOfFragment.JoinsBlock") ]
+def joined(n : Nat) -> -F Nat {
+  run m <- case n -> -F Nat {
+    Zero => return n,
+    Succ(p) => pure p,
+  } ;
+  return m
+}

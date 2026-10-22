@@ -1,0 +1,8 @@
+/// `HeldKept`: an exclusive access of a held slot a view of which is kept in a live region.
+@[ refuses("HeldKept") ]
+def writtenWhileKept() -> -F Integer {
+  hold s = 3;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  access s as v { resume(v, 4) };
+  force k
+}

@@ -1,0 +1,10 @@
+/// `AcrossHandler`: a `become` in a handled subject, or a `break` or a `continue` there whose loop holds the scope.
+@[ refuses("AcrossHandler") ]
+def became() -> -F Integer {
+  handle c : Proc {
+    become one()
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => k(unit)
+  }
+}

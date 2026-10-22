@@ -1,0 +1,19 @@
+/// `CorollaTables`: a corolla whose translators are missing on one side or given twice.
+theory Rig {
+  sort R : Type;
+  oper plus : (x : R, y : R) --> (z : R);
+  oper times : (x : R, y : R) --> (z : R);
+}
+
+@[ checks ]
+def rename(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
+  case e {
+    +{.0 = u} => +{.2 = u},
+    +{.1 = u} => +{.3 = u},
+    +{.2 = u} => +{.0 = u},
+    +{.3 = u} => +{.1 = u}
+  }
+}
+
+@[ refuses("CorollaTables") ]
+def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;

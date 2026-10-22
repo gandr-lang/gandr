@@ -1,0 +1,6 @@
+/// `HeldLent`: a held value read while an access lends it exclusively, or accessed again where its lending excludes the access.
+@[ refuses("HeldLent") ]
+def frozen() -> -F Unit {
+  hold c = 0;
+  access shared c as w { access c as v { resume(v, w) } }
+}

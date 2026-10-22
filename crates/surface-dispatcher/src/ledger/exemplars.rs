@@ -71,6 +71,14 @@
 //! with rows. A features exemplar shows what holds, so [`verify`] holds each
 //! expectation it states to the strict root's admission, though the directory
 //! sits under the fixture root: `owes` and `refuses` are findings there.
+//!
+//! # Diagnostics exemplars refuse
+//!
+//! The `diagnostics` directory holds one source per refusal name, each
+//! stating `refuses` with its name, or the name's row in a table of what is
+//! owed and why; the `diagnostics` module states the pairing.
+
+mod diagnostics;
 
 use alloc::collections::BTreeSet;
 use std::path::Path;
@@ -168,8 +176,8 @@ pub enum ExemplarFault
         /// What has no exemplar.
         subject: String,
     },
-    /// The file names no committed rule or registered attribute, or is not an
-    /// exemplar source.
+    /// The file names nothing the ledger lists: no committed rule, registered
+    /// attribute or refusal; or it is not an exemplar source.
     Stray,
     /// The file could not be read.
     Unreadable(std::io::Error),
@@ -233,6 +241,20 @@ pub enum ExemplarFault
         /// The expectation.
         schema: ExpectationSchema,
     },
+    /// A diagnostics exemplar holds no declaration refused with its subject.
+    Unrefused
+    {
+        /// The refusal or boundary.
+        subject: String,
+    },
+    /// The owed table lists a subject that has an exemplar.
+    Owed
+    {
+        /// The refusal or boundary.
+        subject: String,
+    },
+    /// The owed table lists a name no refusal or boundary carries.
+    Unowed,
 }
 
 impl core::fmt::Display for ExemplarFault
@@ -262,7 +284,7 @@ impl core::fmt::Display for ExemplarFault
     {
         match *self {
             Self::Missing { ref subject } => write!(f, "no exemplar for {subject}"),
-            Self::Stray => f.write_str("names no committed rule or registered attribute"),
+            Self::Stray => f.write_str("names nothing the ledger lists"),
             Self::Unreadable(ref error) => write!(f, "cannot read: {error}"),
             Self::Unparsed { ref error } => write!(f, "does not parse: {error}"),
             Self::Uncommented { ref subject } => {
@@ -298,6 +320,13 @@ impl core::fmt::Display for ExemplarFault
                     "states `{schema}`, but a features exemplar shows what holds"
                 )
             },
+            Self::Unrefused { ref subject } => {
+                write!(f, "no declaration is refused with {subject}")
+            },
+            Self::Owed { ref subject } => {
+                write!(f, "the owed table lists {subject}, which has an exemplar")
+            },
+            Self::Unowed => f.write_str("the owed table lists a name no refusal carries"),
         }
     }
 }
@@ -361,8 +390,14 @@ pub struct ExemplarReport
     verified: usize,
     /// How many features exemplars stated only what the strict root admits.
     exhibited: usize,
+    /// How many diagnostics exemplars refused with their subject.
+    diagnosed: usize,
+    /// How many refusals the owed table lists without an exemplar.
+    owed: usize,
     /// Every exemplar that did not, in the order verified: rules in grammar
-    /// order, then attributes in registry order, then stray files.
+    /// order, then attributes in registry order, then stray files; then the
+    /// diagnostics exemplars in subject order, the table's stray rows and the
+    /// stray files.
     findings: Vec<ExemplarFinding>,
 }
 
@@ -382,12 +417,12 @@ impl ExemplarReport
 
 impl core::fmt::Display for ExemplarReport
 {
-    /// Writes `N exemplars verified, K features exemplars exhibiting, M
-    /// findings`.
+    /// Writes `N exemplars verified, K features exemplars exhibiting, D
+    /// diagnostics exemplars refusing, O owed, M findings`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the three counts, in that order.
+    /// - ensures: the five counts, in that order.
     /// - fails: a failed write.
     /// - panics: none.
     /// - executable: none — the counts are written into a formatter no
@@ -404,7 +439,7 @@ impl core::fmt::Display for ExemplarReport
     {
         write!(
             f,
-            "{} verified, {} exhibiting, {}",
+            "{} verified, {} exhibiting, {} refusing, {} owed, {}",
             super::Counted {
                 count: self.verified,
                 noun: "exemplar"
@@ -414,6 +449,11 @@ impl core::fmt::Display for ExemplarReport
                 noun: "features exemplar"
             },
             super::Counted {
+                count: self.diagnosed,
+                noun: "diagnostics exemplar"
+            },
+            self.owed,
+            super::Counted {
                 count: self.findings.len(),
                 noun: "finding"
             }
@@ -422,7 +462,7 @@ impl core::fmt::Display for ExemplarReport
 }
 
 /// Verify the exemplars under `directory` against the committed rules
-/// `rules` of `pbg` and the attribute registry.
+/// `rules` of `pbg`, the attribute registry and the refusal vocabulary.
 ///
 /// # Specification
 /// - requires: `rules` are the committed rules of `pbg`, in grammar order.
@@ -430,8 +470,10 @@ impl core::fmt::Display for ExemplarReport
 ///   file naming neither, and for every exemplar whose first failing check is
 ///   named; every other exemplar counts as verified. Every features exemplar
 ///   stating only what the strict root admits counts as exhibiting, and every
-///   other is a finding, as is a file there that is no source. A missing
-///   `syntax`, `attributes` or `features` directory reads as empty.
+///   other is a finding, as is a file there that is no source. The diagnostics
+///   exemplars and the owed table are verified as the `diagnostics` module
+///   states. A missing `syntax`, `attributes`, `features` or `diagnostics`
+///   directory reads as empty.
 /// - provides: `gandr ledger exemplars <directory>`.
 /// - fails: a directory that exists and cannot be listed.
 /// - panics: none.
@@ -460,6 +502,8 @@ pub(super) fn verify(
     let mut report = ExemplarReport {
         verified: 0,
         exhibited: 0,
+        diagnosed: 0,
+        owed: 0,
         findings: Vec::new(),
     };
     let subjects = [
@@ -518,6 +562,7 @@ pub(super) fn verify(
             Err(fault) => report.findings.push(ExemplarFinding { path, fault }),
         }
     }
+    diagnostics::verify(pbg, &directory.join(diagnostics::DIAGNOSTICS), &mut report)?;
     Ok(report)
 }
 
@@ -1001,7 +1046,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn copied(name: &Path) -> PathBuf
+    pub(super) fn copied(name: &Path) -> PathBuf
     {
         let directory = std::env::temp_dir().join(format!(
             "gandr-exemplars-{}-{}",
@@ -1009,7 +1054,7 @@ mod tests
             name.display()
         ));
         let _cleared = std::fs::remove_dir_all(&directory);
-        for folder in ["syntax", "attributes"] {
+        for folder in ["syntax", "attributes", "diagnostics"] {
             let target = directory.join(folder);
             std::fs::create_dir_all(&target).expect("the copy's folder is created");
             for entry in std::fs::read_dir(committed().join(folder)).expect("the folder lists") {
@@ -1026,7 +1071,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn verified(directory: &Path) -> ExemplarReport
+    pub(super) fn verified(directory: &Path) -> ExemplarReport
     {
         let task = LedgerTask::Exemplars {
             directory: directory.to_path_buf(),
@@ -1042,7 +1087,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn named(report: &ExemplarReport) -> Vec<String>
+    pub(super) fn named(report: &ExemplarReport) -> Vec<String>
     {
         report
             .findings()
@@ -1092,7 +1137,7 @@ mod tests
         let report = verified(&directory);
         assert_eq!(named(&report), [
             "def_value.gandr: no exemplar for rule `def_value`",
-            "def_values.gandr: names no committed rule or registered attribute",
+            "def_values.gandr: names nothing the ledger lists",
         ]);
         assert!(matches!(
             report.findings.first().map(|finding| &finding.fault),
@@ -1208,7 +1253,7 @@ mod tests
         let mut findings = named(&report);
         findings.sort();
         assert_eq!(findings, [
-            "notes.txt: names no committed rule or registered attribute",
+            "notes.txt: names nothing the ledger lists",
             "owed.gandr: states `owes`, but a features exemplar shows what holds",
             "refused.gandr: states `refuses`, but a features exemplar shows what holds",
         ]);
@@ -1219,8 +1264,8 @@ mod tests
         assert_eq!(
             report.to_string(),
             format!(
-                "{} exemplars verified, 1 features exemplar exhibiting, 3 findings",
-                report.verified
+                "{} exemplars verified, 1 features exemplar exhibiting, {} diagnostics exemplars refusing, {} owed, 3 findings",
+                report.verified, report.diagnosed, report.owed
             ),
             "the summary counts each kind once"
         );

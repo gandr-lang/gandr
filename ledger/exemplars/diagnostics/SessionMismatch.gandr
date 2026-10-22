@@ -1,0 +1,7 @@
+/// `SessionMismatch`: an action the endpoint's session type does not admit.
+@[ refuses("SessionMismatch") ]
+def desk_receives_first() -> -F Unit {
+  fork (seat : ?String. end) { recv(seat) as task; close(seat) } as desk;
+  recv(desk) as task;
+  close(desk)
+}

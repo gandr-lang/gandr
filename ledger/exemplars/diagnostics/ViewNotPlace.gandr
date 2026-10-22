@@ -1,0 +1,6 @@
+/// `ViewNotPlace`: a method at a deduced mode whose result is no view of its receiver's mode or whose body is no place of its receiver, or a view type off such a method's result.
+module Misplaced {
+  /// A method at a deduced mode whose result is a value, not a view.
+  @[ refuses("ViewNotPlace") ]
+  def valued @[m : Mode] (self : m List(Integer)) -> -F Integer { self[0] }
+}

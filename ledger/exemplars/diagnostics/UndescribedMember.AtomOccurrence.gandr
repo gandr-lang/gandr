@@ -1,0 +1,10 @@
+/// `UndescribedMember.AtomOccurrence`: a member the description does not read: a rule term naming the atom an enclosing abstraction binds, which a term does not read yet.
+@[ refuses("UndescribedMember.AtomOccurrence") ]
+theory Occurs {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule use : nu(bind a . out(a, nil())) ==> nil();
+}

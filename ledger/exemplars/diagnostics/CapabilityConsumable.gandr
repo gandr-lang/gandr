@@ -1,0 +1,5 @@
+/// `CapabilityConsumable`: a capability of the consumable grade.
+@[ refuses("CapabilityConsumable") ]
+def discard(c : Cap[1] {write}) -> -F Unit {
+  unit
+}

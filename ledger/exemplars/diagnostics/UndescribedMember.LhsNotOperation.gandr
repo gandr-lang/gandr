@@ -1,0 +1,11 @@
+/// `UndescribedMember.LhsNotOperation`: a member the description does not read: a rule whose left side is no operation application.
+@[ refuses("UndescribedMember.LhsNotOperation") ]
+theory Shared {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+
+  rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
+    node : p(x) ==> (m);
+    node : f(x) --> (m);
+  };
+}

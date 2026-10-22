@@ -1,0 +1,6 @@
+/// `CapturedEndpoint`: an endpoint named where its use may run other than once.
+@[ refuses("CapturedEndpoint") ]
+def seat_closed_in_a_thunk() -> -F Unit {
+  fork (seat : end) { force thunk { close(seat) } } as desk;
+  close(desk)
+}

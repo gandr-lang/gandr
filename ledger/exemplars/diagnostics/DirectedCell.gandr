@@ -1,0 +1,6 @@
+/// `DirectedCell`: a directed cell `-->` between two terms of a `data` block.
+@[ refuses("DirectedCell") ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base --> Base;
+}

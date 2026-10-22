@@ -1,0 +1,6 @@
+/// `OutOfFragment.WrongSort.declaration`: a run target that is no declaration.
+@[ checks ]
+def n = 5;
+
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#{ n | x = 1 }
