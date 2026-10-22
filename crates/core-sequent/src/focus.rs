@@ -736,8 +736,10 @@ where
     let mut scratch = CoreArena::new();
     let empty = scratch.watermark();
     for combinator in wanted {
-        let root = crate::identity::build(core, combinator, &mut scratch)?;
+        let mut cases = crate::identity::RunCases::new();
+        let root = crate::identity::build(core, combinator, (&mut scratch, &mut cases))?;
         let mut closed = Focusing::new(&scratch, arena, provenance);
+        closed.run_cases = cases;
         closed.tasks.push(Task::Value(root));
         closed.drive()?;
         if !closed.wanted.is_empty() {
@@ -869,6 +871,10 @@ enum Task
     /// Pop the scrutinee's producer and the body's command, and mint the cut
     /// of the scrutinee against the match of one tuple pattern of this arity.
     Split(ProducerArity),
+    /// Pop the scrutinee's producer and the arms' commands, one per complete
+    /// run, and mint the cut of the scrutinee against the match of each run's
+    /// moves.
+    RunCase(crate::identity::RunArms),
     /// Pop the scrutinee's producer and the two branches' commands, and mint
     /// the cut of the scrutinee against the match of the list's nil and cell.
     ListCase,
@@ -922,6 +928,9 @@ struct Focusing<'run>
     prepared: BTreeMap<Combinator, ProducerId>,
     /// The identity combinators this run met that were not prepared.
     wanted: BTreeSet<Combinator>,
+    /// The run matches a combinator's build left, by the placeholder each
+    /// stands at.
+    run_cases: crate::identity::RunCases,
 }
 
 impl<'run> Focusing<'run>
@@ -945,6 +954,7 @@ impl<'run> Focusing<'run>
             commands: Vec::new(),
             prepared: BTreeMap::new(),
             wanted: BTreeSet::new(),
+            run_cases: crate::identity::RunCases::new(),
         }
     }
 
@@ -1024,6 +1034,7 @@ impl<'run> Focusing<'run>
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
+            | &Task::RunCase(ref arms) => !self.producers.is_empty() && self.commands.len() >= arms.len(),
             | &Task::Split(_) => !self.producers.is_empty() && !self.commands.is_empty(),
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
@@ -1236,6 +1247,25 @@ impl<'run> Focusing<'run>
                     .enumerate()
                     .map(|(summand, body)| PatternArm {
                         constructor: ConstructorTag::Injection(Summand::from(summand)),
+                        body,
+                    })
+                    .collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::Case { arms })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
+            Task::RunCase(runs) => {
+                let scrutinee = self.pop_producer()?;
+                let start = self
+                    .commands
+                    .len()
+                    .checked_sub(runs.len())
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let arms = self
+                    .commands
+                    .drain(start ..)
+                    .zip(runs.iter())
+                    .map(|(body, &(ref moves, _))| PatternArm {
+                        constructor: ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)),
                         body,
                     })
                     .collect();
@@ -1892,7 +1922,8 @@ impl<'run> Focusing<'run>
     ///   tabulates.
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
-    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
+    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark other
+    ///   than the placeholder of a run match a combinator's build left,
     ///   [`FocusRefusal::Session`] for a session action,
     ///   [`FocusRefusal::ElementTransport`] for a transport whose motive has a
     ///   part no row reads, named by that part's head, and for a telescope
@@ -1919,6 +1950,7 @@ impl<'run> Focusing<'run>
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
+            | Some(&Computation::Hole(_)) if self.run_cases.contains_key(&id) => ret.is_err() || self.tasks.len() > work,
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::Session(_)) => ret == Err(FocusRefusal::Session(id)),
             | Some(&Computation::World(_)) => ret == Err(FocusRefusal::World(id)),
@@ -2246,7 +2278,24 @@ impl<'run> Focusing<'run>
             Computation::TelescopeTransport { .. } => {
                 return Err(FocusRefusal::ElementTransport(id, MotiveHead::Telescope));
             },
-            Computation::Hole(_) | Computation::Mark { .. } => {
+            Computation::Hole(_) => {
+                let Some(case) = self.run_cases.get(&id)
+                else {
+                    return Err(FocusRefusal::IncompleteComputation(id));
+                };
+                let (scrutinee, runs) = (case.scrutinee, alloc::sync::Arc::clone(&case.arms));
+                let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
+                self.tasks
+                    .push(Task::RunCase(alloc::sync::Arc::clone(&runs)));
+                self.tasks.push(Task::Value(scrutinee));
+                for &(_, arm) in runs.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: arm,
+                        continuation: inner,
+                    });
+                }
+            },
+            Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
             Computation::Session(_) => return Err(FocusRefusal::Session(id)),

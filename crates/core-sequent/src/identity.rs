@@ -84,10 +84,15 @@
 //! the new forward map runs `p.1` first when the left end moves, then the
 //! moved path's forward map, then `p.0` when the right end moves, and the
 //! new backward map runs `p.1` first when the right end moves, then the
-//! moved path's backward map, then `p.0` when the left end moves. Any other
-//! motive has no row the normaliser or the kernel computes, and focusing
-//! refuses its transport by the head of the first part no row reads
-//! ([`MotiveHead`]); a telescope transport is refused the same way.
+//! moved path's backward map, then `p.0` when the left end moves. A run of a
+//! quoted session with no recursion, `y. Run(S)`, moves each payload by its
+//! payload type's action and keeps the moves and labels: the core has no
+//! eliminator for a run, so the action's body is the IL's match on the run,
+//! one arm per complete run the protocol admits ([`RunCase`]); a recursive
+//! session admits unboundedly many and is refused by name. Any other motive
+//! has no row the normaliser computes, and focusing refuses its transport by
+//! the head of the first part no row reads ([`MotiveHead`]); a telescope
+//! transport is refused the same way.
 //!
 //! **Choice.** A path as the pair of its maps and transport as the motive's
 //! action on it, rather than a path former of the IL's own with transport its
@@ -121,6 +126,7 @@
 //! former of its own.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -135,6 +141,11 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::session::ProtocolNode;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionType;
+use gandr_core_term::session::Step;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -266,8 +277,11 @@ pub enum MotiveHead
     Path,
     /// A flow type.
     Flow,
-    /// A run type.
+    /// A run type whose code is not a quoted session.
     Run,
+    /// A run of a recursive session: it admits unboundedly many shapes, and
+    /// the IL's match names each shape it answers.
+    RecursiveRun,
     /// A base type.
     Base,
     /// A dependent pair type.
@@ -323,6 +337,7 @@ impl fmt::Display for MotiveHead
             Self::Path => "a path type",
             Self::Flow => "a flow type",
             Self::Run => "a run type",
+            Self::RecursiveRun => "a run of a recursive session",
             Self::Base => "a base type",
             Self::Sigma => "a dependent pair type",
             Self::Thunk => "a thunk type",
@@ -395,6 +410,10 @@ enum Row<'core>
     /// other parts read no binder: the moved path's maps compose with the
     /// image's on the ends that move.
     Ends(Moving),
+    /// A run of a session with no recursion: each payload moves by its
+    /// payload type's action, one match arm per complete run the protocol
+    /// admits.
+    Run(&'core SessionType),
 }
 
 /// Which endpoints of a path between types the moving binder is.
@@ -490,6 +509,50 @@ fn head(node: &ValueType) -> MotiveHead
     }
 }
 
+/// The session a run motive's code quotes, when it has no recursion.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session type `code` quotes, as written, when its protocol
+///   holds no `mu`.
+/// - fails: [`Unread::Head`] with [`MotiveHead::Run`] for a code that is not a
+///   quoted session, the session a motive's binder names among them; with
+///   [`MotiveHead::RecursiveRun`] for a recursive session.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of a fixed protocol and a run of a choice move
+///   their payloads; a run of a recursive protocol is refused by name.
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+#[spec(ensures: |ret| ret.as_ref().is_err() || matches!(core.value(code), Some(&Value::Quote(_))))]
+fn run_session(
+    core: &CoreArena,
+    code: ValueId,
+) -> Result<&SessionType, Unread>
+{
+    let unquoted = Unread::Head(MotiveHead::Run);
+    let Some(&Value::Quote(quoted)) = core.value(code)
+    else {
+        return Err(unquoted);
+    };
+    let Some(&ValueType::Session(ref session)) = core.value_type(quoted)
+    else {
+        return Err(unquoted);
+    };
+    if session
+        .protocol()
+        .nodes()
+        .iter()
+        .any(|node| matches!(*node, ProtocolNode::Mu(_)))
+    {
+        return Err(Unread::Head(MotiveHead::RecursiveRun));
+    }
+    Ok(session)
+}
+
 /// The row `family`'s action takes at the motive part `node`.
 ///
 /// # Specification
@@ -497,12 +560,13 @@ fn head(node: &ValueType) -> MotiveHead
 /// - ensures: for a flow, the module table's ride rows in their order, any
 ///   other part unchanged; for a path, [`Row::Unchanged`] for a part that never
 ///   reads its binder, then the decode of the binder, a non-empty product, a
-///   sum and a list.
+///   sum, a list and a run of a quoted session with no recursion.
 /// - provides: the one reading the focusing's refusal and the combinator's
 ///   build share.
 /// - fails: [`Unread::Dangling`] for a part naming no value type;
 ///   [`Unread::Head`] for a path motive's part that reads its binder under a
-///   head no row reads.
+///   head no row reads, [`MotiveHead::RecursiveRun`] for a run of a recursive
+///   session.
 /// - panics: none.
 ///
 /// # Errors
@@ -515,6 +579,7 @@ fn head(node: &ValueType) -> MotiveHead
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 #[spec(ensures: |ret| family == Family::Path || matches!(ret, Ok(_) | Err(Unread::Dangling)))]
 fn row(
     core: &CoreArena,
@@ -551,6 +616,7 @@ fn row(
             Some(row) => row,
             None => return Err(Unread::Head(head(read))),
         },
+        ValueType::Run(code) if family == Family::Path => Row::Run(run_session(core, code)?),
         ValueType::Data { .. }
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
@@ -721,6 +787,7 @@ pub fn readable(
     while let Some(node) = pending.pop() {
         match row(core, node, Family::Path)? {
             Row::Product(parts) | Row::Sum(parts) => pending.extend(parts.iter().rev()),
+            Row::Run(session) => pending.extend(session.payloads().iter().rev()),
             Row::List(element) => pending.push(element),
             Row::Function { argument, result } => pending.extend([result, argument]),
             Row::Unchanged | Row::Decode | Row::Singleton | Row::Ends(_) => {},
@@ -756,13 +823,34 @@ fn applied(
     scratch.computation_application(once, second)
 }
 
+/// The IL's match on a recorded run, which a run part's action needs and the
+/// core cannot write: the core has no eliminator for a run, so the action's
+/// body is a placeholder, and the focusing mints this match in its place.
+#[derive(Clone, Debug)]
+pub struct RunCase
+{
+    /// The run matched.
+    pub scrutinee: ValueId,
+    /// One arm per complete run the session admits.
+    pub arms: RunArms,
+}
+
+/// A run match's arms: each run's moves, and the body run under its
+/// payloads, the last innermost.
+pub type RunArms = Arc<[(Arc<[RecordedMove<()>]>, ComputationId)]>;
+
+/// The run matches a combinator's build leaves for the focusing, by the
+/// placeholder each stands at.
+pub type RunCases = BTreeMap<ComputationId, RunCase>;
+
 /// Build `combinator` as a closed value of `scratch`.
 ///
 /// # Specification
 /// - requires: a [`Combinator::Ride`] or [`Combinator::Transport`] motive names
 ///   a value type of `core`, a transport motive one [`readable`] reads.
 /// - ensures: a closed thunk of `scratch` computing the combinator, as the
-///   module tables state.
+///   module tables state; the match of every run part the combinator moves
+///   through is left in `cases`, at the placeholder that stands for it.
 /// - provides: what the focusing focuses and applies to an identity's parts.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for a motive naming no type
 ///   of `core`, a transport motive no row reads, or an index overflow.
@@ -781,6 +869,7 @@ fn applied(
 /// - witness: `tests::run::a_flow_product_runs_componentwise`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::native_paths_run_as_their_maps`
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -788,7 +877,7 @@ fn applied(
 pub fn build(
     core: &CoreArena,
     combinator: Combinator,
-    scratch: &mut CoreArena,
+    (scratch, cases): (&mut CoreArena, &mut RunCases),
 ) -> Result<ValueId, FocusRefusal>
 {
     match combinator {
@@ -844,7 +933,7 @@ pub fn build(
             let body = scratch.computation_bind(left, tail);
             Ok(closed(scratch, body, Binders::from(3_u32)))
         },
-        Combinator::Ride(motive) => action(core, motive, Family::Flow, scratch),
+        Combinator::Ride(motive) => action(core, motive, Family::Flow, (scratch, cases)),
         Combinator::Inverse => {
             // Under λe. λy: y = 0, e = 1.
             let record = variable(scratch, DeBruijnIndex::from(1_u32));
@@ -901,13 +990,13 @@ pub fn build(
             let body = forward_body(scratch);
             Ok(closed(scratch, body, Binders::from(2_u32)))
         },
-        Combinator::Transport(motive) => action(core, motive, Family::Path, scratch),
+        Combinator::Transport(motive) => action(core, motive, Family::Path, (scratch, cases)),
         Combinator::TransportFrom {
             motive,
             path,
             value,
         } => {
-            let transport = action(core, motive, Family::Path, scratch)?;
+            let transport = action(core, motive, Family::Path, (scratch, cases))?;
             // Under λp. λv: v = 0, p = 1. The path is forced first, then the
             // value, each binding its result; the action reads both where
             // the binds leave them.
@@ -1024,7 +1113,8 @@ fn compose(scratch: &mut CoreArena) -> ValueId
 /// # Specification
 /// - requires: `motive` names a value type of `core`, under one binder.
 /// - ensures: the module tables' `ride_P` for a flow and `transport_P` for a
-///   path; a node shared by two parts is built once.
+///   path; a node shared by two parts is built once; a run part's match is left
+///   in `cases` at the placeholder its action's body stands at.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for a dangling motive part,
 ///   a path motive's part no row reads, or an index overflow.
 /// - panics: none.
@@ -1038,6 +1128,7 @@ fn compose(scratch: &mut CoreArena) -> ValueId
 ///   values.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -1046,7 +1137,7 @@ fn action(
     core: &CoreArena,
     motive: ValueTypeId,
     family: Family,
-    scratch: &mut CoreArena,
+    (scratch, cases): (&mut CoreArena, &mut RunCases),
 ) -> Result<ValueId, FocusRefusal>
 {
     let read = |node: ValueTypeId| {
@@ -1068,6 +1159,9 @@ fn action(
             Row::Function { argument, result } => {
                 pending.extend([(result, false), (argument, false)]);
             },
+            Row::Run(session) => {
+                pending.extend(session.payloads().iter().map(|&payload| (payload, false)));
+            },
             Row::Unchanged | Row::Decode | Row::Singleton | Row::Ends(_) => {},
         }
     }
@@ -1076,7 +1170,7 @@ fn action(
         if built.contains_key(&node) {
             continue;
         }
-        let body = action_body(core, (node, read(node)?), family, &built, scratch)?;
+        let body = action_body(core, (node, read(node)?), family, (&built, cases), scratch)?;
         let action = closed(scratch, body, Binders::from(2_u32));
         built.insert(node, action);
     }
@@ -1101,9 +1195,11 @@ fn action(
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each row runs to its kernel value.
+/// - hypothesis: L3 — each row runs to its kernel value, and a run's to the
+///   normaliser's.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => scratch.computation(id).is_some(),
     | Err(_) => true,
@@ -1112,7 +1208,7 @@ fn action_body(
     core: &CoreArena,
     (node, row): (ValueTypeId, Row<'_>),
     family: Family,
-    built: &BTreeMap<ValueTypeId, ValueId>,
+    (built, cases): (&BTreeMap<ValueTypeId, ValueId>, &mut RunCases),
     scratch: &mut CoreArena,
 ) -> Result<ComputationId, FocusRefusal>
 {
@@ -1244,7 +1340,206 @@ fn action_body(
             (part_action(argument)?, part_action(result)?),
         )),
         Row::Ends(moving) => Ok(ends_action(scratch, moving)),
+        Row::Run(session) => {
+            let complete = shapes(session)?;
+            let mut arms = Vec::with_capacity(complete.len());
+            for (moves, payloads) in complete {
+                let body = run_arm(scratch, &moves, (&payloads, built))?;
+                arms.push((moves, body));
+            }
+            let mark = u32::try_from(cases.len())
+                .map_err(|_overflow| FocusRefusal::TranslationInvariant)?;
+            let placeholder = scratch.computation_hole(HoleId::from(mark));
+            let scrutinee = variable(scratch, moved);
+            let _fresh = cases.insert(placeholder, RunCase {
+                scrutinee,
+                arms: Arc::from(arms),
+            });
+            Ok(placeholder)
+        },
     }
+}
+
+/// One complete run a session admits: its moves, and the payload type of each
+/// send and receive among them, in order.
+type Shape = (Arc<[RecordedMove<()>]>, Vec<ValueTypeId>);
+
+/// A run part way through a session: where it stands, its moves so far, and
+/// their payload types.
+type Partial = (SessionType, Vec<RecordedMove<()>>, Vec<ValueTypeId>);
+
+/// Every complete run a session with no recursion admits.
+///
+/// # Specification
+/// - requires: `session`'s protocol holds no `mu`.
+/// - ensures: one shape per `end` the protocol reaches, each choice taking
+///   every label; the moves end with the close.
+/// - fails: [`FocusRefusal::TranslationInvariant`] for a protocol that breaks
+///   its own invariant.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Termination
+/// - reason: a protocol with no `mu` is a tree, and each step pushes its
+///   children once.
+/// - measure: the protocol nodes not yet stepped.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a choice's two runs each match their own arm, which a
+///   missing or merged arm would not.
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |all| all.iter().all(|&(ref moves, _)| matches!(moves.last(), Some(&RecordedMove::Closed)))))]
+fn shapes(session: &SessionType) -> Result<Vec<Shape>, FocusRefusal>
+{
+    let broken =
+        |_broken: gandr_core_term::session::ProtocolError| FocusRefusal::TranslationInvariant;
+    let mut complete = Vec::new();
+    let mut pending: Vec<Partial> = Vec::from([(session.clone(), Vec::new(), Vec::new())]);
+    while let Some((standing, mut moves, mut payloads)) = pending.pop() {
+        match standing.step().map_err(broken)? {
+            Step::Send { payload, next } => {
+                moves.push(RecordedMove::Sent(()));
+                payloads.push(payload);
+                pending.push((next, moves, payloads));
+            },
+            Step::Receive { payload, next } => {
+                moves.push(RecordedMove::Received(()));
+                payloads.push(payload);
+                pending.push((next, moves, payloads));
+            },
+            Step::Select(ref branches) => {
+                branch(
+                    branches,
+                    (&moves, &payloads),
+                    RecordedMove::Selected,
+                    &mut pending,
+                )?;
+            },
+            Step::Offer(ref branches) => {
+                branch(
+                    branches,
+                    (&moves, &payloads),
+                    RecordedMove::Offered,
+                    &mut pending,
+                )?;
+            },
+            Step::End => {
+                moves.push(RecordedMove::Closed);
+                complete.push((Arc::from(moves), payloads));
+            },
+        }
+    }
+    Ok(complete)
+}
+
+/// Push one partial run per label of a choice, each with the choice's move.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `pending` gains one entry per label of `branches`, standing at
+///   that label's branch, with `moves` and `chosen(label)` and `payloads`.
+/// - fails: [`FocusRefusal::TranslationInvariant`] for a label whose branch the
+///   protocol does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a choice's two runs each match their own arm.
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+#[spec(captures: before = pending.len(), ensures: |ret| ret.is_err() || before.checked_add(branches.labels().len()) == Some(pending.len()))]
+fn branch(
+    branches: &gandr_core_term::session::Branches<'_>,
+    (moves, payloads): (&[RecordedMove<()>], &[ValueTypeId]),
+    chosen: fn(gandr_core_term::FieldLabel) -> RecordedMove<()>,
+    pending: &mut Vec<Partial>,
+) -> Result<(), FocusRefusal>
+{
+    for label in branches.labels() {
+        let Maybe::Present(standing) = branches
+            .get(label)
+            .map_err(|_broken| FocusRefusal::TranslationInvariant)?
+        else {
+            return Err(FocusRefusal::TranslationInvariant);
+        };
+        let mut taken = moves.to_vec();
+        taken.push(chosen(label.clone()));
+        pending.push((standing, taken, payloads.to_vec()));
+    }
+    Ok(())
+}
+
+/// One arm of a run's match: `y₀ ← force(M₀) t x₀; …; return run(y₀, …)`
+/// under the image `t`, the run `v` and the arm's payloads `x₀ … xₙ₋₁`, the
+/// last innermost, with `Mᵢ` the action of payload `i`'s type.
+///
+/// # Specification
+/// - requires: `payloads` holds the payload type of each send and receive of
+///   `moves`, in order, and `built` the closed action of each.
+/// - ensures: each payload moves by its own type's action, bound before the
+///   next, and the run returns with `moves`' actions and labels.
+/// - fails: [`FocusRefusal::TranslationInvariant`] for a payload count that
+///   differs from the moves', a payload type with no built action, or an index
+///   overflow.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — swapping two payloads or skipping one's action changes
+///   the run the machine returns.
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&body| scratch.computation(body).is_some()))]
+fn run_arm(
+    scratch: &mut CoreArena,
+    moves: &[RecordedMove<()>],
+    (payloads, built): (&[ValueTypeId], &BTreeMap<ValueTypeId, ValueId>),
+) -> Result<ComputationId, FocusRefusal>
+{
+    let invariant = |_overflow| FocusRefusal::TranslationInvariant;
+    let count = u32::try_from(payloads.len()).map_err(invariant)?;
+    // Under all `count` binds, `yᵢ` is `count - 1 - i` binders out.
+    let mut index = count;
+    let mut moved = Vec::with_capacity(moves.len());
+    for movement in moves {
+        moved.push(movement.try_map(|()| -> Result<ValueId, FocusRefusal> {
+            index = index
+                .checked_sub(1)
+                .ok_or(FocusRefusal::TranslationInvariant)?;
+            Ok(variable(scratch, DeBruijnIndex::from(index)))
+        })?);
+    }
+    if index != 0 {
+        return Err(FocusRefusal::TranslationInvariant);
+    }
+    let run = scratch.value_recorded(Arc::from(moved));
+    let mut body = scratch.computation_return(run);
+    // Under `j` binds, `t` is `j + count + 1` out and `xⱼ` stays `count - 1`
+    // out: each bind steps past one payload and adds one binder.
+    let payload = count.checked_sub(1);
+    for (position, payload_type) in payloads.iter().enumerate().rev() {
+        let action = built
+            .get(payload_type)
+            .copied()
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let binds = u32::try_from(position).map_err(invariant)?;
+        let image = binds
+            .checked_add(count)
+            .and_then(|outer| outer.checked_add(1))
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let held = variable(scratch, DeBruijnIndex::from(image));
+        let current = variable(
+            scratch,
+            DeBruijnIndex::from(payload.ok_or(FocusRefusal::TranslationInvariant)?),
+        );
+        let step = applied(scratch, action, (held, current));
+        body = scratch.computation_bind(step, body);
+    }
+    Ok(body)
 }
 
 /// `return thunk(λa. s ← (g ← t.1; f ← t.0; return (g, f)); x ← force(M_A)

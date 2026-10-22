@@ -1,7 +1,8 @@
 // A recorded run carried along a path between its protocol's payload types:
 // each payload the protocol reads at the path moves by the path's forward
 // map, every move and every other payload kept. A run is a finite trace, so
-// it is covariant in every payload type, sent or received.
+// it is covariant in every payload type, sent or received. The machine runs
+// the transport as a match on the run's moves, to the run conversion gives.
 
 /// A bit.
 @[ checks ]
@@ -86,3 +87,14 @@ def heardKept : Path(
   recorded(received(No), closed)
 ) ;
 def heardKept = here(recorded(received(No), closed)) ;
+
+/// The carried run, computed.
+@[ checks ]
+def heardRun() -> -F Run(Ask.Decoded) {
+  become transport(\X. Run(?X. end), codes, heard)
+}
+
+/// On the machine the carried run hears the yes, as it does by conversion.
+@[ runs("recorded(received(Yes), closed)") ]
+def decodedRun : () => Run(Ask.Decoded) ;
+def decodedRun = thunk { become heardRun() } ;

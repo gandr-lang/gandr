@@ -8,6 +8,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_core_sequent::CommandArena;
@@ -50,9 +51,17 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::session::PayloadCount;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::SessionType;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -2747,6 +2756,140 @@ fn transports_run_by_the_motives_action()
         returned(&mut core, five),
         "a transport along `here` keeps the value"
     );
+}
+
+/// The run motive `Run(s)` of the session `syntax` writes over `payloads`.
+///
+/// # Specification
+/// trivial.
+fn run_motive(
+    core: &mut CoreArena,
+    syntax: Vec<ProtocolSyntax>,
+    payloads: &[gandr_core_term::ValueTypeId],
+) -> gandr_core_term::ValueTypeId
+{
+    let protocol = Protocol::new(
+        syntax,
+        ProtocolState::from(0_usize),
+        PayloadCount::from(payloads.len()),
+    )
+    .expect("the fixture's protocol is well formed");
+    let session = SessionType::new(Arc::new(protocol), Arc::from(payloads))
+        .expect("the fixture fills every slot");
+    let session = core.value_type_session(session);
+    let code = core.value_quote(session);
+    core.value_type_run(code)
+}
+
+/// A transport of a recorded run along `ua(e)` runs as the match on the
+/// run's shape: each payload moves by its payload type's action, in move
+/// order, and the moves and labels are kept; a run of a recursive session,
+/// and of a session the motive does not quote, is refused by its head.
+#[test]
+fn a_run_moves_its_payloads_along_a_path()
+{
+    // The motive `y. Run(+{ left: !El y. ?El y. end, right: !Int. end })`.
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let six = integer(&mut core, Digits("6"));
+    let unit = core.value_unit();
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+    let [left, right] = ["left", "right"].map(|label| FieldLabel::from(String::from(label)));
+    let motive = run_motive(
+        &mut core,
+        alloc::vec![
+            ProtocolSyntax::Select(BTreeMap::from([
+                (left.clone(), ProtocolState::from(1_usize)),
+                (right.clone(), ProtocolState::from(4_usize)),
+            ])),
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(2_usize),
+            },
+            ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(3_usize),
+            },
+            ProtocolSyntax::End,
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(1_usize),
+                next: ProtocolState::from(5_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[identity, integer_type],
+    );
+    let both = |core: &mut CoreArena, sent: ValueId, received: ValueId| {
+        core.value_recorded(Arc::from([
+            RecordedMove::Selected(left.clone()),
+            RecordedMove::Sent(sent),
+            RecordedMove::Received(received),
+            RecordedMove::Closed,
+        ]))
+    };
+    let operand = both(&mut core, five, six);
+    let moved = core.computation_path_transport(motive, path, operand);
+    let sent = core.value_tuple(&[five, unit]);
+    let received = core.value_tuple(&[six, unit]);
+    let image = both(&mut core, sent, received);
+    let expected = returned(&mut core, image);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        expected,
+        "each payload of the left run moves by the forward map, in move order"
+    );
+    let swapped = both(&mut core, received, sent);
+    assert_ne!(
+        returned(&mut core, swapped),
+        expected,
+        "the payloads keep their moves"
+    );
+
+    let kept = core.value_recorded(Arc::from([
+        RecordedMove::Selected(right),
+        RecordedMove::Sent(five),
+        RecordedMove::Closed,
+    ]));
+    let moved = core.computation_path_transport(motive, path, kept);
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, kept),
+        "the right run's payload never reads the binder and is kept"
+    );
+
+    // `y. Run(mu t. !El y. t)` and `y. Run(y)` have no row.
+    let recursive = run_motive(
+        &mut core,
+        alloc::vec![
+            ProtocolSyntax::Mu(ProtocolState::from(1_usize)),
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(2_usize),
+            },
+            ProtocolSyntax::Recur(gandr_core_term::session::RecursionIndex::default()),
+        ],
+        &[identity],
+    );
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let unquoted = core.value_type_run(bound);
+    for (motive, head) in [
+        (recursive, MotiveHead::RecursiveRun),
+        (unquoted, MotiveHead::Run),
+    ] {
+        let transport = core.computation_path_transport(motive, path, kept);
+        assert_eq!(
+            focus_computation(
+                &core,
+                transport,
+                &mut CommandArena::new(),
+                &mut Provenance::new()
+            ),
+            Err(FocusRefusal::ElementTransport(transport, head)),
+            "the transport is refused by {head}"
+        );
+    }
 }
 
 /// A native path runs as its two maps: reflexivity as the identity, an
