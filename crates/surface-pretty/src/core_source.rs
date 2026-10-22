@@ -707,7 +707,18 @@ impl<'arena> CoreSource<'arena>
     /// The name the family `datatype` names, a data type of the arena.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a data type's declaration name, read through any stage over
+    ///   it; nothing for every other former, a prefix type and a run type among
+    ///   them, and for a node the arena does not hold.
+    /// - provides: the family a constructor is looked up in.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor spells by the name its family's
+    ///   declaration gives it, which no unnamed or misnamed family finds.
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
     fn family(
         &self,
         datatype: ValueTypeId,

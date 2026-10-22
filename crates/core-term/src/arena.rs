@@ -2761,7 +2761,17 @@ impl CoreArena
     /// Mint the prefix type `Prefix(s)` of the session code `s`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `session` names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends the prefix type and returns a fresh value-type id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the minted node reads back as the prefix type of the
+    ///   code it was given, apart from every other former minted beside it.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Prefix(session)))]
     #[inline]
     pub fn value_type_prefix(
         &mut self,

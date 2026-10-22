@@ -110,7 +110,18 @@ impl Image
     /// Borrow all immediate children without a per-node allocation.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the node's immediate children, each in its own family, the
+    ///   unused slots `None`.
+    /// - provides: the one reading of a node's edges the importer walks.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every former, a prefix type's among them, imports as
+    ///   the same spelling written in the target: a dropped or misfiled edge
+    ///   would leave a child at its source id.
+    /// - witness: `import::tests::every_former_imports_as_its_own_spelling`
     fn edges(&mut self) -> [Option<Edge<'_>>; 5]
     {
         use Edge::CompType as CT;

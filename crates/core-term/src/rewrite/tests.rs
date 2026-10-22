@@ -3872,6 +3872,10 @@ pub fn formers() -> Vec<Witnessed>
             let run = a.value_type_run(c);
             a.value_quote(run)
         }),
+        ("prefix type", |a, c| {
+            let prefix = a.value_type_prefix(c);
+            a.value_quote(prefix)
+        }),
         ("located type", |a, c| {
             let inner = path(a, c);
             let located = a.value_type_world(crate::world::WorldType::At {

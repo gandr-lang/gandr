@@ -715,6 +715,7 @@ fn distinct_children_survive_every_compound_former()
             arena.value_type_abstract(ConstantIndex::from(23_usize)),
             ValueType::Abstract(ConstantIndex::from(23_usize)),
         ),
+        (arena.value_type_prefix(second), ValueType::Prefix(second)),
     ];
     for (id, node) in types {
         assert!(id > other);

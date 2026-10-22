@@ -2079,7 +2079,18 @@ impl Bracket
     /// The head and opening parenthesis a bracketed former is spelled with.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the former's head followed by `(`; a native equivalence's
+    ///   maps share `equiv(` with a universe equivalence, and a paid
+    ///   bisimulation `bisim(` with an unpaid one.
+    /// - provides: the opening glyphs of every bracketed former.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the prefix type in the type goldens opens with its
+    ///   own head, which an empty or swapped opener does not write.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
     const fn opener(self) -> Glyphs<'static>
     {
         Glyphs(match self {

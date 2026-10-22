@@ -849,7 +849,18 @@ fn resolve_comp_type(
 /// How a value type reads to the unifier.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the decode of a code reads as its code and level, the unknown
+///   type as gradual, a former the fragment decomposes as rigid, and every
+///   other former, a prefix type and a run type among them, as outside.
+/// - provides: the classification [`value_types`] dispatches on.
+/// - panics: none.
+/// - executable: none — a clause would restate the match arm by arm.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an equation between a prefix type and a run type waits as
+///   outside the fragment, apart from the gradual and family waits beside it.
+/// - witness: `tests::solve::the_fragment_postpones_by_name`
 const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
 {
     match *value_type {

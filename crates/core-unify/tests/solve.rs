@@ -601,6 +601,9 @@ fn the_fragment_postpones_by_name()
     let built = arena.value_constructor(family, ConstructorTag::from(0_usize), vec![]);
     let unknown = arena.value_type_unknown();
     let integer = arena.value_type_base(BaseType::Integer);
+    // A prefix type and a run type: formers the fragment does not decompose.
+    let open = arena.value_type_prefix(three);
+    let complete = arena.value_type_run(three);
     let values = |scope, left, right| Equation::new(scope, Side::Value(left), Side::Value(right));
     let equations = [
         values(Binders::ONE, applied, three),
@@ -613,6 +616,11 @@ fn the_fragment_postpones_by_name()
             Binders::NONE,
             Side::ValueType(unknown),
             Side::ValueType(integer),
+        ),
+        Equation::new(
+            Binders::NONE,
+            Side::ValueType(open),
+            Side::ValueType(complete),
         ),
         Equation::new(Binders::NONE, Side::Value(three), Side::ValueType(integer)),
         values(Binders::NONE, hole_c, four),
@@ -630,13 +638,14 @@ fn the_fragment_postpones_by_name()
             Reason::Pruning { meta: a, other: b },
             Reason::Neutral,
             Reason::Gradual,
+            Reason::Outside,
             Reason::Families,
         ],
         reasons(&metas)
     );
     let blockers: Vec<&[MetaId]> = metas.postponed().iter().map(Postponed::blockers).collect();
     assert_eq!(
-        vec![&[a][..], &[], &[], &[a], &[a, b], &[], &[], &[]],
+        vec![&[a][..], &[], &[], &[a], &[a, b], &[], &[], &[], &[]],
         blockers
     );
     assert_eq!(
