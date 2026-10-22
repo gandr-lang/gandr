@@ -245,6 +245,7 @@ use crate::protocol::ViewsContent;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
 use crate::protocol::WorkTitle;
+use crate::protocol::WorkspaceDiagnosticParams;
 use crate::protocol::WorkspaceEdit;
 use crate::protocol::WorkspaceFolder;
 use crate::protocol::WorkspaceSymbolParams;
@@ -314,6 +315,9 @@ use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
 use crate::signature::help;
+use crate::sweep::Seen;
+use crate::sweep::Sweep;
+use crate::sweep::Sweeping;
 use crate::syntax::printed;
 use crate::tokens::Resolved;
 use crate::tokens::ResultId;
@@ -1095,6 +1099,8 @@ pub struct Admissions<'pool>
     /// How many judgements and admissions were submitted; the next is
     /// numbered after them.
     submitted: Submission,
+    /// The source judged for the workspace's diagnostics, while one is.
+    sweeping: Option<Sweeping>,
 }
 
 /// One judgement's or admission's place among those a connection submitted.
@@ -1124,6 +1130,7 @@ impl<'pool> Admissions<'pool>
             generations: Generations::waking(pool, Arc::new(move || waking.admitted())),
             waiting: BTreeMap::new(),
             submitted: Submission(0_u64),
+            sweeping: None,
         }
     }
 
@@ -1914,6 +1921,7 @@ impl Workspace
             streams: BTreeMap::new(),
             viewing: BTreeSet::new(),
             notebooks: BTreeMap::new(),
+            sweep: Sweep::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -2208,6 +2216,9 @@ pub struct Server
     /// The notebooks the client holds open, by the URI of the one document
     /// each one's code cells are judged as.
     notebooks: BTreeMap<DocumentUri, Notebook>,
+    /// What each source no editor holds last reported, and the pulls of the
+    /// workspace's diagnostics waiting.
+    sweep: Sweep,
 }
 
 /// Where a choice put to the user stands.
@@ -2294,6 +2305,7 @@ impl Server
             streams: BTreeMap::new(),
             viewing: BTreeSet::new(),
             notebooks: BTreeMap::new(),
+            sweep: Sweep::new(),
         }
     }
 
@@ -2820,7 +2832,11 @@ impl Server
     ///   the copy is published, and a change or close of the copy first answers
     ///   it `ContentModified`, or a pull of the copy's diagnostics
     ///   `ServerCancelled` with `retriggerRequest`, which its client asks again
-    ///   instead of reading the refusal as an empty report.
+    ///   instead of reading the refusal as an empty report. A
+    ///   `workspace/diagnostic` pull is answered nothing now unless the sweep's
+    ///   pass is done: [`Server::admitted`] answers it once the pass finds
+    ///   every source it reports current, as [`Server::pulled_workspace`]
+    ///   states.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -2870,6 +2886,12 @@ impl Server
                     && method.as_ref() == "workspace/executeCommand"
                 {
                     return self.execute(workspace, id, params);
+                }
+                if withdrawn.is_none()
+                    && self.phase == Phase::Running
+                    && method.as_ref() == "workspace/diagnostic"
+                {
+                    return self.pulled_workspace(id, params);
                 }
                 if withdrawn.is_none()
                     && self.phase == Phase::Running
@@ -3060,6 +3082,167 @@ impl Server
         }
     }
 
+    /// Answer the pull of the workspace's diagnostics `id` with `params` once
+    /// the sweep's pass finds every source it reports current.
+    ///
+    /// # Specification
+    /// - requires: nothing; any parameters are admissible input.
+    /// - ensures: parameters that do not read are answered `InvalidParams`.
+    ///   Otherwise the pull waits, answered as [`Server::swept`] states once
+    ///   [`Server::sweep_next`] finds the pass done; a pass already done
+    ///   answers it now.
+    /// - fails: never; every refusal is an answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pull answered once its sources are judged, a pull
+    ///   over judged and unchanged sources answered in the settlement of its
+    ///   own message, and parameters of another shape, each asserted at its
+    ///   exact answer.
+    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    #[spec(ensures: |ret| ret.flow == Flow::Continue && ret.messages.len() <= 1)]
+    fn pulled_workspace(
+        &mut self,
+        id: RequestId,
+        params: Value,
+    ) -> Outcome
+    {
+        match serde_json::from_value::<WorkspaceDiagnosticParams>(params) {
+            Err(error) => Outcome::say(failure(id, ErrorCode::INVALID_PARAMS, error.to_string())),
+            Ok(params) => {
+                self.sweep.wait(id, params);
+                Outcome::saying(self.swept())
+            },
+        }
+    }
+
+    /// Start judging the next source the pulls waiting on this connection
+    /// report that is not current, when nothing else is judged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when a pull waits, no source is being swept and no copy is
+    ///   being judged, the next source [`Sweep::next`] answers at this
+    ///   connection's verbosity and spelling, each import read as the editors
+    ///   hold it, the sources those under the opened folders that no editor
+    ///   holds, is read from its file, laid out with each import read as the
+    ///   editors hold it, and judged on the pool in a session of its own at
+    ///   that verbosity and spelling, holding back nothing; each file it reads
+    ///   is seen now, as [`Seen::now`] sees it. A file that cannot be read is
+    ///   judged as the empty text. Nothing is started otherwise.
+    /// - provides: the sweep's next step, behind every copy's judgement.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Server::pulled_workspace`]; a source an editor
+    ///   opens while it is swept is judged as the copy.
+    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    #[spec(ensures: admissions.sweeping.is_none() || !self.sweep.waiting().is_empty())]
+    fn sweep_next(
+        &mut self,
+        workspace: &Workspace,
+        admissions: &mut Admissions<'_>,
+    )
+    {
+        if self.sweep.waiting().is_empty()
+            || admissions.sweeping.is_some()
+            || !admissions.judging.is_empty()
+        {
+            return;
+        }
+        let Ok(grammar) = grammar()
+        else {
+            return;
+        };
+        let shadows = workspace.shadowing(self.peer);
+        let rendering = (self.verbosity, self.style.spelling);
+        let Some(path) = self
+            .sweep
+            .next(&|| workspace.unheld(grammar), rendering, &shadows)
+        else {
+            return;
+        };
+        let Some(uri) = DocumentUri::of_path(&path)
+        else {
+            return;
+        };
+        let started = Instant::now();
+        let own = Seen::now(&path, &shadows);
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let laid = lay(&uri, SourceText::from(text.as_str()), &shadows);
+        let mut closure = vec![(path.clone(), own)];
+        if let Maybe::Present(ref laid) = laid {
+            closure.extend(
+                laid.named
+                    .iter()
+                    .map(|named| (named.clone(), Seen::now(named, &shadows))),
+            );
+        }
+        let judging = Judging {
+            uri: uri.clone(),
+            session: Arc::new(Mutex::new(open(&uri))),
+            text: text.clone(),
+            laid,
+            wanted: Tables::Unkept,
+            rendering: (
+                rendering.0,
+                rendering.1,
+                Maybe::Absent(formless::Absent::Uncareted),
+            ),
+            started,
+        };
+        let submission = admissions.next();
+        let _started = admissions
+            .judgements
+            .submit(uri.clone(), submission, move |watch| {
+                match judging.run(watch) {
+                    Polled::Whole(rechecked) => Ok(rechecked),
+                    Polled::Retired(retired, ()) => Err(retired),
+                }
+            });
+        admissions.sweeping = Some(Sweeping {
+            uri,
+            path,
+            text,
+            closure,
+            rendering,
+        });
+    }
+
+    /// The answers owed the pulls of the workspace's diagnostics waiting, once
+    /// the sweep's pass is done.
+    ///
+    /// # Specification
+    /// - requires: no source is being swept.
+    /// - ensures: when a pull waits and [`Sweep::finished`] answers the sources
+    ///   of a pass done, each pull waiting is answered, in the order read, with
+    ///   [`Sweep::report`] of them against its own ids, and none waits after;
+    ///   nothing otherwise.
+    /// - provides: every answer to `workspace/diagnostic`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Server::pulled_workspace`].
+    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    #[spec(ensures: |ret| ret.is_empty() || self.sweep.waiting().is_empty())]
+    fn swept(&mut self) -> Vec<Outgoing>
+    {
+        if self.sweep.waiting().is_empty() {
+            return Vec::new();
+        }
+        let Some(sources) = self.sweep.finished()
+        else {
+            return Vec::new();
+        };
+        self.sweep
+            .release()
+            .into_iter()
+            .map(|(id, params)| success(id, Answer::Swept(self.sweep.report(&sources, &params))))
+            .collect()
+    }
+
     /// `answer` with each edit it carries shaped as this connection's client
     /// takes edits ([`WorkspaceEdit::shaped`]), each version its own copy's.
     ///
@@ -3130,7 +3313,9 @@ impl Server
     ///   copy's judgement still running, polling its own retirement before it
     ///   takes the session, once it holds it, and before each declaration and
     ///   item; the copy's judgement runs, delivered by [`Server::admitted`],
-    ///   and no copy is left due.
+    ///   and no copy is left due. A source the sweep judges whose copy is now
+    ///   judged is swept no more; then the sweep's next step starts, as
+    ///   [`Server::sweep_next`] states.
     /// - provides: the first half of every synchronisation; the connection
     ///   reads its next frame while the copy is judged.
     /// - fails: never.
@@ -3149,7 +3334,7 @@ impl Server
     #[inline]
     #[must_use]
     pub fn admit(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         admissions: &mut Admissions<'_>,
     ) -> Vec<Logged>
@@ -3204,6 +3389,15 @@ impl Server
                     }
                 });
             let _superseded = admissions.judging.insert(uri.clone(), version);
+            // An editor opened the source the sweep judges: its judgement is
+            // the copy's now.
+            if admissions
+                .sweeping
+                .as_ref()
+                .is_some_and(|sweeping| sweeping.uri == uri)
+            {
+                admissions.sweeping = None;
+            }
             if let Some(held) = workspace.documents.get_mut(&uri)
                 && let Maybe::Present(document) = held.own_mut(self.peer)
                 && let Judgement::Due(refresh) = document.judgement
@@ -3211,6 +3405,7 @@ impl Server
                 document.judgement = Judgement::Running(refresh);
             }
         }
+        self.sweep_next(workspace, admissions);
         retired
     }
 
@@ -3243,9 +3438,13 @@ impl Server
     ///   to a client that pulls its diagnostics, none is sent for a document no
     ///   notebook of its own: each publication is recorded alone, and when one
     ///   was recorded that no pull held on its copy answers, a client that
-    ///   refreshes its diagnostics is asked to pull again, once. With
-    ///   [`Awaiting::All`], no judgement or admission is left running and no
-    ///   progress end left waiting.
+    ///   refreshes its diagnostics is asked to pull again, once. Before each
+    ///   wait for a judgement, while no copy is judged, the sweep's next step
+    ///   starts, as [`Server::sweep_next`] states; the delivered judgement of
+    ///   the source the sweep judges is kept as its report, as [`reported`]
+    ///   reads it, and once no source is swept the pulls waiting are answered
+    ///   as [`Server::swept`] states. With [`Awaiting::All`], no judgement or
+    ///   admission is left running and no progress end left waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
@@ -3279,6 +3478,10 @@ impl Server
         // waited for: the client is asked to pull again.
         let mut unpulled = false;
         loop {
+            // The sweep judges its next source while no copy is judged.
+            if admissions.judging.is_empty() {
+                self.sweep_next(workspace, admissions);
+            }
             let delivered = match awaiting {
                 Awaiting::Ended => admissions.judgements.ready(),
                 Awaiting::All => admissions.judgements.wait(),
@@ -3293,6 +3496,11 @@ impl Server
             };
             let Some(version) = admissions.judging.remove(&uri)
             else {
+                if let Some(sweeping) = admissions.sweeping.take_if(|sweeping| sweeping.uri == uri)
+                {
+                    let reported = reported(SourceText::from(sweeping.text.as_str()), rechecked);
+                    self.sweep.keep(sweeping, reported);
+                }
                 continue;
             };
             for &mut (ref mut waiting, _) in &mut admissions.ending {
@@ -3354,6 +3562,9 @@ impl Server
                     let _first = admissions.waiting.insert(uri, line);
                 },
             }
+        }
+        if admissions.sweeping.is_none() {
+            settled.messages.extend(self.swept());
         }
         if refresh.0 && self.phase == Phase::Running {
             if self.refreshing.tokens.0 {
@@ -5481,7 +5692,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Diagnosed(_)
+            | Answer::Diagnosed(_) | Answer::Swept(_)
             | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn tokens(
@@ -5548,7 +5759,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
-            | Answer::Diagnosed(_)
+            | Answer::Diagnosed(_) | Answer::Swept(_)
             | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inlay_hints(
@@ -5695,7 +5906,7 @@ impl Workspace
             | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
-            | Answer::Diagnosed(_)
+            | Answer::Diagnosed(_) | Answer::Swept(_)
             | Answer::Sources(_) | Answer::Callables(_) | Answer::Callers(_) | Answer::Callees(_) | Answer::Hint(_) => false,
     })]
     fn inline(
@@ -6131,6 +6342,32 @@ impl Workspace
             return Answer::Resolved(Box::new(item));
         };
         Answer::Resolved(Box::new(resolved(item, hovering)))
+    }
+
+    /// Every source under the opened folders that no editor holds, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each source [`Files::sources`] lists whose path no copy names
+    ///   and which a `file` URI names, ascending.
+    /// - provides: the sources the workspace's diagnostics report.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source under the folder reported and an opened one
+    ///   left out, each asserted at the pull's answer.
+    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    fn unheld(
+        &self,
+        grammar: &Pbg,
+    ) -> Vec<PathBuf>
+    {
+        let mut sources = self.files.borrow_mut().sources(grammar);
+        sources
+            .retain(|path| !self.paths.contains_key(path) && DocumentUri::of_path(path).is_some());
+        sources
     }
 
     /// What a workspace-symbol request for `query` answers `peer`: the names
@@ -7923,6 +8160,24 @@ impl Judging
     }
 }
 
+/// What the judgement `rechecked` of `text` reports: its diagnostics, then
+/// the hints [`unused`] answers off its unused binders and those
+/// [`unreached`] answers off its imports no lookup reached.
+///
+/// # Specification
+/// trivial.
+fn reported(
+    text: SourceText<'_>,
+    rechecked: Rechecked,
+) -> Vec<Diagnostic>
+{
+    let index = LineIndex::new(<&str>::from(text).into());
+    let mut diagnostics = rechecked.diagnostics;
+    diagnostics.extend(unused(&rechecked.unused, text, &index));
+    diagnostics.extend(unreached(&rechecked.unreached, text, &index));
+    diagnostics
+}
+
 /// The publication of `rechecked`, the judgement of `document`, open at `uri`,
 /// at its version, holding back the diagnostics of the form under its caret:
 /// the notification publishing the rest and the line logging what the
@@ -8560,7 +8815,7 @@ mod tests
                         "linkedEditingRangeProvider":true,
                         "callHierarchyProvider":true,
                         "diagnosticProvider":{"identifier":"gandr","interFileDependencies":true,
-                            "workspaceDiagnostics":false},
+                            "workspaceDiagnostics":true},
                         "workspace":{"workspaceFolders":{"supported":true,"changeNotifications":true},
                             "fileOperations":{"didCreate":{"filters":[
                                 {"scheme":"file","pattern":{"glob":"**/*.gandr","matches":"file"}},
@@ -9295,6 +9550,176 @@ mod tests
                 .collect::<Vec<_>>(),
             [String::from("farther")],
             "a rewritten source is found as its file now reads, its old names gone"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_workspace_pull_reports_each_source_no_editor_holds_1824()
+    {
+        use serde_json::json;
+        let directory =
+            std::env::temp_dir().join(format!("gandr-workspace-pull-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        for (file, text) in [
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "user.gandr",
+                "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
+            ),
+            ("broken.gandr", "def bad : Integer ;\ndef bad = nope ;\n"),
+            ("opened.gandr", "def held : Integer ;\ndef held = gone ;\n"),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {"textDocument": {"diagnostic": {}}},
+                "workspaceFolders": [{"uri": uri(""), "name": "scratch"}]}});
+        let _initialized = send(&mut server, Json(&initialize.to_string()));
+        let open = json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("opened.gandr"), "languageId": "gandr", "version": 1_i32,
+                "text": "def held : Integer ;\ndef held = 1 ;\n"}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let pull = |server: &mut Connected, previous: &Value| {
+            let request = json!({"jsonrpc": "2.0", "id": 7_i32, "method": "workspace/diagnostic",
+                "params": {"previousResultIds": previous}});
+            send(server, Json(&request.to_string()))
+        };
+        let items = |answered: &Value| -> Vec<(String, String, Vec<Value>)> {
+            answered[0_usize]["result"]["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|item| {
+                    (
+                        item["uri"].as_str().map(String::from).unwrap_or_default(),
+                        item["kind"].as_str().map(String::from).unwrap_or_default(),
+                        item["items"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|diagnostic| diagnostic["code"].clone())
+                            .collect(),
+                    )
+                })
+                .collect()
+        };
+        let first = pull(&mut server, &json!([]));
+        assert_eq!(
+            first.as_array().map(Vec::len),
+            Some(1_usize),
+            "the pull is answered once, after the sweep: {first}"
+        );
+        let full = String::from("full");
+        let unchanged = String::from("unchanged");
+        assert_eq!(
+            items(&first),
+            vec![
+                (uri("base.gandr"), full.clone(), Vec::new()),
+                (uri("broken.gandr"), full.clone(), vec![json!(
+                    "UnresolvedName"
+                )]),
+                (uri("user.gandr"), full.clone(), Vec::new()),
+            ],
+            "each source no editor holds is judged, the importer over its import, and the \
+             opened source left to its own pull"
+        );
+        assert!(
+            first[0_usize]["result"]["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .all(|item| item.get("version") == Some(&Value::Null)),
+            "a source read from its file has no version"
+        );
+        let held: Vec<Value> = first[0_usize]["result"]["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|item| json!({"uri": item["uri"], "value": item["resultId"]}))
+            .collect();
+        let held = Value::Array(held);
+        assert_eq!(
+            items(&pull(&mut server, &held)),
+            vec![
+                (uri("base.gandr"), unchanged.clone(), Vec::new()),
+                (uri("broken.gandr"), unchanged.clone(), Vec::new()),
+                (uri("user.gandr"), unchanged.clone(), Vec::new()),
+            ],
+            "a report the client holds is answered unchanged"
+        );
+        std::fs::write(
+            directory.join("base.gandr"),
+            "def zero : Integer ;\ndef zero = 0 ;\n",
+        )
+        .expect("the import is rewritten");
+        assert_eq!(
+            items(&pull(&mut server, &held)),
+            vec![
+                (uri("base.gandr"), unchanged.clone(), Vec::new()),
+                (uri("broken.gandr"), unchanged, Vec::new()),
+                (uri("user.gandr"), full, vec![json!("UnresolvedName")]),
+            ],
+            "an import rewritten judges its importer again; a report that reads the same is \
+             unchanged"
+        );
+        std::fs::write(
+            directory.join("base.gandr"),
+            "def one : Integer ;\ndef one = 1 ;\n",
+        )
+        .expect("the import is restored");
+        let change = json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri("opened.gandr"), "version": 2_i32},
+            "contentChanges": [{"text": "def held : Integer ;\ndef held = 2 ;\n"}]}});
+        let request = json!({"jsonrpc": "2.0", "id": 9_i32, "method": "workspace/diagnostic",
+            "params": {"previousResultIds": held}});
+        for message in [change, request] {
+            let quiet = server.server.handle(
+                &mut server.workspace,
+                &Body::from(message.to_string().into_bytes()),
+            );
+            assert!(
+                quiet.messages.is_empty(),
+                "a change and a stale pull answer nothing yet"
+            );
+        }
+        let _log = server
+            .server
+            .admit(&mut server.workspace, &mut server.admissions);
+        assert!(
+            server.admissions.judging.len() == 1_usize && server.admissions.sweeping.is_none(),
+            "the sweep waits while an editor's copy is judged"
+        );
+        let settled =
+            server
+                .server
+                .admitted(&mut server.workspace, &mut server.admissions, Awaiting::All);
+        let answered: Vec<Value> = settled
+            .messages
+            .iter()
+            .map(|message| serde_json::to_value(message).expect("a message encodes"))
+            .filter(|message| message.get("id") == Some(&json!(9_i32)))
+            .collect();
+        assert_eq!(
+            items(&Value::Array(answered)),
+            vec![
+                (uri("base.gandr"), String::from("unchanged"), Vec::new()),
+                (uri("broken.gandr"), String::from("unchanged"), Vec::new()),
+                (uri("user.gandr"), String::from("unchanged"), Vec::new()),
+            ],
+            "then the sweep judges the importer again, and the pull is answered"
+        );
+        let unread = json!({"jsonrpc": "2.0", "id": 8_i32, "method": "workspace/diagnostic",
+            "params": {"previousResultIds": 3_i32}});
+        assert_eq!(
+            send(&mut server, Json(&unread.to_string()))[0_usize]["error"]["code"],
+            json!(-32602_i32),
+            "parameters that do not read are refused"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

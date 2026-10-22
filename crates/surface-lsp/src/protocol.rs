@@ -2246,6 +2246,49 @@ pub struct DiagnosticParams
     pub previous_result_id: Option<ResultId>,
 }
 
+/// The parameters of `workspace/diagnostic`.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct WorkspaceDiagnosticParams
+{
+    /// The id of each report the client holds, by its document.
+    #[serde(default)]
+    pub previous_result_ids: Vec<PreviousResultId>,
+}
+
+/// The id of the report the client holds for one document.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PreviousResultId
+{
+    /// The document.
+    pub uri: DocumentUri,
+    /// The id of its report.
+    pub value: ResultId,
+}
+
+/// What `workspace/diagnostic` answers: a report for each source.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct WorkspaceReport
+{
+    /// The reports, one per source.
+    pub items: Vec<WorkspaceDocumentReport>,
+}
+
+/// One source's report in a workspace's, the source no editor holds.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkspaceDocumentReport
+{
+    /// The source.
+    pub uri: DocumentUri,
+    /// Its version: none, the source being read from its file.
+    pub version: Option<DocumentVersion>,
+    /// Its diagnostics, or that the client holds them.
+    #[serde(flatten)]
+    pub report: DiagnosticReport,
+}
+
 /// The parameters of `textDocument/references`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -2383,7 +2426,7 @@ impl InitializeResult
             && ret.capabilities.completion_provider.completion_item.label_details_support
             && matches!(ret.capabilities.diagnostic_provider.identifier.as_bytes(), b"gandr")
             && ret.capabilities.diagnostic_provider.inter_file_dependencies
-            && !ret.capabilities.diagnostic_provider.workspace_diagnostics)]
+            && ret.capabilities.diagnostic_provider.workspace_diagnostics)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -2455,7 +2498,7 @@ impl InitializeResult
                 diagnostic_provider: DiagnosticOptions {
                     identifier: SOURCE,
                     inter_file_dependencies: true,
-                    workspace_diagnostics: false,
+                    workspace_diagnostics: true,
                 },
                 workspace: WorkspaceOptions {
                     workspace_folders: FoldersOptions {
@@ -2575,8 +2618,8 @@ pub struct DiagnosticOptions
     /// Whether a document's diagnostics change when another document does:
     /// they do, a copy being judged with its import closure.
     pub inter_file_dependencies: bool,
-    /// Whether `workspace/diagnostic` is answered: it is not, a source no
-    /// editor holds being checked by no one.
+    /// Whether `workspace/diagnostic` is answered: it is, each source under the
+    /// opened folders that no editor holds judged as an editor's copy is.
     pub workspace_diagnostics: bool,
 }
 
@@ -3104,6 +3147,9 @@ pub enum Answer
     /// What a pull of an open document's diagnostics answers: what its copy
     /// last published, or that the client already holds it.
     Diagnosed(DiagnosticReport),
+    /// What a pull of the workspace's diagnostics answers: a report for each
+    /// source under the opened folders that no editor holds.
+    Swept(WorkspaceReport),
     /// `null`: what `shutdown` answers, a request about a document that is not
     /// open, and a hover over nothing the server knows.
     Nothing,
