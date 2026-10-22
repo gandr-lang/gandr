@@ -705,7 +705,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 59_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 62_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -955,6 +955,15 @@ mod tests
                     Maybe::Absent(crate::description_subject::Absent::Unnamed),
                 ],
             },
+            LoweringRefusal::NonExhaustiveMatch { span: empty },
+            LoweringRefusal::RulesOverlapSecondOrder {
+                span: empty,
+                first: empty,
+            },
+            LoweringRefusal::UnguardedCorecursion {
+                span: empty,
+                name: SurfaceName::from("ones"),
+            },
         ]
     }
 
@@ -1018,6 +1027,9 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

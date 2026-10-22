@@ -1222,4 +1222,16 @@ mod tests
             "a table seeded later shadows an earlier table"
         );
     }
+
+    #[test]
+    fn each_event_kind_spells_its_own_tag()
+    {
+        use alloc::string::ToString as _;
+
+        assert_eq!(
+            [EventKind::NotFound, EventKind::Shadow, EventKind::Hook].map(|kind| kind.to_string()),
+            ["not-found", "shadow", "hook"].map(alloc::string::String::from),
+            "a rejection's tag reads as the event that raised it"
+        );
+    }
 }

@@ -2431,6 +2431,71 @@ fn an_unresolved_import_refuses_its_source()
 }
 
 #[test]
+fn an_import_closing_a_cycle_refuses_its_source()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[(
+        SourceText::from("import \"./self.gandr\" ;\ndef one : Integer ;\ndef one = 1 ;"),
+        &[ImportTarget::Cycle],
+    )]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    assert!(
+        matches!(
+            module.declarations(),
+            [declaration] if matches!(
+                declaration.outcome(),
+                DeclarationOutcome::Refused(LoweringRefusal::ImportCycle { span, .. })
+                    if span == bytes(0_usize, 23_usize)
+            )
+        ),
+        "every declaration of the source is refused, naming the import on the cycle"
+    );
+}
+
+#[test]
+fn a_constructor_an_import_binds_again_refuses_its_family()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from("data Bit : Type { O : Bit; I : Bit; }"),
+            &[],
+        ),
+        (
+            SourceText::from("import \"./base.gandr\" ;\ndata Other : Type { O : Other; }"),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let refused: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { name, .. }) =
+                declaration.outcome()
+            {
+                Some((
+                    String::from(declaration.name().as_ref()),
+                    String::from(name.as_ref()),
+                ))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        Vec::from([(String::from("Other"), String::from("O"))]),
+        "the importer's family is refused at its constructor `O`, which the base binds"
+    );
+}
+
+#[test]
 fn a_declaration_an_import_binds_again_is_refused()
 {
     let pbg = grammar();

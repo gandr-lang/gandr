@@ -691,6 +691,45 @@ fn a_stated_stack_is_resumed_as_a_clause_resumes_1387()
     }
 }
 
+/// A member abbreviating anything but a stack states no stack: a plain type
+/// and another family's application are read as the types they are, and a
+/// parameter of either resumes nothing.
+#[test]
+fn a_member_abbreviating_no_stack_states_none()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "module Others {\n",
+        "  type P = Integer ;\n",
+        "  type A = List(Integer) ;\n",
+        "}\n",
+        "def plain(j : Others.P) -> -F Integer { return j }\n",
+        "def boxed(j : Others.A) -> -F Integer { return 0 }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    for name in ["plain", "boxed"] {
+        let mut at = tail_of(&module, &arena, name.into());
+        while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+            at = body;
+        }
+        assert!(
+            !matches!(arena.computation(at), Some(&Computation::Resume(..))),
+            "{name}: no stack is stated, so nothing resumes"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    for name in ["plain", "boxed"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: {:?}",
+            verdict_of(&module, &report, name.into())
+        );
+    }
+}
+
 /// `abandon(k)` in an operation clause ends the clause's continuation without
 /// running it, and the clause checks; a program that binds its own `abandon`
 /// calls it (#1334).
