@@ -1007,6 +1007,12 @@ impl Typer<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `pi+` port beside first-order ones: its binder
+    ///   answers at its sort and its own name nowhere, so a bound port read as
+    ///   first-order, or not read at all, shows.
+    /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     fn bound(
         &mut self,
         scope: &Scope,

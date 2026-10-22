@@ -109,6 +109,12 @@ impl SortRef
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a port abstracting an atom of an atom sort passes the
+    ///   description check and one over an ordinary sort is refused, so a port
+    ///   that drops its abstractions passes both.
+    /// - witness: `wellformed::tests::a_port_abstracts_atoms_of_an_atom_sort`
     #[inline]
     #[must_use]
     pub fn abstracting<I>(

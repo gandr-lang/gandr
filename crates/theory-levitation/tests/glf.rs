@@ -377,3 +377,33 @@ fn translation_refuses_non_signatures()
         Err(TranslationError::AtomAbstraction(Name::from("app")))
     );
 }
+
+#[test]
+fn each_translation_refusal_reads_as_its_own_message()
+{
+    let named = [
+        TranslationError::ReservedName(Name::from("app")),
+        TranslationError::UnknownIndexSort(Name::from("app")),
+        TranslationError::NonProductOperation(Name::from("app")),
+        TranslationError::AtomAbstraction(Name::from("app")),
+    ];
+    for refusal in &named {
+        assert!(
+            refusal.to_string().contains("app"),
+            "a refusal of a named component names it: {refusal}"
+        );
+    }
+    let messages: Vec<String> = [
+        TranslationError::Malformed(Vec::new()),
+        TranslationError::NonSignatureMembers,
+    ]
+    .iter()
+    .chain(&named)
+    .map(ToString::to_string)
+    .collect();
+    for (first, left) in messages.iter().enumerate() {
+        for right in messages.iter().skip(first.saturating_add(1)) {
+            assert_ne!(left, right, "no two refusals read alike");
+        }
+    }
+}

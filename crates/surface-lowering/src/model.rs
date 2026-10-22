@@ -468,6 +468,13 @@ impl Presentation
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — operations with plain, bound and abstracting ports read
+///   back their ports, each refused by the fault its ports name, so a port list
+///   emptied, padded or stripped of its binders or atoms shows.
+/// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+/// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
 fn ports<Names>(
     coded: Vec<TheoryPort>,
     names: Names,
@@ -623,6 +630,11 @@ impl core::fmt::Display for ModelFault
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every fault renders a clause no other fault renders,
+    ///   so an empty or fixed text shows.
+    /// - witness: `model::tests::each_model_fault_reads_as_its_own_clause`
     #[inline]
     fn fmt(
         &self,
