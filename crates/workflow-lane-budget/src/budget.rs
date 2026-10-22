@@ -24,6 +24,11 @@ impl From<&str> for Lane
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report names each lane as its budget spells it,
+    ///   so an emptied name drops the lane from its row.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn from(name: &str) -> Self
     {
@@ -37,6 +42,11 @@ impl fmt::Display for Lane
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report's row spells the lane, so writing nothing
+    ///   changes the asserted report.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn fmt(
         &self,
@@ -58,6 +68,11 @@ impl From<u64> for Seconds
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lane at its budget and one second over stand apart,
+    ///   which every time read as zero would not.
+    /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
     #[inline]
     fn from(seconds: u64) -> Self
     {
@@ -73,6 +88,11 @@ impl FromStr for Seconds
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a budget's seconds read back as written, so a parse
+    ///   to zero changes the limit asserted.
+    /// - witness: `budget::tests::a_budget_reads_name_cone_and_seconds`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -203,6 +223,11 @@ impl FromStr for RunCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `--runs 2` reads runs 3 and 2 and not 1, so another
+    ///   count changes the runs listed and fetched.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -216,6 +241,11 @@ impl From<RunCount> for usize
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `--runs 2` reads two runs, and a length of zero reads
+    ///   none.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[spec(ensures: |ret| ret == count.0.get())]
     #[inline]
     fn from(count: RunCount) -> Self

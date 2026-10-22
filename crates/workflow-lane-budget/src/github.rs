@@ -61,6 +61,11 @@ impl From<&str> for IssueTitle
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the issue is opened under the title given, so an
+    ///   emptied title changes the invocation logged.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn from(title: &str) -> Self
     {
@@ -79,6 +84,11 @@ impl fmt::Display for IssueNumber
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the closed, reopened and updated issue are each named
+    ///   by number in the line printed.
+    /// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
     #[inline]
     fn fmt(
         &self,
@@ -116,6 +126,12 @@ impl fmt::Display for Filed
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every action's line is asserted, so writing nothing
+    ///   changes each.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
+    /// - witness: `tests::cli::an_issue_follows_the_budget_both_ways`
     #[inline]
     fn fmt(
         &self,

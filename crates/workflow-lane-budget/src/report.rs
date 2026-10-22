@@ -30,6 +30,11 @@ impl FromStr for RunId
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — runs 3 and 2 are listed and their jobs fetched by
+    ///   identifier, so every run read as zero fetches another route.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn from_str(text: &str) -> Result<Self, Self::Err>
     {
@@ -43,6 +48,11 @@ impl fmt::Display for RunId
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each run's jobs are fetched at a route naming it, and
+    ///   the report lists the runs read.
+    /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
     #[inline]
     fn fmt(
         &self,
@@ -149,6 +159,11 @@ impl fmt::Display for Standing
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row within and a row over are asserted, so writing
+    ///   nothing changes both.
+    /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
     #[inline]
     fn fmt(
         &self,
@@ -174,6 +189,11 @@ impl fmt::Display for SampleCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each row's job count is asserted, so writing nothing
+    ///   changes it.
+    /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
     #[inline]
     fn fmt(
         &self,
