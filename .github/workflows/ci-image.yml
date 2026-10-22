@@ -21,6 +21,7 @@ on:
       - .github/docker/image-tag.sh
       - .github/workflows/ci.yml
       - .config/mise/tasks/mise-tasks-check.toml
+      - .config/mise/tasks/mise-tasks-mutants.toml
       - .github/workflows/ci-image.yml
   # Refresh upstream releases and base digest rotations even without pin edits.
   schedule:

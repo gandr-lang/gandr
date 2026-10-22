@@ -1,5 +1,5 @@
 # The Linux CI image carries this workspace's pinned Rust toolchain, CI mise
-# subset, runtime and Dylint driver. No engine SDK or LLVM pin exists here.
+# subset, gh, cargo-mutants, runtime and Dylint driver. No engine SDK or LLVM pin exists here.
 # Pin files are copied, never retyped; image-tag.sh hashes the build inputs.
 ARG UBUNTU_BASE=docker.io/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 FROM ${UBUNTU_BASE}
@@ -31,7 +31,7 @@ ENV MISE_DISABLE_TOOLS=cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk
 # under .mise/locks, which the npm backend reads to install from lock.
 COPY --chown=1000:1000 rust-toolchain.toml mise.toml mise.lock .github/workflows/ci.yml /opt/pins/
 COPY --chown=1000:1000 .mise/locks /opt/pins/.mise/locks
-COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml /opt/pins/.config/mise/tasks/
+COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml .config/mise/tasks/mise-tasks-mutants.toml /opt/pins/.config/mise/tasks/
 WORKDIR /opt/pins
 
 # The pin supplies channel, profile and components.
@@ -43,7 +43,9 @@ RUN set -eux; \
     rustup default "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
 
 # ci.yml selects mise's version. A BuildKit secret authenticates release
-# attestations without persisting a credential in any layer.
+# attestations without persisting a credential in any layer. The mutants
+# tasks pin cargo-mutants, which ships no Linux arm64 binary, so the image
+# builds it once instead of every mutants job.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false set -eux; \
     if [ -s /run/secrets/github_token ]; then GITHUB_TOKEN="$(cat /run/secrets/github_token)"; export GITHUB_TOKEN; fi; \
     expected="$(sed -n 's/^  MISE_DISABLE_TOOLS: "\(.*\)"$/\1/p' /opt/pins/ci.yml)"; \
@@ -58,7 +60,8 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false set -eux; \
     mkdir -p /opt/ci/.local/bin; \
     curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${ARCH}" -o /opt/ci/.local/bin/mise; \
     chmod +x /opt/ci/.local/bin/mise; \
-    mise install
+    mise install; \
+    mise install "cargo:cargo-mutants@$(sed -n 's/^tools."cargo:cargo-mutants" = "\(.*\)"$/\1/p' .config/mise/tasks/mise-tasks-mutants.toml | sort -u)"
 
 # Cargo resolves its subcommands by name; expose pinned binaries without shims.
 RUN set -eux; \
@@ -67,8 +70,10 @@ RUN set -eux; \
     done
 
 # act invokes JavaScript actions through PATH rather than the hosted runner's
-# bundled Node. Expose the pinned interpreter.
-RUN ln -sf "$(mise which node)" /opt/ci/.local/bin/node
+# bundled Node. Expose the pinned interpreter. Workflow steps call gh outside
+# mise, as they do on the hosted runner; expose the pinned client.
+RUN ln -sf "$(mise which node)" /opt/ci/.local/bin/node \
+    && ln -sf "$(mise which gh)" /opt/ci/.local/bin/gh
 
 WORKDIR /opt/ci/warmup/app
 

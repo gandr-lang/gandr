@@ -332,6 +332,53 @@ url = "https://github.com/aubepkg/aube/releases/download/v2.8.0/aube-v2.8.0-x86_
 url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/656479313"
 provenance = "github-attestations"
 
+[[tools."github:cli/cli"]]
+version = "2.102.1"
+backend = "github:cli/cli"
+specifiers = ["v2.102.1"]
+
+[tools."github:cli/cli"."platforms.linux-arm64"]
+checksum = "sha256:5019b3cc6e8a03bb4d88600f8dbda2add8e6407705c159b0c63151036e77a1af"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284837"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.linux-arm64-musl"]
+checksum = "sha256:5019b3cc6e8a03bb4d88600f8dbda2add8e6407705c159b0c63151036e77a1af"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284837"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.linux-x64"]
+checksum = "sha256:77b9e297e94c50336823d0f84de7ef1be60cba704601fa0d98f129f47a94987b"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284822"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.linux-x64-musl"]
+checksum = "sha256:77b9e297e94c50336823d0f84de7ef1be60cba704601fa0d98f129f47a94987b"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284822"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.macos-arm64"]
+checksum = "sha256:08bfef98b50c553df122bb34ee8dcf415cae7d3b108891488964a0df07aa2aeb"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284918"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.macos-x64"]
+checksum = "sha256:91c5fbd493274b545b03ef32a89c2a21238393c0c0b1108210967199b3230d9d"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_macOS_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284911"
+provenance = "github-attestations"
+
+[tools."github:cli/cli"."platforms.windows-x64"]
+checksum = "sha256:843c0dc119f014d9458aeaff96c44c16fc4b8e556c1c4c5df9bab5ba002356e9"
+url = "https://github.com/cli/cli/releases/download/v2.102.1/gh_2.102.1_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/660284981"
+provenance = "github-attestations"
+
 [[tools."github:crate-ci/typos"]]
 version = "1.51.1"
 backend = "github:crate-ci/typos"

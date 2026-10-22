@@ -1207,8 +1207,7 @@ jobs:
       report: ${{ steps.report.outputs.artifact-url }}
     env:
       # The mutants build over main's plain test state and the listing reads
-      # main's rustdoc JSON from the policy state. Only the cargo-mutants
-      # install is saved.
+      # main's rustdoc JSON from the policy state. Nothing is saved.
       CI_BUILD_STATE: cargo-test-plain-only
       # A pull request checks out its merge commit, whose first parent is the
       # base it merges into; a dispatch reads its parent commit.
@@ -1224,25 +1223,6 @@ jobs:
       - *restore-test-state
       - *find-build-state
       - *unpack-build-state
-      # The tasks pin cargo-mutants, which ships no Linux arm64 binary. Neither
-      # the CI image nor the policy tools' cache holds it, so mise builds it
-      # from source on first use. Its install, under mise's data directory on
-      # the runner or in the image, is cached by version and architecture until
-      # the image carries it (#1763). The nightly run on main saves the entry
-      # every pull request restores.
-      - &note-mutants-version
-        name: note the cargo-mutants pin
-        shell: bash
-        run: |
-          printf 'CI_MUTANTS_VERSION=%s\n' "$(sed -n 's/^tools."cargo:cargo-mutants" = "\(.*\)"$/\1/p' .config/mise/tasks/mise-tasks-mutants.toml | sort -u)" >> "$GITHUB_ENV"
-          printf 'CI_MUTANTS_INSTALL=%s\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}/installs/cargo-cargo-mutants" >> "$GITHUB_ENV"
-      - &restore-mutants-tool
-        name: restore the cargo-mutants install
-        id: mutants-tool
-        uses: *cache-restore
-        with:
-          path: &mutants-tool ${{ env.CI_MUTANTS_INSTALL }}
-          key: &mutants-tool-key gandr-v1-cargo-mutants-${{ env.CI_MUTANTS_VERSION }}-${{ runner.os }}-${{ runner.arch }}
       # A lane for each of the runner's cores, each building in its own copy
       # of the restored target directory: a lane's worktree sits elsewhere, so
       # the workspace's own crates rebuild there, but every dependency is
@@ -1272,13 +1252,6 @@ jobs:
             printf '::error::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
             exit 1
           fi
-      - &save-mutants-tool
-        name: save the cargo-mutants install
-        if: ${{ !cancelled() && env.ACT != 'true' && steps.mutants-tool.outputs.cache-hit != 'true' }}
-        uses: *cache-save
-        with:
-          path: *mutants-tool
-          key: *mutants-tool-key
       - *lane-timing
 
   mutants-comment:
@@ -1362,8 +1335,6 @@ jobs:
             mutants.out/nightly/*/iterate
           key: gandr-v1-mutants-nightly-${{ github.run_id }}
           restore-keys: gandr-v1-mutants-nightly-
-      - *note-mutants-version
-      - *restore-mutants-tool
       # One lane, building into the restored target directory.
       - name: run the night's mutants
         id: night
@@ -1383,7 +1354,6 @@ jobs:
         with:
           path: *mutants-state
           key: gandr-v1-mutants-nightly-${{ github.run_id }}
-      - *save-mutants-tool
       - *lane-timing
 
   # The benchmark report (`mise run ci:hotpath`): each series runs under the
