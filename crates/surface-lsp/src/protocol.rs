@@ -3257,6 +3257,9 @@ pub struct DocumentSymbol
     /// The position of the declaration holding it among the document's
     /// symbols; none at the top level.
     pub holder: Option<usize>,
+    /// Whether a `deprecated` attribute marks the declaration, which the
+    /// symbol's `Deprecated` tag says.
+    pub deprecated: bool,
 }
 
 /// The declarations of a document in source order, each after the one
@@ -3272,7 +3275,8 @@ impl Serialize for DocumentSymbols
 {
     /// Write the symbols as the protocol's tree: each symbol an object, its
     /// held symbols in source order under `children`, omitted when it holds
-    /// none; a holder that is not an earlier symbol writes its symbol at the
+    /// none, and the `Deprecated` tag under `tags` when it is deprecated; a
+    /// holder that is not an earlier symbol writes its symbol at the
     /// top level.
     ///
     /// # Specification
@@ -3306,6 +3310,12 @@ impl Serialize for DocumentSymbols
             if let Some(ref detail) = symbol.detail {
                 let _detail = object.insert("detail".to_owned(), Value::String(detail.clone()));
             }
+            if symbol.deprecated {
+                let _tags = object.insert(
+                    "tags".to_owned(),
+                    Value::from([SymbolTag::DEPRECATED.0].as_slice()),
+                );
+            }
             objects.push(object);
         }
         // Every symbol a symbol holds stands after it, so writing from the
@@ -3336,6 +3346,18 @@ impl Serialize for DocumentSymbols
         roots.reverse();
         Value::Array(roots).serialize(serializer)
     }
+}
+
+/// How a symbol is marked besides its kind, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SymbolTag(u8);
+
+impl SymbolTag
+{
+    /// Deprecated: a declaration a `deprecated` attribute marks, which the
+    /// outline strikes through.
+    pub const DEPRECATED: Self = Self(1);
 }
 
 /// What a symbol declares, as the protocol numbers it.
@@ -4032,6 +4054,9 @@ impl DiagnosticTag
 {
     /// Unnecessary: a binder no use refers to, which the editor fades.
     pub const UNNECESSARY: Self = Self(1);
+    /// Deprecated: a use of a declaration its author marked deprecated,
+    /// which the editor strikes through.
+    pub const DEPRECATED: Self = Self(2);
 }
 
 /// Where a diagnostic's code is described.
@@ -4250,6 +4275,7 @@ mod tests
             selection_range: Range::default(),
             detail: None,
             holder,
+            deprecated: false,
         };
         let symbols = DocumentSymbols(Vec::from([
             symbol("outer", None),

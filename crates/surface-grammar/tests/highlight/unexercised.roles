@@ -474,8 +474,6 @@
 827 Other module_declaration ( L[identifier] R[<expression>]
 828 Other module_declaration ) L[<expression>] R[, ]]
 829 Other module_declaration , L[) identifier] R[]]
-833 Other module_declaration ( L[identifier] R[<expression>]
-834 Other module_declaration ) L[<expression>] R[, ]]
 835 Other module_declaration , L[) identifier] R[identifier]
 836 Other module_declaration identifier L[,] R[( , ]]
 837 Other module_declaration ( L[identifier] R[<expression>]

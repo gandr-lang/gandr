@@ -142,6 +142,9 @@ pub enum Label
     Overlaps,
     /// A variable's second occurrence on a rule's left side.
     Copied,
+    /// A use of a declaration a `deprecated` attribute marks: the primary
+    /// locus of a `deprecated` finding.
+    Deprecated,
 }
 
 impl fmt::Display for Label
@@ -193,6 +196,7 @@ impl fmt::Display for Label
             Self::FirstArm => f.write_str("the arm it disagrees with"),
             Self::Overlaps => f.write_str("the rule it overlaps"),
             Self::Copied => f.write_str("the variable matched again"),
+            Self::Deprecated => f.write_str("names a deprecated declaration"),
         }
     }
 }
@@ -4325,6 +4329,7 @@ mod tests
             Label::Ran(gandr_core_term::effect::Purity::Pure).to_string(),
             Label::Ran(gandr_core_term::effect::Purity::Effectful).to_string(),
             Label::Copied.to_string(),
+            Label::Deprecated.to_string(),
         ];
         for (index, label) in labels.iter().enumerate() {
             for earlier in &labels[.. index] {

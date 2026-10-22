@@ -23,8 +23,10 @@
 //!   a `Module`, an `Interface`, a `Struct` or an `Enum` by its keyword:
 //!   `module`, `theory`, `codata`, and `data` or anything else. A symbol's
 //!   range is its form's, widened over the attribute blocks standing directly
-//!   before it, and its selection range is the name's tile. An attribute block
-//!   is a form with no such tile, so it is no symbol.
+//!   before it, and its selection range is the name's tile; it is tagged
+//!   `Deprecated` when one of those blocks, or one an attributed module member
+//!   writes before its keyword, names the `deprecated` attribute. An attribute
+//!   block is a form with no such tile, so it is no symbol.
 //! - **Members.** A `theory` block, a `data` declaration and a `codata`
 //!   declaration write their members among their own tiles, not as forms, so
 //!   each `;`-ended run between the form's braces is read as a member nested
@@ -105,14 +107,16 @@ pub enum Declarer
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
 ///   or [`HlRole::Type`], or as [`HlRole::Label`] after the keyword `world`.
 ///   The symbol's range is the form's, widened to the attribute blocks standing
-///   directly before it, its selection range the name's, and its kind a
+///   directly before it, and it is deprecated exactly when one of those blocks,
+///   or one the form writes among its own tiles before its keyword, names the
+///   `deprecated` attribute; its selection range the name's, and its kind a
 ///   function, a value, or by the form's first keyword a world, a module, a
 ///   data declaration, a codata declaration or a signature. A signature, data
 ///   declaration or codata declaration holds one symbol per member written
-///   between its own braces, as [`members`] reads them. Symbols are in source
-///   order, each after the declaration holding it, which it names by position;
-///   a top-level one names none. Each is beside the form that declares it, or
-///   the form whose member it is.
+///   between its own braces, as [`members`] reads them, none of them
+///   deprecated. Symbols are in source order, each after the declaration
+///   holding it, which it names by position; a top-level one names none. Each
+///   is beside the form that declares it, or the form whose member it is.
 /// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
@@ -129,6 +133,7 @@ pub enum Declarer
 ///   reading an attribute name as the declared one changes it; a hover finds
 ///   each declaration's documentation under its own form.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
+/// - witness: `outline::tests::a_deprecated_declaration_is_tagged`
 /// - witness: `outline::tests::a_theory_holds_its_members`
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
@@ -143,7 +148,7 @@ pub fn declarations(
     // A depth-first walk in source order meets each declaration after the
     // one holding it.
     let mut found: Vec<(Declarer, DocumentSymbol)> = Vec::new();
-    let mut pending: Vec<(NodeIndex, Option<usize>, Option<ByteSpan>)> =
+    let mut pending: Vec<(NodeIndex, Option<usize>, Option<Decorated>)> =
         Vec::from([(tree.root(), None, None)]);
     while let Some((at, holder, decorated)) = pending.pop() {
         let holder =
@@ -162,7 +167,7 @@ pub fn declarations(
         let first = pending.len();
         // The attribute blocks standing before a form decorate it, layout
         // between them included.
-        let mut blocks: Option<ByteSpan> = None;
+        let mut blocks: Option<Decorated> = None;
         for child in tree.children(at) {
             let Some(node) = tree.node(child)
             else {
@@ -175,7 +180,14 @@ pub fn declarations(
                         .is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK) =>
                 {
                     let span = node.span();
-                    blocks = Some(blocks.map_or(span, |first| first.join(span)));
+                    let Deprecated(deprecated) = names_deprecated(tree, child);
+                    blocks =
+                        Some(
+                            blocks.map_or(Decorated { span, deprecated }, |first| Decorated {
+                                span: first.span.join(span),
+                                deprecated: first.deprecated || deprecated,
+                            }),
+                        );
                     pending.push((child, holder, None));
                 },
                 NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
@@ -195,6 +207,78 @@ pub fn declarations(
     found
 }
 
+/// The attribute blocks standing before a form: the bytes they cover, and
+/// whether one names the `deprecated` attribute.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Decorated
+{
+    /// From the first block's start to the last one's end.
+    span: ByteSpan,
+    /// Whether a block names the `deprecated` attribute.
+    deprecated: bool,
+}
+
+/// Whether attribute blocks name the `deprecated` attribute.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Deprecated(bool);
+
+/// Whether the attribute blocks the node at `at` starts with name the
+/// `deprecated` attribute: a tile reading `deprecated` right after a block's
+/// `@[` or a `,`, where an attribute's name stands, not inside a payload. The
+/// node is an attribute block, or a form writing its blocks among its own
+/// tiles before its keyword, as an attributed module member does; the reading
+/// stops at the first tile or form outside a block.
+///
+/// # Specification
+/// trivial.
+fn names_deprecated(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Deprecated
+{
+    let mut inside = false;
+    let mut opens_name = false;
+    for child in tree.children(at) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => {},
+            NodeLabel::Tile(_) => {
+                let written = tree.fragment(child).map(<&str>::from);
+                if !inside {
+                    if written != Some("@[") {
+                        return Deprecated(false);
+                    }
+                    inside = true;
+                }
+                else if written == Some("]") {
+                    inside = false;
+                }
+                else if opens_name && written == Some("deprecated") {
+                    return Deprecated(true);
+                }
+                opens_name = inside && matches!(written, Some("@[" | ","));
+            },
+            NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => {
+                if !inside {
+                    return Deprecated(false);
+                }
+                opens_name = false;
+            },
+        }
+    }
+    Deprecated(false)
+}
+
 /// The symbol the form at `at` declares, when it is a named declaration,
 /// its range widened over the attribute blocks `decorated` before it.
 ///
@@ -206,7 +290,7 @@ fn declared(
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
     at: NodeIndex,
-    decorated: Option<ByteSpan>,
+    decorated: Option<Decorated>,
 ) -> Option<DocumentSymbol>
 {
     let node = tree.node(at)?;
@@ -245,11 +329,14 @@ fn declared(
                     kind: kind_of(role, keyword),
                     range: range_of(
                         index,
-                        decorated.map_or_else(|| node.span(), |blocks| blocks.join(node.span())),
+                        decorated
+                            .map_or_else(|| node.span(), |blocks| blocks.span.join(node.span())),
                     )?,
                     selection_range: range_of(index, named)?,
                     detail: detail(tree, named.end(), body),
                     holder: None,
+                    deprecated: decorated.is_some_and(|blocks| blocks.deprecated)
+                        || names_deprecated(tree, at).0,
                 });
             },
             Ok(_) | Err(_) => {},
@@ -599,6 +686,7 @@ fn member(
         selection_range: range_of(index, named_span)?,
         detail: detail(tree, named_span.end(), end),
         holder: None,
+        deprecated: false,
     })
 }
 
@@ -1009,6 +1097,50 @@ mod tests
             wire.get(0_usize)
                 .is_some_and(|twice| twice.get("children").is_none()),
             "a symbol holding none writes no children"
+        );
+    }
+
+    /// A declaration an attribute block before it marks `deprecated` is
+    /// tagged so on the wire, whichever block names it and whatever its
+    /// payload; a `deprecated` word inside another attribute's payload marks
+    /// nothing, and neither does a module member's block mark its holder.
+    #[test]
+    fn a_deprecated_declaration_is_tagged()
+    {
+        let source = "@[ deprecated ] def bare = 1 ;\n@[ checks ]\n@[ doc(\"x\"), deprecated(#{ \
+                      since = \"0.2\" }) ] def recorded = 2 ;\n@[ respects(deprecated) ] def \
+                      named = 3 ;\nmodule Holder {\n  @[ deprecated ] def member = 4 ;\n}\ndef \
+                      plain = 5 ;\n";
+        let answered = Reading::of(SourceText::from(source)).symbols();
+        assert_eq!(
+            answered
+                .0
+                .iter()
+                .map(|symbol| (symbol.name.as_str(), symbol.deprecated))
+                .collect::<Vec<_>>(),
+            [
+                ("bare", true),
+                ("recorded", true),
+                ("named", false),
+                ("Holder", false),
+                ("member", true),
+                ("plain", false),
+            ]
+        );
+        let wire = serde_json::to_value(&answered).expect("the symbols encode");
+        assert_eq!(
+            wire.pointer("/0/tags"),
+            Some(&serde_json::json!([1_u8])),
+            "a deprecated symbol carries the protocol's `Deprecated` tag"
+        );
+        assert_eq!(
+            wire.pointer("/3/children/0/tags"),
+            Some(&serde_json::json!([1_u8])),
+            "a member is tagged where it nests"
+        );
+        assert!(
+            wire.pointer("/2/tags").is_none(),
+            "an unmarked symbol carries no tags"
         );
     }
 

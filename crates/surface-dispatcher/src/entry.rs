@@ -40,6 +40,7 @@ use gandr_surface_diagnostics::diagnose;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_diagnostics::upstream;
 use gandr_surface_lowering::AskedRuns;
+use gandr_surface_lowering::DeprecatedUse;
 use gandr_surface_lowering::Explicitness;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
@@ -192,6 +193,9 @@ struct Remaining<'step>
     /// The runs the checker inferred, each a finding where a lint reaches,
     /// printed after the exits; none under `test`.
     runs: slice::Iter<'step, InferredRun>,
+    /// The uses of deprecated declarations, each a finding, printed after
+    /// the runs; none under `test`.
+    deprecated: slice::Iter<'step, DeprecatedUse<'step>>,
     /// The declarations, in admission order.
     declarations: slice::Iter<'step, DeclarationReport<'step>>,
     /// Every declaration of the source, visited or not: what a refusal naming
@@ -238,12 +242,13 @@ pub struct Entries<'step>
 ///   Under `check`, a source the lowering read first prints a warning for each
 ///   builtin it shadowed, in the order shadowed, then a finding for each exit
 ///   the lowering inferred where an attribute asks for it, then one for each
-///   run the checker inferred where an attribute asks for it, each in source
-///   order ([`Entries::linting`] widens where a lint reaches); `test` prints
-///   none. Each declaration is printed as [`shown`] decides under `verb`:
-///   nothing when it is counted; a goal when it is a goal; when it has a line,
-///   a ledger line if it settled, a refusal if it produced one, and an
-///   unsettled diagnostic otherwise. Declarations keep admission order.
+///   run the checker inferred where an attribute asks for it, then one for each
+///   use of a deprecated declaration, each in source order
+///   ([`Entries::linting`] widens where a lint reaches); `test` prints none.
+///   Each declaration is printed as [`shown`] decides under `verb`: nothing
+///   when it is counted; a goal when it is a goal; when it has a line, a ledger
+///   line if it settled, a refusal if it produced one, and an unsettled
+///   diagnostic otherwise. Declarations keep admission order.
 /// - provides: the one pass a face prints a step through, so no refusal a step
 ///   carries can reach the walk without reaching a face.
 /// - fails: never.
@@ -260,6 +265,7 @@ pub struct Entries<'step>
 /// - witness: `entry::tests::a_shadowed_builtin_is_warned_of_under_check_alone`
 /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
 /// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
+/// - witness: `entry::tests::each_use_of_a_deprecated_declaration_is_a_finding`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
 #[spec(ensures: |ref ret| ret.verb == verb && ret.lints == Lints::default() && ret.spelling == Spelling::Unicode && match *step {
@@ -308,9 +314,10 @@ pub fn entries<'step>(
 /// - ensures: pending refusals are ledger lines only under test; other
 ///   whole-source refusals are refusals. A lowered source starts with its
 ///   ledger line; other settled compositions start at their declarations, after
-///   their shadowing warnings, inferred exits and inferred runs under `check`.
-///   Borrowed declaration, warning, inferred-exit, inferred-run and refusal
-///   slices retain their complete order.
+///   their shadowing warnings, inferred exits, inferred runs and deprecated
+///   uses under `check`. Borrowed declaration, warning, inferred-exit,
+///   inferred-run, deprecated-use and refusal slices retain their complete
+///   order.
 /// - provides: the first state of a lazy entry traversal.
 /// - fails: never.
 /// - panics: none.
@@ -334,18 +341,19 @@ pub fn entries<'step>(
     },
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(expected), &Cursor::Last(Last::Source(refusal))) => refusal == expected,
-    (Standing::Lowered, &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, .. },
+    (Standing::Lowered, &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
         &Cursor::Lowered(ref held))
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
-        &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, .. },
+        &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
         &Cursor::Declarations(ref held)) =>
         core::ptr::eq(core::ptr::from_ref(held.declarations.as_slice()), core::ptr::from_ref(report.declarations()))
             && match verb {
                 Verb::Check(_) => core::ptr::eq(core::ptr::from_ref(held.shadowed.as_slice()), core::ptr::from_ref(shadowed.as_slice()))
                     && core::ptr::eq(core::ptr::from_ref(held.inferred.as_slice()), core::ptr::from_ref(inferred.as_slice()))
-                    && core::ptr::eq(core::ptr::from_ref(held.runs.as_slice()), core::ptr::from_ref(runs.as_slice())),
+                    && core::ptr::eq(core::ptr::from_ref(held.runs.as_slice()), core::ptr::from_ref(runs.as_slice()))
+                    && core::ptr::eq(core::ptr::from_ref(held.deprecated.as_slice()), core::ptr::from_ref(deprecated.as_slice())),
                 Verb::Test => held.shadowed.as_slice().is_empty() && held.inferred.as_slice().is_empty()
-                    && held.runs.as_slice().is_empty(),
+                    && held.runs.as_slice().is_empty() && held.deprecated.as_slice().is_empty(),
             }
             && core::ptr::eq(core::ptr::from_ref(held.origins), core::ptr::from_ref(origins))
             && core::ptr::eq(core::ptr::from_ref(held.spellings), core::ptr::from_ref(spellings))
@@ -386,6 +394,7 @@ fn cursor<'step>(
                 ref shadowed,
                 ref inferred,
                 ref runs,
+                ref deprecated,
                 ..
             },
         ) => {
@@ -393,6 +402,7 @@ fn cursor<'step>(
                 shadowed: warned(verb, shadowed),
                 inferred: considered(verb, inferred),
                 runs: considered(verb, runs),
+                deprecated: considered(verb, deprecated),
                 declarations: report.declarations().iter(),
                 admitted: report.declarations(),
                 origins,
@@ -542,7 +552,9 @@ impl<'step> Entries<'step>
     /// - requires: nothing.
     /// - ensures: the same entries, printing each lint's findings where `lints`
     ///   reaches, attribute or not; [`entries`] reaches only the forms an
-    ///   attribute enables a lint on.
+    ///   attribute enables a lint on, and prints the `deprecated` lint's
+    ///   findings wherever they stand, which `lints` neither widens nor
+    ///   narrows.
     /// - provides: the driver's `--lint` flags, read where a step is printed.
     /// - fails: never.
     /// - panics: none.
@@ -732,16 +744,16 @@ impl Iterator for Entries<'_>
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
             Cursor::Last(_) => 1_usize,
-            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
-            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.declarations.len()),
+            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
+            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()),
             Cursor::Pending { ref unstatable } => unstatable.len(),
         }],
         ensures: |ref ret| {
             let remaining = match self.cursor {
                 Cursor::Done => 0_usize,
                 Cursor::Last(_) => 1_usize,
-                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
-                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.declarations.len()),
+                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
+                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()),
                 Cursor::Pending { ref unstatable } => unstatable.len(),
             };
             ret.as_ref().map_or(remaining == 0_usize, |diagnostic| remaining < before && diagnostic.path.as_path() == self.path)
@@ -824,6 +836,10 @@ impl Entries<'_>
                             Subject::InferredRun(inferred),
                         ));
                     }
+                }
+                if let Some(used) = held.deprecated.next() {
+                    self.cursor = Cursor::Declarations(held);
+                    return Some(diagnose(self.path, self.text, Subject::Deprecated(used)));
                 }
                 while let Some(declaration) = held.declarations.next() {
                     if let Maybe::Present(printed) = self.declaration(declaration, &held) {
@@ -1058,6 +1074,57 @@ mod tests
             )
         )]);
         assert!(entries(&shadowing, Verb::Test).next().is_none());
+    }
+
+    #[test]
+    fn each_use_of_a_deprecated_declaration_is_a_finding()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let written = "def add : Integer ;\n@[ deprecated ] def add = 1 ;\ndef a = add ;\ndef b \
+                       = missing ;\n";
+        let text = SourceText::from(written);
+        let at = |needle: &str, length: usize| {
+            let start = written.find(needle).expect("written").saturating_add(2);
+            Maybe::Present(
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(length)),
+                )
+                .expect("ordered"),
+            )
+        };
+        let source = step(
+            Path::new("deprecated.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Unsettled,
+            &grammar,
+        );
+        assert_eq!(
+            entries(&source, Verb::Check(Goals::Gated))
+                .map(|diagnostic| (diagnostic.detail.class, diagnostic.span))
+                .collect::<Vec<_>>(),
+            [
+                (
+                    Class::Warning,
+                    Maybe::Present(
+                        ByteSpan::new(ByteOffset::from(4_usize), ByteOffset::from(7_usize))
+                            .expect("ordered")
+                    )
+                ),
+                (Class::Lint(Lint::Deprecated), at("= add", 3)),
+                (
+                    Class::Refusal(gandr_core_term::FailureClass::MalformedSource),
+                    at("= missing", 7)
+                ),
+            ],
+            "with no lint enabled, the use is a finding after the warnings and before the \
+             declarations"
+        );
+        assert!(
+            entries(&source, Verb::Test).all(|diagnostic| diagnostic.severity != Severity::Warning),
+            "`test` prints settlements alone"
+        );
     }
 
     #[test]

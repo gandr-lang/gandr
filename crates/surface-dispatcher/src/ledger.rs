@@ -1106,6 +1106,9 @@ fn attribute_json(row: &AttributeRow) -> Value
         AttributeSchema::Names => json!({ "schema": "names" }),
         AttributeSchema::Interface => json!({ "schema": "interface" }),
         AttributeSchema::Word(words) => json!({ "schema": "word", "words": words }),
+        AttributeSchema::MarkerOrRecord(fields) => {
+            json!({ "schema": "marker_or_record", "fields": fields })
+        },
     };
     json!({
         "name": row.name,
@@ -2032,7 +2035,8 @@ mod tests
                 "respects",
                 "entry",
                 "form",
-                "identity"
+                "identity",
+                "deprecated"
             ],
             "one row per registered attribute, in registry order"
         );

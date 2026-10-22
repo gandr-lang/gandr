@@ -53,8 +53,9 @@
 //! `explicit_runs` none or a text naming its one option, `effects`, `owes` an
 //! integer, `refuses`, `runs`, `normalizes` and `doc` a text, `respects` and
 //! `entry` one declared name or a tuple of them, `identity` a tuple of two or
-//! three declared names, and `form` one bare word,
-//! `explicit` or `sugared`. The attribute block
+//! three declared names, `form` one bare word, `explicit` or `sugared`, and
+//! `deprecated` none or a record of the texts `since` and `note`, either
+//! left out. The attribute block
 //! admits one payload per attribute and refuses an attribute written twice,
 //! so several laws are one tuple, `respects((a, b))`, in the order of the
 //! rules they answer, and an entry's worlds one tuple, `entry((home, w, …))`,
@@ -129,6 +130,7 @@
 //! declaration's refusal.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -137,6 +139,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Literal;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -290,6 +293,101 @@ pub fn members(
     }
 }
 
+/// What a `deprecated` attribute states: the version that deprecated the
+/// declaration and a note on what to use instead, each when written.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each text is the one its record field spells.
+/// - panics: none.
+/// - executable: none — a carrier; [`deprecation`] states what it holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`deprecation`].
+/// - witness: `attribute::tests::a_deprecated_payload_reads_its_texts`
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Deprecation
+{
+    /// The version that deprecated the declaration, when stated.
+    pub since: Option<String>,
+    /// What to use instead, when stated.
+    pub note: Option<String>,
+}
+
+/// What a `deprecated` record payload states, read off its lowered value.
+///
+/// # Specification
+/// - requires: `payload` is the lowered value of a payload the
+///   [`AttributeSchema::MarkerOrRecord`] schema admitted.
+/// - ensures: the texts of `since` and `note` when `payload` is a record each
+///   of whose labels is one of [`RegisteredAttribute::DEPRECATION_FIELDS`] and
+///   each of whose values is a text literal; [`names::Absent::Unnamed`] for any
+///   other value, a record with another label or a field that is no text
+///   included.
+/// - fails: never — a payload of another shape is an absence, not an error.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record of both texts, of one, the empty record, a
+///   foreign label, a field that is an integer and a tuple separate the
+///   answers.
+/// - witness: `attribute::tests::a_deprecated_payload_reads_its_texts`
+#[spec(ensures: |ref ret| match (ret, arena.value(payload)) {
+    | (&Maybe::Present(_), Some(&Value::Record(ref written))) => written.keys().all(|label| matches!(label.as_ref(), "since" | "note")),
+    | (&Maybe::Present(_), _) => false,
+    | (&Maybe::Absent(_), _) => true,
+})]
+#[inline]
+pub fn deprecation(
+    arena: &CoreArena,
+    payload: ValueId,
+) -> Maybe<Deprecation, names::Absent>
+{
+    let Some(&Value::Record(ref written)) = arena.value(payload)
+    else {
+        return Maybe::Absent(names::Absent::Unnamed);
+    };
+    let mut stated = Deprecation::default();
+    for (label, &value) in written {
+        let Some(&Value::Literal(Literal::Text(ref text))) = arena.value(value)
+        else {
+            return Maybe::Absent(names::Absent::Unnamed);
+        };
+        let text = String::from(text.as_ref());
+        match label.as_ref() {
+            "since" => stated.since = Some(text),
+            "note" => stated.note = Some(text),
+            _ => return Maybe::Absent(names::Absent::Unnamed),
+        }
+    }
+    Maybe::Present(stated)
+}
+
+/// A use of a deprecated declaration: the use's bytes, the declaration's
+/// name, and what its `deprecated` attribute states.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `span` is a written name the lowering resolved to the declaration
+///   `name` names, whose attribute states `deprecation`.
+/// - panics: none.
+/// - executable: none — a carrier; [`crate::LoweredModule::deprecated_uses`]
+///   states what it holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crate::LoweredModule::deprecated_uses`].
+/// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DeprecatedUse<'source>
+{
+    /// The bytes of the use.
+    pub span: ByteSpan,
+    /// The deprecated declaration's name.
+    pub name: SurfaceName<'source>,
+    /// What its `deprecated` attribute states.
+    pub deprecation: Deprecation,
+}
+
 /// The furthest an unknown attribute name may sit from a registered one and
 /// still be answered with it.
 ///
@@ -350,6 +448,13 @@ impl RegisteredAttribute
     /// the reflexivity it names second and, when it names a third, the
     /// transport law that makes the relation the atom's identity.
     pub const IDENTITY: Self = Self("identity");
+    /// `deprecated`: the declaration it decorates is kept for the code that
+    /// still uses it, and each use is reported, with the version that
+    /// deprecated it and a note on what to use instead when the record
+    /// payload states them.
+    pub const DEPRECATED: Self = Self("deprecated");
+    /// The fields a `deprecated` record may state, each a text.
+    pub const DEPRECATION_FIELDS: &'static [&'static str] = &["since", "note"];
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -432,6 +537,9 @@ pub enum AttributeSchema
     /// One bare word among those named, read as written and never lowered as
     /// a value.
     Word(&'static [&'static str]),
+    /// A bare marker, or a record whose fields are among those named, each a
+    /// text literal, any of them left out.
+    MarkerOrRecord(&'static [&'static str]),
 }
 
 impl fmt::Display for AttributeSchema
@@ -461,6 +569,14 @@ impl fmt::Display for AttributeSchema
                 for (index, word) in words.iter().enumerate() {
                     let joint = if index == 0 { " " } else { ", " };
                     write!(f, "{joint}`{word}`")?;
+                }
+                Ok(())
+            },
+            Self::MarkerOrRecord(fields) => {
+                f.write_str("no payload or a record of the texts")?;
+                for (index, field) in fields.iter().enumerate() {
+                    let joint = if index == 0 { " " } else { ", " };
+                    write!(f, "{joint}`{field}`")?;
                 }
                 Ok(())
             },
@@ -565,7 +681,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 12_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 13_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -587,6 +703,10 @@ const REGISTRY: [(&str, AttributeSchema); 12_usize] = [
         AttributeSchema::Word(RegisteredAttribute::FORMS),
     ),
     (RegisteredAttribute::IDENTITY.0, AttributeSchema::Interface),
+    (
+        RegisteredAttribute::DEPRECATED.0,
+        AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
+    ),
 ];
 
 impl AttributeRegistry
@@ -745,15 +865,17 @@ impl AttributeRegistry
 ///
 /// # Specification
 /// - requires: nothing; the function is total over both closed vocabularies.
-/// - ensures: absence is admitted exactly by the bare marker and the
-///   marker-or-option schema; an integer literal exactly by the integer schema;
-///   a text literal by the text schema and, read as the option it spells, by
-///   the marker-or-option schema; a text spelling no option by the text schema
-///   alone; a bare word by the names schema, as the one name it declares, and
-///   by the word schema, read as one of its words; a word spelling none by no
-///   schema; any other value exactly by the names and interface schemas; every
-///   other pair is refused, and the refusal is the missing one exactly when
-///   nothing was written for a schema that takes something.
+/// - ensures: absence is admitted exactly by the bare marker, the
+///   marker-or-option and the marker-or-record schemas; an integer literal
+///   exactly by the integer schema; a text literal by the text schema and, read
+///   as the option it spells, by the marker-or-option schema; a text spelling
+///   no option by the text schema alone; a bare word by the names schema, as
+///   the one name it declares, and by the word schema, read as one of its
+///   words; a word spelling none by no schema; any other value exactly by the
+///   names, interface and marker-or-record schemas, each reading its shape off
+///   the lowered value; every other pair is refused, and the refusal is the
+///   missing one exactly when nothing was written for a schema that takes
+///   something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
 /// - fails: never — a refusal is a verdict here, not an error.
@@ -768,12 +890,19 @@ impl AttributeRegistry
     ensures: |ret| {
         let admitted = matches!(
             (schema, form),
-            (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
-                | (AttributeSchema::Integer, PayloadForm::Integer)
+            (
+                AttributeSchema::Marker
+                    | AttributeSchema::MarkerOr(_)
+                    | AttributeSchema::MarkerOrRecord(_),
+                PayloadForm::Absent
+            ) | (AttributeSchema::Integer, PayloadForm::Integer)
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
                 | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
-                | (AttributeSchema::Interface, PayloadForm::OtherValue)
+                | (
+                    AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
+                    PayloadForm::OtherValue
+                )
                 | (AttributeSchema::Word(_), PayloadForm::Word)
         );
         let missing = matches!(form, PayloadForm::Absent)
@@ -798,12 +927,20 @@ pub const fn payload_verdict(
 ) -> PayloadVerdict
 {
     match (schema, form) {
-        (AttributeSchema::Marker | AttributeSchema::MarkerOr(_), PayloadForm::Absent)
+        (
+            AttributeSchema::Marker
+            | AttributeSchema::MarkerOr(_)
+            | AttributeSchema::MarkerOrRecord(_),
+            PayloadForm::Absent,
+        )
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
         | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
-        | (AttributeSchema::Interface, PayloadForm::OtherValue)
+        | (
+            AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
+            PayloadForm::OtherValue,
+        )
         | (AttributeSchema::Word(_), PayloadForm::Word) => PayloadVerdict::Admitted,
         (
             AttributeSchema::Integer
@@ -853,7 +990,7 @@ pub const fn payload_verdict(
             | PayloadForm::OtherWord,
         )
         | (
-            AttributeSchema::Interface,
+            AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
             PayloadForm::Integer
             | PayloadForm::Text
             | PayloadForm::OtherText
@@ -1466,6 +1603,44 @@ impl AttributeTable
         self.interfaces.get(&key).map_or(&[], Vec::as_slice)
     }
 
+    /// What the `deprecated` entry filed under `key` states, read off its
+    /// payload in `arena`.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the payloads this table's entries were minted
+    ///   into.
+    /// - ensures: for a `deprecated` entry under `key`, nothing stated for a
+    ///   bare marker and the payload's texts for a record, as [`deprecation`]
+    ///   reads them; none when `key` holds no such entry.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marker, a record and an undecorated declaration
+    ///   separate the answers.
+    /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
+    #[spec(ensures: |ret| ret.is_none() || !self.entries(key).is_empty())]
+    #[must_use]
+    #[inline]
+    pub fn deprecation(
+        &self,
+        key: UnitKey,
+        arena: &CoreArena,
+    ) -> Option<Deprecation>
+    {
+        let entry = self
+            .entries(key)
+            .iter()
+            .find(|entry| entry.name() == RegisteredAttribute::DEPRECATED)?;
+        Some(match entry.payload() {
+            Maybe::Present(value) => match deprecation(arena, value) {
+                Maybe::Present(stated) => stated,
+                Maybe::Absent(_) => Deprecation::default(),
+            },
+            Maybe::Absent(_) => Deprecation::default(),
+        })
+    }
+
     /// The worlds the `entry` entry filed under `key` names, its home first,
     /// in the order it names them.
     ///
@@ -1543,10 +1718,13 @@ impl From<AttributedCount> for usize
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
     use alloc::vec;
 
     use gandr_core_term::CoreArena;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::Literal;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::FormRank;
     use gandr_surface_syntax::NodeDigest;
@@ -1558,9 +1736,11 @@ mod tests
     use super::AttributeSchema;
     use super::AttributeTable;
     use super::AttributedCount;
+    use super::Deprecation;
     use super::EditDistance;
     use super::PayloadForm;
     use super::PayloadVerdict;
+    use super::deprecation;
     use super::edit_distance;
     use super::members;
     use super::names;
@@ -1663,6 +1843,10 @@ mod tests
             ("entry", AttributeSchema::Names),
             ("form", AttributeSchema::Word(&["explicit", "sugared"])),
             ("identity", AttributeSchema::Interface),
+            (
+                "deprecated",
+                AttributeSchema::MarkerOrRecord(&["since", "note"]),
+            ),
         ];
 
         for (spelling, schema) in expected {
@@ -1717,6 +1901,7 @@ mod tests
             ("entri", "entry"),
             ("forms", "form"),
             ("identiy", "identity"),
+            ("deprecate", "deprecated"),
         ];
 
         for (written, nearest) in expected {
@@ -1823,6 +2008,9 @@ mod tests
             (AttributeSchema::Word(&["explicit", "sugared"]), [
                 M, I, I, I, A, I, I,
             ]),
+            (AttributeSchema::MarkerOrRecord(&["since", "note"]), [
+                A, I, I, I, I, I, A,
+            ]),
         ];
 
         for (schema, verdicts) in expected {
@@ -1873,6 +2061,58 @@ mod tests
             "the laws filed under a key are read back from it"
         );
         assert!(table.laws(unfiled).is_empty(), "and from no other");
+    }
+
+    #[test]
+    fn a_deprecated_payload_reads_its_texts()
+    {
+        let mut arena = CoreArena::new();
+        let mut text = |written: &str| {
+            arena.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+                String::from(written),
+            )))
+        };
+        let (since, note) = (text("0.2"), text("use `cube`"));
+        let label = |written: &str| gandr_kernel_term::FieldLabel::from(String::from(written));
+        let both = arena.value_record(BTreeMap::from([
+            (label("since"), since),
+            (label("note"), note),
+        ]));
+        let alone = arena.value_record(BTreeMap::from([(label("note"), note)]));
+        let empty = arena.value_record(BTreeMap::new());
+        assert_eq!(
+            deprecation(&arena, both),
+            Maybe::Present(Deprecation {
+                since: Some(String::from("0.2")),
+                note: Some(String::from("use `cube`")),
+            }),
+            "a record states both texts"
+        );
+        assert_eq!(
+            deprecation(&arena, alone),
+            Maybe::Present(Deprecation {
+                since: None,
+                note: Some(String::from("use `cube`")),
+            }),
+            "a field left out is unstated"
+        );
+        assert_eq!(
+            deprecation(&arena, empty),
+            Maybe::Present(Deprecation::default()),
+            "the empty record states nothing"
+        );
+        let unit = arena.value_unit();
+        let foreign = arena.value_record(BTreeMap::from([(label("reason"), note)]));
+        let untexted = arena.value_record(BTreeMap::from([(label("since"), unit)]));
+        let tuple = arena.value_tuple(&[since, note]);
+        for refused in [foreign, untexted, tuple, unit] {
+            assert_eq!(
+                deprecation(&arena, refused),
+                Maybe::Absent(names::Absent::Unnamed),
+                "a foreign label, a field that is no text, or a value that is no record is \
+                 refused"
+            );
+        }
     }
 
     #[test]

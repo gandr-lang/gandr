@@ -16,11 +16,12 @@
 //! environment, settled once and admitted once, each source's certificate
 //! replayed in that order. [`judge_component`] then projects the one
 //! composition onto each source: each reports its own declarations, refusals,
-//! shadowed builtins, inferred exits and runs and the obligations its
-//! declarations owe, and shares the component's origins, failures, program
-//! and kernel artifact. A source given alone is composed over its import
-//! closure, its own text last ([`judge_member`]), which is the component it
-//! makes on its own: the session's unit.
+//! shadowed builtins, inferred exits and runs, uses of deprecated
+//! declarations and the obligations its declarations owe, and shares the
+//! component's origins, failures, program and kernel artifact. A source given
+//! alone is composed over its import closure, its own text last
+//! ([`judge_member`]), which is the component it makes on its own: the
+//! session's unit.
 //!
 //! - Recorded design: one arena and one kernel environment per import-connected
 //!   component, its members in dependency order, each lowered and checked once
@@ -216,6 +217,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::CarriedOrigins;
 use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::DeprecatedUse;
 use gandr_surface_lowering::ImportDeclaration;
 use gandr_surface_lowering::ImportResolution;
 use gandr_surface_lowering::ImportTarget;
@@ -416,6 +418,10 @@ pub enum Composed<'source>
         /// position that reads a value, in source order: each a finding of
         /// the `explicit-runs` lint where an attribute or the run asks for it.
         runs: Vec<InferredRun>,
+        /// Every written name resolving to a declaration a `deprecated`
+        /// attribute marks, in source order: each a finding of the
+        /// `deprecated` lint.
+        deprecated: Vec<DeprecatedUse<'source>>,
         /// Every binder a lambda or a bind opens, written in a declaration
         /// the checker accepted, that no variable reads, ascending: each a
         /// hint the editor fades. An unused consumable capability is the
@@ -529,6 +535,7 @@ impl Composed<'_>
                 shadowed,
                 inferred,
                 runs,
+                deprecated,
                 unused,
                 unreached,
                 program,
@@ -543,6 +550,7 @@ impl Composed<'_>
                 shadowed,
                 inferred,
                 runs,
+                deprecated,
                 unused,
                 unreached,
                 kernel: Maybe::Present(kernel),
@@ -2369,6 +2377,8 @@ struct Share<'source>
     inferred: Vec<InferredExit>,
     /// The runs the checker inferred in it.
     runs: Vec<InferredRun>,
+    /// The uses of deprecated declarations written in it.
+    deprecated: Vec<DeprecatedUse<'source>>,
     /// The binders its accepted declarations write and never read.
     unused: Vec<ByteSpan>,
     /// The path imports it writes that no use of its own reaches.
@@ -2556,6 +2566,7 @@ where
             let unit = Unitwide {
                 unstatable: unstatable(&module),
                 runs: inferred_runs(&module, &verdicts),
+                deprecated: module.deprecated_uses(&arena),
             };
             let whole = earlier.is_empty() && usize::from(last.start) == 0_usize;
             let earlier = earlier
@@ -2608,6 +2619,8 @@ struct Unitwide<'source>
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The runs the checker inferred over the unit.
     runs: Vec<InferredRun>,
+    /// The uses of deprecated declarations over the unit, ascending.
+    deprecated: Vec<DeprecatedUse<'source>>,
 }
 
 /// The report of the declarations written in `member`, owing what their
@@ -2671,8 +2684,9 @@ fn owned<'source>(
 ///   source that is the whole unit; `spellings` and `unit` are the unit's.
 /// - ensures: `report`, the exercised rows it carries, `spellings`, and of the
 ///   unit's refusals at a declaration's own form, shadowed builtins, inferred
-///   exits and inferred runs, those written in `member` — starting within its
-///   own bytes, its end included — a refusal with no span kept.
+///   exits, inferred runs and deprecated uses, those written in `member` —
+///   starting within its own bytes, its end included — a refusal with no span
+///   kept.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -2683,6 +2697,7 @@ fn owned<'source>(
 /// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 #[spec(ensures: |ref ret| ret.shadowed.iter().all(|shadow| member.start <= shadow.span.start() && shadow.span.start() <= member.end)
     && ret.runs.iter().all(|run| member.start <= run.span.start() && run.span.start() <= member.end)
+    && ret.deprecated.iter().all(|used| member.start <= used.span.start() && used.span.start() <= member.end)
     && ret.unused.iter().all(|span| member.start <= span.start() && span.start() <= member.end)
     && ret.unreached.iter().all(|span| member.start <= span.start() && span.start() <= member.end))]
 fn share<'source>(
@@ -2705,6 +2720,12 @@ fn share<'source>(
     inferred.retain(|exit| own(exit.span));
     let mut runs = unit.runs.clone();
     runs.retain(|run| own(run.span));
+    let deprecated = unit
+        .deprecated
+        .iter()
+        .filter(|used| own(used.span))
+        .cloned()
+        .collect();
     let unused = unused_binders(arena, module, &report, own);
     let unreached = unreached_imports(module, member);
     Share {
@@ -2715,6 +2736,7 @@ fn share<'source>(
         shadowed,
         inferred,
         runs,
+        deprecated,
         unused,
         unreached,
     }
@@ -2916,6 +2938,7 @@ fn settled<'source>(
         unused: share.unused,
         unreached: share.unreached,
         runs: share.runs,
+        deprecated: share.deprecated,
         kernel: Maybe::Absent(admitted::Absent::Pending),
         program,
     }
@@ -4854,6 +4877,7 @@ def h = 1 ;"#,
             let shadowed = module.recognition().shadowed().to_vec();
             let inferred = module.inferred_exits().to_vec();
             let runs = super::inferred_runs(&module, &verdicts);
+            let deprecated = module.deprecated_uses(&arena);
             let unused = super::unused_binders(&arena, &module, &report, |_| true);
             let readmitted_first = Composed::Settled {
                 report,
@@ -4865,6 +4889,7 @@ def h = 1 ;"#,
                 shadowed,
                 inferred,
                 runs,
+                deprecated,
                 unused,
                 unreached: Vec::new(),
                 kernel: Maybe::Present(kernel),

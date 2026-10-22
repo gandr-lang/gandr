@@ -21,6 +21,7 @@
 //! | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
 //! | inferred exit | ``warning[explicit-exits]: this path ends without its exit; …`` | the tail, labelled with the exit inferred there; the fix writes that keyword before it | none |
 //! | inferred run | ``warning[explicit-runs]: this computation stands where a value is read; …`` | the computation, labelled with the run inferred there and whether it performs an effect; the fix writes `run` before it, parenthesised where it begins a statement | none |
+//! | deprecated use | ``warning[deprecated]: `<name>` is deprecated since <version>: <note>`` | the use, labelled `names a deprecated declaration` | none |
 //! | ledger line | `<path>: <line>` | the declaration or refusal the line reports, when it has one | none |
 //!
 //! No message carries a byte range: a face locates the diagnostic by its
@@ -66,6 +67,14 @@
 //! the computation is a written run and the lint finds nothing. Witness:
 //! `tests::diagnostics::an_inferred_run_is_a_finding_whose_fix_writes_its_keyword`.
 //!
+//! # A use of a deprecated declaration is a lint's finding, naming its note
+//!
+//! A written name that resolves to a declaration a `deprecated` attribute
+//! marks is a [`Class::Lint`] warning of the `deprecated` lint at the use,
+//! titled with the version and the note the attribute states, each left out
+//! when unstated. It proposes no fix. Witness:
+//! `tests::diagnostics::a_deprecated_use_is_a_finding_naming_its_note`.
+//!
 //! # The settle note says what was expected and why it did not happen
 //!
 //! A refused declaration closes with a note in words: what its source
@@ -106,6 +115,7 @@ use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
+use gandr_surface_lowering::DeprecatedUse;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
@@ -422,6 +432,9 @@ pub enum Subject<'step>
     /// A run the checker inferred, where a computation stands in a position
     /// that reads a value: a finding of the `explicit-runs` lint.
     InferredRun(&'step InferredRun),
+    /// A written name resolving to a declaration a `deprecated` attribute
+    /// marks: a finding of the `deprecated` lint.
+    Deprecated(&'step DeprecatedUse<'step>),
     /// A ledger line: a settled fixture, a pending source's refusal or
     /// declaration, or a pending source the lowering read.
     Ledger
@@ -545,6 +558,7 @@ impl Report<'_>
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
             | Subject::InferredRun(_)
+            | Subject::Deprecated(_)
             | Subject::Ledger { .. } => (Vec::new(), Vec::new()),
         };
         let expression = match span {
@@ -578,9 +592,10 @@ impl Report<'_>
             path: self.path.to_path_buf(),
             severity: match self.subject {
                 Subject::Goal(_) => Severity::Goal,
-                Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
-                    Severity::Warning
-                },
+                Subject::Shadowed(_)
+                | Subject::InferredExit(_)
+                | Subject::InferredRun(_)
+                | Subject::Deprecated(_) => Severity::Warning,
                 Subject::Ledger { .. } => Severity::Ledger,
                 Subject::Refused {
                     upstream: Maybe::Present(_),
@@ -615,6 +630,7 @@ impl Report<'_>
                     | Subject::Shadowed(_)
                     | Subject::InferredExit(_)
                     | Subject::InferredRun(_)
+                    | Subject::Deprecated(_)
                     | Subject::Ledger { .. } => Maybe::Absent(producer::Absent::Statement),
                 },
             },
@@ -639,9 +655,10 @@ impl Report<'_>
                 | Subject::Goal(_)
                 | Subject::Source(_)
                 | Subject::Ledger { .. } => Maybe::Absent(report_note::Absent::Statement),
-                Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) => {
-                    Maybe::Absent(report_note::Absent::Warning)
-                },
+                Subject::Shadowed(_)
+                | Subject::InferredExit(_)
+                | Subject::InferredRun(_)
+                | Subject::Deprecated(_) => Maybe::Absent(report_note::Absent::Warning),
             },
             expression,
             excerpt,
@@ -695,6 +712,7 @@ impl Report<'_>
                 | Subject::Goal(_)
                 | Subject::Source(_)
                 | Subject::Shadowed(_)
+                | Subject::Deprecated(_)
                 | Subject::Ledger { .. } => Maybe::Absent(fix::Absent::Unproposed),
             },
         }
@@ -709,8 +727,9 @@ impl Report<'_>
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
     ///   what it rests on; a goal is [`Class::Goal`]; a shadowed builtin is
     ///   [`Class::Warning`]; an inferred exit is [`Class::Lint`] of the
-    ///   `explicit-exits` lint, an inferred run of the `explicit-runs` lint; a
-    ///   ledger line [`Class::Ledger`].
+    ///   `explicit-exits` lint, an inferred run of the `explicit-runs` lint, a
+    ///   deprecated use of the `deprecated` lint; a ledger line
+    ///   [`Class::Ledger`].
     /// - provides: the class a reader sorts diagnostics by.
     /// - fails: never.
     /// - panics: none.
@@ -732,6 +751,7 @@ impl Report<'_>
         Subject::Shadowed(_) => Class::Warning,
         Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
         Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
+        Subject::Deprecated(_) => Class::Lint(Lint::Deprecated),
         Subject::Ledger { .. } => Class::Ledger,
     })]
     fn class(&self) -> Class
@@ -744,6 +764,7 @@ impl Report<'_>
             Subject::Shadowed(_) => Class::Warning,
             Subject::InferredExit(_) => Class::Lint(Lint::ExplicitExits),
             Subject::InferredRun(_) => Class::Lint(Lint::ExplicitRuns),
+            Subject::Deprecated(_) => Class::Lint(Lint::Deprecated),
             Subject::Ledger { .. } => Class::Ledger,
         }
     }
@@ -760,6 +781,7 @@ impl Report<'_>
             Subject::Shadowed(_) => MessageKey::Refusal(RefusalName::ShadowedBuiltin),
             Subject::InferredExit(_) => MessageKey::Lint(Lint::ExplicitExits),
             Subject::InferredRun(_) => MessageKey::Lint(Lint::ExplicitRuns),
+            Subject::Deprecated(_) => MessageKey::Lint(Lint::Deprecated),
             Subject::Unsettled { unsettlement, .. } => MessageKey::Unsettled(unsettlement),
             Subject::Goal(_) => MessageKey::Goal,
             Subject::Ledger { .. } => MessageKey::Ledger,
@@ -774,7 +796,7 @@ impl Report<'_>
     ///   refused as a whole the lowering's refusal, and a shadowed builtin
     ///   `ShadowedBuiltin`, each spelled as a `refuses` payload spells it; an
     ///   inferred exit names the `explicit-exits` lint, an inferred run the
-    ///   `explicit-runs` lint.
+    ///   `explicit-runs` lint, a deprecated use the `deprecated` lint.
     /// - provides: the identifier a face writes beside the message.
     /// - fails: never; an unsettled declaration, a goal and a ledger line carry
     ///   no refusal to name.
@@ -792,6 +814,7 @@ impl Report<'_>
         (Subject::Shadowed(_), Maybe::Present(identifier)) => identifier == Identifier::Refusal(RefusalName::ShadowedBuiltin.spelling()),
         (Subject::InferredExit(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::ExplicitExits),
         (Subject::InferredRun(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::ExplicitRuns),
+        (Subject::Deprecated(_), Maybe::Present(identifier)) => identifier == Identifier::Lint(Lint::Deprecated),
         (Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. }, Maybe::Absent(report_identifier::Absent::Statement)) => true,
         _ => false,
     })]
@@ -809,6 +832,7 @@ impl Report<'_>
             },
             Subject::InferredExit(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitExits)),
             Subject::InferredRun(_) => Maybe::Present(Identifier::Lint(Lint::ExplicitRuns)),
+            Subject::Deprecated(_) => Maybe::Present(Identifier::Lint(Lint::Deprecated)),
             Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Ledger { .. } => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
@@ -831,7 +855,7 @@ impl Report<'_>
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
-        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Ledger { .. } => ret == Comparison::none(),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Deprecated(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
     fn comparison(&self) -> Comparison<'_>
     {
@@ -845,6 +869,7 @@ impl Report<'_>
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
             | Subject::InferredRun(_)
+            | Subject::Deprecated(_)
             | Subject::Ledger { .. } => Comparison::none(),
         }
     }
@@ -878,6 +903,7 @@ impl Report<'_>
                 Subject::Shadowed(_) => annotation.label == Label::Shadows,
                 Subject::InferredExit(inferred) => annotation.label == Label::Inferred(inferred.exit),
                 Subject::InferredRun(inferred) => annotation.label == Label::Ran(inferred.purity),
+                Subject::Deprecated(_) => annotation.label == Label::Deprecated,
                 Subject::Ledger { .. } => annotation.label == Label::Reported,
             },
             Maybe::Absent(_) => true,
@@ -923,6 +949,7 @@ impl Report<'_>
             Subject::InferredRun(inferred) => {
                 Annotations::at(inferred.span, Label::Ran(inferred.purity))
             },
+            Subject::Deprecated(used) => Annotations::at(used.span, Label::Deprecated),
             Subject::Ledger { at, .. } => match at {
                 Maybe::Present(span) => Annotations::at(span, Label::Reported),
                 Maybe::Absent(reason) => Annotations {
@@ -1093,6 +1120,16 @@ impl fmt::Display for TitleText<'_>
                 },
                 Lint::ExplicitRuns
             ),
+            Subject::Deprecated(used) => {
+                write!(f, "`{}` is deprecated", used.name)?;
+                if let Some(ref since) = used.deprecation.since {
+                    write!(f, " since {since}")?;
+                }
+                if let Some(ref note) = used.deprecation.note {
+                    write!(f, ": {note}")?;
+                }
+                Ok(())
+            },
             Subject::Ledger { line, .. } => f.write_str(line),
         }
     }
@@ -1167,6 +1204,7 @@ impl fmt::Display for MessageText<'_>
             | Subject::Shadowed(_)
             | Subject::InferredExit(_)
             | Subject::InferredRun(_)
+            | Subject::Deprecated(_)
             | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }
