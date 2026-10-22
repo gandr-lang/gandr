@@ -959,7 +959,10 @@ pub fn root_overlaps_between<A>(
 where
     A: CellAlphabet,
 {
-    if left.0 == right.0 || A::root_agreement(left.1.lhs(), right.1.lhs()) == RootAgreement::Clash {
+    if left.0 == right.0 {
+        return Vec::new();
+    }
+    if A::root_agreement(left.1.lhs(), right.1.lhs()) == RootAgreement::Clash {
         return Vec::new();
     }
     root_overlap(left, right, &renamed_apart(left.1, right.1))

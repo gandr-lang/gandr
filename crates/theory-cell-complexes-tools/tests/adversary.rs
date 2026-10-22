@@ -10,6 +10,7 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes_tools::AlphabetLie;
 use gandr_theory_cell_complexes_tools::CollidingAddresses;
 use gandr_theory_cell_complexes_tools::IncomparablePositions;
@@ -235,6 +236,25 @@ fn default_answers_and_adversarial_boundaries_stay_distinct()
         assert_eq!(
             PositionOrder::Incomparable,
             <IncomparablePositions as AlphabetLie>::position_order(a, b)
+        );
+    }
+    for (lhs, rhs, expected) in [
+        (
+            Toy::add(Toy::zero(), Toy::zero()),
+            Toy::succ(Toy::zero()),
+            RootAgreement::Clash,
+        ),
+        (Toy::var("x"), Toy::succ(Toy::zero()), RootAgreement::May),
+        (
+            Toy::succ(Toy::var("y")),
+            Toy::succ(Toy::zero()),
+            RootAgreement::May,
+        ),
+    ] {
+        assert_eq!(
+            expected,
+            <Lying<IncomparablePositions> as CellAlphabet>::root_agreement(&lhs, &rhs),
+            "no adversary lies about whether two roots can meet"
         );
     }
     assert_eq!(

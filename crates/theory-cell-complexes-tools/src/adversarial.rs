@@ -515,11 +515,18 @@ where
         ToyAlphabet::unify_cmd(lhs, rhs, subst)
     }
 
-    /// The toy alphabet's root check.
+    /// The toy alphabet's root check: no adversary lies about it.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the toy alphabet's verdict on the two roots.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two different heads clash and a metavariable root may
+    ///   meet anything; a constant or swapped verdict changes one of them.
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(ensures: |output| output == ToyAlphabet::root_agreement(lhs, rhs))]
     fn root_agreement(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
