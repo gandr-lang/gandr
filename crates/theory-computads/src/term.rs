@@ -160,7 +160,22 @@ impl Head
     /// The node's number of children.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: none for a leaf, one for an abstraction, and its own count
+    ///   for an application, a results tuple and an instantiation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a restriction's body is reached below its operation
+    ///   and its abstraction, and the siblings of applications nesting
+    ///   constructors, operations and results keep their boundaries. A head
+    ///   counting no children hides every subterm below it.
+    /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
+    /// - witness: `term::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    #[spec(ensures: |ret| match *self {
+        | Self::Var(_) | Self::Konst(_) => ret.0 == 0,
+        | Self::Abs => ret.0 == 1,
+        | Self::Ctor(_, count) | Self::Op(_, count) | Self::Results(count) | Self::Inst(_, count) => ret.0 == count.0,
+    })]
     const fn arity(&self) -> Count
     {
         match *self {
