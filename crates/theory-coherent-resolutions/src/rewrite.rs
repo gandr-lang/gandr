@@ -29,6 +29,10 @@
 //! is reported, never mistaken for a normal form. The budget is the guard
 //! against a store that does not terminate, the same decline-and-report posture
 //! completion takes.
+//!
+//! [`redex_below`] searches only the positions a given one strictly encloses,
+//! in the same order: completion asks it whether a critical pair's peak
+//! reduces below the seam, before deciding the pair.
 
 use alloc::vec::Vec;
 
@@ -37,6 +41,7 @@ use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use quenchant_shape::shape::Maybe;
@@ -111,6 +116,19 @@ quenchant_shape::reason_enum! {
             /// No cell fires at any command position: the term is a normal
             /// form of the store.
             NormalForm,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no cell of a store fires below a position of a term.
+    pub mod below_search {
+        /// The reason no redex is found below the position.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No cell fires at a command position the given one strictly
+            /// encloses.
+            NormalBelow,
         }
     }
 }
@@ -238,6 +256,57 @@ where
         }
     }
     Maybe::Absent(redex_search::Absent::NormalForm)
+}
+
+/// The first cell that fires in `term` strictly below `above`.
+///
+/// # Specification
+/// - ensures: the first `(position, cell)` pair whose [`rewrite_at`] fires,
+///   among the command positions `above` strictly encloses, positions in the
+///   alphabet's [`CellAlphabet::command_positions`] order and cells in store
+///   order within a position.
+/// - provides: [`below_search::Absent::NormalBelow`] when no cell fires at any
+///   command position `above` strictly encloses; `above` itself is not read.
+/// - panics: none.
+/// - intension: each position's redex read once, and a cell whose root clashes
+///   with it costs one comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over the toy alphabet, a peak whose seam encloses a redex
+///   reports it and the pair is skipped, while the deepest overlap of the same
+///   peak, which encloses none, is decided. Reading the seam itself, or a
+///   position beside it, changes which pair is decided.
+/// - witness: `completion::tests::a_pair_whose_peak_reduces_below_its_seam_is_not_decided`
+#[spec(ensures: |output| match output {
+    Maybe::Present(ref step) => A::position_order(above, &step.at) == PositionOrder::Encloses
+        && matches!(store.get(step.cell), Maybe::Present(cell) if matches!(rewrite_at(cell, term, &step.at), Maybe::Present(_))),
+    Maybe::Absent(below_search::Absent::NormalBelow) => A::command_positions(term).iter().all(|at|
+        A::position_order(above, at) != PositionOrder::Encloses
+            || store.iter().all(|(_, cell)| matches!(rewrite_at(cell, term, at), Maybe::Absent(_)))),
+})]
+pub fn redex_below<A>(
+    store: &CellStore<A>,
+    term: &A::Cmd,
+    above: &A::Pos,
+) -> Maybe<CellApp<A>, below_search::Absent>
+where
+    A: CellAlphabet,
+{
+    for at in A::command_positions(term) {
+        if A::position_order(above, &at) != PositionOrder::Encloses {
+            continue;
+        }
+        let Maybe::Present(redex) = A::subterm_cmd_at(term, &at)
+        else {
+            continue;
+        };
+        for (cell_id, cell) in store.iter() {
+            if let Maybe::Present(_) = contract(cell, term, &at, &redex) {
+                return Maybe::Present(CellApp { cell: cell_id, at });
+            }
+        }
+    }
+    Maybe::Absent(below_search::Absent::NormalBelow)
 }
 
 /// Fire `cell` at `pos` in `term`.
