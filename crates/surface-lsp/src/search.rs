@@ -61,7 +61,18 @@ impl Query
     /// The query `text` asks, folded to lower case.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every character of `text`, in order, each folded to lower
+    ///   case.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause is the folding itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an upper-case query finds a lower-case name, and a
+    ///   query that kept none of its characters would find every name for `nt`
+    ///   where only `count` and `Nat` hold them.
+    /// - witness: `search::tests::a_query_finds_the_names_holding_its_characters_in_order`
     #[must_use]
     pub fn of(text: SourceText<'_>) -> Self
     {
