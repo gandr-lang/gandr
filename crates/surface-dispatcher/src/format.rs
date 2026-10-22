@@ -943,4 +943,25 @@ mod tests
             "without a checker every thunk is kept"
         );
     }
+
+    /// A path that names no source, one that cannot be read and one whose
+    /// formatted text cannot be written read apart, and the two input-output
+    /// faults carry the error they met.
+    #[test]
+    fn each_format_fault_reads_apart_and_carries_its_cause()
+    {
+        let unreadable = FormatFault::Unreadable(std::io::Error::other("the disk is gone"));
+        let unwritable = FormatFault::Unwritable(std::io::Error::other("the file is locked"));
+        let written = [&FormatFault::NoSource, &unreadable, &unwritable].map(ToString::to_string);
+        assert_eq!(
+            written
+                .iter()
+                .collect::<alloc::collections::BTreeSet<_>>()
+                .len(),
+            3,
+            "{written:?}"
+        );
+        assert!(written[1].ends_with("the disk is gone"), "{}", written[1]);
+        assert!(written[2].ends_with("the file is locked"), "{}", written[2]);
+    }
 }
