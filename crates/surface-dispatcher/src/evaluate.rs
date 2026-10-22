@@ -2923,11 +2923,11 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     }
 
     /// The thunk declared as `name` is a thunk whose force, on every tier this
-    /// host has, runs until its heap fills, each pass allocating its window,
-    /// or its 2²⁸ jumps are spent, without filling the frame region. A pass
-    /// that allocates less than a held frame adds would fill the frames first
-    /// if it held one; `gandr-core-sequent`'s loop suite holds the plain loop
-    /// to that contrast.
+    /// host has, runs until its 2²⁵ jumps are spent or its heap fills, without
+    /// filling the frame region. Each pass gives its window back, so a pass
+    /// holding a frame would fill the frames within those jumps;
+    /// `gandr-core-sequent`'s loop suite holds the plain loop to that
+    /// contrast.
     ///
     /// # Specification
     /// trivial.
@@ -2967,7 +2967,7 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                 ),
                 "`{name}` is a thunk on {tier:?}"
             );
-            let spent = run(forced, 1_usize << 28_u32);
+            let spent = run(forced, 1_usize << 25_u32);
             assert!(
                 matches!(
                     spent,

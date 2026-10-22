@@ -1305,6 +1305,12 @@ impl<'run, 'host> Calls<'run, 'host>
                 unsafe {
                     give_up(runtime, old, |object| owned(object, sites));
                 }
+                // SAFETY: the access has ended: its frame is popping and its
+                // body's slot is dead, so nothing reads the view again. It
+                // owns nothing: its value moved into the held cell.
+                unsafe {
+                    runtime.reclaim(view);
+                }
                 Ok(answer)
             },
             ABORTED => {

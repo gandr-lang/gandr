@@ -7,6 +7,7 @@ use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::COUNT_ONE;
 use gandr_runtime_stencils::Family;
+use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Fuel;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Instruction;
@@ -112,8 +113,8 @@ extern "C" fn releasing(
     Word::ZERO
 }
 
-/// What a run left: its answer, the heap it ran over and the words it
-/// allocated past the heap's start.
+/// What a run left: its answer, the heap it ran over, the words it
+/// allocated past the heap's start and the window region's words in use.
 struct Ran
 {
     /// The value in hand at the halt.
@@ -122,6 +123,8 @@ struct Ran
     heap: Vec<Word>,
     /// The words between the heap's start and its top.
     allocated: usize,
+    /// The words between the window region's start and its top.
+    windows: usize,
 }
 
 impl Ran
@@ -148,6 +151,7 @@ fn run(program: &[Instruction]) -> Ran
     let mut heap = vec![Word::ZERO; HEAP];
     let mut frames = vec![Word::ZERO; 18];
     let mut window = [Word::ZERO; 4];
+    let mut windows = [Word::ZERO; 8];
     let halt = program.last().expect("a program ends in its halt");
     frames[0] = Word::from_pointer(core::ptr::from_ref(halt));
     let start = heap.as_mut_ptr();
@@ -162,6 +166,8 @@ fn run(program: &[Instruction]) -> Ran
         releasing,
         Word::ZERO,
     );
+    let region = (&raw mut windows).cast::<Word>();
+    runtime.set_windows(region, region.wrapping_add(windows.len()));
     // SAFETY: the program falls through to its halt; the regions live to the
     // end of the call, the sentinel frame below the base mark.
     let answer = unsafe {
@@ -180,10 +186,17 @@ fn run(program: &[Instruction]) -> Ran
         .saturating_sub(start.addr())
         .checked_div(size_of::<Word>())
         .unwrap_or(0);
+    let windows = runtime
+        .window_top()
+        .addr()
+        .saturating_sub(region.addr())
+        .checked_div(size_of::<Word>())
+        .unwrap_or(0);
     Ran {
         answer,
         heap,
         allocated,
+        windows,
     }
 }
 
@@ -395,5 +408,90 @@ fn a_shared_scrutinee_is_rebuilt_in_a_fresh_block()
         Word::from(2_usize),
         ran.heap[0],
         "the field is held by both pairs"
+    );
+}
+
+/// A thunk's closure header over `captures` captures.
+///
+/// # Specification
+/// trivial.
+fn thunk(captures: Words) -> Word
+{
+    Header::new(
+        Kind::Closure,
+        Tag::from(Flavour::Thunk),
+        Arity::try_from(captures.0).expect("the captures fit"),
+        Family::UNNAMED,
+    )
+    .matched()
+}
+
+/// A thunk forced from the run's entry window enters a window of its own at
+/// the window region's base and returns to the halt frame: the return gives
+/// the window back, the region's top where the entry found it.
+#[test]
+fn a_returned_body_gives_its_window_back()
+{
+    let mut program = vec![
+        bare(StencilId::Halt),
+        bare(StencilId::InvokeForceValue),
+        bare(StencilId::Halt),
+        // The thunk's body: its window holds the return mark in slot 0 and
+        // the closure in slot 1, which it answers.
+        instruction(StencilId::EnterForce, Word::from(2_usize), Word::ZERO),
+        slotted(StencilId::Var, Words(1)),
+        slotted(StencilId::Leave, Words(0)),
+        bare(StencilId::Halt),
+    ];
+    let body = Word::from_pointer(program.as_ptr().wrapping_add(3));
+    program[0] = instruction(StencilId::Closure, body, thunk(Words(0)));
+    let ran = run(&program);
+    assert_eq!(0, ran.windows, "the body's window is given back");
+    assert_eq!(
+        ran.at(Words(1)),
+        ran.answer,
+        "the body answered the thunk, the heap's first object"
+    );
+}
+
+/// A thunk whose last act forces a second one gives its window back before
+/// the second enters, so the second's window takes the same words; the
+/// second's return then empties the region.
+#[test]
+fn a_tail_call_gives_its_window_back_before_the_callee_enters()
+{
+    let mut program = vec![
+        bare(StencilId::Halt),
+        bare(StencilId::Push),
+        bare(StencilId::Halt),
+        bare(StencilId::InvokeForceValue),
+        bare(StencilId::Halt),
+        // The first thunk's body: the second thunk captured in slot 0, the
+        // return mark in slot 1 and the closure in slot 2. It loads its
+        // return and forces the second there.
+        instruction(
+            StencilId::EnterForce,
+            Word::from(3_usize),
+            Word::from(1_usize),
+        ),
+        slotted(StencilId::Shrink, Words(1)),
+        bare(StencilId::Release),
+        slotted(StencilId::InvokeForce, Words(0)),
+        // The second thunk's body answers itself.
+        instruction(StencilId::EnterForce, Word::from(2_usize), Word::ZERO),
+        slotted(StencilId::Var, Words(1)),
+        slotted(StencilId::Leave, Words(0)),
+        bare(StencilId::Halt),
+    ];
+    let first = Word::from_pointer(program.as_ptr().wrapping_add(5));
+    let second = Word::from_pointer(program.as_ptr().wrapping_add(9));
+    program[0] = instruction(StencilId::Closure, second, thunk(Words(0)));
+    program[2] = instruction(StencilId::Closure, first, thunk(Words(1)));
+    let ran = run(&program);
+    assert_eq!(0, ran.windows, "both windows are given back");
+    assert_eq!(
+        ran.at(Words(1)),
+        ran.answer,
+        "the second thunk, the heap's first object, answered"
     );
 }

@@ -61,14 +61,14 @@
 //!   cells and covariable marks alike, a falling-through covariable needing
 //!   none — each pushed in the creator's binding order and popped into the
 //!   closure. The body's entry, laid out after the creator's code, allocates a
-//!   fresh window on the heap, copies the captures into its first slots and
-//!   binds its own binders above them; in the body's scope every binder the
-//!   creator had still counts, so the body's indices resolve unchanged, and one
-//!   it does not capture holds no slot. A window is never shared, so a frame
-//!   resumed in it finds its slots as it left them. The alternative, copying
-//!   the creator's whole window prefix, kept every binding in reach alive in
-//!   every closure, which a counted runtime cannot afford: a closure owns
-//!   exactly what it names.
+//!   fresh window in the window region, copies the captures into its first
+//!   slots and binds its own binders above them; in the body's scope every
+//!   binder the creator had still counts, so the body's indices resolve
+//!   unchanged, and one it does not capture holds no slot. A window is never
+//!   shared, so a frame resumed in it finds its slots as it left them. The
+//!   alternative, copying the creator's whole window prefix, kept every binding
+//!   in reach alive in every closure, which a counted runtime cannot afford: a
+//!   closure owns exactly what it names.
 //! - **An observation enters code.** Delivering to `apply(p; c)` or `force(c)`
 //!   saves the observed value and the argument in slots, loads `c`, and jumps
 //!   to the closure's entry; loading `c` pushes, for each destructor on it, a
@@ -99,9 +99,28 @@
 //!   and at the empty list the walk drops the list and the names the fold's
 //!   node handed the cell branch. An exclusive access's frame owns what its
 //!   unwind selects, which a resumed view's end drops and an abandoned one's
-//!   unwind consumes; a write-back drops the value the held cell held. A cell,
-//!   a view and a window are never freed: a held value outlives its cell's last
-//!   read, and a closure's window outlives its body.
+//!   unwind consumes; a write-back drops the value the held cell held. A held
+//!   cell is never freed: a held value outlives its cell's last read. A view is
+//!   freed when its access ends, its value written back.
+//! - **A body gives its window back.** Windows live in a region of their own, a
+//!   stack apart from the object heap: an entry takes the region's top, and a
+//!   body's return gives its window back by moving the top down to it
+//!   (`leave`). Every window above it was taken by an entry after it, and every
+//!   frame resuming in one sits above the body's mark, which the return pops. A
+//!   call whose continuation is the body's own return — through the frames of
+//!   the observations it loads, or through a `μ` or a hold that falls through
+//!   to it — is the body's last act: its window is given back just before the
+//!   call (`release`), the call reading its operands first, so a loop by tail
+//!   recursion runs in one window's words. A window outside the region — the
+//!   entry window, a replay's copy, which the host allocates on the heap — is
+//!   never given back. #1175 records a heap-wide watermark instead: a
+//!   stack-shaped body would restore the heap's top on return. Measured, every
+//!   probe's body allocates an object that outlives it (a boxed integer written
+//!   back, a field of a rebuilt pair) above its window, and freed blocks above
+//!   a mark would stay on the size lists, so a heap-wide mark would almost
+//!   never restore; a region of windows alone restores on every return,
+//!   whatever escapes. Revisit if objects gain an arena of their own whose
+//!   lifetime a body bounds.
 //! - **A waiting frame owns what its block will consume.** The window table
 //!   names, per frame label, the slots of the names the frame's node selects,
 //!   one owner each; a handler's frame owns, besides its return clause's names,
@@ -253,9 +272,17 @@ enum Binding
     Producer,
     /// A covariable whose slot holds its mark.
     Covariable,
+    /// The covariable a closure entry binds, whose slot holds the mark of the
+    /// frame its body returns to: delivered to, the body's window is given
+    /// back.
+    Returns,
     /// A covariable a delimiter binds, delivering to whatever frame is on
     /// top: its slot holds nothing.
     FallThrough,
+    /// A covariable that falls through to the frame a closure body returns
+    /// to, loaded on top with nothing pushed above it: delivered to, the
+    /// body's window is given back.
+    Returning,
     /// A linear variable, whose slot holds its cell.
     Linear,
     /// A slot the lowering holds a value in, which no index names.
@@ -272,7 +299,7 @@ impl Binding
     const fn space(self) -> Self
     {
         match self {
-            Self::FallThrough => Self::Covariable,
+            Self::FallThrough | Self::Returning | Self::Returns => Self::Covariable,
             Self::Producer | Self::Covariable | Self::Linear | Self::Temporary => self,
         }
     }
@@ -310,6 +337,22 @@ struct Binder
     slot: Option<Slot>,
     /// The slot the next binder inside it takes.
     depth: Slot,
+}
+
+/// How a value reaches a covariable.
+#[derive(Clone, Copy, Debug)]
+enum Delivery
+{
+    /// The covariable a closure entry bound, its mark in the slot: the body
+    /// returns, giving its window back.
+    Return(Slot),
+    /// A covariable whose slot holds its mark.
+    Mark(Slot),
+    /// The frame on top.
+    FallThrough,
+    /// The frame on top, which the closure body returns to: the body
+    /// returns, giving its window back.
+    Returning,
 }
 
 /// A scope: the innermost binder, if any.
@@ -430,11 +473,33 @@ impl Scopes
         index: Index,
     ) -> Result<Option<Slot>, Form>
     {
+        Ok(match self.delivery(scope, index)? {
+            Delivery::Return(slot) | Delivery::Mark(slot) => Some(slot),
+            Delivery::FallThrough | Delivery::Returning => None,
+        })
+    }
+
+    /// How a value is delivered to the covariable `index` covariables out
+    /// from `scope`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Unbound`] when the chain holds fewer covariables.
+    fn delivery(
+        &self,
+        scope: Scope,
+        index: Index,
+    ) -> Result<Delivery, Form>
+    {
         let binder = self.find(scope, Binding::Covariable, index)?;
         match binder.binding {
-            Binding::Covariable => binder.slot.map(Some).ok_or(Form::Unbound),
+            Binding::Returns => binder.slot.map(Delivery::Return).ok_or(Form::Unbound),
+            Binding::Covariable => binder.slot.map(Delivery::Mark).ok_or(Form::Unbound),
+            Binding::Returning => Ok(Delivery::Returning),
             Binding::Producer | Binding::FallThrough | Binding::Linear | Binding::Temporary => {
-                Ok(None)
+                Ok(Delivery::FallThrough)
             },
         }
     }
@@ -506,10 +571,10 @@ impl Scopes
             let kept = match binder.binding {
                 Binding::Producer => Some(captured.producers.contains(&next(&mut producers).0)),
                 Binding::Linear => Some(captured.linears.contains(&next(&mut linears).0)),
-                Binding::Covariable => {
+                Binding::Covariable | Binding::Returns => {
                     Some(captured.covariables.contains(&next(&mut covariables).0))
                 },
-                Binding::FallThrough => {
+                Binding::FallThrough | Binding::Returning => {
                     let _index = next(&mut covariables);
                     Some(false)
                 },
@@ -2212,7 +2277,14 @@ impl Lowering<'_>
             MemoryForm::Hold { value, body, .. } => {
                 let call = self.call(&Callee::Hold, Immediate::from(1_u32))?;
                 let (held, cell) = self.bind(scope, Binding::Linear);
-                let (inner, _) = self.bind(held, Binding::FallThrough);
+                // reason: the hold pushes no frame, so its body falls through
+                // to the loaded continuation, the body's return when that is
+                // where the continuation delivers.
+                let falls = match self.returns_through(continuation, scope)? {
+                    Some(_) => Binding::Returning,
+                    None => Binding::FallThrough,
+                };
+                let (inner, _) = self.bind(held, falls);
                 self.tasks.push(Task::Command(body, inner));
                 self.tasks
                     .push(Task::Emit(StencilId::Bind, cell.operand(), Operand::Unused));
@@ -2362,17 +2434,14 @@ impl Lowering<'_>
         let (stencil, bindings): (StencilId, &[Binding]) = match body.entry {
             Entry::Apply(_) => (StencilId::EnterApply, &[
                 Binding::Producer,
-                Binding::Covariable,
+                Binding::Returns,
                 Binding::Temporary,
             ]),
             Entry::Force(_) | Entry::Unfold(..) => (StencilId::EnterForce, &[
-                Binding::Covariable,
+                Binding::Returns,
                 Binding::Temporary,
             ]),
-            Entry::Fixpoint(_) => (StencilId::EnterFix, &[
-                Binding::Producer,
-                Binding::Covariable,
-            ]),
+            Entry::Fixpoint(_) => (StencilId::EnterFix, &[Binding::Producer, Binding::Returns]),
         };
         let at = self.emit(stencil, Slot(0).operand(), depth.operand());
         let mut scope = body.scope;
@@ -2646,7 +2715,26 @@ impl Lowering<'_>
             },
         };
         self.enter(NodeAddress::Producer(producer), scope)?;
-        let (inner, alpha) = self.bind(scope, Binding::Covariable);
+        // reason: a `μ` run against the body's return aliases its mark, and
+        // delivering to it returns as delivering to the return does.
+        let kind = match *target {
+            ConsumerNode::Covariable(index) => {
+                match self.scopes.delivery(scope, Index(u32::from(index)))? {
+                    Delivery::Return(_) => Binding::Returns,
+                    Delivery::Mark(_) | Delivery::FallThrough | Delivery::Returning => {
+                        Binding::Covariable
+                    },
+                }
+            },
+            ConsumerNode::Top
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Destructor { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. } => Binding::Covariable,
+        };
+        let (inner, alpha) = self.bind(scope, kind);
         match *target {
             ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => {
                 let owners = self.owners(NodeAddress::Consumer(consumer), scope, Crossed::NONE)?;
@@ -2662,7 +2750,13 @@ impl Lowering<'_>
                     self.tasks.push(Task::Command(body, inner));
                 }
                 else {
-                    let (through, _) = self.bind(scope, Binding::FallThrough);
+                    let falls = match self.scopes.delivery(scope, Index(u32::from(index)))? {
+                        Delivery::Returning => Binding::Returning,
+                        Delivery::Return(_) | Delivery::Mark(_) | Delivery::FallThrough => {
+                            Binding::FallThrough
+                        },
+                    };
+                    let (through, _) = self.bind(scope, falls);
                     self.tasks.push(Task::Command(body, through));
                 }
             },
@@ -2924,11 +3018,18 @@ impl Lowering<'_>
                 self.emit(StencilId::Halt, Operand::Unused, Operand::Unused);
             },
             ConsumerNode::Covariable(index) => {
-                match self.scopes.covariable(scope, Index(u32::from(index)))? {
-                    Some(slot) => {
+                match self.scopes.delivery(scope, Index(u32::from(index)))? {
+                    Delivery::Return(slot) => {
+                        self.emit(StencilId::Leave, slot.operand(), Operand::Unused);
+                    },
+                    Delivery::Mark(slot) => {
                         self.emit(StencilId::Ret, slot.operand(), Operand::Unused);
                     },
-                    None => {
+                    Delivery::FallThrough => {
+                        self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
+                    },
+                    Delivery::Returning => {
+                        self.emit(StencilId::Release, Operand::Unused, Operand::Unused);
                         self.emit(StencilId::Pop, Operand::Unused, Operand::Unused);
                     },
                 }
@@ -2984,6 +3085,12 @@ impl Lowering<'_>
                 };
                 let (held, function) = self.bind(scope, Binding::Temporary);
                 self.emit(StencilId::Bind, function.operand(), Operand::Unused);
+                // reason: a call whose continuation is the body's own return
+                // is the body's last act; its window is given back before the
+                // callee's entry takes the region's top, the call's operands
+                // read from it first.
+                let tail = self.returns_through(then, scope)?;
+                let release = || Task::Emit(StencilId::Release, Operand::Unused, Operand::Unused);
                 match (tag, &**producers) {
                     (DestructorTag::Apply, &[argument]) => {
                         let (inner, slot) = self.bind(held, Binding::Temporary);
@@ -2992,6 +3099,9 @@ impl Lowering<'_>
                             function.operand(),
                             slot.operand(),
                         ));
+                        if tail.is_some() {
+                            self.tasks.push(release());
+                        }
                         self.tasks.push(Task::Load(then, inner));
                         self.tasks.push(Task::Emit(
                             StencilId::Bind,
@@ -3006,6 +3116,9 @@ impl Lowering<'_>
                             function.operand(),
                             Operand::Unused,
                         ));
+                        if tail.is_some() {
+                            self.tasks.push(release());
+                        }
                         self.tasks.push(Task::Load(then, held));
                     },
                     (DestructorTag::Project(component), &[]) => {
@@ -3043,6 +3156,57 @@ impl Lowering<'_>
             },
         }
         Ok(())
+    }
+
+    /// How `then` delivers at last when that is the closure body's return,
+    /// through the frames of observations it loads — each an application's,
+    /// a force's or a projection's, whose frame holds no window — and none
+    /// for any other continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a consumer the arena does not hold;
+    /// [`Form::Unbound`] as [`Scopes::delivery`].
+    fn returns_through(
+        &self,
+        then: ConsumerId,
+        scope: Scope,
+    ) -> Result<Option<Delivery>, Form>
+    {
+        let mut at = then;
+        loop {
+            match *self.arena.consumer(at).ok_or(Form::Dangling)? {
+                ConsumerNode::Covariable(index) => {
+                    return Ok(
+                        match self.scopes.delivery(scope, Index(u32::from(index)))? {
+                            delivery @ (Delivery::Return(_) | Delivery::Returning) => {
+                                Some(delivery)
+                            },
+                            Delivery::Mark(_) | Delivery::FallThrough => None,
+                        },
+                    );
+                },
+                ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply | DestructorTag::Force | DestructorTag::Project(_),
+                    ref consumers,
+                    ..
+                } => {
+                    let &[next] = &**consumers
+                    else {
+                        return Ok(None);
+                    };
+                    at = next;
+                },
+                ConsumerNode::Top
+                | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::Case { .. }
+                | ConsumerNode::DataCase { .. }
+                | ConsumerNode::Select { .. }
+                | ConsumerNode::ListFold { .. } => return Ok(None),
+            }
+        }
     }
 
     /// Run the arm or branch at `position` of the match `id`, the
@@ -3847,6 +4011,47 @@ mod tests
             (StencilId::Var, reuse.b),
             (token.stencil, token.a),
             "the constructor takes the token from the slot the match left it in"
+        );
+    }
+
+    /// A thunk whose body forces a second thunk as its last act gives its
+    /// window back before the force, and the second thunk's body gives its
+    /// window back as it returns.
+    #[test]
+    fn a_body_gives_its_window_back_at_its_tail_call_and_its_return()
+    {
+        let mut core = CoreArena::new();
+        let one = core.value_unit();
+        let inner = core.computation_return(one);
+        let second = core.value_thunk(inner);
+        let bound = core.computation_return(second);
+        let named = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let forced = core.computation_force(named);
+        let body = core.computation_bind(bound, forced);
+        let first = core.value_thunk(body);
+        let root = core.computation_force(first);
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
+        let stencils: Vec<StencilId> = lowered
+            .function
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.stencil)
+            .collect();
+        let release = stencils
+            .iter()
+            .position(|&stencil| stencil == StencilId::Release)
+            .expect("the first body releases its window at its tail call");
+        assert_eq!(
+            Some(&StencilId::InvokeForce),
+            stencils.get(release.wrapping_add(1)),
+            "the release comes just before the force: {stencils:?}"
+        );
+        assert!(
+            stencils.contains(&StencilId::Leave),
+            "the second body leaves its window as it returns: {stencils:?}"
         );
     }
 

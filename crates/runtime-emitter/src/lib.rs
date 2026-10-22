@@ -74,7 +74,8 @@
 //!
 //! # The runtime support
 //!
-//! Each thread keeps its own heap, frame region and window, each allocated
+//! Each thread keeps its own heap, frame region, window region and entry
+//! window, each allocated
 //! at its bound and committed as a run first touches it; a run that would
 //! pass a bound takes that region's exit and is declined. A run enters
 //! through `enter` or `execute` with a fresh
