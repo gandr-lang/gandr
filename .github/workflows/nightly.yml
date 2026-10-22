@@ -9,10 +9,11 @@ name: Nightly
 # Every sweep over its whole input, which the merge queue samples: the
 # `nightly` nextest profile with specifications enforced (`mise run
 # ci:sweeps-nightly`), the four costliest sweeps over the night's slice of
-# the corpus; and the night's third of the crates that declare features, each
-# crate's tests with every feature on. Daily on main when main moved since the
-# last successful run; a failure is a red run on main, never a blocked queue.
-# A dispatch always runs. Beside them, every day, each CI lane's median job
+# the corpus; the night's third of the crates that declare features, each
+# crate's tests with every feature on; and the recovery sweep over the syntax
+# exemplars, its causes filed. Daily on main when main moved since the last
+# successful run; a failure is a red run on main, never a blocked queue. A
+# dispatch always runs. Beside them, every day, each CI lane's median job
 # time against its budget. The whole workflow is held to fifteen minutes
 # summed over its jobs.
 on:
@@ -203,6 +204,32 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
+      # The recovery sweep first (`mise run ledger:recovery`, #1782): every
+      # literal tile of every syntax exemplar missed and deleted, built from
+      # the same enforcing state as the sweeps. Its causes and counts are the
+      # job summary, the whole backlog visible whether or not it is filed;
+      # the report goes to `recovery-file`, which holds the write token.
+      - name: sweep the exemplars for recovery
+        env:
+          RUSTFLAGS: --cfg anodized_panic
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/enforcing
+        shell: bash
+        run: |
+          mkdir -p recovery.out
+          mise run ledger:recovery recovery.out/report.txt > recovery.out/causes.txt
+          {
+            echo '## Recovery sweep'
+            echo
+            grep -e ' mutants swept: ' recovery.out/causes.txt
+            echo
+            sed -n 's/^cause: /- /p' recovery.out/causes.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload the recovery report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: recovery-report
+          path: recovery.out/report.txt
+          retention-days: 7
       - name: run the night's sweeps
         run: mise run ci:sweeps-nightly
 
@@ -235,6 +262,40 @@ jobs:
       - *fetch-dependencies
       - name: run the night's crates' tests with every feature on
         run: mise run ci:all-features
+
+  # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
+  # issue per first error and mutation kind, at most three new a night, a
+  # cause already filed skipped. Only the scheduled run files; a dispatch
+  # prints what it would file. The report comes from the sweeps job, so this
+  # job builds nothing.
+  recovery-file:
+    name: file the recovery sweep's causes
+    needs: [ci-image-ref, sweeps]
+    if: ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RECOVERY_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+      RECOVERY_REPORT: recovery.out/report.txt
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the recovery report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: recovery-report
+          path: recovery.out
+      - name: file the causes
+        run: mise run ci:recovery-file
 
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on

@@ -27,7 +27,11 @@
 //!   reads, the exemplars' expectations included.
 //! - Alternatives: parsing each mutant alone and reading the parser's
 //!   obligations, which misses every report the lowering and the checker make;
-//!   a hand-written table of near misses, which drifts from the grammar.
+//!   a hand-written table of near misses, which drifts from the grammar. The
+//!   parser's own drop sweep (`gandr-surface-parser`'s
+//!   `sweeps::dropped_tokens_recover_no_worse_than_the_record`) holds every
+//!   dropped token's obligation and node counts to a record; it says how much
+//!   the parse recovers, and this sweep where the user is told.
 //! - Reversal: a sweep that must run on every pull request checks its mutants
 //!   in memory, without the scratch directory.
 
@@ -145,10 +149,51 @@ struct Mutant
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Reported
 {
-    /// The refusal or lint it names, or its message where it names none.
-    name: String,
+    /// The refusal or lint it names, when it names one.
+    name: Option<String>,
+    /// What it leads with.
+    message: String,
     /// Its primary span, measured in the mutant's own text, when it has one.
     span: Option<Site>,
+}
+
+/// Whether a cause's mutants deleted their tile or missed it.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Kind
+{
+    /// The tile left out.
+    Deleted,
+    /// The tile written as its near miss.
+    Missed,
+}
+
+/// What a finding is filed under: one issue per cause, not per finding.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Cause
+{
+    /// The first error's name, or `unnamed`.
+    name: String,
+    /// How the tile was written wrong.
+    kind: Kind,
+}
+
+impl core::fmt::Display for Cause
+{
+    /// Writes ``` `<name>` deleted ``` or ``` `<name>` missed ```.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        let kind = match self.kind {
+            Kind::Deleted => "deleted",
+            Kind::Missed => "missed",
+        };
+        write!(f, "`{}` {kind}", self.name)
+    }
 }
 
 /// A mutant whose first error does not mark its mutation.
@@ -185,17 +230,59 @@ impl core::fmt::Display for RecoveryFinding
     {
         write!(
             f,
-            "{}:{}: `{}` {}: first error `{}`",
+            "{}:{}: `{}` {}: first error ",
             self.exemplar.display(),
             self.at,
             self.tile,
             self.mutation,
-            self.reported.name
         )?;
+        match self.reported.name {
+            Some(ref name) => write!(f, "`{name}`")?,
+            None => write!(f, "\"{}\"", self.reported.message)?,
+        }
         match self.reported.span {
             Some(span) => write!(f, " at {span}, not at {}", self.site),
             None => write!(f, " with no span, not at {}", self.site),
         }
+    }
+}
+
+impl RecoveryFinding
+{
+    /// What the finding is filed under: its first error's name, `unnamed` for
+    /// an error that names no refusal or lint, and whether its tile was
+    /// deleted or missed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cause(&self) -> Cause
+    {
+        Cause {
+            name: self
+                .reported
+                .name
+                .clone()
+                .unwrap_or_else(|| "unnamed".to_owned()),
+            kind: match self.mutation {
+                Mutation::Missed(_) => Kind::Missed,
+                Mutation::Deleted => Kind::Deleted,
+            },
+        }
+    }
+
+    /// The exemplar's family: its file's name up to the first dot, the rule
+    /// its variants share.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(&self) -> String
+    {
+        self.exemplar
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .and_then(|name| name.split('.').next())
+            .unwrap_or_default()
+            .to_owned()
     }
 }
 
@@ -232,8 +319,10 @@ impl RecoveryReport
 impl core::fmt::Display for RecoveryReport
 {
     /// Writes the near-miss table, one ``near miss: `<tile>` → `<miss>` `` line
-    /// per tile (`—` for a tile with none), then each finding, then the count
-    /// swept, marked where made, accepted and marked elsewhere.
+    /// per tile (`—` for a tile with none), then each finding, then one
+    /// ``cause: `<name>` <kind>`` line per cause with its count and families,
+    /// the largest first, then the count swept, marked where made, accepted
+    /// and marked elsewhere.
     ///
     /// # Specification
     /// trivial.
@@ -251,6 +340,28 @@ impl core::fmt::Display for RecoveryReport
         }
         for finding in &self.findings {
             writeln!(f, "{finding}")?;
+        }
+        let mut causes: BTreeMap<Cause, (usize, BTreeSet<String>)> = BTreeMap::new();
+        for finding in &self.findings {
+            let &mut (ref mut count, ref mut families) = causes.entry(finding.cause()).or_default();
+            *count = count.saturating_add(1);
+            let _new = families.insert(finding.family());
+        }
+        let mut ranked: Vec<(&Cause, &(usize, BTreeSet<String>))> = causes.iter().collect();
+        ranked.sort_by_key(|&(cause, &(count, _))| (core::cmp::Reverse(count), cause));
+        for (cause, &(count, ref families)) in ranked {
+            write!(
+                f,
+                "cause: {cause}: {count} mutants in {} families: ",
+                families.len()
+            )?;
+            for (index, family) in families.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(", ")?;
+                }
+                f.write_str(family)?;
+            }
+            writeln!(f)?;
         }
         let found = self.findings.len();
         write!(
@@ -525,9 +636,10 @@ pub(super) fn sweep(
                     let base = usize::from(base);
                     *slot = Some(Reported {
                         name: match diagnostic.identifier {
-                            Maybe::Present(ref identifier) => identifier.to_string(),
-                            Maybe::Absent(_) => diagnostic.message.text.clone(),
+                            Maybe::Present(ref identifier) => Some(identifier.to_string()),
+                            Maybe::Absent(_) => None,
                         },
+                        message: diagnostic.message.text.clone(),
                         span: match diagnostic.span {
                             Maybe::Present(span) => Some(Site {
                                 start: usize::from(span.start()).saturating_sub(base),
@@ -571,12 +683,16 @@ mod tests
 {
     use alloc::collections::BTreeMap;
     use std::path::Path;
+    use std::path::PathBuf;
 
     use gandr_surface_grammar::LabelText;
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::SourceText;
 
     use super::Mutation;
+    use super::RecoveryFinding;
+    use super::RecoveryReport;
+    use super::Reported;
     use super::Site;
     use super::literal_tiles;
     use super::mutants;
@@ -653,6 +769,60 @@ mod tests
                 end: 2
             }))
         );
+    }
+
+    #[test]
+    fn findings_are_filed_by_cause_the_largest_first()
+    {
+        let finding = |exemplar: &str, name: Option<&str>, mutation: Mutation| RecoveryFinding {
+            exemplar: PathBuf::from(exemplar),
+            tile: "=".to_owned(),
+            at: 0,
+            mutation,
+            site: Site { start: 0, end: 1 },
+            reported: Reported {
+                name: name.map(str::to_owned),
+                message: "a message".to_owned(),
+                span: Some(Site { start: 9, end: 9 }),
+            },
+        };
+        let report = RecoveryReport {
+            findings: vec![
+                finding("syntax/sum_type.gandr", None, Mutation::Deleted),
+                finding(
+                    "syntax/binary_expression.add.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/binary_expression.cons.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/path_type.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Deleted,
+                ),
+                finding(
+                    "syntax/path_type.gandr",
+                    Some("MalformedForm"),
+                    Mutation::Missed("==".to_owned()),
+                ),
+            ],
+            ..RecoveryReport::default()
+        };
+        let causes: Vec<String> = report
+            .to_string()
+            .lines()
+            .filter(|line| line.starts_with("cause: "))
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(causes, [
+            "cause: `MalformedForm` deleted: 3 mutants in 2 families: binary_expression, path_type",
+            "cause: `MalformedForm` missed: 1 mutants in 1 families: path_type",
+            "cause: `unnamed` deleted: 1 mutants in 1 families: sum_type",
+        ]);
     }
 
     #[test]

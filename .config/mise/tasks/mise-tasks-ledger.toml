@@ -22,3 +22,29 @@ mv ledger/features.db.new ledger/features.db
 ["ledger:dump"]
 description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
 run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
+
+# The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
+# `ledger::recovery` module): every literal tile written as its near miss and
+# deleted, each mutant's first error read against the mutation. The whole
+# report goes to the file named, `target/recovery.txt` by default; its causes
+# and its count are printed. A mutant marked elsewhere is the report's content,
+# not a failure: the task fails only when the sweep cannot run. The nightly
+# workflow runs it and `ci:recovery-file` files each cause.
+["ledger:recovery"]
+description = "Sweep the syntax exemplars for recovery: each tile missed and deleted, the first error read"
+usage = '''
+arg "[report]" help="the file the whole report is written to" default="target/recovery.txt"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+report={{ usage.report }}
+mkdir -p "$(dirname "$report")"
+status=0
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger recovery ledger/exemplars > "$report" || status=$?
+if (( status > 1 )); then
+  cat "$report"
+  exit "$status"
+fi
+grep -e '^cause: ' -e ' mutants swept: ' "$report" || true
+'''
