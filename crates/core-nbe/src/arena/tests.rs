@@ -365,6 +365,35 @@ fn native_field_spans_obey_truncation()
 }
 
 #[test]
+fn a_tuple_s_components_are_its_fields_in_order_and_no_other_former_has_any()
+{
+    let mut arena = DomainArena::new();
+    let unit = arena.value_unit(TermFace::Reduced);
+    let inner = arena.value_tuple([unit, unit], TermFace::Reduced);
+    let pair = arena.value_tuple([inner, unit], TermFace::Reduced);
+    let here = arena.value_here(pair, TermFace::Reduced);
+    let nil = arena.value_list_nil(TermFace::Reduced);
+    let read = |id| {
+        arena
+            .value(id)
+            .and_then(|value| arena.components(value))
+            .map(<[_]>::to_vec)
+    };
+    assert_eq!(
+        read(pair),
+        Some(Vec::from([inner, unit])),
+        "a tuple's components are its fields, in the order written"
+    );
+    assert_eq!(read(unit), Some(Vec::new()), "the unit is the empty tuple");
+    assert_eq!(
+        read(here),
+        None,
+        "a reflexivity over a tuple has no components"
+    );
+    assert_eq!(read(nil), None, "nor has an empty list");
+}
+
+#[test]
 fn case_branch_spans_obey_truncation()
 {
     let mut core = CoreArena::new();
