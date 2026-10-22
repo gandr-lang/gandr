@@ -458,6 +458,10 @@ use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
+use crate::retire::Demand;
+use crate::retire::Polled;
+use crate::retire::Retirement;
+use crate::retire::Unretired;
 use crate::view::CompTypeView;
 
 mod native;
@@ -1741,10 +1745,67 @@ pub fn readmit_resuming(
     crossed: Maybe<&Crossed, crossed::Absent>,
 ) -> (Readmission, Maybe<Crossed, crossed::Absent>)
 {
-    readmit_from(arena, report, |certificate| certificate, Resume::Leading {
-        boundary,
-        crossed,
-    })
+    readmit_retiring(arena, report, boundary, crossed, &Unretired).whole()
+}
+
+/// What a readmission that polls retirement answers.
+///
+/// Whole, the readmission beside the record of its leading declarations
+/// [`readmit_resuming`] answers; retired, the retirement beside the record of
+/// the declarations it crossed before it.
+pub type Readmitting<Retired> = Polled<
+    (Readmission, Maybe<Crossed, crossed::Absent>),
+    Retired,
+    Maybe<Crossed, crossed::Absent>,
+>;
+
+/// [`readmit_resuming`], polling `retirement` before each declaration it
+/// crosses: retired, it stops there and answers the record of the
+/// declarations before it.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`].
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`readmit_resuming`]'s answer. Retired before the declaration at
+///   index `k`, [`Polled::Retired`] with the retirement and the record of the
+///   first `k` declarations, made as [`readmit_resuming`] makes one at a
+///   boundary of `k`: present when it crossed at least one of them beyond those
+///   it resumed, every one was admitted or static, and no seal is open at `k`;
+///   absent otherwise. A mutual block crosses whole, so `k` never falls inside
+///   one; a poll is read only before a declaration, so `k` is always one of the
+///   report's.
+/// - provides: an admission a newer revision overtakes stops at its next
+///   declaration, and the next one resumes what it crossed.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission retired part way, then resumed from its
+///   record, answers what a whole readmission answers.
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+#[inline]
+#[spec(ensures: |ret| match ret {
+    Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
+    Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < report.judged().len(),
+    Polled::Retired(_, Maybe::Absent(_)) => true,
+})]
+pub fn readmit_retiring<Poll>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    boundary: LeadingCount,
+    crossed: Maybe<&Crossed, crossed::Absent>,
+    retirement: &Poll,
+) -> Readmitting<Poll::Retired>
+where
+    Poll: Retirement,
+{
+    readmit_from(
+        arena,
+        report,
+        |certificate| certificate,
+        Resume::Leading { boundary, crossed },
+        retirement,
+    )
 }
 
 /// [`readmit`], with every certificate passed through `vouch` before the
@@ -1773,7 +1834,9 @@ fn readmit_with<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    readmit_from(arena, report, vouch, Resume::Whole).0
+    readmit_from(arena, report, vouch, Resume::Whole, &Unretired)
+        .whole()
+        .0
 }
 
 /// How a readmission treats its report's leading declarations.
@@ -1793,34 +1856,42 @@ enum Resume<'crossed>
     },
 }
 
-/// [`readmit_with`] under `resume`: the readmission, and the record of its
-/// leading declarations [`Resume::Leading`] asks for.
+/// [`readmit_with`] under `resume`, polling `retirement` before each
+/// declaration: the readmission and the record of its leading declarations
+/// [`Resume::Leading`] asks for, or what it held when retired.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`].
-/// - ensures: under [`Resume::Leading`], [`readmit_resuming`]'s answer with
+/// - ensures: under [`Resume::Leading`], [`readmit_retiring`]'s answer with
 ///   each certificate vouched as [`readmit_with`] vouches it; under
 ///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
-///   record.
+///   record, while no poll retires it.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`readmit`] and [`readmit_resuming`].
+/// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`] and
+///   [`readmit_retiring`].
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
-#[spec(ensures: |ret| ret.0.readmitted().len() == report.judged().len()
-    && (matches!(resume, Resume::Leading { .. })
-        || (usize::from(ret.0.resumed()) == 0 && matches!(ret.1, Maybe::Absent(_)))))]
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+#[spec(ensures: |ret| match ret {
+    Polled::Whole((ref readmission, ref recorded)) => readmission.readmitted().len() == report.judged().len()
+        && (matches!(resume, Resume::Leading { .. })
+            || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
+    Polled::Retired(..) => true,
+})]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn readmit_from<Vouch>(
+fn readmit_from<Vouch, Poll>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
     resume: Resume<'_>,
-) -> (Readmission, Maybe<Crossed, crossed::Absent>)
+    retirement: &Poll,
+) -> Readmitting<Poll::Retired>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Poll: Retirement,
 {
     let source = Source {
         lifts: report.lifts(),
@@ -1871,20 +1942,26 @@ where
     let mut index = from;
     loop {
         if boundary == Some(index) {
-            recorded = if seeded.is_ok() {
-                Crossed::record(
-                    (&environment, &positions, readmitted.as_slice()),
-                    LeadingCount(from),
-                )
-            }
-            else {
-                Maybe::Absent(crossed::Absent::Unadmitted)
-            };
+            recorded = record_after(
+                &seeded,
+                (&environment, &positions, readmitted.as_slice()),
+                LeadingCount(from),
+            );
         }
         let Some(judged) = judged_all.get(index)
         else {
             break;
         };
+        if let Demand::Retired(retired) = retirement.demand() {
+            return Polled::Retired(
+                retired,
+                record_after(
+                    &seeded,
+                    (&environment, &positions, readmitted.as_slice()),
+                    LeadingCount(from),
+                ),
+            );
+        }
         index = index.saturating_add(1);
         if let Err(ref error) = seeded {
             readmitted.push(Readmitted {
@@ -2072,7 +2149,7 @@ where
         ConstantIndex::from(usize::MAX),
     );
     let audit = ArtifactAudit::of(&readmitted);
-    (
+    Polled::Whole((
         Readmission {
             environment,
             readmitted,
@@ -2081,7 +2158,37 @@ where
             resumed: from,
         },
         recorded,
-    )
+    ))
+}
+
+/// The record of `built`, a readmission's state between two declarations
+/// once it resumed `from` of them, when the native signatures `seeded`.
+///
+/// # Specification
+/// - requires: as [`Crossed::record`].
+/// - ensures: [`Crossed::record`]'s answer when the signatures seeded; absent
+///   as [`crossed::Absent::Unadmitted`] otherwise, since no declaration was
+///   admitted.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit_resuming`] and [`readmit_retiring`].
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+#[spec(ensures: |ret| seeded.is_ok() || matches!(ret, Maybe::Absent(crossed::Absent::Unadmitted)))]
+fn record_after(
+    seeded: &Result<(), KernelError>,
+    built: (&Environment, &Positions, &[Readmitted]),
+    from: LeadingCount,
+) -> Maybe<Crossed, crossed::Absent>
+{
+    if seeded.is_ok() {
+        Crossed::record(built, from)
+    }
+    else {
+        Maybe::Absent(crossed::Absent::Unadmitted)
+    }
 }
 
 /// The offers of the mutual block the first of `run`, the judged declarations

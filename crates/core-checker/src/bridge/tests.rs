@@ -122,6 +122,7 @@ use super::crossed;
 use super::fault;
 use super::readmit;
 use super::readmit_resuming;
+use super::readmit_retiring;
 use super::readmit_with;
 use crate::code::Lift;
 use crate::code::Unfolded;
@@ -155,6 +156,9 @@ use crate::refusal::StaticArity;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
+use crate::retire::Demand;
+use crate::retire::Polled;
+use crate::retire::Retirement;
 
 /// A module position in a fixture.
 #[repr(transparent)]
@@ -782,6 +786,76 @@ fn a_code_constant_unfolds_in_conversion_and_its_trace_replays()
     }
 }
 
+/// How many unrelated nodes an arena holds before a fixture's own, so that no
+/// two arenas number a node alike.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Padding(u32);
+
+/// The body `Alias` is given in [`numerals`]: `Num`, which checks, or an
+/// integer, which is refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AliasBody
+{
+    /// `def Alias : Type = Num`.
+    Num,
+    /// `def Alias : Type = 0`.
+    Integer,
+}
+
+/// The module `def Num : Type = Integer ; def Alias : Type = Num ; def n : Num
+/// = 0 ; def m : Alias = 0 ;` cut before position `end`, built after
+/// `padding`, `Alias` given `body`, and judged.
+///
+/// # Specification
+/// - requires: `end` is at most the module's four declarations.
+/// - ensures: the arena and its report, one verdict per declaration.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the module the resumed and the retired readmission
+///   witnesses compare whole readmissions against.
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+#[spec(requires: end.0 <= 4, ensures: |ret| ret.1.judged().len() == end.0)]
+fn numerals(
+    padding: Padding,
+    body: AliasBody,
+    end: At,
+) -> (CoreArena, ModuleReport)
+{
+    let mut arena = CoreArena::new();
+    for index in 0 .. padding.0 {
+        let _padding = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+    }
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let code = arena.value_quote(integer);
+    let num = arena.value_constant(ConstantIndex::from(0_usize));
+    let alias = arena.value_constant(ConstantIndex::from(1_usize));
+    let decoded_num = arena.value_type_element(num, Level::zero());
+    let decoded_alias = arena.value_type_element(alias, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let module = [
+        declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
+        declaration(
+            At(1),
+            Maybe::Present(small),
+            Maybe::Present(match body {
+                AliasBody::Num => num,
+                AliasBody::Integer => zero,
+            }),
+        ),
+        declaration(At(2), Maybe::Present(decoded_num), Maybe::Present(zero)),
+        declaration(At(3), Maybe::Present(decoded_alias), Maybe::Present(zero)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, module.get(.. end.0).unwrap())
+    };
+    (arena, report)
+}
+
 /// #776: a readmission resumed from a record of its leading declarations,
 /// made over another arena, answers what a whole readmission answers — the
 /// same entries, audit and artifact, the later declarations unfolding the
@@ -792,42 +866,7 @@ fn a_code_constant_unfolds_in_conversion_and_its_trace_replays()
 #[test]
 fn a_resumed_readmission_answers_as_a_whole_one_776()
 {
-    // def Num : Type = Integer ; def Alias : Type = Num ;
-    // def n : Num = 0 ; def m : Alias = 0 ;
-    //
-    // Each module is the first `declarations` of these, built after `padding`
-    // unrelated nodes so that no two arenas number a node alike; a refused one
-    // gives `Alias` an integer for its body.
-    let judged = |padding: u32, refused: bool, declarations: usize| {
-        let mut arena = CoreArena::new();
-        for index in 0 .. padding {
-            let _padding = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
-        }
-        let integer = arena.value_type_base(BaseType::Integer);
-        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        let code = arena.value_quote(integer);
-        let num = arena.value_constant(ConstantIndex::from(0_usize));
-        let alias = arena.value_constant(ConstantIndex::from(1_usize));
-        let decoded_num = arena.value_type_element(num, Level::zero());
-        let decoded_alias = arena.value_type_element(alias, Level::zero());
-        let zero = arena.value_literal(integer_literal());
-        let module = [
-            declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
-            declaration(
-                At(1),
-                Maybe::Present(small),
-                Maybe::Present(if refused { zero } else { num }),
-            ),
-            declaration(At(2), Maybe::Present(decoded_num), Maybe::Present(zero)),
-            declaration(At(3), Maybe::Present(decoded_alias), Maybe::Present(zero)),
-        ];
-        let report = {
-            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-            check_module(&mut context, module.get(.. declarations).unwrap())
-        };
-        (arena, report)
-    };
-    let (mut first, first_report) = judged(0, false, 3);
+    let (mut first, first_report) = numerals(Padding(0), AliasBody::Num, At(3));
     let (first_readmission, recorded) = readmit_resuming(
         &mut first,
         &first_report,
@@ -855,9 +894,9 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         "the record keeps the encoding of the two kernel declarations"
     );
 
-    let (mut whole_arena, whole_report) = judged(7, false, 4);
+    let (mut whole_arena, whole_report) = numerals(Padding(7), AliasBody::Num, At(4));
     let whole = readmit(&mut whole_arena, &whole_report);
-    let (mut resumed_arena, resumed_report) = judged(7, false, 4);
+    let (mut resumed_arena, resumed_report) = numerals(Padding(7), AliasBody::Num, At(4));
     let (resumed, again) = readmit_resuming(
         &mut resumed_arena,
         &resumed_report,
@@ -916,9 +955,9 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         "a later declaration unfolds the resumed ones as its own arena holds them"
     );
 
-    let (mut whole_arena, whole_report) = judged(7, true, 4);
+    let (mut whole_arena, whole_report) = numerals(Padding(7), AliasBody::Integer, At(4));
     let whole = readmit(&mut whole_arena, &whole_report);
-    let (mut refused_arena, refused_report) = judged(7, true, 4);
+    let (mut refused_arena, refused_report) = numerals(Padding(7), AliasBody::Integer, At(4));
     let (refused, _) = readmit_resuming(
         &mut refused_arena,
         &refused_report,
@@ -931,6 +970,125 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         "a record whose verdicts disagree is not resumed"
     );
     assert_eq!(refused.readmitted(), whole.readmitted());
+}
+
+/// A poll that retires the work at its `at`th reading, counting every reading.
+#[derive(Debug)]
+struct RetireAt
+{
+    /// The reading that retires the work, counted from one.
+    at: usize,
+    /// How many times the work has been polled.
+    readings: core::cell::Cell<usize>,
+}
+
+impl Retirement for RetireAt
+{
+    type Retired = ();
+
+    /// Wanted until the `at`th reading, retired from it on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more reading counted; [`Demand::Retired`] once the count
+    ///   reaches `at`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witness counts the readings a readmission made.
+    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    #[spec(
+        captures: before = self.readings.get(),
+        ensures: |ret| self.readings.get() == before.saturating_add(1)
+            && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
+    )]
+    fn demand(&self) -> Demand<()>
+    {
+        let reading = self.readings.get().saturating_add(1);
+        self.readings.set(reading);
+        if reading >= self.at {
+            Demand::Retired(())
+        }
+        else {
+            Demand::Wanted
+        }
+    }
+}
+
+/// #1547: a readmission polled to retirement stops before the declaration it
+/// polled at and answers the record of the ones it crossed before it; the next
+/// readmission, over another arena, resumes them from that record and answers
+/// what a whole readmission answers. Retired at its first poll, it crossed
+/// nothing, and records nothing.
+#[test]
+fn a_retired_readmission_resumes_from_its_record_1547()
+{
+    let (mut arena, report) = numerals(Padding(0), AliasBody::Num, At(4));
+    let poll = RetireAt {
+        at: 3,
+        readings: core::cell::Cell::new(0),
+    };
+    let retired = readmit_retiring(
+        &mut arena,
+        &report,
+        LeadingCount::NONE,
+        Maybe::Absent(crossed::Absent::Unasked),
+        &poll,
+    );
+    let Polled::Retired((), Maybe::Present(record)) = retired
+    else {
+        panic!("retired before `n`, `Num` and `Alias` are recorded: {retired:?}");
+    };
+    assert_eq!(
+        poll.readings.get(),
+        3,
+        "the readmission polls once before each declaration it reaches"
+    );
+    assert_eq!(
+        record.boundary(),
+        LeadingCount::from(2_usize),
+        "the record holds the two declarations crossed before the retiring poll"
+    );
+
+    let (mut whole_arena, whole_report) = numerals(Padding(7), AliasBody::Num, At(4));
+    let whole = readmit(&mut whole_arena, &whole_report);
+    let (mut resumed_arena, resumed_report) = numerals(Padding(7), AliasBody::Num, At(4));
+    let (resumed, _) = readmit_resuming(
+        &mut resumed_arena,
+        &resumed_report,
+        LeadingCount::NONE,
+        Maybe::Present(&record),
+    );
+    assert_eq!(
+        resumed.resumed(),
+        LeadingCount::from(2_usize),
+        "the declarations the retired readmission crossed are resumed"
+    );
+    assert_eq!(resumed.readmitted(), whole.readmitted());
+    assert_eq!(
+        resumed.export(BTreeMap::new()),
+        whole.export(BTreeMap::new()),
+        "the artifact is the whole one, byte for byte"
+    );
+
+    let (mut first_arena, first_report) = numerals(Padding(0), AliasBody::Num, At(4));
+    let at_once = RetireAt {
+        at: 1,
+        readings: core::cell::Cell::new(0),
+    };
+    assert!(
+        matches!(
+            readmit_retiring(
+                &mut first_arena,
+                &first_report,
+                LeadingCount::NONE,
+                Maybe::Absent(crossed::Absent::Unasked),
+                &at_once,
+            ),
+            Polled::Retired((), Maybe::Absent(crossed::Absent::Unchanged))
+        ),
+        "retired before its first declaration, a readmission crossed nothing to record"
+    );
 }
 
 /// A run's certificate keeps a code constant it is handed as the constant:

@@ -3,6 +3,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Polled;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use quenchant_shape::shape::Maybe;
@@ -15,6 +16,7 @@ use crate::fixture::Digits;
 use crate::fixture::Key;
 use crate::fixture::Label;
 use crate::fixture::Position;
+use crate::fixture::RetireAt;
 use crate::fixture::Scratch;
 use crate::fixture::declaration;
 use crate::fixture::integer;
@@ -251,4 +253,84 @@ fn a_store_failure_retains_the_new_resume_for_the_next_submission()
         panic!("the earlier persisted revision survives the failed write");
     };
     assert_eq!(earlier.items().len(), 1_usize);
+}
+
+/// #1547: a submission polled to retirement stops before the item it polled
+/// at, and the session keeps the resume it held; the next submission resumes
+/// from that resume, judging and recording what it would have with no retired
+/// submission before it.
+#[test]
+fn a_retired_submission_keeps_the_resume_it_held_1547()
+{
+    let fresh = || {
+        IncrementalSession::new(
+            MemoryCheckpointStore::default(),
+            backend(),
+            CheckBudget::DEFAULT,
+        )
+    };
+    let first = || {
+        integers(CoreArena::new(), &[
+            (Key("one"), Digits("1")),
+            (Key("two"), Digits("2")),
+            (Key("three"), Digits("3")),
+        ])
+    };
+    let edited = || {
+        integers(CoreArena::new(), &[
+            (Key("one"), Digits("1")),
+            (Key("two"), Digits("20")),
+            (Key("three"), Digits("3")),
+        ])
+    };
+    let mut session = fresh();
+    let _first = session
+        .submit(&mut first(), &mut Quiet)
+        .expect("the first revision submits");
+    let held = session.last().map(Resume::census);
+    let poll = RetireAt {
+        at: 2,
+        readings: core::cell::Cell::new(0),
+    };
+    let retired = session
+        .submit_retiring(&mut edited(), &mut Quiet, &poll)
+        .expect("a retired submission does not fail");
+    assert!(
+        matches!(retired, Polled::Retired((), ())),
+        "the second poll retires the submission: {retired:?}"
+    );
+    assert_eq!(
+        poll.readings.get(),
+        2,
+        "the pass polls before each item it reaches and stops before the second"
+    );
+    assert_eq!(
+        session.last().map(Resume::census),
+        held,
+        "the session keeps the resume it held"
+    );
+
+    let mut unretired = fresh();
+    let _first = unretired
+        .submit(&mut first(), &mut Quiet)
+        .expect("the first revision submits");
+    let expected = unretired
+        .submit(&mut edited(), &mut Quiet)
+        .expect("the edited revision submits");
+    let census = session
+        .submit(&mut edited(), &mut Quiet)
+        .expect("the edited revision submits after the retired one");
+    assert_eq!(
+        census, expected,
+        "the next submission does the work it would have done with no retired one before it"
+    );
+    let (Maybe::Present(after), Maybe::Present(whole)) = (session.last(), unretired.last())
+    else {
+        panic!("both sessions hold a resume");
+    };
+    assert_eq!(
+        after.checkpoints(),
+        whole.checkpoints(),
+        "and records the same checkpoints"
+    );
 }

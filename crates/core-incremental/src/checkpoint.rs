@@ -122,8 +122,12 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
+use gandr_core_checker::Demand;
 use gandr_core_checker::FormedValueType;
+use gandr_core_checker::Polled;
+use gandr_core_checker::Retirement;
 use gandr_core_checker::Support;
+use gandr_core_checker::Unretired;
 use gandr_core_checker::check_declaration_supported;
 use gandr_core_checker::form_value_type;
 use gandr_core_checker::signature_table;
@@ -1157,8 +1161,15 @@ pub fn check_program(
 ) -> Result<Resume, ResumeError>
 {
     let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
-    advance::<NullMemoChoice, KeepNothing>((&[], &[]), (order, &[]), program, Start::Fresh(budget))
-        .map(|advanced| advanced.resume)
+    advance::<NullMemoChoice, KeepNothing, _>(
+        (&[], &[]),
+        (order, &[]),
+        program,
+        Start::Fresh(budget),
+        &Unretired,
+    )
+    .map(Polled::whole)
+    .map(|advanced| advanced.resume)
 }
 
 /// Resume from `base` onto the edited program, carrying item identity.
@@ -1228,12 +1239,14 @@ pub fn resume(
         order,
         ..
     } = base;
-    advance::<OrderedMemoChoice, KeepNothing>(
+    advance::<OrderedMemoChoice, KeepNothing, _>(
         (&checkpoints.items, &handles),
         (order, &[]),
         edited,
         Start::Fresh(checkpoints.budget),
+        &Unretired,
     )
+    .map(Polled::whole)
     .map(|advanced| advanced.resume)
 }
 
@@ -1297,12 +1310,14 @@ pub fn resume_from(
         .map(|checkpoint| checkpoint.content().reference().clone())
         .collect();
     let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
-    advance::<OrderedMemoChoice, KeepNothing>(
+    advance::<OrderedMemoChoice, KeepNothing, _>(
         (&base.items, &handles),
         (order, &[]),
         edited,
         Start::Fresh(base.budget),
+        &Unretired,
     )
+    .map(Polled::whole)
     .map(|advanced| advanced.resume)
 }
 
@@ -1336,12 +1351,14 @@ pub fn lead(
 ) -> Result<(Resume, Leading), ResumeError>
 {
     let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
-    let advanced = advance::<NullMemoChoice, KeepContext>(
+    let advanced = advance::<NullMemoChoice, KeepContext, _>(
         (&[], &[]),
         (order, &[]),
         program,
         Start::Fresh(budget),
-    )?;
+        &Unretired,
+    )?
+    .whole();
     let leading = Leading {
         budget,
         locus: program.layout().locus(),
@@ -1403,40 +1420,186 @@ pub fn resume_after(
     edited: &mut Program,
 ) -> Result<Resume, ResumeError>
 {
+    resume_after_retiring(base, leading, edited, &Unretired).map(Polled::whole)
+}
+
+/// What a resume that polls retirement answers: the resume, or the retirement
+/// beside the resume it was given.
+pub type Resuming<Retired> =
+    Polled<Resume, Retired, Maybe<Resume, crate::session::submitted::Absent>>;
+
+/// [`resume_after`], polling `retirement` before each item the pass adopts or
+/// judges: retired, it answers the base it was given, unchanged, for the next
+/// revision to resume from.
+///
+/// # Specification
+/// - requires: as [`resume_after`].
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`resume_after`]'s resume. Retired, before the item it polled at,
+///   [`Polled::Retired`] with the retirement and `base` as it was given.
+/// - fails: as [`resume_after`].
+/// - panics: none.
+///
+/// # Errors
+/// As [`resume_after`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a submission retired part way leaves the session the
+///   resume it held, and the next submission resumes from it as it would have.
+/// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|polled| match *polled {
+    Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
+    Polled::Retired(..) => true,
+}) || ret.is_err())]
+pub fn resume_after_retiring<Poll>(
+    base: Maybe<Resume, crate::session::submitted::Absent>,
+    leading: &Arc<Leading>,
+    edited: &mut Program,
+    retirement: &Poll,
+) -> Result<Resuming<Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
+{
     if leading.leads(edited) == Leads::Departs {
-        return match base {
-            Maybe::Present(base) => resume(base, edited),
-            Maybe::Absent(_) => check_program(edited, leading.budget),
-        };
+        return resume_or_check(base, edited, leading.budget, retirement);
     }
     let count = leading.checkpoints.len();
-    let advanced = match base {
+    let polled = match base {
         Maybe::Present(Resume {
             checkpoints,
+            adoptions,
             handles,
             order,
+            census,
             after: Maybe::Present(after),
-            ..
         }) if Arc::ptr_eq(&after, leading) => {
-            match (
+            let advanced = match (
                 handles.split_at_checked(count),
                 checkpoints.items.get(count ..),
             ) {
-                (Some((before, after)), Some(items)) => advance::<OrderedMemoChoice, KeepNothing>(
-                    (items, after),
-                    (order, before),
-                    edited,
-                    Start::After(leading),
+                (Some((before, behind)), Some(items)) => {
+                    advance::<OrderedMemoChoice, KeepNothing, _>(
+                        (items, behind),
+                        (order, before),
+                        edited,
+                        Start::After(leading),
+                        retirement,
+                    )?
+                },
+                _ => match fresh_after(leading, edited, retirement)? {
+                    Polled::Whole(advanced) => Polled::Whole(advanced),
+                    Polled::Retired(retired, _) => Polled::Retired(retired, order),
+                },
+            };
+            match advanced {
+                Polled::Whole(advanced) => Polled::Whole(advanced),
+                Polled::Retired(retired, order) => Polled::Retired(
+                    retired,
+                    Maybe::Present(Resume {
+                        checkpoints,
+                        adoptions,
+                        handles,
+                        order,
+                        census,
+                        after: Maybe::Present(after),
+                    }),
                 ),
-                _ => fresh_after(leading, edited),
             }
         },
-        Maybe::Present(_) | Maybe::Absent(_) => fresh_after(leading, edited),
-    }?;
-    Ok(Resume {
-        after: Maybe::Present(Arc::clone(leading)),
-        ..advanced.resume
+        other @ (Maybe::Present(_) | Maybe::Absent(_)) => {
+            match fresh_after(leading, edited, retirement)? {
+                Polled::Whole(advanced) => Polled::Whole(advanced),
+                Polled::Retired(retired, _) => Polled::Retired(retired, other),
+            }
+        },
+    };
+    Ok(match polled {
+        Polled::Whole(advanced) => Polled::Whole(Resume {
+            after: Maybe::Present(Arc::clone(leading)),
+            ..advanced.resume
+        }),
+        Polled::Retired(retired, held) => Polled::Retired(retired, held),
     })
+}
+
+/// Resume from `previous` onto `edited`, or judge `edited` whole under
+/// `budget` when no resume is held, polling `retirement` before each item.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`resume`]'s resume from `previous` when it is present, and
+///   [`check_program`]'s under `budget` otherwise. Retired, before the item it
+///   polled at, [`Polled::Retired`] with the retirement and `previous` as it
+///   was given.
+/// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
+/// - panics: none.
+///
+/// # Errors
+/// [`ResumeError::Order`] — the order-maintenance structure refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`resume_after_retiring`].
+/// - witness: `session::tests::a_retired_submission_keeps_the_resume_it_held_1547`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|polled| match *polled {
+    Polled::Whole(ref resumed) => resumed.checkpoints.items.len() == edited.items().len(),
+    Polled::Retired(..) => true,
+}) || ret.is_err())]
+pub fn resume_or_check<Poll>(
+    previous: Maybe<Resume, crate::session::submitted::Absent>,
+    edited: &mut Program,
+    budget: CheckBudget,
+    retirement: &Poll,
+) -> Result<Resuming<Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
+{
+    match previous {
+        Maybe::Present(Resume {
+            checkpoints,
+            adoptions,
+            handles,
+            order,
+            census,
+            after,
+        }) => Ok(
+            match advance::<OrderedMemoChoice, KeepNothing, _>(
+                (&checkpoints.items, &handles),
+                (order, &[]),
+                edited,
+                Start::Fresh(checkpoints.budget),
+                retirement,
+            )? {
+                Polled::Whole(advanced) => Polled::Whole(advanced.resume),
+                Polled::Retired(retired, order) => Polled::Retired(
+                    retired,
+                    Maybe::Present(Resume {
+                        checkpoints,
+                        adoptions,
+                        handles,
+                        order,
+                        census,
+                        after,
+                    }),
+                ),
+            },
+        ),
+        Maybe::Absent(reason) => {
+            let (order, _) = ItemOrder::seeded(&[]).map_err(ResumeError::Order)?;
+            Ok(
+                match advance::<NullMemoChoice, KeepNothing, _>(
+                    (&[], &[]),
+                    (order, &[]),
+                    edited,
+                    Start::Fresh(budget),
+                    retirement,
+                )? {
+                    Polled::Whole(advanced) => Polled::Whole(advanced.resume),
+                    Polled::Retired(retired, _) => Polled::Retired(retired, Maybe::Absent(reason)),
+                },
+            )
+        },
+    }
 }
 
 /// [`resume_after`] with no base after the same state: the leading items
@@ -1444,7 +1607,8 @@ pub fn resume_after(
 ///
 /// # Specification
 /// - requires: as [`resume_after`], `edited` laying the leading items first.
-/// - ensures: the pass after `leading` from no base.
+/// - ensures: the pass after `leading` from no base, polling `retirement`
+///   before each item as [`advance`] does.
 /// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
 /// - panics: none.
 /// - executable: none — as [`resume_after`], whose witness runs it.
@@ -1455,17 +1619,21 @@ pub fn resume_after(
 /// # Adequacy
 /// - hypothesis: L3 — as [`resume_after`].
 /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
-fn fresh_after(
+fn fresh_after<Poll>(
     leading: &Leading,
     edited: &mut Program,
-) -> Result<Advanced<()>, ResumeError>
+    retirement: &Poll,
+) -> Result<Advancing<(), Poll::Retired>, ResumeError>
+where
+    Poll: Retirement,
 {
     let (order, handles) = ItemOrder::seeded(&leading.references).map_err(ResumeError::Order)?;
-    advance::<OrderedMemoChoice, KeepNothing>(
+    advance::<OrderedMemoChoice, KeepNothing, _>(
         (&[], &[]),
         (order, &handles),
         edited,
         Start::After(leading),
+        retirement,
     )
 }
 
@@ -1619,6 +1787,44 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
             DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
         ),
     })
+}
+
+/// An item's content key: the digest of its canonical content.
+///
+/// The content names no arena id, position or name, so an edit to whitespace
+/// or a comment, or a renumbering of the arena, leaves the key alone. Two keys
+/// that differ name different content; two that agree name the same content
+/// but for a collision of the digest's sixteen bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContentKey(ContentDigest);
+
+/// The content key of each of `program`'s items, in order: what a pool keys
+/// the work on an item by, so that work whose item's key a newer revision
+/// keeps need not be retired.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one key per item, in order: the digest the memo buckets the
+///   item's content by; absent as [`recall::Absent::Opaque`] for an item whose
+///   content holds an unresolved node, which no key names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the keys of two revisions agree at the items whose
+///   content agrees, over arenas numbered apart, and differ at an edited one.
+/// - witness: `checkpoint::tests::an_item_s_content_key_moves_only_with_its_content_1547`
+#[spec(ensures: |ret| ret.len() == program.items().len())]
+#[inline]
+#[must_use]
+pub fn content_keys(program: &Program) -> Vec<Maybe<ContentKey, recall::Absent>>
+{
+    (0 .. program.items().len())
+        .map(|index| {
+            let encoded = encode_item(program.arena(), program.layout(), ItemOrdinal::from(index));
+            identity_of(&encoded.content).map(|identity| ContentKey(identity.digest))
+        })
+        .collect()
 }
 
 /// A choice of memo for the pass: the type parameter that separates batch
@@ -1994,6 +2200,10 @@ struct Advanced<Kept>
     kept: Kept,
 }
 
+/// What an advance that polls retirement answers: the advance, or the
+/// retirement beside the order it was given, unspliced.
+type Advancing<Kept, Retired> = Polled<Advanced<Kept>, Retired, ItemOrder>;
+
 /// Run the pass from `base` over `edited`'s items after `start`'s, splice the
 /// order after the last leading handle, and assemble the resume.
 ///
@@ -2001,8 +2211,11 @@ struct Advanced<Kept>
 /// - requires: `base` pairs `order`'s handles with the base items laid after
 ///   the leading ones, in order; `leading` holds `order`'s handles of the
 ///   leading items, one per item `start` holds, before every base handle.
-/// - ensures: as [`resume`] at the memo `Choice` builds, the leading items'
-///   checkpoints `start`'s, each adopted, under the leading handles.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`] as
+///   [`resume`] at the memo `Choice` builds, the leading items' checkpoints
+///   `start`'s, each adopted, under the leading handles. Retired, before the
+///   item it polled at, [`Polled::Retired`] with the retirement and `order`
+///   unspliced.
 /// - fails: [`ResumeError::Order`] when the splice fails.
 /// - panics: none.
 /// - intension: encodes each edited item after the leading ones once, recalls
@@ -2030,34 +2243,39 @@ struct Advanced<Kept>
             ordered.0.reference(handle) == Maybe::Present(item.content().reference())
         }),
     ensures: |ret| {
-        ret.as_ref().is_ok_and(|advanced| {
-            let resumed = &advanced.resume;
-            resumed.checkpoints.budget == start.budget()
-                && resumed.checkpoints.items.len() == edited.items().len()
-                && resumed.adoptions.len() == edited.items().len()
-                && resumed.handles.len() == edited.items().len()
-                && usize::from(resumed.census.items) == edited.items().len()
-                && usize::from(resumed.census.adopted)
-                    .checked_add(usize::from(resumed.census.judged))
-                    == Some(edited.items().len())
-                && resumed
-                    .checkpoints
-                    .items
-                    .iter()
-                    .map(|item| item.content().reference())
-                    .eq(edited.references().iter())
+        ret.as_ref().is_ok_and(|polled| match *polled {
+            Polled::Whole(ref advanced) => {
+                let resumed = &advanced.resume;
+                resumed.checkpoints.budget == start.budget()
+                    && resumed.checkpoints.items.len() == edited.items().len()
+                    && resumed.adoptions.len() == edited.items().len()
+                    && resumed.handles.len() == edited.items().len()
+                    && usize::from(resumed.census.items) == edited.items().len()
+                    && usize::from(resumed.census.adopted)
+                        .checked_add(usize::from(resumed.census.judged))
+                        == Some(edited.items().len())
+                    && resumed
+                        .checkpoints
+                        .items
+                        .iter()
+                        .map(|item| item.content().reference())
+                        .eq(edited.references().iter())
+            },
+            Polled::Retired(..) => true,
         }) || ret.is_err()
     },
 )]
-fn advance<Choice, Kept>(
+fn advance<Choice, Kept, Poll>(
     base: (&[ItemCheckpoint], &[ItemHandle]),
     ordered: (ItemOrder, &[ItemHandle]),
     edited: &mut Program,
     start: Start<'_>,
-) -> Result<Advanced<Kept::Kept>, ResumeError>
+    retirement: &Poll,
+) -> Result<Advancing<Kept::Kept, Poll::Retired>, ResumeError>
 where
     Choice: MemoChoice,
     Kept: Keep,
+    Poll: Retirement,
 {
     let (base, base_handles) = base;
     let (mut order, leading_handles) = ordered;
@@ -2069,9 +2287,21 @@ where
         .map(|index| encode_item(edited.arena(), edited.layout(), ItemOrdinal::from(index)))
         .collect();
     census.items = ItemCount::from(count);
-    let (outcomes, answers, kept) = {
+    let passed = {
         let memo = Choice::build(base);
-        pass::<Choice::Memo<'_>, Kept>(base, &memo, &encoded, edited, start, &mut census)
+        pass::<Choice::Memo<'_>, Kept, Poll>(
+            base,
+            &memo,
+            &encoded,
+            edited,
+            start,
+            &mut census,
+            retirement,
+        )
+    };
+    let (outcomes, answers, kept) = match passed {
+        Polled::Whole(passed) => passed,
+        Polled::Retired(retired, ()) => return Ok(Polled::Retired(retired, order)),
     };
     let mut items = Vec::with_capacity(count);
     let mut adoptions = Vec::with_capacity(count);
@@ -2111,7 +2341,7 @@ where
     let mut handles = Vec::with_capacity(count);
     handles.extend_from_slice(leading_handles);
     handles.extend(after);
-    Ok(Advanced {
+    Ok(Polled::Whole(Advanced {
         resume: Resume {
             checkpoints: Checkpoints::new(budget, items),
             adoptions,
@@ -2122,23 +2352,28 @@ where
         },
         answers,
         kept,
-    })
+    }))
 }
 
+/// What a pass that polls retirement answers: each item's outcome, the answers
+/// its judgements consulted and what it kept, or the retirement.
+type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, ()>;
+
 /// The forward pass: recall, seat, close, then adopt or judge each item after
-/// `start`'s in order.
+/// `start`'s in order, polling `retirement` before each.
 ///
 /// # Specification
 /// - requires: `encoded` holds the encodings of `edited`'s items after the ones
 ///   `start` holds, in order.
-/// - ensures: one outcome and one answer per encoded item, in order, and what
-///   `Kept` keeps of the context after the last; an item is adopted only when
-///   its recalled checkpoint's support holds pointwise against the answers of
-///   the items before it, the leading ones' `start`'s, no type position of it
-///   or of a recorded answer names a value-changed definition, and its type can
-///   be seated; every other item is judged in a context that has admitted
-///   exactly the items before it, as batch does. Support is ordered and unique
-///   by reference and signature table, retaining value and Data consultations
+/// - ensures: while every poll answers [`Demand::Wanted`], one outcome and one
+///   answer per encoded item, in order, and what `Kept` keeps of the context
+///   after the last; retired, nothing. An item is adopted only when its
+///   recalled checkpoint's support holds pointwise against the answers of the
+///   items before it, the leading ones' `start`'s, no type position of it or of
+///   a recorded answer names a value-changed definition, and its type can be
+///   seated; every other item is judged in a context that has admitted exactly
+///   the items before it, as batch does. Support is ordered and unique by
+///   reference and signature table, retaining value and Data consultations
 ///   separately.
 /// - panics: none.
 ///
@@ -2171,51 +2406,56 @@ where
         judged = usize::from(census.judged),
         recalled = usize::from(census.recalled),
     ],
-    ensures: |ret| {
-        ret.0.len() == encoded.len()
-            && ret.1.len() == encoded.len()
-            && usize::from(census.adopted)
-                == adopted.saturating_add(
-                    ret.0.iter()
-                        .filter(|outcome| outcome.adoption == Adoption::Adopted)
-                        .count(),
-                )
-            && usize::from(census.judged)
-                == judged.saturating_add(
-                    ret.0.iter()
-                        .filter(|outcome| outcome.adoption == Adoption::Judged)
-                        .count(),
-                )
-            && usize::from(census.recalled)
-                == recalled.saturating_add(if Memo::ACTIVITY == MemoActivity::Active {
-                    encoded.len()
-                }
-                else {
-                    0
-                })
-            && ret.0.iter().zip(encoded).all(|(outcome, item)| {
-                outcome.footprint.opacity() == item.content.opacity()
-                    && outcome.support.windows(2).all(|pair| {
-                        pair.first()
-                            .zip(pair.last())
-                            .is_none_or(|(left, right)|
-                                (&left.reference, left.answer.consultation())
-                                    < (&right.reference, right.answer.consultation()))
+    ensures: |ret| match ret {
+        Polled::Whole((ref outcomes, ref answers, _)) => {
+            outcomes.len() == encoded.len()
+                && answers.len() == encoded.len()
+                && usize::from(census.adopted)
+                    == adopted.saturating_add(
+                        outcomes.iter()
+                            .filter(|outcome| outcome.adoption == Adoption::Adopted)
+                            .count(),
+                    )
+                && usize::from(census.judged)
+                    == judged.saturating_add(
+                        outcomes.iter()
+                            .filter(|outcome| outcome.adoption == Adoption::Judged)
+                            .count(),
+                    )
+                && usize::from(census.recalled)
+                    == recalled.saturating_add(if Memo::ACTIVITY == MemoActivity::Active {
+                        encoded.len()
+                    }
+                    else {
+                        0
                     })
-            })
+                && outcomes.iter().zip(encoded).all(|(outcome, item)| {
+                    outcome.footprint.opacity() == item.content.opacity()
+                        && outcome.support.windows(2).all(|pair| {
+                            pair.first()
+                                .zip(pair.last())
+                                .is_none_or(|(left, right)|
+                                    (&left.reference, left.answer.consultation())
+                                    < (&right.reference, right.answer.consultation()))
+                        })
+                })
+        },
+        Polled::Retired(..) => true,
     },
 )]
-fn pass<'id, Memo, Kept>(
+fn pass<'id, Memo, Kept, Poll>(
     base: &'id [ItemCheckpoint],
     memo: &Memo,
     encoded: &'id [Encoded],
     edited: &mut Program,
     start: Start<'_>,
     census: &mut ResumeCensus,
-) -> (Vec<Outcome>, Vec<Answer>, Kept::Kept)
+    retirement: &Poll,
+) -> Passed<Kept::Kept, Poll::Retired>
 where
     Memo: CheckMemo<ItemIdentity<'id>, ItemOrdinal>,
     Kept: Keep,
+    Poll: Retirement,
 {
     let active = Memo::ACTIVITY == MemoActivity::Active;
     let footprints: Vec<Footprint> = encoded
@@ -2267,6 +2507,9 @@ where
     // projects is encoded once.
     let types = crate::content::TypeMemo::default();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
+        if let Demand::Retired(retired) = retirement.demand() {
+            return Polled::Retired(retired, ());
+        }
         let ordinal = ItemOrdinal::from(skip.saturating_add(index));
         let Some(declaration) = layout
             .items
@@ -2352,7 +2595,7 @@ where
         supplied.own.push(answer);
     }
     let kept = Kept::keep(&context);
-    (outcomes, supplied.own, kept)
+    Polled::Whole((outcomes, supplied.own, kept))
 }
 
 /// Mint the seat an unsigned item's adopted synthesised type is read from.
