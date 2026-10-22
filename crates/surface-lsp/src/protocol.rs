@@ -3116,11 +3116,13 @@ pub struct SignatureInformation
 
 /// One parameter of a signature.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[repr(transparent)]
 pub struct ParameterInformation
 {
     /// Where it stands in the signature's label.
     pub label: ParameterLabel,
+    /// The documentation written before the parameter, when it has any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<MarkupContent>,
 }
 
 /// Where a parameter stands in its signature's label.

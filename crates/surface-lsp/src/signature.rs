@@ -5,8 +5,9 @@
 //! and a family's application alike, ordered by where its arguments open
 //! ([`Calls`]). A copy's hovering keeps the head of every declaration and
 //! constructor its import closure writes ([`Signatures`]): the name through its
-//! parameters and its result, each parameter's place in that label, and the
-//! documentation written for it. Both are read once per text, off the parse
+//! parameters and its result on one line, each parameter's place in that label
+//! with the `///` run written before it, and the documentation written for the
+//! head. Both are read once per text, off the parse
 //! each already makes; the heads the closure writes are read once per closure
 //! lowering the process holds and shared by every text laid after it, so a
 //! keystroke reads the document's own forms alone. A request takes the
@@ -313,6 +314,19 @@ struct Place
     end: usize,
 }
 
+/// A parameter of a head: its place in the label, the name tile it binds,
+/// and the documentation written before it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Parameter
+{
+    /// Its place in the head's label.
+    place: Place,
+    /// The first tile it writes, in the text the head was read off.
+    named: Option<ByteSpan>,
+    /// The `///` run written before it.
+    documentation: Option<String>,
+}
+
 /// A head: its label, each parameter's place in the label, and the
 /// documentation written for it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -320,8 +334,8 @@ pub struct Signature
 {
     /// The name through its parameters and its result, on one line.
     label: String,
-    /// Each parameter's place in `label`, in written order.
-    parameters: Vec<Place>,
+    /// Each parameter, in written order.
+    parameters: Vec<Parameter>,
     /// The documentation written for the declaration or constructor.
     documentation: Option<String>,
 }
@@ -378,11 +392,14 @@ impl Signature
         let mut snippet = String::new();
         escape_into(&mut snippet, name);
         snippet.push('(');
-        for (stop, &Place { start, end }) in (1_usize ..).zip(&self.parameters) {
+        for (stop, parameter) in (1_usize ..).zip(&self.parameters) {
             if stop > 1 {
                 snippet.push_str(", ");
             }
-            let written = self.label.get(start .. end).unwrap_or_default();
+            let written = self
+                .label
+                .get(parameter.place.start .. parameter.place.end)
+                .unwrap_or_default();
             let held = written
                 .split_once(" : ")
                 .map_or(written, |(named, _)| named);
@@ -428,6 +445,10 @@ pub struct Signatures
     closure: Arc<[Head]>,
     /// The heads the text's own forms write.
     own: Vec<Head>,
+    /// The documentation of each parameter the text's own heads write that
+    /// has any, by the source holding the parameter's first tile and that
+    /// tile's span in the source's own text, ascending.
+    documented: Vec<((SourceIndex, ByteSpan), String)>,
 }
 
 impl Signatures
@@ -448,6 +469,11 @@ impl Signatures
     ///   or holds that the form's own `:` follows and a function type after it,
     ///   as the table reads it, undocumented; each for a tile `unit` places in
     ///   a source, the first head for a tile kept; all of them the text's own.
+    ///   A head laid over lines labels as one line: each stretch of layout that
+    ///   breaks a line or holds documentation is one space, none inside its
+    ///   parentheses or before a comma. A parameter carries the documentation
+    ///   nodes written before it inside its list or telescope, and none of them
+    ///   documents the head.
     /// - provides: the index a signature-help request answers from, built once
     ///   per text.
     /// - fails: never.
@@ -460,8 +486,11 @@ impl Signatures
     ///   signature's arrow, a family with parameters, a constructor with fields
     ///   and one with none, a head over two lines, documented ones, a parameter
     ///   typed by an arrow and record fields typed by an arrow and over a
-    ///   telescope each read at their exact label and parameters.
+    ///   telescope each read at their exact label and parameters; documented
+    ///   parameters of a list laid over lines and of a telescope, a run of two
+    ///   lines among them, at their exact documentation.
     /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     #[spec(ensures: |ret| ret.closure.is_empty()
         && ret.own.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
     #[must_use]
@@ -472,15 +501,17 @@ impl Signatures
         unit: &Unit,
     ) -> Self
     {
+        let own = heads_among(
+            grammar,
+            roles,
+            tree,
+            unit,
+            tree.roots().iter().flat_map(|&root| tree.children(root)),
+        );
         Self {
             closure: Arc::default(),
-            own: heads_among(
-                grammar,
-                roles,
-                tree,
-                unit,
-                tree.roots().iter().flat_map(|&root| tree.children(root)),
-            ),
+            documented: parameters_documented(unit, &own),
+            own,
         }
     }
 
@@ -523,17 +554,19 @@ impl Signatures
             tree.node(*child)
                 .is_some_and(|node| node.span().start() < base)
         };
+        let own = heads_among(
+            grammar,
+            roles,
+            tree,
+            unit,
+            top().filter(|child| !before(child)),
+        );
         Self {
             closure: closure_heads(closure, || {
                 heads_among(grammar, roles, tree, unit, top().filter(before))
             }),
-            own: heads_among(
-                grammar,
-                roles,
-                tree,
-                unit,
-                top().filter(|child| !before(child)),
-            ),
+            documented: parameters_documented(unit, &own),
+            own,
         }
     }
 
@@ -556,6 +589,54 @@ impl Signatures
             })
             .map(|held| &held.1)
     }
+
+    /// The documentation written before the parameter of one of the text's
+    /// own heads whose first tile `source` writes at `named`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn parameter(
+        &self,
+        source: SourceIndex,
+        named: ByteSpan,
+    ) -> Option<SourceText<'_>>
+    {
+        let key = (source, named);
+        let at = self
+            .documented
+            .binary_search_by(|held| held.0.cmp(&key))
+            .ok()?;
+        self.documented
+            .get(at)
+            .map(|held| SourceText::from(held.1.as_str()))
+    }
+}
+
+/// The documentation of each parameter of `own` that has any, by the source
+/// `unit` places its first tile in and that tile's span there, ascending, the
+/// first for a tile kept.
+///
+/// # Specification
+/// trivial.
+fn parameters_documented(
+    unit: &Unit,
+    own: &[Head],
+) -> Vec<((SourceIndex, ByteSpan), String)>
+{
+    let mut found: Vec<((SourceIndex, ByteSpan), String)> = own
+        .iter()
+        .flat_map(|held| &held.1.parameters)
+        .filter_map(|parameter| {
+            Some((
+                placed(unit, parameter.named?)?,
+                parameter.documentation.clone()?,
+            ))
+        })
+        .collect();
+    found.sort_by_key(|held| held.0);
+    found.dedup_by(|second, first| first.0 == second.0);
+    found
 }
 
 /// The heads the forms among `children`, top-level forms of `tree` in order,
@@ -873,21 +954,26 @@ impl Form
     {
         if self.declares == Declares::Names {
             let mut documented = carried;
+            let mut depth = Depth::default();
             for (at, &piece) in self.pieces.iter().enumerate() {
                 match piece {
-                    Piece::Doc(node) => {
+                    // A run inside the parentheses documents a parameter.
+                    Piece::Doc(node) if depth == Depth::default() => {
                         append(&mut documented, documentation(grammar, tree, node));
                     },
                     Piece::Own(named, Some(role)) if NAMING.contains(&role) => {
                         let from = self.pieces.get(at ..).unwrap_or_default();
                         found(named, head(grammar, tree, text, from, documented.take()));
                     },
-                    Piece::Own(..) | Piece::Operand(..) => {},
+                    Piece::Own(span, _) => {
+                        depth = depth.after(spelled(text, span));
+                    },
+                    Piece::Doc(_) | Piece::Operand(..) => {},
                 }
             }
         }
         for window in self.pieces.windows(3) {
-            let &[named, Piece::Own(colon, _), Piece::Operand(typed, span)] = window
+            let &[named, Piece::Own(colon, _), Piece::Operand(typed, _)] = window
             else {
                 continue;
             };
@@ -903,13 +989,10 @@ impl Form
                 && <&str>::from(spelled(text, colon)) == ":"
                 && let Some(domains) = domains(grammar, tree, typed)
             {
-                let (label, placed) = labelled(text, window);
-                let parameters = placed
-                    .get(2)
-                    .map(|&place| within(span, place, &domains))
-                    .unwrap_or_default();
+                let label = labelled(tree, text, window);
+                let parameters = label.parameters(domains);
                 found(tile, Signature {
-                    label,
+                    label: label.text,
                     parameters,
                     documentation: None,
                 });
@@ -926,9 +1009,33 @@ const NAMING: [HlRole; 4] = [
     HlRole::Constructor,
 ];
 
+/// The parentheses open before a tile; `Depth::default()` when none is.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+struct Depth(usize);
+
+impl Depth
+{
+    /// The depth after the tile `written`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn after(
+        self,
+        written: SourceText<'_>,
+    ) -> Self
+    {
+        match <&str>::from(written) {
+            "(" => Self(self.0.saturating_add(1)),
+            ")" => Self(self.0.saturating_sub(1)),
+            _ => self,
+        }
+    }
+}
+
 /// The head of `text` whose pieces start with its name `from`, documented by
 /// `documentation`: the pieces up to the next name, the start of a body or
-/// documentation.
+/// documentation outside its parentheses.
 ///
 /// # Specification
 /// trivial.
@@ -941,78 +1048,328 @@ fn head(
 ) -> Signature
 {
     let tail = from.get(1 ..).unwrap_or_default();
+    let mut depth = Depth::default();
     let length = tail
         .iter()
         .position(|&piece| match piece {
             Piece::Own(span, role) => {
+                let written = spelled(text, span);
+                depth = depth.after(written);
                 role.is_some_and(|role| NAMING.contains(&role))
-                    || matches!(<&str>::from(spelled(text, span)), "{" | "=" | ";" | "}")
+                    || matches!(<&str>::from(written), "{" | "=" | ";" | "}")
             },
-            Piece::Doc(_) => true,
+            Piece::Doc(_) => depth == Depth::default(),
             Piece::Operand(..) => false,
         })
         .unwrap_or(tail.len());
     let pieces = from.get(..= length).unwrap_or_default();
-    let (label, placed) = labelled(text, pieces);
-    let parameters = parameters(grammar, tree, text, pieces, &placed);
+    let label = labelled(tree, text, pieces);
+    let parameters = parameters(grammar, tree, text, pieces, &label);
     Signature {
-        label,
+        label: label.text,
         parameters,
         documentation,
     }
 }
 
-/// The label `pieces` spell in `text`, joined by one space wherever `text`
-/// leaves layout between them, beside each piece's place in it.
+/// A label being written on one line from the bytes of a text, with where
+/// each run it copies starts in both.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Label
+{
+    /// What is written so far.
+    text: String,
+    /// Each run copied unchanged: its first byte in the source text and in
+    /// `text`, ascending in both.
+    runs: Vec<(ByteOffset, usize)>,
+}
+
+impl Label
+{
+    /// Copy `span` of `text` on, each stretch of layout that breaks a line or
+    /// holds one of `docs` written as [`Label::space`] writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn copy(
+        &mut self,
+        text: SourceText<'_>,
+        span: ByteSpan,
+        docs: &[ByteSpan],
+    )
+    {
+        let text = <&str>::from(text);
+        let end = usize::from(span.end());
+        let mut at = usize::from(span.start());
+        let doc_at = |offset| docs.iter().find(|doc| usize::from(doc.start()) == offset);
+        while at < end {
+            let mut layout = at;
+            let mut documented = false;
+            loop {
+                if let Some(doc) = doc_at(layout)
+                    && usize::from(doc.end()) > layout
+                {
+                    layout = usize::from(doc.end()).min(end);
+                    documented = true;
+                    continue;
+                }
+                match text.get(layout .. end).and_then(|rest| rest.chars().next()) {
+                    Some(blank) if blank.is_whitespace() => {
+                        layout = layout.saturating_add(blank.len_utf8());
+                    },
+                    _ => break,
+                }
+            }
+            if layout > at {
+                let blank = text.get(at .. layout).unwrap_or_default();
+                if documented || blank.contains('\n') {
+                    self.space(SourceText::from(text.get(layout ..).unwrap_or_default()));
+                }
+                else {
+                    self.verbatim(ByteOffset::from(at), SourceText::from(blank));
+                }
+                at = layout;
+                continue;
+            }
+            let next = text
+                .get(at .. end)
+                .and_then(|rest| {
+                    rest.char_indices().skip(1).find(|&(offset, written)| {
+                        written.is_whitespace() || doc_at(at.saturating_add(offset)).is_some()
+                    })
+                })
+                .map_or(end, |(offset, _)| at.saturating_add(offset));
+            self.verbatim(
+                ByteOffset::from(at),
+                SourceText::from(text.get(at .. next).unwrap_or_default()),
+            );
+            at = next;
+        }
+    }
+
+    /// Write one space, unless the label is empty or ends one already or an
+    /// opening parenthesis or bracket, or `rest`, what the text writes next,
+    /// starts with a closing one or a comma.
+    ///
+    /// # Specification
+    /// trivial.
+    fn space(
+        &mut self,
+        rest: SourceText<'_>,
+    )
+    {
+        let rest = <&str>::from(rest);
+        if !(self.text.is_empty()
+            || self.text.ends_with([' ', '(', '['])
+            || rest.starts_with([')', ']', ',']))
+        {
+            self.text.push(' ');
+        }
+    }
+
+    /// Copy `written`, the bytes of the source text from `at`, on unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    fn verbatim(
+        &mut self,
+        at: ByteOffset,
+        written: SourceText<'_>,
+    )
+    {
+        let continues = self.runs.last().is_some_and(|&(source, label)| {
+            usize::from(source).saturating_add(self.text.len().saturating_sub(label))
+                == usize::from(at)
+        });
+        if !continues {
+            self.runs.push((at, self.text.len()));
+        }
+        self.text.push_str(<&str>::from(written));
+    }
+
+    /// Where `span` of the source text stands in the label: each end inside
+    /// the run that copied it, else at the end of the last run before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        span: ByteSpan,
+    ) -> Place
+    {
+        let at = |offset| {
+            let next = self.runs.partition_point(|&(source, _)| source <= offset);
+            let Some(&(source, label)) = next.checked_sub(1).and_then(|run| self.runs.get(run))
+            else {
+                return 0;
+            };
+            let limit = self
+                .runs
+                .get(next)
+                .map_or(self.text.len(), |&(_, start)| start);
+            label
+                .saturating_add(usize::from(offset).saturating_sub(usize::from(source)))
+                .min(limit)
+        };
+        Place {
+            start: at(span.start()),
+            end: at(span.end()),
+        }
+    }
+
+    /// Each of `entries`, bytes of the source text the label copied, as a
+    /// parameter written at its place in the label.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parameters(
+        &self,
+        entries: Vec<Entry>,
+    ) -> Vec<Parameter>
+    {
+        entries
+            .into_iter()
+            .map(|entry| Parameter {
+                place: self.place(entry.span),
+                named: entry.named,
+                documentation: entry.documentation,
+            })
+            .collect()
+    }
+}
+
+/// A parameter as the source text writes it: its bytes, its first tile, and
+/// the documentation written before it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Entry
+{
+    /// Its bytes.
+    span: ByteSpan,
+    /// Its first tile.
+    named: Option<ByteSpan>,
+    /// The `///` run written before it.
+    documentation: Option<String>,
+}
+
+/// The label `pieces` spell in `text`, on one line: each piece as
+/// [`Label::copy`] writes it, joined by one space wherever `text` leaves
+/// layout between them, or as [`Label::space`] writes a stretch that breaks a
+/// line; documentation pieces left out.
 ///
 /// # Specification
 /// trivial.
 fn labelled(
+    tree: &SyntaxTree<'_>,
     text: SourceText<'_>,
     pieces: &[Piece],
-) -> (String, Vec<Place>)
+) -> Label
 {
-    let mut label = String::new();
-    let mut placed: Vec<Place> = Vec::with_capacity(pieces.len());
+    let written = <&str>::from(text);
+    let mut label = Label::default();
     let mut previous: Option<ByteSpan> = None;
-    for span in pieces.iter().filter_map(|piece| piece.span()) {
-        if previous.is_some_and(|before| before.end() < span.start()) {
-            label.push(' ');
+    let mut docs = Vec::new();
+    for &piece in pieces {
+        let Some(span) = piece.span()
+        else {
+            continue;
+        };
+        if let Some(before) = previous
+            && before.end() < span.start()
+        {
+            let rest = written
+                .get(usize::from(span.start()) ..)
+                .unwrap_or_default();
+            let gap = written
+                .get(usize::from(before.end()) .. usize::from(span.start()))
+                .unwrap_or_default();
+            if gap.contains('\n') {
+                label.space(SourceText::from(rest));
+            }
+            else {
+                label.text.push(' ');
+            }
         }
-        let start = label.len();
-        label.push_str(<&str>::from(spelled(text, span)));
-        placed.push(Place {
-            start,
-            end: label.len(),
-        });
+        docs.clear();
+        if let Piece::Operand(node, _) = piece
+            && <&str>::from(spelled(text, span)).contains('\n')
+        {
+            docs_under(tree, node, &mut docs);
+        }
+        label.copy(text, span, &docs);
         previous = Some(span);
     }
-    (label, placed)
+    label
 }
 
-/// Each of `spans`, written inside the piece covering `base` that the label
-/// writes at `place`, as its place in the label.
+/// Push the span of each documentation node under `at` onto `found`, in
+/// written order.
 ///
 /// # Specification
 /// trivial.
-fn within(
-    base: ByteSpan,
-    place: Place,
-    spans: &[ByteSpan],
-) -> Vec<Place>
+fn docs_under(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+    found: &mut Vec<ByteSpan>,
+)
 {
-    let moved = |offset: ByteOffset| {
-        place
-            .start
-            .saturating_add(usize::from(offset).saturating_sub(usize::from(base.start())))
-    };
-    spans
-        .iter()
-        .map(|span| Place {
-            start: moved(span.start()),
-            end: moved(span.end()),
-        })
-        .collect()
+    // The nodes still to read, the next one last.
+    let mut pending: Vec<NodeIndex> = tree.children(at).collect();
+    pending.reverse();
+    while let Some(child) = pending.pop() {
+        match tree.node(child).map(Node::label) {
+            Some(NodeLabel::Doc) => found.extend(tree.node(child).map(Node::span)),
+            Some(NodeLabel::Meld(_)) => {
+                let added = pending.len();
+                pending.extend(tree.children(child));
+                if let Some(children) = pending.get_mut(added ..) {
+                    children.reverse();
+                }
+            },
+            Some(
+                NodeLabel::Tile(_)
+                | NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space,
+            )
+            | None => {},
+        }
+    }
+}
+
+/// The first tile under `at`, or `at` itself when it is a tile.
+///
+/// # Specification
+/// trivial.
+fn first_tile(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<ByteSpan>
+{
+    // The nodes still to read, the next one last.
+    let mut pending = vec![at];
+    while let Some(next) = pending.pop() {
+        let Some(node) = tree.node(next)
+        else {
+            continue;
+        };
+        match node.label() {
+            NodeLabel::Tile(_) => return Some(node.span()),
+            NodeLabel::Meld(_) => {
+                let added = pending.len();
+                pending.extend(tree.children(next));
+                if let Some(children) = pending.get_mut(added ..) {
+                    children.reverse();
+                }
+            },
+            NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => {},
+        }
+    }
+    None
 }
 
 /// The bytes `span` covers in `text`.
@@ -1031,10 +1388,9 @@ fn spelled(
     )
 }
 
-/// The parameters of the head `pieces` of `text`, its name first, each piece
-/// written at its place in `placed`: the entries of a parenthesised list after
-/// the name, or after its `:`; else the domains of the function type its `:`
-/// types it by.
+/// The parameters of the head `pieces` of `text`, its name first, as `label`
+/// writes them: the entries of a parenthesised list after the name, or after
+/// its `:`; else the domains of the function type its `:` types it by.
 ///
 /// # Specification
 /// trivial.
@@ -1043,16 +1399,17 @@ fn parameters(
     tree: &SyntaxTree<'_>,
     text: SourceText<'_>,
     pieces: &[Piece],
-    placed: &[Place],
-) -> Vec<Place>
+    label: &Label,
+) -> Vec<Parameter>
 {
     let own = |at: usize, written: &str| matches!(pieces.get(at), Some(&Piece::Own(span, _)) if <&str>::from(spelled(text, span)) == written);
     let after = |at: usize| {
-        entries(
+        label.parameters(entries(
+            grammar,
+            tree,
             text,
             pieces.get(at ..).unwrap_or_default(),
-            placed.get(at ..).unwrap_or_default(),
-        )
+        ))
     };
     if own(1, "(") {
         return after(2);
@@ -1061,59 +1418,76 @@ fn parameters(
         return after(3);
     }
     if own(1, ":")
-        && let (Some(&Piece::Operand(node, span)), Some(&place)) = (pieces.get(2), placed.get(2))
+        && let Some(&Piece::Operand(node, _)) = pieces.get(2)
     {
         return domains(grammar, tree, node)
-            .map(|domains| within(span, place, &domains))
+            .map(|domains| label.parameters(domains))
             .unwrap_or_default();
     }
     Vec::new()
 }
 
 /// The entries of the parenthesised list of `text` whose pieces after its `(`
-/// are `pieces`, written at `placed`, each from its first piece's start to its
-/// last piece's end.
+/// are `pieces`, each from its first piece's start to its last piece's end,
+/// documented by the documentation pieces before its first.
 ///
 /// # Specification
 /// trivial.
 fn entries(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
     text: SourceText<'_>,
     pieces: &[Piece],
-    placed: &[Place],
-) -> Vec<Place>
+) -> Vec<Entry>
 {
     let mut found = Vec::new();
-    let mut entry: Option<Place> = None;
-    let mut depth = 0_usize;
-    for (&piece, &place) in pieces.iter().zip(placed) {
-        let written = match piece {
-            Piece::Own(span, _) => <&str>::from(spelled(text, span)),
-            Piece::Operand(..) | Piece::Doc(_) => "",
-        };
-        match written {
-            "," | ")" if depth == 0 => {
-                found.extend(entry.take());
-                if written == ")" {
-                    break;
+    let mut entry: Option<Entry> = None;
+    let mut documented: Option<String> = None;
+    let mut depth = Depth::default();
+    for &piece in pieces {
+        let (span, named) = match piece {
+            Piece::Doc(node) => {
+                if depth == Depth::default() && entry.is_none() {
+                    append(&mut documented, documentation(grammar, tree, node));
                 }
                 continue;
             },
-            "(" => depth = depth.saturating_add(1),
-            ")" => depth = depth.saturating_sub(1),
-            _ => {},
-        }
-        entry = Some(entry.map_or(place, |first| Place {
-            start: first.start,
-            end: place.end,
-        }));
+            Piece::Own(span, _) => {
+                let written = <&str>::from(spelled(text, span));
+                match written {
+                    "," | ")" if depth == Depth::default() => {
+                        found.extend(entry.take());
+                        documented = None;
+                        if written == ")" {
+                            break;
+                        }
+                        continue;
+                    },
+                    _ => depth = depth.after(SourceText::from(written)),
+                }
+                (span, Some(span))
+            },
+            Piece::Operand(node, span) => (span, first_tile(tree, node)),
+        };
+        entry = Some(match entry {
+            Some(first) => Entry {
+                span: first.span.join(span),
+                ..first
+            },
+            None => Entry {
+                span,
+                named,
+                documentation: documented.take(),
+            },
+        });
     }
     found
 }
 
-/// The bytes of each parameter the function type at `at` takes, read through
-/// the thunks and parentheses around it, outermost first: the domain of each
-/// `->`, and each entry of the parenthesised telescope before each `=>`; none
-/// when `at` is no function type.
+/// Each parameter the function type at `at` takes, read through the thunks
+/// and parentheses around it, outermost first: the domain of each `->`,
+/// undocumented, and each entry of the parenthesised telescope before each
+/// `=>`; none when `at` is no function type.
 ///
 /// # Specification
 /// trivial.
@@ -1121,7 +1495,7 @@ fn domains(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
-) -> Option<Vec<ByteSpan>>
+) -> Option<Vec<Entry>>
 {
     let mut found = Vec::new();
     let mut function = None;
@@ -1132,7 +1506,11 @@ fn domains(
                 at = inner;
             },
             (ARROW, &[domain, .., codomain]) => {
-                found.extend(tree.node(domain).map(Node::span));
+                found.extend(tree.node(domain).map(|node| Entry {
+                    span: node.span(),
+                    named: None,
+                    documentation: None,
+                }));
                 function = Some(());
                 at = codomain;
             },
@@ -1211,9 +1589,9 @@ impl<'grammar> Operands<'grammar>
     }
 }
 
-/// The bytes of each entry of the telescope at `at`: each run between the
-/// parentheses and commas a parenthesised type owns, or `at` whole when it is
-/// no parenthesised type.
+/// Each entry of the telescope at `at`: each run between the parentheses and
+/// commas a parenthesised type owns, documented by the documentation nodes
+/// written before it, or `at` whole when it is no parenthesised type.
 ///
 /// # Specification
 /// trivial.
@@ -1221,7 +1599,7 @@ fn telescope(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
-) -> Vec<ByteSpan>
+) -> Vec<Entry>
 {
     let Some(node) = tree.node(at)
     else {
@@ -1237,10 +1615,15 @@ fn telescope(
         | NodeLabel::Doc => None,
     };
     if rule != Some(PARENTHESES) {
-        return Vec::from([node.span()]);
+        return Vec::from([Entry {
+            span: node.span(),
+            named: None,
+            documentation: None,
+        }]);
     }
     let mut found = Vec::new();
-    let mut entry: Option<ByteSpan> = None;
+    let mut entry: Option<Entry> = None;
+    let mut documented: Option<String> = None;
     for child in tree.children(at) {
         let Some(held) = tree.node(child)
         else {
@@ -1257,17 +1640,33 @@ fn telescope(
                     )
             },
             NodeLabel::Meld(_) => false,
+            NodeLabel::Doc => {
+                if entry.is_none() {
+                    append(&mut documented, documentation(grammar, tree, child));
+                }
+                continue;
+            },
             NodeLabel::Wald
             | NodeLabel::Grout { .. }
             | NodeLabel::GhostClose { .. }
-            | NodeLabel::Space
-            | NodeLabel::Doc => continue,
+            | NodeLabel::Space => continue,
         };
         if delimits {
             found.extend(entry.take());
+            documented = None;
         }
         else {
-            entry = Some(entry.map_or_else(|| held.span(), |first| first.join(held.span())));
+            entry = Some(match entry {
+                Some(first) => Entry {
+                    span: first.span.join(held.span()),
+                    ..first
+                },
+                None => Entry {
+                    span: held.span(),
+                    named: first_tile(tree, child),
+                    documentation: documented.take(),
+                },
+            });
         }
     }
     found
@@ -1286,8 +1685,9 @@ fn telescope(
 ///   constructor whose head the hovering keeps: that head as the one signature,
 ///   active, with its documentation as markdown, each parameter as its start
 ///   and end in the label counted in UTF-16 code units when `offsets` holds or
-///   as its text otherwise, and the argument the position writes as the active
-///   parameter, `null` past the last parameter; Nothing otherwise.
+///   as its text otherwise, with the documentation written before it as
+///   markdown when it has any, and the argument the position writes as the
+///   active parameter, `null` past the last parameter; Nothing otherwise.
 /// - provides: the answer to `textDocument/signatureHelp`.
 /// - fails: never.
 /// - panics: none.
@@ -1300,6 +1700,7 @@ fn telescope(
 /// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
 /// - witness: `server::tests::signature_help_answers_inside_a_call_typed_before_its_close_843`
 /// - witness: `tests::session::signature_help_reads_a_sibling_s_head`
+/// - witness: `server::tests::signature_help_sends_a_parameter_s_documentation_1116`
 #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_)))]
 #[must_use]
 pub fn help(
@@ -1344,15 +1745,25 @@ pub fn help(
     let parameters: Vec<ParameterInformation> = signature
         .parameters
         .iter()
-        .map(|&Place { start, end }| ParameterInformation {
-            label: if offsets.0 {
-                ParameterLabel::Offsets([units(start), units(end)])
+        .map(|parameter| {
+            let Place { start, end } = parameter.place;
+            ParameterInformation {
+                label: if offsets.0 {
+                    ParameterLabel::Offsets([units(start), units(end)])
+                }
+                else {
+                    ParameterLabel::Text(String::from(
+                        signature.label.get(start .. end).unwrap_or_default(),
+                    ))
+                },
+                documentation: parameter
+                    .documentation
+                    .as_ref()
+                    .map(|documented| MarkupContent {
+                        kind: "markdown",
+                        value: documented.clone(),
+                    }),
             }
-            else {
-                ParameterLabel::Text(String::from(
-                    signature.label.get(start .. end).unwrap_or_default(),
-                ))
-            },
         })
         .collect();
     let active = (argument.0 < parameters.len())
@@ -1561,7 +1972,8 @@ mod tests
                 let parameters = signature
                     .parameters
                     .iter()
-                    .map(|&super::Place { start, end }| {
+                    .map(|parameter| {
+                        let super::Place { start, end } = parameter.place;
                         String::from(signature.label.get(start .. end).unwrap_or_default())
                     })
                     .collect();
@@ -1637,6 +2049,93 @@ mod tests
                 "subTm : (g : Nat, t : sub(g, g)) => Nat",
                 &["g : Nat", "t : sub(g, g)"],
                 None
+            ),
+        ]);
+    }
+
+    /// #1116: a `///` run written before a parameter documents it, in a
+    /// declaration's parameter list and in a constructor's telescope, and a
+    /// list laid over lines labels as one line.
+    #[test]
+    fn a_parameter_reads_the_documentation_written_before_it_1116()
+    {
+        // A head as read: its name, its label, each parameter's text with
+        // its documentation, and the head's documentation.
+        type Read = (
+            String,
+            String,
+            Vec<(String, Option<String>)>,
+            Option<String>,
+        );
+        let text = "data Nat : Type {\n  Zero : Nat;\n  /// One more.\n  Succ : (\n    /// The \
+                    predecessor.\n    n : Nat\n  ) --> Nat;\n}\n/// Addition.\ndef plus(\n  /// The \
+                    first summand.\n  n : Nat,\n  /// The second\n  /// summand.\n  m : Nat,\n  k : \
+                    Nat\n) -> -F Nat { n }\n";
+        let grammar = grammar().expect("the grammar builds");
+        let roles = roles().expect("the roles build");
+        let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
+        let heads = Signatures::of(grammar, roles, parsed.tree(), &Unit::single());
+        let read: Vec<Read> = heads
+            .own
+            .iter()
+            .map(|&((_, named), ref signature)| {
+                let name = text
+                    .get(usize::from(named.start()) .. usize::from(named.end()))
+                    .unwrap_or_default();
+                let parameters = signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        (
+                            String::from(
+                                signature
+                                    .label
+                                    .get(parameter.place.start .. parameter.place.end)
+                                    .unwrap_or_default(),
+                            ),
+                            parameter.documentation.clone(),
+                        )
+                    })
+                    .collect();
+                (
+                    String::from(name),
+                    signature.label.clone(),
+                    parameters,
+                    signature.documentation.clone(),
+                )
+            })
+            .collect();
+        let documented = |parameter: &str, documentation: Option<&str>| {
+            (String::from(parameter), documentation.map(String::from))
+        };
+        assert_eq!(read, [
+            (
+                String::from("Nat"),
+                String::from("Nat : Type"),
+                Vec::new(),
+                None
+            ),
+            (
+                String::from("Zero"),
+                String::from("Zero : Nat"),
+                Vec::new(),
+                None
+            ),
+            (
+                String::from("Succ"),
+                String::from("Succ : (n : Nat) --> Nat"),
+                Vec::from([documented("n : Nat", Some("The predecessor."))]),
+                Some(String::from("One more.")),
+            ),
+            (
+                String::from("plus"),
+                String::from("plus(n : Nat, m : Nat, k : Nat) -> -F Nat"),
+                Vec::from([
+                    documented("n : Nat", Some("The first summand.")),
+                    documented("m : Nat", Some("The second\nsummand.")),
+                    documented("k : Nat", None),
+                ]),
+                Some(String::from("Addition.")),
             ),
         ]);
     }

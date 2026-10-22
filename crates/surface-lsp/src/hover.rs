@@ -31,13 +31,15 @@
 //! - **The innermost typed node holding the cursor**, about its span: a term
 //!   with its type, and, when an outer judgement checked it against a type
 //!   spelled otherwise, that type after it; a binder with its name and the type
-//!   of its uses; a written type with its text and its universe; a term the
-//!   source writes as one name — a use, a constructor, a member — with that
-//!   name before its type, as its binder answers. A keyword or a delimiter
-//!   inside a term answers that term, so `return` and `{` answer the
-//!   computation they open. A node spanning a whole declaration — the body's
-//!   term the lowering writes over its declaration — answers as that
-//!   declaration's name does, about its head when the cursor is there.
+//!   of its uses, and a parameter's binder and its uses with the `///` run
+//!   written before the parameter after a blank line; a written type with its
+//!   text and its universe; a term the source writes as one name — a use, a
+//!   constructor, a member — with that name before its type, as its binder
+//!   answers. A keyword or a delimiter inside a term answers that term, so
+//!   `return` and `{` answer the computation they open. A node spanning a whole
+//!   declaration — the body's term the lowering writes over its declaration —
+//!   answers as that declaration's name does, about its head when the cursor is
+//!   there.
 //! - **The head of the innermost declaration holding the cursor** — from its
 //!   declaring form's start to the brace opening its own body, or all of it
 //!   when it has none — about the head, as for its name: the keyword that
@@ -561,13 +563,14 @@ impl Style
 ///   position is there and the node's range otherwise; else a block of its type
 ///   — a binder's name, a written type's text or a term written as one name
 ///   before ` : ` — and, for a term checked against a type spelled otherwise,
-///   that type in a second block, about the node's range. Else, in the head of
-///   a declaration — from its form's start to the brace opening its own body, a
-///   member's keyword to its name — as on its name, about the head, and in the
-///   attributes before the head, about them. Else, on a tile, [`stubbed`]'s
-///   answer, about what it is about. Absent in layout and comments. Every type
-///   is spelled in `style`'s form, and every block is written as [`Code`]
-///   writes it in `style`'s markup.
+///   that type in a second block; for a parameter's binder or a use of it, the
+///   `///` run written before the parameter after a blank line; about the
+///   node's range. Else, in the head of a declaration — from its form's start
+///   to the brace opening its own body, a member's keyword to its name — as on
+///   its name, about the head, and in the attributes before the head, about
+///   them. Else, on a tile, [`stubbed`]'s answer, about what it is about.
+///   Absent in layout and comments. Every type is spelled in `style`'s form,
+///   and every block is written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -585,7 +588,8 @@ impl Style
 ///   an unwritten theory, a module's name and ascription, a type alias, a shape
 ///   and a circuit rule as written; an `include`'s keyword and name and a
 ///   `Model(…)`'s theory as the theory they name; a declaration and a written
-///   type in HTML, coloured by their roles.
+///   type in HTML, coloured by their roles; a documented parameter at its
+///   binder and at a use, and an undocumented one.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -601,6 +605,7 @@ impl Style
 /// - witness: `hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206`
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 /// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
+/// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -782,6 +787,23 @@ pub fn hover<Store, Blocks>(
             return Maybe::Present(declared(session, table, whole, about, &quoted, style));
         }
         let mut value = typed(&quoted, &entry, style.markup);
+        // A parameter, written or used, answers the `///` run written before
+        // it after its type.
+        let parameter = match table.referent(entry.span().start()) {
+            Maybe::Present((_, referent)) => hovering
+                .signatures
+                .parameter(referent.source(), referent.named()),
+            Maybe::Absent(_) => None,
+        }
+        .or_else(|| {
+            hovering
+                .signatures
+                .parameter(table.own_source(), entry.span())
+        });
+        if let Some(documented) = parameter {
+            value.push_str("\n\n");
+            value.push_str(<&str>::from(documented));
+        }
         if let Some(note) = oriented {
             value.push_str("\n\n");
             value.push_str(match note {
@@ -2239,6 +2261,27 @@ mod tests
                 "```gandr\nanswer : Integer\n```\n\nThe answer, said once."
             )),
             "the keyword answers the declaration it introduces"
+        );
+    }
+
+    /// #1116: a parameter, at its binder and at a use, hovers its type and
+    /// the `///` run written before it; one with none hovers its type alone.
+    #[test]
+    fn a_documented_parameter_hovers_its_documentation_1116()
+    {
+        let text = SourceText::from(
+            "def plus(\n  /// The first summand.\n  n : Integer,\n  m : Integer\n) -> -F Integer \
+             {\n  return n\n}\ndef id(\n  k : Integer\n) -> -F Integer {\n  return k\n}\n",
+        );
+        let documented = Ok(String::from(
+            "```gandr\nn : Integer\n```\n\nThe first summand.",
+        ));
+        assert_eq!(shown(text, (2.into(), 2.into())), documented, "the binder");
+        assert_eq!(shown(text, (5.into(), 9.into())), documented, "a use");
+        assert_eq!(
+            shown(text, (8.into(), 2.into())),
+            Ok(String::from("```gandr\nk : Integer\n```")),
+            "an undocumented parameter"
         );
     }
 
