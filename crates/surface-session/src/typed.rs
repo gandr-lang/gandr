@@ -270,4 +270,21 @@ mod tests
             Maybe::Present(ref shown) if shown.as_ref() == "Integer")
         );
     }
+
+    /// A data declaration is spelled by the kind it declares.
+    #[test]
+    fn a_data_declaration_is_spelled_by_its_kind()
+    {
+        let mut session = session();
+        let _submitted = session
+            .submit(SourceText::from(
+                "data Two : Type {\n  L : Two;\n  R : Two;\n}",
+            ))
+            .expect("the session does not fault");
+        let page = PageWidth::from(100_u32);
+        assert!(
+            matches!(type_of(session.last(), SourceFragment::from("Two"), page),
+            Maybe::Present(ref shown) if shown.as_ref() == "Type")
+        );
+    }
 }

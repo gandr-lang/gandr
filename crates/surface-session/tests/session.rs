@@ -27,11 +27,13 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::DottedName;
 use gandr_surface_lowering::namespace::NamePath;
+use gandr_surface_session::Tables;
 use gandr_surface_session::admission;
 use gandr_surface_session::admitted;
 use gandr_surface_session::evaluation;
 use gandr_surface_session::import;
 use gandr_surface_session::resumed;
+use gandr_surface_syntax::ByteOffset;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::names;
@@ -644,6 +646,25 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
         Maybe::Absent(import::Absent::Unbound),
         "an unbound path resolves to nothing"
     );
+    let Maybe::Present(row) = session.resolve_import(&list)
+    else {
+        panic!("the second line's alias resolves");
+    };
+    assert_eq!(
+        second
+            .text()
+            .fragment(row.span())
+            .map(|covered| String::from(covered.as_ref())),
+        Ok(String::from(
+            "import \"file:///lib/list.gandr\" as list_ext ;"
+        )),
+        "the row covers its own declaration in the revision's text"
+    );
+    assert_eq!(
+        second.base(),
+        ByteOffset::default(),
+        "a revision that imports no sibling starts its own text at zero"
+    );
 
     let duplicate = submit(
         &mut session,
@@ -671,6 +692,34 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
         uri(&list),
         Maybe::Present("file:///lib/list.gandr".to_owned()),
         "and every other alias of the accepted revision"
+    );
+}
+
+/// A session keeps no type tables until asked. Asked, it hands each judged
+/// revision's table on once, and a second take reads apart from a table never
+/// kept.
+#[test]
+fn a_kept_table_is_handed_on_once()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut unkept = submit(&mut session, "def a = 1 ;");
+    let Maybe::Absent(untabled) = unkept.take_table()
+    else {
+        panic!("a session keeps no table unless asked");
+    };
+    session.keep(Tables::Kept);
+    let mut kept = submit(&mut session, "def a = 1 ;\ndef b = a ;");
+    assert!(
+        matches!(kept.take_table(), Maybe::Present(_)),
+        "a session asked to keep tables keeps the judged revision's"
+    );
+    let Maybe::Absent(taken) = kept.take_table()
+    else {
+        panic!("the table is handed on once");
+    };
+    assert_ne!(
+        taken, untabled,
+        "a taken table reads apart from one never kept"
     );
 }
 
@@ -1668,4 +1717,28 @@ fn an_importer_lowers_its_closure_once_1033()
         "to the typings the cold session's judged"
     );
     let _removed = std::fs::remove_dir_all(&directory);
+}
+
+/// A revision read through the session's form store parses as the session's
+/// grammar parses it afresh: before any submission, and after one that molded
+/// a form the revision shares.
+#[test]
+fn a_held_parse_is_the_grammar_s_own_parse()
+{
+    let text = gandr_surface_syntax::SourceText::from("def a = 1 ;\ndef b = a ;");
+    let mut session = session(SourceRoot::Strict);
+    let afresh = gandr_surface_parser::parse(session.grammar(), text)
+        .expect("the revision parses")
+        .tree()
+        .digest();
+    let held = |session: &gandr_surface_session::Session<_, _>| {
+        session
+            .parse_held(text)
+            .expect("the revision parses")
+            .tree()
+            .digest()
+    };
+    assert_eq!(held(&session), afresh, "with nothing held");
+    let _first = submit(&mut session, "def a = 1 ;");
+    assert_eq!(held(&session), afresh, "with the first form held");
 }
