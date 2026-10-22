@@ -108,13 +108,16 @@
 //! `DeclarationRoots::Data`, `DeclarationRoots::Abstract` or
 //! `DeclarationRoots::World`; data retains the kind, every parameter and every
 //! constructor field, and an abstract type its kind, its representation, the
-//! extent of its seal, the site that mints its atom and the mobility its
-//! signature marks, a mobile one under its own roots tag so an unmarked one
-//! encodes as before. Cache node tags `0x50–0x55` represent the six native
-//! data/record forms independently of kernel artifact tags, `0x5A` the
-//! positional tuple projection, its component a count after its tuple child,
-//! and `0x5B` the split, its arity a count between its scrutinee and body
-//! children. Field labels and arbitrary child counts survive persistence.
+//! extent of its seal, the site that mints its atom, the mobility its
+//! signature marks and the relation, reflexivity and law of its interface,
+//! each a value root, so an edit to the interface reaches every reader of the
+//! atom. A mobile atom and an interfaced one take their own roots tags, so an
+//! unmarked one without an interface encodes as before. Cache node tags
+//! `0x50–0x55` represent the six native data/record forms independently of
+//! kernel artifact tags, `0x5A` the positional tuple projection, its component
+//! a count after its tuple child, and `0x5B` the split, its arity a count
+//! between its scrutinee and body children. Field labels and arbitrary child
+//! counts survive persistence.
 //!
 //! A value declaration's roots carry the laws its folds rest on as item
 //! references, so adding, removing or reordering a `respects` law changes the
@@ -2415,7 +2418,8 @@ pub enum DeclarationRoots
 }
 
 /// The roots of a sealed abstract type, with the reach of its seal, the site
-/// that mints its atom and the mobility its signature marks.
+/// that mints its atom, the mobility its signature marks and the interface its
+/// elements are related by.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AbstractRoots
 {
@@ -2430,6 +2434,21 @@ pub struct AbstractRoots
     /// Whether its signature marks it mobile: sealing checks the mark against
     /// the representation.
     pub mobility: gandr_core_checker::worlds::Mobility,
+    /// The roots of the interface its elements are related by, when stated.
+    pub interface: Maybe<InterfaceRoots, gandr_core_checker::interface::Absent>,
+}
+
+/// The roots of a sealed atom's interface: its relation, the relation's
+/// reflexivity and, when stated, its law.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct InterfaceRoots
+{
+    /// The relation between two elements.
+    pub relation: NodeIndex,
+    /// The relation's reflexivity.
+    pub reflexivity: NodeIndex,
+    /// The singleton's contraction onto its centre, when stated.
+    pub law: Maybe<NodeIndex, gandr_core_checker::law::Absent>,
 }
 
 impl DeclarationRoots
@@ -2439,7 +2458,8 @@ impl DeclarationRoots
     /// # Specification
     /// - ensures: value signature before body, all nominal roots in order as
     ///   [`DataRoots::sorted`] sorts them, an abstract type's kind before its
-    ///   representation, or none for a world or a codata declaration.
+    ///   representation and both before its interface's relation, reflexivity
+    ///   and law, or none for a world or a codata declaration.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Adequacy
@@ -2463,18 +2483,37 @@ impl DeclarationRoots
                         Maybe::Present(root) => Some((root, Sort::Value)),
                         Maybe::Absent(_) => None,
                     },
+                    None,
+                    None,
+                    None,
                 ],
                 None,
             ),
-            Self::Data(ref roots) => ([None, None], Some(roots)),
-            Self::World | Self::Codata => ([None, None], None),
-            Self::Abstract(roots) => (
-                [
-                    Some((roots.kind, Sort::ValueType)),
-                    Some((roots.representation, Sort::ValueType)),
-                ],
-                None,
-            ),
+            Self::Data(ref roots) => ([None; 5], Some(roots)),
+            Self::World | Self::Codata => ([None; 5], None),
+            Self::Abstract(roots) => {
+                let (relation, reflexivity, law) = match roots.interface {
+                    Maybe::Present(interface) => (
+                        Some((interface.relation, Sort::Value)),
+                        Some((interface.reflexivity, Sort::Value)),
+                        match interface.law {
+                            Maybe::Present(law) => Some((law, Sort::Value)),
+                            Maybe::Absent(_) => None,
+                        },
+                    ),
+                    Maybe::Absent(_) => (None, None, None),
+                };
+                (
+                    [
+                        Some((roots.kind, Sort::ValueType)),
+                        Some((roots.representation, Sort::ValueType)),
+                        relation,
+                        reflexivity,
+                        law,
+                    ],
+                    None,
+                )
+            },
         };
         values
             .into_iter()
@@ -2493,9 +2532,11 @@ impl DeclarationRoots
     ///
     /// # Adequacy
     /// - hypothesis: L3 — native checkpoints round-trip every root slot of a
-    ///   value, a data and an abstract declaration through renumbering; roots
-    ///   that move under renumbering still name their own nodes.
+    ///   value, a data and an abstract declaration through renumbering, an
+    ///   abstract one's interface roots among them; roots that move under
+    ///   renumbering still name their own nodes.
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
     /// - witness: `content::tests::open_roots_project_under_their_own_supports`
     #[spec(ensures: |ret| ret.iter().map(|(_, sort)| sort).eq(self.iter().map(|(_, sort)| sort))
         && ret.iter().map(|(root, _)| root).eq(self.iter().map(|(root, _)| image(root))))]
@@ -2529,6 +2570,11 @@ impl DeclarationRoots
             Self::Abstract(roots) => Self::Abstract(AbstractRoots {
                 kind: image(roots.kind),
                 representation: image(roots.representation),
+                interface: roots.interface.map(|interface| InterfaceRoots {
+                    relation: image(interface.relation),
+                    reflexivity: image(interface.reflexivity),
+                    law: interface.law.map(&image),
+                }),
                 ..roots
             }),
             Self::World => Self::World,
@@ -3445,7 +3491,14 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
                     && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
  else if let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_left_value && let DeclarationRoots::Abstract(roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(sealed.kind())) == Some(&roots.kind)
                     && ret.sites.0.get(&ArenaNode::ValueType(sealed.representation())) == Some(&roots.representation)
-                    && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility() }
+                    && roots.extent == sealed.extent() && roots.site == sealed.site() && roots.mobility == sealed.mobility()
+                    && match (sealed.interface(), roots.interface) {
+                        (Maybe::Present(interface), Maybe::Present(actual)) => ret.sites.0.get(&ArenaNode::Value(interface.relation())) == Some(&actual.relation)
+                            && ret.sites.0.get(&ArenaNode::Value(interface.reflexivity())) == Some(&actual.reflexivity)
+                            && interface.law().map(|law| ret.sites.0.get(&ArenaNode::Value(law)).copied()) == actual.law.map(Some),
+                        (Maybe::Absent(_), Maybe::Absent(_)) => true,
+                        (Maybe::Present(_), Maybe::Absent(_)) | (Maybe::Absent(_), Maybe::Present(_)) => false,
+                    } }
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
@@ -3499,6 +3552,14 @@ pub fn encode_item(
                         extent: sealed.extent(),
                         site: sealed.site(),
                         mobility: sealed.mobility(),
+                        interface: sealed.interface().map(|interface| InterfaceRoots {
+                            relation: encoder.discover(ArenaNode::Value(interface.relation())),
+                            reflexivity: encoder
+                                .discover(ArenaNode::Value(interface.reflexivity())),
+                            law: interface
+                                .law()
+                                .map(|law| encoder.discover(ArenaNode::Value(law))),
+                        }),
                     })
                 },
                 gandr_core_checker::DeclarationContent::World => DeclarationRoots::World,

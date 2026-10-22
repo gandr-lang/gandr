@@ -241,6 +241,214 @@ fn native_checkpoint_round_trip_and_signature_invalidation()
     );
 }
 
+/// Whether the interfaced atom's interface states its law.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Law
+{
+    /// The law `((), ())` is stated.
+    Stated,
+    /// The interface states the relation and reflexivity alone.
+    Unstated,
+}
+
+/// An atom over `Unit` related by `Unit` and reflexive by `()`, its law
+/// `((), ())` declared and stated when `law` says so; two points inside its
+/// seal; past it the relation's evidence `()` between them, and a bystander.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: eight items at ascending positions, the atom fourth.
+/// - panics: the positions do not ascend.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unedited interface is adopted with its readers, and
+///   dropping its law re-judges the atom and every reader of it.
+/// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
+#[spec(ensures: |ret| ret.items().len() == 8)]
+fn interfaced_atom(law: Law) -> Program
+{
+    use gandr_core_checker::AbstractType;
+    use gandr_core_checker::AtomInterface;
+    use gandr_core_checker::ComponentOrdinal;
+    use gandr_core_checker::SealSite;
+    use gandr_core_checker::SealingSite;
+    use gandr_kernel_term::SealExtent;
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = arena.value_unit();
+    let var = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let thunk = |arena: &mut CoreArena, result: ValueId, binders: u8| {
+        let mut body = arena.computation_return(result);
+        for _ in 0_u8 .. binders {
+            body = arena.computation_lambda(body);
+        }
+        arena.value_thunk(body)
+    };
+    let relation = arena.value_constant(ConstantIndex::from(0_usize));
+    let reflexivity = arena.value_constant(ConstantIndex::from(1_usize));
+    // `El(⟨relation left right⟩)`.
+    let related = |arena: &mut CoreArena, left: ValueId, right: ValueId| {
+        let forced = arena.computation_force(relation);
+        let applied = arena.computation_application(forced, left);
+        let applied = arena.computation_application(applied, right);
+        let code = arena.value_returned(applied);
+        arena.value_type_element(code, Level::zero())
+    };
+    // `relation : U(Unit → Unit → F U₀) = λ λ return ⌜Unit⌝`.
+    let codes = arena.comp_type_returner(small);
+    let inner = arena.comp_type_arrow(unit, codes);
+    let outer = arena.comp_type_arrow(unit, inner);
+    let relations = arena.value_type_thunk(outer);
+    let unit_code = arena.value_quote(unit);
+    let relation_body = thunk(&mut arena, unit_code, 2);
+    // `reflexivity : U(Π (x : Unit). F El(⟨relation x x⟩)) = λ return ()`.
+    let element = var(&mut arena, 0);
+    let diagonal = related(&mut arena, element, element);
+    let witnessed = arena.comp_type_returner(diagonal);
+    let reflexive = arena.comp_type_pi(unit, witnessed);
+    let reflexive = arena.value_type_thunk(reflexive);
+    let reflexivity_body = thunk(&mut arena, one, 1);
+    // `law : U(Π (a b : Unit). Π (r : El(⟨relation a b⟩)). F Path(Σ (y :
+    // Unit). El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩))) = λ λ λ
+    // return ((), ())`.
+    let (start, end) = (var(&mut arena, 3), var(&mut arena, 0));
+    let singleton = related(&mut arena, start, end);
+    let pairs = arena.value_type_sigma(unit, singleton);
+    let (start, other, evidence) = (var(&mut arena, 2), var(&mut arena, 1), var(&mut arena, 0));
+    let source = arena.value_tuple(&[other, evidence]);
+    let forced = arena.computation_force(reflexivity);
+    let reflexive_start = arena.computation_application(forced, start);
+    let reflexive_start = arena.value_returned(reflexive_start);
+    let centre = arena.value_tuple(&[start, reflexive_start]);
+    let contracted = arena.value_type_path(pairs, source, centre);
+    let returns = arena.comp_type_returner(contracted);
+    let (start, other) = (var(&mut arena, 1), var(&mut arena, 0));
+    let between = related(&mut arena, start, other);
+    let over_evidence = arena.comp_type_pi(between, returns);
+    let over_other = arena.comp_type_pi(unit, over_evidence);
+    let over_start = arena.comp_type_pi(unit, over_other);
+    let lawful = arena.value_type_thunk(over_start);
+    let contraction = arena.value_tuple(&[one, one]);
+    let law_body = thunk(&mut arena, contraction, 3);
+    let interface = AtomInterface::new(relation, reflexivity);
+    let interface = match law {
+        Law::Stated => interface.lawful(arena.value_constant(ConstantIndex::from(2_usize))),
+        Law::Unstated => interface,
+    };
+    let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let (first, second) = (
+        arena.value_constant(ConstantIndex::from(4_usize)),
+        arena.value_constant(ConstantIndex::from(5_usize)),
+    );
+    let identity = arena.value_type_path(atom, first, second);
+    let value = |position: usize, declared, body| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(body),
+            OriginToken::from(position),
+        )
+    };
+    Program::new(arena, vec![
+        Item::new(ItemKey::from("related"), value(0, relations, relation_body)),
+        Item::new(
+            ItemKey::from("reflexive"),
+            value(1, reflexive, reflexivity_body),
+        ),
+        Item::new(ItemKey::from("law"), value(2, lawful, law_body)),
+        Item::new(
+            ItemKey::from("Point.T"),
+            Declaration::abstract_type(
+                ConstantIndex::from(3_usize),
+                AbstractType::new(
+                    small,
+                    unit,
+                    SealExtent::from(2_usize),
+                    SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+                )
+                .interfaced(interface),
+                OriginToken::from(3_usize),
+            ),
+        ),
+        Item::new(ItemKey::from("Point.first"), value(4, atom, one)),
+        Item::new(ItemKey::from("Point.second"), value(5, atom, one)),
+        Item::new(ItemKey::from("client"), value(6, identity, one)),
+        Item::new(ItemKey::from("bystander"), value(7, unit, one)),
+    ])
+    .expect("fixture positions ascend")
+}
+
+#[test]
+fn an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader()
+{
+    let original = check_program(&mut interfaced_atom(Law::Stated), CheckBudget::DEFAULT)
+        .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    let typings: Vec<&Typing> = checkpoints
+        .items()
+        .iter()
+        .map(gandr_core_incremental::ItemCheckpoint::typing)
+        .collect();
+    assert!(
+        matches!(typings.as_slice(), [
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Data,
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+            Typing::Checked { .. },
+        ]),
+        "the interface checks and the relation's evidence is an identity: {typings:?}"
+    );
+    let encoded = encode_checkpoints(checkpoints).expect("an interfaced atom persists");
+    let restored = decode_checkpoints(&encoded).expect("its interface decodes");
+    assert_eq!(&restored, checkpoints);
+    let unchanged = resume_from(&restored, &mut interfaced_atom(Law::Stated))
+        .expect("the restored atom can be adopted");
+    assert!(
+        unchanged
+            .adoptions()
+            .iter()
+            .all(|adoption| *adoption == Adoption::Adopted),
+        "unedited, the atom is adopted with its readers"
+    );
+    let changed = resume_from(&restored, &mut interfaced_atom(Law::Unstated))
+        .expect("the edited interface is checked");
+    let fresh = check_program(&mut interfaced_atom(Law::Unstated), CheckBudget::DEFAULT)
+        .expect("fresh checking succeeds");
+    assert_eq!(
+        changed.checkpoints(),
+        fresh.checkpoints(),
+        "incremental equals batch"
+    );
+    assert_eq!(
+        changed.adoptions(),
+        [
+            Adoption::Adopted,
+            Adoption::Adopted,
+            Adoption::Adopted,
+            Adoption::Judged,
+            Adoption::Judged,
+            Adoption::Judged,
+            Adoption::Judged,
+            Adoption::Adopted,
+        ],
+        "dropping the law reaches the atom and its readers, not its members or the bystander"
+    );
+    assert!(
+        matches!(
+            changed.checkpoints().items()[6].typing(),
+            Typing::Refused(_)
+        ),
+        "without its law the relation's evidence is no identity"
+    );
+}
+
 /// The magma's description: `mul : 2 → 1`, then `one : 0 → 1`.
 ///
 /// # Specification

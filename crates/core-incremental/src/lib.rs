@@ -205,6 +205,7 @@ pub use crate::content::ContentNode;
 pub use crate::content::DataContent;
 pub use crate::content::DataRoots;
 pub use crate::content::DeclarationRoots;
+pub use crate::content::InterfaceRoots;
 pub use crate::content::ItemContent;
 pub use crate::content::Opacity;
 pub use crate::content::Sort;

@@ -592,6 +592,143 @@ pub fn form_abstract(
     Ok(level)
 }
 
+/// Check the interface `declared` states at the types its representation `R`
+/// and its kind's level `level` give: the relation at `U(R → R → F kind)`, its
+/// reflexivity at `U(Π (x : R). F El(⟨relation x x⟩))`, and the law, when
+/// stated, at `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
+/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`: every element of the
+/// singleton at `a` is its centre. These are the types the kernel checks the
+/// interface at when it admits the atom.
+///
+/// # Specification
+/// - requires: `declared` formed by [`form_abstract`] at `level`.
+/// - ensures: on success each stated value checks at its type; nothing is
+///   checked for an atom stating no interface.
+/// - fails: the formation or checking refusal of the first value that does not
+///   check, the relation first, then the reflexivity, then the law.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckRefusal`] names the failed check.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a total relation over `Unit` with its reflexivity and
+///   contraction checks, and each member named at another member's place is
+///   refused; the same atom's identity reads the relation.
+/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+#[spec(ensures: |ret| matches!(declared.interface(), Maybe::Present(_)) || ret.is_ok())]
+pub fn form_interface(
+    context: &mut CheckingContext<'_>,
+    declared: AbstractType,
+    level: &Level,
+) -> Result<(), CheckRefusal>
+{
+    let Maybe::Present(interface) = declared.interface()
+    else {
+        return Ok(());
+    };
+    let representation = declared.representation();
+    let kind = declared.kind();
+    let arena = context.arena_mut();
+    let codes = arena.comp_type_returner(kind);
+    let inner = arena.comp_type_arrow(representation, codes);
+    let outer = arena.comp_type_arrow(representation, inner);
+    let relations = arena.value_type_thunk(outer);
+    let formed = form_value_type(context, relations)?;
+    let _checked = crate::judgement::check_value(context, interface.relation(), formed)?;
+    let arena = context.arena_mut();
+    let element = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let diagonal = related_by(arena, interface.relation(), (element, element), level);
+    let witnessed = arena.comp_type_returner(diagonal);
+    let reflexive = arena.comp_type_pi(representation, witnessed);
+    let reflexive = arena.value_type_thunk(reflexive);
+    let formed = form_value_type(context, reflexive)?;
+    let _checked = crate::judgement::check_value(context, interface.reflexivity(), formed)?;
+    let Maybe::Present(law) = interface.law()
+    else {
+        return Ok(());
+    };
+    let lawful = law_type(
+        context.arena_mut(),
+        level,
+        representation,
+        (interface.relation(), interface.reflexivity()),
+    );
+    let formed = form_value_type(context, lawful)?;
+    let _checked = crate::judgement::check_value(context, law, formed)?;
+    Ok(())
+}
+
+/// `El(⟨relation left right⟩)` at `level`: the decode of the code `relation`
+/// relates `left` and `right` by.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reflexivity is checked at the relation's diagonal and
+///   the evidence at the relation between its endpoints, so another type
+///   refuses the atom or the evidence.
+/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+pub fn related_by(
+    arena: &mut gandr_core_term::CoreArena,
+    relation: ValueId,
+    (left, right): (ValueId, ValueId),
+    level: &Level,
+) -> ValueTypeId
+{
+    let forced = arena.computation_force(relation);
+    let applied = arena.computation_application(forced, left);
+    let applied = arena.computation_application(applied, right);
+    let code = arena.value_returned(applied);
+    arena.value_type_element(code, level.clone())
+}
+
+/// The type an atom's identity-system law checks at over its representation
+/// `R`: `U(Π (a b : R). Π (r : El(⟨relation a b⟩)). F Path(Σ (y : R).
+/// El(⟨relation a y⟩), (b, r), (a, ⟨reflexivity a⟩)))`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law is checked at this type, so a reflexivity named as
+///   the law refuses the atom and the stated law admits it.
+/// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
+/// - witness: `bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+pub fn law_type(
+    arena: &mut gandr_core_term::CoreArena,
+    level: &Level,
+    representation: ValueTypeId,
+    (relation, reflexivity): (ValueId, ValueId),
+) -> ValueTypeId
+{
+    let var = |arena: &mut gandr_core_term::CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // Under `a`, `b` and `r`, and under the pair's binder `y` beneath them.
+    let (a, y) = (var(arena, 3), var(arena, 0));
+    let singleton = related_by(arena, relation, (a, y), level);
+    let pairs = arena.value_type_sigma(representation, singleton);
+    let (a, b, r) = (var(arena, 2), var(arena, 1), var(arena, 0));
+    let source = arena.value_tuple(&[b, r]);
+    let forced = arena.computation_force(reflexivity);
+    let diagonal = arena.computation_application(forced, a);
+    let centre = arena.value_returned(diagonal);
+    let centre = arena.value_tuple(&[a, centre]);
+    let contracted = arena.value_type_path(pairs, source, centre);
+    let returns = arena.comp_type_returner(contracted);
+    // Under `a` and `b`: the relation between them.
+    let (a, b) = (var(arena, 1), var(arena, 0));
+    let related = related_by(arena, relation, (a, b), level);
+    let over_r = arena.comp_type_pi(related, returns);
+    let over_b = arena.comp_type_pi(representation, over_r);
+    let over_a = arena.comp_type_pi(representation, over_b);
+    arena.value_type_thunk(over_a)
+}
+
 /// Resolve the signature and check a nominal application's argument count:
 /// one per parameter, then one per index.
 ///

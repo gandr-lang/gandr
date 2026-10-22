@@ -1114,6 +1114,9 @@ fn decide(
         },
         crate::DeclarationContent::Abstract(declared) => {
             let verdict = crate::former::form_abstract(context, declared)
+                .and_then(|level| {
+                    crate::former::form_interface(context, declared, &level).map(|()| level)
+                })
                 .and_then(|level| founded(context, constant, declared).map(|()| level))
                 .and_then(|level| context.seal_abstract(constant, declared, level))
                 .map(|_atom| ());

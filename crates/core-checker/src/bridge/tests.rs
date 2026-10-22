@@ -1767,6 +1767,231 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
     );
 }
 
+/// The interface an interfaced atom's module states: its relation `related`,
+/// its reflexivity `reflexive` and its law `law`, each named right or one
+/// named at another member's place.
+#[derive(Clone, Copy, Debug)]
+enum Stated
+{
+    /// `related`, `reflexive` and `law`.
+    Lawful,
+    /// `related` and `reflexive`, no law.
+    Lawless,
+    /// `reflexive` named as the relation.
+    RelationAtReflexivity,
+    /// `related` named as the reflexivity.
+    ReflexivityAtRelation,
+    /// `reflexive` named as the law.
+    LawAtReflexivity,
+}
+
+/// An atom over `Unit` whose module declares the relation `Unit`, its
+/// reflexivity `()` and the law contracting every singleton onto its centre
+/// by `((), ())`, the atom's interface naming them as `stated`; two points
+/// made inside the seal; past it the relation's evidence `()` between them
+/// as an identity at the atom, and two transports in the singleton family
+/// `y. Path(atom, first, y)`: along `here(first)` returning its operand, and
+/// along that evidence moving `here(first)` to the evidence.
+///
+/// # Specification
+/// trivial.
+fn interfaced_atom_module(
+    arena: &mut CoreArena,
+    stated: Stated,
+) -> Vec<Declaration>
+{
+    use gandr_kernel_term::SealExtent;
+
+    use crate::declaration::AbstractType;
+    use crate::declaration::AtomInterface;
+    use crate::seal::ComponentOrdinal;
+    use crate::seal::SealSite;
+    use crate::seal::SealingSite;
+    let unit = arena.value_type_unit();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let one = arena.value_unit();
+    let thunk = |arena: &mut CoreArena, result: ValueId, binders: u8| {
+        let mut body = arena.computation_return(result);
+        for _ in 0_u8 .. binders {
+            body = arena.computation_lambda(body);
+        }
+        arena.value_thunk(body)
+    };
+    let unit_code = arena.value_quote(unit);
+    let related = thunk(arena, unit_code, 2);
+    let codes = arena.comp_type_returner(small);
+    let inner = arena.comp_type_arrow(unit, codes);
+    let outer = arena.comp_type_arrow(unit, inner);
+    let relations = arena.value_type_thunk(outer);
+    let relation = arena.value_constant(ConstantIndex::from(0_usize));
+    let element = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let diagonal = crate::former::related_by(arena, relation, (element, element), &Level::zero());
+    let witnessed = arena.comp_type_returner(diagonal);
+    let reflexive = arena.comp_type_pi(unit, witnessed);
+    let reflexive = arena.value_type_thunk(reflexive);
+    let reflexivity = thunk(arena, one, 1);
+    let reflexivity_constant = arena.value_constant(ConstantIndex::from(1_usize));
+    let lawful_type = crate::former::law_type(
+        arena,
+        &Level::zero(),
+        unit,
+        (relation, reflexivity_constant),
+    );
+    let centre = arena.value_tuple(&[one, one]);
+    let law = thunk(arena, centre, 3);
+    let law_constant = arena.value_constant(ConstantIndex::from(2_usize));
+    let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let (first, second) = (
+        arena.value_constant(ConstantIndex::from(4_usize)),
+        arena.value_constant(ConstantIndex::from(5_usize)),
+    );
+    let identity = arena.value_type_path(atom, first, second);
+    let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(atom, first, end);
+    let start = arena.value_here(first);
+    let along_here = arena.computation_path_transport(singleton, start, start);
+    let along_here = arena.value_returned(along_here);
+    let loops = arena.value_type_path(atom, first, first);
+    let at_start = arena.value_type_path(loops, along_here, start);
+    let reflexive_start = arena.value_here(start);
+    let evidence = arena.value_constant(ConstantIndex::from(6_usize));
+    let along_evidence = arena.computation_path_transport(singleton, evidence, start);
+    let along_evidence = arena.value_returned(along_evidence);
+    let at_evidence = arena.value_type_path(identity, along_evidence, evidence);
+    let reflexive_evidence = arena.value_here(evidence);
+    let interface = match stated {
+        Stated::Lawful => AtomInterface::new(relation, reflexivity_constant).lawful(law_constant),
+        Stated::Lawless => AtomInterface::new(relation, reflexivity_constant),
+        Stated::RelationAtReflexivity => {
+            AtomInterface::new(reflexivity_constant, reflexivity_constant).lawful(law_constant)
+        },
+        Stated::ReflexivityAtRelation => {
+            AtomInterface::new(relation, relation).lawful(law_constant)
+        },
+        Stated::LawAtReflexivity => {
+            AtomInterface::new(relation, reflexivity_constant).lawful(reflexivity_constant)
+        },
+    };
+    vec![
+        declaration(At(0), Maybe::Present(relations), Maybe::Present(related)),
+        declaration(
+            At(1),
+            Maybe::Present(reflexive),
+            Maybe::Present(reflexivity),
+        ),
+        declaration(At(2), Maybe::Present(lawful_type), Maybe::Present(law)),
+        Declaration::abstract_type(
+            ConstantIndex::from(3_usize),
+            AbstractType::new(
+                small,
+                unit,
+                SealExtent::from(2_usize),
+                SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+            )
+            .interfaced(interface),
+            origin(At(3)),
+        ),
+        declaration(At(4), Maybe::Present(atom), Maybe::Present(one)),
+        declaration(At(5), Maybe::Present(atom), Maybe::Present(one)),
+        declaration(At(6), Maybe::Present(identity), Maybe::Present(one)),
+        declaration(
+            At(7),
+            Maybe::Present(at_start),
+            Maybe::Present(reflexive_start),
+        ),
+        declaration(
+            At(8),
+            Maybe::Present(at_evidence),
+            Maybe::Present(reflexive_evidence),
+        ),
+    ]
+}
+
+#[test]
+fn a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers()
+{
+    // The interface checks at the atom; the relation's evidence is an identity
+    // between its points; transport in the singleton family computes along
+    // reflexivity and along that evidence; the kernel admits each.
+    let mut arena = CoreArena::new();
+    let module = interfaced_atom_module(&mut arena, Stated::Lawful);
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        verdicts
+            .iter()
+            .all(|verdict| matches!(verdict, Verdict::Data | Verdict::Checked { .. })),
+        "the interface checks at the atom, and the relation's evidence is an identity: \
+         {verdicts:?}"
+    );
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(Readmitted::outcome)
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Outcome::Data { .. } | Outcome::Defined { .. })),
+        "the kernel admits the interface and the identity: {outcomes:?}"
+    );
+}
+
+#[test]
+fn an_atom_stating_no_law_keeps_its_neutral_fibre()
+{
+    // The same atom whose interface states no law: its identity is its own
+    // neutral fibre, so the relation's evidence is no identity there, and
+    // reflexivity still is.
+    let mut arena = CoreArena::new();
+    let module = interfaced_atom_module(&mut arena, Stated::Lawless);
+    let (report, _) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Data,
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Refused(CheckRefusal::TypeMismatch(_)),
+            Verdict::Checked { .. },
+            ..
+        ]),
+        "the relation's evidence is refused where no law makes it an identity: {verdicts:?}"
+    );
+}
+
+#[test]
+fn an_interface_member_named_at_another_member_s_type_refuses_the_atom()
+{
+    // Each member is checked at its own type where the atom is judged: a
+    // reflexivity named as the relation, a relation named as the
+    // reflexivity, or a reflexivity named as the law refuses the atom, while
+    // the members themselves still check.
+    for stated in [
+        Stated::RelationAtReflexivity,
+        Stated::ReflexivityAtRelation,
+        Stated::LawAtReflexivity,
+    ] {
+        let mut arena = CoreArena::new();
+        let module = interfaced_atom_module(&mut arena, stated);
+        let (report, _) = judge_and_readmit(&mut arena, &module);
+        let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+        assert!(
+            matches!(verdicts.as_slice(), [
+                Verdict::Checked { .. },
+                Verdict::Checked { .. },
+                Verdict::Checked { .. },
+                Verdict::Refused(_),
+                ..
+            ]),
+            "{stated:?}: the atom is refused at its interface: {verdicts:?}"
+        );
+    }
+}
+
 #[test]
 fn a_body_naming_a_withheld_declaration_is_refused()
 {

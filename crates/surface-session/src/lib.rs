@@ -190,6 +190,7 @@ pub use crate::edit::ChildSlot;
 pub use crate::edit::CorePath;
 pub use crate::edit::DeclarationTree;
 pub use crate::edit::EditScript;
+pub use crate::edit::InterfaceTree;
 pub use crate::edit::ItemTree;
 pub use crate::edit::Snapshot;
 pub use crate::edit::SourceEdit;

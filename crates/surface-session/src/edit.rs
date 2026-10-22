@@ -80,10 +80,10 @@
 //! `DeclarationTree::Codata` preserve distinct declaration categories. Data
 //! snapshots retain their kind, parameter telescope and every constructor
 //! field; an abstract type its kind, its representation, the extent of its
-//! seal, its minting site and the mobility its signature marks; a world
-//! declaration and a codata declaration have no roots. A schema or
-//! category change replaces the item through delete/insert; native term
-//! children still receive localized edits.
+//! seal, its minting site, the mobility its signature marks and its interface's
+//! relation, reflexivity and law; a world declaration and a codata declaration
+//! have no roots. A schema or category change replaces the item through
+//! delete/insert; native term children still receive localized edits.
 //! Record labels, constructor tags, nominal identities and all variadic
 //! children participate in agreement. The child reader is an unbounded borrowed
 //! iterator, not a fixed three-child buffer.
@@ -512,7 +512,7 @@ pub enum DeclarationTree
         /// The declared universe.
         kind: Tree,
     },
-    /// A sealed abstract type; neither root is a value obligation.
+    /// A sealed abstract type; none of its roots is a value obligation.
     Abstract
     {
         /// The declared universe.
@@ -525,12 +525,27 @@ pub enum DeclarationTree
         site: gandr_core_checker::SealSite,
         /// Whether its signature marks it mobile.
         mobility: gandr_core_checker::worlds::Mobility,
+        /// The interface its elements are related by, when stated.
+        interface: Maybe<InterfaceTree, gandr_core_checker::interface::Absent>,
     },
     /// A world declaration; it has no roots.
     World,
     /// A codata declaration; its signature has no content form, so it has no
     /// roots.
     Codata,
+}
+
+/// A sealed atom's interface, read out of the arena: its relation, the
+/// relation's reflexivity and, when stated, its law.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InterfaceTree
+{
+    /// The relation between two elements.
+    relation: Tree,
+    /// The relation's reflexivity.
+    reflexivity: Tree,
+    /// The singleton's contraction onto its centre, when stated.
+    law: Maybe<Tree, gandr_core_checker::law::Absent>,
 }
 
 /// One item of a revision: its identity, its signature and its body, each
@@ -750,7 +765,12 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                                     && parameters.iter().chain(constructors.iter().flatten()).chain(core::iter::once(kind)).all(ordered)
                                     && spans.is_empty()
                             } }
- else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site,mobility} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && mobility == sealed.mobility() && spans.is_empty() }
+ else if let DeclarationTree::Abstract {ref kind,ref representation,extent,site,mobility,ref interface} = *matched_left_value && let gandr_core_checker::DeclarationContent::Abstract(sealed) = *matched_right_value { ordered(kind) && ordered(representation) && extent == sealed.extent() && site == sealed.site() && mobility == sealed.mobility() && spans.is_empty()
+    && match (interface, sealed.interface()) {
+        (&Maybe::Present(ref tree), Maybe::Present(source)) => ordered(&tree.relation) && ordered(&tree.reflexivity) && match (&tree.law, source.law()) { (&Maybe::Present(ref law), Maybe::Present(_)) => ordered(law), (&Maybe::Absent(left), Maybe::Absent(right)) => left == right, (&Maybe::Present(_), Maybe::Absent(_)) | (&Maybe::Absent(_), Maybe::Present(_)) => false },
+        (&Maybe::Absent(left), Maybe::Absent(right)) => left == right,
+        (&Maybe::Present(_), Maybe::Absent(_)) | (&Maybe::Absent(_), Maybe::Present(_)) => false,
+    } }
  else if (matches!(*matched_left_value, DeclarationTree::World) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::World)) || (matches!(*matched_left_value, DeclarationTree::Codata) && matches!(*matched_right_value, gandr_core_checker::DeclarationContent::Codata(_))) { spans.is_empty() }
  else { false }
 }
@@ -902,6 +922,18 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
                         extent: sealed.extent(),
                         site: sealed.site(),
                         mobility: sealed.mobility(),
+                        interface: sealed.interface().map(|interface| InterfaceTree {
+                            relation: read(program, origins, Root::Value(interface.relation())).0,
+                            reflexivity: read(
+                                program,
+                                origins,
+                                Root::Value(interface.reflexivity()),
+                            )
+                            .0,
+                            law: interface
+                                .law()
+                                .map(|law| read(program, origins, Root::Value(law)).0),
+                        }),
                     },
                     Vec::new(),
                 ),

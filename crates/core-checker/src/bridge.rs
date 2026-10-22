@@ -2488,13 +2488,15 @@ enum Erased
         /// The declared type's image.
         declared: gandr_kernel_term::ValueTypeId,
     },
-    /// A sealed abstract type's kind and representation.
+    /// A sealed abstract type's kind, representation and interface.
     Abstract
     {
         /// The kind's image.
         kind: gandr_kernel_term::ValueTypeId,
         /// The representation's image.
         representation: gandr_kernel_term::ValueTypeId,
+        /// The interface's image, when the atom states one.
+        interface: Option<gandr_kernel_term::AtomInterface>,
     },
     /// A codata signature's images.
     Codata
@@ -2786,12 +2788,19 @@ where
         Erased::Abstract {
             kind,
             representation,
-        } => staging.abstract_type(
-            LevelSignature::monomorphic(),
-            kind,
-            representation,
-            SealScope::Open,
-        ),
+            interface,
+        } => {
+            let staged = staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                representation,
+                SealScope::Open,
+            );
+            match interface {
+                Some(interface) => staged.interfaced(interface),
+                None => staged,
+            }
+        },
     };
     Ok(Staged {
         declaration,
@@ -4246,13 +4255,14 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     }
 
     /// Erase `offer` into `target`: its declared type, then a definition's
-    /// body; or an abstract type's kind, then its representation.
+    /// body; or an abstract type's kind, then its representation, then its
+    /// interface's relation, reflexivity and law.
     ///
     /// # Specification
     /// - requires: no earlier erasure of this machine was refused.
     /// - ensures: the images of the offer's declared type and, for a
-    ///   definition, of its body, or of an abstract type's kind and
-    ///   representation, as [`Self::erase`] gives them.
+    ///   definition, of its body, or of an abstract type's kind, representation
+    ///   and stated interface, as [`Self::erase`] gives them.
     /// - fails: the first refusal either erasure gives; the body is not erased
     ///   once the type is refused.
     /// - panics: none.
@@ -4275,7 +4285,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     && matches!(matched_left_value, Offer::Definition { relations, laws: named, .. } if relations.len() == related.len() && named.len() == laws.len())
     && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
  else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
- else if matches!(matched_left_value, Offer::Abstract(_)) && let Ok(Erased::Abstract { ref kind, ref representation }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() }
+ else if let Offer::Abstract(declared) = matched_left_value && let Ok(Erased::Abstract { ref kind, ref representation, ref interface }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() && matches!(declared.interface(), Maybe::Present(_)) == interface.is_some() && interface.as_ref().is_none_or(|stated| target.value(stated.relation()).is_some() && target.value(stated.reflexivity()).is_some()) }
  else if let Offer::Codata(signature) = matched_left_value && let Ok(Erased::Codata { ref parameters, ref observations, ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && observations.len() == signature.observations().len() && target.value_type(*kind).is_some() }
  else { (*matched_right_value).is_err() }
 })]
@@ -4381,9 +4391,23 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Offer::Abstract(declared) => {
                 let kind = self.value_type(target, declared.kind())?;
                 let representation = self.value_type(target, declared.representation())?;
+                let interface = match declared.interface() {
+                    Maybe::Present(stated) => {
+                        let relation = self.value(target, stated.relation())?;
+                        let reflexivity = self.value(target, stated.reflexivity())?;
+                        let interface =
+                            gandr_kernel_term::AtomInterface::new(relation, reflexivity);
+                        Some(match stated.law() {
+                            Maybe::Present(law) => interface.lawful(self.value(target, law)?),
+                            Maybe::Absent(_) => interface,
+                        })
+                    },
+                    Maybe::Absent(_) => None,
+                };
                 Ok(Erased::Abstract {
                     kind,
                     representation,
+                    interface,
                 })
             },
             Offer::Codata(signature) => {
