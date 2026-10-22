@@ -871,6 +871,7 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
         | ValueType::Run(_)
+        | ValueType::Prefix(_)
         | ValueType::Staged { .. }
         | ValueType::Stack { .. }
         | ValueType::Session(_)

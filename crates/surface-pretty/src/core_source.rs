@@ -719,6 +719,7 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
             | ValueType::Run(_)
+            | ValueType::Prefix(_)
             | ValueType::Base(_)
             | ValueType::Buffer
             | ValueType::Product(_)
@@ -1125,7 +1126,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
         | (Some(&ValueType::Element { code, .. }), Former::Element(actual))
-        | (Some(&ValueType::Run(code)), Former::RunType(actual)) => actual == CoreNode::Value(code),
+        | (Some(&ValueType::Run(code)), Former::RunType(actual))
+        | (Some(&ValueType::Prefix(code)), Former::PrefixType(actual)) => actual == CoreNode::Value(code),
         | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&ValueType::Abstract(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
@@ -1191,6 +1193,7 @@ impl<'arena> CoreSource<'arena>
                 right: CoreNode::Value(target),
             },
             ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
+            ValueType::Prefix(code) => Former::PrefixType(CoreNode::Value(code)),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -1948,6 +1951,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
+                | ValueType::Prefix(_)
                 | ValueType::Base(_)
                 | ValueType::Buffer
                 | ValueType::List(_)
@@ -2140,6 +2144,7 @@ impl Source for CoreSource<'_>
                 | ValueType::Path { .. }
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
+                | ValueType::Prefix(_)
                 | ValueType::Base(_)
                 | ValueType::Buffer
                 | ValueType::Product(_)

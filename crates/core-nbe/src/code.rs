@@ -1191,6 +1191,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | ValueType::Session(_)
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
+                    | ValueType::Prefix(_)
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_) => return Ok(node),
@@ -1332,7 +1333,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(a.types().zip(b.types()).map(|(a, b)| (Node::ValueType(a, here), Node::ValueType(b, there)))));
                                 Ok((Alike::Same, a.types().count(), 0))
                             } else { Ok((Alike::Different, 0, 0)) },
-                        (&ValueType::Run(a), &ValueType::Run(b)) =>
+                        (&ValueType::Run(a), &ValueType::Run(b))
+                        | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =>
                             self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
                                 .map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 1) }),
                         _ => Ok((Alike::Different, 0, 0)),
@@ -1542,8 +1544,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         atoms.extend([source, target]);
                         Ok(Alike::Same)
                     }
-                    else if let ValueType::Run(a) = *matched_left_value
-                        && let ValueType::Run(b) = *matched_right_value
+                    else if let (&ValueType::Run(a), &ValueType::Run(b))
+                    | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =
+                        (matched_left_value, matched_right_value)
                     {
                         let session = (
                             self.atom(Node::Code(a, here))?,
@@ -1751,6 +1754,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Session(_)
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
+                                | ValueType::Prefix(_)
                                 | ValueType::Staged { .. }
                                 | ValueType::Kept { .. }
                                 | ValueType::World(_) => Ok(Alike::Different),
@@ -2441,7 +2445,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
-                        ValueType::Run(session) => {
+                        ValueType::Run(session) | ValueType::Prefix(session) => {
                             atoms.push(self.atom(Node::Code(session, place))?);
                         },
                         ValueType::Product(ref components) | ValueType::Sum(ref components) => {

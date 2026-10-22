@@ -701,6 +701,8 @@ pub enum ContentNode
     },
     /// The type of recorded runs of a session code.
     RunType(NodeIndex),
+    /// The type of recorded prefixes of a session code.
+    PrefixType(NodeIndex),
     /// A bound variable.
     Variable
     {
@@ -1296,6 +1298,7 @@ impl ContentNode
         | Self::PathType { .. }
         | Self::FlowType { .. }
         | Self::RunType(_)
+        | Self::PrefixType(_)
         | Self::Base(_)
         | Self::Product(_)
         | Self::Sum(_)
@@ -1407,6 +1410,7 @@ impl ContentNode
             | Self::PathType { .. }
             | Self::FlowType { .. }
             | Self::RunType(_)
+            | Self::PrefixType(_)
             | Self::Base(_)
             | Self::Product(_)
             | Self::Sum(_)
@@ -1513,6 +1517,7 @@ impl ContentNode
             | Self::Stay(a)
             | Self::Forward(a)
             | Self::RunType(a)
+            | Self::PrefixType(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
             | Self::ValueLift { body: a, .. }
@@ -1795,6 +1800,7 @@ impl ContentNode
             | Self::Stay(body)
             | Self::Forward(body)
             | Self::RunType(body)
+            | Self::PrefixType(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
             | Self::Return(body)
@@ -1891,7 +1897,7 @@ impl ContentNode
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Univalence(..) | Self::Abandon(_) |
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1939,6 +1945,7 @@ impl ContentNode
             | Self::PathType { .. }
             | Self::FlowType { .. }
             | Self::RunType(_)
+            | Self::PrefixType(_)
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)
@@ -4439,6 +4446,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 target: self.discover(ArenaNode::Value(target)),
             },
             ValueType::Run(code) => ContentNode::RunType(self.discover(ArenaNode::Value(code))),
+            ValueType::Prefix(code) => {
+                ContentNode::PrefixType(self.discover(ArenaNode::Value(code)))
+            },
             ValueType::Base(base) => ContentNode::Base(base),
             ValueType::Kept { value, region } => ContentNode::KeptType {
                 value: self.discover(ArenaNode::ValueType(value)),
@@ -4849,6 +4859,7 @@ where
             target: image(target),
         },
         ContentNode::RunType(code) => ContentNode::RunType(image(code)),
+        ContentNode::PrefixType(code) => ContentNode::PrefixType(image(code)),
         ContentNode::SessionRelated {
             relation,
             source,
@@ -5394,7 +5405,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_))
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_))
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -5604,6 +5615,7 @@ fn mint_node(
         | ContentNode::PathType { .. }
         | ContentNode::FlowType { .. }
         | ContentNode::RunType(_)
+        | ContentNode::PrefixType(_)
         | ContentNode::SessionRelated { .. }
         | ContentNode::Stay(_)
         | ContentNode::Then(..)

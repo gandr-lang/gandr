@@ -282,6 +282,8 @@ pub enum MotiveHead
     /// A run of a recursive session: it admits unboundedly many shapes, and
     /// the IL's match names each shape it answers.
     RecursiveRun,
+    /// A prefix type: an open play does not transport.
+    Prefix,
     /// A base type.
     Base,
     /// A dependent pair type.
@@ -338,6 +340,7 @@ impl fmt::Display for MotiveHead
             Self::Flow => "a flow type",
             Self::Run => "a run type",
             Self::RecursiveRun => "a run of a recursive session",
+            Self::Prefix => "a prefix type",
             Self::Base => "a base type",
             Self::Sigma => "a dependent pair type",
             Self::Thunk => "a thunk type",
@@ -488,6 +491,7 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::Path { .. } => MotiveHead::Path,
         ValueType::Flow { .. } => MotiveHead::Flow,
         ValueType::Run(_) => MotiveHead::Run,
+        ValueType::Prefix(_) => MotiveHead::Prefix,
         ValueType::Base(_) | ValueType::Product(_) | ValueType::Sum(_) | ValueType::List(_) => {
             MotiveHead::Base
         },
@@ -623,6 +627,7 @@ fn row(
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
         | ValueType::Run(_)
+        | ValueType::Prefix(_)
         | ValueType::Base(_)
         | ValueType::Product(_)
         | ValueType::Sigma { .. }

@@ -204,7 +204,7 @@ impl FormedCompType
 ///   the walk meets; the code's refusal for a decode, among them
 ///   [`CheckRefusal::SortMismatch`] and [`CheckRefusal::LevelMismatch`];
 ///   [`CheckRefusal::OpenSessionPayload`] for a session type whose payload
-///   reads a binder outside it, anywhere but a run's protocol;
+///   reads a binder outside it, anywhere but a run's or a prefix's protocol;
 ///   [`CheckRefusal::DanglingNode`] for an id the arena does not hold.
 /// - panics: none.
 /// - intension: one machine run under the context's allowance; the binders
@@ -442,6 +442,7 @@ pub fn level_of(
                 | ValueTypeView::String
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Prefix(_)
                 | ValueTypeView::Buffer
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());

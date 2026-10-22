@@ -838,6 +838,7 @@ pub fn constructor_owes(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer

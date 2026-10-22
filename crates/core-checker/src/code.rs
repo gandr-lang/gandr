@@ -2597,7 +2597,7 @@ pub fn loose_reach(
                         (CoreNode::Term(TermNode::Value(source)), depth),
                         (CoreNode::Term(TermNode::Value(target)), depth),
                     ]),
-                    ValueType::Run(session) => {
+                    ValueType::Run(session) | ValueType::Prefix(session) => {
                         work.push((CoreNode::Term(TermNode::Value(session)), depth));
                     },
                     ValueType::Staged { base, .. } | ValueType::Kept { value: base, .. } => {

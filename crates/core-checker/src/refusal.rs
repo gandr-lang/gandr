@@ -149,7 +149,8 @@ pub enum ExpectedShape
     /// A directed identity `Flow(A, a, b)`: what a ride moves along and what
     /// a composite's two flows must synthesise.
     Flow,
-    /// A run type `Run(S)`: what a recorded run is checked against.
+    /// A run type `Run(S)` or a prefix type `Prefix(S)`: what a recorded run is
+    /// checked against.
     Run,
 }
 

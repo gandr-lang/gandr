@@ -532,6 +532,7 @@ pub fn coverage(
                     | ValueTypeView::Path { .. }
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
+                    | ValueTypeView::Prefix(_)
                     | ValueTypeView::Sum(_)
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Universe { .. }

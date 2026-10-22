@@ -1716,7 +1716,7 @@ impl fmt::Display for Shape
             },
             ExpectedShape::Capability => "a capability `Cap {op, …}`",
             ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
-            ExpectedShape::Run => "a run type `Run(s)`",
+            ExpectedShape::Run => "a run type `Run(s)` or a prefix type `Prefix(s)`",
         })
     }
 }

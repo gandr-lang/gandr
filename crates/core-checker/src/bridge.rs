@@ -6085,7 +6085,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at: CoreNode::Type(TypeNode::Value(at)),
                 });
             },
-            ValueTypeView::Run(_) => {
+            ValueTypeView::Run(_) | ValueTypeView::Prefix(_) => {
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Run,

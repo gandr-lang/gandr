@@ -11205,7 +11205,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     exhausted(site, &cursor)?;
                     return self.effectful(site, row, argument.node);
                 },
-                TypeFormer::List | TypeFormer::Run => {
+                TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix => {
                     return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
                 },
             }
@@ -11314,7 +11314,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         == match former {
                             | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
                             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
-                            | TypeFormer::Run => Reading::Value(site.reading.frame()),
+                            | TypeFormer::Run | TypeFormer::Prefix => Reading::Value(site.reading.frame()),
                         })
         },
     )]
@@ -11326,14 +11326,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match former {
-            TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run => Produced::ValueType,
+            TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix => {
+                Produced::ValueType
+            },
             TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
         let inner = match former {
             TypeFormer::Thunk => Reading::CompType(frame),
             TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
-            TypeFormer::Run => Reading::Value(frame),
+            TypeFormer::Run | TypeFormer::Prefix => Reading::Value(frame),
         };
         self.read(argument, inner);
 
@@ -12880,7 +12882,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Product(..)
                 | Plan::RecordType(..)
                 | Plan::Sum(_)
-                | Plan::Former(TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run, _)
+                | Plan::Former(
+                    TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix,
+                    _,
+                )
                 | Plan::Path(..)
                 | Plan::Flow(..)
                 | Plan::Relation(..)
@@ -13925,7 +13930,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
                 },
             },
-            | TypeFormer::Run => match self.value_at(argument) {
+            | TypeFormer::Run | TypeFormer::Prefix => match self.value_at(argument) {
                 | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
                 | Maybe::Present(_) => {
                     matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
@@ -13959,6 +13964,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             TypeFormer::Run => self.value_at(argument).map(|session| {
                 let id = sink.arena.value_type_run(session);
+                sink.origins.record_value_type(id, origin);
+                Lowered::ValueType(id)
+            }),
+            TypeFormer::Prefix => self.value_at(argument).map(|session| {
+                let id = sink.arena.value_type_prefix(session);
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),

@@ -1032,7 +1032,8 @@ pub(crate) fn crosses(
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
-            | ValueTypeView::Run(_) => return Ok(stays),
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_) => return Ok(stays),
         }
     }
     Ok(Crossing::Crosses)

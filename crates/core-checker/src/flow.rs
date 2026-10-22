@@ -54,6 +54,14 @@
 //! move's position and the monitor's reason. A run is data: it evaluates to
 //! itself and prints as the literal it is.
 //!
+//! `Prefix(S)` classifies the recorded prefixes of `S`: the same literal,
+//! checked by the same replay, admitted when the monitor accepts every move
+//! it holds, whether it reaches `closed` or stops with a move still owed. A
+//! prefix the monitor refuses at a move is refused at that move as a run is;
+//! only the incomplete end is admitted. A run type stays complete-only:
+//! riding and transporting move complete runs, and an open play neither
+//! rides nor transports.
+//!
 //! # Riding a flow
 //!
 //! `ride(\X. T, f, v)` moves `v : T[a]` along `f : Flow(A, a, b)` and
@@ -409,6 +417,7 @@ pub fn session_code(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -921,6 +930,7 @@ pub fn endpoints(
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Path { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -1096,7 +1106,9 @@ pub fn covariant(
                 | Value::Reify(_) => return Err(refused),
             },
             Position::ValueType(id) => match *arena.value_type(id).ok_or_else(|| dangling(node))? {
-                ValueType::Run(code) | ValueType::Element { code, .. } => {
+                ValueType::Run(code)
+                | ValueType::Prefix(code)
+                | ValueType::Element { code, .. } => {
                     work.push((Position::Value(code), polarity, depth));
                 },
                 ValueType::Flow {
@@ -1413,6 +1425,7 @@ fn computed(
             | ValueType::Path { .. }
             | ValueType::Flow { .. }
             | ValueType::Run(_)
+            | ValueType::Prefix(_)
             | ValueType::Base(_)
             | ValueType::Sigma { .. }
             | ValueType::Thunk(_)
@@ -1515,17 +1528,20 @@ pub fn admit(
 }
 
 /// The payloads of the recorded run `at` and the types its protocol names
-/// for them, once the monitor of the run type `expected` accepts its
-/// skeleton.
+/// for them, once the monitor of the run or prefix type `expected` accepts
+/// its skeleton.
 ///
 /// # Specification
 /// - requires: `at` is a recorded run checked against `expected`.
 /// - ensures: one premise per payload move, in move order, at the payload type
-///   the protocol names at that move; none against the unknown type.
-/// - fails: [`CheckRefusal::ShapeMismatch`] wanting a run type for any other
-///   former; [`CheckRefusal::SessionCodeExpected`] at a protocol that is no
-///   session code; [`CheckRefusal::RunNotAdmitted`] at `at` with the first move
-///   the monitor refuses, or the incomplete run's length.
+///   the protocol names at that move; none against the unknown type. A run type
+///   admits a run the monitor closes; a prefix type admits one it closes or
+///   leaves open.
+/// - fails: [`CheckRefusal::ShapeMismatch`] wanting a run or prefix type for
+///   any other former; [`CheckRefusal::SessionCodeExpected`] at a protocol that
+///   is no session code; [`CheckRefusal::RunNotAdmitted`] at `at` with the
+///   first move the monitor refuses, or, against a run type, the incomplete
+///   run's length.
 /// - panics: none.
 ///
 /// # Errors
@@ -1533,8 +1549,11 @@ pub fn admit(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a complete seat run checks with its three payloads, a
-///   paused run is refused at its pause and a truncated one at its end.
+///   paused run is refused at its pause and a truncated one at its end; the
+///   truncated run checks as a prefix, which still refuses a move the protocol
+///   does not offer.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `flow::tests::a_prefix_admits_an_open_run_and_refuses_by_move`
 /// - witness: `flow::tests::each_refusal_is_named`
 /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
 #[spec(ensures: |ret| match ret {
@@ -1548,8 +1567,9 @@ pub fn run_premises(
 ) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
 {
     let head = context.whnf_value_type(expected)?;
-    let protocol = match value_type_view(context.arena(), head)? {
-        ValueTypeView::Run(protocol) => protocol,
+    let (protocol, open_admitted) = match value_type_view(context.arena(), head)? {
+        ValueTypeView::Run(protocol) => (protocol, false),
+        ValueTypeView::Prefix(protocol) => (protocol, true),
         ValueTypeView::Unknown => return Ok(Vec::new()),
         ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
@@ -1596,8 +1616,11 @@ pub fn run_premises(
         return Err(CheckRefusal::MachineInvariant);
     };
     let moves = Arc::clone(recorded);
-    gandr_core_session::replay(&engine(&session)?, &skeleton(&moves))
-        .map_err(|error| replay_refusal(at, &error))?;
+    match gandr_core_session::replay(&engine(&session)?, &skeleton(&moves)) {
+        Ok(_) => {},
+        Err(ReplayError::IncompleteRun { .. }) if open_admitted => {},
+        Err(ref error) => return Err(replay_refusal(at, error)),
+    }
     let mut premises = Vec::new();
     let mut current = session;
     for movement in moves.iter() {

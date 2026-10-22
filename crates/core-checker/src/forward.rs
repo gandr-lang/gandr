@@ -478,6 +478,7 @@ fn first_order(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
             | ValueTypeView::Sum(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
@@ -575,6 +576,7 @@ fn leaves(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }
@@ -718,6 +720,7 @@ fn natural(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }

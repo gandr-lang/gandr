@@ -232,6 +232,7 @@ fn every_node_former_round_trips_under_its_own_frame()
             target: c,
         },
         ContentNode::RunType(a),
+        ContentNode::PrefixType(a),
         ContentNode::Variable {
             zone: Zone::Intuitionistic,
             index: slot,

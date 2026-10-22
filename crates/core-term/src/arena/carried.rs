@@ -567,7 +567,9 @@ impl CoreArena
                 self.value_into(&mut union, left, at);
                 self.value_into(&mut union, right, at);
             },
-            ValueType::Run(session) => self.value_into(&mut union, session, at),
+            ValueType::Run(session) | ValueType::Prefix(session) => {
+                self.value_into(&mut union, session, at);
+            },
             ValueType::Base(_)
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)

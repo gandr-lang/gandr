@@ -1072,7 +1072,7 @@ where
                     pending.push((AnyNode::Value(source), reach.term()));
                     pending.push((AnyNode::Value(target), reach.term()));
                 },
-                Some(&ValueType::Run(session)) => {
+                Some(&(ValueType::Run(session) | ValueType::Prefix(session))) => {
                     pending.push((AnyNode::Value(session), reach.term()));
                 },
                 Some(&ValueType::Thunk(body)) => {
