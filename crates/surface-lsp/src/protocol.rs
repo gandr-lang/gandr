@@ -2996,9 +2996,14 @@ pub struct CompletionItem
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub documentation: Option<MarkupContent>,
     /// Where a declared name was offered; none for a binder or a keyword,
-    /// which resolve to themselves.
+    /// which resolve to themselves, and for a name its document does not
+    /// import yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<CompletionData>,
+    /// The edit importing the source that declares a name its document does
+    /// not import yet, made beside the item's own when it is chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additional_text_edits: Option<Vec<TextEdit>>,
 }
 
 /// What a client shows beside a completion's label: the rest of its head,

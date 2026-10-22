@@ -87,6 +87,7 @@ use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_dispatcher::tabled;
+use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::DocId;
@@ -106,6 +107,8 @@ use crate::calls::Read;
 use crate::calls::callees;
 use crate::calls::callers;
 use crate::calls::items;
+use crate::complete::Elsewhere;
+use crate::complete::Unimported;
 use crate::complete::completions;
 use crate::complete::resolved;
 use crate::files::Files;
@@ -5486,7 +5489,10 @@ impl Workspace
     /// - ensures: an unknown document, and one whose session or grammar did not
     ///   build, yields Nothing; otherwise the list [`completions`] answers off
     ///   the copy's text and what it keeps for its hovers, made now when no
-    ///   request has asked since the text last changed, as `presented` says.
+    ///   request has asked since the text last changed, as `presented` says,
+    ///   with the names of every source the roots' walk reaches outside the
+    ///   document and its import closure, as [`Files::declared`] reads them,
+    ///   each imported by the edit [`Reading::imported`] writes into the copy.
     /// - provides: the answer to `textDocument/completion`.
     /// - fails: never.
     /// - panics: none.
@@ -5495,6 +5501,7 @@ impl Workspace
     /// - hypothesis: L3 — as [`completions`], and an unknown document answers
     ///   `null`.
     /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
+    /// - witness: `server::tests::completion_offers_a_folder_name_with_its_import`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Completions(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn completion(
@@ -5517,13 +5524,45 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
+        let path = named_path(&uri.path());
+        let mut reached: BTreeSet<&Path> = BTreeSet::new();
+        let mut at = 0_usize;
+        while hovering
+            .table()
+            .source_text(SourceIndex::from(at))
+            .is_some()
+        {
+            reached.extend(hovering.source_path(SourceIndex::from(at)));
+            at = at.saturating_add(1_usize);
+        }
+        let mut files = self.files.borrow_mut();
+        let unimported: Vec<Unimported<'_>> = files
+            .declared(grammar)
+            .filter(|&(source, _)| source != path.as_path() && !reached.contains(source))
+            .map(|(source, names)| Unimported {
+                path: source,
+                names,
+            })
+            .collect();
+        let text = document.text.source();
+        let index = LineIndex::new(<&str>::from(text).into());
+        let import = |file: &Path| {
+            document
+                .text
+                .reading()
+                .imported(text, &index, &path, &[file.to_path_buf()])
+        };
         Answer::Completions(completions(
             grammar,
             forms,
-            document.text.source(),
+            text,
             hovering,
             (uri, position),
             presented,
+            Elsewhere {
+                sources: &unimported,
+                import: &import,
+            },
         ))
     }
 
@@ -8769,6 +8808,89 @@ mod tests
                 .collect::<Vec<_>>(),
             [String::from("farther")],
             "a rewritten source is found as its file now reads, its old names gone"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn completion_offers_a_folder_name_with_its_import()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-flyimport-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        for (file, text) in [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+            ),
+            (
+                "lonely/far.gandr",
+                "def faraway : Integer ;\ndef faraway = 7 ;\n",
+            ),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {},
+                "workspaceFolders": [{"uri": uri(""), "name": "scratch"}]}});
+        let _initialized = send(&mut server, Json(&initialize.to_string()));
+        let _ready = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+        );
+        let typing = "import \"./base.gandr\" ;\ndef near : Integer ;\ndef near = fa";
+        let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+            "textDocument": {"uri": uri("typing.gandr"), "languageId": "gandr", "version": 1_i32,
+                "text": typing}}});
+        let _published = send(&mut server, Json(&open.to_string()));
+        let offered = |server: &mut Connected, line: i32, character: i32| -> Vec<Value> {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 8_i32,
+                "method": "textDocument/completion", "params": {
+                    "textDocument": {"uri": uri("typing.gandr")},
+                    "position": {"line": line, "character": character}}});
+            send(server, Json(&request.to_string()))[0_usize]["result"]["items"]
+                .as_array()
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter(|item| item["label"] == "faraway")
+                        .map(|item| {
+                            serde_json::json!({"detail": item["detail"],
+                                "additionalTextEdits": item["additionalTextEdits"],
+                                "data": item["data"]})
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            offered(&mut server, 2_i32, 13_i32),
+            [
+                serde_json::json!({"detail": "import \"./lonely/far.gandr\" ;",
+                "additionalTextEdits": [{"range": {"start": {"line": 1_i32, "character": 0_i32},
+                    "end": {"line": 1_i32, "character": 0_i32}},
+                    "newText": "import \"./lonely/far.gandr\" ;\n"}],
+                "data": null})
+            ],
+            "a name no import reaches is offered with the import of its source after the last"
+        );
+        let imported = "import \"./base.gandr\" ;\nimport \"./lonely/far.gandr\" ;\ndef near : \
+                        Integer ;\ndef near = fa";
+        let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+            "params": {"textDocument": {"uri": uri("typing.gandr"), "version": 2_i32},
+                "contentChanges": [{"text": imported}]}});
+        let _published = send(&mut server, Json(&change.to_string()));
+        assert_eq!(
+            offered(&mut server, 3_i32, 13_i32),
+            [serde_json::json!({"detail": "faraway : Integer",
+                "additionalTextEdits": null,
+                "data": {"uri": uri("typing.gandr")}})],
+            "once imported, the name is offered once, as the closure declares it"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
