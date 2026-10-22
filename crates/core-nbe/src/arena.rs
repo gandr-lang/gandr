@@ -781,7 +781,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_)) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint{ .. } => true,
+            Elimination::ListFold { .. } | Elimination::ListCase { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::PathTransport { .. } | Elimination::OperandTransport { .. } | Elimination::Ride { .. } | Elimination::OperandRide { .. } | Elimination::TelescopeTransport { .. } | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::Split(_) | Elimination::Projection(_) | Elimination::Fixpoint{ .. } => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -830,6 +830,7 @@ impl DomainArena
                 | Elimination::PathTransport { .. }
                 | Elimination::OperandTransport { .. }
                 | Elimination::Ride { .. }
+                | Elimination::OperandRide { .. }
                 | Elimination::TelescopeTransport { .. }
                 | Elimination::Bind(_)
                 | Elimination::ListFold { .. }

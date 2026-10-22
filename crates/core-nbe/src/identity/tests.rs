@@ -561,6 +561,92 @@ fn transport_along_an_equivalence_waits_on_a_stuck_list_1677()
 }
 
 #[test]
+fn a_ride_along_a_canonical_flow_waits_on_a_stuck_operand_1707()
+{
+    // Negation as a forward flow of Bool to itself, in the motive
+    // `y. List(El y)`, over a list no rule reads yet: the ride waits on the
+    // list, and moves it once the list's definition unfolds.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let negated = [falsity, truth].map(|value| core.computation_return(value));
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let body = core.computation_case(bound, &negated);
+    let lambda = core.computation_lambda(body);
+    let not = core.value_thunk(lambda);
+    let flow = core.value_forward(not);
+    let element = core.value_type_element(bound, gandr_kernel_strata::Level::zero());
+    let motive = core.value_type_list(element);
+    let operand = stuck(&mut core, ConstantIndex::from(0_usize));
+    let rode = core.computation_ride(motive, flow, operand);
+    assert_eq!(
+        normalises_to(&mut core, rode, rode),
+        CertificateEquality::Equal,
+        "along a canonical flow, the ride of a list no rule reads reads back as itself"
+    );
+    let nil = core.value_list_nil();
+    let tail = core.value_list_cons(falsity, nil);
+    let list = core.value_list_cons(truth, tail);
+    let mut chain = DefinitionChain::new();
+    chain
+        .define(
+            ConstantIndex::from(0_usize),
+            GlobalIndex::from(0_u32),
+            Transparency::Manifest,
+            &[],
+        )
+        .expect("the list's definition is the chain's first");
+    let Ok(chain) = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(list));
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), rode)
+        .expect("the ride evaluates");
+    let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(evaluated)
+    else {
+        panic!("the ride waits on the list's definition");
+    };
+    let spine = Vec::from(
+        domain
+            .neutral(neutral)
+            .expect("the list's neutral resolves")
+            .spine(),
+    );
+    assert!(
+        matches!(spine.as_slice(), [Elimination::OperandRide { .. }]),
+        "the ride waits on the list, not on the canonical flow"
+    );
+    let head = eval_value(&core, &mut domain, definitions, ample(), list)
+        .expect("the list's body evaluates");
+    let (progress, _) = Evaluation::eliminate(definitions, head, &spine)
+        .resume(&core, &mut domain, ample())
+        .expect("the ride resumes on the unfolded list");
+    let Progress::Finished(Glued::Computation(answer)) = progress
+    else {
+        panic!("the ride finishes once the list unfolds");
+    };
+    let read = readback_computation(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        answer,
+    )
+    .expect("the moved list reads back");
+    let moved_tail = core.value_list_cons(truth, nil);
+    let moved = core.value_list_cons(falsity, moved_tail);
+    let expected = core.computation_return(moved);
+    let [read, expected] = [read, expected].map(|computation| core.value_thunk(computation));
+    assert_eq!(
+        equal_certificate_syntax(&core, read, expected),
+        CertificateEquality::Equal,
+        "re-applied to the unfolded list, each head is negated and the spine kept"
+    );
+}
+
+#[test]
 fn transport_in_the_decoded_binder_along_a_stuck_path_stays_in_its_motive()
 {
     let mut core = CoreArena::new();
