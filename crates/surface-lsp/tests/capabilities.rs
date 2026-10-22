@@ -26,6 +26,9 @@ fn advertised_capabilities_name_the_token_legend()
             "capabilities": {
                 "positionEncoding": "utf-16",
                 "textDocumentSync": {"openClose": true, "change": 2_i32},
+                "notebookDocumentSync": {"notebookSelector": [{
+                    "notebook": {"notebookType": "jupyter-notebook"},
+                    "cells": [{"language": "gandr"}]}]},
                 "semanticTokensProvider": {
                     "legend": {"tokenTypes": TOKEN_TYPES, "tokenModifiers": TOKEN_MODIFIERS},
                     "full": {"delta": true},

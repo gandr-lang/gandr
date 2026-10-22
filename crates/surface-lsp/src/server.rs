@@ -131,6 +131,7 @@ use crate::inline::ghost;
 use crate::markup::Markup;
 use crate::missing::UNRESOLVED_NAME;
 use crate::missing::additions;
+use crate::notebook::Notebook;
 use crate::paste::copied;
 use crate::position::Position;
 use crate::position::Range;
@@ -166,7 +167,10 @@ use crate::protocol::DeltaParams;
 use crate::protocol::Diagnostic;
 use crate::protocol::DiagnosticParams;
 use crate::protocol::DiagnosticReport;
+use crate::protocol::DidChangeNotebookParams;
 use crate::protocol::DidChangeParams;
+use crate::protocol::DidCloseNotebookParams;
+use crate::protocol::DidOpenNotebookParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
@@ -228,6 +232,7 @@ use crate::protocol::ShowsProgress;
 use crate::protocol::StringValue;
 use crate::protocol::SymbolInformation;
 use crate::protocol::TakesSnippets;
+use crate::protocol::TextDocumentItem;
 use crate::protocol::TextEdit;
 use crate::protocol::Trace;
 use crate::protocol::TraceParams;
@@ -235,6 +240,7 @@ use crate::protocol::TriggerSetting;
 use crate::protocol::TypedParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::Unresolved;
+use crate::protocol::VersionedDocument;
 use crate::protocol::ViewsContent;
 use crate::protocol::WatchedFilesParams;
 use crate::protocol::WatchesFiles;
@@ -1907,6 +1913,7 @@ impl Workspace
             choices: Vec::new(),
             streams: BTreeMap::new(),
             viewing: BTreeSet::new(),
+            notebooks: BTreeMap::new(),
         };
         let answer = match classify(request) {
             Err(malformed) => malformed.response(),
@@ -2198,6 +2205,9 @@ pub struct Server
     /// when asked: a change of the document asks it for the tree again, and the
     /// entry goes when the connection closes the document.
     viewing: BTreeSet<(DocumentUri, DocumentUri)>,
+    /// The notebooks the client holds open, by the URI of the one document
+    /// each one's code cells are judged as.
+    notebooks: BTreeMap<DocumentUri, Notebook>,
 }
 
 /// Where a choice put to the user stands.
@@ -2283,6 +2293,7 @@ impl Server
             choices: Vec::new(),
             streams: BTreeMap::new(),
             viewing: BTreeSet::new(),
+            notebooks: BTreeMap::new(),
         }
     }
 
@@ -2630,9 +2641,9 @@ impl Server
     /// - requires: nothing.
     /// - ensures: when this connection holds a copy of `uri` whose published
     ///   diagnostics are fewer than it checked, all of them are recorded as the
-    ///   copy's publication, and sent as one diagnostic notification at `uri`
-    ///   and the copy's version, or, to a client that pulls them, the client is
-    ///   asked to pull again when it refreshes its diagnostics; nothing
+    ///   copy's publication, and sent as [`Server::pushed`] sends it, or, to a
+    ///   client that pulls them a document no notebook of its own, the client
+    ///   is asked to pull again when it refreshes its diagnostics; nothing
     ///   otherwise.
     /// - provides: the promotion a passed deadline makes, and the one a
     ///   configuration that holds nothing makes.
@@ -2645,7 +2656,7 @@ impl Server
     /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
     /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
     /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
-    #[spec(ensures: |ret| ret.len() <= 1)]
+    #[spec(ensures: |ret| ret.len() <= 1 || self.notebooks.contains_key(uri))]
     #[inline]
     #[must_use]
     pub fn release(
@@ -2671,13 +2682,60 @@ impl Server
             diagnostics: document.checked.clone(),
         });
         workspace.published_by(self.peer, &release);
-        if !self.pulled.0 {
-            return vec![release];
+        if let Some(pushed) = self.pushed(release) {
+            return pushed;
         }
         if self.refreshing.diagnostics.0 {
             return vec![self.asked(Refreshed::Diagnostics)];
         }
         Vec::new()
+    }
+
+    /// The notifications the publication `message` is sent to this
+    /// connection's client as, none when the client pulls them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a publication at the document a notebook this connection
+    ///   holds is judged as is sent as [`Notebook::split`] splits it, one per
+    ///   code cell, whether or not the client pulls, the cells being documents
+    ///   it never pulls; any other publication is sent as it is, or answers
+    ///   none when the client pulls its diagnostics; any other message is sent
+    ///   as it is.
+    /// - provides: every diagnostic publication this connection sends.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a notebook's publication split into its cells, a
+    ///   document's sent whole, and a pulling client's held, each asserted at
+    ///   its exact notifications.
+    /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
+    /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|sent| !sent.is_empty() || !self.notebooks.is_empty()))]
+    fn pushed(
+        &self,
+        message: Outgoing,
+    ) -> Option<Vec<Outgoing>>
+    {
+        let Outgoing::Notification {
+            params: Notified::Published(ref params),
+            ..
+        } = message
+        else {
+            return Some(vec![message]);
+        };
+        match self.notebooks.get(&params.uri) {
+            Some(notebook) => Some(
+                notebook
+                    .split(&params.uri, params)
+                    .into_iter()
+                    .map(publish)
+                    .collect(),
+            ),
+            None if self.pulled.0 => None,
+            None => Some(vec![message]),
+        }
     }
 
     /// Handle one message body over `workspace`.
@@ -2693,8 +2751,9 @@ impl Server
     ///   [`Server::admit`] after it and published by [`Server::admitted`] —
     ///   opening and changing it judge it at its new version, published to this
     ///   connection and to every other holding it open, a connection whose
-    ///   client pulls its diagnostics answered on its pull instead, and closing
-    ///   it publishes none to this connection and forgets it once no connection
+    ///   client pulls its diagnostics answered on its pull instead but for a
+    ///   notebook's cells, as [`Server::pushed`] sends them, and closing it
+    ///   publishes none to this connection and forgets it once no connection
     ///   holds it. A configuration change that names another verbosity makes
     ///   every document this connection holds due. A body that is not a message
     ///   is answered with the error the protocol owes it. `exit` ends the
@@ -3180,12 +3239,13 @@ impl Server
     ///   notification at the line's URI and version whose one diagnostic names
     ///   it, recorded as the copy's publication and as all it checked, and the
     ///   line holds nothing. A delivered admission whose copy is gone is logged
-    ///   as retired. To a client that pulls its diagnostics, no notification is
-    ///   sent: each publication is recorded alone, and when one was recorded
-    ///   that no pull held on its copy answers, a client that refreshes its
-    ///   diagnostics is asked to pull again, once. With [`Awaiting::All`], no
-    ///   judgement or admission is left running and no progress end left
-    ///   waiting.
+    ///   as retired. Each notification is sent as [`Server::pushed`] sends it:
+    ///   to a client that pulls its diagnostics, none is sent for a document no
+    ///   notebook of its own: each publication is recorded alone, and when one
+    ///   was recorded that no pull held on its copy answers, a client that
+    ///   refreshes its diagnostics is asked to pull again, once. With
+    ///   [`Awaiting::All`], no judgement or admission is left running and no
+    ///   progress end left waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
@@ -3200,7 +3260,8 @@ impl Server
     /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
     /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
-    #[spec(ensures: |ret| (self.pulled.0 || ret.judged.len() <= ret.messages.len())
+    #[spec(ensures: |ret| (self.pulled.0 || !self.notebooks.is_empty()
+            || ret.judged.len() <= ret.messages.len())
         && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
             && admissions.waiting.is_empty() && admissions.ending.is_empty())))]
     #[inline]
@@ -3261,8 +3322,8 @@ impl Server
             let taken = admission(&mut locked(&document.session), line.timing);
             refresh = Refresh(refresh.0 || refreshing.0);
             workspace.published_by(self.peer, &message);
-            if !self.pulled.0 {
-                settled.messages.push(message);
+            if let Some(pushed) = self.pushed(message) {
+                settled.messages.extend(pushed);
             }
             else if !asked
                 .iter()
@@ -3354,8 +3415,8 @@ impl Server
                     diagnostics: vec![fault],
                 });
                 workspace.published_by(self.peer, &correction);
-                if !self.pulled.0 {
-                    settled.messages.push(correction);
+                if let Some(pushed) = self.pushed(correction) {
+                    settled.messages.extend(pushed);
                 }
                 else if self.refreshing.diagnostics.0 && self.phase == Phase::Running {
                     settled.messages.push(self.asked(Refreshed::Diagnostics));
@@ -4634,8 +4695,18 @@ impl Server
     ///   is made due, and every other hub connection whose copies name it hears
     ///   it changed. A copy made due for what its closure names asks a client
     ///   that refreshes its semantic tokens or its inlay hints for them again
-    ///   once it is published. Unknown, malformed and out-of-phase
-    ///   notifications leave documents alone.
+    ///   once it is published. A running-state notebook open holds the notebook
+    ///   and opens its one document, [`Notebook::text`], at the notebook's URI
+    ///   and version, as an open does; a notebook change applies to its cells
+    ///   as [`Notebook::change`] states, changes the one document to its new
+    ///   text at the notebook's version as a change does when that text
+    ///   differs, and publishes a versionless empty diagnostic list at each
+    ///   cell it removes or makes markup; a notebook close forgets the
+    ///   notebook, closes its one document as a close does, and publishes a
+    ///   versionless empty list at each of its code cells. Those publications
+    ///   are sent whether or not the client pulls. A change or a close of a
+    ///   notebook this connection does not hold is ignored. Unknown, malformed
+    ///   and out-of-phase notifications leave documents alone.
     /// - provides: document synchronization, configuration, file watching, the
     ///   folders the client opens and termination: a folder opened is a root of
     ///   the path table while this connection holds it open.
@@ -4666,23 +4737,28 @@ impl Server
     /// - witness: `server::tests::a_folder_is_searched_while_the_client_holds_it_open`
     /// - witness: `server::tests::an_unread_folder_change_lists_the_folders_whole`
     /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
+    /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| {
             self.phase == phase
             && (ret.messages.len() <= 1
                 || matches!(method.as_ref(), "workspace/didChangeConfiguration" | "initialized"
-                    | "textDocument/didChange" | "textDocument/didClose"))
+                    | "textDocument/didChange" | "textDocument/didClose"
+                    | "notebookDocument/didChange" | "notebookDocument/didClose"))
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && match method.as_ref() {
-                "textDocument/didOpen" => workspace.documents.len() <= count.saturating_add(1),
-                "textDocument/didClose" => workspace.documents.len().saturating_add(1) >= count,
+                "textDocument/didOpen" | "notebookDocument/didOpen" =>
+                    workspace.documents.len() <= count.saturating_add(1),
+                "textDocument/didClose" | "notebookDocument/didClose" =>
+                    workspace.documents.len().saturating_add(1) >= count,
                 _ => workspace.documents.len() == count,
             }
             && (ret.messages.is_empty() || phase == Phase::Running)
             && ret.messages.iter().all(|message| match *message {
                 Outgoing::Notification { params: Notified::Published(ref params), .. } =>
-                    method.as_ref() == "textDocument/didClose" && params.version.is_none()
+                    matches!(method.as_ref(), "textDocument/didClose" | "notebookDocument/didChange"
+                        | "notebookDocument/didClose") && params.version.is_none()
                         && params.diagnostics.is_empty()
                         && workspace.documents.get(&params.uri)
                             .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
@@ -4699,7 +4775,8 @@ impl Server
                 },
                 Outgoing::Failure { ref error, .. } => (error.code == ErrorCode::CONTENT_MODIFIED
                     || error.code == ErrorCode::SERVER_CANCELLED)
-                    && matches!(method.as_ref(), "textDocument/didChange" | "textDocument/didClose"),
+                    && matches!(method.as_ref(), "textDocument/didChange" | "textDocument/didClose"
+                        | "notebookDocument/didChange" | "notebookDocument/didClose"),
                 Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
                 | Outgoing::Progress(_) => false,
             })
@@ -4722,40 +4799,7 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let version = text_document.version;
-                let (uri, mut held, first) = if let Some((uri, held)) =
-                    workspace.documents.remove_entry(&text_document.uri)
-                {
-                    (uri, held, false)
-                }
-                else {
-                    let uri = text_document.uri;
-                    let path = named_path(&uri.path());
-                    let _indexed = workspace.paths.insert(path.clone(), uri.clone());
-                    let held = Held {
-                        latest: self.peer,
-                        document: Document::opened(&uri, version),
-                        others: BTreeMap::new(),
-                        path,
-                    };
-                    (uri, held, true)
-                };
-                held.take_up(self.peer, &uri, version);
-                let document = &mut held.document;
-                document.version = version;
-                document.text.replace(text_document.text);
-                document.caret = Maybe::Absent(uncareted::Absent::Unranged);
-                document.proposals.clear();
-                document.judgement = document.judgement.due(Refresh(false));
-                // The first copy of a file stands in for its disk text, so
-                // what its importers read changes only where the two differ.
-                let named = workspace.named(&held.path).filter(|path| {
-                    !first || differs_from_disk(path, held.document.text.source()).0
-                });
-                let _kept = workspace.documents.insert(uri, held);
-                if let Some(path) = named {
-                    self.reclosed(workspace, &path);
-                }
+                self.open_copy(workspace, text_document);
                 Outcome::quiet()
             },
             (Phase::Running, "textDocument/didChange") => {
@@ -4766,55 +4810,14 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let Some((uri, mut held)) = workspace.documents.remove_entry(&text_document.uri)
-                else {
-                    return Outcome::quiet();
-                };
-                held.promote(self.peer);
-                let changed = match held.own_mut(self.peer) {
-                    Maybe::Present(document) => {
-                        edited(document, text_document.version, content_changes);
-                        document.judgement = document.judgement.due(Refresh(false));
-                        Some(document.withdrawn())
-                    },
-                    Maybe::Absent(_) => None,
-                };
-                let named = changed.as_ref().and_then(|_| workspace.named(&held.path));
-                let _kept = workspace.documents.insert(uri, held);
-                if let Some(path) = named {
-                    self.reclosed(workspace, &path);
-                }
-                Outcome::saying(changed.unwrap_or_default())
+                Outcome::saying(self.change_copy(workspace, &text_document, content_changes))
             },
             (Phase::Running, "textDocument/didClose") => {
                 let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
                 };
-                let _forgotten = self.streams.remove(&text_document.uri);
-                let _unoffered = self.announced.remove(&text_document.uri);
-                self.viewing
-                    .retain(|&(ref viewed, _)| *viewed != text_document.uri);
-                let mut messages = Vec::new();
-                let named = match workspace.documents.remove_entry(&text_document.uri) {
-                    Some((uri, mut held)) => {
-                        if let Maybe::Present(document) = held.own_mut(self.peer) {
-                            messages = document.withdrawn();
-                        }
-                        // The disk stands in for the last copy, so what its
-                        // importers read changes only where the two differ.
-                        let named = workspace.named(&held.path);
-                        let differs = named.as_deref().map_or(Differs(false), |path| {
-                            differs_from_disk(path, held.document.text.source())
-                        });
-                        let forgotten = workspace.let_go(uri, held, self.peer);
-                        named.filter(|_| forgotten.is_none() || differs.0)
-                    },
-                    None => None,
-                };
-                if let Some(path) = named {
-                    self.reclosed(workspace, &path);
-                }
+                let mut messages = self.close_copy(workspace, &text_document.uri);
                 // A pulling client drops a closed document's diagnostics
                 // itself.
                 if !self.pulled.0 {
@@ -4824,6 +4827,71 @@ impl Server
                         diagnostics: Vec::new(),
                     }));
                 }
+                Outcome::saying(messages)
+            },
+            (Phase::Running, "notebookDocument/didOpen") => {
+                let Ok(DidOpenNotebookParams {
+                    notebook_document,
+                    cell_text_documents,
+                }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                let uri = notebook_document.uri.clone();
+                let version = notebook_document.version;
+                let notebook = Notebook::opened(notebook_document, cell_text_documents);
+                let text = notebook.text();
+                let _reopened = self.notebooks.insert(uri.clone(), notebook);
+                self.open_copy(workspace, TextDocumentItem { uri, version, text });
+                Outcome::quiet()
+            },
+            (Phase::Running, "notebookDocument/didChange") => {
+                let Ok(DidChangeNotebookParams {
+                    notebook_document,
+                    change,
+                }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                let Some(notebook) = self.notebooks.get_mut(&notebook_document.uri)
+                else {
+                    return Outcome::quiet();
+                };
+                let was = notebook.text();
+                let gone = notebook.change(change);
+                let text = notebook.text();
+                // A change of the notebook's metadata alone, or of a markup
+                // cell, leaves the one document as it was.
+                let mut messages = if text == was {
+                    Vec::new()
+                }
+                else {
+                    self.change_copy(workspace, &notebook_document, vec![ContentChange {
+                        range: None,
+                        text,
+                    }])
+                };
+                messages.extend(gone.into_iter().map(|cell| {
+                    publish(PublishParams {
+                        uri: cell,
+                        version: None,
+                        diagnostics: Vec::new(),
+                    })
+                }));
+                Outcome::saying(messages)
+            },
+            (Phase::Running, "notebookDocument/didClose") => {
+                let Ok(DidCloseNotebookParams { notebook_document }) =
+                    serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                let Some(notebook) = self.notebooks.remove(&notebook_document.uri)
+                else {
+                    return Outcome::quiet();
+                };
+                let mut messages = self.close_copy(workspace, &notebook_document.uri);
+                messages.extend(notebook.cleared().into_iter().map(publish));
                 Outcome::saying(messages)
             },
             (Phase::Running, "workspace/didChangeConfiguration") => {
@@ -4916,6 +4984,157 @@ impl Server
             },
             (Phase::Waiting | Phase::Running | Phase::ShuttingDown, _) => Outcome::quiet(),
         }
+    }
+
+    /// Give this connection a copy of the document `text_document` opens.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Server::notification`] states for an open.
+    /// - provides: the open of a document and of a notebook's one document.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Server::notification`].
+    /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+    /// - witness: `server::tests::two_connections_hold_their_own_copies`
+    /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
+    #[spec(
+        captures: opened = text_document.uri.clone(),
+        ensures: workspace.documents.contains_key(&opened),
+    )]
+    fn open_copy(
+        &self,
+        workspace: &mut Workspace,
+        text_document: TextDocumentItem,
+    )
+    {
+        let version = text_document.version;
+        let (uri, mut held, first) =
+            if let Some((uri, held)) = workspace.documents.remove_entry(&text_document.uri) {
+                (uri, held, false)
+            }
+            else {
+                let uri = text_document.uri;
+                let path = named_path(&uri.path());
+                let _indexed = workspace.paths.insert(path.clone(), uri.clone());
+                let held = Held {
+                    latest: self.peer,
+                    document: Document::opened(&uri, version),
+                    others: BTreeMap::new(),
+                    path,
+                };
+                (uri, held, true)
+            };
+        held.take_up(self.peer, &uri, version);
+        let document = &mut held.document;
+        document.version = version;
+        document.text.replace(text_document.text);
+        document.caret = Maybe::Absent(uncareted::Absent::Unranged);
+        document.proposals.clear();
+        document.judgement = document.judgement.due(Refresh(false));
+        // The first copy of a file stands in for its disk text, so what its
+        // importers read changes only where the two differ.
+        let named = workspace
+            .named(&held.path)
+            .filter(|path| !first || differs_from_disk(path, held.document.text.source()).0);
+        let _kept = workspace.documents.insert(uri, held);
+        if let Some(path) = named {
+            self.reclosed(workspace, &path);
+        }
+    }
+
+    /// Apply `changes` to this connection's copy of `text_document`, and
+    /// answer the requests the copy held.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Server::notification`] states for a change.
+    /// - provides: the change of a document and of a notebook's one document.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Server::notification`].
+    /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
+    /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+    /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
+    #[spec(ensures: |ret| ret.iter().all(|message| matches!(*message, Outgoing::Failure { .. })))]
+    fn change_copy(
+        &self,
+        workspace: &mut Workspace,
+        text_document: &VersionedDocument,
+        changes: Vec<ContentChange>,
+    ) -> Vec<Outgoing>
+    {
+        let Some((uri, mut held)) = workspace.documents.remove_entry(&text_document.uri)
+        else {
+            return Vec::new();
+        };
+        held.promote(self.peer);
+        let changed = match held.own_mut(self.peer) {
+            Maybe::Present(document) => {
+                edited(document, text_document.version, changes);
+                document.judgement = document.judgement.due(Refresh(false));
+                Some(document.withdrawn())
+            },
+            Maybe::Absent(_) => None,
+        };
+        let named = changed.as_ref().and_then(|_| workspace.named(&held.path));
+        let _kept = workspace.documents.insert(uri, held);
+        if let Some(path) = named {
+            self.reclosed(workspace, &path);
+        }
+        changed.unwrap_or_default()
+    }
+
+    /// Let this connection's copy of `uri` go, and answer the requests it
+    /// held.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Server::notification`] states for a close, but for the
+    ///   empty publication, which the caller owes.
+    /// - provides: the close of a document and of a notebook's one document.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Server::notification`].
+    /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+    /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
+    #[spec(ensures: |ret| ret.iter().all(|message| matches!(*message, Outgoing::Failure { .. })))]
+    fn close_copy(
+        &mut self,
+        workspace: &mut Workspace,
+        uri: &DocumentUri,
+    ) -> Vec<Outgoing>
+    {
+        let _forgotten = self.streams.remove(uri);
+        let _unoffered = self.announced.remove(uri);
+        self.viewing.retain(|&(ref viewed, _)| viewed != uri);
+        let mut messages = Vec::new();
+        let named = match workspace.documents.remove_entry(uri) {
+            Some((uri, mut held)) => {
+                if let Maybe::Present(document) = held.own_mut(self.peer) {
+                    messages = document.withdrawn();
+                }
+                // The disk stands in for the last copy, so what its importers
+                // read changes only where the two differ.
+                let named = workspace.named(&held.path);
+                let differs = named.as_deref().map_or(Differs(false), |path| {
+                    differs_from_disk(path, held.document.text.source())
+                });
+                let forgotten = workspace.let_go(uri, held, self.peer);
+                named.filter(|_| forgotten.is_none() || differs.0)
+            },
+            None => None,
+        };
+        if let Some(path) = named {
+            self.reclosed(workspace, &path);
+        }
+        messages
     }
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
@@ -7139,6 +7358,20 @@ fn apply(
     Maybe::Present(ByteOffset::from(start.saturating_add(change.text.len())))
 }
 
+/// `text` with `change` applied, as [`apply`] states, the caret it leaves
+/// unread.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn edit_text(
+    text: &mut String,
+    change: ContentChange,
+)
+{
+    let _caret = apply(text, change);
+}
+
 /// The settings the `initialize` parameters `params` name in their
 /// initialization options, none when they name none or cannot be read.
 ///
@@ -8289,6 +8522,9 @@ mod tests
                     "capabilities":{
                         "positionEncoding":"utf-16",
                         "textDocumentSync":{"openClose":true,"change":2},
+                        "notebookDocumentSync":{"notebookSelector":[{
+                            "notebook":{"notebookType":"jupyter-notebook"},
+                            "cells":[{"language":"gandr"}]}]},
                         "semanticTokensProvider":{
                             "legend":{
                                 "tokenTypes":["keyword","operator","function","variable",
@@ -13321,6 +13557,150 @@ mod tests
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
+        );
+    }
+
+    /// A publication as [`cells`] reads it: its URI, its version and each
+    /// diagnostic's code and range.
+    type Published = (Value, Value, Vec<(Value, Value)>);
+
+    /// Each publication `messages` carry: its URI, its version and each
+    /// diagnostic's code and range.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cells(messages: &Value) -> Vec<Published>
+    {
+        messages
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|message| {
+                message.get("method") == Some(&serde_json::json!("textDocument/publishDiagnostics"))
+            })
+            .map(|message| {
+                let at = |pointer: &str| message.pointer(pointer).cloned().unwrap_or(Value::Null);
+                (
+                    at("/params/uri"),
+                    at("/params/version"),
+                    message
+                        .pointer("/params/diagnostics")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .map(|diagnostic| {
+                            (
+                                diagnostic.get("code").cloned().unwrap_or(Value::Null),
+                                diagnostic.get("range").cloned().unwrap_or(Value::Null),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_notebook_s_code_cells_are_judged_as_one_document_1815()
+    {
+        use serde_json::json;
+        let notebook = "file:///tmp/judged.ipynb";
+        let open = json!({ "jsonrpc": "2.0", "method": "notebookDocument/didOpen", "params": {
+            "notebookDocument": { "uri": notebook, "notebookType": "jupyter-notebook",
+                "version": 1_i32, "metadata": { "kernelspec": { "name": "gandr" } }, "cells": [
+                    { "kind": 2_i32, "document": "cell:one" },
+                    { "kind": 1_i32, "document": "cell:prose" },
+                    { "kind": 2_i32, "document": "cell:two" },
+                ] },
+            "cellTextDocuments": [
+                { "uri": "cell:one", "languageId": "gandr", "version": 1_i32,
+                    "text": "def one : Integer ;\ndef one = 1 ;" },
+                { "uri": "cell:prose", "languageId": "markdown", "version": 1_i32,
+                    "text": "# `one` is declared above" },
+                { "uri": "cell:two", "languageId": "gandr", "version": 1_i32,
+                    "text": "def two : Integer ;\ndef two = one ;" },
+            ] } })
+        .to_string();
+        let empty = Vec::<(Value, Value)>::new();
+        let mut server = initialized();
+        assert_eq!(
+            cells(&send(&mut server, Json(&open))),
+            vec![
+                (json!("cell:one"), json!(1_i32), empty.clone()),
+                (json!("cell:two"), json!(1_i32), empty.clone()),
+            ],
+            "each code cell is published, the second reading what the first declares"
+        );
+        let edit = json!({ "jsonrpc": "2.0", "method": "notebookDocument/didChange", "params": {
+            "notebookDocument": { "uri": notebook, "version": 2_i32 },
+            "change": { "cells": { "textContent": [{
+                "document": { "uri": "cell:two", "version": 2_i32 },
+                "changes": [{ "range": { "start": { "line": 1_i32, "character": 10_i32 },
+                    "end": { "line": 1_i32, "character": 13_i32 } }, "text": "nope" }] }] } } } })
+        .to_string();
+        assert_eq!(
+            cells(&send(&mut server, Json(&edit))),
+            vec![
+                (json!("cell:one"), json!(1_i32), empty.clone()),
+                (json!("cell:two"), json!(2_i32), vec![(
+                    json!("UnresolvedName"),
+                    json!({ "start": { "line": 1_i32, "character": 10_i32 },
+                        "end": { "line": 1_i32, "character": 14_i32 } }),
+                )]),
+            ],
+            "an edit of a cell is judged with the notebook, its diagnostic in the cell's lines"
+        );
+        let metadata = json!({ "jsonrpc": "2.0", "method": "notebookDocument/didChange",
+            "params": { "notebookDocument": { "uri": notebook, "version": 3_i32 },
+                "change": { "metadata": { "kernelspec": { "name": "gandr" } } } } })
+        .to_string();
+        assert_eq!(
+            send(&mut server, Json(&metadata)),
+            json!([]),
+            "a change of the notebook's metadata alone judges nothing"
+        );
+        let removed = json!({ "jsonrpc": "2.0", "method": "notebookDocument/didChange", "params": {
+            "notebookDocument": { "uri": notebook, "version": 4_i32 },
+            "change": { "cells": { "structure": {
+                "array": { "start": 2_i32, "deleteCount": 1_i32 },
+                "didClose": [{ "uri": "cell:two" }] } } } } })
+        .to_string();
+        assert_eq!(
+            cells(&send(&mut server, Json(&removed))),
+            vec![
+                (json!("cell:two"), Value::Null, empty.clone()),
+                (json!("cell:one"), json!(1_i32), empty.clone()),
+            ],
+            "a removed cell is cleared, and the notebook judged without it"
+        );
+        let close = json!({ "jsonrpc": "2.0", "method": "notebookDocument/didClose", "params": {
+            "notebookDocument": { "uri": notebook },
+            "cellTextDocuments": [{ "uri": "cell:one" }, { "uri": "cell:prose" }] } })
+        .to_string();
+        assert_eq!(
+            cells(&send(&mut server, Json(&close))),
+            vec![(json!("cell:one"), Value::Null, empty.clone())],
+            "closing the notebook clears its code cells, and nothing at its own URI"
+        );
+        assert!(
+            server.workspace.documents.is_empty(),
+            "the notebook's one document is let go"
+        );
+        let mut pulling = Connected::default();
+        let _answered = send(
+            &mut pulling,
+            Json(
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{
+                    "textDocument":{"diagnostic":{}}}}}"#,
+            ),
+        );
+        assert_eq!(
+            cells(&send(&mut pulling, Json(&open))),
+            vec![
+                (json!("cell:one"), json!(1_i32), empty.clone()),
+                (json!("cell:two"), json!(1_i32), empty),
+            ],
+            "a client that pulls is published its cells, which it never pulls"
         );
     }
 
