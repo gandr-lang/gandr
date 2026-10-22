@@ -137,7 +137,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0e";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0f";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0a";
@@ -5529,7 +5529,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in stable wire order.
-const FORMERS: [UnadmittedFormer; 25] = [
+const FORMERS: [UnadmittedFormer; 24] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -5550,7 +5550,6 @@ const FORMERS: [UnadmittedFormer; 25] = [
     UnadmittedFormer::Exercise,
     UnadmittedFormer::Scope,
     UnadmittedFormer::Run,
-    UnadmittedFormer::HigherFlow,
     UnadmittedFormer::Memory,
     UnadmittedFormer::Stage,
     UnadmittedFormer::Buffer,

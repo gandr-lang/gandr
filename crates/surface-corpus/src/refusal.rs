@@ -1602,7 +1602,7 @@ const SORTS: [FragmentSort; 8_usize] = [
 ];
 
 /// Every former the checker's judgement has no rule for.
-const FORMERS: [UnadmittedFormer; 25_usize] = [
+const FORMERS: [UnadmittedFormer; 24_usize] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -1623,7 +1623,6 @@ const FORMERS: [UnadmittedFormer; 25_usize] = [
     UnadmittedFormer::Exercise,
     UnadmittedFormer::Scope,
     UnadmittedFormer::Run,
-    UnadmittedFormer::HigherFlow,
     UnadmittedFormer::Memory,
     UnadmittedFormer::Stage,
     UnadmittedFormer::Buffer,
@@ -1819,7 +1818,6 @@ const fn former_tag(former: UnadmittedFormer) -> Tag
         UnadmittedFormer::Exercise => "Exercise",
         UnadmittedFormer::Scope => "Scope",
         UnadmittedFormer::Run => "Run",
-        UnadmittedFormer::HigherFlow => "HigherFlow",
         UnadmittedFormer::Memory => "Memory",
         UnadmittedFormer::Stage => "Stage",
         UnadmittedFormer::Buffer => "Buffer",

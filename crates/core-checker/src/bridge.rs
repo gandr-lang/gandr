@@ -757,12 +757,12 @@ impl Refusal
 /// - requires: nothing; the function is total over the formers.
 /// - ensures: a former the pure kernel has no reading for is unimplemented,
 ///   naming the kernel's issue for its feature: effects and control,
-///   capabilities, memory and buffers, runs, flows above level zero, sealed
-///   abstract types, static lambdas left unnormalised and staged types in a
-///   term; a numeric literal, the numeric atom, a value lift and a universe
-///   over a sort parameter are unimplemented as the judgement's refusal of them
-///   is; a universe at the greatest level and a lift that does not raise, which
-///   the bridge never meets in an accepted declaration, are engine faults.
+///   capabilities, memory and buffers, runs, sealed abstract types, static
+///   lambdas left unnormalised and staged types in a term; a numeric literal,
+///   the numeric atom, a value lift and a universe over a sort parameter are
+///   unimplemented as the judgement's refusal of them is; a universe at the
+///   greatest level and a lift that does not raise, which the bridge never
+///   meets in an accepted declaration, are engine faults.
 /// - provides: the class of [`Refusal::OutOfFragment`].
 /// - fails: never.
 /// - panics: none.
@@ -775,7 +775,6 @@ impl Refusal
     | UnadmittedFormer::Capability | UnadmittedFormer::Exercise | UnadmittedFormer::Scope => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_CAPABILITY)),
     | UnadmittedFormer::Memory | UnadmittedFormer::Buffer => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)),
     | UnadmittedFormer::Run => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN)),
-    | UnadmittedFormer::HigherFlow => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_HIGHER_FLOW)),
     | UnadmittedFormer::Abstract => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT)),
     | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
     | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
@@ -802,9 +801,6 @@ const fn readmitted(former: UnadmittedFormer) -> FailureClass
             FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)
         },
         UnadmittedFormer::Run => FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN),
-        UnadmittedFormer::HigherFlow => {
-            FailureClass::Unimplemented(TrackingIssue::KERNEL_HIGHER_FLOW)
-        },
         UnadmittedFormer::Abstract => FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT),
         UnadmittedFormer::StaticLambda => {
             FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)
@@ -5939,7 +5935,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   type and a universe are minted; a sealed atom is minted at the kernel
     ///   position its abstract type was admitted at; a thunk type, a lift, an
     ///   eager product and a static Pi open their frames; a decode opens its
-    ///   frame and decodes its code.
+    ///   frame and decodes its code; a flow whose carrier is the level-zero
+    ///   value universe opens the frames of the kernel's universe flow over its
+    ///   two codes, and a flow at any other carrier, a universe above level
+    ///   zero included, those of the kernel's flow at that carrier.
     /// - fails: [`Refusal::Cyclic`] for an open value type;
     ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Abstract`] for a
     ///   sealed atom whose abstract type did not cross, so nothing is minted at
@@ -5951,14 +5950,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Adequacy
     /// - hypothesis: L3 — atom, compound, universe and decode types expose
     ///   their exact kernel images; a sealed atom bound and unbound separates
-    ///   the position map; a value-type back-edge is refused. Wrong family,
-    ///   absent memo publication or dropped cycle detection differs.
+    ///   the position map; a flow at the universe one level up crosses as the
+    ///   kernel's flow at that universe; a value-type back-edge is refused.
+    ///   Wrong family, absent memo publication, a refused or level-zero image
+    ///   of the higher flow or dropped cycle detection differs.
     /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
     /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
     /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
     /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
+    /// - witness: `flow::tests::a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
         | Ok(Step::Ascend(_)) => false,
@@ -6000,11 +6002,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 source,
                 target: target_code,
             } => {
-                let Ok(ValueTypeView::Universe {
-                    sort: GroundSort::Value,
-                    level,
-                }) = value_type_view(self.arena, carrier)
-                else {
+                if !matches!(
+                    value_type_view(self.arena, carrier),
+                    Ok(ValueTypeView::Universe {
+                        sort: GroundSort::Value,
+                        level,
+                    }) if *level == Level::zero()
+                ) {
                     self.memo().value_types.insert(at, Image::Open);
                     self.frames.push(Frame::PathCarrier {
                         at,
@@ -6013,12 +6017,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         family: Family::Flow,
                     });
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(carrier))));
-                };
-                if *level != Level::zero() {
-                    return Err(Refusal::OutOfFragment {
-                        at: CoreNode::Type(TypeNode::Value(at)),
-                        former: UnadmittedFormer::HigherFlow,
-                    });
                 }
                 (
                     Frame::FlowSource { at, target_code },

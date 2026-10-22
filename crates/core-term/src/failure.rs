@@ -162,8 +162,6 @@ impl TrackingIssue
     /// A declaration naming a run, a recorded run or a ride, which the kernel
     /// does not replay.
     pub const KERNEL_RUN: Self = Self(1627);
-    /// A flow above level zero, which the kernel does not replay.
-    pub const KERNEL_HIGHER_FLOW: Self = Self(1628);
     /// A sealed abstract type, which the kernel does not replay.
     pub const KERNEL_ABSTRACT: Self = Self(1629);
     /// A static lambda the readmission cannot normalise away, which the kernel

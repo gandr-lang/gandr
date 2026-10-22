@@ -250,9 +250,6 @@ pub enum UnadmittedFormer
     /// consumer, and the kernel's lowering of a session flow refuses to run
     /// one.
     Run,
-    /// A flow at a universe above level zero: the kernel's flows between codes
-    /// are classified at the level-zero value universe.
-    HigherFlow,
     /// A memory form: the kernel has no store, so a held value and its
     /// accesses stay on the checker's side.
     Memory,
@@ -291,7 +288,7 @@ impl UnadmittedFormer
     #[spec(ensures: |ret| match self {
         | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
         | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::UNFILED)),
-        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::HigherFlow | Self::Memory | Self::Buffer | Self::Abandon => matches!(ret, FailureClass::EngineFault),
+        | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Abandon => matches!(ret, FailureClass::EngineFault),
     })]
     #[inline]
     #[must_use]
@@ -317,7 +314,6 @@ impl UnadmittedFormer
             | Self::Exercise
             | Self::Scope
             | Self::Run
-            | Self::HigherFlow
             | Self::Memory
             | Self::Buffer
             | Self::Abandon => FailureClass::EngineFault,

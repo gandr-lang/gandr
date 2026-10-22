@@ -1,0 +1,50 @@
+// A flow at a universe above the smallest: the codes it relates are large
+// types, which pack a type in a field, so they live one level up and so does
+// the flow between them. The classifier `Flow(Type[+, 1], A, B)` is the
+// directed hom of that universe (Gratzer, Weinberger and Buchholtz,
+// _Directed univalence in simplicial homotopy type theory_,
+// arXiv:2407.09146, Definition 1.2), stated at its level as `Path` is at
+// every level; the kernel replays each declaration here at its flow over the
+// level-one universe (#1628).
+
+/// A list of values of a type it carries: a large type, since a field holds a
+/// type.
+@[ checks ]
+data Packed : Type[+, 1] {
+  Pack : (a : Type, xs : List(a)) --> Packed;
+}
+
+/// A second large type of the same shape.
+@[ checks ]
+data Boxed : Type[+, 1] {
+  Box : (a : Type, xs : List(a)) --> Boxed;
+}
+
+/// The stationary flow at a large code.
+@[ checks ]
+def packedKept : Flow(Type[+, 1], Packed, Packed) ;
+def packedKept = stay(Packed) ;
+
+/// The stationary flow, then itself: the unit composes at the level it is
+/// stated at.
+@[ checks ]
+def packedTwice() -> -F Flow(Type[+, 1], Packed, Packed) {
+  become packedKept then packedKept
+}
+
+/// A given flow from one large code to the other, after the stationary one.
+@[ checks ]
+def after(f : Flow(Type[+, 1], Packed, Boxed)) -> -F Flow(Type[+, 1], Packed, Boxed) {
+  become packedKept then f
+}
+
+/// The stationary flow at the smallest universe itself, read one level up.
+@[ checks ]
+def types : Flow(Type[+, 1], Type, Type) ;
+def types = stay(Type) ;
+
+/// A large code at a universe two levels up: a flow is stated at any level
+/// its codes inhabit.
+@[ checks ]
+def lifted : Flow(Type[+, 2], Packed, Packed) ;
+def lifted = stay(Packed) ;

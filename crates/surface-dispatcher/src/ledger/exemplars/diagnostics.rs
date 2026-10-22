@@ -114,7 +114,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 90_usize] = [
+const OWED: [(&str, Owed); 89_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -273,7 +273,6 @@ const OWED: [(&str, Owed); 90_usize] = [
     ("OutOfFragment.Exercise", Owed::Unwritten(CHECKER)),
     ("OutOfFragment.Scope", Owed::Unwritten(CHECKER)),
     ("OutOfFragment.Run", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.HigherFlow", Owed::Unwritten(CHECKER)),
     ("OutOfFragment.Memory", Owed::Unwritten(CHECKER)),
     ("OutOfFragment.Buffer", Owed::Unwritten(CHECKER)),
     ("OutOfFragment.Abandon", Owed::Unwritten(CHECKER)),
