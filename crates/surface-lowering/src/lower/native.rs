@@ -4222,7 +4222,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   or at a record nested in one, so are those of the record it
     ///   abbreviates, and at one written `Model(T)` whose record nests pairs,
     ///   as [`Self::stated_bundle`] reads it, those of the record the signature
-    ///   states, each component unstated; otherwise positional entries, in
+    ///   states, each component unstated; at one stated as a record of one or
+    ///   more labelled entries, positional entries of its arity are its fields
+    ///   in the order the record writes them; otherwise positional entries, in
     ///   index order, make a tuple and labelled ones a record of their labels;
     ///   each component queued with the positional type of the same place, or
     ///   the labelled type of the same label, of the telescope type `queued`
@@ -4342,6 +4344,28 @@ impl<'source> Lowerer<'_, 'source>
         };
         match arranged {
             arity::Arranged::Positional(entries) => {
+                if let Maybe::Present(ref typed) = typed
+                    && !entries.is_empty()
+                    && typed.len() == entries.len()
+                    && typed
+                        .iter()
+                        .all(|held| matches!(held.key, arity::Key::Label(..)))
+                {
+                    let mut labels = Vec::with_capacity(entries.len());
+                    let mut queued = Vec::with_capacity(entries.len());
+                    for (entry, component) in entries.iter().zip(typed) {
+                        let arity::Key::Label(name, _) = component.key
+                        else {
+                            continue;
+                        };
+                        labels.push(FieldLabel::from(String::from(name.as_ref())));
+                        queued.push(queue(entry, Maybe::Present(component.held.at().node)));
+                    }
+                    return Ok(Matcher::Record {
+                        labels,
+                        fields: allocated(patterns, work, &queued),
+                    });
+                }
                 let queued: Vec<Queued> = match typed {
                     Maybe::Present(ref typed)
                         if typed.len() == entries.len()
