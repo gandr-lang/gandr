@@ -6,6 +6,8 @@
 //! The emitter's suite includes this file too, so both packages hold their
 //! tiers to one oracle.
 
+use alloc::sync::Arc;
+
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConstructorTag;
@@ -23,9 +25,19 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::EffectClause;
 use gandr_core_term::control::StackFrame;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectOp;
+use gandr_core_term::effect::EffectSig;
+use gandr_core_term::effect::OperationName;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
@@ -107,10 +119,20 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// answers the projection it is entered with; a captured stack resumed
 /// twice, whose frames return a pair bound outside the shift each time, so a
 /// replay that gave the copy no owner of its own frees the pair the second
-/// replay returns; and a fold over a list built where it runs, whose cell
+/// replay returns; a fold over a list built where it runs, whose cell
 /// branch pairs each head with a pair bound outside the fold that the answer
 /// holds too, so a walk that gave a tail or a capture no owner of its own
-/// reads a freed cell.
+/// reads a freed cell; a held pair written back whole with a pair of two
+/// reads of its view, and a held list of pairs written back past its head,
+/// each answered beside a pair allocated after, so a read, a copied head or
+/// a shared tail left without an owner is freed and its block reused; an
+/// access abandoned by a shift whose unwind reads a pair the answer holds
+/// too; a component projected from a fresh pair of pairs; a thunk forced
+/// twice whose first answer is dropped before a fresh pair is allocated, so
+/// a body that took its capture without an owner of its own frees it; and a
+/// handler whose return clause answers a pair bound outside it and whose
+/// clause resumes its stack twice, so a handler frame copied without an
+/// owner of that pair frees it.
 ///
 /// # Specification
 /// trivial.
@@ -358,6 +380,235 @@ pub fn named() -> Vec<Named>
     push(
         "y <- return (7, 8); z <- fold [1, 2, 3] { nil ⇒ return (); cons h r ⇒ return ((h, y), r) }; return (z, y)",
         "⟨pair(pair(pair(1, pair(7, 8)), pair(pair(2, pair(7, 8)), pair(pair(3, pair(7, 8)), ()))), pair(7, 8)) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let seven = integer(&mut core, Integer(7));
+    let eight = integer(&mut core, Integer(8));
+    let held = core.value_tuple(&[one, two]);
+    let read = core.value_variable(Zone::Linear, 0_u32.into());
+    let written = core.value_tuple(&[read, read]);
+    let resumed = core.computation_memory(MemoryForm::Resume {
+        view: 0_u32.into(),
+        value: written,
+    });
+    let unit = core.value_unit();
+    let unwind = core.computation_return(unit);
+    let access = core.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held: 0_u32.into(),
+        place: Place::Whole,
+        body: resumed,
+    });
+    let after = core.value_tuple(&[seven, eight]);
+    let whole = core.value_variable(Zone::Linear, 0_u32.into());
+    let both = core.value_tuple(&[whole, after]);
+    let answered = core.computation_return(both);
+    let body = core.computation_bind(access, answered);
+    let root = core.computation_memory(MemoryForm::Hold {
+        value: held,
+        body,
+        grade: HoldGrade::Many,
+    });
+    push(
+        "hold x = (1, 2); access x as w { resume(w, (w, w)) }; return (x, (7, 8))",
+        "⟨pair(pair(pair(1, 2), pair(1, 2)), pair(7, 8)) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let five = integer(&mut core, Integer(5));
+    let nine = integer(&mut core, Integer(9));
+    let first = core.value_tuple(&[one, one]);
+    let second = core.value_tuple(&[one, two]);
+    let nil = core.value_list_nil();
+    let last = core.value_list_cons(second, nil);
+    let list = core.value_list_cons(first, last);
+    let replacement = core.value_tuple(&[five, five]);
+    let resumed = core.computation_memory(MemoryForm::Resume {
+        view: 0_u32.into(),
+        value: replacement,
+    });
+    let unit = core.value_unit();
+    let unwind = core.computation_return(unit);
+    let index = integer(&mut core, Integer(1));
+    let access = core.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held: 0_u32.into(),
+        place: Place::At { index },
+        body: resumed,
+    });
+    let after = core.value_tuple(&[nine, nine]);
+    let whole = core.value_variable(Zone::Linear, 0_u32.into());
+    let both = core.value_tuple(&[after, whole]);
+    let answered = core.computation_return(both);
+    let body = core.computation_bind(access, answered);
+    let root = core.computation_memory(MemoryForm::Hold {
+        value: list,
+        body,
+        grade: HoldGrade::Many,
+    });
+    push(
+        "hold xs = [(1, 1), (1, 2)]; access xs[1] as w { resume(w, (5, 5)) }; return ((9, 9), xs)",
+        "⟨pair(pair(9, 9), cons(pair(1, 1), cons(pair(5, 5), nil()))) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let seven = integer(&mut core, Integer(7));
+    let eight = integer(&mut core, Integer(8));
+    let nine = integer(&mut core, Integer(9));
+    let outer = core.value_tuple(&[seven, eight]);
+    let bound = core.computation_return(outer);
+    let stack = innermost(&mut core);
+    let abandoned = core.computation_abandon(stack);
+    let shifted = core.computation_shift(abandoned);
+    let kept = innermost(&mut core);
+    let read = core.computation_return(kept);
+    let unit = core.value_unit();
+    let unwound = core.computation_return(unit);
+    let unwind = core.computation_bind(read, unwound);
+    let access = core.computation_memory(MemoryForm::Access {
+        mode: AccessMode::Exclusive { unwind },
+        held: 0_u32.into(),
+        place: Place::Whole,
+        body: shifted,
+    });
+    let zero = integer(&mut core, Integer(0));
+    let returned = core.computation_return(zero);
+    let delimited = core.computation_bind(access, returned);
+    let reset = core.computation_reset(delimited);
+    let held = core.computation_memory(MemoryForm::Hold {
+        value: one,
+        body: reset,
+        grade: HoldGrade::Many,
+    });
+    let again = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let after = core.value_tuple(&[nine, nine]);
+    let both = core.value_tuple(&[again, after]);
+    let answered = core.computation_return(both);
+    let rest = core.computation_bind(held, answered);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "y <- return (7, 8); r <- hold x = 1; reset { access x as w { shift k. abandon k } unwind { _ <- return y; return () }; return 0 }; return (y, (9, 9))",
+        "⟨pair(pair(7, 8), pair(9, 9)) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let three = integer(&mut core, Integer(3));
+    let four = integer(&mut core, Integer(4));
+    let five = integer(&mut core, Integer(5));
+    let left = core.value_tuple(&[one, two]);
+    let right = core.value_tuple(&[three, four]);
+    let pair = core.value_tuple(&[left, right]);
+    let bound = core.computation_return(pair);
+    let record = innermost(&mut core);
+    let projected = core.computation_tuple_projection(record, Component::from(1_usize));
+    let field = innermost(&mut core);
+    let after = core.value_tuple(&[five, five]);
+    let both = core.value_tuple(&[field, after]);
+    let answered = core.computation_return(both);
+    let rest = core.computation_bind(projected, answered);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "p <- return ((1, 2), (3, 4)); q <- p.1; return (q, (5, 5))",
+        "⟨pair(pair(3, 4), pair(5, 5)) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let seven = integer(&mut core, Integer(7));
+    let eight = integer(&mut core, Integer(8));
+    let nine = integer(&mut core, Integer(9));
+    let outer = core.value_tuple(&[seven, eight]);
+    let bound = core.computation_return(outer);
+    let captured = innermost(&mut core);
+    let suspended = core.computation_return(captured);
+    let thunk = core.value_thunk(suspended);
+    let made = core.computation_return(thunk);
+    let first = innermost(&mut core);
+    let forced = core.computation_force(first);
+    let fresh = core.value_tuple(&[nine, nine]);
+    let allocated = core.computation_return(fresh);
+    let again = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let reforced = core.computation_force(again);
+    let second = innermost(&mut core);
+    let kept = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let both = core.value_tuple(&[second, kept]);
+    let answered = core.computation_return(both);
+    let tail = core.computation_bind(reforced, answered);
+    let fed = core.computation_bind(allocated, tail);
+    let dropped = core.computation_bind(forced, fed);
+    let rest = core.computation_bind(made, dropped);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "y <- return (7, 8); f <- return thunk { return y }; _ <- force f; z <- return (9, 9); w <- force f; return (w, z)",
+        "⟨pair(pair(7, 8), pair(9, 9)) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let zero = integer(&mut core, Integer(0));
+    let one = integer(&mut core, Integer(1));
+    let seven = integer(&mut core, Integer(7));
+    let eight = integer(&mut core, Integer(8));
+    let nine = integer(&mut core, Integer(9));
+    let outer = core.value_tuple(&[seven, eight]);
+    let bound = core.computation_return(outer);
+    let payload = core.value_type_base(BaseType::Integer);
+    let signature = EffectSig::new(EffectName::from("E"), [EffectOp {
+        name: OperationName::from("op"),
+        payload,
+        reply: payload,
+    }])
+    .expect("one operation");
+    let performed = core.computation_perform(signature.clone(), OperationName::from("op"), one);
+    let answered = core.computation_return(zero);
+    let subject = core.computation_bind(performed, answered);
+    let kept = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let on_return = core.computation_return(kept);
+    let fed = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let feed = core.computation_return(fed);
+    let stack = innermost(&mut core);
+    let first = core.computation_resume(stack, feed);
+    let again = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let refed = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let refeed = core.computation_return(refed);
+    let second = core.computation_resume(again, refeed);
+    let clause = core.computation_bind(first, second);
+    let handled = core.computation_handle(
+        signature,
+        subject,
+        on_return,
+        Arc::from([EffectClause {
+            operation: OperationName::from("op"),
+            body: clause,
+        }]),
+    );
+    let result = innermost(&mut core);
+    let after = core.value_tuple(&[nine, nine]);
+    let both = core.value_tuple(&[result, after]);
+    let returned = core.computation_return(both);
+    let rest = core.computation_bind(handled, returned);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "y <- return (7, 8); r <- handle { _ <- op 1; return 0 } with { return _ ⇒ return y; op p k ⇒ _ <- resume k { return p }; resume k { return p } }; return (r, (9, 9))",
+        "⟨pair(pair(7, 8), pair(9, 9)) |+ ★⟩",
         core,
         root,
     );

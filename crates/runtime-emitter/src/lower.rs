@@ -1570,6 +1570,13 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::select`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a component projected from a fresh pair of pairs
+    ///   answers that component beside a pair allocated after: a selection that
+    ///   skips the field or its owner answers the record or a freed field.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn selected(
         &mut self,
         id: ConsumerId,
@@ -1625,6 +1632,14 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a fold over a list built where it runs, whose cell
+    ///   branch pairs each head with a pair bound outside it, answers the list
+    ///   it states: a walk that gives a tail or a capture no owner of its own
+    ///   reads a freed cell.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn fold(
         &mut self,
         id: ConsumerId,
@@ -1734,6 +1749,13 @@ impl Lowering<'_>
     /// # Errors
     /// [`Form::Dangling`] for a node the arena does not hold;
     /// [`Form::Unbound`] for a name no slot of `scope` holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the fold and the access programs answer as they
+    ///   state: a name read off the wrong slot, or not at all, duplicates or
+    ///   drops the wrong value.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn named(
         &self,
         node: NodeAddress,
@@ -1763,6 +1785,13 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::named`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a captured stack resumed twice answers the pair its
+    ///   frames return: a frame that owns nothing gives its copy no owner, and
+    ///   the second resumption returns a freed pair.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn owners(
         &mut self,
         node: NodeAddress,
@@ -1824,6 +1853,14 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::owners`] and [`Self::kept`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a handler whose return clause answers a pair bound
+    ///   outside it, and whose clause resumes its stack twice, answers that
+    ///   pair: a handler frame that owns nothing is copied without an owner of
+    ///   it, and the pair is freed.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn handled(
         &mut self,
         handle: CommandId,
@@ -1908,6 +1945,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs that handle, delimit, capture,
+    ///   resume and abandon answer as they state on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn control(
         &mut self,
         id: CommandId,
@@ -2102,6 +2145,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs that hold, access, write back and
+    ///   abandon a view answer as they state on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn memory(
         &mut self,
         id: CommandId,
@@ -2246,6 +2295,13 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a thunk forced twice, whose first answer is dropped
+    ///   before a fresh pair is allocated, answers its capture: an entry that
+    ///   took its captures without an owner of its own frees the capture.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn open(
         &mut self,
         body: Body,
@@ -2312,6 +2368,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// The [`Form`] of the first node outside the lowered fragment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every named program lowers and answers as it states
+    ///   on both tiers: a step that emits nothing answers nothing.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn step(
         &mut self,
         task: Task,
@@ -2574,6 +2636,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every named program evaluates its producers to the
+    ///   answers it states on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn producer(
         &mut self,
         id: ProducerId,
@@ -2769,6 +2837,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every named program delivers its values to the
+    ///   consumers that answer as it states on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn deliver(
         &mut self,
         id: ConsumerId,
@@ -2956,6 +3030,12 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs that load a continuation before an
+    ///   observation, a fold or a selection answer as they state on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn load(
         &mut self,
         id: ConsumerId,
@@ -3286,6 +3366,12 @@ struct Survey
 ///
 /// # Errors
 /// [`Form::Dangling`] for a node the arena does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every named program lowers counted: a survey that reads
+///   no root leaves every node unplaced, and the lowering refuses.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 fn survey(
     arena: &CommandArena,
     definitions: &Definitions,

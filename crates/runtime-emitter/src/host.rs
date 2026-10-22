@@ -471,6 +471,13 @@ impl<'run, 'host> Calls<'run, 'host>
     /// [`Refusal::Operands`] for an operand the callee does not take, an
     /// evaluation the prelude refuses or a control operation the run cannot
     /// answer; [`Refusal::Heap`] or [`Refusal::Frames`] past a region's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs halt alike on both tiers with the
+    ///   answers they state: a primitive, a control call and a memory call each
+    ///   answered wrong, or not at all, changes an answer.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn call(
         &mut self,
         runtime: &mut Runtime,
@@ -599,6 +606,12 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Errors
     /// As [`Self::call`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named primitive calls answer the sum, the product
+    ///   past 64 bits and the comparison they state on both tiers.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn primitive(
         &mut self,
         runtime: &mut Runtime,
@@ -921,6 +934,13 @@ impl<'run, 'host> Calls<'run, 'host>
     /// [`Refusal::Operands`] for a frame the function never pushes, or one
     /// that resumes a block midway, whose owners no node names; as [`stack`]
     /// otherwise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a captured stack resumed twice, and an access
+    ///   abandoned by a shift, answer as they state: a capture that took the
+    ///   wrong frames resumes the wrong rest.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn capture(
         &self,
         runtime: &mut Runtime,
@@ -1022,6 +1042,14 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// [`Refusal::Operands`] for a value that is no stack;
     /// [`Refusal::Frames`] or [`Refusal::Heap`] past a region's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a captured stack resumed twice and a handler resuming
+    ///   its stack twice answer as they state: a replay that gave its copy no
+    ///   owner of its own, or moved the owners of a stack another owner keeps,
+    ///   frees a pair the second resumption returns.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn replay(
         &self,
         runtime: &mut Runtime,
@@ -1140,6 +1168,13 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// [`Refusal::Operands`] for a value that is no stack;
     /// [`Refusal::Frames`] past the frame region's limit; as [`unit()`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an access abandoned by a shift, whose unwind reads a
+    ///   pair the answer holds too, answers that pair: an abandonment that runs
+    ///   no unwind, or gives its owners no owner of their own, frees it.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn abandon(
         &self,
         runtime: &mut Runtime,
@@ -1208,6 +1243,14 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// [`Refusal::Operands`] for a view never ended; [`Refusal::Frames`]
     /// past the frame region's limit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a held pair written back whole and a held list
+    ///   written back at a place answer the values written: an end that writes
+    ///   nothing back, or releases the old value early, answers the old value
+    ///   or a freed one.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
     fn ended(
         &self,
         runtime: &mut Runtime,
@@ -1696,6 +1739,14 @@ fn walk(
 /// # Errors
 /// [`Refusal::Operands`] as [`walk`], and for an index naming no element;
 /// [`Refusal::Heap`] past the heap's limit.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a held list of pairs written back past its head answers
+///   the copied head and the shared tail beside a pair allocated after: a copy
+///   that shares a head or the tail without an owner frees it, and the fresh
+///   pair takes its block.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 fn replaced(
     runtime: &mut Runtime,
     list: Word,
@@ -1972,6 +2023,13 @@ pub unsafe fn give_up<Owned>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the named programs that resume a stack twice answer as
+///   they state: an owner left uncounted frees a value the second resumption
+///   reads.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
 fn share(value: Word)
 {
     let count = count_word(value);

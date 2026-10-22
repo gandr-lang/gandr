@@ -413,6 +413,13 @@ fn children(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple's release gives up both fields it holds and a
+///   cell's nothing; L2 — the named programs that free what they drop answer as
+///   they state.
+/// - witness: `transfer::tests::a_released_tuple_gives_up_its_fields_and_a_cell_none`
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 pub fn owned(
     object: Word,
     sites: &Sites<'_>,
@@ -667,4 +674,73 @@ fn allocate(
         },
     };
     Ok(store.allocate(value)?)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_runtime_stencils::Arity;
+    use gandr_runtime_stencils::Family;
+    use gandr_runtime_stencils::Header;
+    use gandr_runtime_stencils::Kind;
+    use gandr_runtime_stencils::Tag;
+    use gandr_runtime_stencils::Word;
+
+    use super::Sites;
+    use super::owned;
+
+    /// The block of an object of `kind` holding `fields`: its count word,
+    /// its header, then the fields.
+    ///
+    /// # Specification
+    /// trivial.
+    fn block(
+        kind: Kind,
+        fields: &[Word],
+    ) -> Vec<Word>
+    {
+        let header = Header::new(
+            kind,
+            Tag::try_from(0_usize).expect("tag zero fits"),
+            Arity::try_from(fields.len()).expect("the arity fits"),
+            Family::UNNAMED,
+        );
+        let mut words = Vec::from([Word::ZERO, header.word()]);
+        words.extend_from_slice(fields);
+        words
+    }
+
+    /// A tuple's release gives up each field it holds, in order, and a
+    /// cell's gives up nothing: a held cell's value keeps its owner.
+    #[test]
+    fn a_released_tuple_gives_up_its_fields_and_a_cell_none()
+    {
+        let mut first = block(Kind::Tuple, &[]);
+        let mut second = block(Kind::Tuple, &[]);
+        let fields = [
+            Word::from_pointer(first.as_mut_ptr().wrapping_add(1)),
+            Word::from_pointer(second.as_mut_ptr().wrapping_add(1)),
+        ];
+        let mut pair = block(Kind::Tuple, &fields);
+        let mut cell = block(Kind::Cell, &fields[.. 1]);
+        let sites = Sites::default();
+        assert_eq!(
+            Vec::from(fields),
+            owned(
+                Word::from_pointer(pair.as_mut_ptr().wrapping_add(1)),
+                &sites
+            ),
+            "the pair gives up both fields"
+        );
+        assert_eq!(
+            Vec::<Word>::new(),
+            owned(
+                Word::from_pointer(cell.as_mut_ptr().wrapping_add(1)),
+                &sites
+            ),
+            "the cell gives up nothing"
+        );
+    }
 }
