@@ -37,6 +37,7 @@ use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use quenchant_shape::shape::Maybe;
 
@@ -223,8 +224,12 @@ where
     A: CellAlphabet,
 {
     for at in A::command_positions(term) {
+        let Maybe::Present(redex) = A::subterm_cmd_at(term, &at)
+        else {
+            continue;
+        };
         for (cell_id, cell) in store.iter() {
-            if let Maybe::Present(result) = rewrite_at(cell, term, &at) {
+            if let Maybe::Present(result) = contract(cell, term, &at, &redex) {
                 return Maybe::Present(Rewrite {
                     step: CellApp { cell: cell_id, at },
                     result,
@@ -288,11 +293,66 @@ where
         Maybe::Present(redex) => redex,
         Maybe::Absent(reason) => return Maybe::Absent(firing::Absent::NoCommand(reason)),
     };
-    if !bool::from(A::may_fire(&cell.provenance(), &redex)) {
+    contract(cell, term, pos, &redex)
+}
+
+/// Fire `cell` at `pos` in `term`, where `redex` is the command `pos`
+/// addresses: [`rewrite_at`] after its read of the redex, so a search that
+/// tries every cell at one position reads the redex once.
+///
+/// # Specification
+/// - requires: `redex` is the command of `term` at `pos`.
+/// - ensures: the answer [`rewrite_at`] gives for `cell`, `term` and `pos`: the
+///   splice of the instantiated right-hand side when the discipline permits the
+///   cell and its left-hand side matches `redex`, so a root check that refuses
+///   a cell which matches breaks it.
+/// - provides: [`firing::Absent::Refused`] when the alphabet's firing
+///   discipline refuses the cell there; [`firing::Absent::NoMatch`] when the
+///   roots clash or the left-hand side does not match;
+///   [`firing::Absent::SpliceRefused`] when the alphabet refuses the splice.
+/// - panics: none.
+/// - intension: the roots are compared before the left-hand side is matched, so
+///   a cell whose root cannot meet the redex costs one comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — [`rewrite_at`]'s witnesses run through it, and the redex
+///   search's order witness tries cells whose roots clash with the redex before
+///   the one that fires. Skipping a cell that matches, or firing one that does
+///   not, changes the observed rewrite.
+/// - witness: `rewrite::tests::an_eta_cell_is_rejected_at_the_wrong_polarity`
+/// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
+/// - witness: `rewrite::tests::normalization_and_first_redex_respect_both_orders`
+/// - witness: `rewrite::tests::refusal_boundaries_do_not_record_a_step`
+#[spec(ensures: |output| if bool::from(A::may_fire(&cell.provenance(), redex)) {
+    let mut subst = A::Subst::default();
+    if bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
+        match A::splice_cmd_at(term, pos, A::apply_subst(&subst, cell.rhs())) {
+            Ok(expected) => output == Maybe::Present(expected),
+            Err(reason) => output == Maybe::Absent(firing::Absent::SpliceRefused(reason)),
+        }
+    } else {
+        output == Maybe::Absent(firing::Absent::NoMatch)
+    }
+} else {
+    output == Maybe::Absent(firing::Absent::Refused)
+})]
+fn contract<A>(
+    cell: &Cell<A>,
+    term: &A::Cmd,
+    pos: &A::Pos,
+    redex: &A::Cmd,
+) -> Maybe<A::Cmd, firing::Absent>
+where
+    A: CellAlphabet,
+{
+    if !bool::from(A::may_fire(&cell.provenance(), redex)) {
         return Maybe::Absent(firing::Absent::Refused);
     }
+    if A::root_agreement(cell.lhs(), redex) == RootAgreement::Clash {
+        return Maybe::Absent(firing::Absent::NoMatch);
+    }
     let mut subst = A::Subst::default();
-    if !bool::from(A::match_cmd(cell.lhs(), &redex, &mut subst)) {
+    if !bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
         return Maybe::Absent(firing::Absent::NoMatch);
     }
     let contractum = A::apply_subst(&subst, cell.rhs());

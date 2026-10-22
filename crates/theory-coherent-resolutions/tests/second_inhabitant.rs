@@ -164,7 +164,9 @@ fn interior_overlaps_reach_below_the_root_and_join_or_diverge()
         Joinability::Diverges {
             overlap: entry.clone(),
             left: Toy::zero(),
+            left_steps: Vec::new(),
             right: Toy::add(Toy::zero(), Toy::var("y")),
+            right_steps: Vec::new(),
         },
         join_critical_pairs(&divergent, NormalizationBudget::from(16_usize)),
         "the interior pair diverges"

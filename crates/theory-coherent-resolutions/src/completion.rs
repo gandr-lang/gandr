@@ -132,6 +132,7 @@ use crate::overlap::OverlapSupport;
 use crate::overlap::enumerate_overlaps;
 use crate::overlap::interior_overlaps_between;
 use crate::overlap::root_overlaps_between;
+use crate::rewrite::CellApp;
 use crate::rewrite::normalize;
 use crate::tracelet::Tracelet;
 use crate::tracelet::joined;
@@ -886,8 +887,12 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
         overlap: Overlap<A>,
         /// The left reduct's normal form.
         left: A::Cmd,
+        /// The steps from the left reduct to `left`.
+        left_steps: Vec<CellApp<A>>,
         /// The right reduct's normal form.
         right: A::Cmd,
+        /// The steps from the right reduct to `right`.
+        right_steps: Vec<CellApp<A>>,
     },
     /// The first pair a reduct of which reached no normal form within the
     /// budget: whether it joins is not decided.
@@ -914,7 +919,8 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
 ///   under `budget`; [`Joinability::Joined`] carries one replaying certificate
 ///   per pair when every pair joins; otherwise the first pair that does not, as
 ///   [`Joinability::Undecided`] when a reduct ran out of budget and as
-///   [`Joinability::Diverges`] with both normal forms when they differ.
+///   [`Joinability::Diverges`] with both normal forms, and the steps that
+///   reached each, when they differ.
 /// - panics: none.
 /// - intension: a fresh [`PairJoining`] resumed once.
 ///
@@ -935,7 +941,9 @@ pub enum Joinability<A: CellAlphabet = SequentAlphabet>
         certificate.overlap.kind == OverlapKind::Confluence
             && (certificate.overlap.seam != A::root_position() || certificate.overlap.left < certificate.overlap.right)
             && bool::from(certificate.replay(store))),
-    Joinability::Diverges { ref overlap, ref left, ref right } => overlap.kind == OverlapKind::Confluence && left != right,
+    Joinability::Diverges { ref overlap, ref left, ref left_steps, ref right, ref right_steps } => overlap.kind == OverlapKind::Confluence && left != right
+        && overlap.left_reduct(store).is_ok_and(|reduct| normalize(store, &reduct, budget).path == *left_steps)
+        && overlap.right_reduct().is_ok_and(|reduct| normalize(store, &reduct, budget).path == *right_steps),
     Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
 })]
 #[inline]
@@ -1066,7 +1074,9 @@ where
         ensures: |output| self.decided >= before && match output {
             Joinability::Joined(ref certificates) => certificates.iter().all(|certificate|
                 certificate.overlap.kind == OverlapKind::Confluence && bool::from(certificate.replay(store))),
-            Joinability::Diverges { ref overlap, ref left, ref right } => overlap.kind == OverlapKind::Confluence && left != right,
+            Joinability::Diverges { ref overlap, ref left, ref left_steps, ref right, ref right_steps } => overlap.kind == OverlapKind::Confluence && left != right
+                && overlap.left_reduct(store).is_ok_and(|reduct| normalize(store, &reduct, budget).path == *left_steps)
+                && overlap.right_reduct().is_ok_and(|reduct| normalize(store, &reduct, budget).path == *right_steps),
             Joinability::Undecided(ref overlap) => overlap.kind == OverlapKind::Confluence,
         },
     )]
@@ -1115,7 +1125,9 @@ where
                         return Joinability::Diverges {
                             overlap,
                             left: left.normal,
+                            left_steps: left.path,
                             right: right.normal,
+                            right_steps: right.path,
                         };
                     }
                     if let Maybe::Present(certificate) = joined(&overlap, left, right) {
