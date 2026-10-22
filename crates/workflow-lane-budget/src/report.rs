@@ -527,6 +527,12 @@ fn table(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one run and two, each run's id in the order sampled; an
+///   empty or fixed list, or another separator, changes the runs line.
+/// - witness: `report::tests::the_report_lists_every_budget_in_order`
+/// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
 fn listed(runs: &[RunId]) -> String
 {
     runs.iter()
