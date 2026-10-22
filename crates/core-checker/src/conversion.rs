@@ -864,6 +864,7 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::invariant_types_agree_exactly_where_their_parts_do`
 /// - witness: `conversion::tests::a_row_meets_its_signatures_in_a_wider_row_by_name`
 /// - witness: `conversion::tests::invariant_capabilities_agree_on_authority_grade_and_region`
+/// - witness: `conversion::tests::kept_and_located_types_agree_on_their_region_and_world`
 /// - witness: `conversion::tests::a_path_type_is_apart_from_data_it_does_not_read_as`
 /// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `elaboration::tests::owed_conversion_suspends`

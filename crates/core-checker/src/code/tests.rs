@@ -239,6 +239,55 @@ fn a_closed_returned_code_runs_to_the_quote_it_returns()
     );
 }
 
+/// A step whose redex stands under binders is certified with those binders
+/// read as rigid variables: an unfolding by a dialogue the machine decides
+/// there, and a run, which the machine cannot run under a binder, by its
+/// reading alone.
+#[test]
+fn a_step_under_binders_is_certified_with_the_binders_rigid()
+{
+    use super::Derivation;
+
+    // def Same : Type -> Type = \A. A ;
+    // def pick : U (Integer + Unit -> F Type) =
+    //     thunk λ. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let same = arena.value_static_lambda(bound);
+    let integer_code = arena.value_quote(integer);
+    let unit_code = arena.value_quote(unit_type);
+    let to_integer = arena.computation_return(integer_code);
+    let to_unit = arena.computation_return(unit_code);
+    let case = arena.computation_case(bound, &[to_integer, to_unit]);
+    let pick = arena.computation_lambda(case);
+    let pick = arena.value_thunk(pick);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), same);
+    definitions.define(ConstantIndex::from(1_usize), pick);
+    // Same applied to a binder, and pick applied to a left injection of one.
+    let operator = arena.value_constant(ConstantIndex::from(0_usize));
+    let applied = arena.value_static_application(operator, bound);
+    let head = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let injected = arena.value_injection(gandr_core_term::Summand::from(0_usize), bound);
+    let call = arena.computation_application(forced, injected);
+    let run = arena.value_returned(call);
+    for (code, derivation) in [(applied, Derivation::Dialogue), (run, Derivation::Reading)] {
+        let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+        else {
+            panic!("{code:?} steps under its binder");
+        };
+        let certificate = definitions.certify(&arena, step).unwrap();
+        assert_eq!(
+            (certificate.derivation(), certificate.redex()),
+            (derivation, code),
+            "{code:?} is certified at the redex under its binder"
+        );
+    }
+}
+
 /// A model type's family field read at a binder, `tm(g)` under the `Σ` that
 /// binds `tm`, decodes `↑((force tm) g)`: a run stuck on a binder. Each weak
 /// head of such a decode asked the machine to run it, minting the claim it
@@ -336,6 +385,523 @@ fn the_loose_reach_counts_only_binders_outside_the_root()
             loose_reach(&arena, root),
             Ok(BinderDepth::from(reach)),
             "{message}"
+        );
+    }
+}
+
+#[test]
+fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::control::StackFrame;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::hole::MarkIndex;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::session::RecordedMove;
+    use gandr_core_term::session::SessionAction;
+    use gandr_core_term::session::SessionRelation;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldForm;
+    use gandr_core_term::world::WorldType;
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::FieldLabel;
+    use gandr_kernel_term::PathEvidence;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Summand;
+
+    let mut arena = CoreArena::new();
+    let five = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(5_u32));
+    let unit = arena.value_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let decoded = arena.value_type_element(five, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let returns_integer = arena.comp_type_returner(integer);
+    let reads = arena.computation_return(five);
+    let returns_unit = arena.computation_return(unit);
+    let label = || FieldLabel::from(alloc::string::String::from("x"));
+    let data_at_five = arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([five]));
+    let pair = ComponentCount::from(2_usize);
+    let signature = |payload| {
+        EffectSig::new(EffectName::from("Probe"), [EffectOp {
+            name: OperationName::from("poke"),
+            payload,
+            reply: payload,
+        }])
+        .expect("one operation")
+    };
+    let plain = signature(integer);
+    let naming = signature(decoded);
+    let poking = |body| -> Arc<[EffectClause]> {
+        Arc::from([EffectClause {
+            operation: OperationName::from("poke"),
+            body,
+        }])
+    };
+    let effect_rows = [
+        (
+            arena.computation_perform(naming.clone(), OperationName::from("poke"), unit),
+            6,
+            "a performed operation's types",
+        ),
+        (
+            arena.computation_perform(plain.clone(), OperationName::from("poke"), five),
+            6,
+            "a performed payload",
+        ),
+        (
+            arena.computation_exercise(five, plain.clone(), OperationName::from("poke"), unit),
+            6,
+            "an exercised capability",
+        ),
+        (
+            arena.computation_exercise(unit, naming.clone(), OperationName::from("poke"), five),
+            6,
+            "an exercised payload and types",
+        ),
+        (
+            arena.computation_handle(plain.clone(), reads, returns_unit, poking(returns_unit)),
+            6,
+            "a handled subject binds none",
+        ),
+        (
+            arena.computation_handle(plain.clone(), returns_unit, reads, poking(returns_unit)),
+            5,
+            "a handler's return binds one",
+        ),
+        (
+            arena.computation_handle(plain.clone(), returns_unit, returns_unit, poking(reads)),
+            4,
+            "a handler's clause binds two",
+        ),
+        (
+            arena.computation_scope(plain.clone(), reads, returns_unit, poking(returns_unit)),
+            5,
+            "a scoped subject binds its capability",
+        ),
+        (
+            arena.computation_scope(plain, returns_unit, returns_unit, poking(reads)),
+            4,
+            "a scope's clause binds two",
+        ),
+        (
+            arena.computation_scope(naming, returns_unit, returns_unit, poking(returns_unit)),
+            6,
+            "a scope's signature binds none",
+        ),
+        (
+            arena.computation_ascribe(reads, returns_integer),
+            6,
+            "an ascribed body",
+        ),
+        (
+            arena.computation_ascribe(returns_unit, returns_decoded),
+            6,
+            "an ascription",
+        ),
+        (
+            arena.computation_session(SessionAction::Send {
+                endpoint: DeBruijnIndex::from(0_u32),
+                payload: five,
+            }),
+            6,
+            "a sent payload",
+        ),
+        (
+            arena.computation_session(SessionAction::Receive {
+                endpoint: DeBruijnIndex::from(0_u32),
+                body: reads,
+            }),
+            6,
+            "a receive binds only linearly",
+        ),
+        (
+            arena.computation_memory(MemoryForm::Hold {
+                value: five,
+                body: returns_unit,
+                grade: HoldGrade::One,
+            }),
+            6,
+            "a held value",
+        ),
+        (
+            arena.computation_memory(MemoryForm::Hold {
+                value: unit,
+                body: reads,
+                grade: HoldGrade::Many,
+            }),
+            6,
+            "a hold binds only linearly",
+        ),
+        (
+            arena.computation_world(WorldForm::Migrate {
+                world: World::Host,
+                body: reads,
+            }),
+            6,
+            "a migration binds nothing",
+        ),
+    ];
+    let value = |at| CoreNode::Term(TermNode::Value(at));
+    let computation = |at| CoreNode::Term(TermNode::Computation(at));
+    let value_type = |at| CoreNode::Type(TypeNode::Value(at));
+    let comp_type = |at| CoreNode::Type(TypeNode::Computation(at));
+    let rows: Vec<(CoreNode, usize, &str)> = Vec::from([
+        (
+            value(arena.value_record(BTreeMap::from([(label(), five)]))),
+            6,
+            "a record field",
+        ),
+        (
+            value(arena.value_reify(Arc::from([StackFrame::Apply(five)]))),
+            6,
+            "an applied frame",
+        ),
+        (
+            value(arena.value_reify(Arc::from([StackFrame::Bind(reads)]))),
+            5,
+            "a bind frame binds one",
+        ),
+        (
+            value(arena.value_path_product(unit, five)),
+            6,
+            "a path product",
+        ),
+        (value(arena.value_funext(five, unit)), 6, "a funext"),
+        (value(arena.value_equiv(unit, five)), 6, "an equivalence"),
+        (value(arena.value_univalence(five, unit)), 6, "a univalence"),
+        (value(arena.value_then(unit, five)), 6, "a composite"),
+        (
+            value(arena.value_flow_product(five, unit)),
+            6,
+            "a flow product",
+        ),
+        (
+            value(arena.value_function_flow(unit, five)),
+            6,
+            "a function flow",
+        ),
+        (value(arena.value_list_cons(five, unit)), 6, "a cons cell"),
+        (
+            value(arena.value_static_application(unit, five)),
+            6,
+            "a static application",
+        ),
+        (value(arena.value_path_refl(five)), 6, "a reflexivity"),
+        (value(arena.value_here(five)), 6, "a here"),
+        (value(arena.value_stay(five)), 6, "a stay"),
+        (value(arena.value_forward(five)), 6, "a forward"),
+        (
+            value(arena.value_injection(Summand::from(1_usize), five)),
+            6,
+            "an injection",
+        ),
+        (value(arena.value_lift(Level::zero(), five)), 6, "a lift"),
+        (
+            value(arena.value_mark(MarkIndex::from(0_u32), five)),
+            6,
+            "a marked value",
+        ),
+        (
+            value(arena.value_returned(reads)),
+            6,
+            "a returned computation",
+        ),
+        (value(arena.value_nested(reads)), 6, "a nested computation"),
+        (value(arena.value_run(reads)), 6, "a run"),
+        (
+            value(arena.value_constructor(data_at_five, ConstructorTag::from(0_usize), Vec::new())),
+            6,
+            "a constructor's datatype",
+        ),
+        (
+            value(arena.value_constructor(
+                integer,
+                ConstructorTag::from(0_usize),
+                Vec::from([five]),
+            )),
+            6,
+            "a constructor's field",
+        ),
+        (
+            computation(arena.computation_record_projection(five, label())),
+            6,
+            "a record projection",
+        ),
+        (
+            computation(arena.computation_tuple_projection(five, Component::from(0_usize))),
+            6,
+            "a tuple projection",
+        ),
+        (
+            computation(arena.computation_split(unit, pair, reads)),
+            4,
+            "a split binds its arity",
+        ),
+        (
+            computation(arena.computation_dependent_split(
+                unit,
+                pair,
+                returns_decoded,
+                returns_unit,
+            )),
+            5,
+            "a split's motive binds its scrutinee",
+        ),
+        (
+            computation(arena.computation_resume(five, returns_unit)),
+            6,
+            "a resumed stack",
+        ),
+        (
+            computation(arena.computation_with(&[reads])),
+            6,
+            "a with component",
+        ),
+        (computation(arena.computation_reset(reads)), 6, "a reset"),
+        (
+            computation(arena.computation_project(Component::from(0_usize), reads)),
+            6,
+            "a projected subject",
+        ),
+        (
+            computation(arena.computation_mark(MarkIndex::from(0_u32), reads)),
+            6,
+            "a marked computation",
+        ),
+        (
+            computation(arena.computation_shift(reads)),
+            5,
+            "a shift binds one",
+        ),
+        (
+            computation(arena.computation_list_fold(integer, integer, unit, returns_unit, reads)),
+            4,
+            "a fold's cons arm binds two",
+        ),
+        (
+            computation(arena.computation_list_fold(integer, integer, unit, reads, returns_unit)),
+            6,
+            "a fold's nil arm binds none",
+        ),
+        (
+            computation(arena.computation_list_case(unit, returns_unit, reads)),
+            4,
+            "a list case's cons arm binds two",
+        ),
+        (
+            computation(arena.computation_transport(five, unit)),
+            6,
+            "a transport",
+        ),
+        (
+            computation(arena.computation_path_transport(decoded, unit, unit)),
+            5,
+            "a transport's motive binds one",
+        ),
+        (
+            computation(arena.computation_ride(integer, unit, five)),
+            6,
+            "a ride's value",
+        ),
+        (
+            computation(arena.computation_telescope_transport(
+                returns_decoded,
+                unit,
+                unit,
+                unit,
+                unit,
+            )),
+            6,
+            "a telescope's motive binds none of its own",
+        ),
+        (
+            computation(arena.computation_abandon(five)),
+            6,
+            "an abandon",
+        ),
+        (
+            computation(arena.computation_case(unit, &[reads])),
+            5,
+            "a case branch binds one",
+        ),
+        (
+            computation(arena.computation_data_case(
+                unit,
+                returns_decoded,
+                Vec::from([returns_unit]),
+                Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
+            )),
+            5,
+            "a data case's motive binds one",
+        ),
+        (
+            computation(arena.computation_data_case(
+                five,
+                returns_integer,
+                Vec::from([returns_unit]),
+                Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]),
+            )),
+            6,
+            "a data case's scrutinee",
+        ),
+        (
+            computation(arena.computation_world(WorldForm::Hold { value: five })),
+            6,
+            "a held value",
+        ),
+        (
+            computation(arena.computation_world(WorldForm::Leta {
+                value: unit,
+                body: reads,
+            })),
+            5,
+            "a leta binds one",
+        ),
+        (value_type(data_at_five), 6, "a data type's argument"),
+        (
+            value_type(arena.value_type_record(BTreeMap::from([(label(), decoded)]))),
+            6,
+            "a record type's field",
+        ),
+        (
+            value_type(arena.value_type_stack(returns_decoded, returns_integer)),
+            6,
+            "a stack type",
+        ),
+        (
+            value_type(arena.value_type_path_universe(unit, five)),
+            6,
+            "a path universe",
+        ),
+        (
+            value_type(arena.value_type_flow(integer, five, unit)),
+            6,
+            "a flow type",
+        ),
+        (value_type(arena.value_type_run(five)), 6, "a run type"),
+        (
+            value_type(arena.value_type_sum(&[integer, decoded])),
+            6,
+            "a summand",
+        ),
+        (
+            value_type(arena.value_type_sigma(integer, decoded)),
+            5,
+            "a sigma's second binds one",
+        ),
+        (
+            value_type(arena.value_type_sigma(decoded, integer)),
+            6,
+            "a sigma's first binds none",
+        ),
+        (
+            value_type(arena.value_type_static_pi(decoded, integer)),
+            6,
+            "a static pi",
+        ),
+        (value_type(arena.value_type_list(decoded)), 6, "a list type"),
+        (
+            value_type(arena.value_type_lift(decoded, Level::zero())),
+            6,
+            "a lifted type",
+        ),
+        (
+            value_type(arena.value_type_staged(decoded, Stage::At(StageId::from(0_usize)))),
+            6,
+            "a staged type",
+        ),
+        (
+            value_type(arena.value_type_world(WorldType::At {
+                inner: decoded,
+                world: World::Host,
+            })),
+            6,
+            "a type held at a world",
+        ),
+        (
+            value_type(arena.value_type_capability(
+                EffectRow::singleton(signature(decoded)),
+                CapabilityGrade::Durable,
+                Region::Scoped(RegionDepth::from(1_u32)),
+            )),
+            6,
+            "a capability's operations",
+        ),
+        (
+            value(arena.value_path_equiv(
+                decoded,
+                unit,
+                unit,
+                Arc::new(PathEvidence {
+                    source: Vec::new(),
+                    target: Vec::new(),
+                }),
+            )),
+            6,
+            "an equivalence's path type",
+        ),
+        (
+            value(arena.value_path_equiv(
+                integer,
+                five,
+                unit,
+                Arc::new(PathEvidence {
+                    source: Vec::new(),
+                    target: Vec::new(),
+                }),
+            )),
+            6,
+            "an equivalence's forward map",
+        ),
+        (
+            value(
+                arena.value_recorded(Arc::from([RecordedMove::Closed, RecordedMove::Sent(five)])),
+            ),
+            6,
+            "a recorded payload",
+        ),
+        (
+            value(arena.value_session_related(SessionRelation::Subtyping, unit, five)),
+            6,
+            "a session relation",
+        ),
+        (
+            comp_type(arena.comp_type_with(&[returns_decoded])),
+            6,
+            "a with type",
+        ),
+        (
+            comp_type(arena.comp_type_element(five, Level::zero())),
+            6,
+            "a decoded computation type",
+        ),
+        (
+            comp_type(arena.comp_type_codata(ConstantIndex::from(0_usize), Vec::from([five]))),
+            6,
+            "a codata argument",
+        ),
+    ]);
+    let effect_rows = effect_rows.map(|(at, reach, former)| (computation(at), reach, former));
+    for (root, reach, former) in rows.into_iter().chain(effect_rows) {
+        assert_eq!(
+            loose_reach(&arena, root),
+            Ok(BinderDepth::from(reach)),
+            "{former}"
         );
     }
 }

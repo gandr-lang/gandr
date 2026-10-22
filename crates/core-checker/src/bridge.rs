@@ -5563,6 +5563,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   unit evidence, and the kernel accepts the evidence at their fibre.
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     /// - witness: `bridge::tests::a_funext_returning_a_literal_crosses_with_the_literal`
+    /// - witness: `bridge::tests::a_funext_returning_a_pair_or_a_constant_crosses_with_it`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|(image, evidence)| target.value(image).is_some() && target.value(evidence).is_some()))]
     fn returned(
         &mut self,
@@ -5957,6 +5958,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
     /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
     /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
         | Ok(Step::Ascend(_)) => false,
@@ -6167,6 +6169,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::returner_type_lowers`
     /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
     /// - witness: `bridge::tests::a_lazy_product_crosses_as_its_kernel_nodes`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(AnyNode::CompType(_)) | Step::Descend(_)) => self.reached().comp_types.contains_key(&at),
@@ -6268,6 +6271,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
     /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
     /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
     /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
     #[spec(ensures: |ret| match ret {
         | Err(_) | Ok(Step::Descend(_)) => true,

@@ -225,6 +225,25 @@ fn unreplayed_and_open_residuals_are_refused()
         compile(&mut arena, &[token, nat], &certificate, &mut Budget(1000)),
         Err(StageError::NotResidual)
     );
+    // A residual is a quoted function of the inner stage's naturals: a bare
+    // natural and a quoted inner variable are not.
+    let two = arena
+        .alloc(Term::Natural(Stage::Outer, Natural(2)))
+        .unwrap();
+    let bound = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let quoted_variable = arena.alloc(Term::Quote(bound)).unwrap();
+    for term in [two, quoted_variable] {
+        let certificate = Certificate {
+            source: term,
+            target: term,
+            steps: Vec::new(),
+        };
+        assert_eq!(
+            compile(&mut arena, &[token, nat], &certificate, &mut Budget(1000)),
+            Err(StageError::NotResidual),
+            "{term:?} is no residual"
+        );
+    }
     let pow = power(&mut arena, model).unwrap();
     let exponent = arena
         .alloc(Term::Natural(Stage::Outer, Natural(2)))

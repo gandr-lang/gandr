@@ -1475,6 +1475,7 @@ impl Machine<'_, '_>
     ///   the seat exchange's sends check.
     /// - witness: `judgement::session::tests::an_endpoint_used_twice_in_one_action_is_refused`
     /// - witness: `judgement::session::tests::a_delegated_endpoint_leaves_its_sender`
+    /// - witness: `judgement::session::tests::a_closed_endpoint_is_not_delegated`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { .. }) | Step::Ascend(Produced::CompType(_)))))]
     fn send(
@@ -1926,6 +1927,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — the seat selects each of its choices once across the
     ///   exchange.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_selection_or_offer_off_the_protocol_s_labels_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     fn select(
         &mut self,
@@ -2014,6 +2016,7 @@ impl Machine<'_, '_>
     ///   different endpoints are refused.
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
     /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
+    /// - witness: `judgement::session::tests::a_selection_or_offer_off_the_protocol_s_labels_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
     fn offer(
         &mut self,
@@ -3234,6 +3237,7 @@ impl Machine<'_, '_>
 /// - witness: `judgement::session::tests::an_endpoint_captured_by_a_thunk_is_refused`
 /// - witness: `judgement::access::tests::a_view_escaping_its_access_is_refused`
 /// - witness: `judgement::session::tests::a_held_value_is_captured_by_a_branch_only`
+/// - witness: `judgement::session::tests::a_buffer_capability_or_continuation_capture_is_refused_by_its_name`
 #[spec(ensures: |ret| match (resident, ret) {
     | (Resident::Held { .. } | Resident::Received { .. } | Resident::Buffer { .. }, Ok(())) => by == Capture::Branch,
     | (Resident::Endpoint(_) | Resident::View { .. } | Resident::Capability { .. } | Resident::Continuation { .. }, Ok(())) => false,

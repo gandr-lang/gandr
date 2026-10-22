@@ -163,6 +163,7 @@ pub fn kind_level(
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 /// - witness: `tests::codata::a_value_universe_is_no_codata_kind`
 /// - witness: `tests::codata::a_self_reference_off_an_observations_result_is_refused`
+/// - witness: `tests::codata::a_codata_declaration_observes_something_below_its_universe`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
 #[inline]
 pub fn form_signature(
@@ -242,6 +243,7 @@ pub fn form_signature(
 ///   argument and a self reference in a domain are refused by name.
 /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
 /// - witness: `tests::codata::a_self_reference_off_an_observations_result_is_refused`
+/// - witness: `tests::codata::a_codata_declaration_observes_something_below_its_universe`
 #[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: |ret| ret.is_err() || context.depth(Zone::Intuitionistic) == depth)]
 fn observation(
     context: &mut CheckingContext<'_>,

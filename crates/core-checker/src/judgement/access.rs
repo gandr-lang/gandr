@@ -907,6 +907,7 @@ impl Machine<'_, '_>
     /// - witness: `judgement::access::tests::a_value_held_at_grade_one_is_never_copied`
     /// - witness: `judgement::access::tests::a_consumed_hold_is_read_lent_or_consumed_no_more`
     /// - witness: `judgement::session::tests::the_seat_exchange_checks_at_both_ends`
+    /// - witness: `judgement::session::tests::a_linear_read_of_nothing_or_of_a_buffer_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
     pub(super) fn linear_read(
         &mut self,

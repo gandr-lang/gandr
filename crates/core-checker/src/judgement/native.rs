@@ -64,6 +64,7 @@ impl Machine<'_, '_>
     ///   separate the nominal introduction rule; so do a vector's indices.
     /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
     pub(super) fn native_constructor(
         &mut self,
@@ -527,6 +528,7 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — width in both directions, nested depth and a field of
     ///   the wrong type separate record checking from mere label inclusion.
     /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
     pub(super) fn check_native_record(
         &mut self,
@@ -615,6 +617,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
     /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
     pub(super) fn native_case(
         &mut self,
@@ -1119,6 +1122,7 @@ impl Machine<'_, '_>
     /// - witness: `tests::native_formers::record_width_depth_and_projection`
     /// - witness: `tests::native_formers::tuple_projection_reads_each_component`
     /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
     pub(super) fn native_projection(
         &mut self,

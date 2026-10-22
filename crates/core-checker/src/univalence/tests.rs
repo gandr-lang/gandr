@@ -317,16 +317,24 @@ fn ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum()
     );
 
     // A carried map other than the record's is malformed core; a record that
-    // synthesises no dependent pair names no codes.
+    // synthesises no dependent pair names no codes, nor one whose first
+    // component is no map.
     let negated = map(&mut arena, |arena, point| {
         arena.value_injection(1_usize.into(), point)
     });
     let forged = arena.value_univalence(written, negated);
     let unit = arena.value_unit();
     let bare = univalence(&mut arena, unit);
+    let unit_type = arena.value_type_unit();
+    let pair_type = arena.value_type_sigma(unit_type, unit_type);
+    let pair = arena.value_tuple(&[unit, unit]);
+    let paired = arena.value_constant(ConstantIndex::from(2_usize));
+    let mapless = univalence(&mut arena, paired);
     let (report, _) = judged(&mut arena, &[
         declaration(At(0), Maybe::Present(identity), forged),
         declaration(At(1), Maybe::Absent(signature::Absent::Unsigned), bare),
+        declaration(At(2), Maybe::Present(pair_type), pair),
+        declaration(At(3), Maybe::Absent(signature::Absent::Unsigned), mapless),
     ]);
     assert_eq!(
         verdict(&report, At(0)),
@@ -337,6 +345,16 @@ fn ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum()
             verdict(&report, At(1)),
             Verdict::Refused(CheckRefusal::ShapeMismatch {
                 wanted: ExpectedShape::Sigma,
+                ..
+            })
+        ),
+        "{report:?}"
+    );
+    assert!(
+        matches!(
+            verdict(&report, At(3)),
+            Verdict::Refused(CheckRefusal::ShapeMismatch {
+                wanted: ExpectedShape::Thunk,
                 ..
             })
         ),

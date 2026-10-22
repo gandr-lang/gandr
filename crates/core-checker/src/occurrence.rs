@@ -930,6 +930,7 @@ impl Extend<(AnyNode, Reach)> for Pending
 /// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
 /// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `occurrence::tests::a_later_position_extends_the_block_through_every_former`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|later| *later >= block.end))]
 fn worst<Earlier>(
     arena: &CoreArena,
@@ -1607,6 +1608,7 @@ const fn refusal(
 /// - witness: `tests::recursive_data::a_negative_occurrence_below_the_stage_declares`
 /// - witness: `tests::recursive_data::a_nested_occurrence_through_a_strictly_positive_parameter_declares`
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+/// - witness: `occurrence::tests::a_family_named_by_a_session_payload_is_refused_at_its_field`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|refusal| matches!(refusal,
     CheckRefusal::CrossBlockReference { .. }
     | CheckRefusal::NegativeOccurrence(_)
@@ -1698,6 +1700,7 @@ where
 /// - hypothesis: L3 — a lone family reaches one past itself, and a universe
 ///   naming its decoder reaches one past the decoder.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+/// - witness: `occurrence::tests::a_later_position_extends_the_block_through_every_former`
 #[spec(ensures: |ret| ret > position)]
 pub fn reach(
     arena: &CoreArena,
@@ -1733,3 +1736,6 @@ pub fn reach(
     }
     block.end
 }
+
+#[cfg(test)]
+mod tests;

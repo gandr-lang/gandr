@@ -1157,6 +1157,7 @@ impl CodeDefinitions
     /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
     /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
+    /// - witness: `code::tests::a_step_under_binders_is_certified_with_the_binders_rigid`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Ok(ref certificate) => {
@@ -2132,6 +2133,7 @@ fn evaluated_pair(
 ///   beneath a static lambda, a variable beneath a dependent arrow's binder
 ///   inside a quote, and a type decoding a variable, each reach asserted.
 /// - witness: `code::tests::the_loose_reach_counts_only_binders_outside_the_root`
+/// - witness: `code::tests::the_loose_reach_descends_every_former_and_subtracts_only_its_binders`
 #[inline]
 #[spec(ensures: |ret| match (root, ret) {
     | (CoreNode::Term(TermNode::Value(at)), Ok(reach)) => match core.value(at) {

@@ -378,6 +378,7 @@ enum Task
 ///   expected level by its own construction.
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
+/// - witness: `formation::tests::each_carrying_former_stands_at_the_level_of_what_it_carries`
 #[spec(ensures: |ret| match root {
     | TypeNode::Value(at) => match value_type_view(context.arena(), at) {
         | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit | ValueTypeView::Unknown) => ret == Ok(Level::zero()),

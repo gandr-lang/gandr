@@ -1359,6 +1359,7 @@ impl CheckRefusal
     ///   mismatch and a refusal comparing nothing expose each side's node and
     ///   its absence, distinguishing swapped, dropped and invented sides.
     /// - witness: `refusal::tests::a_refusal_compares_the_types_it_names`
+    /// - witness: `refusal::tests::each_refusal_naming_types_reports_them_on_its_own_sides`
     #[spec(ensures: |ret| match *self {
         | Self::TypeMismatch(Mismatch::Value { synthesised, expected, .. })
         | Self::CapabilityAmplified(Mismatch::Value { synthesised, expected, .. })

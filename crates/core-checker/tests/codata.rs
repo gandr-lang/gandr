@@ -309,6 +309,56 @@ fn a_value_universe_is_no_codata_kind()
     );
 }
 
+/// A codata declaration observes something, each observation stands below
+/// its kind's universe, and an observation may take a dependent argument:
+/// none observed and one returning a type are refused by name, and one
+/// under a dependent arrow is admitted.
+#[test]
+fn a_codata_declaration_observes_something_below_its_universe()
+{
+    let mut arena = CoreArena::new();
+    let family = ConstantIndex::from(0_usize);
+    let unit_type = arena.value_type_unit();
+    let returner = arena.comp_type_returner(unit_type);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let returns_a_type = arena.comp_type_returner(small);
+    let dependent = arena.comp_type_pi(unit_type, returner);
+    let (report, _crossed) = run(&mut arena, &[codata(
+        family,
+        CodataSignature::new(vec![], vec![], kind),
+    )]);
+    assert_eq!(
+        report.judged()[0].verdict(),
+        Verdict::Refused(CheckRefusal::Codata {
+            at: CoreNode::Type(TypeNode::Value(kind)),
+            fault: CodataFault::WithoutObservations,
+        }),
+        "a codata declaration observes something"
+    );
+    let (report, _crossed) = run(&mut arena, &[codata(
+        family,
+        CodataSignature::new(vec![], vec![returner, returns_a_type], kind),
+    )]);
+    assert_eq!(
+        report.judged()[0].verdict(),
+        Verdict::Refused(CheckRefusal::Codata {
+            at: CoreNode::Type(TypeNode::Computation(returns_a_type)),
+            fault: CodataFault::ObservationLevel,
+        }),
+        "an observation returning a type stands above the smallest universe"
+    );
+    let (report, _crossed) = run(&mut arena, &[codata(
+        family,
+        CodataSignature::new(vec![], vec![dependent], kind),
+    )]);
+    assert_eq!(
+        report.judged()[0].verdict(),
+        Verdict::Data,
+        "an observation under a dependent arrow is admitted"
+    );
+}
+
 #[test]
 fn a_self_reference_off_an_observations_result_is_refused()
 {

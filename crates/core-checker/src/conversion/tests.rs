@@ -818,6 +818,10 @@ fn codes_agree_exactly_where_their_parts_do()
             .collect::<BTreeMap<_, _>>();
         arena.value_record(fields)
     };
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_zero = arena.comp_type_returner(integer);
+    let string = arena.value_type_base(BaseType::String);
+    let returns_text = arena.comp_type_returner(string);
     let recorded =
         |arena: &mut CoreArena, moves: &[RecordedMove]| arena.value_recorded(Arc::from(moves));
     let twins = [
@@ -855,6 +859,22 @@ fn codes_agree_exactly_where_their_parts_do()
             recorded(&mut arena, &[RecordedMove::Sent(zero)]),
             recorded(&mut arena, &[RecordedMove::Sent(zero)]),
             "a recorded run",
+        ),
+        (
+            arena.value_quote_computation(returns_zero),
+            arena.value_quote_computation(returns_zero),
+            "a quoted computation type",
+        ),
+        (
+            recorded(&mut arena, &[
+                RecordedMove::Closed,
+                RecordedMove::Sent(zero),
+            ]),
+            recorded(&mut arena, &[
+                RecordedMove::Closed,
+                RecordedMove::Sent(zero),
+            ]),
+            "a recorded run closing before it sends",
         ),
     ];
     let apart = [
@@ -910,6 +930,11 @@ fn codes_agree_exactly_where_their_parts_do()
             twins[6].0,
             recorded(&mut arena, &[RecordedMove::Received(zero)]),
             "runs whose moves differ",
+        ),
+        (
+            twins[7].0,
+            arena.value_quote_computation(returns_text),
+            "quoted computation types that differ",
         ),
     ];
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -1135,6 +1160,88 @@ fn invariant_capabilities_agree_on_authority_grade_and_region()
     }
 }
 
+/// Kept types agree on their region exactly, and a kept type is a subtype
+/// of another only where its region outlives the other's, and of the plain
+/// type it keeps; a value held at a world and a world's capability agree
+/// only at one world.
+#[test]
+fn kept_and_located_types_agree_on_their_region_and_world()
+{
+    use gandr_core_term::ValueTypeId;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldType;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let scoped = |depth: u32| Region::Scoped(RegionDepth::from(depth));
+    let shallow = arena.value_type_kept(integer, scoped(1));
+    let shallow_twin = arena.value_type_kept(integer, scoped(1));
+    let deep = arena.value_type_kept(integer, scoped(2));
+    let elsewhere = World::Declared(ConstantIndex::from(0_usize));
+    let mut located = |inner, world| arena.value_type_world(WorldType::At { inner, world });
+    let at_host = located(integer, World::Host);
+    let at_host_twin = located(integer, World::Host);
+    let at_elsewhere = located(integer, elsewhere);
+    let held_host = arena.value_type_world(WorldType::Capability(World::Host));
+    let held_host_twin = arena.value_type_world(WorldType::Capability(World::Host));
+    let held_elsewhere = arena.value_type_world(WorldType::Capability(elsewhere));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let invariant =
+        |left: ValueTypeId, right: ValueTypeId| Pairing::Values(left.into(), right.into());
+    let sub = |left: ValueTypeId, right: ValueTypeId| Pairing::SubValues(left.into(), right.into());
+    for (pairing, agreement, what) in [
+        (
+            invariant(shallow, shallow_twin),
+            Agreement::Convertible,
+            "one region agrees",
+        ),
+        (
+            invariant(shallow, deep),
+            Agreement::Apart,
+            "two regions are apart",
+        ),
+        (
+            sub(shallow, deep),
+            Agreement::Convertible,
+            "a region outliving another is its subtype",
+        ),
+        (
+            sub(deep, shallow),
+            Agreement::Apart,
+            "a region outlived by another is not",
+        ),
+        (
+            sub(integer, shallow),
+            Agreement::Convertible,
+            "a plain value may be kept anywhere",
+        ),
+        (
+            invariant(at_host, at_host_twin),
+            Agreement::Convertible,
+            "one world agrees",
+        ),
+        (
+            invariant(at_host, at_elsewhere),
+            Agreement::Apart,
+            "two worlds are apart",
+        ),
+        (
+            invariant(held_host, held_host_twin),
+            Agreement::Convertible,
+            "one world's capability agrees",
+        ),
+        (
+            invariant(held_host, held_elsewhere),
+            Agreement::Apart,
+            "two worlds' capabilities are apart",
+        ),
+    ] {
+        assert_eq!(convert(&mut context, pairing), Ok(agreement), "{what}");
+    }
+}
+
 /// A path type converts with a data type only when the carrier's words name
 /// that data type at the endpoints: over a carrier with no words, the path
 /// and an unrelated parameterless data type are apart in either order.
@@ -1188,6 +1295,9 @@ fn a_relocated_type_converts_as_its_settled_reading()
     let integer = arena.value_type_base(BaseType::Integer);
     let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let one = Level::constant(LevelConstant::from(1_u64));
+    let unit = arena.value_type_unit();
+    let string = arena.value_type_base(BaseType::String);
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one.clone());
     let defined = arena.value_constant(ConstantIndex::from(0_usize));
     let decoded = arena.value_type_element(defined, Level::zero());
     let body = arena.value_quote(integer);
@@ -1230,6 +1340,10 @@ fn a_relocated_type_converts_as_its_settled_reading()
             arena.value_type_sigma(free, beneath),
             arena.value_type_lift(free, one.clone()),
             arena.value_type_product(&[decoded, free]),
+            arena.value_type_product(&[free, unit, small, string]),
+            arena.value_type_product(&[free, large, string]),
+            arena.value_type_product(&[free, integer, integer]),
+            arena.value_type_lift(free, Level::zero()),
         ])
     };
     let types = [0_u32, 1, 2]
