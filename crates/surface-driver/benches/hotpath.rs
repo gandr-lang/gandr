@@ -23,7 +23,7 @@
 //! workload, so `gandr` (`hotpath/gandr-policy.toml`) judges them at 2% in
 //! every crate; wall-clock time on a shared runner is not, so `gandr-timing`
 //! (`hotpath/gandr-timing-policy.toml`) judges the average of functions called
-//! at least 20 times at 5%, only in the crates a change reaches.
+//! at least 20 times at 7.5%, only in the crates a change reaches.
 //! Rejected: criterion and divan time a closure in isolation and keep their
 //! baselines on the machine that ran them; iai-callgrind counts instructions
 //! exactly but needs valgrind and gives no per-function allocation view. The
