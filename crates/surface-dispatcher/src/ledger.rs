@@ -118,6 +118,7 @@
 //! [`TileKind`]: gandr_surface_grammar::TileKind
 
 mod exemplars;
+mod recovery;
 mod standing;
 
 use alloc::collections::BTreeMap;
@@ -163,6 +164,8 @@ use serde_json::json;
 pub use self::exemplars::ExemplarFault;
 pub use self::exemplars::ExemplarFinding;
 pub use self::exemplars::ExemplarReport;
+pub use self::recovery::RecoveryFinding;
+pub use self::recovery::RecoveryReport;
 
 /// The file the reading form is written to.
 const MARKDOWN: &str = "syntax.md";
@@ -193,6 +196,14 @@ pub enum LedgerTask
         /// The directory holding `syntax/` and `attributes/`.
         directory: PathBuf,
     },
+    /// The syntax exemplars under `directory`, each literal tile written as
+    /// its near miss and deleted, and each mutant's first error read against
+    /// the mutation.
+    Recovery
+    {
+        /// The directory holding `syntax/`.
+        directory: PathBuf,
+    },
 }
 
 /// What a ledger task did.
@@ -203,6 +214,8 @@ pub enum LedgerRun
     Written(Vec<PathBuf>),
     /// What a verification found.
     Verified(ExemplarReport),
+    /// What a recovery sweep found.
+    Swept(RecoveryReport),
 }
 
 /// Why a ledger could not be generated or written.
@@ -252,8 +265,8 @@ pub enum LedgerFault
         /// Why.
         error: std::io::Error,
     },
-    /// A committed rule's exemplar, which its admission is read off, could
-    /// not be read or parsed.
+    /// A committed rule's exemplar, which its admission is read off and the
+    /// recovery sweep mutates, could not be read or parsed.
     Unshown
     {
         /// The exemplar.
@@ -300,7 +313,7 @@ impl core::fmt::Display for LedgerFault
                 ref error,
             } => write!(
                 f,
-                "{}: the rule's exemplar, which its admission is read off, cannot be read: {error}",
+                "{}: the rule's exemplar cannot be read: {error}",
                 path.display()
             ),
         }
@@ -309,8 +322,8 @@ impl core::fmt::Display for LedgerFault
 
 impl LedgerTask
 {
-    /// Generate the task's ledger and write its files, or verify its
-    /// exemplars.
+    /// Generate the task's ledger and write its files, verify its exemplars,
+    /// or sweep them for recovery.
     ///
     /// # Specification
     /// - requires: nothing; a syntax ledger's directory is created when it is
@@ -321,9 +334,11 @@ impl LedgerTask
     ///   read off the exemplars, and the paths are returned in that order.
     ///   Under [`LedgerTask::Exemplars`], the report of the exemplars under the
     ///   directory against the committed rules and the registered attributes
-    ///   (the `exemplars` module).
-    /// - provides: `gandr ledger syntax --write <directory>` and `gandr ledger
-    ///   exemplars <directory>`.
+    ///   (the `exemplars` module). Under [`LedgerTask::Recovery`], the report
+    ///   of the recovery sweep over the directory's syntax exemplars (the
+    ///   `recovery` module).
+    /// - provides: `gandr ledger syntax --write <directory>`, `gandr ledger
+    ///   exemplars <directory>` and `gandr ledger recovery <directory>`.
     /// - fails: the ledger cannot be built, a committed rule's exemplar cannot
     ///   be read, a file cannot be written, or an exemplar directory cannot be
     ///   listed.
@@ -338,15 +353,17 @@ impl LedgerTask
     /// - hypothesis: L3 — a run into an empty directory writes both files with
     ///   the rendered bytes, a second run writes the same bytes, and a
     ///   directory under a file is refused naming the path; the committed
-    ///   exemplars verify with no finding. Arbitrary filesystem failures are
-    ///   outside these observations.
+    ///   exemplars verify with no finding; a definition's exemplar is swept
+    ///   tile by tile. Arbitrary filesystem failures are outside these
+    ///   observations.
     /// - witness: `ledger::tests::a_run_writes_both_files_and_repeats_them_exactly`
     /// - witness: `ledger::tests::an_unwritable_directory_is_refused_by_path`
     /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
+    /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |run| match (self, run) {
         (&Self::Syntax { .. }, &LedgerRun::Written(ref paths)) => paths.len() == 2,
-        (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) => true,
-        (&Self::Syntax { .. } | &Self::Exemplars { .. }, &LedgerRun::Written(_) | &LedgerRun::Verified(_)) => false,
+        (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) | (&Self::Recovery { .. }, &LedgerRun::Swept(_)) => true,
+        (&Self::Syntax { .. } | &Self::Exemplars { .. } | &Self::Recovery { .. }, &LedgerRun::Written(_) | &LedgerRun::Verified(_) | &LedgerRun::Swept(_)) => false,
     }))]
     #[inline]
     pub fn run(&self) -> Result<LedgerRun, LedgerFault>
@@ -375,6 +392,10 @@ impl LedgerTask
                     .map(|row| RuleName(row.name))
                     .collect();
                 exemplars::verify(&pbg, &rules, directory).map(LedgerRun::Verified)
+            },
+            Self::Recovery { ref directory } => {
+                let pbg = built_in().map_err(LedgerFault::Grammar)?;
+                recovery::sweep(&pbg, directory).map(LedgerRun::Swept)
             },
         }
     }

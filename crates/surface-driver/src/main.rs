@@ -39,6 +39,7 @@
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
 //! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
+//! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-dispatcher`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
 //! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
@@ -621,6 +622,14 @@ enum LedgerName
         /// The directory holding `syntax/` and `attributes/`.
         directory: PathBuf,
     },
+    /// The recovery sweep: every literal tile of every syntax exemplar under
+    /// `syntax/` written as its near miss and deleted, and each mutant's first
+    /// error read against the bytes it changed.
+    Recovery
+    {
+        /// The directory holding `syntax/`.
+        directory: PathBuf,
+    },
 }
 
 /// The threads `check`, `test`, `stage` and `fmt` work on.
@@ -989,6 +998,12 @@ fn main() -> ExitCode
             ledger: LedgerName::Exemplars { directory },
         }) => (
             Invocation::Ledger(LedgerTask::Exemplars { directory }),
+            Verbosity::User,
+        ),
+        Some(Command::Ledger {
+            ledger: LedgerName::Recovery { directory },
+        }) => (
+            Invocation::Ledger(LedgerTask::Recovery { directory }),
             Verbosity::User,
         ),
         Some(Command::Lsp {
@@ -1706,20 +1721,22 @@ fn render(
     }
 }
 
-/// Run `task`: write its ledger, printing the path of each file written, or
-/// verify its exemplars, printing each that does not hold; and choose the exit
-/// code.
+/// Run `task`: write its ledger, printing the path of each file written,
+/// verify its exemplars, printing each that does not hold, or sweep them for
+/// recovery, printing each mutant marked elsewhere; and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each file written is its path, as one line on standard output, in
 ///   the order the task writes them, and the exit is zero. A verification
 ///   prints each exemplar that does not hold as `<path>: <fault>`, then the
-///   count verified and found, on standard output, and exits zero when nothing
-///   was found and one otherwise. A ledger that cannot be generated, written or
-///   listed is `gandr: <fault>` on standard error and exits two.
-/// - provides: `gandr ledger syntax --write <directory>` and `gandr ledger
-///   exemplars <directory>`.
+///   count verified and found, on standard output; a recovery sweep prints its
+///   near-miss table, each mutant marked elsewhere, then the count swept. Each
+///   exits zero when nothing was found and one otherwise. A ledger that cannot
+///   be generated, written or listed is `gandr: <fault>` on standard error and
+///   exits two.
+/// - provides: `gandr ledger syntax --write <directory>`, `gandr ledger
+///   exemplars <directory>` and `gandr ledger recovery <directory>`.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 ///
@@ -1730,9 +1747,11 @@ fn render(
 /// - hypothesis: L3 — a run into a fresh directory prints both paths, exits
 ///   zero and leaves files that a second run reproduces byte for byte; a
 ///   directory under a file exits two naming it; the committed exemplars verify
-///   and exit zero, and a stray exemplar exits one naming it.
+///   and exit zero, and a stray exemplar exits one naming it; a sweep prints
+///   its near-miss table and its count.
 /// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
 /// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
+/// - witness: `tests::cli::the_recovery_sweep_reports_its_table_and_count`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNEXEMPLIFIED) || *exit == ExitCode::from(FAULTED)))]
 fn ledger(
@@ -1752,6 +1771,15 @@ fn ledger(
             for finding in report.findings() {
                 writeln!(stdout, "{finding}")?;
             }
+            writeln!(stdout, "{report}")?;
+            Ok(if report.findings().is_empty() {
+                ExitCode::SUCCESS
+            }
+            else {
+                ExitCode::from(UNEXEMPLIFIED)
+            })
+        },
+        Ok(LedgerRun::Swept(report)) => {
             writeln!(stdout, "{report}")?;
             Ok(if report.findings().is_empty() {
                 ExitCode::SUCCESS
