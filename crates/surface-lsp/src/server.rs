@@ -295,7 +295,9 @@ use crate::rpc::success;
 use crate::rpc::tell;
 use crate::rpc::trace;
 use crate::rpc::unregister;
+use crate::search::Declared;
 use crate::search::FOUND_HELD;
+use crate::search::Query;
 use crate::signature::help;
 use crate::syntax::printed;
 use crate::tokens::Resolved;
@@ -5684,28 +5686,34 @@ impl Workspace
 
     /// What a workspace-symbol request for `query` answers `peer`: the names
     /// the open documents' import closures declare, each read off the copy
-    /// `peer` is answered from.
+    /// `peer` is answered from, and the names every other source under the
+    /// opened folders declares, read off its file.
     ///
     /// # Specification
     /// - requires: nothing; any query is admitted.
     /// - ensures: every name [`crate::search::Found::matching`] finds for
-    ///   `query` in a held copy's closure, at most [`FOUND_HELD`], ascending by
-    ///   name folded to lower case, then by name, document and range. A name an
-    ///   open document writes is found where that document's copy writes it,
-    ///   and once; a name a sibling no document holds open writes is found at
-    ///   the sibling's path, once however many closures read it. Each copy's
-    ///   index is made now when no request has asked since its text last
-    ///   changed.
+    ///   `query` in a held copy's closure, and every name of a source under a
+    ///   root that no document holds open that [`Query::matching`] finds, at
+    ///   most [`FOUND_HELD`], ascending by name folded to lower case, then by
+    ///   name, document and range. A name an open document writes is found
+    ///   where that document's copy writes it, and once; a name a source no
+    ///   document holds open writes is found at the source's path, once however
+    ///   many closures read it and whether or not one does. Each copy's index
+    ///   is made now when no request has asked since its text last changed;
+    ///   each source's names are read now when its file changed since they were
+    ///   read, or never were.
     /// - provides: the answer to `workspace/symbol`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name a held document writes, a sibling's names read
-    ///   by two importers, a held sibling's own copy shadowing the disk, and a
+    ///   by two importers, a held sibling's own copy shadowing the disk, a
+    ///   source under a folder no closure reads, that source rewritten, and a
     ///   query no name holds each distinguish a missing, a doubled or a stale
     ///   symbol.
     /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
+    /// - witness: `server::tests::workspace_symbols_find_the_names_no_open_closure_reaches`
     #[spec(ensures: |ret| matches!(ret, Answer::Found(ref found) if found.len() <= FOUND_HELD))]
     fn symbols(
         &self,
@@ -5713,6 +5721,18 @@ impl Workspace
         query: SourceText<'_>,
     ) -> Answer
     {
+        let query = Query::of(query);
+        let information = |declared: &Declared, uri: DocumentUri| {
+            (declared.folded.clone(), SymbolInformation {
+                name: declared.name.clone(),
+                kind: declared.kind,
+                location: Location {
+                    uri,
+                    range: declared.range,
+                },
+                container_name: declared.container.clone(),
+            })
+        };
         let shadows = self.shadowing(peer);
         let mut siblings: BTreeSet<(DocumentUri, Range)> = BTreeSet::new();
         let mut found: Vec<(String, SymbolInformation)> = Vec::new();
@@ -5726,7 +5746,7 @@ impl Workspace
                 continue;
             };
             let own = hovering.table().own_source();
-            for entry in hovering.found().matching(query) {
+            for entry in hovering.found().matching(&query) {
                 let target = if entry.source == own {
                     uri.clone()
                 }
@@ -5741,20 +5761,29 @@ impl Workspace
                     else {
                         continue;
                     };
-                    if !siblings.insert((target.clone(), entry.range)) {
+                    if !siblings.insert((target.clone(), entry.declared.range)) {
                         continue;
                     }
                     target
                 };
-                found.push((entry.folded.clone(), SymbolInformation {
-                    name: entry.name.clone(),
-                    kind: entry.kind,
-                    location: Location {
-                        uri: target,
-                        range: entry.range,
-                    },
-                    container_name: entry.container.clone(),
-                }));
+                found.push(information(&entry.declared, target));
+            }
+        }
+        if let Ok(grammar) = grammar() {
+            let mut files = self.files.borrow_mut();
+            for (path, declared) in files.declared(grammar) {
+                if self.paths.contains_key(path) {
+                    continue;
+                }
+                let Some(target) = DocumentUri::of_path(path)
+                else {
+                    continue;
+                };
+                for name in query.matching(declared) {
+                    if siblings.insert((target.clone(), name.range)) {
+                        found.push(information(name, target.clone()));
+                    }
+                }
             }
         }
         found.sort_unstable_by(|first, second| {
@@ -8621,6 +8650,125 @@ mod tests
             held(&search(&mut server, "nou")),
             [(String::from("nought"), 12_u64, None)],
             "a declaration written as a signature and a definition, once"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn workspace_symbols_find_the_names_no_open_closure_reaches()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-symbols-far-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("lonely")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let opener = "import \"./base.gandr\" ;\ndef near : Nat ;\ndef near = Zero ;\n";
+        for (file, text) in [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+            ),
+            ("opener.gandr", opener),
+            ("held.gandr", "def stale : Integer ;\ndef stale = 1 ;\n"),
+            (
+                "lonely/far.gandr",
+                "def faraway : Integer ;\ndef faraway = 7 ;\n",
+            ),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let mut server = Connected::default();
+        let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
+            "params": {"capabilities": {},
+                "workspaceFolders": [{"uri": uri(""), "name": "scratch"}]}});
+        let _initialized = send(&mut server, Json(&initialize.to_string()));
+        let _ready = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#),
+        );
+        for (file, text) in [
+            ("opener.gandr", opener),
+            ("held.gandr", "def fresh : Integer ;\ndef fresh = 1 ;\n"),
+        ] {
+            let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}});
+            let _published = send(&mut server, Json(&open.to_string()));
+        }
+        let found = |server: &mut Connected, query: &str| -> Vec<(String, String, Value)> {
+            let request = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32, "method": "workspace/symbol",
+                "params": {"query": query}});
+            send(server, Json(&request.to_string()))[0_usize]["result"]
+                .as_array()
+                .map(|found| {
+                    found
+                        .iter()
+                        .map(|symbol| {
+                            (
+                                symbol["name"]
+                                    .as_str()
+                                    .map(String::from)
+                                    .unwrap_or_default(),
+                                symbol["location"]["uri"]
+                                    .as_str()
+                                    .map(String::from)
+                                    .unwrap_or_default(),
+                                symbol["location"]["range"].clone(),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let at = |line: i32, start: i32, end: i32| {
+            serde_json::json!({"start": {"line": line, "character": start},
+                "end": {"line": line, "character": end}})
+        };
+        assert_eq!(
+            found(&mut server, "faraw"),
+            [(
+                String::from("faraway"),
+                uri("lonely/far.gandr"),
+                at(0_i32, 4_i32, 11_i32)
+            )],
+            "a source under the opened folder that no open closure reads is found at its path"
+        );
+        assert_eq!(
+            found(&mut server, "succ"),
+            [(
+                String::from("Succ"),
+                uri("base.gandr"),
+                at(2_i32, 2_i32, 6_i32)
+            )],
+            "a source an open closure reads and the folder holds is found once"
+        );
+        assert_eq!(
+            found(&mut server, "stale"),
+            [],
+            "a held document's file is never read for its names"
+        );
+        assert_eq!(
+            found(&mut server, "fresh"),
+            [(
+                String::from("fresh"),
+                uri("held.gandr"),
+                at(0_i32, 4_i32, 9_i32)
+            )],
+            "a held document is found as its copy writes it"
+        );
+        std::fs::write(
+            directory.join("lonely/far.gandr"),
+            "def remote : Integer ;\ndef remote = 8 ;\ndef farther : Integer ;\ndef farther = 9 ;\n",
+        )
+        .expect("the source is rewritten");
+        assert_eq!(
+            found(&mut server, "far")
+                .into_iter()
+                .map(|(name, ..)| name)
+                .collect::<Vec<_>>(),
+            [String::from("farther")],
+            "a rewritten source is found as its file now reads, its old names gone"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }
