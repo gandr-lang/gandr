@@ -256,6 +256,7 @@
 //! minted cells or the reason none was. A caller rendering diagnostics reads
 //! each decline against the declared member's own span.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
@@ -294,6 +295,7 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::WhiskeredCell;
+use gandr_theory_levitation::atom_port;
 use gandr_theory_levitation::elaborate_body;
 use quenchant_shape::shape::Maybe;
 
@@ -304,6 +306,7 @@ use crate::boundary::DeclinedOpIndex;
 use crate::boundary::InverseFacePresence;
 use crate::boundary::OperationInputCount;
 use crate::term::TermAlphabet;
+use crate::term::conditioned_cell;
 use crate::term::face_cell;
 
 /// The reserved return-continuation hole a rule's cut binds; the `$` prefix
@@ -790,7 +793,8 @@ pub struct DescElaboration
 /// # Specification
 /// - provides: one term cell per face that passed the operation gate, written
 ///   as the face is, and each face's index beside its cell, so a critical pair
-///   between two cells names the rules it came from.
+///   between two cells names the rules it came from; a conditioned face's cell
+///   is held beside the store.
 /// - executable: none — the record lacks the originating description needed to
 ///   validate that every face it should read is read.
 ///
@@ -809,6 +813,44 @@ pub struct PresentedRules
     /// Each face read, by index into the description's rules, with its cell,
     /// in rule order.
     pub faces: Vec<(AdmittedFaceIndex, CellId)>,
+    /// Each conditioned face read, by index into the description's rules,
+    /// with its cell, in rule order: it fires only where its instance names
+    /// no atom it may not, so it rewrites in no store a critical pair joins
+    /// in, and only in [`Self::firing`].
+    pub conditioned: Vec<(AdmittedFaceIndex, Cell<TermAlphabet>)>,
+}
+
+impl PresentedRules
+{
+    /// The store a normal form is reached in: the term cells, then the
+    /// conditioned cells in rule order.
+    ///
+    /// # Specification
+    /// - ensures: the term store itself, nothing copied, when no face is
+    ///   conditioned; otherwise a copy of it with each conditioned cell
+    ///   inserted after the term cells, in rule order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a law held beside the store fires after the term
+    ///   cells, and a presentation holding none fires its store as it is:
+    ///   dropping a held cell, or copying the store when none is held, changes
+    ///   one of them.
+    /// - witness: `elaborate::tests::a_conditioned_law_is_held_beside_the_store`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| matches!(ret, Cow::Borrowed(_)) == self.conditioned.is_empty())]
+    pub fn firing(&self) -> Cow<'_, CellStore<TermAlphabet>>
+    {
+        if self.conditioned.is_empty() {
+            return Cow::Borrowed(&self.store);
+        }
+        let mut store = self.store.clone();
+        for &(_, ref cell) in &self.conditioned {
+            let _cell = store.insert(cell.clone());
+        }
+        Cow::Owned(store)
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -906,7 +948,10 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   face.
 /// - ensures: `presented` is present exactly when a face calls for terms, and
 ///   then holds every face that passed the operation gate and, if it does not
-///   call for terms, was admitted — as [`face_cell`] builds it, in rule order.
+///   call for terms, was admitted — as [`face_cell`] builds it, in rule order;
+///   where some operation's input port takes an atom, a face stating a
+///   freshness condition or moving a variable across an abstraction is held
+///   beside the store instead, as [`conditioned_cell`] builds it.
 /// - ensures: `circuits` holds one [`CircuitElaboration`] per circuit rule, in
 ///   declaration order; a rule whose body denotes no single composite is
 ///   declined with [`ElaborateError::NoCircuitComposite`] before its derived
@@ -940,6 +985,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 /// - witness: `elaborate::tests::a_law_returning_a_nullary_operation_is_read_over_terms_909`
 /// - witness: `elaborate::tests::a_second_order_law_reaches_no_store`
+/// - witness: `elaborate::tests::a_conditioned_law_is_held_beside_the_store`
 #[spec(
     ensures: |ret| {
     ret.opers.len().saturating_add(ret.declined_opers.len()) == desc.opers.len()
@@ -953,12 +999,14 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
             .iter()
             .all(|&(index, _)| usize::from(index) < desc.rules.len())
         && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()).saturating_add(match ret.presented {
-            Maybe::Present(ref presented) => presented.faces.len().saturating_sub(ret.admitted_faces.len()),
+            Maybe::Present(ref presented) => presented.faces.len().saturating_add(presented.conditioned.len()).saturating_sub(ret.admitted_faces.len()),
             Maybe::Absent(_) => 0,
         }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len()
         && match ret.presented {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
                 .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
+                && presented.conditioned.iter().all(|&(index, ref cell)| desc.rules.get(usize::from(index))
+                    .is_some_and(|face| *cell == conditioned_cell(face)))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
             Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len())
                 .saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len(),
@@ -1051,14 +1099,22 @@ fn elaborate_desc<G>(
         }
     }
     let presented = if presents {
+        let nameable = atom_port(desc).is_some();
         let mut terms = CellStore::new();
-        let faces = read
-            .into_iter()
-            .map(|(index, face)| (index, terms.insert(face_cell(face))))
-            .collect();
+        let mut faces = Vec::with_capacity(read.len());
+        let mut conditioned = Vec::new();
+        for (index, face) in read {
+            if nameable && bool::from(face.conditioned()) {
+                conditioned.push((index, conditioned_cell(face)));
+            }
+            else {
+                faces.push((index, terms.insert(face_cell(face))));
+            }
+        }
         Maybe::Present(PresentedRules {
             store: terms,
             faces,
+            conditioned,
         })
     }
     else {
@@ -3930,6 +3986,75 @@ mod tests
             )],
             elaborate_data_desc(&laws).declined_faces,
             "a family declines the first-order law alone"
+        );
+    }
+
+    #[test]
+    fn a_conditioned_law_is_held_beside_the_store()
+    {
+        // `rule gc : nu(bind a . p) ==> p where a # p` beside
+        // `rule r : f(x) ==> nil()`: where `out` takes a channel, collection
+        // fires only where its body names no `a`, so no critical pair is read
+        // through it and it is held beside the store.
+        let var = FreeTerm::var;
+        let collect = face(FreeTerm::op("nu", [FreeTerm::abs("a", var("p"))]), var("p"))
+            .with_fresh(vec![gandr_theory_levitation::Freshness::new("a", "p")]);
+        let laws = |channel: &str| {
+            nat_with(
+                [
+                    op("nil", []),
+                    op("f", [SortRef::new("x", "Nat")]),
+                    op("nu", [SortRef::new("p", "Nat")]),
+                    op("out", [
+                        SortRef::new("c", channel),
+                        SortRef::new("p", "Nat"),
+                    ]),
+                ],
+                [
+                    face(FreeTerm::op("f", [var("x")]), FreeTerm::op("nil", [])),
+                    collect.clone(),
+                ],
+            )
+            .with_sorts([SortDesc::new("Nat", DeclPolarity::Data), SortDesc {
+                representability: gandr_theory_levitation::Representability::Atom,
+                ..SortDesc::new("Name", DeclPolarity::Data)
+            }])
+        };
+        let Maybe::Present(named) = elaborate_theory_desc(&laws("Name")).presented
+        else {
+            panic!("the laws are read over terms");
+        };
+        assert_eq!(
+            (&named.faces, &named.conditioned),
+            (
+                &vec![(AdmittedFaceIndex::from(0_usize), CellId::from(0_usize))],
+                &vec![(AdmittedFaceIndex::from(1_usize), conditioned_cell(&collect))]
+            ),
+            "where `out` takes a channel, collection is held beside the store"
+        );
+        assert_eq!(
+            named.firing().len(),
+            CellCount::from(2_usize),
+            "and fires after the term cells"
+        );
+        let Maybe::Present(unnamed) = elaborate_theory_desc(&laws("Nat")).presented
+        else {
+            panic!("the laws are read over terms");
+        };
+        assert!(
+            matches!(unnamed.firing(), Cow::Borrowed(_)),
+            "with no law held beside it, the store fires as it is, nothing copied"
+        );
+        assert_eq!(
+            (unnamed.faces, unnamed.conditioned),
+            (
+                vec![
+                    (AdmittedFaceIndex::from(0_usize), CellId::from(0_usize)),
+                    (AdmittedFaceIndex::from(1_usize), CellId::from(1_usize))
+                ],
+                Vec::new()
+            ),
+            "where no port takes a channel, no term names one and collection is a term cell"
         );
     }
 

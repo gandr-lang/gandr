@@ -978,3 +978,94 @@ fn the_circles_rules_fire_below_the_root()
         "the redex stands below the root"
     );
 }
+
+#[test]
+fn a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not()
+{
+    let (p, q) = (|| FreeTerm::var("p"), || FreeTerm::var("q"));
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let nu2 = |outer: &str, inner: &str, body: FreeTerm| {
+        FreeTerm::op("nu2", [FreeTerm::abs(outer, FreeTerm::abs(inner, body))])
+    };
+    let par = |left: FreeTerm, right: FreeTerm| FreeTerm::op("par", [left, right]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let face = |lhs: FreeTerm, rhs: FreeTerm, fresh: &[(&str, &str)]| {
+        RuleFace::new(lhs, rhs, Vec::new(), SurfaceSpan::default()).with_fresh(
+            fresh
+                .iter()
+                .map(|&(atom, term)| gandr_theory_levitation::Freshness::new(atom, term))
+                .collect::<Vec<_>>(),
+        )
+    };
+    // `nu(bind a . p) ==> p where a # p`
+    let collect = face(nu("a", p()), p(), &[("a", "p")]);
+    // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where a # q`
+    let extrude = face(par(nu("a", p()), q()), nu("a", par(p(), q())), &[(
+        "a", "q",
+    )]);
+    // `nu2(bind a . bind b . p) ==> nu2(bind b . bind a . p)`
+    let swap = face(nu2("a", "b", p()), nu2("b", "a", p()), &[]);
+    let reached = |face: &RuleFace, written: &FreeTerm, steps: usize| {
+        let cell = conditioned_cell(face);
+        assert_eq!(
+            (cell.lhs().read(), cell.rhs().read()),
+            (
+                Maybe::Present(face.lhs.canonical_atoms()),
+                Maybe::Present(face.rhs.canonical_atoms())
+            ),
+            "the cell's faces read back as written"
+        );
+        let mut store = CellStore::new();
+        let _cell = store.insert(cell);
+        let start = Term::from(written);
+        let reached = normalize(&store, &start, NormalizationBudget::from(steps));
+        assert!(
+            bool::from(replay_path(&store, &start, &reached.normal, &reached.path)),
+            "{written}'s path replays"
+        );
+        reached.normal.read()
+    };
+    let canonical = |term: FreeTerm| Maybe::Present(term.canonical_atoms());
+    let unheard = nu("c", nu("d", out("c")));
+    assert_eq!(
+        reached(&collect, &unheard, 4_usize),
+        canonical(nu("c", out("c"))),
+        "a restriction its body does not name is collected, the body's channel counted one \
+         abstraction nearer"
+    );
+    let heard = nu("c", out("c"));
+    assert_eq!(
+        reached(&collect, &heard, 4_usize),
+        canonical(heard.clone()),
+        "a restriction its body names stays"
+    );
+    let open = nu("c", FreeTerm::var("x"));
+    assert_eq!(
+        reached(&collect, &open, 4_usize),
+        canonical(open.clone()),
+        "a restriction over a metavariable stays: its instance may name the channel"
+    );
+    let beside = nu("d", par(nu("c", out("c")), out("d")));
+    assert_eq!(
+        reached(&extrude, &beside, 4_usize),
+        canonical(nu("d", nu("c", par(out("c"), out("d"))))),
+        "the process moved under the restriction counts its channel one abstraction further"
+    );
+    let crossed = nu2("a", "b", out("a"));
+    assert_eq!(
+        reached(&swap, &crossed, 1_usize),
+        canonical(nu2("b", "a", out("a"))),
+        "swapping two abstractions swaps the occurrences naming them"
+    );
+    let kept = face(
+        nu("a", FreeTerm::op("f", [p()])),
+        nu("a", FreeTerm::op("g", [p()])),
+        &[],
+    );
+    assert_eq!(
+        conditioned_cell(&kept),
+        face_cell(&kept),
+        "a variable under the same abstractions on both sides is not scoped"
+    );
+}

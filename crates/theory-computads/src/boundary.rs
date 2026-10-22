@@ -159,3 +159,9 @@ verdict_wrapper! {
     /// one.
     pub struct Renaming;
 }
+
+verdict_wrapper! {
+    /// Whether an instance names no abstraction a metavariable's scope
+    /// withholds, and holds nothing that could.
+    pub struct ScopeAdmission;
+}

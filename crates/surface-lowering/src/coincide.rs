@@ -194,6 +194,7 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
 use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::atom_port;
 use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::embeds;
 use gandr_theory_levitation::orient_rules;
@@ -462,6 +463,15 @@ pub enum CoherenceFault
         /// The earlier rule's written interval.
         first: ByteSpan,
     },
+    /// The rule and another overlap, and one of them states a freshness
+    /// condition or moves a variable across an abstraction where a term can
+    /// name an atom: it fires only where its instance names no atom it may
+    /// not, which no critical pair decides yet.
+    OverlapsCondition
+    {
+        /// The other rule's written interval.
+        first: ByteSpan,
+    },
     /// The rule and an earlier one overlap at `peak` and rewrite it to two
     /// normal forms each headed by a constructor or a results tuple: no rule
     /// joins two values.
@@ -593,6 +603,9 @@ impl CoherenceFault
             Self::OverlapsSecondOrder { first } => {
                 LoweringRefusal::RulesOverlapSecondOrder { span, first }
             },
+            Self::OverlapsCondition { first } => {
+                LoweringRefusal::RulesOverlapCondition { span, first }
+            },
             Self::Diverges { first, .. } => LoweringRefusal::RulesDiverge { span, first },
             Self::Uncompleted { first, .. } => LoweringRefusal::RulesUncompleted { span, first },
             Self::Undecided { first, .. } | Self::Unfinished { first, .. } => {
@@ -646,6 +659,10 @@ impl fmt::Display for CoherenceFault
             Self::OverlapsSecondOrder { .. } => f.write_str(
                 "the two rules' left sides overlap, and one of them instantiates a variable, \
                  which no critical pair may hold",
+            ),
+            Self::OverlapsCondition { .. } => f.write_str(
+                "the two rules' left sides overlap, and one of them fires only where its \
+                 instance names no atom it may not, which no critical pair decides yet",
             ),
             Self::Diverges {
                 ref peak,
@@ -748,16 +765,21 @@ impl fmt::Display for Spelled<'_>
 ///   or circuit rules; `at` is the declaration's interval.
 /// - ensures: the first unoriented rule as [`CoherenceFault::Unoriented`] at
 ///   its span; else the first overlap of a second-order rule, as
-///   [`second_order_overlap`] finds it, as
-///   [`CoherenceFault::OverlapsSecondOrder`] at the later rule's span naming
-///   the earlier one's; else each reading completed in turn, the sequent one
-///   first, as [`Reading::complete`] completes it, its first fault at the later
-///   rule's span naming the earlier one's; else [`Coincidence::Orthogonal`]
-///   when no two cells overlap in either reading and [`Coincidence::Joined`]
-///   with every prime pair's certificate and every derived rule otherwise. Each
-///   derived rule's cell is appended to `store` or to the presented reading's
-///   store, in derivation order, so the store a reading rewrites with ends with
-///   them.
+///   [`overlap_apart`] finds it, as [`CoherenceFault::OverlapsSecondOrder`] at
+///   the later rule's span naming the earlier one's; else, where some
+///   operation's input port takes an atom, the first overlap of a rule stating
+///   a freshness condition or moving a variable across an abstraction,
+///   likewise, as [`CoherenceFault::OverlapsCondition`]; else each reading
+///   completed in turn, the sequent one first, as [`Reading::complete`]
+///   completes it, its first fault at the later rule's span naming the earlier
+///   one's; else such a conditioned rule's first overlap with a rule the
+///   kernel's certificate derives, after the written rules, as
+///   [`CoherenceFault::OverlapsCondition`] at the block's interval for a
+///   derived rule; else [`Coincidence::Orthogonal`] when no two cells overlap
+///   in either reading and [`Coincidence::Joined`] with every prime pair's
+///   certificate and every derived rule otherwise. Each derived rule's cell is
+///   appended to `store` or to the presented reading's store, in derivation
+///   order, so the store a reading rewrites with ends with them.
 /// - panics: none.
 ///
 /// # Errors
@@ -796,7 +818,9 @@ impl fmt::Display for Spelled<'_>
     Err((span, CoherenceFault::Unoriented)) => matches!(orient_rules(description), Termination::Unoriented(_))
         && span.start() >= at.start() && span.end() <= at.end(),
     Err((_, CoherenceFault::OverlapsSecondOrder { .. })) => orient_rules(description) == Termination::Oriented
-        && second_order_overlap(&description.rules).is_some(),
+        && overlap_apart(&description.rules.iter().map(|face| &face.lhs).collect::<Vec<_>>(), &apart_rules(description).0).is_some(),
+    Err((_, CoherenceFault::OverlapsCondition { .. })) => orient_rules(description) == Termination::Oriented
+        && apart_rules(description).1.contains(&Apart(true)),
     Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::NeverCompletes { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -818,13 +842,28 @@ pub(crate) fn decide<G>(
     if let Termination::Unoriented(index) = orient_rules(description) {
         return Err((rule_span(usize::from(index)), CoherenceFault::Unoriented));
     }
-    if let Some((later, earlier)) = second_order_overlap(&description.rules) {
+    let lefts: Vec<&FreeTerm> = description.rules.iter().map(|face| &face.lhs).collect();
+    let (second_order, conditioned) = apart_rules(description);
+    if let Some((later, earlier)) = overlap_apart(&lefts, &second_order) {
         return Err((
             rule_span(usize::from(later)),
             CoherenceFault::OverlapsSecondOrder {
                 first: rule_span(usize::from(earlier)),
             },
         ));
+    }
+    let overlaps_condition = |lefts: &[&FreeTerm], conditioned: &[Apart]| {
+        overlap_apart(lefts, conditioned).map(|(later, earlier)| {
+            (
+                rule_span(usize::from(later)),
+                CoherenceFault::OverlapsCondition {
+                    first: rule_span(usize::from(earlier)),
+                },
+            )
+        })
+    };
+    if let Some(refused) = overlaps_condition(&lefts, &conditioned) {
+        return Err(refused);
     }
     let budget = NormalizationBudget::from(JOIN_STEPS);
     let rewriting = rewriting_store(store, faces, circuits);
@@ -880,6 +919,27 @@ pub(crate) fn decide<G>(
         },
         Maybe::Absent(presented_reading::Absent::NoTermFace) => (Vec::new(), Vec::new()),
     };
+    let replayed = if derived_terms.is_empty() {
+        derived_commands
+            .iter()
+            .map(|derived| &derived.rule.0)
+            .collect::<Vec<_>>()
+    }
+    else {
+        derived_terms
+            .iter()
+            .map(|derived| &derived.rule.0)
+            .collect()
+    };
+    if !replayed.is_empty() && conditioned.contains(&Apart(true)) {
+        let mut lefts = lefts;
+        lefts.extend(replayed);
+        let mut conditioned = conditioned;
+        conditioned.resize(lefts.len(), Apart(false));
+        if let Some(refused) = overlaps_condition(&lefts, &conditioned) {
+            return Err(refused);
+        }
+    }
     if commands.is_empty() && terms.is_empty() {
         return Ok(Coincidence::Orthogonal);
     }
@@ -891,42 +951,42 @@ pub(crate) fn decide<G>(
     }))
 }
 
-/// The first overlap of a second-order rule of `rules`: the later rule's index
-/// and the earlier one's.
+/// The first overlap of two of the rules whose left sides are `lefts`, one of
+/// them marked in `apart`: the later rule's index and the earlier one's.
 ///
 /// # Specification
 /// - ensures: [`Some`] with the larger and the smaller index of the first pair
 ///   — in order of the outer rule, then of a position of its left side, then of
-///   the inner rule, as the kernel reads them — at least one of whose
-///   right-hand sides instantiates a variable, where the inner rule's left
-///   side, renamed apart, unifies with the outer one's subterm at a position
-///   holding no lone variable, other than the root of one rule overlapping
-///   itself; [`None`] when no such pair exists.
+///   the inner rule, as the kernel reads them — at least one of which `apart`
+///   marks, where the inner rule's left side, renamed apart, unifies with the
+///   outer one's subterm at a position holding no lone variable, other than the
+///   root of one rule overlapping itself; [`None`] when no such pair exists.
 /// - panics: none.
 /// - intension: each left side read as a term once; a pair neither of whose
-///   rules instantiates is never unified.
+///   rules is marked is never unified.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `let`'s rule beside a rule rewriting `let` at a constant
 ///   overlaps at the root, the same rule beside one rewriting under `let`'s
 ///   bound term overlaps below it, and `let` beside a first-order rule over
-///   other operations does not; reading only first-order pairs, or counting a
-///   root self-overlap, changes a verdict.
+///   other operations does not; garbage collection overlaps scope extrusion
+///   below its root; reading only unmarked pairs, or counting a root
+///   self-overlap, changes a verdict.
 /// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
-#[spec(ensures: |ret| ret.is_none_or(|(later, earlier)| earlier <= later && usize::from(later) < rules.len()))]
-fn second_order_overlap(rules: &[RuleFace]) -> Option<(RuleIndex, RuleIndex)>
+/// - witness: `coincide::tests::a_conditioned_rule_overlapping_another_refuses_the_block`
+#[spec(ensures: |ret| ret.is_none_or(|(later, earlier)| earlier <= later && usize::from(later) < lefts.len()))]
+fn overlap_apart(
+    lefts: &[&FreeTerm],
+    apart: &[Apart],
+) -> Option<(RuleIndex, RuleIndex)>
 {
-    let second_order: Vec<bool> = rules
-        .iter()
-        .map(|face| bool::from(face.rhs.instantiates()))
-        .collect();
-    if !second_order.contains(&true) {
+    if !apart.contains(&Apart(true)) {
         return None;
     }
-    let lefts: Vec<Term> = rules.iter().map(|face| Term::from(&face.lhs)).collect();
+    let lefts: Vec<Term> = lefts.iter().map(|&left| Term::from(left)).collect();
     let root = TermAlphabet::root_position();
     for (outer, left) in lefts.iter().enumerate() {
-        let outer_second = second_order.get(outer).copied().unwrap_or(false);
+        let Apart(outer_apart) = apart.get(outer).copied().unwrap_or_default();
         for seam in TermAlphabet::command_positions(left) {
             let Maybe::Present(sub) = TermAlphabet::subterm_cmd_at(left, &seam)
             else {
@@ -937,8 +997,8 @@ fn second_order_overlap(rules: &[RuleFace]) -> Option<(RuleIndex, RuleIndex)>
             {
                 continue;
             }
-            for ((inner, other), &inner_second) in lefts.iter().enumerate().zip(&second_order) {
-                if !(outer_second || inner_second) || (seam == root && inner == outer) {
+            for ((inner, other), &Apart(inner_apart)) in lefts.iter().enumerate().zip(apart) {
+                if !(outer_apart || inner_apart) || (seam == root && inner == outer) {
                     continue;
                 }
                 let (renamed, _) = TermAlphabet::rename_apart((left, left), (other, other));
@@ -953,6 +1013,32 @@ fn second_order_overlap(rules: &[RuleFace]) -> Option<(RuleIndex, RuleIndex)>
         }
     }
     None
+}
+
+/// Whether a rule takes part in no critical pair.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct Apart(bool);
+
+/// Which of `rules` instantiate a variable, and which are conditioned where
+/// some operation of `description` takes an atom: the rules of each kind
+/// take part in no critical pair.
+///
+/// # Specification
+/// trivial.
+fn apart_rules<G>(description: &TheoryDesc<G>) -> (Vec<Apart>, Vec<Apart>)
+{
+    let nameable = atom_port(description).is_some();
+    description
+        .rules
+        .iter()
+        .map(|face| {
+            (
+                Apart(bool::from(face.rhs.instantiates())),
+                Apart(nameable && bool::from(face.conditioned())),
+            )
+        })
+        .unzip()
 }
 
 /// A completed reading: one certificate per prime critical pair, then the
@@ -1576,10 +1662,11 @@ impl fmt::Display for NormalFormFault
 /// - requires: `cells` is the cell gate's elaboration of `description`.
 /// - ensures: the call read in the inspection notation against the block's
 ///   constructors and operations; for a presented type, read as a term and
-///   normalized under its term store, and otherwise elaborated to the command
-///   its faces match and normalized under [`DeclarationCells::rewriting`];
-///   within [`NORMAL_FORM_STEPS`] steps, its path replayed to the normal form,
-///   and the normal form read back as a term.
+///   normalized under its term store with its conditioned cells after the rest
+///   ([`PresentedRules::firing`]), and otherwise elaborated to the command its
+///   faces match and normalized under [`DeclarationCells::rewriting`]; within
+///   [`NORMAL_FORM_STEPS`] steps, its path replayed to the normal form, and the
+///   normal form read back as a term.
 /// - fails: [`NormalFormFault::Incoherent`] for a block the coincidence check
 ///   did not admit; otherwise the first step that fails, in that order.
 /// - panics: none.
@@ -1623,12 +1710,14 @@ pub fn normal_form<G>(
     let call = read_call(description, call)?;
     let (path, normal) = match cells.presented {
         Maybe::Present(ref presented) => {
-            let (path, normal) = certified_normal(&presented.store, &Term::from(&call), |term| {
-                match term.read() {
+            let (path, normal) = certified_normal(
+                &*presented.firing(),
+                &Term::from(&call),
+                |term| match term.read() {
                     Maybe::Present(written) => Ok(written),
                     Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
-                }
-            })?;
+                },
+            )?;
             (NormalPath::Terms(path), normal)
         },
         Maybe::Absent(presented_reading::Absent::NoTermFace) => {

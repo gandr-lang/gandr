@@ -699,25 +699,109 @@ fn an_occurrence_counts_to_its_abstraction()
     );
     let p = code.var(literal("p"));
     let hiding = restricted(&mut code, "a", p);
-    let undecided = |code: &mut Code, naming: super::Naming| {
+    let conditioned = |code: &mut Code, naming: super::Naming| {
         let (sorts, operations) = code.channels(naming);
         let presentation = code.presenting(sorts, operations, vec![
             (rule_tag, vec![unheard, left_a, nil]),
             (rule_tag, vec![leak, hiding, p]),
         ]);
-        TheoryRules::read(&code.arena, presentation).map(|read| read.rules().len())
+        TheoryRules::read(&code.arena, presentation).map(|read| {
+            read.rules()
+                .iter()
+                .map(|rule| rule.conditioned)
+                .collect::<Vec<_>>()
+        })
     };
     assert_eq!(
-        undecided(&mut code, super::Naming::Named),
-        Err(TheoryRuleRefusal {
-            rule: RuleIndex::from(1_usize),
-            fault: TheoryRuleFault::UndecidedCondition,
-        }),
-        "`p` leaves `bind a .` where `out` takes a channel: an instance may name it"
+        conditioned(&mut code, super::Naming::Named),
+        Ok(vec![false, true]),
+        "`p` leaves `bind a .` where `out` takes a channel: the rule fires only where its \
+         instance names no `a`"
     );
     assert_eq!(
-        undecided(&mut code, super::Naming::Unnamed),
-        Ok(2),
-        "where no port takes a channel no term names one, and the move is read"
+        conditioned(&mut code, super::Naming::Unnamed),
+        Ok(vec![false, false]),
+        "where no port takes a channel no term names one, and the move holds of every instance"
+    );
+    let beside = code.app(literal("out"), &[p, hiding]);
+    let (sorts, operations) = code.channels(super::Naming::Named);
+    let split = code.presenting(sorts, operations, vec![(rule_tag, vec![leak, beside, p])]);
+    assert_eq!(
+        TheoryRules::read(&code.arena, split),
+        Err(TheoryRuleRefusal {
+            rule: RuleIndex::from(0_usize),
+            fault: TheoryRuleFault::UndecidedCondition,
+        }),
+        "`p` matched beside `bind a .` and under it compares instances up to the atoms they name"
+    );
+}
+
+#[test]
+fn a_conditioned_rule_converges_alone_and_overlaps_nothing()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (rule_tag, fresh_tag, rank) = (
+        tag(super::tag::RULE),
+        tag(super::tag::FRESH),
+        tag(super::tag::RANK),
+    );
+    let mut code = Code::new();
+    let (p, q) = (code.var(literal("p")), code.var(literal("q")));
+    let hidden = code.abs(literal("a"), p);
+    let restricted = code.app(literal("nu"), &[hidden]);
+    let scoped = code.app(literal("par"), &[restricted, q]);
+    let joined = code.app(literal("par"), &[p, q]);
+    let enclosed = code.abs(literal("a"), joined);
+    let extruded = code.app(literal("nu"), &[enclosed]);
+    let [scope, gc, a, p_name, q_name, par, nu, one, two] =
+        ["scope", "gc", "a", "p", "q", "par", "nu", "1", "2"].map(|name| code.text(literal(name)));
+    let extrusion = [
+        (rule_tag, vec![scope, scoped, extruded]),
+        (fresh_tag, vec![a, q_name]),
+    ];
+    let collection = [
+        (rule_tag, vec![gc, restricted, p]),
+        (fresh_tag, vec![a, p_name]),
+    ];
+    let ranks = [(rank, vec![par, two]), (rank, vec![nu, one])];
+    let decided = |code: &mut Code,
+                   naming: super::Naming,
+                   rules: &[&[(ConstructorTag, Vec<ValueId>)]]|
+     -> Result<(), TheoryRuleRefusal> {
+        let (sorts, operations) = code.channels(naming);
+        let members = rules
+            .iter()
+            .flat_map(|rule| rule.iter().cloned())
+            .chain(ranks.iter().cloned())
+            .collect();
+        let presentation = code.presenting(sorts, operations, members);
+        TheoryRules::read(&code.arena, presentation)?.decide(&mut fuel())
+    };
+    for naming in [super::Naming::Named, super::Naming::Unnamed] {
+        assert_eq!(
+            decided(&mut code, naming, &[&extrusion]),
+            Ok(()),
+            "scope extrusion converges alone"
+        );
+        assert_eq!(
+            decided(&mut code, naming, &[&collection]),
+            Ok(()),
+            "garbage collection converges alone"
+        );
+    }
+    assert_eq!(
+        decided(&mut code, super::Naming::Named, &[&extrusion, &collection]),
+        refused!(0, TheoryRuleFault::Conditioned(RuleIndex::from(1_usize))),
+        "where `out` takes a channel, collection overlaps extrusion under conditions no pair \
+         decides"
+    );
+    assert_eq!(
+        decided(&mut code, super::Naming::Unnamed, &[
+            &extrusion,
+            &collection
+        ]),
+        Ok(()),
+        "where no term names a channel the two join"
     );
 }

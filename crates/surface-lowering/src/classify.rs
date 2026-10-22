@@ -182,6 +182,7 @@ impl LoweringRefusal<'_>
                 kind: crate::WfKind::UndecidedCondition,
                 ..
             }
+            | Self::RulesOverlapCondition { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
@@ -265,7 +266,10 @@ impl LoweringRefusal<'_>
             Self::IllFormedDescription {
                 kind: crate::WfKind::UndecidedCondition,
                 ..
-            } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            }
+            | Self::RulesOverlapCondition { .. } => {
+                FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION)
+            },
             Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -765,7 +769,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 63_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 64_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1020,6 +1024,10 @@ mod tests
                 span: empty,
                 first: empty,
             },
+            LoweringRefusal::RulesOverlapCondition {
+                span: empty,
+                first: empty,
+            },
             LoweringRefusal::UnguardedCorecursion {
                 span: empty,
                 name: SurfaceName::from("ones"),
@@ -1098,6 +1106,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             FailureClass::MalformedSource,
         ];
 

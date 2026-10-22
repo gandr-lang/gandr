@@ -670,6 +670,10 @@ pub enum RefusalName
     /// Two rules of a block whose left sides overlap, one of which
     /// instantiates a variable a binding port binds.
     RulesOverlapSecondOrder,
+    /// Two rules of a block whose left sides overlap, one of which states a
+    /// freshness condition or moves a variable across an abstraction where a
+    /// term can name an atom.
+    RulesOverlapCondition,
     /// Two rules of a block rewriting one term to two normal forms no rule
     /// the path order orients joins.
     RulesUncompleted,
@@ -865,7 +869,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 199_usize] = [
+    pub const VOCABULARY: [Self; 200_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -983,6 +987,7 @@ impl RefusalName
         Self::RulesNonLinear,
         Self::RulesDiverge,
         Self::RulesOverlapSecondOrder,
+        Self::RulesOverlapCondition,
         Self::RulesUncompleted,
         Self::RulesNeverComplete,
         Self::RulesUndecided,
@@ -1170,6 +1175,7 @@ impl RefusalName
         (Self::RulesNonLinear, b"RulesNonLinear") |
         (Self::RulesDiverge, b"RulesDiverge") |
         (Self::RulesOverlapSecondOrder, b"RulesOverlapSecondOrder") |
+        (Self::RulesOverlapCondition, b"RulesOverlapCondition") |
         (Self::RulesUncompleted, b"RulesUncompleted") |
         (Self::RulesNeverComplete, b"RulesNeverComplete") |
         (Self::RulesUndecided, b"RulesUndecided") |
@@ -1492,6 +1498,7 @@ impl RefusalName
             Self::RulesNonLinear => "RulesNonLinear",
             Self::RulesDiverge => "RulesDiverge",
             Self::RulesOverlapSecondOrder => "RulesOverlapSecondOrder",
+            Self::RulesOverlapCondition => "RulesOverlapCondition",
             Self::RulesUncompleted => "RulesUncompleted",
             Self::RulesNeverComplete => "RulesNeverComplete",
             Self::RulesUndecided => "RulesUndecided",
@@ -2147,6 +2154,8 @@ impl Refusal<'_>
         RefusalName::RulesDiverge) |
         (Self::Lowering(LoweringRefusal::RulesOverlapSecondOrder { .. }),
         RefusalName::RulesOverlapSecondOrder) |
+        (Self::Lowering(LoweringRefusal::RulesOverlapCondition { .. }),
+        RefusalName::RulesOverlapCondition) |
         (Self::Lowering(LoweringRefusal::RulesUncompleted { .. }),
         RefusalName::RulesUncompleted) |
         (Self::Lowering(LoweringRefusal::RulesNeverComplete { .. }),
@@ -2374,7 +2383,8 @@ impl Refusal<'_>
         RefusalName::RulesUnoriented) | (LoweringRefusal::RulesNonLinear { .. },
         RefusalName::RulesNonLinear) | (LoweringRefusal::RulesDiverge { .. },
         RefusalName::RulesDiverge) | (LoweringRefusal::RulesOverlapSecondOrder { .. },
-        RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesUncompleted { .. },
+        RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesOverlapCondition { .. },
+        RefusalName::RulesOverlapCondition) | (LoweringRefusal::RulesUncompleted { .. },
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesNeverComplete { .. },
         RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
@@ -2463,6 +2473,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesNonLinear { .. } => RefusalName::RulesNonLinear,
         LoweringRefusal::RulesDiverge { .. } => RefusalName::RulesDiverge,
         LoweringRefusal::RulesOverlapSecondOrder { .. } => RefusalName::RulesOverlapSecondOrder,
+        LoweringRefusal::RulesOverlapCondition { .. } => RefusalName::RulesOverlapCondition,
         LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,
         LoweringRefusal::RulesNeverComplete { .. } => RefusalName::RulesNeverComplete,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,

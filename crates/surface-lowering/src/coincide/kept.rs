@@ -316,6 +316,7 @@ fn moved<E>(
             match fault {
                 CoherenceFault::Unoriented => {},
                 CoherenceFault::OverlapsSecondOrder { ref mut first }
+                | CoherenceFault::OverlapsCondition { ref mut first }
                 | CoherenceFault::Diverges { ref mut first, .. }
                 | CoherenceFault::Uncompleted { ref mut first, .. }
                 | CoherenceFault::Undecided { ref mut first, .. }

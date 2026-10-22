@@ -918,6 +918,61 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 }
 
 #[test]
+fn a_conditioned_rule_overlapping_another_refuses_the_block()
+{
+    let theory = |channel: &str| {
+        format!(
+            "theory Pi {{
+    sort Name : Atom;
+    sort Proc : Type;
+    oper nil : () --> Proc;
+    oper par : (p : Proc, q : Proc) --> Proc;
+    oper out : (c : {channel}, p : Proc) --> Proc;
+    oper nu : (p : bind (a : Name) . Proc) --> Proc;
+    rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+    rule gc : nu(bind a . p) <=> p where a # p;
+}}"
+        )
+    };
+    let named = theory("Name");
+    let source = SourceText::from(named.as_str());
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(CoherenceFault::OverlapsCondition { first }) = diagnostic.fault
+        else {
+            panic!("collection overlaps extrusion: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            text(source, diagnostic.span).as_ref(),
+            "rule gc : nu(bind a . p) <=> p where a # p"
+        );
+        assert_eq!(
+            text(source, first).as_ref(),
+            "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q",
+            "collection names extrusion"
+        );
+        assert_eq!(
+            module.declarations()[0].outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesOverlapCondition {
+                span: diagnostic.span,
+                first
+            })
+        );
+    });
+    let unnamed = theory("Proc");
+    lowered(SourceText::from(unnamed.as_str()), |module| {
+        assert_eq!(
+            module.cells().diagnostics,
+            [],
+            "where no port takes a channel no term names one, and the pair joins"
+        );
+    });
+}
+
+#[test]
 fn an_equation_written_backwards_orients_forwards()
 {
     let source = SourceText::from(

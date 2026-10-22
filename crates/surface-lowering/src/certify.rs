@@ -37,6 +37,7 @@ use gandr_theory_levitation::SidePlace;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::atom_port;
 
 use crate::coincide::Coincidence;
 use crate::coincide::Joined;
@@ -51,8 +52,9 @@ use crate::description::written::RuleDirection;
 ///   the order chose right to left; the rules completion derived in the
 ///   presented reading when it derived any there and the sequent reading's
 ///   otherwise, each with the first peak of the rules before it whose normal
-///   forms are its sides, stopping before the first rule no peak reaches; and
-///   each operation the rules mention, of a positive rank in the precedence the
+///   forms are its sides, a written rule conditioned exactly as the kernel
+///   reads it, stopping before the first rule no peak reaches; and each
+///   operation the rules mention, of a positive rank in the precedence the
 ///   oriented rules and the ranking derived rules induce, in declaration order.
 /// - panics: none.
 ///
@@ -109,10 +111,19 @@ where
         .map(|(name, rank)| (name.clone(), rank))
         .collect();
     let mut symbols = Symbols::new(&ranks);
+    let nameable = atom_port(description).is_some();
     let written: Vec<TheoryRule> = cells
         .oriented
         .iter()
-        .map(|face| symbols.rule(&face.lhs, &face.rhs))
+        .map(|face| {
+            let rule = symbols.rule(&face.lhs, &face.rhs);
+            if nameable && bool::from(face.conditioned()) {
+                rule.conditioned()
+            }
+            else {
+                rule
+            }
+        })
         .collect();
     let derived_rules: Vec<TheoryRule> = derived
         .iter()

@@ -171,6 +171,7 @@ pub use crate::term::TermOrient;
 pub use crate::term::TermPos;
 pub use crate::term::TermProv;
 pub use crate::term::TermSubst;
+pub use crate::term::conditioned_cell;
 pub use crate::term::face_cell;
 pub use crate::term::rule_keeps_growing;
 pub use crate::term::term_reading;
