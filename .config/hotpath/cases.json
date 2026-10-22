@@ -1,0 +1,45 @@
+[
+  {
+    "name": "a failed check reads its first site's span; a passing one moved nothing past its policy",
+    "input": [
+      {
+        "name": "hotpath / gandr-timing",
+        "conclusion": "success",
+        "summary": "### `gandr-timing` · ✅ no regression\nWall time `313.23 ms → 314.02 ms` **+0.3%**\n"
+      },
+      {
+        "name": "hotpath / gandr",
+        "conclusion": "failure",
+        "summary": "<!-- hotpath:benchmark=gandr -->\n### `gandr` · ⚠️ 2 regressions\n\nWall time `401.60 ms → 510.60 ms` **+27%**\n\n**Functions · allocations**\n⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `1444 → 2558` **+77%**, total `452181 → 813738` **+80%** · fails the check\n⚠️ [`lsp keystroke`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/surface-driver/benches/hotpath.rs#L177): avg `59331 → 61258` **+3.2%**, total **+3.2%** · fails the check\n"
+      }
+    ],
+    "output": "[{\"benchmark\":\"gandr\",\"before\":\"1444\",\"after\":\"2558\",\"regressed\":true},{\"benchmark\":\"gandr-timing\",\"before\":\"within its policy\",\"after\":\"within its policy\",\"regressed\":false}]"
+  },
+  {
+    "name": "a failed check with no site over threshold reads its wall time",
+    "input": [
+      {
+        "name": "hotpath / gandr-timing",
+        "conclusion": "failure",
+        "summary": "### `gandr-timing` · ⚠️ wall time\nWall time `313.23 ms → 401.90 ms` **+28%**\n"
+      }
+    ],
+    "output": "[{\"benchmark\":\"gandr-timing\",\"before\":\"313.23 ms\",\"after\":\"401.90 ms\",\"regressed\":true}]"
+  },
+  {
+    "name": "a failed check without a summary reports no numbers",
+    "input": [
+      {
+        "name": "hotpath / gandr",
+        "conclusion": "failure",
+        "summary": ""
+      }
+    ],
+    "output": "[{\"benchmark\":\"gandr\",\"before\":\"unreported\",\"after\":\"unreported\",\"regressed\":true}]"
+  },
+  {
+    "name": "no hotpath check, no deltas",
+    "input": [],
+    "output": "[]"
+  }
+]

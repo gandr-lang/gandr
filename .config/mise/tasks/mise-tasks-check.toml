@@ -312,6 +312,19 @@ run = ".config/mise/scope cargo doc --workspace --locked --no-deps --document-pr
 # gains a `lint assessment` box whose verdict reads `could: yes — <lint>,
 # <reference>` or `could: no — <one sentence>`, open until ticked in one of
 # those shapes. The labels are read through `gh` whenever a body is given.
+#
+# A pull request whose hotpath check is red owes a verdict (#1468): with
+# `--pr`, the head's completed `hotpath / <benchmark>` checks become the
+# report `--hotpath` reads, one delta per benchmark, regressed when the check
+# failed. A failed check's before and after are the first `a → b` span of its
+# first site over threshold, the check's own numbers. A passing check moved
+# nothing past its policy, so both read `within its policy`, and an
+# `accepted` naming it is refused. The section then gains a `### Hotpath` box
+# whose verdict reads `hotpath: fixed — <benchmark> <before> → <after>` or
+# `hotpath: accepted — <benchmark> exercises <feature>; <n> allocations per
+# <use>; <one sentence>`, open until ticked in one of those shapes. The check
+# posts after the benchmark upload, so a CI run may predate it; `pr:land`
+# reads it again before the queue.
 ["evidence:obligations"]
 description = "List the specifications a change obliges to re-verify"
 depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
@@ -320,7 +333,7 @@ usage = '''
 arg "[base]" help="the revision the change is measured against; defaults to the merge base with origin/main"
 flag "--previous <file>" help="a pull-request body whose acknowledgements carry over, left unchanged"
 flag "--body <file>" help="a pull-request body whose acknowledgements carry over, rewritten with its re-verification section"
-flag "--pr <number>" help="the pull request whose own labels join its targets' for the lint assessment"
+flag "--pr <number>" help="the pull request whose own labels join its targets' for the lint assessment, and whose head's hotpath checks owe a verdict when red"
 flag "--require-acknowledged" help="exit 2 while any prose obligation is unticked"
 '''
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
@@ -341,6 +354,14 @@ if [[ -n $text ]]; then
     labels+=("$(gh api "repos/{owner}/{repo}/issues/$number" --jq '[.labels[].name] | join(",")')")
   done
   extra+=(--labels "$(IFS=,; printf '%s' "${labels[*]}")")
+fi
+if [[ -n ${usage_pr:-} ]]; then
+  mkdir -p target/evidence
+  head=$(gh api "repos/{owner}/{repo}/pulls/$usage_pr" --jq .head.sha)
+  gh api --paginate "repos/{owner}/{repo}/commits/$head/check-runs?per_page=100" \
+    --jq '.check_runs[] | select((.name | startswith("hotpath / ")) and .status == "completed" and (.conclusion == "failure" or .conclusion == "success")) | {name, conclusion, summary: (.output.summary // "")}' \
+    | jq -s -f .config/hotpath/report.jq > target/evidence/hotpath.json
+  extra+=(--hotpath target/evidence/hotpath.json)
 fi
 quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
   --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
@@ -669,6 +690,30 @@ while IFS= read -r case; do
 done < <(jq -c '.[]' .config/mutants/cases.json)
 (( failed == 0 )) || exit 1
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
+'''
+
+# The hotpath verdict's report (#1468): `report.jq` reads the head's hotpath
+# checks as the deltas `evidence:obligations` passes to `--hotpath`. Each case
+# in `.config/hotpath/cases.json` holds the checks and the compact JSON they
+# must give.
+["check:hotpath"]
+description = "The hotpath report reading gives each recorded case its deltas"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  got=$(jq .input <<< "$case" | jq -c -f .config/hotpath/report.jq)
+  want=$(jq -r .output <<< "$case")
+  if [[ "$got" != "$want" ]]; then
+    printf 'hotpath case FAILED: %s\n  gave:   %s\n  wanted: %s\n' "$name" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/hotpath/cases.json)
+(( failed == 0 )) || exit 1
+echo "hotpath check OK: $(jq length .config/hotpath/cases.json) cases read as recorded"
 '''
 
 # A clone may wire merge drivers. A driver that merges a rebase "cleanly" into
