@@ -87,7 +87,7 @@ enum Answer
     Term
     {
         /// The arena.
-        core: CoreArena,
+        core: Box<CoreArena>,
         /// The term.
         term: ComputationId,
     },
@@ -217,7 +217,10 @@ fn on_tiers(
                     let mut read = CoreArena::new();
                     let term = read_back_terminal(&arena, &store, value, &mut read)
                         .expect("a halted value of the pure fragment reads back");
-                    Answer::Term { core: read, term }
+                    Answer::Term {
+                        core: Box::new(read),
+                        term,
+                    }
                 },
                 Ok(Outcome::Stuck(stuck)) => Answer::Stopped(tier_stop(&arena, &stuck)),
                 Err(Declined::Lowering(Form::Unbound)) => Answer::Stopped(Stop::UnboundVariable),
@@ -358,7 +361,10 @@ fn normalised(
                 head,
             )
             .expect("a weak head of the pure fragment reads back");
-            Answer::Term { core: normal, term }
+            Answer::Term {
+                core: Box::new(normal),
+                term,
+            }
         },
         Err(fault) => Answer::Stopped(normaliser_stop(fault)),
     }

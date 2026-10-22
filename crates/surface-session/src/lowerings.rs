@@ -145,8 +145,12 @@ impl Led
         let (module, _) = judged.lowering().alone()?;
         let mut items = program(&module, judged.arena().clone()).ok()?;
         let (_, leading) = lead(&mut items, CheckBudget::DEFAULT).ok()?;
+        // Each revision lowers onto a copy of this arena, which the freeze
+        // makes cost the revision's own nodes alone.
+        let mut arena = items.arena().clone();
+        arena.freeze();
         Some(Self {
-            arena: items.arena().clone(),
+            arena,
             leading: Arc::new(leading),
         })
     }

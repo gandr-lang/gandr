@@ -1,3 +1,4 @@
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -451,6 +452,109 @@ fn all_families_truncate_without_resurrecting_nodes()
     assert_eq!(None, arena.value_type(kept_type));
     assert_eq!(None, arena.computation(kept_comp));
     assert_eq!(None, arena.comp_type(kept_comp_type));
+}
+
+/// An arena frozen part way answers every read, mint, truncation and
+/// comparison as one built alike and never frozen does; a clone of it shares
+/// the frozen rows and owns only those minted after, and a truncation into
+/// the frozen rows leaves a clone taken before untouched.
+#[test]
+fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
+{
+    // Each round mints its own content, so a read off by one across the
+    // frozen boundary finds another node.
+    let round = |arena: &mut CoreArena, constant: usize, ty: Option<BaseType>| {
+        let value = arena.value_constant(ConstantIndex::from(constant));
+        let value_type = match ty {
+            Some(ty) => arena.value_type_base(ty),
+            None => arena.value_type_unit(),
+        };
+        let computation = arena.computation_return(value);
+        let comp_type = arena.comp_type_returner(value_type);
+        (value, value_type, computation, comp_type)
+    };
+    let shares = |left: &CoreArena, right: &CoreArena| {
+        left.values
+            .frozen
+            .as_ref()
+            .zip(right.values.frozen.as_ref())
+            .is_some_and(|(left, right)| Arc::ptr_eq(left, right))
+    };
+    let mut plain = CoreArena::new();
+    let mut frozen = CoreArena::new();
+    let first = round(&mut plain, 0, Some(BaseType::Integer));
+    assert_eq!(first, round(&mut frozen, 0, Some(BaseType::Integer)));
+    let mark = frozen.watermark();
+    frozen.freeze();
+    assert_eq!(mark, frozen.watermark(), "a freeze keeps the watermark");
+    assert_eq!(plain, frozen, "and every node");
+    assert!(frozen.values.own.is_empty(), "every row is frozen");
+
+    let mut copy = frozen.clone();
+    assert!(shares(&copy, &frozen), "a clone shares the frozen rows");
+    let second = round(&mut plain, 1, None);
+    assert_eq!(
+        second,
+        round(&mut copy, 1, None),
+        "ids continue past the frozen rows"
+    );
+    assert_eq!(
+        copy.values.own.len(),
+        1,
+        "the clone owns only what it minted"
+    );
+    assert_eq!(plain, copy);
+    assert_eq!(
+        copy.value(first.0),
+        Some(&Value::Constant(ConstantIndex::from(0_usize)))
+    );
+    assert_eq!(
+        copy.value(second.0),
+        Some(&Value::Constant(ConstantIndex::from(1_usize)))
+    );
+    assert_eq!(
+        copy.computation(second.2),
+        Some(&crate::Computation::Return(second.0))
+    );
+    assert_eq!(copy.value_type(second.1), Some(&ValueType::unit()));
+    assert_eq!(copy.value_support(second.0), plain.value_support(second.0));
+    assert_eq!(
+        frozen.value(second.0),
+        None,
+        "the frozen arena never sees the clone's nodes"
+    );
+
+    copy.freeze();
+    assert_eq!(
+        plain, copy,
+        "a second freeze keeps the rows on both sides of the first"
+    );
+    let before = copy.clone();
+    assert!(shares(&before, &copy));
+    let third = round(&mut plain, 2, Some(BaseType::Integer));
+    assert_eq!(third, round(&mut copy, 2, Some(BaseType::Integer)));
+
+    let past = before.watermark();
+    plain.truncate_to(past);
+    copy.truncate_to(past);
+    assert_eq!(plain, copy, "a truncation past the frozen rows");
+    assert_eq!(copy.value(third.0), None);
+    plain.truncate_to(mark);
+    copy.truncate_to(mark);
+    assert_eq!(plain, copy, "a truncation into them");
+    assert_eq!(copy.value(second.0), None);
+    assert_eq!(
+        before.value(second.0),
+        Some(&Value::Constant(ConstantIndex::from(1_usize))),
+        "and a clone taken before keeps its nodes"
+    );
+    let again = round(&mut plain, 3, None);
+    assert_eq!(
+        again,
+        round(&mut copy, 3, None),
+        "a truncated index is minted again"
+    );
+    assert_eq!(plain, copy);
 }
 
 #[test]

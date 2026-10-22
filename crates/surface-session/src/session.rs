@@ -2353,9 +2353,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 });
             },
         };
-        // economy: one arena copy per accepted revision; the reversal is a
-        // report assembled from the resume's own verdicts, which retires the
-        // whole-module judgement and this copy with it.
+        // economy: one arena copy per accepted revision, of the revision's own
+        // nodes when it lowered onto a judged closure's frozen arena; the
+        // reversal is a report assembled from the resume's own verdicts, which
+        // retires the whole-module judgement and this copy with it.
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module, own);
         let documentation = documentation_of(&module, own);

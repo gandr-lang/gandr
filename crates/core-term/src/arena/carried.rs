@@ -85,7 +85,7 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(row) = self.values.get(id_offset(ArenaIndex(child.0)).0) {
+        if let Some(row) = self.values.get(id_offset(ArenaIndex(child.0))) {
             union.stored_child(row.support, &self.words, crossing);
         }
     }
@@ -101,7 +101,7 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(row) = self.computations.get(id_offset(ArenaIndex(child.0)).0) {
+        if let Some(row) = self.computations.get(id_offset(ArenaIndex(child.0))) {
             union.stored_child(row.support, &self.words, crossing);
         }
     }
@@ -117,7 +117,7 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(row) = self.value_types.get(id_offset(ArenaIndex(child.0)).0) {
+        if let Some(row) = self.value_types.get(id_offset(ArenaIndex(child.0))) {
             union.stored_child(row.support, &self.words, crossing);
         }
     }
@@ -134,7 +134,7 @@ impl CoreArena
         crossing: Crossing,
     )
     {
-        if let Some(row) = self.comp_types.get(id_offset(ArenaIndex(child.0)).0) {
+        if let Some(row) = self.comp_types.get(id_offset(ArenaIndex(child.0))) {
             union.stored_child(row.support, &self.words, crossing);
         }
     }
