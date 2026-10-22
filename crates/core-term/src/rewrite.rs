@@ -55,6 +55,12 @@
 //! and regions are closed, so a renaming carries nothing under the binders it
 //! crosses.
 //!
+//! A relevelling reads every decode of one binder at a level and leaves every
+//! other node as it stands. The lowering decodes a transport's or a ride's
+//! motive binder at level zero, the binder's type unknown to it; the checker
+//! relevels the motive at the level of the universe the path or flow lives
+//! in, the one level at which a decode of that binder is well formed.
+//!
 //! # Elaborating nested computations
 //!
 //! A computation written where a value is read stands in the core as
@@ -104,6 +110,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_arith::arith;
@@ -387,6 +394,9 @@ enum Rewrite
     /// each run the engine's slots name by the variable of the bind its region
     /// mints for it.
     Splice(Binders),
+    /// Read every decode of the binder the depth names at the engine's level,
+    /// and leave every other node as it stands.
+    Relevel,
 }
 
 /// Whether an instantiation met the binder it instantiates beneath a node.
@@ -464,6 +474,9 @@ struct Engine<'arena>
     /// Whether each node an instantiation has open reads its binder, the
     /// innermost last.
     reading: Vec<Mention>,
+    /// The level a relevelling reads the binder's decodes at; zero outside
+    /// one.
+    level: Level,
 }
 
 impl<'arena> Engine<'arena>
@@ -489,6 +502,7 @@ impl<'arena> Engine<'arena>
             renaming: &NOTHING_RENAMED,
             reads: alloc::collections::BTreeSet::new(),
             reading: Vec::new(),
+            level: Level::zero(),
         }
     }
 
@@ -620,6 +634,7 @@ impl<'arena> Engine<'arena>
                 | Rewrite::Substitute(_)
                 | Rewrite::Instantiate(..)
                 | Rewrite::Environment
+                | Rewrite::Relevel
         ) && self.outermost_free(node, depth) == Maybe::Absent(free::Absent::Inside)
         {
             self.results.push(node);
@@ -628,6 +643,13 @@ impl<'arena> Engine<'arena>
         if let Maybe::Present(answer) = self.slotted(node, depth, rewrite) {
             let _previous = self.memo.insert((node, depth, rewrite), answer);
             self.results.push(answer);
+            return;
+        }
+        if rewrite == Rewrite::Relevel
+            && let Maybe::Present(relevelled) = self.relevelled(node, depth)
+        {
+            let _previous = self.memo.insert((node, depth, rewrite), relevelled);
+            self.results.push(relevelled);
             return;
         }
         if rewrite == Rewrite::Elaborate
@@ -1085,7 +1107,71 @@ impl<'arena> Engine<'arena>
             | Rewrite::Wrap
             | Rewrite::Environment
             | Rewrite::Rename
-            | Rewrite::Abstract(..) => Maybe::Absent(()),
+            | Rewrite::Abstract(..)
+            | Rewrite::Relevel => Maybe::Absent(()),
+        }
+    }
+
+    /// A decode of the binder the depth names, read at the engine's level.
+    ///
+    /// # Specification
+    /// - requires: `depth` is the number of binders crossed to reach `node`.
+    /// - ensures: a value or computation type decoding the intuitionistic
+    ///   variable that counts to `depth` answers that variable's decode at the
+    ///   engine's level, itself where it already reads there; every other node
+    ///   answers nothing.
+    /// - provides: the decode half of a relevelling's open step.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family decoding its binder at level zero, under a
+    ///   list, beside a decode of an outer variable and inside a computation
+    ///   type, relevelled at one: only the binder's decodes move.
+    /// - witness: `rewrite::tests::a_relevelling_reads_only_the_binders_decodes_at_its_level`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(())) || matches!(node, Node::ValueType(_) | Node::CompType(_)))]
+    fn relevelled(
+        &mut self,
+        node: Node,
+        depth: Binders,
+    ) -> Maybe<Node, ()>
+    {
+        let binder = |arena: &CoreArena, code: ValueId| {
+            matches!(arena.value(code), Some(&Value::Variable { zone: Zone::Intuitionistic, index })
+                if u32::from(index) == depth.0)
+        };
+        match node {
+            Node::ValueType(id) => {
+                let Some(&ValueType::Element { code, ref target }) = self.arena.value_type(id)
+                else {
+                    return Maybe::Absent(());
+                };
+                if !binder(self.arena, code) {
+                    return Maybe::Absent(());
+                }
+                if *target == self.level {
+                    return Maybe::Present(node);
+                }
+                Maybe::Present(Node::ValueType(
+                    self.arena.value_type_element(code, self.level.clone()),
+                ))
+            },
+            Node::CompType(id) => {
+                let Some(&CompType::Element { code, ref target }) = self.arena.comp_type(id)
+                else {
+                    return Maybe::Absent(());
+                };
+                if !binder(self.arena, code) {
+                    return Maybe::Absent(());
+                }
+                if *target == self.level {
+                    return Maybe::Present(node);
+                }
+                Maybe::Present(Node::CompType(
+                    self.arena.comp_type_element(code, self.level.clone()),
+                ))
+            },
+            Node::Value(_) | Node::Computation(_) => Maybe::Absent(()),
         }
     }
 
@@ -1295,7 +1381,7 @@ impl<'arena> Engine<'arena>
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1))),
                 | Some(_) | None => ret == Occurrence::Answered(id),
             },
-            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) => {
+            | Rewrite::Fill(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -1372,7 +1458,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Wrap
             | Rewrite::Elaborate
             | Rewrite::Rename
-            | Rewrite::Abstract(..) => Occurrence::Answered(id),
+            | Rewrite::Abstract(..)
+            | Rewrite::Relevel => Occurrence::Answered(id),
             Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -5794,6 +5881,40 @@ pub fn rename_value_type_traced(
     match renamed {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Read every decode of the binder `family` stands under at `level`: the
+/// family a transport or a ride forms its motive as where its path or flow
+/// lives in the universe at `level`.
+///
+/// # Specification
+/// - requires: `family` is a value type of `arena` scoped beneath one binder.
+/// - ensures: `family` with every decode whose code is that binder's variable,
+///   as a value or a computation type at any depth beneath it, read at `level`;
+///   every other node as it stands, so a family that reads its binder at
+///   `level` already, or never decodes it, answers itself.
+/// - provides: the motive of a transport or a ride above level zero.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the engine's decode step.
+/// - witness: `rewrite::tests::a_relevelling_reads_only_the_binders_decodes_at_its_level`
+#[spec(ensures: |ret| ret == family || arena.value_type(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn relevel_value_type(
+    arena: &mut CoreArena,
+    family: ValueTypeId,
+    level: Level,
+) -> ValueTypeId
+{
+    let mut engine = Engine::new(arena);
+    engine.level = level;
+    match engine.run(Node::ValueType(family), Binders::NONE, Rewrite::Relevel) {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => family,
     }
 }
 

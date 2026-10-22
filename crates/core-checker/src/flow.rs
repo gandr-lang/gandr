@@ -164,6 +164,7 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_value_type;
+use gandr_core_term::relevel_value_type;
 use gandr_core_term::session::ProtocolNode;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::RecordedMove;
@@ -1144,6 +1145,50 @@ pub fn covariant(
     Ok(())
 }
 
+/// The family a transport or a ride at `at` forms its motive as: `written`
+/// with its binder's decodes read at the level of `carrier`, the universe its
+/// path or flow lives in.
+///
+/// # Specification
+/// - requires: `written` is `at`'s motive, standing under one binder of
+///   `carrier`.
+/// - ensures: `written` where `carrier` is no universe or the universe at level
+///   zero, with nothing recorded; otherwise `written` with every decode of its
+///   binder at the carrier's level, recorded at `at` where that moves a decode.
+///   The level is the carrier's, read, never solved.
+/// - fails: as the head-normal form of `carrier` fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a ride and a transport along a level-one universe form
+///   their motives at level one and the kernel replays both, while a ride at
+///   level zero records nothing.
+/// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&family| family == written || context.motives().get(&at) == Some(&family)))]
+pub fn levelled(
+    context: &mut CheckingContext<'_>,
+    at: ComputationId,
+    written: ValueTypeId,
+    carrier: ValueTypeId,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let carrier = context.whnf_value_type(carrier)?;
+    let level = match context.arena().value_type(carrier) {
+        Some(&ValueType::Universe { ref level, .. }) if !bool::from(level.is_zero()) => {
+            level.clone()
+        },
+        _ => return Ok(written),
+    };
+    let family = relevel_value_type(context.arena_mut(), written, level);
+    if family != written {
+        context.record_motive(at, family);
+    }
+    Ok(family)
+}
+
 /// Classify the ride `at` along a flow of type `flow`, its motive formed.
 ///
 /// # Specification
@@ -1190,13 +1235,14 @@ pub fn ride(
 ) -> Result<Ride, CheckRefusal>
 {
     let Some(&Computation::Ride {
-        motive,
+        motive: written,
         flow: along,
         value,
     }) = context.arena().computation(at)
     else {
         return Err(CheckRefusal::MachineInvariant);
     };
+    let motive = context.motive(at, written);
     let (carrier, source, target) = endpoints(context, TermNode::Computation(at), flow)?;
     covariant(context.arena(), at, motive)?;
     let constant = usize::from(loose_reach(
@@ -1240,7 +1286,12 @@ pub fn ride(
         ) {
             return Err(CheckRefusal::RideUnsupported { at });
         }
-        computed(context.arena(), at, motive)?;
+        let arena = context.arena();
+        let ValueTypeView::Universe { level, .. } = value_type_view(arena, carrier)?
+        else {
+            return Ok(fixed);
+        };
+        computed(arena, at, motive, level)?;
         return Ok(fixed);
     }
     let (left, right) = sessions(context, (source, target))?;
@@ -1254,13 +1305,15 @@ pub fn ride(
 }
 
 /// Check that the directed computation table moves `motive`: each position
-/// that reads the code is the decode of the code itself, a product, a sum or a
-/// list of such positions, or a flow singleton `Flow(Type, l, X)` whose source
-/// ignores the code.
+/// that reads the code is the decode of the code itself at `level`, the level
+/// of the universe the flow lives in, a product, a sum or a list of such
+/// positions, or a flow singleton `Flow(Type, l, X)` whose source ignores the
+/// code.
 ///
 /// # Specification
 /// - requires: `motive` stands under one binder, its code, and passed
-///   [`covariant`].
+///   [`covariant`]; `level` is the level of the universe that binder ranges
+///   over.
 /// - ensures: success exactly when every position the walk meets that reads the
 ///   code is one of the rows above; a position ignoring the code is returned
 ///   unchanged by every row.
@@ -1279,8 +1332,9 @@ pub fn ride(
 /// - measure: the positions left, each replaced by its strictly smaller parts.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a decode of the code and a pair of it pass; a record of
-///   it and a thunk of an arrow into it are refused.
+/// - hypothesis: L3 — a decode of the code at the flow's level and a pair of it
+///   pass; a record of it, a thunk of an arrow into it and a decode at another
+///   level are refused.
 /// - witness: `flow::tests::motives_ride_only_covariantly`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::RideUnsupported { at: site }) => site == at,
@@ -1290,6 +1344,7 @@ fn computed(
     arena: &CoreArena,
     at: ComputationId,
     motive: ValueTypeId,
+    level: &Level,
 ) -> Result<(), CheckRefusal>
 {
     let unsupported = CheckRefusal::RideUnsupported { at };
@@ -1313,7 +1368,7 @@ fn computed(
             ValueType::Element {
                 code: decoded,
                 ref target,
-            } if code(decoded) && *target == Level::zero() => {},
+            } if code(decoded) && target == level => {},
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                 pending.extend(parts.iter().copied());
             },

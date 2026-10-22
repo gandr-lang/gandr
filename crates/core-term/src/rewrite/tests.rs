@@ -23,6 +23,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -39,6 +40,7 @@ use super::elaborate_nested_traced;
 use super::fill_hole;
 use super::instantiate_comp_type;
 use super::instantiate_value;
+use super::relevel_value_type;
 use super::rename_value_traced;
 use super::rename_value_type_traced;
 use super::shift_comp_type;
@@ -2954,6 +2956,88 @@ fn a_traced_substitution_reports_every_node_it_rewrote()
     assert!(
         none.is_empty() && mark == arena.watermark(),
         "an empty environment mints and reports nothing"
+    );
+}
+
+#[test]
+fn a_relevelling_reads_only_the_binders_decodes_at_its_level()
+{
+    let mut arena = CoreArena::new();
+    let zero = Level::zero();
+    let one = Level::constant(LevelConstant::from(1_u64));
+    let binder = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let decoded = arena.value_type_element(binder, zero.clone());
+    let listed = arena.value_type_list(decoded);
+    let foreign = arena.value_type_element(outer, zero.clone());
+    let computed = arena.comp_type_element(binder, zero);
+    let suspended = arena.value_type_thunk(computed);
+    // Under the pi's own binder the family's binder counts one and the pi's
+    // argument zero, so `foreign` there decodes the binder and `decoded` the
+    // argument.
+    let inner = arena.value_type_product(&[foreign, decoded]);
+    let returns = arena.comp_type_returner(inner);
+    let pi = arena.comp_type_pi(decoded, returns);
+    let dependent = arena.value_type_thunk(pi);
+    let family = arena.value_type_product(&[decoded, listed, foreign, suspended, dependent]);
+    let relevelled = relevel_value_type(&mut arena, family, one.clone());
+    let at_one = |arena: &CoreArena, id: ValueTypeId, code: ValueId| {
+        matches!(arena.value_type(id), Some(&ValueType::Element { code: read, ref target })
+            if read == code && *target == one)
+    };
+    let Some(&ValueType::Product(ref parts)) = arena.value_type(relevelled)
+    else {
+        panic!("the family stays a product");
+    };
+    let &[top, list, kept, thunk, pi_thunk] = &**parts
+    else {
+        panic!("the family keeps its five factors");
+    };
+    assert!(
+        at_one(&arena, top, binder),
+        "the binder's decode reads at one"
+    );
+    assert!(
+        matches!(arena.value_type(list), Some(&ValueType::List(element)) if at_one(&arena, element, binder)),
+        "the decode under a list reads at one"
+    );
+    assert_eq!(kept, foreign, "an outer variable's decode stands");
+    assert!(
+        matches!(arena.value_type(thunk), Some(&ValueType::Thunk(inside))
+            if matches!(arena.comp_type(inside), Some(&CompType::Element { code, ref target })
+                if code == binder && *target == one)),
+        "a computation type's decode of the binder reads at one"
+    );
+    let Some(&ValueType::Thunk(pi)) = arena.value_type(pi_thunk)
+    else {
+        panic!("the dependent factor stays a thunk");
+    };
+    let Some(&CompType::Pi { domain, codomain }) = arena.comp_type(pi)
+    else {
+        panic!("the dependent factor stays a pi");
+    };
+    assert!(
+        at_one(&arena, domain, binder),
+        "the pi's domain decodes the binder at one"
+    );
+    let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("the pi's codomain stays a returner");
+    };
+    assert!(
+        matches!(arena.value_type(result), Some(&ValueType::Product(ref inner))
+            if matches!(**inner, [shifted, own] if at_one(&arena, shifted, outer) && own == decoded)),
+        "under the pi the binder, one further out, reads at one and the pi's argument stands"
+    );
+    assert_eq!(
+        relevel_value_type(&mut arena, relevelled, one.clone()),
+        relevelled,
+        "a family already at the level answers itself"
+    );
+    assert_eq!(
+        relevel_value_type(&mut arena, foreign, one),
+        foreign,
+        "a family that never decodes its binder answers itself"
     );
 }
 

@@ -1896,6 +1896,7 @@ where
         equivalences: report.equivalences(),
         flows: report.flows(),
         directed: report.directed(),
+        motives: report.motives(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         laws: report.laws(),
@@ -2387,6 +2388,9 @@ struct Source<'source>
     flows: &'source BTreeMap<ValueId, crate::flow::Statement>,
     /// The forward and function flows the judgement decided, by node.
     directed: &'source BTreeMap<ValueId, crate::forward::Directed>,
+    /// The family each transport or ride above level zero formed its motive
+    /// as, by node.
+    motives: &'source BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -5849,6 +5853,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     value,
                     family: Family::Flow,
                 });
+                let motive = self.source.motives.get(&at).copied().unwrap_or(motive);
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
             Computation::Project(component, product) => (
@@ -5902,6 +5907,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     value,
                     family: Family::Path,
                 });
+                let motive = self.source.motives.get(&at).copied().unwrap_or(motive);
                 return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
             },
             Computation::TelescopeTransport { motive, .. } => {

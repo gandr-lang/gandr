@@ -5,7 +5,9 @@
 // _Directed univalence in simplicial homotopy type theory_,
 // arXiv:2407.09146, Definition 1.2), stated at its level as `Path` is at
 // every level; the kernel replays each declaration here at its flow over the
-// level-one universe (#1628).
+// level-one universe (#1628). A transport or a ride along a path or a flow at
+// that universe reads its motive's binder there too, so the motive's body
+// decodes a large code at level one (#1837).
 
 /// A list of values of a type it carries: a large type, since a field holds a
 /// type.
@@ -48,3 +50,43 @@ def types = stay(Type) ;
 @[ checks ]
 def lifted : Flow(Type[+, 2], Packed, Packed) ;
 def lifted = stay(Packed) ;
+
+/// Reflexivity at a large code: a path at the universe its codes inhabit.
+@[ checks ]
+def packedSame : Path(Type[+, 1], Packed, Packed) ;
+def packedSame = here(Packed) ;
+
+/// A packed list carried along reflexivity at its large type: the motive's
+/// binder ranges over `Type[+, 1]`, so its body decodes a code there.
+@[ checks ]
+def packedMoved(p : Packed) -> -F Packed {
+  become transport(\X. X, packedSame, p)
+}
+
+/// A packed list ridden along the stationary flow at its large type.
+@[ checks ]
+def packedRode(p : Packed) -> -F Packed {
+  become ride(\X. X, packedKept, p)
+}
+
+/// A list of packed lists carried along reflexivity: the decode under the
+/// list reads at the carrier's level as well.
+@[ checks ]
+def packedLists(ps : List(Packed)) -> -F List(Packed) {
+  become transport(\X. List(X), packedSame, ps)
+}
+
+/// A packed list ridden into a box along a given flow between the two large
+/// types: the endpoints differ, so the ride moves by the table's decode row,
+/// read at the flow's level.
+@[ checks ]
+def packedCarried(f : Flow(Type[+, 1], Packed, Boxed), p : Packed) -> -F Boxed {
+  become ride(\X. X, f, p)
+}
+
+/// A list of packed lists ridden into a list of boxes along the same flow:
+/// the list row carries the decode beneath it.
+@[ checks ]
+def boxedLists(f : Flow(Type[+, 1], Packed, Boxed), ps : List(Packed)) -> -F List(Boxed) {
+  become ride(\X. List(X), f, ps)
+}

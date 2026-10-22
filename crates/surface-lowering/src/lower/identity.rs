@@ -3897,14 +3897,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the transport of the value along the path in the decode of
-    ///   the motive's body at the fuss-free level — the quoted type itself when
-    ///   the body quotes one, so `\X. List(X)` is `y. List(El y)`. The
-    ///   transport carries the written origin, every other node minted for it
-    ///   the inserted identity origin, and the motive's written origin is
-    ///   recorded against the transport, so a face answers each written motive
-    ///   at its family's universe even where two motives denote one family.
-    ///   Nothing when an operand did not lower or the motive minted as no
-    ///   static abstraction.
+    ///   the motive's body at level zero, which the checker reads at the level
+    ///   of the universe the path lives in — the quoted type itself when the
+    ///   body quotes one, so `\X. List(X)` is `y. List(El y)`. The transport
+    ///   carries the written origin, every other node minted for it the
+    ///   inserted identity origin, and the motive's written origin is recorded
+    ///   against the transport, so a face answers each written motive at its
+    ///   family's universe even where two motives denote one family. Nothing
+    ///   when an operand did not lower or the motive minted as no static
+    ///   abstraction.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3960,8 +3961,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the three operands are already minted or absent.
     /// - ensures: the ride of the value along the flow in the decode of the
-    ///   motive's body at the fuss-free level — the quoted type itself when the
-    ///   body quotes one, so `\X. Run(X)` is `y. Run(y)`. The ride carries the
+    ///   motive's body at level zero, which the checker reads at the level of
+    ///   the universe the flow lives in — the quoted type itself when the body
+    ///   quotes one, so `\X. Run(X)` is `y. Run(y)`. The ride carries the
     ///   written origin and the family the inserted identity origin, and the
     ///   motive's written origin is recorded against the ride, as a transport's
     ///   is. Nothing when an operand did not lower or the motive minted as no

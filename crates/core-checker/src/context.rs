@@ -341,6 +341,10 @@ pub struct CheckingContext<'arena>
     /// The forward and function flows the judgement decided, by node, with
     /// the images and dialogues the kernel replays.
     directed: BTreeMap<ValueId, crate::forward::Directed>,
+    /// The family each transport or ride along a path or a flow above level
+    /// zero formed its motive as, by node: its written motive with the
+    /// binder's decodes read at the carrier's level.
+    motives: BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -534,6 +538,8 @@ pub struct Checkpoint
     flows: BTreeMap<ValueId, crate::flow::Statement>,
     /// [`CheckingContext::directed`].
     directed: BTreeMap<ValueId, crate::forward::Directed>,
+    /// [`CheckingContext::motives`].
+    motives: BTreeMap<ComputationId, ValueTypeId>,
     /// [`CheckingContext::reflexivities`].
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
@@ -671,6 +677,7 @@ impl<'arena> CheckingContext<'arena>
             equivalences: BTreeMap::new(),
             flows: BTreeMap::new(),
             directed: BTreeMap::new(),
+            motives: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -741,6 +748,7 @@ impl<'arena> CheckingContext<'arena>
             ref equivalences,
             ref flows,
             ref directed,
+            ref motives,
             ref reflexivities,
             ref nesting,
             ref relating,
@@ -786,6 +794,7 @@ impl<'arena> CheckingContext<'arena>
             equivalences: equivalences.clone(),
             flows: flows.clone(),
             directed: directed.clone(),
+            motives: motives.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
             relating: relating.clone(),
@@ -855,6 +864,7 @@ impl<'arena> CheckingContext<'arena>
             equivalences,
             flows,
             directed,
+            motives,
             reflexivities,
             nesting,
             relating,
@@ -901,6 +911,7 @@ impl<'arena> CheckingContext<'arena>
             equivalences,
             flows,
             directed,
+            motives,
             reflexivities,
             nesting,
             relating,
@@ -2600,6 +2611,71 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.directed.insert(at, directed);
+    }
+
+    /// The family each transport or ride above level zero formed its motive
+    /// as, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleReport::motives`], which a batch run
+    ///   copies from this table and a fill extends with it.
+    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
+    ///
+    /// [`ModuleReport::motives`]: crate::ModuleReport::motives
+    #[inline]
+    #[must_use]
+    pub const fn motives(&self) -> &BTreeMap<ComputationId, ValueTypeId>
+    {
+        &self.motives
+    }
+
+    /// The family the transport or ride at `at`, written over `written`,
+    /// formed its motive as.
+    ///
+    /// # Specification
+    /// - requires: `written` is the motive `at` is written over.
+    /// - ensures: the family recorded at `at`, or `written` where none is.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_motive`].
+    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    #[spec(ensures: |ret| ret == self.motives.get(&at).copied().unwrap_or(written))]
+    #[inline]
+    #[must_use]
+    pub fn motive(
+        &self,
+        at: ComputationId,
+        written: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.motives.get(&at).copied().unwrap_or(written)
+    }
+
+    /// Record the family the transport or ride at `at` formed its motive as.
+    ///
+    /// # Specification
+    /// - requires: `family` is `at`'s written motive with its binder's decodes
+    ///   read at the level of the universe its path or flow lives in.
+    /// - ensures: `at` has `family` as its motive, replacing an earlier one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ride and a transport above level zero each form and
+    ///   cross with the recorded family, and one at level zero records none.
+    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    #[spec(ensures: self.motives.get(&at) == Some(&family))]
+    pub(crate) fn record_motive(
+        &mut self,
+        at: ComputationId,
+        family: ValueTypeId,
+    )
+    {
+        self.motives.insert(at, family);
     }
 
     /// The reflexivities the judgement checked, by node.

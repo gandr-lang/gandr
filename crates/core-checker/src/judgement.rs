@@ -8013,6 +8013,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         found: TypeNode::Value(classifier),
                     });
                 };
+                let motive = crate::flow::levelled(self.context, at, motive, carrier)?;
                 self.context.binders().open(Zone::Intuitionistic, carrier);
                 self.wait(Frame::ElementTransportMotive {
                     motive,
@@ -8152,6 +8153,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let flow = flow.settle(self.context.arena_mut());
                 let (carrier, ..) =
                     crate::flow::endpoints(self.context, TermNode::Computation(at), flow)?;
+                let motive = crate::flow::levelled(self.context, at, motive, carrier)?;
                 self.context.binders().open(Zone::Intuitionistic, carrier);
                 self.wait(Frame::RideMotive { at, flow });
                 self.wait(Frame::FormBinder);
