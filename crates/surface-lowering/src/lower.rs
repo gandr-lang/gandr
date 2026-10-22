@@ -1280,7 +1280,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1299,6 +1299,7 @@ fn ending(former: Former) -> Ending
         Former::Name
         | Former::Constructor
         | Former::Number
+        | Former::Boolean
         | Former::Text
         | Former::TypeQuote
         | Former::Unit
@@ -1375,7 +1376,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1419,6 +1420,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Constructor
                     | Former::Hole
                     | Former::Number
+                    | Former::Boolean
                     | Former::Text
                     | Former::Parenthesized
                     | Former::TypeQuote
@@ -1501,6 +1503,7 @@ const fn family_of(former: Former) -> Family
         | Former::Constructor
         | Former::Hole
         | Former::Number
+        | Former::Boolean
         | Former::Text
         | Former::Parenthesized
         | Former::TypeQuote
@@ -2208,6 +2211,9 @@ enum Plan
     ),
     /// The unit value.
     Unit,
+    /// A boolean literal: the unit injected into the side of `Bool` it names,
+    /// `true` the left.
+    Boolean(gandr_kernel_term::Side),
     /// A literal, already parsed from the node's own text.
     Literal(Literal),
     /// A nullary type atom.
@@ -5853,6 +5859,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Ok(())
             },
             Former::Number => self.number(site),
+            Former::Boolean => {
+                let _frame = self.require(site, Produced::Value)?;
+                let side = if self.text_at(site.at).as_ref() == "true" {
+                    gandr_kernel_term::Side::Left
+                }
+                else {
+                    gandr_kernel_term::Side::Right
+                };
+                self.plan(site, Plan::Boolean(side));
+                Ok(())
+            },
             Former::Text => self.text(site, pieces),
             Former::Parenthesized => self.parenthesized(site, cursor),
             Former::TypeQuote => self.type_quote(site, cursor),
@@ -12534,6 +12551,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Constant(_)
                 | Plan::Primitive(_)
                 | Plan::Unit
+                | Plan::Boolean(_)
                 | Plan::Literal(_)
                 | Plan::StaticApplication(..)
                 | Plan::Tuple(_)
@@ -12707,6 +12725,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Plan::Unit => {
                 let id = sink.arena.value_unit();
+                Maybe::Present(sink.value(id, origin))
+            },
+            Plan::Boolean(side) => {
+                let unit = sink.arena.value_unit();
+                sink.origins.record_value(unit, origin);
+                let id = sink.arena.value_injection(side.into(), unit);
                 Maybe::Present(sink.value(id, origin))
             },
             Plan::Literal(ref literal) => {
@@ -13874,6 +13898,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Primitive(_)
             | Plan::PrimitiveCall(..)
             | Plan::Unit
+            | Plan::Boolean(_)
             | Plan::Literal(_)
             | Plan::Atom(_)
             | Plan::Sealed(_)
@@ -17673,6 +17698,7 @@ fn halves<'source>(
                 Former::Name
                     | Former::Constructor
                     | Former::Number
+                    | Former::Boolean
                     | Former::Text
                     | Former::Parenthesized
                     | Former::Unit
@@ -17691,6 +17717,7 @@ const fn is_value_form(former: Former) -> ValueForm
         Former::Name
             | Former::Constructor
             | Former::Number
+            | Former::Boolean
             | Former::Text
             | Former::Parenthesized
             | Former::Unit
@@ -17815,6 +17842,7 @@ pub fn parse_literal(
         | Former::Parenthesized
         | Former::TypeQuote
         | Former::Unit
+        | Former::Boolean
         | Former::Thunk
         | Former::Lambda
         | Former::Block
@@ -23420,6 +23448,7 @@ mod tests
             Former::Name,
             Former::Constructor,
             Former::Number,
+            Former::Boolean,
             Former::Text,
             Former::Parenthesized,
             Former::Unit,

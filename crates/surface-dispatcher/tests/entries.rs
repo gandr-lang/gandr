@@ -117,6 +117,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression close", Standing::Owed(0)),
     ("Expression constructor", Standing::Owed(0)),
     ("Expression continue", Standing::Owed(0)),
+    ("Expression false", Standing::Owed(0)),
     ("Expression fn", Standing::Owed(0)),
     ("Expression for", Standing::Owed(0)),
     ("Expression force", Standing::Owed(0)),
@@ -136,6 +137,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression send", Standing::Owed(0)),
     ("Expression then", Standing::Owed(0)),
     ("Expression thunk", Standing::Owed(0)),
+    ("Expression true", Standing::Owed(0)),
     (
         "Expression type(",
         Standing::Design("a type quote: the type inside answers, quoted where the value is read"),

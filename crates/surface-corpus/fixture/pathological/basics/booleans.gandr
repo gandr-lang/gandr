@@ -1,0 +1,7 @@
+// Booleans as values, misused: a literal is a value of `Bool` and of no other
+// type.
+
+/// `true` where an integer is stated: `Bool` is a sum, and `Integer` is none.
+@[ refuses("ShapeMismatch") ]
+def counted : Integer ;
+def counted = true ;

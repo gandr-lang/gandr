@@ -497,7 +497,7 @@ fn a_refused_member_of_a_model_is_refused_once_1081()
 {
     let source = "theory Toggle {\n  sort T : Type;\n  oper flip : (t : T) --> T;\n}\nmodule Bits : \
                   Model(Toggle) {\n  type T = Bool;\n  def flip(b : Bool) -> -F Bool {\n    case b \
-                  {\n      true => return false,\n      false => return true\n    }\n  }\n}\n";
+                  {\n      true => return 'f',\n      false => return true\n    }\n  }\n}\n";
     let found = rows(&lower(source));
     let refusals: Vec<LoweringRefusal<'_>> = found
         .iter()
