@@ -141,6 +141,7 @@ use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Introduces;
 use gandr_core_sequent::NodeAddress;
+use gandr_core_sequent::NodeCount;
 use gandr_core_sequent::Ownership;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
@@ -162,6 +163,7 @@ use gandr_core_term::support::Indices;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
@@ -437,6 +439,23 @@ impl Scopes
         }
     }
 
+    /// `scope` and every scope outside it, innermost first, as binders of the
+    /// scope tree; the empty scope ends them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn outward(
+        &self,
+        scope: Scope,
+    ) -> impl Iterator<Item = Scope>
+    {
+        core::iter::successors(Some(scope), |&cursor| match cursor {
+            Scope::At(at) => self.binders.get(at).map(|found| found.parent),
+            Scope::Empty => None,
+        })
+        .take_while(|&cursor| cursor != Scope::Empty)
+    }
+
     /// The slots of `scope`'s visible producer binders, innermost first; a
     /// binder a closure body does not capture holds none.
     ///
@@ -587,6 +606,10 @@ enum Task
     /// Fold the native list in hand by a fold consumer whose continuation is
     /// loaded.
     Fold(ConsumerId, Scope),
+    /// Run a match's arm or branch, by position, the scrutinee in hand.
+    Matched(ConsumerId, NodeCount, Scope),
+    /// Enter a node counted where its parent is lowered in place.
+    Entered(NodeAddress, Scope),
     /// Select from the value in hand by a selection consumer whose
     /// continuation is loaded, and deliver the field to it.
     Selected(ConsumerId, Scope),
@@ -1079,6 +1102,12 @@ struct Lowering<'run>
     /// The ownership reading of the root and of each constant it unfolds,
     /// each its own root.
     ownership: Ownership,
+    /// The reading's reuse pairs: each match by its consumer, the arm or
+    /// branch by position, and the constructor it builds.
+    reuses: Vec<(ConsumerId, NodeCount, ProducerId)>,
+    /// The reuse tokens waiting for their constructors: the constructor, the
+    /// token's binder and its slot.
+    tokens: Vec<(ProducerId, Scope, Slot)>,
 }
 
 impl Lowering<'_>
@@ -2420,6 +2449,8 @@ impl Lowering<'_>
             Task::Deliver(id, scope) => self.deliver(id, scope),
             Task::Load(id, scope) => self.load(id, scope),
             Task::Fold(id, scope) => self.fold(id, scope),
+            Task::Matched(id, position, scope) => self.matched(id, position, scope),
+            Task::Entered(node, scope) => self.enter(node, scope),
             Task::Selected(id, scope) => {
                 let ConsumerNode::Select { ref selector, .. } =
                     *self.arena.consumer(id).ok_or(Form::Dangling)?
@@ -2736,7 +2767,19 @@ impl Lowering<'_>
                     _ => StencilId::CtorN,
                 };
                 let (low, family) = header_operands(header);
-                self.tasks.push(Task::Emit(stencil, low, family));
+                match self.token(id, scope) {
+                    // The token goes in hand past the last field's push.
+                    Some(token) => {
+                        self.tasks
+                            .push(Task::Emit(StencilId::CtorInto, low, family));
+                        self.tasks.push(Task::Emit(
+                            StencilId::Var,
+                            token.operand(),
+                            Operand::Unused,
+                        ));
+                    },
+                    None => self.tasks.push(Task::Emit(stencil, low, family)),
+                }
                 for &field in producers.iter().rev() {
                     self.tasks.push(Task::Emit(
                         StencilId::Push,
@@ -2904,40 +2947,13 @@ impl Lowering<'_>
                     labels.push(label);
                 }
                 self.unmatched(id)?;
-                for (arm, &label) in arms.iter().zip(&labels).rev() {
-                    let mut inner = scope;
-                    let mut binds = Vec::new();
-                    let fields = u32::try_from(usize::from(arm.constructor.producer_arity()))
-                        .map_err(|_overflow| Form::HeaderWidth)?;
-                    for field in 0 .. fields {
-                        let (next, slot) = self.bind(inner, Binding::Producer);
-                        inner = next;
-                        binds.push(Task::Emit(
-                            StencilId::Field,
-                            slot.operand(),
-                            Slot(field).operand(),
-                        ));
-                    }
-                    self.tasks.push(Task::Command(arm.body, inner));
-                    // The binders own the fields; the match gives up the
-                    // object it was handed.
-                    let (_, held) = self.bind(inner, Binding::Temporary);
+                for (position, &label) in labels.iter().enumerate().rev() {
                     self.tasks
-                        .push(Task::Emit(StencilId::Drop, held.operand(), Operand::Unused));
-                    self.tasks.push(Task::Emit(
-                        StencilId::DupFields,
-                        held.operand(),
-                        Operand::Unused,
-                    ));
-                    self.tasks
-                        .push(Task::Emit(StencilId::Bind, held.operand(), Operand::Unused));
-                    self.tasks.extend(binds.into_iter().rev());
+                        .push(Task::Matched(id, NodeCount::from(position), scope));
                     self.tasks.push(Task::Bind(label));
                 }
             },
-            ConsumerNode::DataCase {
-                ref branches, then, ..
-            } => {
+            ConsumerNode::DataCase { ref branches, .. } => {
                 let mut labels = Vec::with_capacity(branches.len());
                 for ordinal in 0 .. branches.len() {
                     let label = self.function.label();
@@ -2951,31 +2967,9 @@ impl Lowering<'_>
                     labels.push(label);
                 }
                 self.unmatched(id)?;
-                for (&branch, &label) in branches.iter().zip(&labels).rev() {
-                    let (inner, held) = self.bind(scope, Binding::Temporary);
-                    self.tasks.push(Task::Emit(
-                        StencilId::InvokeForceValue,
-                        Operand::Unused,
-                        Operand::Unused,
-                    ));
-                    self.tasks.push(Task::Producer(branch, inner));
-                    // The application frames own the fields; the match
-                    // gives up the object it was handed.
+                for (position, &label) in labels.iter().enumerate().rev() {
                     self.tasks
-                        .push(Task::Emit(StencilId::Drop, held.operand(), Operand::Unused));
-                    self.tasks.push(Task::Emit(
-                        StencilId::DupFields,
-                        held.operand(),
-                        Operand::Unused,
-                    ));
-                    self.tasks.push(Task::Emit(
-                        StencilId::PushFields,
-                        held.operand(),
-                        Operand::Stub(Stub::Apply),
-                    ));
-                    self.tasks.push(Task::Load(then, inner));
-                    self.tasks
-                        .push(Task::Emit(StencilId::Bind, held.operand(), Operand::Unused));
+                        .push(Task::Matched(id, NodeCount::from(position), scope));
                     self.tasks.push(Task::Bind(label));
                 }
             },
@@ -3049,6 +3043,194 @@ impl Lowering<'_>
             },
         }
         Ok(())
+    }
+
+    /// Run the arm or branch at `position` of the match `id`, the
+    /// scrutinee in hand: its binders take the fields, and the match gives
+    /// the scrutinee up. Where the ownership reading pairs the arm with a
+    /// constructor it builds, the scrutinee is given up as a reuse token that
+    /// constructor writes into. A nominal branch that is a thunk of as many
+    /// curried objects as its constructor has fields runs where the match
+    /// stands, each field in a slot of the match's window; any other is
+    /// forced against the fields' application frames.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::step`].
+    fn matched(
+        &mut self,
+        id: ConsumerId,
+        position: NodeCount,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        let arena = self.arena;
+        let at = usize::from(position);
+        match *arena.consumer(id).ok_or(Form::Dangling)? {
+            ConsumerNode::Case { ref arms } => {
+                let arm = arms.get(at).ok_or(Form::Dangling)?;
+                let fields = u32::try_from(usize::from(arm.constructor.producer_arity()))
+                    .map_err(|_overflow| Form::HeaderWidth)?;
+                let mut inner = scope;
+                for field in 0 .. fields {
+                    let (next, slot) = self.bind(inner, Binding::Producer);
+                    inner = next;
+                    self.emit(StencilId::Field, slot.operand(), Slot(field).operand());
+                }
+                let (holder, held) = self.bind(inner, Binding::Temporary);
+                self.emit(StencilId::Bind, held.operand(), Operand::Unused);
+                // reason: a token outlives the match in its slot, so the arm's
+                // binders go past it; without one they reuse the slot.
+                let token = self.reuse(id, position, holder, held);
+                let body = if token.is_some() { holder } else { inner };
+                self.tasks.push(Task::Command(arm.body, body));
+                self.give_up(held, token);
+            },
+            ConsumerNode::DataCase {
+                ref branches,
+                ref arities,
+                then,
+            } => {
+                let branch = *branches.get(at).ok_or(Form::Dangling)?;
+                let inline = match arities.get(at) {
+                    Some(&arity) => inlined(arena, branch, arity)?,
+                    None => None,
+                };
+                let (inner, held) = self.bind(scope, Binding::Temporary);
+                self.emit(StencilId::Bind, held.operand(), Operand::Unused);
+                let Some((levels, body)) = inline
+                else {
+                    self.tasks.push(Task::Emit(
+                        StencilId::InvokeForceValue,
+                        Operand::Unused,
+                        Operand::Unused,
+                    ));
+                    self.tasks.push(Task::Producer(branch, inner));
+                    // The application frames own the fields; the match
+                    // gives up the object it was handed.
+                    self.tasks
+                        .push(Task::Emit(StencilId::Drop, held.operand(), Operand::Unused));
+                    self.tasks.push(Task::Emit(
+                        StencilId::DupFields,
+                        held.operand(),
+                        Operand::Unused,
+                    ));
+                    self.tasks.push(Task::Emit(
+                        StencilId::PushFields,
+                        held.operand(),
+                        Operand::Stub(Stub::Apply),
+                    ));
+                    self.tasks.push(Task::Load(then, inner));
+                    return Ok(());
+                };
+                // The branch and its curried objects run where the match
+                // stands: no closure is made, so none is given up, and each
+                // object's continuation falls through to the loaded frame.
+                let mut entered =
+                    Vec::with_capacity(levels.len().saturating_mul(3).saturating_add(1));
+                entered.push((NodeAddress::Producer(branch), inner));
+                let (mut level_scope, _forced) = self.bind(inner, Binding::FallThrough);
+                for (field, level) in (0_u32 ..).zip(&levels) {
+                    entered.push((NodeAddress::Command(level.cut), level_scope));
+                    entered.push((NodeAddress::Producer(level.object), level_scope));
+                    entered.push((NodeAddress::Consumer(level.returned), level_scope));
+                    let (taken, slot) = self.bind(level_scope, Binding::Producer);
+                    self.emit(StencilId::Field, slot.operand(), Slot(field).operand());
+                    (level_scope, _) = self.bind(taken, Binding::FallThrough);
+                }
+                let token = self.reuse(id, position, inner, held);
+                self.tasks.push(Task::Command(body, level_scope));
+                self.tasks.extend(
+                    entered
+                        .into_iter()
+                        .rev()
+                        .map(|(node, at)| Task::Entered(node, at)),
+                );
+                self.give_up(held, token);
+                self.tasks.push(Task::Load(then, inner));
+            },
+            ConsumerNode::Covariable(_)
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Destructor { .. }
+            | ConsumerNode::Select { .. }
+            | ConsumerNode::ListFold { .. }
+            | ConsumerNode::Top => return Err(Form::Dangling),
+        }
+        Ok(())
+    }
+
+    /// The reuse token for the arm at `position` of `id` when the ownership
+    /// reading pairs it with a constructor: the slot `held`, which holds the
+    /// scrutinee until it is given up and which the binder `scope` ends in
+    /// keeps from every later binder of the arm, recorded for that
+    /// constructor.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reuse(
+        &mut self,
+        id: ConsumerId,
+        position: NodeCount,
+        scope: Scope,
+        held: Slot,
+    ) -> Option<Slot>
+    {
+        let built = self
+            .reuses
+            .iter()
+            .find(|&&(matched, arm, _)| matched == id && arm == position)
+            .map(|&(_, _, built)| built)?;
+        self.tokens.push((built, scope, held));
+        Some(held)
+    }
+
+    /// Queue giving up the scrutinee in `held` whose fields an arm's
+    /// binders took: as the reuse token in `token` when the arm has one,
+    /// else each field gains an owner and the scrutinee loses one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn give_up(
+        &mut self,
+        held: Slot,
+        token: Option<Slot>,
+    )
+    {
+        if let Some(token) = token {
+            self.tasks.push(Task::Emit(
+                StencilId::Reuse,
+                held.operand(),
+                token.operand(),
+            ));
+            return;
+        }
+        self.tasks
+            .push(Task::Emit(StencilId::Drop, held.operand(), Operand::Unused));
+        self.tasks.push(Task::Emit(
+            StencilId::DupFields,
+            held.operand(),
+            Operand::Unused,
+        ));
+    }
+
+    /// The reuse token waiting for the constructor `built` in a slot of
+    /// `scope`'s window, taken: a constructor lowered twice writes into the
+    /// token once.
+    ///
+    /// # Specification
+    /// trivial.
+    fn token(
+        &mut self,
+        built: ProducerId,
+        scope: Scope,
+    ) -> Option<Slot>
+    {
+        let at = self.tokens.iter().position(|&(constructor, binder, _)| {
+            constructor == built && self.scopes.outward(scope).any(|outer| outer == binder)
+        })?;
+        Some(self.tokens.swap_remove(at).2)
     }
 
     /// Load the consumer `id` as an observation's continuation.
@@ -3260,6 +3442,12 @@ pub fn lower_unfused(
     let survey = survey(arena, definitions, root)?;
     let ownership =
         Ownership::of(arena, &survey.roots, &survey.reached).map_err(|_dangling| Form::Dangling)?;
+    let mut reuses = Vec::with_capacity(ownership.reuses().len());
+    for reuse in ownership.reuses() {
+        if let Some(&CommandNode::Cut { consumer, .. }) = arena.command(reuse.matched) {
+            reuses.push((consumer, reuse.branch, reuse.built));
+        }
+    }
     let checked = survey.checked;
     let mut lowering = Lowering {
         arena,
@@ -3287,6 +3475,8 @@ pub fn lower_unfused(
         owners: Vec::new(),
         unwinds: Vec::new(),
         ownership,
+        reuses,
+        tokens: Vec::new(),
     };
     let mut entry: Option<Position> = None;
     loop {
@@ -3454,6 +3644,90 @@ fn survey(
     })
 }
 
+/// One curried object of a nominal branch run where its match stands: the
+/// cut that hands it back, the object and the continuation it is handed to.
+#[derive(Clone, Copy, Debug)]
+struct Level
+{
+    /// `⟨object |− α0⟩`.
+    cut: CommandId,
+    /// The single-arm `apply` object.
+    object: ProducerId,
+    /// The `α0` the cut hands the object to.
+    returned: ConsumerId,
+}
+
+/// The `arity` curried objects of the nominal branch `branch` and the body
+/// under them, when the branch is `{force(α) ⇒ ⟨cocase {apply(x; α) ⇒ …} |−
+/// α0⟩}` that many levels deep and the body names no continuation of the
+/// chain but its own: the chain then runs in its match's window, each field
+/// in a slot. None for any other branch, which is forced as a closure.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Form::Dangling`] for a node the arena does not hold.
+fn inlined(
+    arena: &CommandArena,
+    branch: ProducerId,
+    arity: FieldCount,
+) -> Result<Option<(Vec<Level>, CommandId)>, Form>
+{
+    let ProducerNode::Thunk { body } = *arena.producer(branch).ok_or(Form::Dangling)?
+    else {
+        return Ok(None);
+    };
+    let fields = usize::from(arity);
+    let mut levels = Vec::with_capacity(fields);
+    let mut at = body;
+    for _field in 0 .. fields {
+        let CommandNode::Cut {
+            producer, consumer, ..
+        } = *arena.command(at).ok_or(Form::Dangling)?
+        else {
+            return Ok(None);
+        };
+        let returned = matches!(
+            arena.consumer(consumer),
+            Some(&ConsumerNode::Covariable(index)) if u32::from(index) == 0
+        );
+        let Some(&ProducerNode::Cocase { ref arms }) = arena.producer(producer)
+        else {
+            return Ok(None);
+        };
+        let &[ref arm] = &**arms
+        else {
+            return Ok(None);
+        };
+        if !returned || arm.destructor != DestructorTag::Apply {
+            return Ok(None);
+        }
+        levels.push(Level {
+            cut: at,
+            object: producer,
+            returned: consumer,
+        });
+        at = arm.body;
+    }
+    // reason: the body's own continuation is the match's; the chain's others
+    // are the application frames a forced branch would have, which an inlined
+    // one never pushes.
+    let support = arena
+        .node_scope(NodeAddress::Command(at))
+        .ok_or(Form::Dangling)?;
+    let chain = u32::try_from(fields).map_err(|_overflow| Form::HeaderWidth)?;
+    let outside = BinderDepth::from(1_usize);
+    if support
+        .covariables()
+        .outside(Zone::Intuitionistic, outside)
+        .any(|index| u32::from(index) <= chain)
+    {
+        return Ok(None);
+    }
+    Ok(Some((levels, at)))
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -3509,6 +3783,70 @@ mod tests
             vec![&[Slot(0)][..]],
             captures,
             "its site reads the one capture"
+        );
+    }
+
+    /// A nominal match whose branch rebuilds the constructor it took apart
+    /// runs the branch where the match stands — no closure for the branch or
+    /// its curried objects, no application frames — and writes the new object
+    /// into the scrutinee's block: the token the match leaves in its slot is
+    /// what the constructor is built into.
+    #[test]
+    fn a_nominal_branch_rebuilds_in_place_into_its_scrutinee()
+    {
+        let mut core = CoreArena::new();
+        let one = core.value_unit();
+        let two = core.value_unit();
+        let datatype = core.value_type_data(0_usize.into(), Vec::new());
+        let built = core.value_constructor(datatype, 0_usize.into(), vec![one, two]);
+        let bound = core.computation_return(built);
+        let scrutinee = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let first = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let second = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let rebuilt = core.value_constructor(datatype, 0_usize.into(), vec![second, first]);
+        let answered = core.computation_return(rebuilt);
+        let inner = core.computation_lambda(answered);
+        let branch = core.computation_lambda(inner);
+        let motive = core.comp_type_unknown();
+        let cased =
+            core.computation_data_case(scrutinee, motive, vec![branch], vec![FieldCount::from(
+                2_usize,
+            )]);
+        let root = core.computation_bind(bound, cased);
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
+        let instructions = lowered.function.instructions();
+        let stencils: Vec<StencilId> = instructions
+            .iter()
+            .map(|instruction| instruction.stencil)
+            .collect();
+        for absent in [
+            StencilId::Closure,
+            StencilId::PushFields,
+            StencilId::InvokeForceValue,
+        ] {
+            assert!(
+                !stencils.contains(&absent),
+                "the branch runs in place: no {absent:?} in {stencils:?}"
+            );
+        }
+        let reuse = instructions
+            .iter()
+            .find(|instruction| instruction.stencil == StencilId::Reuse)
+            .expect("the match leaves a token");
+        let into = instructions
+            .iter()
+            .position(|instruction| instruction.stencil == StencilId::CtorInto)
+            .expect("the constructor is built into the token");
+        let token = instructions
+            .get(into.wrapping_sub(1))
+            .expect("the token is put in hand");
+        assert_eq!(
+            (StencilId::Var, reuse.b),
+            (token.stencil, token.a),
+            "the constructor takes the token from the slot the match left it in"
         );
     }
 
