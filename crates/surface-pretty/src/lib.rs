@@ -1175,7 +1175,7 @@ pub fn present_whole(
         .map(|region| Some(Name::from(region.as_str())))
         .chain(arrows.iter().map(|&(arrow, _, dependent)| {
             if dependent {
-                source.arrow_binder(arrow)
+                source.written_binder(arrow)
             }
             else {
                 None

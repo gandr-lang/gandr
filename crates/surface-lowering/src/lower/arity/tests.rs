@@ -535,6 +535,51 @@ fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
     );
 }
 
+/// Each dependent pair keeps where both its labels are written: its binder's,
+/// and its second component's where that is the last entry or another pair;
+/// a pair over a product of the entries after it keeps its binder's alone
+/// (#1613).
+#[test]
+fn each_dependent_pair_keeps_both_labels_1613()
+{
+    let mut arena = CoreArena::new();
+    let source = "def two : #{n : Integer, v : Path(Integer, n, n)} ; def three : #{a : Integer, \
+                  b : Integer, c : Path(Integer, a, a)} ; def chain : #{x : Integer, y : \
+                  Path(Integer, x, x), z : Path(Path(Integer, x, x), y, y)} ;";
+    let module = lowered(source, &mut arena);
+    let origins = module.origins();
+    let written = |origin: crate::origin::Origin| {
+        source
+            .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+            .unwrap_or_default()
+    };
+    let mut labels: Vec<(&str, Option<&str>)> = origins
+        .pairs()
+        .iter()
+        .map(|&(pair, binder)| {
+            let seconds = origins.seconds();
+            let second = seconds
+                .binary_search_by_key(&pair, |&(held, _)| held)
+                .ok()
+                .and_then(|at| seconds.get(at))
+                .map(|&(_, label)| written(label));
+            (written(binder), second)
+        })
+        .collect();
+    labels.sort_unstable();
+    assert_eq!(
+        labels,
+        [
+            ("a", None),
+            ("n", Some("v")),
+            ("x", Some("y")),
+            ("y", Some("z")),
+        ],
+        "each pair's binder label, and its second label where the second is the last entry \
+         or a pair"
+    );
+}
+
 /// A selection off a name written with a dependent record projects the
 /// entry its label names along the nesting, each inner link read as the
 /// value its projection returns; a label the type lacks is refused.

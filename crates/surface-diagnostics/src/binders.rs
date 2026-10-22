@@ -87,6 +87,9 @@ pub struct Naming
     /// Each dependent pair a dependent record's field opens with where the
     /// field's label is written, ascending by id.
     pairs: Vec<(ValueTypeId, ByteSpan)>,
+    /// Each such pair with where the label of its second component is
+    /// written, ascending by id.
+    seconds: Vec<(ValueTypeId, ByteSpan)>,
     /// Each type written as a relation between types, with the relation,
     /// ascending by id.
     relations: Vec<(ValueTypeId, Relation)>,
@@ -105,8 +108,8 @@ impl Naming
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
     ///   constant, the origin table's binders, split components, dependent
-    ///   arrows, dependent record pairs and relations, and its bindings then
-    ///   its written values as uses.
+    ///   arrows, dependent record pairs and their second labels, and relations,
+    ///   and its bindings then its written values as uses.
     /// - provides: the input of [`Self::scoped`].
     /// - fails: never.
     /// - panics: none.
@@ -191,6 +194,11 @@ impl Naming
             .iter()
             .map(|&(pair, origin)| (pair, origin.span()))
             .collect();
+        let seconds = origins
+            .seconds()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect();
         let mut relations = origins.relations().to_vec();
         relations.sort_by_key(|&(related, _)| related);
         Self {
@@ -200,6 +208,7 @@ impl Naming
             components,
             arrows,
             pairs,
+            seconds,
             relations,
             uses,
         }
@@ -271,6 +280,30 @@ impl Naming
     pub fn arrows(&self) -> &[(CompTypeId, ByteSpan)]
     {
         &self.arrows
+    }
+
+    /// Each dependent pair with where the label of its binder is written,
+    /// ascending by pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pairs(&self) -> &[(ValueTypeId, ByteSpan)]
+    {
+        &self.pairs
+    }
+
+    /// Each dependent pair with where the label of its second component is
+    /// written, ascending by pair.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn seconds(&self) -> &[(ValueTypeId, ByteSpan)]
+    {
+        &self.seconds
     }
 
     /// Each type written as a relation between types, ascending by type.

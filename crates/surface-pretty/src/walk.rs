@@ -4066,6 +4066,9 @@ struct Walk<'walk, 'names>
     /// The spellings of the session types whose payloads are being walked,
     /// innermost last; each join takes its own.
     protocols: Vec<Vec<Segment>>,
+    /// The second label each dependent pair whose children are being walked
+    /// is written with, innermost last; each join takes its own.
+    seconds: Vec<Option<BinderName>>,
     /// The parts of the formers spelled by parts whose children are being
     /// walked, innermost last; each join takes its own.
     forms: Vec<Vec<Part>>,
@@ -6530,7 +6533,14 @@ impl Walk<'_, '_>
                 Production("function_type"),
                 writes(Production("parenthesized_type"), Join::Pi),
             )),
-            Former::Sigma { .. } => Some(writes(Production("telescope_type"), Join::Sigma)),
+            Former::Sigma { .. } => {
+                self.seconds.push(
+                    source
+                        .second_label(node)
+                        .map(|name| BinderName(String::from(name.as_ref()))),
+                );
+                Some(writes(Production("telescope_type"), Join::Sigma))
+            },
             Former::StaticLambda(_) => {
                 Some(writes(Production("static_abstraction"), Join::StaticLambda))
             },
@@ -7363,6 +7373,32 @@ impl Walk<'_, '_>
             .nth(unnamed)
     }
 
+    /// The second label `written` a dependent pair writes beside its binder,
+    /// whose join is being closed, where it labels freely: a name the walk's
+    /// spelling writes, the term mentions nowhere else, and neither the pair's
+    /// binder nor a binder around it holds, as [`Self::bind`] reads a written
+    /// binder; none otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn free_label(
+        &self,
+        written: Option<BinderName>,
+    ) -> Option<BinderName>
+    {
+        let end = self
+            .opened
+            .len()
+            .saturating_add(1_usize)
+            .min(self.names.len());
+        let held = self.names.get(.. end).unwrap_or_default();
+        written.filter(|name| {
+            unwritable(Name::from(name.0.as_str()), self.spelling).is_none()
+                && !self.binders.mentioned.contains(name.0.as_str())
+                && !held.iter().flatten().any(|other| other.0 == name.0)
+        })
+    }
+
     /// Open a binder in `zone`, named as the source writes it for `opener`
     /// where that name captures nothing, and by the first generated name no
     /// binder around it holds otherwise.
@@ -7370,9 +7406,9 @@ impl Walk<'_, '_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one binder more is open, in `zone`; its position takes the
-    ///   name `opener`'s source writes ([`Source::arrow_binder`]) when it is a
-    ///   name the walk's spelling writes, the term mentions nowhere else and no
-    ///   open binder holds, else the first generated name
+    ///   name `opener`'s source writes ([`Source::written_binder`]) when it is
+    ///   a name the walk's spelling writes, the term mentions nowhere else and
+    ///   no open binder holds, else the first generated name
     ///   ([`Binders::name_at`]) no open binder holds, else none. With no
     ///   written names, the binder at position `p` takes the `p`-th generated
     ///   name, as it always did.
@@ -7406,7 +7442,7 @@ impl Walk<'_, '_>
         let outer = self.names.as_slice();
         let taken = |name: &str| outer.iter().flatten().any(|held| held.0 == name);
         let written = opener
-            .and_then(|node| source.arrow_binder(node))
+            .and_then(|node| source.written_binder(node))
             .filter(|&name| {
                 let text: &str = name.as_ref();
                 unwritable(name, self.spelling).is_none()
@@ -8762,6 +8798,7 @@ impl Walk<'_, '_>
                 if self.fidelity == Fidelity::Faithful
                     && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
             {
+                let _labelled = self.seconds.pop();
                 let second = self.pop()?;
                 let first = self.pop()?;
                 if self.form == Form::Sugared {
@@ -8785,10 +8822,14 @@ impl Walk<'_, '_>
                 }
             },
             Join::Sigma => {
+                let written = self.seconds.pop().flatten();
                 let second = self.pop()?;
                 let first = self.pop()?;
                 let binder = self.binder(OpenBinders(0_usize))?;
-                let label = self.binder(OpenBinders(1_usize))?;
+                let label = match self.free_label(written) {
+                    Some(name) => self.leaf(Glyphs(name.0.as_str()))?,
+                    None => self.binder(OpenBinders(1_usize))?,
+                };
                 let open = self.leaf(Glyphs("#{"))?;
                 let colon = self.leaf(Glyphs(" : "))?;
                 let comma = self.leaf(Glyphs(","))?;
@@ -9076,6 +9117,7 @@ where
         unspelled: BTreeSet::new(),
         bodies,
         protocols: Vec::new(),
+        seconds: Vec::new(),
         forms: Vec::new(),
         form: style.form,
         spelling: style.spelling,
@@ -9452,6 +9494,7 @@ mod tests
             unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
+            seconds: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             spelling: super::grammar::Spelling::Unicode,
@@ -9543,6 +9586,7 @@ mod tests
             unspelled: super::BTreeSet::new(),
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
+            seconds: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
             spelling: super::grammar::Spelling::Unicode,

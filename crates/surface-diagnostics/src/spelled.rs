@@ -74,12 +74,14 @@ use gandr_core_checker::TypeNode;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Role;
 use gandr_surface_pretty::Arity;
@@ -543,21 +545,15 @@ fn spell<'failure>(
     let constructors = families.naming(&names);
     let contexts = printed_names(&scopes);
     let enclosing = printed_names(&regions);
-    let text: &str = text.into();
-    let arrows: Vec<(CompTypeId, Name<'_>)> = origins
-        .arrows()
-        .iter()
-        .filter_map(|&(arrow, origin)| {
-            let span = origin.span();
-            text.get(usize::from(span.start()) .. usize::from(span.end()))
-                .map(|name| (arrow, Name::from(name)))
-        })
-        .collect();
+    let arrows: Vec<(CompTypeId, Name<'_>)> = written_names(origins.arrows(), text);
+    let pairs: Vec<(ValueTypeId, Name<'_>)> = written_names(origins.pairs(), text);
+    let seconds: Vec<(ValueTypeId, Name<'_>)> = written_names(origins.seconds(), text);
     let mut relations = origins.relations().to_vec();
     relations.sort_by_key(|&(related, _)| related);
     let source = CoreSource::new(arena, &names)
         .naming(&constructors)
         .naming_arrows(&arrows)
+        .naming_pairs(&pairs, &seconds)
         .relating(&relations);
     for (
         node,
@@ -608,6 +604,29 @@ fn spell<'failure>(
         unicode: Spellings(unicode),
         ascii: Spellings(ascii),
     }
+}
+
+/// Each node of `named` with the name `text` writes at its origin, in
+/// `named`'s order; a node whose origin falls outside `text` is left out.
+///
+/// # Specification
+/// trivial.
+fn written_names<'text, Id>(
+    named: &[(Id, Origin)],
+    text: SourceText<'text>,
+) -> Vec<(Id, Name<'text>)>
+where
+    Id: Copy,
+{
+    let text: &str = text.into();
+    named
+        .iter()
+        .filter_map(|&(node, origin)| {
+            let span = origin.span();
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+                .map(|name| (node, Name::from(name)))
+        })
+        .collect()
 }
 
 impl Spellings

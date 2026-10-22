@@ -1996,6 +1996,52 @@ fn an_arrow_binder_spells_as_the_source_names_it()
     }
 }
 
+/// A dependent record spells the labels the source writes for its pair's
+/// binder and second component, where they capture nothing: a second label
+/// the binder already holds falls back to a generated name, and a record the
+/// source names nothing for keeps its generated labels (#1613).
+#[test]
+fn a_dependent_record_spells_its_written_labels_1613()
+{
+    let names = [Name::from("t")];
+    let mut core = CoreArena::new();
+    let universe = small_universe(&mut core);
+    let over = bound(&mut core, DeBruijnIndex::from(0_u32));
+    let pair = core.value_type_sigma(universe, over);
+    for (binder, second, expected, what) in [
+        (
+            Some("carrier"),
+            Some("point"),
+            "#{carrier : Type, point : carrier}",
+            "both labels as written",
+        ),
+        (
+            Some("carrier"),
+            Some("carrier"),
+            "#{carrier : Type, a : carrier}",
+            "a second label the binder holds falls back",
+        ),
+        (None, None, "#{a : Type, b : a}", "no written labels"),
+    ] {
+        let pairs: Vec<(ValueTypeId, Name<'_>)> = binder
+            .map(|name| (pair, Name::from(name)))
+            .into_iter()
+            .collect();
+        let seconds: Vec<(ValueTypeId, Name<'_>)> = second
+            .map(|name| (pair, Name::from(name)))
+            .into_iter()
+            .collect();
+        assert_eq!(
+            spelled(
+                &CoreSource::new(&core, &names).naming_pairs(&pairs, &seconds),
+                Root::Type(CoreNode::ValueType(pair))
+            ),
+            faithful(Written(expected)),
+            "{what}"
+        );
+    }
+}
+
 /// The static formers spell as the grammar writes them: a static Pi as an
 /// arrow between value types, a static abstraction as `\a. v` with its
 /// binder named as a dependent arrow's is, and a spine of static

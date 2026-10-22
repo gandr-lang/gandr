@@ -1450,16 +1450,16 @@ pub trait Source
     }
 
     /// The name the source writes for the one binder `node` opens, when
-    /// `node` is a dependent arrow whose binder the source names: the core
-    /// carries no name, so a source that keeps one beside the node answers it
-    /// here.
+    /// `node` is a dependent arrow or a dependent pair whose binder the source
+    /// names: the core carries no name, so a source that keeps one beside the
+    /// node answers it here.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the written name, or none; the default names nothing, so
     ///   every binder takes a generated name.
     /// - provides: the name a printed declared type spells its parameters by,
-    ///   as the declaration writes them.
+    ///   and a dependent record its first label by, as the source writes them.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1468,10 +1468,40 @@ pub trait Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a dependent arrow whose binder the source names
-    ///   spells that name at the binder and at every occurrence.
+    ///   spells that name at the binder and at every occurrence; a dependent
+    ///   record spells the labels it was written with.
     /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::a_dependent_record_spells_its_written_labels_1613`
     #[inline]
-    fn arrow_binder(
+    fn written_binder(
+        &self,
+        node: Self::Node,
+    ) -> Option<Name<'_>>
+    {
+        let _ = node;
+        None
+    }
+
+    /// The label the source writes for the second component of `node`, when
+    /// `node` is a dependent pair a dependent record's fields lower to: the
+    /// field written after the one the pair binds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the written label, or none; the default names nothing, so the
+    ///   label takes a generated name.
+    /// - provides: the second label a printed dependent record writes.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::written_binder`].
+    /// - witness: `tests::goldens::a_dependent_record_spells_its_written_labels_1613`
+    #[inline]
+    fn second_label(
         &self,
         node: Self::Node,
     ) -> Option<Name<'_>>

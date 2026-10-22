@@ -607,6 +607,10 @@ pub struct OriginTable
     /// later field reads the earlier one through that binder, and the
     /// context it is spelled in names it here (#728).
     pairs: Vec<(ValueTypeId, Origin)>,
+    /// The label each such pair's second component is written with, by the
+    /// pair, ascending by id: the field written after the one the pair binds,
+    /// where that field is the record's last or itself opens a pair.
+    seconds: Vec<(ValueTypeId, Origin)>,
     /// Each variable written in the source, with its binder's span, ascending
     /// by id.
     bindings: Vec<(ValueId, ByteSpan)>,
@@ -819,6 +823,21 @@ impl OriginTable
         record(&mut self.pairs, id, label);
     }
 
+    /// Record where the label of a freshly minted dependent pair's second
+    /// component is written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record_second(
+        &mut self,
+        id: ValueTypeId,
+        label: Origin,
+    )
+    {
+        record(&mut self.seconds, id, label);
+    }
+
     /// Record that the data case `case` eliminates a value of the data
     /// declaration `family`.
     ///
@@ -942,6 +961,9 @@ impl OriginTable
             }
             if let Maybe::Present(label) = find(&self.pairs, held) {
                 self.record_pair(written, label);
+            }
+            if let Maybe::Present(label) = find(&self.seconds, held) {
+                self.record_second(written, label);
             }
         }
         for (written, held) in comp_types {
@@ -1277,6 +1299,40 @@ impl OriginTable
         &self.components
     }
 
+    /// The name the component `component` of the split `split` binds.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unrecorded pair is admissible input.
+    /// - ensures: the name recorded for the pair, or the unrecorded absence.
+    /// - provides: the name a diagnostic writes for a split's binder beside the
+    ///   type the checker held for it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::place_component`].
+    /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
+    #[spec(ensures: |ret| match self.components.binary_search_by_key(&(split, component), |&(held, _)| held) {
+        | Ok(at) => matches!(ret, Maybe::Present(name) if self.components.get(at).is_some_and(|&(_, ref held)| held == name)),
+        | Err(_) => matches!(ret, Maybe::Absent(origin::Absent::Unrecorded)),
+    })]
+    #[inline]
+    pub fn component(
+        &self,
+        split: ComputationId,
+        component: SplitComponent,
+    ) -> Maybe<&ComponentName, origin::Absent>
+    {
+        self.components
+            .binary_search_by_key(&(split, component), |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.components.get(at))
+            .map_or(
+                Maybe::Absent(origin::Absent::Unrecorded),
+                |&(_, ref name)| Maybe::Present(name),
+            )
+    }
+
     /// Every binder a capability scope's clauses write, with where its name is
     /// written, ascending by scope and binder.
     ///
@@ -1355,6 +1411,18 @@ impl OriginTable
     pub fn pairs(&self) -> &[(ValueTypeId, Origin)]
     {
         &self.pairs
+    }
+
+    /// Each dependent pair with where its second component's label is
+    /// written, ascending by id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn seconds(&self) -> &[(ValueTypeId, Origin)]
+    {
+        &self.seconds
     }
 
     /// Each data case a match's tree holds, with the data declaration it

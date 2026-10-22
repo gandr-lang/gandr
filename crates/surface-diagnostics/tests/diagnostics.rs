@@ -2611,9 +2611,11 @@ fn a_words_point_spells_its_constructors_arguments()
 }
 
 /// A split that opens two binders at once, the second's type naming the
-/// first, spells the second under the first: never under the binder before
-/// the split, which its type does not name. The mismatch's found type, the
-/// hypothesis and the split's binding note spell it alike.
+/// first, names them as the pattern writes them and spells the second under
+/// the first: never under the binder before the split, which its type does
+/// not name. The mismatch's found type, the hypotheses and the split's binding
+/// note spell it alike, and the record type keeps the labels it was written
+/// with (#1613).
 #[test]
 fn a_later_binder_of_one_split_spells_under_the_earlier()
 {
@@ -2624,27 +2626,25 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
          counted_at(other) {\n  case p {\n    #{s, n} => return n\n  }\n}\n",
     );
     let diagnostic = only(Path::new("packed.gandr"), text);
-    let Maybe::Present(found) = diagnostic.detail.compared.found.clone()
-    else {
-        panic!("the mismatch spells the type it found");
-    };
-    assert_ne!(
-        found, "counted_at(other)",
-        "the returned binder's type names no binder outside its split"
+    assert_eq!(
+        diagnostic.detail.compared.found,
+        Maybe::Present(String::from("counted_at(s)")),
+        "the returned binder's type names the split's first binder as written"
     );
     let hypotheses: Vec<String> = diagnostic
         .hypotheses
         .iter()
         .map(ToString::to_string)
         .collect();
-    let later = hypotheses
-        .last()
-        .and_then(|hypothesis| hypothesis.split_once(" : "))
-        .map(|(_, ty)| ty);
     assert_eq!(
-        later,
-        Some(found.as_str()),
-        "the later binder's hypothesis spells as the type found: {hypotheses:?}"
+        hypotheses,
+        [
+            "p : #{s : Theory, n : counted_at(s)}",
+            "other : Theory",
+            "s : Theory",
+            "n : counted_at(s)",
+        ],
+        "each binder is named as written, and the record type keeps its labels"
     );
     let split = contexts(text, &diagnostic)
         .into_iter()
@@ -2652,7 +2652,7 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
         .map(|(_, note)| note)
         .expect("the split is a context");
     assert!(
-        split.ends_with(&format!(" : {found}")),
-        "the split's binding note spells its later binder as the type found: {split}"
+        split.ends_with("binds s : Theory, n : counted_at(s)"),
+        "the split's binding note names its binders as the pattern writes them: {split}"
     );
 }

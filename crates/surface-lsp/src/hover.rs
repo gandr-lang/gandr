@@ -2056,7 +2056,7 @@ mod tests
                 "def r$0ing : #{n : Integer, v : Path(Integer, n, n)} ;\ndef ring = #{2, here(2)} \
                  ;\n",
                 Ok(fenced(SourceText::from(
-                    "ring : #{a : Integer, b : Path(Integer, a, a)}",
+                    "ring : #{n : Integer, v : Path(Integer, n, n)}",
                 ))),
             ),
             (

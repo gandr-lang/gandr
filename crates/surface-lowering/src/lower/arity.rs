@@ -1438,10 +1438,14 @@ impl<'source> Lowerer<'_, 'source>
                 let declared = last.held.at();
                 self.read(declared.node, Reading::ValueType(inner));
                 self.label_entry(last, Reading::ValueType(inner));
-                if let Key::Label(name, _) = last.key {
+                let labelled = if let Key::Label(name, key) = last.key {
                     let _first =
                         fields.insert(FieldLabel::from(String::from(name.as_ref())), declared.node);
+                    Some(key.node)
                 }
+                else {
+                    None
+                };
                 Plan::RecordType(
                     fields,
                     Stretch {
@@ -1449,6 +1453,7 @@ impl<'source> Lowerer<'_, 'source>
                         end: self.parameters.len(),
                     },
                     declared.node,
+                    labelled,
                 )
             },
         };
@@ -3009,8 +3014,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   last entry's type wrapped, innermost first, by one link per binder:
     ///   `Σ` over its entry's type when the entries name the binder, the eager
     ///   product of two otherwise; every node with the written origin, and each
-    ///   `Σ` with where its label is written, the name its binder takes (#728);
-    ///   nothing when a type did not lower.
+    ///   `Σ` with where its label is written, the name its binder takes (#728),
+    ///   and, where its second component is the last entry or another `Σ`,
+    ///   where that entry's label is written (#1613); nothing when a type did
+    ///   not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3019,12 +3026,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   and one of three whose middle label nothing names.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    /// - witness: `lower::arity::tests::each_dependent_pair_keeps_both_labels_1613`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
     pub(super) fn mint_labelled_type(
         &self,
         fields: &BTreeMap<FieldLabel, NodeIndex>,
         binders: Stretch,
-        last: NodeIndex,
+        (last, labelled): (NodeIndex, Option<NodeIndex>),
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
@@ -3037,6 +3045,9 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(nested) => nested,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
+        // The label the next link out reads as its second component's: the
+        // last entry's, then each pair's own, while the links are pairs.
+        let mut second = labelled.map(|label| self.origin_at(label));
         for parameter in written.iter().rev() {
             let Maybe::Present(declared) = parameter.declared
             else {
@@ -3046,14 +3057,20 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(first) => first,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
+            let own = self.origin_at(parameter.binder);
             nested = if bool::from(self.names_own_binder(last, parameter.frame)) {
                 let id = sink.arena.value_type_sigma(first, nested);
-                if let Maybe::Present(label) = self.origin_at(parameter.binder) {
+                if let Maybe::Present(label) = own {
                     sink.origins.record_pair(id, label);
                 }
+                if let Some(Maybe::Present(label)) = second {
+                    sink.origins.record_second(id, label);
+                }
+                second = Some(own);
                 id
             }
             else {
+                second = None;
                 sink.arena.value_type_product(&[first, nested])
             };
             sink.origins.record_value_type(nested, origin);
@@ -3334,7 +3351,7 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
         if let Some(&(stated, ref label)) = labelled
-            && let Some(&Plan::RecordType(_, binders, last)) = self.plans.get(stated)
+            && let Some(&Plan::RecordType(_, binders, last, _)) = self.plans.get(stated)
             && !bool::from(self.binds_any(binders, last))
         {
             let id = sink
