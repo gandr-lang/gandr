@@ -28,6 +28,23 @@ def bumped() -> -F List(Integer) {
   pure xs
 }
 
+/// A list of pairs built where it runs.
+@[ checks ]
+def tagged(a : Integer) -> -F List(Integer * Integer) {
+  pure cons((a, 1), cons((a, 2), cons((a, 3), nil)))
+}
+
+/// An element written back past the head: the cells before it are copied
+/// and share their elements, the cells after it are shared, and fresh pairs
+/// allocated after the write-back leave both untouched.
+@[ runs("cons((9, 9), cons((1, 1), cons((5, 5), cons((1, 3), nil))))") ]
+def rebuilt() -> -F List(Integer * Integer) {
+  run l <- tagged(1);
+  hold xs = l;
+  access xs[1] as v { resume(v, (5, 5)) };
+  pure cons((9, 9), xs)
+}
+
 /// An abort writes nothing back: the list stands as it was.
 @[ runs("cons(1, cons(2, nil))") ]
 def kept() -> -F List(Integer) {

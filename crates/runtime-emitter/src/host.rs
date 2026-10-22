@@ -238,10 +238,6 @@ pub struct Calls<'run, 'host>
     literals: Vec<Literal>,
     /// Why the host last refused a call, when it named a reason.
     refused: Option<Refused>,
-    /// Whether the function counts owners, so a primitive gives up the
-    /// operands it was handed, a control call the stack or capability it was
-    /// handed, and a replay copies a stack's owners out.
-    counted: bool,
 }
 
 impl core::fmt::Debug for Calls<'_, '_>
@@ -366,7 +362,6 @@ impl<'run, 'host> Calls<'run, 'host>
             offer,
             literals: lowered.literals.clone(),
             refused: None,
-            counted: lowered.uncounted.is_none(),
         }
     }
 
@@ -500,9 +495,9 @@ impl<'run, 'host> Calls<'run, 'host>
                 };
                 let performed =
                     self.perform(runtime, (signature, operation, at), capability, payload);
-                if let (true, Some(capability)) = (self.counted, capability) {
+                if let Some(capability) = capability {
                     let sites = self.sites;
-                    // SAFETY: a counted perform owns the capability it was
+                    // SAFETY: a perform owns the capability it was
                     // handed, read no more once its handler is found.
                     unsafe {
                         give_up(runtime, capability, |object| owned(object, sites));
@@ -679,14 +674,12 @@ impl<'run, 'host> Calls<'run, 'host>
                 allocate(runtime, &[injection.word(), held])
             },
         }?;
-        if self.counted {
-            let sites = self.sites;
-            for &argument in arguments {
-                // SAFETY: a counted call owns its operands, values of the
-                // run's heap or immortal constants, and reads them no more.
-                unsafe {
-                    give_up(runtime, argument, |object| owned(object, sites));
-                }
+        let sites = self.sites;
+        for &argument in arguments {
+            // SAFETY: a counted call owns its operands, values of the
+            // run's heap or immortal constants, and reads them no more.
+            unsafe {
+                give_up(runtime, argument, |object| owned(object, sites));
             }
         }
         Ok(made)
@@ -919,16 +912,15 @@ impl<'run, 'host> Calls<'run, 'host>
     }
 
     /// Copy the frames from `from` to the top into a stack. The frames leave
-    /// the region, so in a counted run what they own passes to the stack with
-    /// no count changed.
+    /// the region, so what they own passes to the stack with no count changed.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Refusal::Operands`] for a frame the function never pushes, or, in a
-    /// counted run, one that resumes a block midway, whose owners no node
-    /// names; as [`stack`] otherwise.
+    /// [`Refusal::Operands`] for a frame the function never pushes, or one
+    /// that resumes a block midway, whose owners no node names; as [`stack`]
+    /// otherwise.
     fn capture(
         &self,
         runtime: &mut Runtime,
@@ -949,7 +941,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 word,
                 window: self.window(code)?,
             });
-            if self.counted && matches!(self.sites.owners(code), Some(Owners::Unplaced)) {
+            if matches!(self.sites.owners(code), Some(Owners::Unplaced)) {
                 return Err(Refusal::Operands);
             }
             cursor = cursor.wrapping_add(2);
@@ -1055,9 +1047,8 @@ impl<'run, 'host> Calls<'run, 'host>
         }
         // A stack no other owner holds gives its frames' owners to the
         // copies; any other lends them, each copy gaining an owner of its own.
-        let unique = self.counted
-            // SAFETY: a stack is preceded by its count word.
-            && unsafe { *count_word(stack) } == COUNT_ONE;
+        // SAFETY: a stack is preceded by its count word.
+        let unique = unsafe { *count_word(stack) } == COUNT_ONE;
         let mut copies: BTreeMap<Word, Word> = BTreeMap::new();
         let mut words = Vec::new();
         for index in 0 .. count {
@@ -1104,7 +1095,7 @@ impl<'run, 'host> Calls<'run, 'host>
             unsafe {
                 *frame.wrapping_add(1) = resumed;
             }
-            if self.counted && !unique {
+            if !unique {
                 match self.sites.owners(code) {
                     Some(Owners::Window(slots)) => {
                         let window = resumed.to_pointer::<Word>();
@@ -1127,9 +1118,9 @@ impl<'run, 'host> Calls<'run, 'host>
                 runtime.reclaim(stack);
             }
         }
-        else if self.counted {
+        else {
             let sites = self.sites;
-            // SAFETY: a counted replay owns the stack it was handed, which
+            // SAFETY: a replay owns the stack it was handed, which
             // another owner keeps.
             unsafe {
                 give_up(runtime, stack, |object| owned(object, sites));
@@ -1176,6 +1167,16 @@ impl<'run, 'host> Calls<'run, 'host>
             }
             // SAFETY: as above.
             let window = unsafe { *at.wrapping_add(1) };
+            if let Some(Owners::Window(slots)) = self.sites.owners(code) {
+                // The unwind consumes what the access's frame owns, which
+                // the stack's release below drops too: each gains an owner.
+                let copy = window.to_pointer::<Word>();
+                for &slot in slots {
+                    // SAFETY: a window frame's word is its window copy, which
+                    // holds its frame's owned slots.
+                    share(unsafe { *slot_in(copy, slot)? });
+                }
+            }
             // SAFETY: the frame fits below the region's limit.
             unsafe {
                 *top = unwind;
@@ -1187,13 +1188,11 @@ impl<'run, 'host> Calls<'run, 'host>
             top = next;
         }
         runtime.set_frame_top(top);
-        if self.counted {
-            let sites = self.sites;
-            // SAFETY: a counted abandonment owns the stack it was handed, a
-            // value of the run's heap, and reads it no more.
-            unsafe {
-                give_up(runtime, stack, |object| owned(object, sites));
-            }
+        let sites = self.sites;
+        // SAFETY: a counted abandonment owns the stack it was handed, a
+        // value of the run's heap, and reads it no more.
+        unsafe {
+            give_up(runtime, stack, |object| owned(object, sites));
         }
         unit(runtime)
     }
@@ -1230,13 +1229,13 @@ impl<'run, 'host> Calls<'run, 'host>
                 let target = cell(held)?;
                 // SAFETY: a view's header counts its fields.
                 let fields = usize::from(Header::from_word(unsafe { *object }).arity());
+                // SAFETY: a cell holds its value first.
+                let old = unsafe { *target.wrapping_add(VALUE) };
                 let replacement = if fields == PLACED {
                     // SAFETY: a view at a place holds its index after its held
                     // cell.
                     let index = unsafe { *object.wrapping_add(INDEX) };
-                    // SAFETY: a cell holds its value first.
-                    let list = unsafe { *target.wrapping_add(VALUE) };
-                    replaced(runtime, list, index, written)?
+                    replaced(runtime, old, index, written)?
                 }
                 else {
                     written
@@ -1244,6 +1243,13 @@ impl<'run, 'host> Calls<'run, 'host>
                 // SAFETY: a cell holds its value first.
                 unsafe {
                     *target.wrapping_add(VALUE) = replacement;
+                }
+                let sites = self.sites;
+                // SAFETY: the held cell owned the value it held, which the
+                // write-back replaced; a rebuilt list's copies own what
+                // they share with it.
+                unsafe {
+                    give_up(runtime, old, |object| owned(object, sites));
                 }
                 Ok(answer)
             },
@@ -1681,6 +1687,8 @@ fn walk(
 
 /// The native list `list` with its element at the index `index` replaced by
 /// `written`: the cells before it copied in order, the cells after it shared.
+/// Each value a copy shares with `list`, the tail after the element and each
+/// copied head, gains an owner.
 ///
 /// # Specification
 /// trivial.
@@ -1703,6 +1711,7 @@ fn replaced(
     let header = unsafe { *reached };
     // SAFETY: a list cell holds its tail in its third word.
     let tail = unsafe { *reached.wrapping_add(2) };
+    share(tail);
     let rebuilt = allocate(runtime, &[header, written, tail])?;
     let mut first = rebuilt;
     let mut previous: Option<*mut Word> = None;
@@ -1713,6 +1722,7 @@ fn replaced(
         let header = unsafe { *earlier };
         // SAFETY: a list cell holds its head in its second word.
         let head = unsafe { *earlier.wrapping_add(1) };
+        share(head);
         let copied = allocate(runtime, &[header, head, rebuilt])?;
         match previous {
             // SAFETY: the previous copy is a fresh list cell, its tail in its
@@ -1957,15 +1967,15 @@ pub unsafe fn give_up<Owned>(
     }
 }
 
-/// Count one more owner of `value`, a value of a counted run: its count grows
-/// by one, unless it is immortal.
+/// Count one more owner of `value`, a value of the run: its count grows by
+/// one, unless it is immortal.
 ///
 /// # Specification
 /// trivial.
 fn share(value: Word)
 {
     let count = count_word(value);
-    // SAFETY: a value of a counted run addresses an object of its heap or an
+    // SAFETY: a value of the run addresses an object of its heap or an
     // immortal constant, each preceded by its count word.
     let word = unsafe { *count };
     if word != COUNT_IMMORTAL {
