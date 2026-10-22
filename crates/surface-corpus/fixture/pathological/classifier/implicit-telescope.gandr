@@ -1,16 +1,40 @@
-// The refusals of implicit parameters (#315): a use leaving an implicit
-// unsupplied, an implicit written among the parentheses, a resident naming no
-// implicit, a supply standing as a value whose implicit follows an explicit
-// parameter, and a telescope whose types mention each other.
+// The refusals of implicit parameters (#315): a call omitting an implicit
+// nothing determines, one whose only solution names a binder of an
+// argument's own lambda, a call whose argument and expected type disagree on
+// one (#1216), an implicit written among the parentheses, a resident naming
+// no implicit, a use standing as a value with an implicit unsupplied, a
+// supply standing as a value whose implicit follows an explicit parameter,
+// and a telescope whose types mention each other.
 
-// `same`, the identity at a type supplied by name, and `chosen`, whose
-// implicit's type names its explicit parameter.
+// `same`, the identity at a type supplied by name, `twice`, whose combination
+// is implicit, `chosen`, whose implicit's type names its explicit parameter,
+// and `konst`, whose implicit is the result type of the function it takes.
 import "../../classifier/implicit-telescope.gandr" ;
 
-/// A call supplying no implicit: nothing is inferred, so `a` is unsupplied.
-@[ refuses("ImplicitUnsupplied") ]
-def unsupplied : () => Integer ;
-def unsupplied = thunk { become same(3) } ;
+/// `twice` with its implicits omitted: the argument determines `m`, and
+/// nothing determines the combination.
+@[ refuses("ImplicitUnsolved") ]
+def undetermined : () => Integer ;
+def undetermined = thunk { become twice(3) } ;
+
+/// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
+/// determines which.
+@[ refuses("ImplicitUnsolved") ]
+def unchosen : () => Integer ;
+def unchosen = thunk { become chosen(Integer) } ;
+
+/// `konst` with its implicit omitted where the lambda returns its own
+/// argument: the only solution for `b` is the lambda's binder `t`, which the
+/// call does not stand under.
+@[ refuses("ImplicitUnsolved") ]
+def escaping : () => Integer ;
+def escaping = thunk { become konst(fn (t) { fn (y) { y } }) } ;
+
+/// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
+/// and the returned type then disagrees with `Unit`.
+@[ refuses("TypeMismatch") ]
+def disagreeing : () => Unit ;
+def disagreeing = thunk { become same(3) } ;
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[ refuses("ImplicitInParentheses") ]

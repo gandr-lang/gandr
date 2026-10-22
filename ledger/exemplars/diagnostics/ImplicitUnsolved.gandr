@@ -1,0 +1,9 @@
+/// `ImplicitUnsolved`: a call omitting an implicit that neither its arguments nor the type it is checked against determine.
+///
+/// A value combined with itself, the combination implicit.
+@[ checks ]
+def twice @[m : Type, combine : (m, m) => m] (x : m) -> -F m { become combine(x, x) }
+
+@[ refuses("ImplicitUnsolved") ]
+def undetermined : () => Integer ;
+def undetermined = thunk { become twice(3) } ;

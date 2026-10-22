@@ -37,7 +37,10 @@ use super::Renaming;
 use super::Unenclosed;
 use super::constructor_classifier;
 use super::elaborate_nested_traced;
+use super::fill_comp_type_hole;
 use super::fill_hole;
+use super::fill_value_hole;
+use super::fill_value_type_hole;
 use super::instantiate_comp_type;
 use super::instantiate_value;
 use super::relevel_value_type;
@@ -64,6 +67,7 @@ use crate::effect::capability::RegionBinder;
 use crate::effect::capability::RegionDepth;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
+use crate::hole::NominationIndex;
 use crate::hole::TermId;
 use crate::relocation::Relocated;
 use crate::syntax::CompType;
@@ -2418,6 +2422,91 @@ fn a_fill_replaces_exactly_the_named_holes()
         Some(&Computation::Bind(computed, computation_other)),
         arena.computation(filled),
         "a computation filling takes the named computation hole, and another name stands"
+    );
+}
+
+#[test]
+fn a_solution_fills_a_type_raised_past_its_scope_1216()
+{
+    // `?a := #0`, solved one binder deep. Read one binder deep, `El ?a`
+    // takes `#0`; inside `(b : Type) -> F (El ?a)`, a binder further in, it
+    // takes `#1`; read at no binder it stands, the hole's scope not open.
+    let mut arena = CoreArena::new();
+    let hole = HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name");
+    let standing = arena.value_hole(hole);
+    let solution = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let solved = (solution, Binders::ONE);
+    let decoded = arena.value_type_element(standing, Level::zero());
+    let filled = fill_value_type_hole(&mut arena, (decoded, Binders::ONE), hole, solved);
+    assert_eq!(
+        arena.value_type(filled),
+        Some(&ValueType::Element {
+            code: solution,
+            target: Level::zero()
+        }),
+        "at the solution's scope the hole takes it as it stands"
+    );
+    assert_eq!(
+        fill_value_type_hole(&mut arena, (decoded, Binders::NONE), hole, solved),
+        decoded,
+        "read outside the solution's scope the hole stands"
+    );
+    let small = arena.value_type_universe(
+        crate::classifier::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let returned = arena.comp_type_returner(decoded);
+    let dependent = arena.comp_type_pi(small, returned);
+    let filled = fill_comp_type_hole(&mut arena, (dependent, Binders::ONE), hole, solved);
+    let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(filled)
+    else {
+        panic!("a filled pi: {:?}", arena.comp_type(filled));
+    };
+    let Some(&CompType::Returner { result: read, .. }) = arena.comp_type(codomain)
+    else {
+        panic!("a filled returner");
+    };
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(read)
+    else {
+        panic!("a filled decode");
+    };
+    assert_eq!(
+        arena.value(code),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32)
+        }),
+        "under the pi's binder the solution is raised past it"
+    );
+    let returned = arena.computation_return(standing);
+    let lambda = arena.computation_lambda(returned);
+    let suspended = arena.value_thunk(lambda);
+    let filled = fill_value_hole(&mut arena, (suspended, Binders::ONE), hole, solved);
+    let Some(&Value::Thunk(lambda)) = arena.value(filled)
+    else {
+        panic!("a filled thunk");
+    };
+    let Some(&Computation::Lambda(body)) = arena.computation(lambda)
+    else {
+        panic!("a filled lambda");
+    };
+    let Some(&Computation::Return(value)) = arena.computation(body)
+    else {
+        panic!("a filled return");
+    };
+    assert_eq!(
+        arena.value(value),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(1_u32)
+        }),
+        "a value's hole under a lambda takes the solution raised past it"
+    );
+    let unit = arena.value_type_unit();
+    assert_eq!(
+        fill_value_type_hole(&mut arena, (unit, Binders::ONE), hole, solved),
+        unit,
+        "a type holding no hole is its own filling"
     );
 }
 

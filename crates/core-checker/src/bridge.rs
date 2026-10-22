@@ -571,6 +571,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::SessionMismatch { .. }
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::UnenclosedRun { .. }
+        | CheckRefusal::ImplicitUnsolved { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::CapabilityAmplified(_)
         | CheckRefusal::CapabilityOutsideAuthority { .. }

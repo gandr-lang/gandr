@@ -591,6 +591,7 @@ dependencies = [
  "gandr-core-nbe",
  "gandr-core-session",
  "gandr-core-term",
+ "gandr-core-unify",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",

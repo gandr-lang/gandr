@@ -488,6 +488,85 @@ pub enum LoopRespect
     NotPresentedSet,
 }
 
+/// Why the solver bound no solution to the hole a call nominated for an
+/// implicit it omits.
+///
+/// # Specification
+/// - provides: the reason an omitted implicit is refused unsolved: nothing
+///   constrained it, or the solver's reason for the comparison that waits on
+///   it.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an implicit no comparison meets is unforced, and one
+///   whose only solution names a binder of an argument's own lambda waits on
+///   its escape.
+/// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
+/// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unsolved
+{
+    /// No comparison constrained it.
+    Unforced,
+    /// It met a definition, which only unfolding could decide.
+    Unfolding,
+    /// It met the unknown type or a hole no call nominated.
+    Gradual,
+    /// It stands applied to arguments.
+    Spine,
+    /// It met a former the solver does not decompose.
+    Outside,
+    /// It met a side of another family.
+    Families,
+    /// It met a variable or a stuck elimination.
+    Neutral,
+    /// It met a decode at another level.
+    Levels,
+    /// Its solution would mention an implicit of a wider context.
+    Pruning,
+    /// Its solution would name a binder the call does not stand under.
+    Escape,
+    /// Its solution would mention itself.
+    Occurs,
+    /// It stands under fewer binders than its context holds.
+    Scope,
+    /// It met a linear variable.
+    Linear,
+    /// It met a node the arena does not hold.
+    Dangling,
+    /// The solver spent its steps before deciding it.
+    Budget,
+}
+
+impl From<gandr_core_unify::Reason> for Unsolved
+{
+    /// The solver's reason, without the metavariables it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(reason: gandr_core_unify::Reason) -> Self
+    {
+        match reason {
+            gandr_core_unify::Reason::Unfolding => Self::Unfolding,
+            gandr_core_unify::Reason::Gradual => Self::Gradual,
+            gandr_core_unify::Reason::Spine => Self::Spine,
+            gandr_core_unify::Reason::Outside => Self::Outside,
+            gandr_core_unify::Reason::Families => Self::Families,
+            gandr_core_unify::Reason::Neutral => Self::Neutral,
+            gandr_core_unify::Reason::Levels => Self::Levels,
+            gandr_core_unify::Reason::Pruning { .. } => Self::Pruning,
+            gandr_core_unify::Reason::Escape { .. } => Self::Escape,
+            gandr_core_unify::Reason::Occurs { .. } => Self::Occurs,
+            gandr_core_unify::Reason::Scope { .. } => Self::Scope,
+            gandr_core_unify::Reason::Linear => Self::Linear,
+            gandr_core_unify::Reason::Dangling => Self::Dangling,
+            gandr_core_unify::Reason::Budget => Self::Budget,
+        }
+    }
+}
+
 /// Why the judgement refused a term, a type or a declaration.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckRefusal
@@ -1049,6 +1128,16 @@ pub enum CheckRefusal
         /// The nested computation or written run.
         at: ValueId,
     },
+    /// A call omits an implicit that neither its arguments nor the type it is
+    /// checked against determine: the solver bound no solution to the hole
+    /// the call nominated for it.
+    ImplicitUnsolved
+    {
+        /// The hole the call nominated.
+        at: ValueId,
+        /// Why the solver bound it nothing.
+        reason: Unsolved,
+    },
     /// A term stands at a capability type without being a capability
     /// hypothesis: only a capability the host holds or the binder a
     /// capability scope introduces carries authority, so no term forms one.
@@ -1246,7 +1335,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
@@ -1306,6 +1395,7 @@ impl CheckRefusal
             | Self::StageNotBelow { .. }
             | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
+            | Self::ImplicitUnsolved { .. }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
@@ -1526,6 +1616,7 @@ impl CheckRefusal
             | Self::StageNotBelow { .. }
             | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
+            | Self::ImplicitUnsolved { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
             | Self::Codata { .. }

@@ -776,6 +776,18 @@ fn checked(
             "a computation read as a value runs before the computation around it, and none \
              stands around this one",
         ),
+        CheckRefusal::ImplicitUnsolved { reason, .. } => match unsolved(reason) {
+            Maybe::Present(why) => write!(
+                f,
+                "this call omits an implicit argument the solver cannot determine: {why}; supply \
+                 it by name in brackets before the parentheses"
+            ),
+            Maybe::Absent(()) => f.write_str(
+                "this call omits an implicit argument that neither its arguments nor the type it \
+                 is checked against determine; supply it by name in brackets before the \
+                 parentheses",
+            ),
+        },
         CheckRefusal::SessionNotEquivalent { .. } => {
             f.write_str("`bisim` needs the two protocols to behave alike at every step")
         },
@@ -1112,6 +1124,55 @@ fn checked(
             f.write_str("this capability claims authority the host did not grant")
         },
     }
+}
+
+/// Why the solver could not determine an omitted implicit, as a clause of
+/// the message that names it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Undetermined(&'static str);
+
+impl fmt::Display for Undetermined
+{
+    /// Writes the clause.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(self.0)
+    }
+}
+
+/// Why the solver could not determine an omitted implicit; absent when
+/// nothing constrained it.
+///
+/// # Specification
+/// trivial.
+pub const fn unsolved(reason: gandr_core_checker::Unsolved) -> Maybe<Undetermined, ()>
+{
+    use gandr_core_checker::Unsolved;
+    Maybe::Present(Undetermined(match reason {
+        Unsolved::Unforced => return Maybe::Absent(()),
+        Unsolved::Unfolding => "it is compared with a definition, which only unfolding decides",
+        Unsolved::Gradual => "it is compared only with a type left unknown",
+        Unsolved::Spine => "it stands applied to arguments",
+        Unsolved::Outside => "it is compared with a former the solver does not decompose",
+        Unsolved::Families => "it is compared with a term of another family",
+        Unsolved::Neutral => "it is compared with a variable or a stuck elimination",
+        Unsolved::Levels => "it is compared with a decode at another level",
+        Unsolved::Pruning => "its solution would mention an implicit of a wider scope",
+        Unsolved::Escape => "its solution would name a binder the call does not stand under",
+        Unsolved::Occurs => "its solution would mention itself",
+        Unsolved::Scope => "it stands under fewer binders than its scope holds",
+        Unsolved::Linear => "it is compared with a linear variable",
+        Unsolved::Dangling => "internal error: it is compared with a node the arena does not hold",
+        Unsolved::Budget => "the solver spent its steps before deciding it",
+    }))
 }
 
 /// Every refusal name's message, read through one constructed refusal each.
@@ -1878,6 +1939,10 @@ mod tests
                 declared: value_type,
             },
             CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::ImplicitUnsolved {
+                at: value,
+                reason: gandr_core_checker::Unsolved::Unforced,
+            },
             CheckRefusal::SessionNotEquivalent { at: value },
             CheckRefusal::SessionNotSubtype { at: value },
             CheckRefusal::SessionCodeExpected { at: value },

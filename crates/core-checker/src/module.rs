@@ -169,6 +169,7 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 use crate::retire::Demand;
 use crate::retire::Polled;
 use crate::retire::Retirement;
@@ -907,19 +908,22 @@ enum Run
 ///   formed signature; a signature and a hole give [`Verdict::Owed`] with the
 ///   hole's absence; a body alone gives [`Verdict::Synthesised`] when it
 ///   synthesises; neither is refused. An accepted verdict carries the body it
-///   judged — the declaration's own, or its elaboration when the body held a
-///   computation written where a value is read, minted after it — and defines
-///   the constant as that body. A value declaration whose judgement, accepted
-///   otherwise, left a bare flex–rigid equation on a hole the context holds
-///   owed, or read the type of a declaration it holds suspended, is
-///   [`Verdict::Suspended`] at the type it supplies instead, defines nothing,
-///   and is held suspended; a refusal wins over any residual. An owed hole is
-///   held owed. A formed signature enters the signature table after the body is
-///   judged, whatever the body's verdict; a synthesised type enters it after
-///   synthesis; a refused body alone enters nothing. A definition quantified
-///   over stages checks at a stage minted per binder and enters the table at
-///   its plain type, its stage signature kept beside it. An abstract type's
-///   retention is checked where the context retains it, by
+///   judged — the declaration's own; or, when its calls omit implicits, the
+///   body with each one's hole filled by the solution the judgement bound it
+///   to; or the elaboration of either when it held a computation written where
+///   a value is read; each minted after the declaration's — and defines the
+///   constant as that body. A call's omitted implicit no conversion determines
+///   is refused as [`CheckRefusal::ImplicitUnsolved`]. A value declaration
+///   whose judgement, accepted otherwise, left a bare flex–rigid equation on a
+///   hole the context holds owed, or read the type of a declaration it holds
+///   suspended, is [`Verdict::Suspended`] at the type it supplies instead,
+///   defines nothing, and is held suspended; a refusal wins over any residual.
+///   An owed hole is held owed. A formed signature enters the signature table
+///   after the body is judged, whatever the body's verdict; a synthesised type
+///   enters it after synthesis; a refused body alone enters nothing. A
+///   definition quantified over stages checks at a stage minted per binder and
+///   enters the table at its plain type, its stage signature kept beside it. An
+///   abstract type's retention is checked where the context retains it, by
 ///   `CheckingContext::seal_abstract`.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
@@ -999,16 +1003,18 @@ struct Decision
 /// - requires: nothing.
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
 ///   `context`; beside it, when a run of the body refused, the failure of that
-///   run, whose refusal is the verdict's; when the first run accepted a body
-///   holding a computation written where a value is read, what elaborating it
-///   did, the verdict then being the second run's over the elaborated body;
-///   and, when `run` is [`Run::Typed`] and the body was run, what
-///   [`type_value`] keeps for the body as written, read before the
-///   declaration's own type entered the table. An accepted value keeps, under
-///   its position, the path endpoint pairs the run its verdict is from related,
-///   and nothing an earlier declaration or another run related. A suspended
-///   verdict carries the residue its verdict's run left; every other verdict an
-///   empty one.
+///   run, whose refusal is the verdict's; when the body's calls omit implicits,
+///   the verdict of the run over the body filled with their solutions
+///   ([`implicits`]); when the first run accepted a body holding a computation
+///   written where a value is read, what elaborating it did, the verdict then
+///   being the second run's over the elaborated body; and, when `run` is
+///   [`Run::Typed`] and the body was run, what [`type_value`] keeps for the
+///   body as written, each type read with the solutions of the holes its calls
+///   nominated, read before the declaration's own type entered the table. An
+///   accepted value keeps, under its position, the path endpoint pairs the run
+///   its verdict is from related, and nothing an earlier declaration or another
+///   run related. A suspended verdict carries the residue its verdict's run
+///   left; every other verdict an empty one.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -1024,6 +1030,8 @@ struct Decision
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
 /// - witness: `module::tests::a_refused_first_run_leaves_its_nesting_unaccepted`
+/// - witness: `module::tests::an_omitted_implicit_is_typed_at_its_solution_1216`
+/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 /// - witness: `elaboration::tests::owed_conversion_suspends`
 #[spec(ensures: |ret| (run == Run::Typed || matches!(ret.typings, Maybe::Absent(typed::Absent::Unasked)))
     && (matches!(ret.verdict, Verdict::Suspended(_)) == (ret.residue.pending() == Deferred::Yes))
@@ -1210,10 +1218,12 @@ fn decide(
             context.supply(declaration.supplies());
             context.worlds_mut().enter(entry);
             let first = judge(context, body, direction);
+            let (solved, first, solutions) =
+                implicits(context, body, (direction, declaration.stages()), first);
             let decisions = context.take_nesting();
             let judged = match first {
                 Ok(_) if !decisions.is_empty() => {
-                    match crate::nested::elaborate(context.arena_mut(), body, &decisions) {
+                    match crate::nested::elaborate(context.arena_mut(), solved, &decisions) {
                         Ok((elaborated, done)) => {
                             elaboration = Maybe::Present(done);
                             // The verdict is the second run's, and so are the
@@ -1245,8 +1255,12 @@ fn decide(
             );
             if let Some(signed) = signed.take() {
                 context.own_body(body);
-                typings =
-                    Maybe::Present(Typings::after(signed, type_value(context, body, direction)));
+                let typed = type_value(context, body, direction);
+                // The run types the body as written, its omitted implicits
+                // standing as holes; each type is read with their solutions.
+                typings = Maybe::Present(Typings::after(signed, typed).retyped(|ty, depth| {
+                    solved_type(context.arena_mut(), (ty, depth), &solutions)
+                }));
                 let _typed = context.take_nesting();
             }
             spending = context.worlds_mut().leave();
@@ -1532,6 +1546,189 @@ fn judge(
             })
         },
     }
+}
+
+/// The solution of each hole a body's calls nominated, by hole: the value and
+/// the binders it is written under.
+type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_term::Binders)>;
+
+/// Judge `body` again with each hole its calls nominated for an omitted
+/// implicit filled by the solution the run `first` bound it to.
+///
+/// # Specification
+/// - requires: `first` is the run over `body` in `direction` that left the
+///   collector as it stands.
+/// - ensures: `body`, `first` and no solution when the run refused or met no
+///   nominated hole; the run's failure as [`CheckRefusal::ImplicitUnsolved`] at
+///   the first hole the solver left unbound; otherwise the filled body, minted
+///   after `body`, a fresh run over it, the pairs, stages and residue `first`
+///   left dropped as the nesting elaboration's second run drops them, and the
+///   solutions it was filled with.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call whose argument determines its implicit, one whose
+///   two arguments disagree on it and one whose arguments determine none
+///   separate the filled run, the refuted run and the unsolved refusal.
+/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+#[spec(
+    captures: refused = first.is_err(),
+    ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.2.is_empty())),
+)]
+fn implicits(
+    context: &mut CheckingContext<'_>,
+    body: ValueId,
+    (direction, stages): (Direction<FormedValueType>, &[gandr_kernel_term::StageBound]),
+    first: Result<Verdict, Failure>,
+) -> (ValueId, Result<Verdict, Failure>, Solutions)
+{
+    if first.is_err() {
+        return (body, first, Solutions::new());
+    }
+    let solutions = match context.deferrals().solutions(context.arena()) {
+        Ok(solutions) if solutions.is_empty() => return (body, first, solutions),
+        Ok(solutions) => solutions,
+        Err((at, reason)) => {
+            return (body, Err(unsolved_failure(at, reason)), Solutions::new());
+        },
+    };
+    let filled = fill(context.arena_mut(), body, &solutions);
+    let _first = context.take_relating();
+    let _stale = context.take_nesting();
+    context.forget_stages();
+    crate::quantified::mint(context.stages_mut(), stages);
+    context.deferrals_mut().open(Collecting::On);
+    context.own_body(filled);
+    let judged = judge(context, filled, direction);
+    (filled, judged, solutions)
+}
+
+/// `body` with each hole `solutions` names filled by its solution, read
+/// through every solution another one mentions.
+///
+/// # Specification
+/// - requires: no solution mentions its own hole, through others or directly:
+///   the solver's occurs check.
+/// - ensures: `body` with every hole `solutions` names replaced, each solution
+///   raised past the binders between its scope and where the hole stands,
+///   minted after `body`, or `body` itself when it holds none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a solution mentioning a hole solved after it is read
+///   through in a second round, raised past the binders between the two.
+/// - witness: `module::tests::a_solution_naming_a_later_hole_is_read_through_1216`
+/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+#[spec(ensures: |ret| ret >= body)]
+fn fill(
+    arena: &mut gandr_core_term::CoreArena,
+    body: ValueId,
+    solutions: &Solutions,
+) -> ValueId
+{
+    rounds(body, solutions, |subject, hole, solution| {
+        gandr_core_term::fill_value_hole(
+            arena,
+            (subject, gandr_core_term::Binders::NONE),
+            hole,
+            solution,
+        )
+    })
+}
+
+/// `ty`, a type a typed run recorded under `depth` intuitionistic binders,
+/// read with every solution in `solutions`, as [`fill`] reads a body.
+///
+/// # Specification
+/// - requires: as [`fill`].
+/// - ensures: `ty` in its own family, each hole `solutions` names that stands
+///   inside its solution's scope replaced, raised past the binders between;
+///   `ty` itself when it holds none, or when `depth` is past the count a binder
+///   index can name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the type of a call's head instantiated at the hole reads
+///   at the solved implicit.
+/// - witness: `module::tests::a_solution_naming_a_later_hole_is_read_through_1216`
+#[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&ty))]
+fn solved_type(
+    arena: &mut gandr_core_term::CoreArena,
+    (ty, depth): (TypeNode, gandr_core_term::BinderDepth),
+    solutions: &Solutions,
+) -> TypeNode
+{
+    let Ok(under) = u32::try_from(usize::from(depth)).map(gandr_core_term::Binders::from)
+    else {
+        return ty;
+    };
+    rounds(ty, solutions, |subject, hole, solution| match subject {
+        TypeNode::Value(id) => TypeNode::Value(gandr_core_term::fill_value_type_hole(
+            arena,
+            (id, under),
+            hole,
+            solution,
+        )),
+        TypeNode::Computation(id) => TypeNode::Computation(gandr_core_term::fill_comp_type_hole(
+            arena,
+            (id, under),
+            hole,
+            solution,
+        )),
+    })
+}
+
+/// `subject` after one `step` per solution, round after round until a round
+/// changes nothing: each round fills what the previous one inserted.
+///
+/// # Specification
+/// trivial.
+fn rounds<Subject>(
+    subject: Subject,
+    solutions: &Solutions,
+    mut step: impl FnMut(
+        Subject,
+        gandr_core_term::hole::HoleId,
+        (ValueId, gandr_core_term::Binders),
+    ) -> Subject,
+) -> Subject
+where
+    Subject: Copy + Eq,
+{
+    let mut subject = subject;
+    // With no cycle among the solutions, one round per solution reaches the
+    // end.
+    for _round in 0 ..= solutions.len() {
+        let before = subject;
+        for (&hole, &solution) in solutions {
+            subject = step(subject, hole, solution);
+        }
+        if subject == before {
+            break;
+        }
+    }
+    subject
+}
+
+/// The failure of a body whose call omits an implicit the solver left
+/// unbound at `at`, the hole the call nominated, for `reason`.
+///
+/// # Specification
+/// trivial.
+fn unsolved_failure(
+    at: ValueId,
+    reason: crate::Unsolved,
+) -> Failure
+{
+    Failure::bare(
+        CheckRefusal::ImplicitUnsolved { at, reason },
+        Pursuit::new(
+            CoreNode::Term(TermNode::Value(at)),
+            Maybe::Absent(judged::Absent::Synthesised),
+            Stage::Starting,
+        ),
+    )
 }
 
 /// The failure of a body whose elaboration found `run` with no computation

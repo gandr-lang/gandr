@@ -461,6 +461,7 @@ use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::hole::CodomainScope;
 use gandr_core_term::hole::Components;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::hole::matched_function;
 use gandr_core_term::hole::matched_list;
 use gandr_core_term::hole::matched_product;
@@ -4683,7 +4684,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Run(term),
             }),
-            Value::Hole(_) | Value::Mark { .. } => {
+            Value::Hole(hole) => {
+                if hole.origin() == HoleOrigin::Nominated {
+                    self.context.nominate(term, hole)?;
+                }
+                let unknown = self.context.arena_mut().value_type_unknown();
+                Ok(Step::Ascend(Produced::ValueType(Relocated::from(unknown))))
+            },
+            Value::Mark { .. } => {
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(Relocated::from(unknown))))
             },
@@ -5131,7 +5139,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            Value::Hole(_) | Value::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
+            Value::Hole(hole) => {
+                if hole.origin() == HoleOrigin::Nominated {
+                    self.context.nominate(term, hole)?;
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            Value::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
     }
 
@@ -8991,6 +9005,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::SessionMismatch { .. }
                     | CheckRefusal::Linearity { .. }
                     | CheckRefusal::UnenclosedRun { .. }
+                    | CheckRefusal::ImplicitUnsolved { .. }
                     | CheckRefusal::CapabilityForged { .. }
                     | CheckRefusal::CapabilityAmplified(_)
                     | CheckRefusal::CapabilityOutsideAuthority { .. }

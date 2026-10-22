@@ -7,8 +7,10 @@ use quenchant_shape::shape::Maybe;
 use super::CodomainScope;
 use super::Components;
 use super::HoleId;
+use super::HoleOrigin;
 use super::Knowledge;
 use super::MarkIndex;
+use super::NominationIndex;
 use super::comp_type_knowledge;
 use super::matched_function;
 use super::matched_list;
@@ -27,6 +29,26 @@ use crate::classifier::Sort;
 use crate::syntax::CompType;
 use crate::syntax::ValueType;
 use crate::syntax::Zone;
+
+#[test]
+fn a_nominated_hole_shares_no_name_with_a_written_one()
+{
+    let nominated = |index: u32| HoleId::nominated(NominationIndex::from(index));
+    let first = nominated(0).expect("the first index is named");
+    let last = nominated((1 << 31_u32) - 1).expect("the last index is named");
+    assert_eq!(u32::from(first), u32::MAX);
+    assert_eq!(u32::from(last), 1 << 31_u32);
+    assert_eq!([first.origin(), last.origin()], [HoleOrigin::Nominated; 2]);
+    assert_ne!(nominated(1), Some(first), "two indices name two holes");
+    assert_eq!(nominated(1 << 31_u32), None, "the half has no more names");
+    for written in [0_u32, 1, (1 << 31_u32) - 1] {
+        assert_eq!(
+            HoleId::from(written).origin(),
+            HoleOrigin::Written,
+            "a written name below the half is not nominated"
+        );
+    }
+}
 
 #[test]
 fn the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not()

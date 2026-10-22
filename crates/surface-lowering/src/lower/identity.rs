@@ -3843,10 +3843,19 @@ impl<'source> Lowerer<'_, 'source>
         else if applied.len() != callee.arity {
             return unread;
         }
-        for &argument in applied {
-            let Maybe::Present(value) = self.value_at(argument)
+        for position in callee.arguments.start .. callee.arguments.end {
+            let value = if let Some(&hole) = self.nominated.get(&position) {
+                sink.arena.value_hole(hole)
+            }
             else {
-                return unread;
+                let Some(Maybe::Present(value)) = self
+                    .operands
+                    .get(position)
+                    .map(|&argument| self.value_at(argument))
+                else {
+                    return unread;
+                };
+                value
             };
             arguments.push(as_endpoint(sink.arena, value));
         }

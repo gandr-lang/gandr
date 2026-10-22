@@ -1,7 +1,7 @@
 //! Implicit parameters in the lowering: a function whose telescope `@[a :
 //! Type]` binds a value binds every parameter in its merged telescope's order
 //! ([`crate::module::Plicity`]), and a call supplies the implicits by name,
-//! `f[a = T](x)`.
+//! `f[a = T](x)`, or omits them, `f(x)`.
 //!
 //! # Supply by name
 //!
@@ -18,11 +18,23 @@
 //! declaration taken as a value has every implicit determined where it is
 //! taken.
 //!
+//! # Nomination
+//!
+//! A call that omits an implicit, `same(3)`, passes in its place a hole the
+//! call nominates ([`gandr_core_term::hole::HoleId::nominated`]), apart from
+//! every hole the text writes, and the application is otherwise the one the
+//! supply by name gives. The checker solves each nominated hole from the
+//! comparisons the call's explicit arguments force and supplies the
+//! solution, so the body it accepts is the one `same[a = Integer](3)` lowers
+//! to; the lowering keeps which call nominated each hole, and for which
+//! implicit ([`Nomination`]), so a refusal names it.
+//!
 //! # Boundaries
 //!
-//! - A use of a function with implicits supplies all of them:
-//!   [`LoweringRefusal::ImplicitUnsupplied`] names the first one a use leaves
-//!   out, and a bare use of the function, called or not, leaves out all.
+//! - A use of a function with implicits standing as a value supplies all of
+//!   them: [`LoweringRefusal::ImplicitUnsupplied`] names the first one it
+//!   leaves out, and a bare name of the function leaves out all. A call
+//!   nominates every implicit it leaves out.
 //! - A call writing one argument per parameter in its parentheses, the
 //!   implicits among them, is [`LoweringRefusal::ImplicitInParentheses`].
 //! - A resident naming no implicit of the function is
@@ -30,7 +42,6 @@
 //!   the function's stage binders: that resident supplies a stage, which
 //!   crosses beside the declaration rather than as an argument
 //!   ([`super::staged`]).
-//! - Nothing is inferred: an implicit is supplied where the function is used.
 //! - A supply standing as a value takes implicits that lead the merged
 //!   telescope: an implicit the merge places after an explicit parameter, whose
 //!   type mentions it, leaves the fragment there, and a lambda that calls the
@@ -88,6 +99,55 @@ enum Use<'cursor>
     Called(Cursor<'cursor>),
     /// Standing where no call applies it, passed or returned as a value.
     Standing,
+}
+
+/// The call that omits an implicit, for the hole nominated in its place.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the function's name and the implicit's name.
+/// - provides: what the origin table records for the hole once it is minted,
+///   and a refusal of the hole names.
+/// - panics: none.
+/// - executable: none — a record of names, holding no tree to check them
+///   against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call omitting both implicits of `first` nominates one
+///   hole per implicit, each naming it.
+/// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Nomination<'source>
+{
+    /// The function the call applies.
+    function: SurfaceName<'source>,
+    /// The implicit the call omits.
+    implicit: SurfaceName<'source>,
+}
+
+impl<'source> Nomination<'source>
+{
+    /// The function the call applies.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(super) const fn function(&self) -> SurfaceName<'source>
+    {
+        self.function
+    }
+
+    /// The implicit the call omits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(super) const fn implicit(&self) -> SurfaceName<'source>
+    {
+        self.implicit
+    }
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -288,41 +348,41 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Plan the call at `site` whose head names a function with implicits:
-    /// supplied by name, the function applied in its merged telescope's
-    /// order; otherwise refused.
+    /// each supplied by name or nominated where the call omits it, the
+    /// function applied in its merged telescope's order; otherwise refused.
     ///
     /// # Specification
     /// - requires: `site` is a call read as a computation under `frame`;
     ///   `cursor` stands at its head.
-    /// - ensures: [`arity::Planned`] true exactly when the head is an
-    ///   instantiation of a declaration with implicits or stage binders, every
-    ///   resident `a = e` naming one, the call then planned as the declaration
-    ///   applied to one argument per merged entry, an implicit's the resident
-    ///   naming it and an explicit one's the next written argument, each read
-    ///   as a value under `frame` and the declaration's name as the head; a
-    ///   resident naming a stage binder is no argument but a stage the head
-    ///   carries ([`Self::stage_supplies`]); the head is recorded as supplied.
-    ///   False, with nothing changed, for any other head but a bare name of a
-    ///   declaration with implicits.
+    /// - ensures: [`arity::Planned`] true exactly when the head is a bare name
+    ///   or an instantiation of a declaration with implicits or stage binders,
+    ///   every resident `a = e` naming one, the call then planned as the
+    ///   declaration applied to one argument per merged entry, an implicit's
+    ///   the resident naming it or, where none does, the hole the call
+    ///   nominates for it ([`Self::nominate`]), and an explicit one's the next
+    ///   written argument, each written argument read as a value under `frame`
+    ///   and the declaration's name as the head; a resident naming a stage
+    ///   binder is no argument but a stage the head carries
+    ///   ([`Self::stage_supplies`]); the head is recorded as supplied. False,
+    ///   with nothing changed, for any other head.
     /// - fails: [`LoweringRefusal::ImplicitInParentheses`] for a call writing
-    ///   one argument per parameter, [`LoweringRefusal::ImplicitUnsupplied`]
-    ///   for one leaving an implicit unsupplied, the bare name included;
+    ///   one argument per parameter and omitting an implicit;
     ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit
     ///   or stage binder, and at a stage supplied by a name the caller binds no
     ///   stage to; a fault at a resident written twice; the reserved refusal
-    ///   for a resident other than `a = e` beside one that is; a form fault
-    ///   reading the head.
+    ///   for a resident other than `a = e` beside one that is; the budget
+    ///   refusal once no hole can be nominated; a form fault reading the head.
     /// - panics: none.
     ///
     /// # Errors
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — residents in either order apply alike; a missing
-    ///   resident, an implicit among the parentheses and a resident naming
-    ///   nothing each refuse by their own name.
+    /// - hypothesis: L3 — residents in either order apply alike; an omitted
+    ///   implicit is a nominated hole; an implicit among the parentheses and a
+    ///   resident naming nothing each refuse by their own name.
     /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
-    /// - witness: `lower::implicit::tests::an_unsupplied_implicit_is_refused_with_its_slot_spelling`
+    /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::an_implicit_in_the_parentheses_is_refused`
     /// - witness: `lower::implicit::tests::a_resident_naming_no_implicit_is_unresolved`
     /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
@@ -577,21 +637,20 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .find(|entry| entry.plicity == Plicity::Implicit && !supplied.contains_key(&entry.name))
         {
-            let refusal = if written.len() == entries.len() && written.len() > explicit {
-                LoweringRefusal::ImplicitInParentheses {
+            if written.len() == entries.len() && written.len() > explicit {
+                return Err(LoweringRefusal::ImplicitInParentheses {
                     span: site.at.span,
                     function,
                     implicit: missing.name,
-                }
+                });
             }
-            else {
-                LoweringRefusal::ImplicitUnsupplied {
+            if standing {
+                return Err(LoweringRefusal::ImplicitUnsupplied {
                     span: site.at.span,
                     function,
                     implicit: missing.name,
-                }
-            };
-            return Err(refusal);
+                });
+            }
         }
         // Standing, the supply applies the function to its implicits alone:
         // they must lead the merged telescope, as an implicit placed after an
@@ -614,7 +673,16 @@ impl<'source> Lowerer<'_, 'source>
         let mut positional = written.iter();
         for entry in &entries {
             let argument = match entry.plicity {
-                Plicity::Implicit => supplied.get(&entry.name).map(|&(_, value)| value),
+                Plicity::Implicit => {
+                    if let Some(&(_, value)) = supplied.get(&entry.name) {
+                        Some(value)
+                    }
+                    else {
+                        let hole = self.nominate(function, entry.name)?;
+                        let _first = self.nominated.insert(self.operands.len(), hole);
+                        Some(site.at.node)
+                    }
+                },
                 Plicity::Explicit => positional.next().copied(),
             };
             if let Some(argument) = argument {
@@ -632,6 +700,9 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.read(inner.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
+            if self.nominated.contains_key(&position) {
+                continue;
+            }
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }
@@ -639,5 +710,50 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Application(inner.node, applied));
 
         Ok(arity::Planned(true))
+    }
+
+    /// Nominate a hole for the implicit `implicit` of `function`, which a
+    /// call omits, the next nominated name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a nominated name no hole before it carries, kept beside the
+    ///   names.
+    /// - fails: the budget refusal once the nominated half has no more names.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two implicits a call omits are two distinct holes,
+    ///   each kept with its implicit's name.
+    /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    #[spec(
+        captures: before = self.nominations.len(),
+        ensures: |ret| match ret {
+            Ok(hole) => hole.origin() == gandr_core_term::hole::HoleOrigin::Nominated
+                && self.nominations.len() == before.saturating_add(1)
+                && self.nominations.get(&hole).is_some_and(|kept| kept.implicit == implicit),
+            Err(_) => self.nominations.len() == before,
+        },
+    )]
+    fn nominate(
+        &mut self,
+        function: SurfaceName<'source>,
+        implicit: SurfaceName<'source>,
+    ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
+    {
+        let hole = u32::try_from(self.nominations.len())
+            .ok()
+            .map(gandr_core_term::hole::NominationIndex::from)
+            .and_then(gandr_core_term::hole::HoleId::nominated)
+            .ok_or(LoweringRefusal::BudgetExceeded {
+                budget: self.fuel.budget,
+            })?;
+        let _first = self
+            .nominations
+            .insert(hole, Nomination { function, implicit });
+        Ok(hole)
     }
 }

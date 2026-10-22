@@ -2667,6 +2667,10 @@ fn every_refusal() -> Vec<Refusal>
             expected: ty(),
         },
         Refusal::UnenclosedRun { at },
+        Refusal::ImplicitUnsolved {
+            at,
+            reason: gandr_core_checker::Unsolved::Escape,
+        },
         Refusal::CapabilityForged { at, expected: ty() },
         Refusal::CapabilityAmplified {
             at,

@@ -761,8 +761,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::StagesDisagree { .. } |
-        CheckRefusal::AtomTransport { .. } |
+        CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } |
         CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -895,6 +894,7 @@ fn checked(
         | CheckRefusal::UaUncertified { at, .. }
         | CheckRefusal::UaInequivalent { at, .. }
         | CheckRefusal::UnenclosedRun { at }
+        | CheckRefusal::ImplicitUnsolved { at, .. }
         | CheckRefusal::SessionNotEquivalent { at }
         | CheckRefusal::SessionNotSubtype { at }
         | CheckRefusal::SessionCodeExpected { at }
@@ -1280,6 +1280,7 @@ impl fmt::Display for Checked
                 },
             },
             | CheckRefusal::UnenclosedRun { .. } => f.write_str("a run where a value is read needs a computation around it to run before"),
+            | CheckRefusal::ImplicitUnsolved { .. } => f.write_str("an implicit this call omits is determined by neither its arguments nor the type it is checked against"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -2839,6 +2840,10 @@ mod tests
                 },
             },
             CheckRefusal::UnenclosedRun { at: value },
+            CheckRefusal::ImplicitUnsolved {
+                at: value,
+                reason: gandr_core_checker::Unsolved::Unforced,
+            },
             CheckRefusal::SessionNotEquivalent { at: value },
             CheckRefusal::SessionNotSubtype { at: value },
             CheckRefusal::SessionCodeExpected { at: value },
@@ -3291,6 +3296,7 @@ mod tests
                         | CheckRefusal::UaUncertified { .. }
                         | CheckRefusal::UaInequivalent { .. }
                         | CheckRefusal::UnenclosedRun { .. }
+                        | CheckRefusal::ImplicitUnsolved { .. }
                         | CheckRefusal::SessionNotEquivalent { .. }
                         | CheckRefusal::SessionNotSubtype { .. }
                         | CheckRefusal::SessionCodeExpected { .. }

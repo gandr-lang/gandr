@@ -17,6 +17,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
@@ -883,7 +884,9 @@ impl<'arena> CoreSource<'arena>
                 && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
-        (Some(&Value::Hole(_)), Former::Unreadable(Unreadable::Hole)) | (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Hole)) => hole.origin() == HoleOrigin::Written,
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Omitted)) => hole.origin() == HoleOrigin::Nominated,
+        (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
         | (Some(&Value::Thunk(body)), Former::Thunk(actual))
@@ -950,6 +953,17 @@ impl<'arena> CoreSource<'arena>
                         Some(_) | None => None,
                     },
                 }
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a metavariable a call nominated for an implicit it omits: a call \
+                              leaves it out, and anywhere else it is unsolved"
+                )
+            )]
+            Value::Hole(hole) if hole.origin() == HoleOrigin::Nominated => {
+                Former::Unreadable(Unreadable::Omitted)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

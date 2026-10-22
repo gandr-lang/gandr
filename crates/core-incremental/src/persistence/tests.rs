@@ -471,6 +471,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::AtomTransport { .. }) => "atom-transport",
         Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
         Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
+        Typing::Refused(Refusal::ImplicitUnsolved { .. }) => "implicit-unsolved",
         Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
         Typing::Refused(Refusal::Linearity { .. }) => "linearity",
         Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",

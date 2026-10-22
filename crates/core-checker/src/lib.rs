@@ -656,6 +656,7 @@ pub use crate::refusal::StaticArity;
 pub use crate::refusal::TermNode;
 pub use crate::refusal::TypeNode;
 pub use crate::refusal::UnadmittedFormer;
+pub use crate::refusal::Unsolved;
 pub use crate::refusal::compared;
 pub use crate::retire::Demand;
 pub use crate::retire::Polled;

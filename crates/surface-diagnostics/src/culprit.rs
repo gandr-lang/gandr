@@ -305,6 +305,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
             UaDefect::Stuck { .. } => "a translator that returns no element",
         },
         CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
+        CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
         CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },

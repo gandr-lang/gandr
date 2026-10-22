@@ -7158,17 +7158,18 @@ impl Walk<'_, '_>
     ///   and `tasks` is the walk's stack.
     /// - ensures: the function is read down through every application it is, at
     ///   most [`DEPTH_LIMIT`] arguments in all, each argument scheduled as a
-    ///   value at `depth`; a force at the head of the spine is scheduled as the
-    ///   value it forces, the bridge the lowering writes before a value it
-    ///   calls, and any other head as a computation where the body goes on; the
-    ///   join over the head and the arguments, left to right, is pushed below
-    ///   their visits, the head visited first. Where the head forces a
-    ///   recursive definition's own binder, each uniform parameter
-    ///   ([`Self::uniform`]) is scheduled as its context binder between the
-    ///   head and the first argument, outermost first, and the join counts them
-    ///   among the arguments. A forced thunk literal of at least as many
-    ///   abstractions as the call has arguments, whose body then returns, is
-    ///   scheduled instead as the value it returns, under one binder per
+    ///   value at `depth` but a hole the call nominated for an implicit it
+    ///   omits, which the source wrote nothing for; a force at the head of the
+    ///   spine is scheduled as the value it forces, the bridge the lowering
+    ///   writes before a value it calls, and any other head as a computation
+    ///   where the body goes on; the join over the head and the arguments, left
+    ///   to right, is pushed below their visits, the head visited first. Where
+    ///   the head forces a recursive definition's own binder, each uniform
+    ///   parameter ([`Self::uniform`]) is scheduled as its context binder
+    ///   between the head and the first argument, outermost first, and the join
+    ///   counts them among the arguments. A forced thunk literal of at least as
+    ///   many abstractions as the call has arguments, whose body then returns,
+    ///   is scheduled instead as the value it returns, under one binder per
     ///   argument standing for the argument, the first outermost: the type
     ///   grammar has no call of a literal, and the reading back compares such a
     ///   call as what it returns (#675).
@@ -7187,11 +7188,14 @@ impl Walk<'_, '_>
     ///   literal projection on two arguments observe the reduct and the binder
     ///   each argument stands for, and a literal whose body does more than
     ///   return stays a call; a recursive definition's call under one and two
-    ///   uniform parameters observes them passed first, in order.
+    ///   uniform parameters observes them passed first, in order; a call
+    ///   omitting an implicit, and one omitting its every argument, write only
+    ///   what the source wrote.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
     /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -7204,12 +7208,10 @@ impl Walk<'_, '_>
             }
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
             else { return false; };
-            arity > 0_usize
-                && arity.checked_add(1_usize) == Some(visits.len())
+            arity.checked_add(1_usize) == Some(visits.len())
                 && visits.split_last().is_some_and(|(head, arguments)| {
                     let passed = arguments.iter().filter(|task| matches!(**task, Task::Visit { .. })).count();
                     matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
-                        && passed > 0_usize
                         && u32::try_from(passed).is_ok_and(|count| count <= DEPTH_LIMIT.0)
                         && arguments.iter().all(|task| matches!(*task, Task::Context(_))
                             || matches!(*task, Task::Visit { admits: Admits::Value, depth: at, .. } if at == depth))
@@ -7273,6 +7275,10 @@ impl Walk<'_, '_>
                 return;
             }
         }
+        // A hole the call nominated for an implicit it omits is what the
+        // source left out: the call writes nothing there.
+        arguments
+            .retain(|&node| !matches!(source.read(node), Former::Unreadable(Unreadable::Omitted)));
         // A recursive definition's call of itself passes each uniform
         // parameter as itself, ahead of the arguments its fixpoint takes.
         let Arity(uniform) = self.uniform(source, head);

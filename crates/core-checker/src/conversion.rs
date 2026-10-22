@@ -826,15 +826,18 @@ fn endpoints_agree(
 ///   a mark or they are equal as syntax; [`Agreement::Apart`] at the first
 ///   rigid disagreement. Inside the elaboration run a bare owed flex–rigid
 ///   equation is accumulated instead: agreement is then conditional on those
-///   residuals, and a later rigid disagreement still answers `Apart`. Two
-///   staged types agree invariantly at one stage and agreeing bases; under
-///   subtyping a found staged type agrees with a wanted one whose stage its own
-///   fits within, and with an unstaged type as its base, while an unstaged type
-///   against a staged one, or a stage the order refuses, is
-///   [`Agreement::NotBelow`].
+///   residuals, and a later rigid disagreement still answers `Apart`. A pair
+///   not deferred whose side is the decode of a metavariable a call nominated
+///   is posed to the solver: a solved or postponed equation agrees, and a
+///   refuted one answers `Apart`. Two staged types agree invariantly at one
+///   stage and agreeing bases; under subtyping a found staged type agrees with
+///   a wanted one whose stage its own fits within, and with an unstaged type as
+///   its base, while an unstaged type against a staged one, or a stage the
+///   order refuses, is [`Agreement::NotBelow`].
 /// - fails: the refusal a view gives for a node outside the fragment or a
-///   dangling id, and the unfolding's refusal when a decode or a code does not
-///   reduce.
+///   dangling id, the unfolding's refusal when a decode or a code does not
+///   reduce, and [`CheckRefusal::MachineInvariant`] when the binders open pass
+///   any binder count a metavariable's equation can be posed under.
 /// - panics: none.
 /// - intension: a pair of equal ids is accepted without reading the node, and a
 ///   pair already met is not compared again; a worklist, so no depth overflows
@@ -870,6 +873,8 @@ fn endpoints_agree(
 /// - witness: `conversion::tests::a_vacuous_dependent_arrow_is_the_plain_arrow_577`
 /// - witness: `elaboration::tests::owed_conversion_suspends`
 /// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
+/// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
+/// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -960,6 +965,11 @@ fn convert(
                     == crate::elaboration::Deferred::Yes
                 {
                     continue;
+                }
+                match context.unify(TypeNode::Value(left), TypeNode::Value(right))? {
+                    crate::elaboration::Unified::Agreed => continue,
+                    crate::elaboration::Unified::Refuted => return Ok(Agreement::Apart),
+                    crate::elaboration::Unified::Rigid => {},
                 }
                 match (
                     value_type_view(context.arena(), left)?,
@@ -1372,6 +1382,11 @@ fn convert(
                     == crate::elaboration::Deferred::Yes
                 {
                     continue;
+                }
+                match context.unify(TypeNode::Computation(left), TypeNode::Computation(right))? {
+                    crate::elaboration::Unified::Agreed => continue,
+                    crate::elaboration::Unified::Refuted => return Ok(Agreement::Apart),
+                    crate::elaboration::Unified::Rigid => {},
                 }
                 match (
                     comp_type_view(context.arena(), left)?,

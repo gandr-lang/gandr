@@ -624,6 +624,9 @@ pub enum RefusalName
     ImplicitUnsupplied,
     /// A call writing a function's implicit arguments among its parentheses.
     ImplicitInParentheses,
+    /// A call omitting an implicit neither its arguments nor the type it is
+    /// checked against determine.
+    ImplicitUnsolved,
     /// A definition's region binder named as a value.
     RegionAsValue,
     /// A receiver mode word on a parameter that is no method's receiver.
@@ -862,7 +865,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 198_usize] = [
+    pub const VOCABULARY: [Self; 199_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -960,6 +963,7 @@ impl RefusalName
         Self::TelescopeCycle,
         Self::ImplicitUnsupplied,
         Self::ImplicitInParentheses,
+        Self::ImplicitUnsolved,
         Self::RegionAsValue,
         Self::StrayReceiverMode,
         Self::AmbiguousMethod,
@@ -1146,6 +1150,7 @@ impl RefusalName
         (Self::TelescopeCycle, b"TelescopeCycle") |
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
+        (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
         (Self::RegionAsValue, b"RegionAsValue") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
         (Self::AmbiguousMethod, b"AmbiguousMethod") |
@@ -1467,6 +1472,7 @@ impl RefusalName
             Self::TelescopeCycle => "TelescopeCycle",
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
             Self::ImplicitInParentheses => "ImplicitInParentheses",
+            Self::ImplicitUnsolved => "ImplicitUnsolved",
             Self::RegionAsValue => "RegionAsValue",
             Self::StrayReceiverMode => "StrayReceiverMode",
             Self::AmbiguousMethod => "AmbiguousMethod",
@@ -2224,6 +2230,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaUncertified { .. }), RefusalName::UncertifiedDegree | RefusalName::UncertifiedCondition | RefusalName::UncertifiedAllowance)
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
+        | (Self::Checking(CheckRefusal::ImplicitUnsolved { .. }), RefusalName::ImplicitUnsolved)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
@@ -2557,6 +2564,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
+        | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
@@ -2683,6 +2691,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
         },
         CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
+        CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => RefusalName::SessionMismatch,
             ProtocolDefect::Label => RefusalName::UnofferedLabel,

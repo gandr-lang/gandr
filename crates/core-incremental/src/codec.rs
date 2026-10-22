@@ -5863,6 +5863,25 @@ const RULE_FAULTS: [gandr_kernel_term::RuleFault; 10] = [
     gandr_kernel_term::RuleFault::DependentSlot,
 ];
 
+/// Why an omitted implicit is unsolved, in stable wire order.
+const UNSOLVED: [gandr_core_checker::Unsolved; 15] = [
+    gandr_core_checker::Unsolved::Unforced,
+    gandr_core_checker::Unsolved::Unfolding,
+    gandr_core_checker::Unsolved::Gradual,
+    gandr_core_checker::Unsolved::Spine,
+    gandr_core_checker::Unsolved::Outside,
+    gandr_core_checker::Unsolved::Families,
+    gandr_core_checker::Unsolved::Neutral,
+    gandr_core_checker::Unsolved::Levels,
+    gandr_core_checker::Unsolved::Pruning,
+    gandr_core_checker::Unsolved::Escape,
+    gandr_core_checker::Unsolved::Occurs,
+    gandr_core_checker::Unsolved::Scope,
+    gandr_core_checker::Unsolved::Linear,
+    gandr_core_checker::Unsolved::Dangling,
+    gandr_core_checker::Unsolved::Budget,
+];
+
 /// Write the parameter or field an occurrence refusal names.
 ///
 /// # Specification
@@ -6359,6 +6378,11 @@ where
         Refusal::UnenclosedRun { at } => {
             writer.tag(Tag(55));
             write_site(writer, at)?;
+        },
+        Refusal::ImplicitUnsolved { at, reason } => {
+            writer.tag(Tag(86));
+            write_site(writer, at)?;
+            write_listed(writer, &UNSOLVED, &reason)?;
         },
         Refusal::TypeMismatch {
             at,
@@ -6866,6 +6890,7 @@ where
                     | Refusal::UaUncertified { .. } => 53,
                     | Refusal::UaInequivalent { .. } => 54,
                     | Refusal::UnenclosedRun { .. } => 55,
+                    | Refusal::ImplicitUnsolved { .. } => 86,
                     | Refusal::SessionMismatch { .. } => 56,
                     | Refusal::Linearity { .. } => 57,
                     | Refusal::CapabilityForged { .. } => 58,
@@ -7153,6 +7178,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         55 => Refusal::UnenclosedRun {
             at: read_site(reader)?,
+        },
+        86 => Refusal::ImplicitUnsolved {
+            at: read_site(reader)?,
+            reason: read_listed(reader, &UNSOLVED)?,
         },
         56 => {
             let at = read_site(reader)?;
@@ -7911,6 +7940,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::AtomTransport { .. }
             | Refusal::SealSiteRepeated(_)
             | Refusal::UnenclosedRun { .. }
+            | Refusal::ImplicitUnsolved { .. }
             | Refusal::Linearity { .. }
             | Refusal::CapabilityForged { .. }
             | Refusal::CapabilityAmplified { .. }

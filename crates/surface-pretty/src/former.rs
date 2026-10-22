@@ -1008,6 +1008,10 @@ pub enum Unreadable
     /// same hole, named by its place among its source's holes, so it is the
     /// one member the walk writes faithfully.
     Hole,
+    /// A metavariable a call nominated for an implicit it omits: the source
+    /// wrote nothing there, so a call's arguments leave it out, and the checker
+    /// left it unsolved wherever else it stands.
+    Omitted,
     /// A mark: a term the elaborator could not type, kept as written.
     Mark,
     /// A universe lift of a type or a value: the core's explicit cumulativity,

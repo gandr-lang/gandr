@@ -1994,3 +1994,147 @@ fn a_sealed_member_checks_at_the_representation_inside()
         "nor does a literal of the representation inhabit it"
     );
 }
+
+#[test]
+fn a_solution_naming_a_later_hole_is_read_through_1216()
+{
+    use alloc::collections::BTreeMap;
+
+    use gandr_core_term::BinderDepth;
+    use gandr_core_term::Binders;
+    use gandr_core_term::Value;
+    use gandr_core_term::ValueType;
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // `?first`, declared two binders deep, is solved as `?second`, declared
+    // one binder deep and solved as `#0`. In `thunk λ λ. return ?first` the
+    // second round reads `?second` two binders deep, raised past one: `#1`.
+    // A type recorded two binders deep reads the same.
+    let mut arena = CoreArena::new();
+    let [first, second] = [0_u32, 1]
+        .map(|index| HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"));
+    let first_at = arena.value_hole(first);
+    let second_at = arena.value_hole(second);
+    let innermost = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let solutions = BTreeMap::from([
+        (first, (second_at, Binders::from(2_u32))),
+        (second, (innermost, Binders::ONE)),
+    ]);
+    let suspended = |arena: &mut CoreArena, value| {
+        let returned = arena.computation_return(value);
+        let inner = arena.computation_lambda(returned);
+        let lambda = arena.computation_lambda(inner);
+        arena.value_thunk(lambda)
+    };
+    let holed = suspended(&mut arena, first_at);
+    let filled = suspended(&mut arena, outer);
+    let read = super::fill(&mut arena, holed, &solutions);
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, read, filled),
+        gandr_core_term::CertificateEquality::Equal,
+        "the hole reads through both solutions, the second raised past one binder"
+    );
+    assert_eq!(
+        super::fill(&mut arena, filled, &solutions),
+        filled,
+        "a body holding no hole is its own filling"
+    );
+    let decoded = arena.value_type_element(first_at, Level::zero());
+    let TypeNode::Value(typed) = super::solved_type(
+        &mut arena,
+        (TypeNode::Value(decoded), BinderDepth::from(2_usize)),
+        &solutions,
+    )
+    else {
+        panic!("a value type reads as a value type");
+    };
+    assert!(
+        matches!(
+            arena.value_type(typed),
+            Some(&ValueType::Element { code, .. }) if arena.value(code)
+                == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(1_u32) })
+        ),
+        "a type recorded two binders deep reads the same: {:?}",
+        arena.value_type(typed)
+    );
+}
+
+#[test]
+fn an_omitted_implicit_is_typed_at_its_solution_1216()
+{
+    use gandr_core_term::CompType;
+    use gandr_core_term::ValueType;
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def id : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+    // def k  : U (F Integer) = thunk ((force id) ?a) 0 ;   `same(3)`
+    // The typed run keeps the instantiated head `(force id) ?a` at
+    // `Integer -> F Integer`: the hole read as its solution, whose decode is
+    // the integers.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let returns_element = arena.comp_type_returner(element);
+    let arrow = arena.comp_type_arrow(element, returns_element);
+    let polymorphic = arena.comp_type_pi(small, arrow);
+    let identity_type = arena.value_type_thunk(polymorphic);
+    let returned = arena.computation_return(bound);
+    let inner = arena.computation_lambda(returned);
+    let outer = arena.computation_lambda(inner);
+    let identity = arena.value_thunk(outer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let zero = arena.value_literal(integer_literal());
+    let hole = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(constant);
+    let head = arena.computation_application(forced, hole);
+    let applied = arena.computation_application(head, zero);
+    let call = arena.value_thunk(applied);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let module = [
+        declaration(
+            At(0),
+            Maybe::Present(identity_type),
+            Maybe::Present(identity),
+        ),
+        declaration(At(1), Maybe::Present(suspended), Maybe::Present(call)),
+    ];
+    let run = type_module(&mut context, &module);
+    assert!(
+        run.refused().is_empty(),
+        "both declarations check: {:?}",
+        run.refused()
+    );
+    let typed = run.typings()[&ConstantIndex::from(1_usize)].typings();
+    let headed = typed
+        .iter()
+        .find(|typing| typing.term == TermNode::Computation(head))
+        .expect("the instantiated head is typed");
+    let arena = context.arena();
+    let TypeNode::Computation(at) = headed.ty
+    else {
+        panic!("a head synthesises a computation type: {headed:?}");
+    };
+    let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(at)
+    else {
+        panic!(
+            "the head takes the explicit argument: {:?}",
+            arena.comp_type(at)
+        );
+    };
+    assert_eq!(
+        arena.value_type(domain),
+        Some(&ValueType::Base(BaseType::Integer)),
+        "the domain is the integers, the decode of the solution, not of the hole"
+    );
+}

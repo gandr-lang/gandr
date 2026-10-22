@@ -471,6 +471,7 @@ pub use crate::origin::ComponentName;
 pub use crate::origin::Insertion;
 pub use crate::origin::Label;
 pub use crate::origin::Labelled;
+pub use crate::origin::Omitted;
 pub use crate::origin::Origin;
 pub use crate::origin::OriginCount;
 pub use crate::origin::OriginTable;
