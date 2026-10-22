@@ -2493,10 +2493,12 @@ impl Lowering<'_>
 
     /// Open a closure body: bind its label, emit its entry, and queue what it
     /// runs — a command, or a constant's definition evaluated into its word
-    /// and returned to the frame its read pushed. Answers the entry's
-    /// instruction, whose window operand is written once the body is lowered.
-    /// Counted, the window's captures each gain an owner and the closure
-    /// entered is given up; a fixpoint's own binder keeps it.
+    /// and returned to the frame its read pushed; a computed definition's `μ`
+    /// runs its command against a frame of its own, which sets the word with
+    /// the answer. Answers the entry's instruction, whose window operand is
+    /// written once the body is lowered. Counted, the window's captures each
+    /// gain an owner and the closure entered is given up; a fixpoint's own
+    /// binder keeps it.
     ///
     /// # Specification
     /// trivial.
@@ -2507,6 +2509,7 @@ impl Lowering<'_>
     ///   took its captures without an owner of its own frees the capture.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `tests::agreement::a_computed_constant_unfolds_once_to_its_answer`
     fn open(
         &mut self,
         body: Body,
@@ -2557,7 +2560,18 @@ impl Lowering<'_>
                     Operand::Immediate(word),
                     Operand::Unused,
                 ));
-                self.tasks.push(Task::Producer(definition, scope));
+                if let Some(&ProducerNode::Mu { body: computed }) = self.arena.producer(definition)
+                {
+                    let owners = self.unowned();
+                    let resume = self.frame_label(Some(owners));
+                    let (inner, alpha) = self.bind(scope, Binding::Covariable);
+                    self.emit(StencilId::Pushk, Operand::Code(resume), alpha.operand());
+                    self.tasks.push(Task::Bind(resume));
+                    self.tasks.push(Task::Command(computed, inner));
+                }
+                else {
+                    self.tasks.push(Task::Producer(definition, scope));
+                }
             },
         }
         at
