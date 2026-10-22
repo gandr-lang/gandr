@@ -38,6 +38,7 @@ use crate::alphabet::CommandSpliceRefusal;
 use crate::alphabet::ConvexityDischarge;
 use crate::alphabet::Generalization;
 use crate::alphabet::PositionOrder;
+use crate::alphabet::RootAgreement;
 use crate::alphabet::SeamRole;
 use crate::alphabet::anti_unification;
 use crate::alphabet::command_subterm;
@@ -786,6 +787,33 @@ impl CellAlphabet for SequentAlphabet
     ) -> SubstitutionDecision
     {
         crate::subst::unify_cmd(lhs, rhs, subst)
+    }
+
+    /// Two commands of different polarities never unify; any other pair is
+    /// left to unification.
+    ///
+    /// # Specification
+    /// - ensures: [`RootAgreement::Clash`] exactly when the polarities differ,
+    ///   the first refusal [`crate::subst::unify_cmd`] makes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a positive and a negative cut clash, two cuts of one
+    ///   polarity may meet. Reporting a clash at one polarity drops a pair.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    #[inline]
+    #[spec(ensures: |output| (output == RootAgreement::Clash) == (lhs.polarity() != rhs.polarity()))]
+    fn root_agreement(
+        lhs: &Self::Cmd,
+        rhs: &Self::Cmd,
+    ) -> RootAgreement
+    {
+        if lhs.polarity() == rhs.polarity() {
+            RootAgreement::May
+        }
+        else {
+            RootAgreement::Clash
+        }
     }
 
     /// The least general generalization of a family of command-pattern
