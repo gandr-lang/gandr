@@ -2117,9 +2117,9 @@ pub(crate) struct ElementTransport
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `here` transports to the value; a product, a sum and a
-///   list motive compute constructorwise, a list one cell per step; the
-///   universe clause reaches native transport along any path but a returned
+/// - hypothesis: L3 — `here` transports to the value; a product, a record, a
+///   sum and a list motive compute constructorwise, a list one cell per step;
+///   the universe clause reaches native transport along any path but a returned
 ///   one, which sticks here for the word rows to run; a function motive along
 ///   `ua(e)` moves the function by the record's maps; a neutral path over a
 ///   dependent motive sticks.
@@ -2175,6 +2175,27 @@ where
                 Mover::Transport,
                 (&parts, &components),
                 path,
+                Former::Tuple,
+            )?))
+        },
+        ValueType::Record(parts) => {
+            let components: Vec<ValueId> = match arena.value(value) {
+                Some(&Value::Record(ref fields)) if fields.keys().eq(parts.keys()) => {
+                    fields.values().copied().collect()
+                },
+                Some(_) => return Ok(Reduction::Stuck),
+                None => return Err(KernelError::ArenaFault),
+            };
+            let labels: Vec<gandr_kernel_term::FieldLabel> = parts.keys().cloned().collect();
+            let parts: Vec<ValueTypeId> = parts.values().copied().collect();
+            Ok(Reduction::Reduced(componentwise(
+                arena,
+                table,
+                memo,
+                Mover::Transport,
+                (&parts, &components),
+                path,
+                Former::Record(&labels),
             )?))
         },
         ValueType::Sum(parts) => {
@@ -2253,7 +2274,6 @@ where
             )
         },
         ValueType::Data { .. }
-        | ValueType::Record(_)
         | ValueType::Session { .. }
         | ValueType::PathUniverse(..)
         | ValueType::FlowUniverse(..)
@@ -2460,7 +2480,8 @@ where
     }
 }
 
-/// Transport of a function in `y. U(A(y) → F B(y))` along a universe path.
+/// Transport of a function in `y. U(A(y) → F B(y))`, or of a suspension in
+/// `y. U(F B(y))`, along a universe path.
 ///
 /// # Specification
 /// - requires: `function_type` is the motive's thunk type under its own binder.
@@ -2470,7 +2491,9 @@ where
 ///   first leg does, or `return thunk(λa. force f m)` when `B` ignores the
 ///   binder; the argument `m` is `a` when `A` ignores the binder and `⟨tr(A,
 ///   back(p), a)⟩`, by [`back_along`], when `A` is the binder's decode and the
-///   path reads back; `None` for any other type, path or argument.
+///   path reads back. For a returner along the same paths, `return thunk(tr(B,
+///   p, ⟨force f⟩))`, or `return thunk(force f)` when `B` ignores the binder.
+///   `None` for any other type, path or argument.
 /// - provides: the cubical table's function row, as the evaluator's transported
 ///   function mirrors it.
 /// - fails: never.
@@ -2478,8 +2501,9 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the argument moves back by the left inverse and the
-///   result forward by the forward map; moving the argument forward, by the
-///   right inverse, or leaving the result where it is changes the reduct.
+///   result forward by the forward map, a suspension's result forward alone;
+///   moving the argument forward, by the right inverse, or leaving the result
+///   where it is changes the reduct.
 /// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
 /// - witness: `element_identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
@@ -2493,13 +2517,13 @@ fn transported_function<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
-    let Some(&CompType::Arrow {
-        domain: argument,
-        codomain,
-    }) = arena.comp_type(function_type)
-    else {
-        return None;
-    };
+    let (argument, codomain) =
+        if let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(function_type) {
+            (Some(domain), codomain)
+        }
+        else {
+            (None, function_type)
+        };
     let Some(&CompType::Returner(result)) = arena.comp_type(codomain)
     else {
         return None;
@@ -2511,6 +2535,21 @@ where
     {
         return None;
     }
+    // A suspension runs, forced, and its result moves forward as the value
+    // the run returns; no binder is crossed.
+    let Some(argument) = argument
+    else {
+        let forced = arena.computation_force(function);
+        let body = if binder_use(arena, table, memo, Family::Type(result)) == BinderUse::Ignored {
+            forced
+        }
+        else {
+            let returned = arena.value_returned(forced);
+            arena.computation_path_transport(result, path, returned)
+        };
+        let thunk = arena.value_thunk(body);
+        return Some(arena.computation_return(thunk));
+    };
     let one = BinderDepth::from(1_u32);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
     // Under `λa`, the argument moves back along the path as the value the
@@ -2785,14 +2824,26 @@ impl Mover
     }
 }
 
-/// Move a tuple componentwise: one bind per component, then the tuple of the
-/// bound results.
+/// The former a componentwise move returns its moved components in.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Former<'labels>
+{
+    /// A tuple, the components in order.
+    Tuple,
+    /// A record, one label per component in field order.
+    Record(&'labels [gandr_kernel_term::FieldLabel]),
+}
+
+/// Move a tuple or a record componentwise: one bind per component, then the
+/// `former` of the bound results.
 ///
 /// # Specification
-/// - requires: one component per motive part.
+/// - requires: one component per motive part, and one label per component for a
+///   record.
 /// - ensures: `x₀ ← step(P₀, p, v₀); …; return (x₀, …)` for the `mover`'s step,
-///   each step's identity or flow and component shifted past the binds outside
-///   it, and each part's outer variables shifted past them as well.
+///   or `return #{l₀ = x₀, …}` for a record, each step's identity or flow and
+///   component shifted past the binds outside it, and each part's outer
+///   variables shifted past them as well.
 /// - fails: `ArenaFault` for a component count past `u32`.
 /// - panics: none.
 ///
@@ -2800,8 +2851,9 @@ impl Mover
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a pair of a Bool and a universe element transports
-///   componentwise, and a pair rides componentwise along a forward flow.
+/// - hypothesis: L3 — a pair of a Bool and a universe element and a record of
+///   them transport componentwise, and a pair rides componentwise along a
+///   forward flow.
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
 /// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&reduct| arena.computation(reduct).is_some()))]
@@ -2812,6 +2864,7 @@ pub(crate) fn componentwise<M>(
     mover: Mover,
     (parts, components): (&[ValueTypeId], &[ValueId]),
     path: ValueId,
+    former: Former<'_>,
 ) -> Result<ComputationId, KernelError>
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
@@ -2821,8 +2874,11 @@ where
     for position in (0 .. count).rev() {
         bound.push(arena.value_variable(DeBruijnIndex::from(position)));
     }
-    let tuple = arena.value_tuple(&bound);
-    let mut reduct = arena.computation_return(tuple);
+    let assembled = match former {
+        Former::Tuple => arena.value_tuple(&bound),
+        Former::Record(labels) => arena.value_record(labels.iter().cloned().zip(bound).collect()),
+    };
+    let mut reduct = arena.computation_return(assembled);
     for (position, (&part, &component)) in (0 .. count).zip(parts.iter().zip(components)).rev() {
         let outside = BinderDepth::from(position);
         let part = shift_value_type(arena, table, memo, part, BinderDepth::from(1_u32), outside);

@@ -93,3 +93,20 @@ def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit 
 /// Counting modulo three stepped once: the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
 def second() -> -F (Unit + (Unit + Unit)) { become stepOnce(rightward) }
+
+/// A counter over the left nesting stepped once from its start.
+@[ checks ]
+def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((Unit + Unit) + Unit) {
+  case m {
+    #{.start = s, .step = t} => {
+      run zero <- s();
+      become t(zero)
+    }
+  }
+}
+
+/// #1480: the counter carried to the left nesting stepped once, its second
+/// state carried along: the transport moves the record field by field, each
+/// field a function moved along the path.
+@[ runs("+{.0 = +{.1 = unit}}") ]
+def secondLeft() -> -F ((Unit + Unit) + Unit) { become stepOnceLeft(leftward) }
