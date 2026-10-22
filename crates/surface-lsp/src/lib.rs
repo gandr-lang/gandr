@@ -72,8 +72,10 @@
 //! use std::io::Cursor;
 //!
 //! use gandr_surface_lsp::Body;
+//! use gandr_surface_lsp::Pool;
 //! use gandr_surface_lsp::Served;
 //! use gandr_surface_lsp::Spelling;
+//! use gandr_surface_lsp::Width;
 //! use gandr_surface_lsp::serve;
 //! use gandr_surface_lsp::write_frame;
 //!
@@ -90,7 +92,7 @@
 //!     &mut Cursor::new(input),
 //!     &mut output,
 //!     &mut Vec::new(),
-//!     Spelling::Unicode,
+//!     (Spelling::Unicode, &Pool::new(Width::SERIAL)),
 //! )?;
 //! assert_eq!(
 //!     served,
@@ -401,6 +403,8 @@ mod unused;
 mod uses;
 mod view;
 
+pub use gandr_surface_dispatcher::Pool;
+pub use gandr_surface_dispatcher::Width;
 pub use gandr_surface_pretty::Spelling;
 
 #[cfg(unix)]
@@ -428,12 +432,17 @@ pub use crate::protocol::ContentChange;
 pub use crate::protocol::Diagnostic;
 pub use crate::protocol::DocumentUri;
 pub use crate::protocol::DocumentVersion;
+pub use crate::quiet::Changes;
+pub use crate::quiet::Inbox;
 pub use crate::quiet::QUIET;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
+pub use crate::server::Admissions;
+pub use crate::server::Awaiting;
 pub use crate::server::Peer;
 pub use crate::server::Served;
 pub use crate::server::Server;
+pub use crate::server::Settled;
 pub use crate::server::Workspace;
 pub use crate::server::serve;
 pub use crate::tokens::TOKEN_MODIFIERS;

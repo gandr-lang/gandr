@@ -17,13 +17,17 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 
 use anodized::spec;
+use gandr_surface_lsp::Admissions;
+use gandr_surface_lsp::Awaiting;
 use gandr_surface_lsp::Body;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::Peer;
+use gandr_surface_lsp::Pool;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Server;
 use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
+use gandr_surface_lsp::Width;
 use gandr_surface_lsp::Workspace;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::serve;
@@ -134,12 +138,18 @@ struct Outbox
 /// everything the message before it owed.
 const SYNC: &str = "sync";
 
+/// The pool joined connections admit on: one thread, so each admission runs
+/// where it is submitted.
+static SERIAL: Pool = Pool::new(Width::SERIAL);
+
 /// A connection driven in process over a workspace other connections may
 /// join, as the hub's are.
 struct Joined
 {
     /// The connection.
     server: Server,
+    /// Its admissions, on [`SERIAL`].
+    admissions: Admissions<'static>,
     /// Its workspace, shared with every connection beside it.
     shared: Rc<RefCell<Shared>>,
     /// Whether the exchange is kept.
@@ -262,6 +272,7 @@ impl Client
         Self {
             connection: Connection::Joined(Box::new(Joined {
                 server: Server::new(peer),
+                admissions: Admissions::new(&SERIAL, gandr_surface_lsp::Inbox::default().changes()),
                 shared,
                 record,
                 sent: Vec::new(),
@@ -529,7 +540,13 @@ impl Streams
             flushed: signal,
         };
         let serving = std::thread::spawn(move || {
-            serve(&mut inbox, &mut outbox, &mut io::sink(), Spelling::Unicode)
+            let pool = gandr_surface_dispatcher::Pool::new(gandr_surface_dispatcher::Width::SERIAL);
+            serve(
+                &mut inbox,
+                &mut outbox,
+                &mut io::sink(),
+                (Spelling::Unicode, &pool),
+            )
         });
         Self {
             frames,
@@ -593,7 +610,7 @@ impl Streams
 impl Joined
 {
     /// Handle `message` as `serve` does — the message, then the admission
-    /// its log leaves — and return every message written.
+    /// its log leaves, settled — and return every message written.
     ///
     /// # Specification
     /// trivial.
@@ -604,18 +621,19 @@ impl Joined
     {
         let body = Body::from(serde_json::to_vec(&message).expect("a message encodes"));
         let mut shared = self.shared.borrow_mut();
-        let mut outcome = self.server.handle(&mut shared.workspace, &body);
-        let admitted = self.server.admit(&mut shared.workspace, &mut outcome.log);
+        let outcome = self.server.handle(&mut shared.workspace, &body);
+        let _logged = self
+            .server
+            .admit(&mut shared.workspace, outcome.log, &mut self.admissions);
+        let admitted =
+            self.server
+                .admitted(&mut shared.workspace, &mut self.admissions, Awaiting::All);
         drop(shared);
         let messages: Vec<Value> = outcome
             .messages
             .iter()
+            .chain(&admitted.corrections)
             .map(|written| serde_json::to_value(written).expect("a written message encodes"))
-            .chain(
-                admitted
-                    .iter()
-                    .map(|written| serde_json::to_value(written).expect("an admission encodes")),
-            )
             .collect();
         if self.record == Record::Kept {
             self.sent.push(message);

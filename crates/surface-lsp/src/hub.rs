@@ -94,11 +94,13 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::PoisonError;
+use std::sync::mpsc::Sender;
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_pretty::Spelling;
 use quenchant_shape::shape::Maybe;
 
@@ -109,7 +111,10 @@ use crate::quiet::paced;
 use crate::rpc::Incoming;
 use crate::rpc::Outgoing;
 use crate::rpc::classify;
+use crate::server::Admissions;
+use crate::server::Awaiting;
 use crate::server::Flow;
+use crate::server::Logged;
 use crate::server::Peer;
 use crate::server::Served;
 use crate::server::Server;
@@ -265,19 +270,19 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 /// - ensures: a connection whose first byte is `{` is handed to `lines` when
 ///   one is given, and one whose first byte is `r` to the render-bus face,
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
-///   [`Server::handle`] and [`Server::admit`] state, over the documents every
-///   connection shares, the workspace's configured spelling `spelling`, each
-///   connection answered from its own copy: its answers and publications reach
-///   it in the order its handling made them, and each synchronisation's timing
-///   line goes to `log`. For a connection whose client watches no file, the hub
-///   watches the files its copies' closures name, as [`Server::followed`] reads
-///   them, and a change to one on disk is handled as
-///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
-///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
-///   the end of its stream, or at a stream fault; it then holds nothing and its
-///   socket is shut. The hub returns once no connection has been open for
-///   `linger`, its socket file removed first so a late client starts a fresh
-///   hub.
+///   [`Server::handle`], [`Server::admit`] and [`Server::admitted`] state, over
+///   the documents every connection shares, the workspace's configured spelling
+///   `spelling`, its kernel admissions running on `pool`, each connection
+///   answered from its own copy: its answers and publications reach it in the
+///   order its handling made them, and each synchronisation's timing line goes
+///   to `log`. For a connection whose client watches no file, the hub watches
+///   the files its copies' closures name, as [`Server::followed`] reads them,
+///   and a change to one on disk is handled as [`Server::changed_on_disk`]
+///   states; a watch that cannot start is said once in `log` and the hub serves
+///   on unwatched. A connection ends at `exit`, at the end of its stream, or at
+///   a stream fault; it then holds nothing and its socket is shut. The hub
+///   returns once no connection has been open for `linger`, its socket file
+///   removed first so a late client starts a fresh hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -306,13 +311,14 @@ pub fn run_hub<Log>(
     linger: Duration,
     mut log: Log,
     lines: Option<Face>,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, Pool),
 ) -> Result<(), io::Error>
 where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
     let workspace = Arc::new(Mutex::new(Workspace::spelled(spelling)));
+    let pool = Arc::new(pool);
     let disk = match Disk::new() {
         Ok(disk) => Some(disk),
         Err(error) => {
@@ -329,15 +335,16 @@ where
         stream.set_nonblocking(false)?;
         peers = peers.saturating_add(1);
         let _opened = open.fetch_add(1, Ordering::SeqCst);
-        let (workspace, disk, log, open) = (
+        let (workspace, disk, log, open, pool) = (
             Arc::clone(&workspace),
             Arc::clone(&disk),
             Arc::clone(&log),
             Arc::clone(&open),
+            Arc::clone(&pool),
         );
         let peer = Peer::from(peers);
         drop(thread::spawn(move || {
-            connection(stream, peer, &workspace, &disk, &log, lines);
+            connection(stream, peer, (&workspace, &pool), &disk, &log, lines);
             let _closed = open.fetch_sub(1, Ordering::SeqCst);
         }));
         Ok(())
@@ -389,7 +396,7 @@ where
 fn connection<Log>(
     stream: UnixStream,
     peer: Peer,
-    workspace: &Mutex<Workspace>,
+    (workspace, pool): (&Mutex<Workspace>, &Pool),
     disk: &Mutex<Option<Disk>>,
     log: &Mutex<Log>,
     lines: Option<Face>,
@@ -429,12 +436,22 @@ fn connection<Log>(
     let mut server = Server::new(peer);
     let inbox = Inbox::default();
     let changes = inbox.changes();
+    let mut admissions = Admissions::new(pool, inbox.changes());
     lock(workspace).hear_edits(peer, inbox.changes());
     if writer.is_ok() {
         let _ended = paced(&mut reading, inbox, |met, deadlines| {
             let mut held = lock(workspace);
-            let (reported, mut outcome) = match met {
-                Met::Closed => return Ok(ControlFlow::Break(())),
+            let (reported, outcome) = match met {
+                Met::Closed => {
+                    let settled = server.admitted(&mut held, &mut admissions, Awaiting::All);
+                    drop(held);
+                    let mut written = lock(log);
+                    for line in &settled.log {
+                        drop(writeln!(written, "{line}"));
+                    }
+                    drop(written);
+                    return Ok(ControlFlow::Break(()));
+                },
                 Met::Quiet(uri) => {
                     for message in server.release(&mut held, &uri) {
                         drop(outbox.send(message));
@@ -445,6 +462,16 @@ fn connection<Log>(
                     for message in server.proposed_elsewhere(&held) {
                         drop(outbox.send(message));
                     }
+                    return Ok(ControlFlow::Continue(()));
+                },
+                Met::Admitted => {
+                    let settled = server.admitted(&mut held, &mut admissions, Awaiting::Ended);
+                    drop(held);
+                    for message in settled.corrections {
+                        drop(outbox.send(message));
+                    }
+                    deadlines.settled(&settled.log);
+                    logged(&server, &settled.log, (log, &outbox));
                     return Ok(ControlFlow::Continue(()));
                 },
                 Met::Changed(paths) => {
@@ -469,7 +496,6 @@ fn connection<Log>(
                     (reported.end, server.answer(&mut held, message, later))
                 },
             };
-            let admitted = server.admit(&mut held, &mut outcome.log);
             // The watch is armed before the client hears the judgement, so a
             // change it makes on hearing it is seen.
             if let Some(ref mut watch) = *lock(disk)
@@ -477,27 +503,27 @@ fn connection<Log>(
             {
                 held.watched_on_disk(watched);
             }
-            for message in core::mem::take(&mut outcome.messages) {
-                drop(outbox.send(message));
-            }
-            for message in admitted {
+            for message in outcome.messages {
                 drop(outbox.send(message));
             }
             for message in reported {
                 drop(outbox.send(message));
             }
-            drop(held);
             deadlines.note(&outcome.log, server.quiet(), Instant::now());
-            let mut written = lock(log);
-            for line in &outcome.log {
-                drop(writeln!(written, "{line}"));
-            }
-            drop(written);
-            for message in server.traced(&outcome.log) {
-                drop(outbox.send(message));
-            }
+            let now = server.admit(&mut held, outcome.log, &mut admissions);
+            drop(held);
+            logged(&server, &now, (log, &outbox));
             Ok(match outcome.flow {
-                Flow::Exit(_) => ControlFlow::Break(()),
+                Flow::Exit(_) => {
+                    let settled =
+                        server.admitted(&mut lock(workspace), &mut admissions, Awaiting::All);
+                    let mut written = lock(log);
+                    for line in &settled.log {
+                        drop(writeln!(written, "{line}"));
+                    }
+                    drop(written);
+                    ControlFlow::Break(())
+                },
                 Flow::Continue => ControlFlow::Continue(()),
             })
         });
@@ -516,6 +542,38 @@ fn connection<Log>(
         drop(writer.join());
     }
     drop(reading.get_ref().shutdown(std::net::Shutdown::Both));
+}
+
+/// Write `lines` to `log`, and send the trace of them `server`'s client asked
+/// for through `outbox`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each line is written to `log` with a line terminator, a line
+///   `log` refuses dropped, then each trace message `server` makes of them is
+///   sent, a message the closed writer refuses dropped.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the log and the writer are opaque.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`run_hub`]'s witnesses.
+/// - witness: `hub::tests::two_clients_hold_their_own_copies_230`
+fn logged<Log>(
+    server: &Server,
+    lines: &[Logged],
+    (log, outbox): (&Mutex<Log>, &Sender<Outgoing>),
+) where
+    Log: Write,
+{
+    let mut written = lock(log);
+    for line in lines {
+        drop(writeln!(written, "{line}"));
+    }
+    drop(written);
+    for message in server.traced(lines) {
+        drop(outbox.send(message));
+    }
 }
 
 /// Carry frames between a client and the hub at the other end of `hub`:
@@ -714,7 +772,10 @@ mod tests
                 Duration::from_millis(100),
                 io::sink(),
                 Some(echo),
-                super::Spelling::Unicode,
+                (
+                    super::Spelling::Unicode,
+                    super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
+                ),
             )
             .expect("the hub serves");
         })
@@ -1292,7 +1353,10 @@ mod tests
                 Duration::from_millis(10),
                 io::sink(),
                 Some(echo),
-                super::Spelling::Unicode,
+                (
+                    super::Spelling::Unicode,
+                    super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
+                ),
             )
             .is_ok(),
             "a socket another hand removed is not a fault"

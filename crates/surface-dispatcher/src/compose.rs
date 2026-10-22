@@ -175,9 +175,12 @@ use gandr_core_checker::ModuleRun;
 use gandr_core_checker::Nesting;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::OriginToken;
+use gandr_core_checker::Polled;
+use gandr_core_checker::Retirement;
 use gandr_core_checker::SealSite;
 use gandr_core_checker::SealingSite;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::Unretired;
 use gandr_core_checker::Verdict;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
@@ -705,15 +708,73 @@ impl Admission
     )]
     #[must_use]
     pub fn admit_resuming(
-        mut self,
+        self,
         boundary: bridge::LeadingCount,
         crossed: Maybe<&bridge::Crossed, bridge::crossed::Absent>,
     ) -> Resumption
     {
+        self.admit_retiring(boundary, crossed, &Unretired).whole()
+    }
+
+    /// [`admit_resuming`](Self::admit_resuming), polling `retirement` before
+    /// each declaration the readmission crosses: retired, it stops there and
+    /// answers the record of the declarations it crossed before.
+    ///
+    /// # Specification
+    /// - requires: as [`admit_resuming`](Self::admit_resuming).
+    /// - ensures: while every poll answers wanted, [`Polled::Whole`] with
+    ///   [`admit_resuming`](Self::admit_resuming)'s answer; retired before a
+    ///   declaration, [`Polled::Retired`] with the retirement and the record
+    ///   [`bridge::readmit_retiring`] made of the declarations before it, and
+    ///   no artifact.
+    /// - provides: an editor's admission that a newer revision overtakes stops
+    ///   at its next declaration, and the next admission resumes what it
+    ///   crossed.
+    /// - fails: as [`admit_resuming`](Self::admit_resuming), in the artifact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission retired part way, then resumed from its
+    ///   record, exports what a whole admission exports.
+    /// - witness: `compose::tests::a_retired_admission_resumes_from_its_record_1547`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body readmits every judged declaration; the capture copies each one's constant once"
+        )
+    )]
+    #[spec(
+        captures: [judged = self.verdicts.judged().iter().map(gandr_core_checker::Judged::constant)
+            .collect::<alloc::vec::Vec<_>>()],
+        ensures: |ref ret| match *ret {
+            Polled::Whole(ref whole) => usize::from(whole.judged) == judged.len() && whole.resumed <= whole.judged
+                && whole.artifact.as_ref().err().is_none_or(|fault| judged.contains(&fault.constant())),
+            Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < judged.len(),
+            Polled::Retired(_, Maybe::Absent(_)) => true,
+        },
+    )]
+    pub fn admit_retiring<Poll>(
+        mut self,
+        boundary: bridge::LeadingCount,
+        crossed: Maybe<&bridge::Crossed, bridge::crossed::Absent>,
+        retirement: &Poll,
+    ) -> Polled<Resumption, Poll::Retired, Maybe<bridge::Crossed, bridge::crossed::Absent>>
+    where
+        Poll: Retirement,
+    {
         let judged = bridge::LeadingCount::from(self.verdicts.judged().len());
-        let (readmission, mut recorded) =
-            readmitted(&mut self.arena, &self.verdicts, (boundary, crossed));
-        match readmission {
+        let (readmission, mut recorded) = match readmitted(
+            &mut self.arena,
+            &self.verdicts,
+            (boundary, crossed),
+            retirement,
+        ) {
+            Polled::Whole(whole) => whole,
+            Polled::Retired(retired, held) => return Polled::Retired(retired, held),
+        };
+        Polled::Whole(match readmission {
             Ok(readmission) => Resumption {
                 resumed: readmission.resumed(),
                 judged,
@@ -726,7 +787,7 @@ impl Admission
                 judged,
                 crossed: recorded,
             },
-        }
+        })
     }
 }
 
@@ -3315,24 +3376,38 @@ fn abstract_type(sealing: Sealing) -> AbstractType
     })
 }
 
+/// What [`readmitted`] answers: the readmission or the first disagreement,
+/// beside the record of its boundary; or the retirement, beside the record of
+/// the declarations crossed before it.
+type Readmitting<Retired> = Polled<
+    (
+        Result<bridge::Readmission, bridge::Readmitted>,
+        Maybe<bridge::Crossed, bridge::crossed::Absent>,
+    ),
+    Retired,
+    Maybe<bridge::Crossed, bridge::crossed::Absent>,
+>;
+
 /// Have the kernel re-derive every declaration in `verdicts` the checker
 /// accepted, resuming the first of them from `leading`'s record and
-/// recording its boundary's, as [`bridge::readmit_resuming`] does.
+/// recording its boundary's, as [`bridge::readmit_retiring`] does under
+/// `retirement`.
 ///
 /// # Specification
 /// - requires: `verdicts` was judged over `arena`; `leading`'s record, when
 ///   present, as [`bridge::readmit_resuming`] requires.
-/// - ensures: beside [`bridge::readmit_resuming`]'s record of `leading`'s
-///   boundary, succeeds with the readmission when every accepted declaration
-///   crossed as a definition or an axiom, or stays on the checker's side as a
-///   static definition or as an effectful one the bridge refuses by its
-///   effectful former; a refused declaration crosses as its mark, a suspended
-///   one crosses as nothing until a fill resumes it, a declaration withheld
-///   because it names a refused one carries that one's reason, a declaration
-///   holding a term hole or the unknown type stays behind as the user absence
-///   it is, and a declaration holding a session stays behind on the checker's
-///   side, the kernel having no session former, so none of these is a
-///   disagreement.
+/// - ensures: retired before a declaration, [`bridge::readmit_retiring`]'s
+///   retirement and record. Otherwise, beside [`bridge::readmit_resuming`]'s
+///   record of `leading`'s boundary, succeeds with the readmission when every
+///   accepted declaration crossed as a definition or an axiom, or stays on the
+///   checker's side as a static definition or as an effectful one the bridge
+///   refuses by its effectful former; a refused declaration crosses as its
+///   mark, a suspended one crosses as nothing until a fill resumes it, a
+///   declaration withheld because it names a refused one carries that one's
+///   reason, a declaration holding a term hole or the unknown type stays behind
+///   as the user absence it is, and a declaration holding a session stays
+///   behind on the checker's side, the kernel having no session former, so none
+///   of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: the readmission of the first declaration the kernel rejected or the
@@ -3353,7 +3428,9 @@ fn abstract_type(sealing: Sealing) -> AbstractType
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
 /// - witness: `compose::tests::an_effectful_declaration_stays_on_the_checkers_side`
-#[spec(ensures: |ref ret| match ret.0 {
+#[spec(ensures: |ref ret| match *ret {
+    Polled::Retired(..) => true,
+    Polled::Whole((ref whole, _)) => match *whole {
     Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
             crossed.constant() == judged.constant() && (matches!(*crossed.outcome(),
@@ -3371,21 +3448,26 @@ fn abstract_type(sealing: Sealing) -> AbstractType
                     | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. }
                     | bridge::Refusal::MachineInvariant))
                 || matches!(*fault.outcome(), bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { former, .. }) if residence(former) == Residence::Kernel)),
+    },
 })]
-fn readmitted(
+fn readmitted<Poll>(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
     leading: (
         bridge::LeadingCount,
         Maybe<&bridge::Crossed, bridge::crossed::Absent>,
     ),
-) -> (
-    Result<bridge::Readmission, bridge::Readmitted>,
-    Maybe<bridge::Crossed, bridge::crossed::Absent>,
-)
+    retirement: &Poll,
+) -> Readmitting<Poll::Retired>
+where
+    Poll: Retirement,
 {
     let (boundary, crossed) = leading;
-    let (readmission, recorded) = bridge::readmit_resuming(arena, verdicts, boundary, crossed);
+    let (readmission, recorded) =
+        match bridge::readmit_retiring(arena, verdicts, boundary, crossed, retirement) {
+            Polled::Whole(whole) => whole,
+            Polled::Retired(retired, held) => return Polled::Retired(retired, held),
+        };
     for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
             bridge::Outcome::Data { .. }
@@ -3412,11 +3494,11 @@ fn readmitted(
                 | bridge::Refusal::MachineInvariant,
             )
             | bridge::Outcome::Rejected(_) => {
-                return (Err(readmitted.clone()), recorded);
+                return Polled::Whole((Err(readmitted.clone()), recorded));
             },
         }
     }
-    (Ok(readmission), recorded)
+    Polled::Whole((Ok(readmission), recorded))
 }
 
 /// Which side of the boundary a declaration holding a former the kernel has
@@ -3496,8 +3578,12 @@ mod tests
     use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
+    use gandr_core_checker::Demand;
     use gandr_core_checker::HostGrant;
     use gandr_core_checker::ObligationCount;
+    use gandr_core_checker::Polled;
+    use gandr_core_checker::Retirement;
+    use gandr_core_checker::Unretired;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
@@ -4366,7 +4452,8 @@ def h = 1 ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let admission = readmitted(&mut arena, &verdicts, WHOLE)
+        let admission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
+            .whole()
             .0
             .expect("marks and withheld references are not disagreements");
         let [ref marked, ref withheld, ref defined] = *admission.readmitted()
@@ -4387,7 +4474,7 @@ def h = 1 ;"#,
             "the reference is accepted by the checker despite the withheld body"
         );
         let mut foreign = CoreArena::new();
-        let (Err(fault), _) = readmitted(&mut foreign, &verdicts, WHOLE)
+        let (Err(fault), _) = readmitted(&mut foreign, &verdicts, WHOLE, &Unretired).whole()
         else {
             panic!("over a foreign arena the accepted ids dangle");
         };
@@ -4442,7 +4529,8 @@ def h = 1 ;"#,
                 &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
                 &adapt(&module),
             );
-            let readmission = readmitted(&mut arena, &verdicts, WHOLE)
+            let readmission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
+                .whole()
                 .0
                 .expect("the kernel re-derives every acceptance");
             let kernel = readmission.export(module.structured_names());
@@ -4580,6 +4668,91 @@ def h = 1 ;"#,
             (usize::from(resumed.resumed), usize::from(resumed.judged)),
             (2_usize, 4_usize),
             "the closure's two declarations are resumed, and the revision's own two cross"
+        );
+        assert_eq!(
+            resumed.artifact, whole,
+            "the resumed artifact is the whole one, byte for byte"
+        );
+    }
+
+    /// A poll that answers wanted a number of times, then retired.
+    #[repr(transparent)]
+    struct After(core::cell::Cell<usize>);
+
+    impl Retirement for After
+    {
+        type Retired = ();
+
+        /// Wanted while polls are left, then retired.
+        ///
+        /// # Specification
+        /// trivial.
+        fn demand(&self) -> Demand<()>
+        {
+            self.0
+                .get()
+                .checked_sub(1_usize)
+                .map_or(Demand::Retired(()), |left| {
+                    self.0.set(left);
+                    Demand::Wanted
+                })
+        }
+    }
+
+    /// #1547: an admission retired before its third declaration answers the
+    /// record of the two it crossed, and an admission resumed from that record
+    /// exports, byte for byte, what a whole admission exports, crossing only
+    /// the third.
+    #[test]
+    fn a_retired_admission_resumes_from_its_record_1547()
+    {
+        let grammar = grammar();
+        let text = "def one : Integer ; def one = 1 ;\ndef two : Integer ; def two = one ;\ndef three : Integer ; def three = two ;";
+        let admission = || {
+            let Lowered::Module { module, arena } = lower_source(
+                &grammar,
+                SourceText::from(text),
+                &mut LoweringCount::default(),
+            )
+            .expect("the revision lowers")
+            .into_lowered()
+            else {
+                panic!("the revision is not refused whole");
+            };
+            judge(
+                CorpusRoot::Fixture,
+                (module, SourceText::from(text)),
+                arena,
+                &HostGrant::UNBOUNDED,
+            )
+            .into_parts()
+            .1
+        };
+        let Polled::Retired((), Maybe::Present(record)) = admission().admit_retiring(
+            bridge::LeadingCount::from(3_usize),
+            Maybe::Absent(bridge::crossed::Absent::Unasked),
+            &After(core::cell::Cell::new(2_usize)),
+        )
+        else {
+            panic!("the admission is retired before its third declaration with a record");
+        };
+        assert_eq!(
+            usize::from(record.boundary()),
+            2_usize,
+            "the record holds the two declarations crossed before the retirement"
+        );
+        let whole = admission().admit();
+        let resumed = admission()
+            .admit_retiring(
+                bridge::LeadingCount::from(3_usize),
+                Maybe::Present(&record),
+                &Unretired,
+            )
+            .whole();
+        assert_eq!(
+            (usize::from(resumed.resumed), usize::from(resumed.judged)),
+            (2_usize, 3_usize),
+            "the two crossed before the retirement are resumed, and the third crosses"
         );
         assert_eq!(
             resumed.artifact, whole,

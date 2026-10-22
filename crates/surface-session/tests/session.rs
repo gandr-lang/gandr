@@ -1122,6 +1122,142 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     let _removed = std::fs::remove_dir_all(&directory);
 }
 
+/// A poll that answers wanted a number of times, then retired.
+#[repr(transparent)]
+struct After(core::cell::Cell<usize>);
+
+impl gandr_core_checker::Retirement for After
+{
+    type Retired = ();
+
+    /// Wanted while polls are left, then retired.
+    ///
+    /// # Specification
+    /// trivial.
+    fn demand(&self) -> gandr_core_checker::Demand<()>
+    {
+        self.0
+            .get()
+            .checked_sub(1_usize)
+            .map_or(gandr_core_checker::Demand::Retired(()), |left| {
+                self.0.set(left);
+                gandr_core_checker::Demand::Wanted
+            })
+    }
+}
+
+/// #1547: an admission retired part way leaves the record of the declarations
+/// it crossed, inside the import closure or past it, and the next admission of
+/// the same revision offers the kernel only those after it, exporting what a
+/// whole admission exports.
+#[test]
+fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
+{
+    use gandr_core_checker::HostGrant;
+    use gandr_core_checker::Polled;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_dispatcher::Lowered;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::judge_member;
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_dispatcher::lower_unit_source;
+    use gandr_surface_syntax::SourceText;
+
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-retired-1547-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let sibling = directory.join("base.gandr");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        &sibling,
+        "/// #1547: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
+         two = one ;\n",
+    )
+    .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let grammar = &*crate::common::GRAMMAR;
+    let mut session = session(SourceRoot::Strict);
+    let own = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\ndef four : \
+               Integer ;\ndef four = three ;\n";
+    let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
+    let Maybe::Present(laid) = laid
+    else {
+        panic!("the document is laid out after its sibling: {laid:?}");
+    };
+    let text = SourceText::from(laid.text.as_str());
+    let judge = |session: &mut gandr_surface_session::Session<
+        gandr_core_incremental::MemoryCheckpointStore,
+        gandr_storage_records::InMemoryBlockStore,
+    >| {
+        let slot = gandr_surface_session::ClosureSlot::new();
+        let _judged = session
+            .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
+            .expect("the revision is judged");
+        let Maybe::Present(detached) = session.admission()
+        else {
+            panic!("the judgement left its admission");
+        };
+        detached
+    };
+    // Each retirement, then the whole admission after it: what it counted and
+    // the artifact it exported.
+    let mut retire_then_admit = |wanted: usize| {
+        let retired = judge(&mut session).run(&After(core::cell::Cell::new(wanted)));
+        assert!(
+            matches!(retired, Polled::Retired((), ())),
+            "the admission is retired after {wanted} crossings"
+        );
+        let ran = judge(&mut session)
+            .run(&gandr_core_checker::Unretired)
+            .whole();
+        let Ok(Maybe::Present(admitted)) = session.settle(ran)
+        else {
+            panic!("the admission settles");
+        };
+        (
+            usize::from(admitted.crossed()),
+            usize::from(admitted.judged()),
+            admitted,
+        )
+    };
+    let (crossed, judged, inside) = retire_then_admit(1_usize);
+    assert_eq!(
+        (crossed, judged),
+        (3_usize, 4_usize),
+        "retired inside the closure, the next admission crosses the rest"
+    );
+    let Lowered::Module { module, arena } =
+        lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+            .expect("the revision lowers")
+            .into_lowered()
+    else {
+        panic!("the revision is not refused whole");
+    };
+    let whole = judge_member(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &HostGrant::UNBOUNDED,
+        laid.base,
+    )
+    .into_parts()
+    .1
+    .admit()
+    .expect("the kernel re-derives the revision");
+    assert!(*inside.kernel() == whole, "and exports the whole artifact");
+    let (crossed, judged, past) = retire_then_admit(1_usize);
+    assert_eq!(
+        (crossed, judged),
+        (1_usize, 4_usize),
+        "retired past the closure, the next admission crosses the last declaration alone"
+    );
+    assert!(*past.kernel() == whole, "and exports the whole artifact");
+    let _removed = std::fs::remove_dir_all(&directory);
+}
+
 /// #776: each revision of a document laid out after its import closure shares
 /// the closure's items' images with the revision before it, and its edits are
 /// the document's own.

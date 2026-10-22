@@ -50,6 +50,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use core::cell::Cell;
 use core::cell::OnceCell;
 use core::cell::RefCell;
@@ -66,8 +67,12 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_dispatcher::Delivered;
 use gandr_surface_dispatcher::Freshness;
+use gandr_surface_dispatcher::Generations;
 use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::Polled;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::forget;
@@ -223,6 +228,7 @@ use crate::protocol::WorkspaceFolder;
 use crate::protocol::WorkspaceSymbolParams;
 use crate::protocol::folder_roots;
 use crate::quiet::Changes;
+use crate::quiet::Deadlines;
 use crate::quiet::Holding;
 use crate::quiet::Inbox;
 use crate::quiet::Met;
@@ -232,13 +238,16 @@ use crate::quiet::paced;
 use crate::quiet::publishable;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
+use crate::recheck::Finished;
+use crate::recheck::Taken;
 use crate::recheck::Timing;
 use crate::recheck::Tried;
-use crate::recheck::admit;
+use crate::recheck::admission;
 use crate::recheck::forms;
 use crate::recheck::grammar;
 use crate::recheck::open;
 use crate::recheck::recheck;
+use crate::recheck::settle;
 use crate::recheck::trial;
 use crate::relocate::Moves;
 use crate::rename::NewName;
@@ -893,6 +902,83 @@ impl fmt::Display for Logged
     }
 }
 
+/// The kernel admissions one connection started, running on the driver's
+/// pool, with the line of each synchronisation that waits for its admission.
+///
+/// # Specification
+/// - provides: the half of every synchronisation that runs while the connection
+///   reads its next frame: a later revision of the same document retires the
+///   admission at its next declaration, and the next admission resumes from
+///   what it crossed.
+/// - panics: an admission's panic resumes where it is delivered.
+/// - executable: none — the admissions run on the pool's threads;
+///   [`Server::admit`] and [`Server::admitted`] carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Server::admit`].
+/// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+#[derive(Debug)]
+pub struct Admissions<'pool>
+{
+    /// The running admissions, one generation per document.
+    generations: Generations<'pool, DocumentUri, Submission, Finished>,
+    /// The line of each document's synchronisation whose admission runs.
+    waiting: BTreeMap<DocumentUri, Logged>,
+    /// How many admissions were submitted; the next is numbered after them.
+    submitted: Submission,
+}
+
+/// One admission's place among those a connection submitted.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Submission(u64);
+
+impl<'pool> Admissions<'pool>
+{
+    /// No admission, on `pool`, each ended admission waking its connection's
+    /// loop through `waking`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        pool: &'pool Pool,
+        waking: Changes,
+    ) -> Self
+    {
+        Self {
+            generations: Generations::waking(pool, Arc::new(move || waking.admitted())),
+            waiting: BTreeMap::new(),
+            submitted: Submission(0_u64),
+        }
+    }
+}
+
+/// Whether settling admissions waits for those still running.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Awaiting
+{
+    /// Settle those that ended; leave the rest running.
+    Ended,
+    /// Wait for every admission to end, then settle them.
+    All,
+}
+
+/// What settling a connection's ended admissions produced.
+///
+/// The diagnostics to publish in place of those a disagreeing admission's
+/// synchronisation published, and the lines of the synchronisations whose
+/// admission ended.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Settled
+{
+    /// The corrections to write, in order.
+    pub corrections: Vec<Outgoing>,
+    /// The lines to log, in order.
+    pub log: Vec<Logged>,
+}
+
 /// What handling one message produced: the messages to write, in order, the
 /// lines to log, and whether the session goes on.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -936,13 +1022,14 @@ impl Outcome
 }
 
 /// The progress reported around the work one message starts: the messages
-/// written before it is handled, and those written once its admissions ran.
+/// written before it is handled, and those written once it was handled and its
+/// admissions started.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Reported
 {
     /// Written before the message is handled.
     pub begin: Vec<Outgoing>,
-    /// Written once its admissions ran.
+    /// Written once the message was handled and its admissions started.
     pub end: Vec<Outgoing>,
 }
 
@@ -2328,8 +2415,8 @@ impl Server
     ///   holds, to it alone. A body that is not a message is answered with the
     ///   error the protocol owes it. `exit` ends the session.
     /// - provides: the whole of a connection's behaviour but the admission
-    ///   [`Server::admit`] runs after it; [`serve`] and the hub only move
-    ///   bytes.
+    ///   [`Server::admit`] starts after it and [`Server::admitted`] settles;
+    ///   [`serve`] and the hub only move bytes.
     /// - fails: never; every refusal is a message to the client.
     /// - panics: none.
     ///
@@ -2660,68 +2747,156 @@ impl Server
         }
     }
 
-    /// Run the kernel admission each synchronisation logged in `log` left, its
-    /// diagnostics already published, and return what to publish in their
-    /// place.
+    /// Start the kernel admission each synchronisation logged in `log` left,
+    /// its diagnostics already published, on `admissions`' pool, and return
+    /// the lines to log now.
     ///
     /// # Specification
     /// - requires: `log` is the log of the outcome [`Server::handle`] returned
     ///   last, its messages already written.
     /// - ensures: each line naming a document of which this connection holds a
-    ///   copy at the line's version runs the admission that copy's session
-    ///   holds, as [`admit`] states, and carries its wall; a kernel
-    ///   disagreement adds one diagnostic notification at the line's URI and
-    ///   version whose one diagnostic names it, recorded as the copy's
-    ///   publication and as all it checked, and the line holds nothing. Every
-    ///   other line is left as it was.
-    /// - provides: the second half of every synchronisation; [`serve`] writes
-    ///   what it returns, then logs the lines.
-    /// - fails: never; a disagreement is a diagnostic.
+    ///   copy at the line's version first retires the admission a previous line
+    ///   of the document still waits for, that line returned with its admission
+    ///   retired; then, when the copy's session holds an admission, the
+    ///   admission is started on the pool, polling its retirement before each
+    ///   declaration, and the line waits for it, delivered by
+    ///   [`Server::admitted`]. Every other line is returned, its timing saying
+    ///   why nothing was admitted.
+    /// - provides: the first half of every synchronisation's admission; the
+    ///   connection reads its next frame while the kernel works.
+    /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a change's logged line gains the admission's wall and
-    ///   publishes nothing more when the kernel agrees; a line naming a closed
-    ///   document is left as it was. Corrections are made in log order, so the
-    ///   predicate matches them against the log in one ordered pass.
+    /// - hypothesis: L3 — a change during an admission retires it at its next
+    ///   declaration, its line logged as retired, and the next admission
+    ///   resumes from what it crossed.
+    /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
     /// - witness: `server::tests::an_admission_follows_its_synchronisation`
-    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks every logged line once; the check walks them once more in order beside the corrections"
-        )
+    #[spec(
+        captures: lines = log.len(),
+        ensures: |ret| ret.len() <= lines.saturating_mul(2),
     )]
-    #[spec(ensures: |ret| ret.len() <= log.len() && {
-        let mut lines = log.iter();
-        ret.iter().all(|message| matches!(*message,
-            Outgoing::Notification { method: "textDocument/publishDiagnostics", params: Notified::Published(ref params), .. }
-                if params.diagnostics.len() == 1 && lines.any(|logged|
-                    logged.uri == params.uri && Some(logged.version) == params.version)))
-    })]
     #[inline]
     #[must_use]
     pub fn admit(
         &self,
         workspace: &mut Workspace,
-        log: &mut [Logged],
-    ) -> Vec<Outgoing>
+        log: Vec<Logged>,
+        admissions: &mut Admissions<'_>,
+    ) -> Vec<Logged>
     {
-        let mut corrections = Vec::new();
-        for logged in &mut *log {
-            let Some(held) = workspace.documents.get_mut(&logged.uri)
-            else {
-                continue;
-            };
-            let Maybe::Present(document) = held.own_mut(self.peer)
-            else {
-                continue;
-            };
-            if document.version != logged.version {
-                continue;
+        let mut now = Vec::with_capacity(log.len());
+        for mut logged in log {
+            if let Some(superseded) = admissions.waiting.remove(&logged.uri) {
+                admissions.generations.retire(&logged.uri);
+                now.push(Logged {
+                    timing: superseded.timing.retired(),
+                    ..superseded
+                });
             }
-            let admitted = admit(&mut document.session, logged.timing);
+            let document = workspace
+                .documents
+                .get_mut(&logged.uri)
+                .and_then(|held| match held.own_mut(self.peer) {
+                    Maybe::Present(document) => Some(document),
+                    Maybe::Absent(_) => None,
+                })
+                .filter(|document| document.version == logged.version);
+            let Some(document) = document
+            else {
+                now.push(logged);
+                continue;
+            };
+            match admission(&mut document.session, logged.timing) {
+                Taken::Unrun(timing) => {
+                    logged.timing = timing;
+                    now.push(logged);
+                },
+                Taken::Running(admitting) => {
+                    admissions.submitted = Submission(admissions.submitted.0.saturating_add(1));
+                    let _started = admissions.generations.submit(
+                        logged.uri.clone(),
+                        admissions.submitted,
+                        move |watch| match admitting.run(watch) {
+                            Polled::Whole(finished) => Ok(finished),
+                            Polled::Retired(retired, ()) => Err(retired),
+                        },
+                    );
+                    let _first = admissions.waiting.insert(logged.uri.clone(), logged);
+                },
+            }
+        }
+        now
+    }
+
+    /// Settle the admissions `admissions` holds that ended, waiting for the
+    /// rest when `awaiting` says so, and return what to publish and log.
+    ///
+    /// # Specification
+    /// - requires: every admission `admissions` holds was started by
+    ///   [`Server::admit`] of this connection over `workspace`.
+    /// - ensures: each delivered admission whose document this connection still
+    ///   holds at its line's version settles into the copy's session, as
+    ///   [`settle`] states, its line carrying its wall; a kernel disagreement
+    ///   adds one diagnostic notification at the line's URI and version whose
+    ///   one diagnostic names it, recorded as the copy's publication and as all
+    ///   it checked, and the line holds nothing. A delivered admission whose
+    ///   copy is gone is logged as retired. With [`Awaiting::All`], no
+    ///   admission is left running.
+    /// - provides: the second half of every synchronisation's admission, on the
+    ///   connection's thread.
+    /// - fails: never; a disagreement is a diagnostic.
+    /// - panics: resumes an admission's panic.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change's logged line gains the admission's wall and
+    ///   publishes nothing more when the kernel agrees.
+    /// - witness: `server::tests::an_admission_follows_its_synchronisation`
+    /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[spec(ensures: |ret| ret.corrections.len() <= ret.log.len())]
+    #[inline]
+    #[must_use]
+    pub fn admitted(
+        &self,
+        workspace: &mut Workspace,
+        admissions: &mut Admissions<'_>,
+        awaiting: Awaiting,
+    ) -> Settled
+    {
+        let mut settled = Settled::default();
+        loop {
+            let delivered = match awaiting {
+                Awaiting::Ended => admissions.generations.ready(),
+                Awaiting::All => admissions.generations.wait(),
+            };
+            let Maybe::Present(Delivered {
+                slot: uri,
+                output: finished,
+                ..
+            }) = delivered
+            else {
+                return settled;
+            };
+            let Some(mut logged) = admissions.waiting.remove(&uri)
+            else {
+                continue;
+            };
+            let document = workspace
+                .documents
+                .get_mut(&uri)
+                .and_then(|held| match held.own_mut(self.peer) {
+                    Maybe::Present(document) => Some(document),
+                    Maybe::Absent(_) => None,
+                })
+                .filter(|document| document.version == logged.version);
+            let Some(document) = document
+            else {
+                logged.timing = logged.timing.retired();
+                settled.log.push(logged);
+                continue;
+            };
+            let admitted = settle(&mut document.session, finished);
             logged.timing = admitted.timing;
             if let Maybe::Present(fault) = admitted.fault {
                 document.checked = vec![fault.clone()];
@@ -2732,14 +2907,15 @@ impl Server
                     diagnostics: vec![fault],
                 });
                 workspace.published_by(self.peer, &correction);
-                corrections.push(correction);
+                settled.corrections.push(correction);
             }
+            settled.log.push(logged);
         }
-        corrections
     }
 
     /// The progress of the work `message` starts: the messages written before
-    /// it is handled, and those written once its admissions ran.
+    /// it is handled, and those written once it was handled and its admissions
+    /// started.
     ///
     /// # Specification
     /// - requires: `message` is the next message [`Server::answer`] handles.
@@ -6979,9 +7155,10 @@ fn synchronised(
     }
 }
 
-/// Serve the protocol over `input` and `output` until the session ends,
-/// writing each synchronisation's timing line to `log`, its user's
-/// configuration naming `spelling`.
+/// Serve the protocol over `input` and `output` until the session ends.
+///
+/// Each synchronisation's timing line goes to `log`, its user's configuration
+/// names `spelling`, and its kernel admissions run on `pool`.
 ///
 /// # Specification
 /// - requires: nothing of the streams; `input` carries the client's frames,
@@ -6990,21 +7167,25 @@ fn synchronised(
 ///   whose configured spelling is `spelling`: the progress the work it starts
 ///   reports, as [`Server::reported`] states, begins first, and every message
 ///   it produces is written as one frame, in order; then the admissions its
-///   synchronisations left run, as [`Server::admit`] states, each correction
-///   written as one frame, the progress ends, and every line logged is written
-///   to `log` with a line terminator, before the next frame is read. A
-///   synchronisation whose publication held a diagnostic back arms its
-///   document's deadline the server's quiet interval later, and one that held
-///   nothing disarms it; a deadline that passes with no frame read publishes
-///   what the document holds back, as [`Server::release`] states. The session
-///   ends at `exit` or at a stream closed at a frame boundary, as
-///   [`Server::closed`] states. A line `log` refuses is dropped: the log is the
-///   operator's, and the protocol never depends on it.
+///   synchronisations left start on `pool`, as [`Server::admit`] states, the
+///   progress ends, and every line logged that waits for no admission is
+///   written to `log` with a line terminator, before the next frame is read. An
+///   admission that ended is settled before the next frame, as
+///   [`Server::admitted`] states, each correction written as one frame and its
+///   line logged. A synchronisation whose publication held a diagnostic back
+///   arms its document's deadline the server's quiet interval later, and one
+///   that held nothing, or whose correction replaced what it held, disarms it;
+///   a deadline that passes with no frame read publishes what the document
+///   holds back, as [`Server::release`] states. The session ends at `exit` or
+///   at a stream closed at a frame boundary, as [`Server::closed`] states, once
+///   every admission still running ended and was settled, its line logged and
+///   nothing more written to `output`. A line `log` refuses is dropped: the log
+///   is the operator's, and the protocol never depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
 /// - fails: the first [`TransportFault`] of either protocol stream, and
 ///   [`TransportFault::Encode`] for a message that does not encode.
-/// - panics: none.
+/// - panics: resumes an admission's panic.
 /// - executable: none — generic streams expose neither their consumed nor
 ///   emitted transcript; the returned ending or fault cannot reconstruct
 ///   lifecycle transitions, frame order or the failing stream operation.
@@ -7016,18 +7197,20 @@ fn synchronised(
 /// - hypothesis: L2 — a whole session over in-memory streams, from `initialize`
 ///   to `exit`, asserted frame by frame; L3 — a session closed without `exit`,
 ///   one whose stream breaks inside a frame, an editor-shaped edit to a large
-///   document whose log carries one timing line per synchronisation, and a held
-///   diagnostic published once the document is quiet.
+///   document whose log carries one timing line per synchronisation, a held
+///   diagnostic published once the document is quiet, and a change during an
+///   admission retiring it.
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+/// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
 #[inline]
 pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
     log: &mut Log,
-    spelling: Spelling,
+    (spelling, pool): (Spelling, &Pool),
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead + Send,
@@ -7036,13 +7219,26 @@ where
 {
     let mut workspace = Workspace::spelled(spelling);
     let mut server = Server::default();
-    paced(input, Inbox::default(), |met, deadlines| {
+    let inbox = Inbox::default();
+    let mut admissions = Admissions::new(pool, inbox.changes());
+    paced(input, inbox, |met, deadlines| {
         let (message, later) = match met {
-            Met::Closed => return Ok(ControlFlow::Break(server.closed())),
+            Met::Closed => {
+                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+                for line in &settled.log {
+                    let _unlogged = writeln!(log, "{line}");
+                }
+                return Ok(ControlFlow::Break(server.closed()));
+            },
             Met::Quiet(uri) => {
                 for message in &server.release(&mut workspace, &uri) {
                     written(output, message)?;
                 }
+                return Ok(ControlFlow::Continue(()));
+            },
+            Met::Admitted => {
+                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::Ended);
+                wrote_settled((output, log), &server, deadlines, &settled)?;
                 return Ok(ControlFlow::Continue(()));
             },
             // No watch and no other connection holds this loop's inbox.
@@ -7055,28 +7251,98 @@ where
         for message in &reported.begin {
             written(output, message)?;
         }
-        let mut outcome = server.answer(&mut workspace, message, later);
+        let outcome = server.answer(&mut workspace, message, later);
         for message in &outcome.messages {
             written(output, message)?;
         }
-        for message in &server.admit(&mut workspace, &mut outcome.log) {
-            written(output, message)?;
-        }
+        deadlines.note(&outcome.log, server.quiet(), Instant::now());
+        let now = server.admit(&mut workspace, outcome.log, &mut admissions);
         for message in &reported.end {
             written(output, message)?;
         }
-        deadlines.note(&outcome.log, server.quiet(), Instant::now());
-        for line in &outcome.log {
-            let _unlogged = writeln!(log, "{line}");
-        }
-        for message in &server.traced(&outcome.log) {
-            written(output, message)?;
-        }
+        logged((output, log), &server, &now)?;
         Ok(match outcome.flow {
-            Flow::Exit(served) => ControlFlow::Break(served),
+            Flow::Exit(served) => {
+                let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+                for line in &settled.log {
+                    let _unlogged = writeln!(log, "{line}");
+                }
+                ControlFlow::Break(served)
+            },
             Flow::Continue => ControlFlow::Continue(()),
         })
     })
+}
+
+/// Write `lines` to `log`, and the trace of them `server`'s client asked for
+/// to `output`.
+///
+/// # Specification
+/// - requires: nothing of the streams.
+/// - ensures: each line is written to `log` with a line terminator, a line
+///   `log` refuses dropped, then each trace message `server` makes of them as
+///   one frame.
+/// - fails: the first fault of `output`.
+/// - panics: none.
+/// - executable: none — the streams are opaque.
+///
+/// # Errors
+/// [`TransportFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every line a served session logs passes here.
+/// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
+fn logged<Output, Log>(
+    (output, log): (&mut Output, &mut Log),
+    server: &Server,
+    lines: &[Logged],
+) -> Result<(), TransportFault>
+where
+    Output: Write,
+    Log: Write,
+{
+    for line in lines {
+        let _unlogged = writeln!(log, "{line}");
+    }
+    for message in &server.traced(lines) {
+        written(output, message)?;
+    }
+    Ok(())
+}
+
+/// Write what settling `server`'s admissions produced: each correction to
+/// `output`, then each line, disarming the deadline of each document whose
+/// correction replaced what it held.
+///
+/// # Specification
+/// - requires: nothing of the streams.
+/// - ensures: each correction as one frame, in order; the deadlines as
+///   [`Deadlines::settled`] states; then the lines as [`logged`] states.
+/// - fails: the first fault of `output`.
+/// - panics: none.
+/// - executable: none — the streams are opaque.
+///
+/// # Errors
+/// [`TransportFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an admission's line is logged once it settles.
+/// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
+fn wrote_settled<Output, Log>(
+    (output, log): (&mut Output, &mut Log),
+    server: &Server,
+    deadlines: &mut Deadlines,
+    settled: &Settled,
+) -> Result<(), TransportFault>
+where
+    Output: Write,
+    Log: Write,
+{
+    for message in &settled.corrections {
+        written(output, message)?;
+    }
+    deadlines.settled(&settled.log);
+    logged((output, log), server, &settled.log)
 }
 
 /// Write `message` to `output` as one frame.
@@ -7114,9 +7380,15 @@ mod tests
 
     use anodized::spec;
     use gandr_surface_diagnostics::Verbosity;
+    use gandr_surface_dispatcher::Generations;
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Width;
     use gandr_surface_dispatcher::named_path;
     use serde_json::Value;
 
+    use super::Admissions;
+    use super::Awaiting;
     use super::Cancelled;
     use super::Choice;
     use super::Flow;
@@ -7124,6 +7396,7 @@ mod tests
     use super::Peer;
     use super::Served;
     use super::Server;
+    use super::Settled;
     use super::Workspace;
     use crate::goto::Goto;
     use crate::position::Character;
@@ -7140,21 +7413,43 @@ mod tests
     use crate::protocol::MessageAction;
     use crate::protocol::MessageType;
     use crate::protocol::ProgressToken;
+    use crate::quiet::Inbox;
     use crate::rpc::Classified;
     use crate::rpc::Outgoing;
     use crate::rpc::RequestId;
     use crate::server::Logged;
     use crate::transport::Body;
 
+    /// The pool the tests' connections admit on: one thread, so each admission
+    /// runs where it is submitted.
+    static SERIAL: Pool = Pool::new(Width::SERIAL);
+
     /// One connection over a workspace of its own, as [`super::serve`] runs
     /// one.
-    #[derive(Default)]
     struct Connected
     {
         /// The connection.
         server: Server,
         /// Its workspace.
         workspace: Workspace,
+        /// Its admissions, on [`SERIAL`].
+        admissions: Admissions<'static>,
+    }
+
+    impl Default for Connected
+    {
+        /// A connection waiting for `initialize`, over an empty workspace.
+        ///
+        /// # Specification
+        /// trivial.
+        fn default() -> Self
+        {
+            Self {
+                server: Server::default(),
+                workspace: Workspace::default(),
+                admissions: Admissions::new(&SERIAL, Inbox::default().changes()),
+            }
+        }
     }
 
     impl Connected
@@ -7171,16 +7466,27 @@ mod tests
             self.server.handle(&mut self.workspace, body)
         }
 
-        /// The admissions `log` left, run.
+        /// The admissions `log` left, run to their ends and settled: the
+        /// corrections, and every line in the order it was logged.
         ///
         /// # Specification
         /// trivial.
         fn admit(
             &mut self,
-            log: &mut [Logged],
-        ) -> Vec<Outgoing>
+            log: Vec<Logged>,
+        ) -> Settled
         {
-            self.server.admit(&mut self.workspace, log)
+            let mut lines = self
+                .server
+                .admit(&mut self.workspace, log, &mut self.admissions);
+            let settled =
+                self.server
+                    .admitted(&mut self.workspace, &mut self.admissions, Awaiting::All);
+            lines.extend(settled.log);
+            Settled {
+                corrections: settled.corrections,
+                log: lines,
+            }
         }
 
         /// How the connection ends if its stream closes now.
@@ -10261,8 +10567,8 @@ mod tests
         let reported = |server: &mut Connected, message: &Value| {
             let classified = crate::rpc::classify(&Body::from(message.to_string().into_bytes()));
             let reported = server.server.reported(&server.workspace, &classified);
-            let mut outcome = server.server.answer(&mut server.workspace, classified, &[]);
-            let _admitted = server.admit(&mut outcome.log);
+            let outcome = server.server.answer(&mut server.workspace, classified, &[]);
+            let _admitted = server.admit(outcome.log);
             let encoded = |messages: &[Outgoing]| {
                 Value::Array(
                     messages
@@ -11988,6 +12294,7 @@ mod tests
                     ..Server::default()
                 },
                 workspace: Workspace::default(),
+                ..Connected::default()
             };
             let outcome = server.handle(&exit);
             assert_eq!(outcome.flow, Flow::Exit(expected));
@@ -12222,6 +12529,7 @@ mod tests
         let mut server = Connected {
             server: Server::default(),
             workspace: Workspace::spelled(super::Spelling::Ascii),
+            ..Connected::default()
         };
         let _answered = send(
             &mut server,
@@ -12301,7 +12609,7 @@ mod tests
                 "contentChanges":[{"text":"def g : Integer ;\ndef g = 1 ;\n"}]}}"#
                 .to_vec(),
         );
-        let mut outcome = server.handle(&body);
+        let outcome = server.handle(&body);
         let [ref published] = *outcome.log.as_slice()
         else {
             panic!("one timing line per synchronisation");
@@ -12310,12 +12618,13 @@ mod tests
             !published.to_string().contains("admitted"),
             "the diagnostics are published before the admission: {published}"
         );
+        let admitted = server.admit(outcome.log);
         assert_eq!(
-            server.admit(&mut outcome.log),
+            admitted.corrections,
             Vec::new(),
             "the kernel agrees, so nothing replaces the published diagnostics"
         );
-        let [ref admitted] = *outcome.log.as_slice()
+        let [ref admitted] = *admitted.log.as_slice()
         else {
             panic!("the admission keeps the line");
         };
@@ -12329,13 +12638,100 @@ mod tests
                 .to_vec(),
         );
         let _cleared = server.handle(&closed);
-        let mut stale = server.handle(&body).log;
+        let stale = server.handle(&body).log;
         assert_eq!(
             stale,
             Vec::new(),
             "a change to a closed document logs nothing"
         );
-        assert_eq!(server.admit(&mut stale), Vec::new());
+        assert_eq!(server.admit(stale), Settled::default());
+    }
+
+    /// #1547: a change that arrives while its document's admission waits for
+    /// the pool retires it, its line logged as retired, and the change's own
+    /// admission settles whole once the pool frees.
+    #[test]
+    fn a_change_during_an_admission_retires_it_1547()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::MIN.saturating_add(1),
+        )));
+        // Both of the pool's threads wait on a gate, so the admissions queue
+        // behind them.
+        let mut blocking: Generations<'_, u8, u8, ()> = Generations::new(&pool);
+        let (started, began) = std::sync::mpsc::channel();
+        let mut gates = Vec::new();
+        for thread in 0_u8 .. 2_u8 {
+            let (gate, opened) = std::sync::mpsc::channel::<()>();
+            gates.push(gate);
+            let started = started.clone();
+            let _blocked = blocking.submit(thread, thread, move |_| {
+                started.send(()).expect("the test waits for the start");
+                opened
+                    .recv()
+                    .map_err(|_closed| gandr_surface_dispatcher::Retired)
+            });
+        }
+        for _thread in 0_u8 .. 2_u8 {
+            began.recv().expect("each blocking job starts");
+        }
+        let Connected {
+            mut server,
+            mut workspace,
+            ..
+        } = initialized();
+        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        let opened = server.handle(
+            &mut workspace,
+            &Body::from(
+                br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/example.gandr","languageId":"gandr","version":1,
+                     "text":"def f : Integer ;\ndef f = 1 ;\n"}}}"#
+                    .to_vec(),
+            ),
+        );
+        let waiting = server.admit(&mut workspace, opened.log, &mut admissions);
+        assert_eq!(
+            waiting,
+            Vec::new(),
+            "the opening's line waits for its admission"
+        );
+        let changed = server.handle(
+            &mut workspace,
+            &Body::from(
+                br#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
+                    "contentChanges":[{"text":"def f : Integer ;\ndef f = 1 ;\ndef g : Integer ;\ndef g = f ;\n"}]}}"#
+                    .to_vec(),
+            ),
+        );
+        let retired = server.admit(&mut workspace, changed.log, &mut admissions);
+        let [ref retired] = *retired.as_slice()
+        else {
+            panic!("the change logs the opening's line at once: {retired:?}");
+        };
+        assert!(
+            retired.to_string().contains("at version 1: ")
+                && retired.to_string().ends_with(", admission retired"),
+            "the opening's admission is retired by the change: {retired}"
+        );
+        drop(gates);
+        let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+        assert_eq!(settled.corrections, Vec::new(), "the kernel agrees");
+        let [ref admitted] = *settled.log.as_slice()
+        else {
+            panic!("the change's admission settles once: {:?}", settled.log);
+        };
+        assert!(
+            admitted.to_string().contains("at version 2: ")
+                && admitted.to_string().contains(", admitted in ")
+                && admitted.to_string().ends_with(", 2/2 declarations crossed"),
+            "the change's admission crosses the revision whole: {admitted}"
+        );
+        assert!(matches!(
+            blocking.wait(),
+            quenchant_shape::shape::Maybe::Absent(_)
+        ));
     }
 
     #[test]
