@@ -187,6 +187,7 @@ impl IsoWitness
 ///   The predicate observes the necessary seam and round-trip endpoints;
 ///   endpoint agreement alone never establishes replay.
 /// - witness: `tests::laws::tests::an_iso_whose_one_direction_fails_replay_is_rejected`
+/// - witness: `tests::laws::tests::an_identity_cell_round_trips_beside_a_reflexive_certificate`
 #[spec(ensures: |out| !bool::from(out) || match *a { Elaborated::Stuck => false, Elaborated::Trivial => match *b { Elaborated::Trivial => true, Elaborated::Stuck => false, Elaborated::Cert(ref cert) => cert.overlap.peak == cert.joins_at && bool::from(cert.replay(cells)) }, Elaborated::Cert(ref first) => match *b { Elaborated::Stuck => false, Elaborated::Trivial => first.overlap.peak == first.joins_at && bool::from(first.replay(cells)), Elaborated::Cert(ref second) => first.joins_at == second.overlap.peak && first.overlap.peak == second.joins_at } })]
 fn round_trips_to_identity(
     a: &Elaborated<'_>,
@@ -258,6 +259,7 @@ impl ProtypeIso
     /// - hypothesis: L1 — both resolved directions retain the bound evidence;
     ///   resolution does not assert isomorphism validity.
     /// - witness: `tests::laws::tests::a_reflexive_witness_pair_is_a_valid_iso`
+    /// - witness: `tests::laws::tests::a_reflected_iso_resolves_only_bound_certificates`
     #[spec(ensures: |out| match out { Maybe::Present(ref witness) => resolve_cert(&self.fwd, derivations) == Maybe::Present(&witness.fwd) && resolve_cert(&self.bwd, derivations) == Maybe::Present(&witness.bwd), Maybe::Absent(_) => matches!(resolve_cert(&self.fwd, derivations), Maybe::Absent(_)) || matches!(resolve_cert(&self.bwd, derivations), Maybe::Absent(_)) })]
     pub fn witness(
         &self,
@@ -283,6 +285,7 @@ impl ProtypeIso
     /// - hypothesis: L3 — both recorded directions must resolve and their two
     ///   round trips must replay; the negative fixture corrupts one direction.
     /// - witness: `tests::laws::tests::an_iso_whose_one_direction_fails_replay_is_rejected`
+    /// - witness: `tests::laws::tests::a_reflected_iso_resolves_only_bound_certificates`
     #[spec(ensures: |out| bool::from(out) == match (resolve_cert(&self.fwd, derivations), resolve_cert(&self.bwd, derivations)) { (Maybe::Present(fwd), Maybe::Present(bwd)) => bool::from(round_trips_to_identity(&fwd.elaborate(), &bwd.elaborate(), cells)) && bool::from(round_trips_to_identity(&bwd.elaborate(), &fwd.elaborate(), cells)), _ => false })]
     pub fn is_valid(
         &self,
@@ -320,6 +323,7 @@ impl ProtypeIso
 ///   certificate from an unbound certificate id, and projects the actual bound
 ///   derivation.
 /// - witness: `tests::laws::tests::a_reflexive_witness_pair_is_a_valid_iso`
+/// - witness: `tests::laws::tests::a_reflected_iso_resolves_only_bound_certificates`
 #[spec(ensures: |out| match *term.to_node().kind() { ProtermKind::Cert { id } => match out { Maybe::Present(derivation) => derivations.get(usize::from(DerivationIndex::from(id))) == Some(derivation), Maybe::Absent(witness_resolution::Absent::Unbound(missing)) => id == missing && derivations.get(usize::from(DerivationIndex::from(id))).is_none(), Maybe::Absent(witness_resolution::Absent::NotCertificate) => false }, ProtermKind::Var { .. } | ProtermKind::Refl { .. } | ProtermKind::PathInd { .. } | ProtermKind::Pair { .. } | ProtermKind::SeamInd | ProtermKind::Lam { .. } | ProtermKind::App | ProtermKind::ProdIntro | ProtermKind::ProjL | ProtermKind::ProjR | ProtermKind::UnitTerm => matches!(out, Maybe::Absent(witness_resolution::Absent::NotCertificate)) })]
 fn resolve_cert<'env>(
     term: &Proterm,

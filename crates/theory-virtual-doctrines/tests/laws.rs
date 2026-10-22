@@ -32,6 +32,7 @@ mod tests
     use gandr_theory_virtual_doctrines::DerivationId;
     use gandr_theory_virtual_doctrines::DerivationIndex;
     use gandr_theory_virtual_doctrines::DescTable;
+    use gandr_theory_virtual_doctrines::Elaborated;
     use gandr_theory_virtual_doctrines::IsoWitness;
     use gandr_theory_virtual_doctrines::Proterm;
     use gandr_theory_virtual_doctrines::Protype;
@@ -44,6 +45,8 @@ mod tests
     use gandr_theory_virtual_doctrines::TermRef;
     use gandr_theory_virtual_doctrines::Vdc as _;
     use gandr_theory_virtual_doctrines::WCartesianAction;
+    use gandr_theory_virtual_doctrines::iso::witness_resolution;
+    use quenchant_shape::shape::Maybe;
 
     use crate::require_present;
 
@@ -83,6 +86,35 @@ mod tests
             left.apply_name(NameRef::from("x")).as_ref(),
             "the composite renames x to w"
         );
+    }
+
+    /// A renaming that pairs a name with itself is the identity, and a name
+    /// renamed twice keeps its first image.
+    #[test]
+    fn a_renaming_keeps_the_first_image_of_each_name()
+    {
+        let descs = DescTable::<()>::new();
+        let cells = CellStore::new();
+        let vdc = CellStoreVdc::new(&descs, &cells);
+        let sig = nat_sig();
+        let pairs = |pairs: &[(&str, &str)]| {
+            SigMorphism::renaming(
+                sig.clone(),
+                sig.clone(),
+                pairs
+                    .iter()
+                    .map(|&(from, to)| (n(NameRef::from(from)), n(NameRef::from(to))))
+                    .collect(),
+            )
+        };
+        assert!(bool::from(vdc.id_tight(&sig).is_identity()));
+        let reflexive = pairs(&[("x", "x")]);
+        assert!(bool::from(reflexive.is_identity()));
+        assert_eq!(reflexive, vdc.id_tight(&sig));
+        let twice = pairs(&[("x", "y"), ("x", "z")]);
+        assert!(!bool::from(twice.is_identity()));
+        assert_eq!(twice.apply_name(NameRef::from("x")).as_ref(), "y");
+        assert_eq!(twice, pairs(&[("x", "y")]));
     }
 
     // ---- the reflection rules law 3: restriction
@@ -170,6 +202,34 @@ mod tests
         );
     }
 
+    /// Every cell answers its boundary: an identity cell is bounded by its
+    /// relation on both sides, and a graft by its inners' domain and its
+    /// outer cell's codomain; a relation answers its two faces.
+    #[test]
+    fn every_cell_answers_its_boundary()
+    {
+        let (store, ab, first, second) = ground_chain();
+        let descs = DescTable::<()>::new();
+        let vdc = CellStoreVdc::new(&descs, &store);
+        let ra = rel(NameRef::from("RA"), vec![ab]);
+        let rc = rel(NameRef::from("RC"), Vec::new());
+        let re = rel(NameRef::from("RE"), Vec::new());
+        let identity = vdc.id_cell(&ra);
+        assert_eq!(vdc.cell_dom(&identity), vec![ra.clone()]);
+        assert_eq!(vdc.cell_cod(&identity), Ok(ra.clone()));
+        let graft = vdc.compose_cells(&cert(second, rc.clone(), re.clone()), &[cert(
+            first,
+            ra.clone(),
+            rc,
+        )]);
+        assert_eq!(vdc.cell_dom(&graft), vec![ra]);
+        assert_eq!(vdc.cell_cod(&graft), Ok(re));
+        let other = SignatureRef::single(NominalId::new(1_u64.into(), "Other"));
+        let faces = RelationRef::new(NameRef::from("F"), nat_sig(), other.clone(), Box::default());
+        assert_eq!(vdc.src(&faces), nat_sig());
+        assert_eq!(vdc.tgt(&faces), other);
+    }
+
     #[test]
     fn cell_grafting_is_unital_up_to_replay()
     {
@@ -185,6 +245,38 @@ mod tests
             bool::from(vdc.cells_equal(&unit, &d_first)),
             "grafting the identity cell is a unit up to replay-equivalence"
         );
+    }
+
+    /// A graft sequences one inner cell through its outer one, passing over
+    /// an identity on either side; two inner certificates cannot be
+    /// sequenced, and what sticks stays stuck under a further graft, replays
+    /// nothing and equals no cell, itself included. Identity cells equal
+    /// each other and a reflexive certificate on the same boundary.
+    #[test]
+    fn a_graft_sequences_one_inner_cell_and_sticks_on_two()
+    {
+        let (store, ab, first, second) = ground_chain();
+        let descs = DescTable::<()>::new();
+        let vdc = CellStoreVdc::new(&descs, &store);
+        let ra = rel(NameRef::from("RA"), vec![ab]);
+        let rc = rel(NameRef::from("RC"), Vec::new());
+        let re = rel(NameRef::from("RE"), Vec::new());
+        let d_first = cert(first.clone(), ra.clone(), rc.clone());
+        let d_second = cert(second, rc.clone(), re);
+        let through_identity =
+            vdc.compose_cells(&vdc.id_cell(&rc), core::slice::from_ref(&d_first));
+        assert_eq!(through_identity.elaborate(), d_first.elaborate());
+        let stuck = vdc.compose_cells(&d_second, &[d_first.clone(), d_first]);
+        assert!(matches!(stuck.elaborate(), Elaborated::Stuck));
+        assert!(!bool::from(stuck.replays(&store)));
+        assert!(!bool::from(vdc.cells_equal(&stuck, &stuck)));
+        let still_stuck = vdc.compose_cells(&d_second, &[stuck]);
+        assert!(matches!(still_stuck.elaborate(), Elaborated::Stuck));
+        let identity = vdc.id_cell(&ra);
+        assert!(bool::from(vdc.cells_equal(&identity, &vdc.id_cell(&ra))));
+        let reflexive = cert(reflexive_cert(&first), ra.clone(), ra);
+        assert!(bool::from(vdc.cells_equal(&identity, &reflexive)));
+        assert!(bool::from(vdc.cells_equal(&reflexive, &identity)));
     }
 
     /// The linear ground chain `A ~> B ~> C ~> D ~> E`: two composable fused
@@ -325,6 +417,38 @@ mod tests
         assert!(!bool::from(witness.structure));
     }
 
+    /// An action whose source, or else whose target, is not a product has no
+    /// cartesian status to check; each refusal says which, and a violation
+    /// says which statuses failed.
+    #[test]
+    fn w_cartesian_action_refuses_a_boundary_that_is_not_a_product()
+    {
+        let nat = nat_sig();
+        let pair = SignatureRef::product(Box::from([nat.clone(), nat.clone()]));
+        let identities = vec![
+            SigMorphism::identity(nat.clone()),
+            SigMorphism::identity(nat.clone()),
+        ];
+        let source_refusal =
+            WCartesianAction::new(nat.clone(), nat.clone(), identities.clone()).checked_witness();
+        assert_eq!(source_refusal, Err(CartesianLawError::SourceNotProduct));
+        let target_refusal =
+            WCartesianAction::new(pair.clone(), nat.clone(), identities).checked_witness();
+        assert_eq!(target_refusal, Err(CartesianLawError::TargetNotProduct));
+        let violation = WCartesianAction::new(pair.clone(), pair, vec![
+            SigMorphism::identity(nat),
+            SigMorphism::identity(SignatureRef::single(NominalId::new(1_u64.into(), "Other"))),
+        ])
+        .checked_witness();
+        let rendered = [source_refusal, target_refusal, violation]
+            .map(|refusal| refusal.expect_err("each action is refused").to_string());
+        assert_eq!(rendered, [
+            "cartesian source is not a product".to_owned(),
+            "cartesian target is not a product".to_owned(),
+            "cartesian laws fail: projections=false, diagonal=false, structure=false".to_owned(),
+        ]);
+    }
+
     // ---- the reflection rules law 5: units (path induction)
     // --------------------------------
 
@@ -384,6 +508,27 @@ mod tests
         // A non-linear seam: `plus` leaves a `g`-redex two consumers both match,
         // so the ⊙ family has two members, never one collapsed rule (the reflection
         // rules).
+        let (store, [plus, linear, nonlinear]) = g_seam_store();
+        let query = Query::new(&store);
+        let left = rel(NameRef::from("plus"), vec![plus]);
+        let right = rel(NameRef::from("g"), vec![linear, nonlinear]);
+        let family = query.seam_family(&left, &right);
+        assert!(
+            family.len() >= 2,
+            "the g-seam composition is a multi-sum family, not a single rule"
+        );
+        // Every member re-derives its composite from the overlap (engine oracle).
+        for member in &family {
+            assert_eq!(member.left, plus, "each member is a plus∘g overlap");
+        }
+    }
+
+    /// The `plus` producer of a `g`-redex and the two `g` consumers, linear
+    /// and non-linear, in that order.
+    /// # Specification
+    /// trivial.
+    fn g_seam_store() -> (CellStore, [CellId; 3])
+    {
         let mut store = CellStore::new();
         let plus = store.insert(Cell::new(
             CmdPat::cut(
@@ -427,18 +572,31 @@ mod tests
             Orientation::PolarityDerived,
             CellProvenance::SurfaceRule,
         ));
+        (store, [plus, linear, nonlinear])
+    }
+
+    /// A relation's extension candidates are the critical pairs among its own
+    /// generators: both orders of the two `g` consumers, and nothing from a
+    /// composition seam or a pair with a cell outside the relation.
+    #[test]
+    fn the_extension_candidates_are_the_critical_pairs_among_the_generators()
+    {
+        let (store, [plus, linear, nonlinear]) = g_seam_store();
         let query = Query::new(&store);
-        let left = rel(NameRef::from("plus"), vec![plus]);
-        let right = rel(NameRef::from("g"), vec![linear, nonlinear]);
-        let family = query.seam_family(&left, &right);
-        assert!(
-            family.len() >= 2,
-            "the g-seam composition is a multi-sum family, not a single rule"
-        );
-        // Every member re-derives its composite from the overlap (engine oracle).
-        for member in &family {
-            assert_eq!(member.left, plus, "each member is a plus∘g overlap");
-        }
+        let pairs = |generators| {
+            query
+                .extension_candidates(&rel(NameRef::from("R"), generators))
+                .iter()
+                .map(|candidate| (candidate.left, candidate.right))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(pairs(vec![linear, nonlinear]), vec![
+            (linear, nonlinear),
+            (nonlinear, linear)
+        ]);
+        assert_eq!(pairs(vec![plus, linear]), Vec::new());
+        assert_eq!(pairs(vec![nonlinear]), Vec::new());
+        assert_eq!(pairs(vec![plus]), Vec::new());
     }
 
     #[test]
@@ -726,6 +884,71 @@ mod tests
             !bool::from(witness.is_valid(&store)),
             "an iso whose one direction fails replay is rejected (protype-iso-replay-fail)"
         );
+    }
+
+    /// An identity derivation is a round trip on its own and beside a
+    /// reflexive certificate, never beside one that takes a step; a stuck
+    /// graft is a round trip with nothing.
+    #[test]
+    fn an_identity_cell_round_trips_beside_a_reflexive_certificate()
+    {
+        let (store, base) = peano_fused();
+        let relation = rel(NameRef::from("R"), Vec::new());
+        let id = Derivation::id(relation.clone());
+        let d_refl = cert(reflexive_cert(&base), relation.clone(), relation.clone());
+        let d_step = cert(base.clone(), relation.clone(), relation.clone());
+        let mut broken = base;
+        broken.joins_at = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Nope", []),
+            ConsPat::top(),
+        );
+        let d_broken = cert(broken, relation.clone(), relation);
+        let stuck = Derivation::graft(d_broken.clone(), vec![d_broken]);
+        assert!(matches!(stuck.elaborate(), Elaborated::Stuck));
+        for (fwd, bwd, valid) in [
+            (&id, &id, true),
+            (&id, &d_refl, true),
+            (&d_refl, &id, true),
+            (&id, &d_step, false),
+            (&d_step, &id, false),
+            (&stuck, &d_refl, false),
+            (&d_refl, &stuck, false),
+        ] {
+            assert_eq!(
+                bool::from(IsoWitness::new(fwd.clone(), bwd.clone()).is_valid(&store)),
+                valid,
+                "{fwd:?} and {bwd:?}"
+            );
+        }
+    }
+
+    /// A reflected iso resolves only certificates bound in the environment;
+    /// any other witness, or an unbound one, has no engine witness and is
+    /// not valid.
+    #[test]
+    fn a_reflected_iso_resolves_only_bound_certificates()
+    {
+        let (store, base) = peano_fused();
+        let relation = rel(NameRef::from("R"), Vec::new());
+        let d_refl = cert(reflexive_cert(&base), relation.clone(), relation);
+        let derivations = vec![d_refl.clone()];
+        let bound = Proterm::cert(DerivationId::new(DerivationIndex::from(0_usize)));
+        let missing = DerivationId::new(DerivationIndex::from(1_usize));
+        assert_eq!(
+            ProtypeIso::new(bound.clone(), bound.clone()).witness(&derivations),
+            Maybe::Present(IsoWitness::new(d_refl.clone(), d_refl))
+        );
+        assert_eq!(
+            ProtypeIso::new(bound.clone(), Proterm::cert(missing)).witness(&derivations),
+            Maybe::Absent(witness_resolution::Absent::Unbound(missing))
+        );
+        let not_cert = ProtypeIso::new(Proterm::unit_term(), bound);
+        assert_eq!(
+            not_cert.witness(&derivations),
+            Maybe::Absent(witness_resolution::Absent::NotCertificate)
+        );
+        assert!(!bool::from(not_cert.is_valid(&derivations, &store)));
     }
 
     /// The `Nat` fusion store (`Succ⁻` frame + add-S rule) with the `frame ∘

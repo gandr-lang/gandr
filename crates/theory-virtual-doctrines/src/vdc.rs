@@ -240,6 +240,7 @@ fn compose_renaming(
 ///   structurally; explicit identity pairs cannot survive as a different
 ///   identity.
 /// - witness: `tests::laws::tests::tight_composition_is_associative_and_unital`
+/// - witness: `tests::laws::tests::a_renaming_keeps_the_first_image_of_each_name`
 #[spec(ensures: |ret| ret.iter().all(|pair| pair.0 != pair.1) && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
 fn canonical_map(pairs: Vec<(Name, Name)>) -> Box<[(Name, Name)]>
 {
@@ -443,6 +444,7 @@ impl Derivation
     /// - hypothesis: L3 — asymmetric grafts distinguish order, omission and
     ///   inclusion of the outer domain.
     /// - witness: `tests::laws::tests::cell_grafting_matches_engine_composition`
+    /// - witness: `tests::laws::tests::every_cell_answers_its_boundary`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self.0.to_ref().head() { DerivationKind::Id(ref relation) => ret.as_slice() == core::slice::from_ref(relation), DerivationKind::Cert { ref dom, .. } => ret.as_slice() == dom.as_ref(), DerivationKind::Graft(_) => true })]
@@ -501,6 +503,7 @@ impl Derivation
     /// - hypothesis: L3 — nested grafts retain the outermost output,
     ///   independently of inner outputs.
     /// - witness: `tests::laws::tests::cell_grafting_matches_engine_composition`
+    /// - witness: `tests::laws::tests::every_cell_answers_its_boundary`
     #[inline]
     #[spec(ensures: |ret| match *self.0.to_ref().head() { DerivationKind::Id(ref relation) => ret == Ok(relation), DerivationKind::Cert { ref cod, .. } => ret == Ok(cod), DerivationKind::Graft(_) => true })]
     pub fn cod(&self) -> Result<&RelationRef, DerivationError>
@@ -532,6 +535,7 @@ impl Derivation
     ///   corrupted composition evidence.
     /// - witness: `tests::laws::tests::cell_grafting_matches_engine_composition`
     /// - witness: `tests::laws::tests::cell_grafting_is_unital_up_to_replay`
+    /// - witness: `tests::laws::tests::a_graft_sequences_one_inner_cell_and_sticks_on_two`
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| match *self.0.to_ref().head() { DerivationKind::Id(_) => matches!(*ret, Elaborated::Trivial), DerivationKind::Cert { ref cert, .. } => matches!(*ret, Elaborated::Cert(ref actual) if actual.as_ref() == cert), DerivationKind::Graft(_) => true })]
@@ -590,6 +594,7 @@ impl Derivation
     /// - hypothesis: L1 — accepted and corrupted certificates are compared
     ///   through engine replay.
     /// - witness: `tests::laws::tests::a_non_replaying_certificate_is_rejected`
+    /// - witness: `tests::laws::tests::a_graft_sequences_one_inner_cell_and_sticks_on_two`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| bool::from(ret) == match self.elaborate() { Elaborated::Trivial => true, Elaborated::Cert(cert) => bool::from(cert.replay(store)), Elaborated::Stuck => false })]
@@ -635,6 +640,7 @@ enum ElaborateFrame<'derivation>
 /// - hypothesis: L1 — graft elaboration is compared with engine composition and
 ///   replay, so a changed sequential seam or path changes the observation.
 /// - witness: `tests::laws::tests::cell_grafting_matches_engine_composition`
+/// - witness: `tests::laws::tests::a_graft_sequences_one_inner_cell_and_sticks_on_two`
 #[spec(captures: refused = matches!((&inner, &outer), (Elaborated::Stuck, _) | (_, Elaborated::Stuck)) || matches!((&inner, &outer), (Elaborated::Cert(i), Elaborated::Cert(o)) if i.joins_at != o.overlap.peak), ensures: |ref ret| matches!(ret, Elaborated::Stuck) == refused)]
 fn graft_sequential<'derivation>(
     inner: Elaborated<'derivation>,
@@ -670,6 +676,7 @@ fn graft_sequential<'derivation>(
 /// - hypothesis: L1 — graft units are compared by engine replay; endpoint
 ///   agreement alone cannot establish equality.
 /// - witness: `tests::laws::tests::cell_grafting_is_unital_up_to_replay`
+/// - witness: `tests::laws::tests::a_graft_sequences_one_inner_cell_and_sticks_on_two`
 #[spec(ensures: |ret| !bool::from(ret) || !matches!((a, b), (Elaborated::Stuck, _) | (_, Elaborated::Stuck)))]
 fn elaborations_replay_equivalent(
     a: &Elaborated<'_>,

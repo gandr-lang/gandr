@@ -318,6 +318,7 @@ impl<'env> Checker<'env>
     /// - hypothesis: L3 — nearest-invalid contexts, generators and asymmetric
     ///   seam signatures distinguish each formation guard.
     /// - witness: `tests::constructor_menu::formation_observes_names_generators_and_both_seam_boundaries`
+    /// - witness: `tests::constructor_menu::a_nested_composite_meets_its_seam_at_its_outer_boundary`
     #[inline]
     #[spec(ensures: |ref result| !matches!(result, Err(CheckError::UnknownRelationGenerator(id)) if matches!(self.cells.get(*id), Maybe::Present(_))))]
     pub fn check_protype(
@@ -477,6 +478,8 @@ impl<'env> Checker<'env>
     /// - hypothesis: L3 — sibling scopes and nested eliminations expose leaked
     ///   hypotheses, result-stack reversal and skipped premises.
     /// - witness: `tests::constructor_menu::every_constructor_has_an_accepted_and_nearest_invalid_judgment`
+    /// - witness: `tests::constructor_menu::a_body_reads_each_binder_at_its_own_type`
+    /// - witness: `tests::constructor_menu::a_projection_of_a_path_is_refused`
     #[spec(ensures: |ref result| !matches!(result, Err(CheckError::UnboundDerivation(id)) if usize::from(id.index()) < self.derivations.len()))]
     fn run_judgment<'syntax>(
         &self,
@@ -814,6 +817,7 @@ fn extension(ty: Synthesized<'_>) -> Result<ProtypeNode<'_>, CheckError>
 /// - hypothesis: L3 — nested lambdas and sibling checks distinguish lexical
 ///   scope from global accumulation.
 /// - witness: `tests::constructor_menu::every_constructor_has_an_accepted_and_nearest_invalid_judgment`
+/// - witness: `tests::constructor_menu::a_body_reads_each_binder_at_its_own_type`
 #[spec(ensures: |ref result| !matches!(result, Err(CheckError::UnboundVar(found)) if found != var))]
 fn lookup_hyp<'syntax>(
     hyps: &'syntax Hyps,
@@ -851,6 +855,7 @@ fn lookup_hyp<'syntax>(
 /// - hypothesis: L3 — asymmetric type pairs distinguish an omitted comparison
 ///   or reversed diagnostic payload.
 /// - witness: `tests::constructor_menu::every_constructor_has_an_accepted_and_nearest_invalid_judgment`
+/// - witness: `tests::constructor_menu::a_body_reads_each_binder_at_its_own_type`
 #[spec(ensures: |ref result| result.is_ok() == (expected == found))]
 fn expect_equal(
     expected: Synthesized<'_>,
@@ -910,6 +915,7 @@ fn term_vars_declared(
 /// - hypothesis: L3 — distinct source, middle and target signatures distinguish
 ///   either boundary direction.
 /// - witness: `tests::constructor_menu::formation_observes_names_generators_and_both_seam_boundaries`
+/// - witness: `tests::constructor_menu::a_nested_composite_meets_its_seam_at_its_outer_boundary`
 #[spec(ensures: |ref result| !matches!(result, Err(CheckError::UnboundVar(_))))]
 fn boundary(
     mut node: ProtypeNode<'_>,
