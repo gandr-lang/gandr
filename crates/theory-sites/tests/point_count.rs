@@ -2,9 +2,11 @@
 //! and the codegeneracy.
 
 use gandr_theory_circuit_algebras::Edge;
+use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_sites::Catalogue;
 use gandr_theory_sites::Invertibility;
 use gandr_theory_sites::PointCount;
+use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::Site;
 use gandr_theory_sites::SiteMap;
@@ -18,7 +20,8 @@ use gandr_theory_sites::homs;
 use gandr_theory_sites::split_lowering;
 
 /// Every shape at size four is uniquely its core beside its points, and a
-/// corolla beside two points has the corolla as its core.
+/// corolla beside two points has the corolla as its core; the corolla beside
+/// sixty-four points would hold sixty-five vertices and is refused by count.
 #[test]
 fn every_shape_is_its_core_beside_its_points()
 {
@@ -33,6 +36,12 @@ fn every_shape_is_its_core_beside_its_points()
             .expect("the points fit")
             .key(),
         shape.key()
+    );
+    assert_eq!(
+        core.beside_points(PointCount::from(64)),
+        Err(ShapeObstruction::TooManyVertices {
+            vertices: EdgeCount::from(65)
+        })
     );
 }
 

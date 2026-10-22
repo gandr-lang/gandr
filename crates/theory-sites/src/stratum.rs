@@ -1412,7 +1412,9 @@ fn probed(
 /// - hypothesis: L3 — the extension of the input swap restricts to the swap;
 ///   the same family with the identity at the graft, a bijection at every
 ///   shape, is refused at the inclusion of the binary corolla into the graft,
-///   at degree one and at degree two alike.
+///   at degree one and at degree two alike. A family missing its shapes, one
+///   with a shape too many and two species whose term counts differ are refused
+///   by the defects that name them.
 /// - witness: `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`
 /// - witness: `tests::stratum::a_shape_of_degree_two_is_the_colimit_of_its_corollas`
 #[inline]
