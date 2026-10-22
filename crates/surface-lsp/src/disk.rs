@@ -370,14 +370,23 @@ mod tests
     /// thread that hands each event on, so a follow that held the followers
     /// while waiting for that reply waited on a thread waiting for the
     /// followers, and the hub stopped (#1898).
+    ///
+    /// The witness waits on progress, not on a deadline for the whole run:
+    /// it fails only when a window passes in which no follow returns, which
+    /// the deadlock does at once and a loaded machine, whose follows are
+    /// slow but keep returning, does not (#1921).
     #[test]
     fn a_follow_returns_while_its_files_keep_changing_1898()
     {
         use alloc::sync::Arc;
         use core::sync::atomic::AtomicBool;
+        use core::sync::atomic::AtomicUsize;
         use core::sync::atomic::Ordering;
         use core::time::Duration;
         use std::sync::mpsc;
+
+        /// How long no follow may return before the hub is taken as stopped.
+        const STALL: Duration = Duration::from_secs(10);
 
         let scratch = std::env::temp_dir().join(format!("gd-{}-1898", std::process::id()));
         drop(std::fs::remove_dir_all(&scratch));
@@ -399,27 +408,45 @@ mod tests
             })
         };
         let (done, finished) = mpsc::channel();
-        let following = std::thread::spawn(move || {
-            let inbox = Inbox::default();
-            let mut disk = Disk::new().expect("the watcher starts");
-            let peer = Peer::from(1_u64);
-            let one = BTreeSet::from([written.clone()]);
-            let both = BTreeSet::from([written, aside]);
-            for _ in 0_u32 .. 500_u32 {
-                disk.follow(peer, &inbox.changes(), both.clone());
-                disk.follow(peer, &inbox.changes(), one.clone());
+        let returned = Arc::new(AtomicUsize::new(0));
+        let following = {
+            let returned = Arc::clone(&returned);
+            std::thread::spawn(move || {
+                let inbox = Inbox::default();
+                let mut disk = Disk::new().expect("the watcher starts");
+                let peer = Peer::from(1_u64);
+                let one = BTreeSet::from([written.clone()]);
+                let both = BTreeSet::from([written, aside]);
+                for _ in 0_u32 .. 500_u32 {
+                    disk.follow(peer, &inbox.changes(), both.clone());
+                    disk.follow(peer, &inbox.changes(), one.clone());
+                    let _before = returned.fetch_add(1, Ordering::SeqCst);
+                }
+                disk.follow(peer, &inbox.changes(), BTreeSet::new());
+                let _sent = done.send(());
+            })
+        };
+        let mut seen = returned.load(Ordering::SeqCst);
+        let answered = loop {
+            match finished.recv_timeout(STALL) {
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let now = returned.load(Ordering::SeqCst);
+                    if now == seen {
+                        break Err(mpsc::RecvTimeoutError::Timeout);
+                    }
+                    seen = now;
+                },
+                answered @ (Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected)) => break answered,
             }
-            disk.follow(peer, &inbox.changes(), BTreeSet::new());
-            let _sent = done.send(());
-        });
-        let answered = finished.recv_timeout(Duration::from_secs(10));
+        };
         stop.store(true, Ordering::SeqCst);
         writer.join().expect("the writer stops");
         drop(std::fs::remove_dir_all(&scratch));
         assert_eq!(
             answered,
             Ok(()),
-            "every follow returns while the followed file keeps changing"
+            "every follow returns while the followed file keeps changing: none returned for \
+             {STALL:?} after {seen} pairs"
         );
         following.join().expect("the follower ends");
     }
