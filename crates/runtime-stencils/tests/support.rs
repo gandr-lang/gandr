@@ -896,6 +896,7 @@ pub fn same_value(
             (&HeapValue::Literal(ref first), &HeapValue::Literal(ref second))
                 if first == second => {},
             (&HeapValue::Opaque(first), &HeapValue::Opaque(second)) if first == second => {},
+            (&HeapValue::Code(first), &HeapValue::Code(second)) if first == second => {},
             (&HeapValue::Capability, &HeapValue::Capability) => {},
             (
                 &HeapValue::Constructed {

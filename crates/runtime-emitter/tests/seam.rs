@@ -170,6 +170,8 @@ enum Answer
     Unit,
     /// Resume with the offered payload itself.
     Payload,
+    /// Resume with a fresh copy of the offered payload.
+    Copy,
     /// Leave the operation unhandled.
     Decline,
     /// Resume with a value the host builds itself.
@@ -187,6 +189,8 @@ enum Built
     Left,
     /// The opaque constant 7.
     Opaque,
+    /// The nullary first constructor of the datatype declared at constant 0.
+    Data,
     /// A capability, which no handler of the run introduced.
     Capability,
     /// Code the host built, which no function's code table holds.
@@ -269,6 +273,13 @@ impl HostHandler for ScriptedHost<'_>
                     .expect("the reply fits"),
             ),
             Answer::Payload => HostReply::Resume(request.payload),
+            Answer::Copy => {
+                let copy = values
+                    .value(request.payload)
+                    .cloned()
+                    .expect("the payload is held");
+                HostReply::Resume(values.allocate(copy).expect("the reply fits"))
+            },
             Answer::Decline => HostReply::Decline,
             Answer::Built(built) => {
                 let value = match built {
@@ -285,6 +296,14 @@ impl HostHandler for ScriptedHost<'_>
                             .expect("the field fits")]),
                     },
                     Built::Opaque => HeapValue::Opaque(ConstantIndex::from(7_usize)),
+                    Built::Data => HeapValue::Constructed {
+                        tag: ConstructorTag::Data {
+                            tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                            arity: ProducerArity::ZERO,
+                            family: Some(ConstantIndex::from(0_usize)),
+                        },
+                        fields: Box::new([]),
+                    },
                     Built::Capability => HeapValue::Capability,
                     Built::Code => HeapValue::Code(self.core.value_unit()),
                     Built::Nil => HeapValue::Constructed {
@@ -756,8 +775,9 @@ fn a_host_abort_never_resumes_and_a_missing_reply_declines()
     }
 }
 
-/// A reply the host builds of a text literal, an injection or an opaque
-/// constant is laid into the run and is the run's answer, read back as built.
+/// A reply the host builds of a text literal, an injection, an opaque
+/// constant or a datatype's constructor is laid into the run and is the
+/// run's answer, read back as built.
 #[test]
 fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
 {
@@ -769,10 +789,17 @@ fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
     let left = core.value_injection(Summand::from(0_usize), unit);
     let sum_type = core.value_type_sum(&[unit_type, unit_type]);
     let opaque = core.value_constant(ConstantIndex::from(7_usize));
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        nat,
+        gandr_kernel_term::ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
     for (built, reply, reply_type) in [
         (Built::Text, text, text_type),
         (Built::Left, left, sum_type),
         (Built::Opaque, opaque, unit_type),
+        (Built::Data, zero, nat),
     ] {
         let signature = EffectSig::new("Ask".into(), [EffectOp {
             name: "ask".into(),
@@ -791,6 +818,52 @@ fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
                 answer: Answer::Built(built),
             }],
             Expected::Value(reply),
+        );
+    }
+}
+
+/// A reply whose head or code the function builds itself is laid into the
+/// run by its row in the function's table: `x <- ask(()); return (x, nil)`
+/// answered with a built `nil` is `(nil, nil)`, and
+/// `x <- ask(Integer); return (x, Integer)` answered with a fresh copy of its
+/// payload is `(Integer, Integer)`, where a run that builds no list declines
+/// the same `nil`.
+#[test]
+fn a_host_reply_the_function_tables_is_the_answer()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let unit_type = core.value_type_unit();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let list_type = core.value_type_list(integer_type);
+    let nil = core.value_list_nil();
+    let quoted = core.value_quote(integer_type);
+    for (payload, answer, held, reply_type) in [
+        (unit, Answer::Built(Built::Nil), nil, list_type),
+        (quoted, Answer::Copy, quoted, unit_type),
+    ] {
+        let signature = EffectSig::new("Ask".into(), [EffectOp {
+            name: "ask".into(),
+            payload: unit_type,
+            reply: reply_type,
+        }])
+        .expect("one operation");
+        let asked = core.computation_perform(signature, "ask".into(), payload);
+        let reply = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let pair = core.value_tuple(&[reply, held]);
+        let returned = core.computation_return(pair);
+        let program = core.computation_bind(asked, returned);
+        let expected = core.value_tuple(&[held, held]);
+        assert_host(
+            &mut core,
+            program,
+            &[Offer {
+                signature: "Ask",
+                operation: "ask",
+                payload,
+                answer,
+            }],
+            Expected::Value(expected),
         );
     }
 }
