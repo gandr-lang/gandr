@@ -1,0 +1,32 @@
+// A tuple of optional values: each member takes the component of the product
+// the tuple is written at, as a list's elements take its element type
+// (`data-answered-list.gandr`). `Maybe` is the one `data-maybe.gandr`
+// declares. Before #1877 each constructor among the members was refused for
+// want of a stated type.
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr" ;
+
+/// A present value and an absent one, annotated as their product.
+@[ checks ]
+def paired = ((Some(1), None) : Maybe(Integer) * Maybe(Integer)) ;
+
+/// The same pair at the type the function returns.
+@[ checks ]
+def answered_pair(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {
+  (None, Some(n))
+}
+
+/// Pairs in a list: each takes the element type, and gives its members the
+/// components.
+@[ checks ]
+def pair_list() -> -F List(Maybe(Integer) * Maybe(Integer)) {
+  [(Some(1), None), (None, Some(2))]
+}
+
+/// A pair in a pair: the inner one takes the product at its place.
+@[ checks ]
+def nested_pair = ((
+  Some(1),
+  (None, Some(2))
+) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;

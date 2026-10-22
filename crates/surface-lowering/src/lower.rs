@@ -7226,10 +7226,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose first member a comma follows.
     /// - ensures: the tuple stands as a value, reads every member as a value
     ///   under its own frame, and is planned over them as one tuple, as one `*`
-    ///   chain is one product.
+    ///   chain is one product. At a product it is written or answered at, as
+    ///   [`Self::stated_value`] reads it, of as many positional components as
+    ///   it has members, each member written as a constructor, a call, a list
+    ///   or a parenthesised form takes the component at its place, as
+    ///   [`Self::classify_member`] gives it.
     /// - provides: the introduction of the eager product.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
-    ///   list's refusal for a member out of shape, both naming the tuple.
+    ///   list's refusal for a member out of shape, both naming the tuple; the
+    ///   walk's refusal reading the product.
     /// - panics: none.
     ///
     /// # Errors
@@ -7241,8 +7246,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a tuple of one, of two and of three, and a tuple
     ///   where a computation is read, each asserted as the exact core node read
-    ///   back out of the arena or the exact refusal.
+    ///   back out of the arena or the exact refusal; and tuples of a
+    ///   parameterised family's constructors under an annotation, at a body's
+    ///   tail and inside a list, each classified by its component.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7272,6 +7280,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
+        let (stated, answered) = self.stated_value(tuple)?;
+        if let Some(stated) = stated
+            && let Maybe::Present(components) =
+                self.stated_entries(tuple, stated, Former::TelescopeType, arity::Thunked(false))?
+            && components.len() == members.end.saturating_sub(members.start)
+            && components
+                .iter()
+                .all(|component| matches!(component.key, arity::Key::Positional))
+        {
+            for (position, component) in (members.start .. members.end).zip(&components) {
+                if let Some(&member) = self.operands.get(position) {
+                    self.classify_member(member, component.held.at().node, answered, frame);
+                }
+            }
+        }
         for position in members.start .. members.end {
             if let Some(&member) = self.operands.get(position) {
                 self.read(member, Reading::Value(frame));
@@ -7291,12 +7314,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   under its own frame, and is planned over them as one native list, as
     ///   `v1 :: … :: vn :: nil` is. Under a written classifier `List(T)` — its
     ///   annotation, or the signature of the definition it is — its parentheses
-    ///   stripped, each element written as a constructor, a call or a list
-    ///   takes `T` as its own, as a constructor's field gives the constructor
-    ///   written in it its type. A list ending a body that answers `-F List(T)`
-    ///   or returns `List(T)`, or carried such an answer by the list it is an
-    ///   element of, gives each such element `T` as the answer it returns, read
-    ///   under the answer's frame and carried to the list's.
+    ///   stripped, each element written as a constructor, a call, a list or a
+    ///   parenthesised form takes `T` as its own, as a constructor's field
+    ///   gives the constructor written in it its type. A list ending a body
+    ///   that answers `-F List(T)` or returns `List(T)`, or carried such an
+    ///   answer by the list or tuple it is a member of, gives each such element
+    ///   `T` as the answer it returns, read under the answer's frame and
+    ///   carried to the list's.
     /// - provides: the introduction of the native list from its elements.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
     ///   element list's refusal for an element out of shape, both naming the
@@ -7345,29 +7369,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             end: self.operands.len(),
         };
         // An element type the list is written at classifies each constructor,
-        // call or list among its elements, as a field's type does the
+        // call, list or tuple among its elements, as a field's type does the
         // constructor written in it; one the list answers is carried to them as
         // the answer each returns.
-        let (stated, answered) = match (
-            self.classifiers.get(&site.at.node),
-            self.inherited.get(&site.at.node),
-        ) {
-            (Some(&written), _) | (None, Some(&native::Classifier::Written(written))) => {
-                (Some(written), None)
-            },
-            (None, Some(&native::Classifier::Answered { answer, .. })) => {
-                (self.answered_list(answer)?, Some(answer))
-            },
-            (None, Some(_)) => (None, None),
-            (None, None) => match self
-                .answers
-                .get(&site.at.node)
-                .filter(|_| self.exits.contains(&site.at.node))
-            {
-                Some(&answer) => (self.answered_list(answer)?, Some(answer)),
-                None => (None, None),
-            },
-        };
+        let (stated, answered) = self.stated_value(site)?;
         if let Some(stated) = stated
             && let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
@@ -7377,33 +7382,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && let [element_type] = typed.operands[..]
         {
             for position in elements.start .. elements.end {
-                if let Some(&element) = self.operands.get(position)
-                    && self.tree.node(element).is_some_and(|node| {
-                        matches!(
-                            shape_of(self.pbg, node),
-                            Ok(Shape::Form {
-                                former: Former::Constructor | Former::Call | Former::List,
-                                ..
-                            })
-                        )
-                    })
-                {
-                    match answered {
-                        Some(answer) => {
-                            let carried = native::Classifier::Answered {
-                                answer: native::Answer {
-                                    node: element_type,
-                                    frame: answer.frame,
-                                    over: native::Over::Returning,
-                                },
-                                frame,
-                            };
-                            let _first = self.inherited.insert(element, carried);
-                        },
-                        None => {
-                            let _first = self.classifiers.insert(element, element_type);
-                        },
-                    }
+                if let Some(&element) = self.operands.get(position) {
+                    self.classify_member(element, element_type, answered, frame);
                 }
             }
         }
@@ -7436,14 +7416,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function result `-F List(T)` and a thunk signed `()
-    ///   => List(T)`, each giving a listed constructor its element type.
+    ///   => List(T)`, each giving a listed constructor its element type, and a
+    ///   function result `-F (A * B)` giving a tuple's members theirs.
     /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
+    /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |node| match answer.over {
         native::Over::Returning => *node == Some(answer.node),
         native::Over::Written => true,
         native::Over::Loop { .. } | native::Over::Valued { .. } => node.is_none(),
     }))]
-    fn answered_list(
+    fn answered_value(
         &mut self,
         answer: native::Answer,
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
@@ -7460,6 +7442,121 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(_) | Maybe::Absent(_) => Ok(None),
             },
             native::Over::Loop { .. } | native::Over::Valued { .. } => Ok(None),
+        }
+    }
+
+    /// The type a list or a tuple at `site` is written at, and the answer it
+    /// was read off when it is answered rather than written.
+    ///
+    /// # Specification
+    /// - requires: `site` is a list or a tuple standing as a value.
+    /// - ensures: its written classifier — its annotation, the signature of the
+    ///   definition it is, or one the form around it passes — with no answer;
+    ///   else the value type the answer an enclosing form carries returns, or
+    ///   the answer of the body it ends, as [`Self::answered_value`] reads it,
+    ///   with that answer; else nothing.
+    /// - fails: as [`Self::answered_value`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::answered_value`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::answered_value`], and an annotated list
+    ///   and tuple, each classifying its members by what it is written at.
+    /// - witness: `lower::native::tests::a_listed_constructor_takes_the_element_type_1544`
+    /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(_, ref answered)| answered.is_none() || !self.classifiers.contains_key(&site.at.node)))]
+    fn stated_value(
+        &mut self,
+        site: Site,
+    ) -> Result<(Option<NodeIndex>, Option<native::Answer>), LoweringRefusal<'source>>
+    {
+        Ok(
+            match (
+                self.classifiers.get(&site.at.node),
+                self.inherited.get(&site.at.node),
+            ) {
+                (Some(&written), _) | (None, Some(&native::Classifier::Written(written))) => {
+                    (Some(written), None)
+                },
+                (None, Some(&native::Classifier::Answered { answer, .. })) => {
+                    (self.answered_value(answer)?, Some(answer))
+                },
+                (None, Some(_)) => (None, None),
+                (None, None) => match self
+                    .answers
+                    .get(&site.at.node)
+                    .filter(|_| self.exits.contains(&site.at.node))
+                {
+                    Some(&answer) => (self.answered_value(answer)?, Some(answer)),
+                    None => (None, None),
+                },
+            },
+        )
+    }
+
+    /// Give `member`, a list's element or a tuple's member, the type
+    /// `component` writes, when it is a form that takes one.
+    ///
+    /// # Specification
+    /// - requires: `component` is read under `answered`'s frame when `answered`
+    ///   is present, else under the frame its written classifier was read in;
+    ///   `frame` is the member's.
+    /// - ensures: a member written as a constructor, a call, a list or a
+    ///   parenthesised form takes `component` as its written classifier when
+    ///   `answered` is absent, and otherwise inherits the answer returning
+    ///   `component` under `answered`'s frame, carried to `frame`; any other
+    ///   member is left as it was.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::stated_value`].
+    /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
+    /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
+    #[spec(
+        captures: before = (self.classifiers.len(), self.inherited.len()),
+        ensures: self.classifiers.len() >= before.0 && self.inherited.len() >= before.1,
+    )]
+    fn classify_member(
+        &mut self,
+        member: NodeIndex,
+        component: NodeIndex,
+        answered: Option<native::Answer>,
+        frame: Frame,
+    )
+    {
+        let takes = self.tree.node(member).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Constructor
+                        | Former::Call
+                        | Former::List
+                        | Former::Parenthesized,
+                    ..
+                })
+            )
+        });
+        if !takes {
+            return;
+        }
+        match answered {
+            Some(answer) => {
+                let carried = native::Classifier::Answered {
+                    answer: native::Answer {
+                        node: component,
+                        frame: answer.frame,
+                        over: native::Over::Returning,
+                    },
+                    frame,
+                };
+                let _first = self.inherited.insert(member, carried);
+            },
+            None => {
+                let _first = self.classifiers.insert(member, component);
+            },
         }
     }
 
