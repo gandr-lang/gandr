@@ -15,6 +15,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::SealExtent;
 use quenchant_shape::shape::Maybe;
 
+use super::ModuleRun;
 use super::Verdict;
 use super::check_declaration;
 use super::check_module;
@@ -33,6 +34,7 @@ use crate::failure::FrameRole;
 use crate::failure::Pursuit;
 use crate::failure::Stage;
 use crate::failure::judged;
+use crate::fixture::RetireAt;
 use crate::fixture::integer_literal;
 use crate::fixture::text_literal;
 use crate::nested::Nesting;
@@ -43,6 +45,7 @@ use crate::refusal::Mismatch;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
+use crate::retire::Polled;
 use crate::seal::ComponentOrdinal;
 use crate::seal::SealSite;
 use crate::seal::SealingSite;
@@ -471,6 +474,85 @@ fn a_refusal_does_not_stop_the_run()
         matches!(synthesised.verdict(), Verdict::Synthesised { .. }),
         "and the run goes on past it"
     );
+}
+
+/// #1663: a run polled to retirement before its second declaration judges and
+/// settles the first alone, and answers what retired it; a run whose poll
+/// never retires it judges every declaration, polled once before each, and
+/// reports as the run nobody polls.
+#[test]
+fn a_retired_run_judges_nothing_after_its_poll_1663()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let module = [
+        declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
+        declaration(At(1), Maybe::Present(integer), Maybe::Present(zero)),
+        declaration(At(2), Maybe::Present(integer), HOLE),
+    ];
+    let mut whole_arena = arena.clone();
+    let whole = {
+        let mut context = CheckingContext::new(&mut whole_arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        run.judge(&mut context, &module, |_, _, _| {});
+        run.finish(&mut context)
+    };
+
+    let mut retired_arena = arena.clone();
+    let mut context = CheckingContext::new(&mut retired_arena, CheckBudget::DEFAULT);
+    let mut run = ModuleRun::new();
+    let mut settled = Vec::new();
+    let at_second = RetireAt {
+        at: 2,
+        readings: core::cell::Cell::new(0),
+    };
+    let retired = run.judge_retiring(
+        &mut context,
+        &module,
+        |_, declaration, _| settled.push(declaration.constant()),
+        &at_second,
+    );
+    assert_eq!(
+        retired,
+        Polled::Retired((), ()),
+        "the poll before the second declaration retires the run"
+    );
+    assert_eq!(
+        at_second.readings.get(),
+        2,
+        "polled before the first declaration and the second, never the third"
+    );
+    assert_eq!(
+        settled,
+        [ConstantIndex::from(0_usize)],
+        "the first declaration alone is settled"
+    );
+    assert_eq!(run.judged.len(), 1, "and judged");
+
+    let mut polled_arena = arena;
+    let never = RetireAt {
+        at: 4,
+        readings: core::cell::Cell::new(0),
+    };
+    let (answer, polled) = {
+        let mut context = CheckingContext::new(&mut polled_arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        let answer = run.judge_retiring(&mut context, &module, |_, _, _| {}, &never);
+        (answer, run.finish(&mut context))
+    };
+    assert_eq!(
+        answer,
+        Polled::Whole(()),
+        "a poll never retired answers whole"
+    );
+    assert_eq!(
+        never.readings.get(),
+        3,
+        "polled once before each declaration"
+    );
+    assert_eq!(polled, whole, "and reports as the run nobody polls");
+    assert_eq!(polled_arena, whole_arena, "over the arena it mints");
 }
 
 #[test]

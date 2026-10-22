@@ -1,8 +1,10 @@
 //! Retirement: whether the work a run does is still wanted, polled where the
 //! run stands between two of its steps.
 //!
-//! A run that judges a revision's items, or readmits a report's declarations,
-//! may be overtaken by a newer revision that makes its answer stale. A
+//! A run that judges a revision's items or a module's declarations
+//! ([`ModuleRun::judge_retiring`](crate::ModuleRun::judge_retiring)), or
+//! readmits a report's declarations, may be overtaken by a newer revision that
+//! makes its answer stale. A
 //! [`Retirement`] is what the run polls before each step: a read, never a
 //! write, so one value serves every worker that reads it and nothing is shared
 //! mutably. A run that reads [`Demand::Retired`] stops before its next step

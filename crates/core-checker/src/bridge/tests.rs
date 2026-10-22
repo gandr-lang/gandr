@@ -133,6 +133,7 @@ use crate::declaration::OriginToken;
 use crate::declaration::body;
 use crate::declaration::signature;
 use crate::fixture::Mode;
+use crate::fixture::RetireAt;
 use crate::fixture::Typing;
 use crate::fixture::dangling_value;
 use crate::fixture::dangling_value_type;
@@ -156,9 +157,7 @@ use crate::refusal::StaticArity;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
-use crate::retire::Demand;
 use crate::retire::Polled;
-use crate::retire::Retirement;
 
 /// A module position in a fixture.
 #[repr(transparent)]
@@ -970,49 +969,6 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
         "a record whose verdicts disagree is not resumed"
     );
     assert_eq!(refused.readmitted(), whole.readmitted());
-}
-
-/// A poll that retires the work at its `at`th reading, counting every reading.
-#[derive(Debug)]
-struct RetireAt
-{
-    /// The reading that retires the work, counted from one.
-    at: usize,
-    /// How many times the work has been polled.
-    readings: core::cell::Cell<usize>,
-}
-
-impl Retirement for RetireAt
-{
-    type Retired = ();
-
-    /// Wanted until the `at`th reading, retired from it on.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one more reading counted; [`Demand::Retired`] once the count
-    ///   reaches `at`.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the witness counts the readings a readmission made.
-    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
-    #[spec(
-        captures: before = self.readings.get(),
-        ensures: |ret| self.readings.get() == before.saturating_add(1)
-            && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
-    )]
-    fn demand(&self) -> Demand<()>
-    {
-        let reading = self.readings.get().saturating_add(1);
-        self.readings.set(reading);
-        if reading >= self.at {
-            Demand::Retired(())
-        }
-        else {
-            Demand::Wanted
-        }
-    }
 }
 
 /// #1547: a readmission polled to retirement stops before the declaration it

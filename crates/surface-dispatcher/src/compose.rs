@@ -169,6 +169,7 @@ use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
 use gandr_core_checker::Declaration;
+use gandr_core_checker::Demand;
 use gandr_core_checker::Formations;
 use gandr_core_checker::HostGrant;
 use gandr_core_checker::ModuleReport;
@@ -2046,21 +2047,81 @@ pub fn judge_member_after<'source>(
     base: ByteOffset,
 ) -> Judged<'source>
 {
+    judge_member_after_retiring(
+        root,
+        (module, text),
+        arena,
+        (grant, checking),
+        base,
+        &Unretired,
+    )
+    .whole()
+}
+
+/// [`judge_member_after`], polling `retirement` before each declaration it
+/// judges and once more before the module is tabled, built and settled.
+///
+/// Under [`Checking::Whole`] it is [`judge_member`] polled.
+///
+/// # Specification
+/// - requires: as [`judge_member_after`].
+/// - ensures: [`Polled::Whole`] with what [`judge_member_after`] answers when
+///   every poll answered wanted; otherwise [`Polled::Retired`] with what the
+///   first poll to answer retired named, nothing of the judgement kept.
+/// - fails: never; a settle fault is carried.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a judgement retired before its second declaration, or
+///   after its last, answers retired; one never retired reads its poll once
+///   before each declaration and once before the settle, and answers what
+///   [`judge_member_after`] answers.
+/// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+#[inline]
+#[must_use]
+#[spec(
+    captures: [expected_declarations = module.declarations().len()],
+    ensures: |ref ret| if let Polled::Whole(ref judged) = *ret {
+        match judged.settled {
+            Ok(Composed::Settled { ref report, .. }) =>
+                report.declarations().len() <= expected_declarations
+                    && report.declarations().iter().all(|declaration| declaration.span().start() >= base),
+            Ok(Composed::Refused(_)) => false,
+            Err(_) => true,
+        }
+    } else {
+        true
+    },
+)]
+pub fn judge_member_after_retiring<'source, Poll>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    base: ByteOffset,
+    retirement: &Poll,
+) -> Polled<Judged<'source>, Poll::Retired, ()>
+where
+    Poll: Retirement,
+{
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
     };
-    let (projected, admission, _untabled) = judge_members(
+    match judge_members(
         root,
         (module, text),
         arena,
         (grant, checking),
         (&[], last),
         (&mut SpellingCount::default(), Tabling::Untabled),
-    );
-    Judged {
-        settled: projected.last,
-        admission,
+        retirement,
+    ) {
+        Polled::Whole((projected, admission, _untabled)) => Polled::Whole(Judged {
+            settled: projected.last,
+            admission,
+        }),
+        Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
     }
 }
 
@@ -2097,25 +2158,69 @@ pub fn judge_member_tabled<'source>(
     (unit, base): (&Unit, ByteOffset),
 ) -> (Judged<'source>, Maybe<TypeTable, tabled::Absent>)
 {
+    judge_member_tabled_retiring(
+        root,
+        (module, text),
+        arena,
+        (grant, checking),
+        (unit, base),
+        &Unretired,
+    )
+    .whole()
+}
+
+/// [`judge_member_tabled`], polling `retirement` as
+/// [`judge_member_after_retiring`] polls it.
+///
+/// # Specification
+/// - requires: as [`judge_member_tabled`].
+/// - ensures: [`Polled::Whole`] with what [`judge_member_tabled`] answers when
+///   every poll answered wanted; otherwise [`Polled::Retired`] with what the
+///   first poll to answer retired named, nothing of the judgement or its table
+///   kept.
+/// - fails: never; a settle fault is carried, and the table still made.
+/// - panics: none.
+/// - executable: none — as [`judge_member_tabled`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tabled judgement retired before its second declaration
+///   answers retired; one never retired reads its poll as the untabled one
+///   does, and answers what [`judge_member_tabled`] answers.
+/// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+#[inline]
+pub fn judge_member_tabled_retiring<'source, Poll>(
+    root: CorpusRoot,
+    (module, text): (LoweredModule<'source>, SourceText<'source>),
+    arena: CoreArena,
+    (grant, checking): (&HostGrant, Checking<'source>),
+    (unit, base): (&Unit, ByteOffset),
+    retirement: &Poll,
+) -> Polled<(Judged<'source>, Maybe<TypeTable, tabled::Absent>), Poll::Retired, ()>
+where
+    Poll: Retirement,
+{
     let last = Member {
         start: base,
         end: ByteOffset::from(text.as_ref().len()),
     };
-    let (projected, admission, table) = judge_members(
+    match judge_members(
         root,
         (module, text),
         arena,
         (grant, checking),
         (&[], last),
         (&mut SpellingCount::default(), Tabling::Tabled(unit)),
-    );
-    (
-        Judged {
-            settled: projected.last,
-            admission,
-        },
-        table,
-    )
+        retirement,
+    ) {
+        Polled::Whole((projected, admission, table)) => Polled::Whole((
+            Judged {
+                settled: projected.last,
+                admission,
+            },
+            table,
+        )),
+        Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
+    }
 }
 
 /// Whether a judgement keeps the type table of the source it judges last.
@@ -2180,6 +2285,14 @@ struct Share<'source>
     unreached: Vec<ByteSpan>,
 }
 
+/// What judging a unit whole holds: its composition projected onto its
+/// sources, its admission and the type table the judgement kept.
+type JudgedUnit<'source> = (
+    Projected<'source>,
+    Admission,
+    Maybe<TypeTable, tabled::Absent>,
+);
+
 /// Judge and settle one lowered unit once, and project the composition onto
 /// each of its sources `members`.
 ///
@@ -2201,7 +2314,10 @@ struct Share<'source>
 ///   [`type_module`](gandr_core_checker::type_module) decides it, keeping the
 ///   first formation of every type the last source writes, and the table of the
 ///   last source is assembled from that run over copies of the module and the
-///   arena as the run left them; otherwise no table is.
+///   arena as the run left them; otherwise no table is. `retirement` is polled
+///   before each declaration judged and once more before the unit is tabled,
+///   built and settled; a poll that answers retired stops the judgement there,
+///   [`Polled::Retired`] with what it named and nothing kept.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 /// - intension: one check, one program, one settle comparison and one spelling
@@ -2223,19 +2339,23 @@ struct Share<'source>
 /// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
 /// - witness: `compose::tests::a_closure_judged_otherwise_is_not_continued`
 /// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
-#[spec(ensures: |ref ret| ret.0.earlier.len() == earlier.len())]
-fn judge_members<'source>(
+/// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+#[spec(ensures: |ref ret| if let Polled::Whole(ref whole) = *ret {
+    whole.0.earlier.len() == earlier.len()
+} else {
+    true
+})]
+fn judge_members<'source, Poll>(
     root: CorpusRoot,
     (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
     (spelled, tabling): (&mut SpellingCount, Tabling<'_>),
-) -> (
-    Projected<'source>,
-    Admission,
-    Maybe<TypeTable, tabled::Absent>,
-)
+    retirement: &Poll,
+) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
+where
+    Poll: Retirement,
 {
     let declarations = adapt(&module);
     let entry = grant.entry(&declared_worlds(&module));
@@ -2274,13 +2394,20 @@ fn judge_members<'source>(
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
         }
-        run.judge(&mut context, judged, |_, _, _| {});
+        if let Polled::Retired(retired, ()) =
+            run.judge_retiring(&mut context, judged, |_, _, _| {}, retirement)
+        {
+            return Polled::Retired(retired, ());
+        }
         let read = run
             .take_typings()
             .zip(written)
             .map(|(typed, written)| TypedRun::read(&context, typed, written));
         (run.finish(&mut context), read)
     };
+    if let Demand::Retired(retired) = retirement.demand() {
+        return Polled::Retired(retired, ());
+    }
     let table = match (tabling, read) {
         (Tabling::Tabled(unit), Some(read)) => Maybe::Present(TypeTable::assemble(
             text,
@@ -2372,7 +2499,7 @@ fn judge_members<'source>(
             last: Err(fault),
         },
     };
-    (
+    Polled::Whole((
         projected,
         Admission {
             arena,
@@ -2380,7 +2507,7 @@ fn judge_members<'source>(
             names,
         },
         table,
-    )
+    ))
 }
 
 /// What a judged unit holds once for all of its sources, read by [`share`].
@@ -2755,7 +2882,9 @@ pub fn judge_component<'source>(
                 (grant, Checking::Whole),
                 (earlier, last),
                 (spelled, Tabling::Untabled),
-            );
+                &Unretired,
+            )
+            .whole();
             match admission.admit() {
                 Ok(kernel) => {
                     let mut composed: Vec<_> = projected
@@ -5510,6 +5639,51 @@ def h = 1 ;"#,
         .expect("two sources make a unit")
     }
 
+    /// A poll that retires the work at its `at`th reading, counting every
+    /// reading.
+    #[derive(Debug)]
+    struct RetireAt
+    {
+        /// The reading that retires the work, counted from one.
+        at: usize,
+        /// How many times the work has been polled.
+        readings: core::cell::Cell<usize>,
+    }
+
+    impl Retirement for RetireAt
+    {
+        type Retired = ();
+
+        /// Wanted until the `at`th reading, retired from it on.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: one more reading counted; [`Demand::Retired`] once the
+        ///   count reaches `at`.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the witness counts the readings a member
+        ///   judgement made.
+        /// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+        #[spec(
+            captures: before = self.readings.get(),
+            ensures: |ret| self.readings.get() == before.saturating_add(1)
+                && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
+        )]
+        fn demand(&self) -> Demand<()>
+        {
+            let reading = self.readings.get().saturating_add(1);
+            self.readings.set(reading);
+            if reading >= self.at {
+                Demand::Retired(())
+            }
+            else {
+                Demand::Wanted
+            }
+        }
+    }
+
     /// The built-in grammar with one more rule, a form no source writes: a
     /// grammar of another fingerprint, so a tree molded under it is refused
     /// under the built-in one.
@@ -5998,6 +6172,136 @@ def h = 1 ;"#,
                 Vec::new()
             ],
             "the importer reports the import it reads nothing through; the refused one none"
+        );
+    }
+
+    /// #1663: a member judgement polled to retirement before its second
+    /// declaration answers retired, and so does one the poll after its last
+    /// declaration retires before the settle; one whose poll never retires it
+    /// reads the poll once before each declaration and once before the settle,
+    /// and answers what the judgement nobody polls answers, its table too.
+    #[test]
+    fn a_retired_member_judgement_keeps_nothing_1663()
+    {
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::judge_member_after;
+        use super::judge_member_after_retiring;
+        use super::judge_member_tabled;
+        use super::judge_member_tabled_retiring;
+
+        let grammar = grammar();
+        let source = SourceText::from("def one = 1 ;\ndef two = 2 ;\ndef three = 3 ;\n");
+        let lowered = || {
+            let Lowered::Module { module, arena } =
+                lower_source(&grammar, source, &mut LoweringCount::default())
+                    .expect("the module lowers")
+                    .into_lowered()
+            else {
+                panic!("the module is read");
+            };
+            (module, arena)
+        };
+        let base = ByteOffset::from(0_usize);
+        let judged = |at| {
+            let poll = RetireAt {
+                at,
+                readings: core::cell::Cell::new(0),
+            };
+            let (module, arena) = lowered();
+            let answer = judge_member_after_retiring(
+                CorpusRoot::Strict,
+                (module, source),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                base,
+                &poll,
+            );
+            (answer, poll.readings.get())
+        };
+        let (second, read) = judged(2);
+        assert!(
+            matches!(second, Polled::Retired((), ())),
+            "the poll before the second declaration retires the judgement"
+        );
+        assert_eq!(read, 2, "and the third declaration is never polled for");
+        let (settling, read) = judged(4);
+        assert!(
+            matches!(settling, Polled::Retired((), ())),
+            "the poll after the last declaration retires it before the settle"
+        );
+        assert_eq!(read, 4, "the fourth reading is the settle's");
+        let (never, read) = judged(5);
+        let Polled::Whole(polled) = never
+        else {
+            panic!("a poll never retired answers whole");
+        };
+        assert_eq!(
+            read, 4,
+            "polled once before each of the three declarations and once before the settle"
+        );
+        assert!(
+            matches!(polled.settled, Ok(Composed::Settled { .. })),
+            "the module settles"
+        );
+        let (module, arena) = lowered();
+        let whole = judge_member_after(
+            CorpusRoot::Strict,
+            (module, source),
+            arena,
+            (&HostGrant::UNBOUNDED, Checking::Whole),
+            base,
+        );
+        assert_eq!(
+            polled.settled, whole.settled,
+            "and answers what the judgement nobody polls answers"
+        );
+
+        let unit = alone();
+        let tabled = |at| {
+            let poll = RetireAt {
+                at,
+                readings: core::cell::Cell::new(0),
+            };
+            let (module, arena) = lowered();
+            let answer = judge_member_tabled_retiring(
+                CorpusRoot::Strict,
+                (module, source),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                (&unit, base),
+                &poll,
+            );
+            (answer, poll.readings.get())
+        };
+        let (second, read) = tabled(2);
+        assert!(
+            matches!(second, Polled::Retired((), ())) && read == 2,
+            "the tabled judgement is retired alike"
+        );
+        let (never, read) = tabled(5);
+        let Polled::Whole((polled, polled_table)) = never
+        else {
+            panic!("a tabled judgement never retired answers whole");
+        };
+        assert_eq!(read, 4, "and is polled as the untabled one is");
+        assert!(
+            matches!(polled_table, Maybe::Present(_)),
+            "its table is made"
+        );
+        let (module, arena) = lowered();
+        let (whole, whole_table) = judge_member_tabled(
+            CorpusRoot::Strict,
+            (module, source),
+            arena,
+            (&HostGrant::UNBOUNDED, Checking::Whole),
+            (&unit, base),
+        );
+        assert_eq!(
+            (polled.settled, polled_table),
+            (whole.settled, whole_table),
+            "and answers what the tabled judgement nobody polls answers"
         );
     }
 }
