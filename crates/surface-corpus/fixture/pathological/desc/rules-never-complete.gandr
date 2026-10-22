@@ -16,3 +16,17 @@ theory Extrusion {
   rule gc : nu(nil()) ==> nil();
   rule scope : par(nu(p), q) ==> nu(par(p, q));
 }
+
+/// The same restriction abstracting its atom: each derived rule wraps the
+/// last one under the abstraction, and the block is refused by name as the
+/// first-order one is, not once its budget runs out (#1917).
+@[ refuses("RulesNeverComplete") ]
+theory Restriction {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule gc : nu(bind a . nil()) ==> nil();
+  rule scope : par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where a # q;
+}
