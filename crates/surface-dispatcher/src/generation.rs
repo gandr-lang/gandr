@@ -96,7 +96,19 @@ impl fmt::Display for Retired
     /// Name the retirement.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the text names the newer submission that retired the job.
+    /// - fails: what the formatter fails with.
+    /// - panics: none.
+    /// - executable: none — the text goes to the formatter, which the contract
+    ///   cannot read back; the witness reads the written text.
+    ///
+    /// # Errors
+    /// The formatter's error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the one text is pinned.
+    /// - witness: `generation::tests::a_watch_reads_its_generation_s_retirement`
     #[inline]
     fn fmt(
         &self,
@@ -139,8 +151,10 @@ impl Watch
     /// Returns [`Retired`] once the job's generation is retired.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Watch`].
-    /// - witness: `generation::tests::a_conflicting_submission_retires_the_older_generation`
+    /// - hypothesis: L3 — a job's watch stands until a submission under another
+    ///   key follows it, and stays retired after; the witness polls once on
+    ///   each side, where a job polling in a loop would never end.
+    /// - witness: `generation::tests::a_watch_reads_its_generation_s_retirement`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok() || self.0.load(Ordering::Acquire))]
     pub fn poll(&self) -> Result<(), Retired>
@@ -578,6 +592,7 @@ mod tests
 
     use super::Delivered;
     use super::Generations;
+    use super::Retired;
     use super::Submitted;
     use super::delivery;
     use crate::pool::Pool;
@@ -805,6 +820,32 @@ mod tests
         assert!(
             matches!(generations.wait(), Maybe::Absent(delivery::Absent::Idle)),
             "the retired slot's job stopped and delivered nothing"
+        );
+    }
+
+    #[test]
+    fn a_watch_reads_its_generation_s_retirement()
+    {
+        let pool = four();
+        let mut generations: Generations<'_, &'static str, u32, u32> = Generations::new(&pool);
+        let (open, gate) = mpsc::channel::<()>();
+        let (polled, polls) = mpsc::channel();
+        generations.submit("a", 1, move |watch| {
+            polled.send(watch.poll()).unwrap();
+            gate.recv().unwrap();
+            polled.send(watch.poll()).unwrap();
+            polled.send(watch.poll()).unwrap();
+            Ok(10)
+        });
+        assert_eq!(polls.recv().unwrap(), Ok(()), "a current generation stands");
+        generations.submit("a", 2, |_| Ok(20));
+        open.send(()).unwrap();
+        let retired = polls.recv().unwrap();
+        assert_eq!(retired, Err(Retired), "a newer key retires the generation");
+        assert_eq!(polls.recv().unwrap(), Err(Retired), "and it stays retired");
+        assert_eq!(
+            retired.map_err(|retired| retired.to_string()),
+            Err(String::from("retired by a newer submission for its slot"))
         );
     }
 }
