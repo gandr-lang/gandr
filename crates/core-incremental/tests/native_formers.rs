@@ -446,6 +446,103 @@ fn a_path_product_resumes_to_its_native_path()
     );
 }
 
+/// The swap of the booleans, the equivalence it is with itself, and under the
+/// item key `last` a product of reflexivity at the unit beside that
+/// equivalence, read through its constant.
+///
+/// # Specification
+/// - ensures: three signed declarations; the product reads the equivalence's
+///   decision through the constant that names it.
+/// - panics: only if the ordered fixture is rejected by the program container.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the product checks freshly and, judged again under a new
+///   key, after the equivalence resumes.
+/// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
+#[spec(ensures: |ret| ret.items().len() == 3)]
+fn equivalences(last: ItemKey) -> Program
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit, unit]);
+    let returner = arena.comp_type_returner(boolean);
+    let arrow = arena.comp_type_arrow(boolean, returner);
+    let translator = arena.value_type_thunk(arrow);
+    let swap = tabulate(
+        &mut arena,
+        &Table::new([1_usize, 0].into_iter().map(ElementIndex::from).collect()),
+    );
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let identity = |arena: &mut CoreArena, code| {
+        let code = arena.value_quote(code);
+        arena.value_type_path(universe, code, code)
+    };
+    let flipping = identity(&mut arena, boolean);
+    let pair = arena.value_type_product(&[unit, boolean]);
+    let pairing = identity(&mut arena, pair);
+    let swapped = arena.value_constant(ConstantIndex::from(0_usize));
+    let equivalence = arena.value_equiv(swapped, swapped);
+    let unit_code = arena.value_quote(unit);
+    let here = arena.value_here(unit_code);
+    let named = arena.value_constant(ConstantIndex::from(1_usize));
+    let paired = arena.value_path_product(here, named);
+    let items = [
+        (ItemKey::from("swap"), translator, swap),
+        (ItemKey::from("flipped"), flipping, equivalence),
+        (last, pairing, paired),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (key, declared, body))| {
+        Item::new(
+            key,
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(declared),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            ),
+        )
+    })
+    .collect();
+    Program::new(arena, items).expect("fixture positions ascend")
+}
+
+#[test]
+fn an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752()
+{
+    let original = check_program(
+        &mut equivalences(ItemKey::from("paired")),
+        CheckBudget::DEFAULT,
+    )
+    .expect("the initial pass succeeds");
+    let checkpoints = original.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .all(|item| matches!(item.typing(), Typing::Checked { .. })),
+        "the swap, its equivalence and the product check: {checkpoints:?}"
+    );
+    let renamed = resume_from(checkpoints, &mut equivalences(ItemKey::from("again")))
+        .expect("the equivalence resumes under a renamed product");
+    let fresh = check_program(
+        &mut equivalences(ItemKey::from("again")),
+        CheckBudget::DEFAULT,
+    )
+    .expect("fresh checking succeeds");
+    assert_eq!(
+        renamed.checkpoints(),
+        fresh.checkpoints(),
+        "a product after a resumed equivalence reads its decision, as a fresh check does"
+    );
+    assert_eq!(
+        renamed.adoptions(),
+        [Adoption::Adopted, Adoption::Judged, Adoption::Judged],
+        "an equivalence is judged again for its decision; the renamed item has no checkpoint"
+    );
+}
+
 /// The order a stream declares its observations in.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Observed
