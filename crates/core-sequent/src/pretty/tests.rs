@@ -576,6 +576,22 @@ fn structural_rendering_preserves_fields_arms_and_separators()
             ConstructorTag::Lift(Level::zero()),
             "case {lift(x) ⇒ ⟨() |+ ★⟩}",
         ),
+        (ConstructorTag::ListNil, "case {nil ⇒ ⟨() |+ ★⟩}"),
+        (ConstructorTag::ListCons, "case {cons(x, x) ⇒ ⟨() |+ ★⟩}"),
+        (
+            ConstructorTag::Recorded(alloc::sync::Arc::from([
+                gandr_core_term::session::RecordedMove::Sent(()),
+                gandr_core_term::session::RecordedMove::Selected(
+                    gandr_kernel_term::FieldLabel::from(String::from("l")),
+                ),
+                gandr_core_term::session::RecordedMove::Offered(
+                    gandr_kernel_term::FieldLabel::from(String::from("m")),
+                ),
+                gandr_core_term::session::RecordedMove::Received(()),
+                gandr_core_term::session::RecordedMove::Closed,
+            ])),
+            "case {recorded[sent, selected(l), offered(m), received, closed](x, x) ⇒ ⟨() |+ ★⟩}",
+        ),
     ] {
         let matcher = arena
             .mint_consumer(ConsumerNode::Case {
@@ -663,4 +679,289 @@ fn literal_spelling_preserves_fraction_and_escaped_content()
             .expect("leaf");
         assert_eq!(expected, render_producer(&arena, producer));
     }
+}
+
+/// Every effect, control and memory command renders in its notation: a
+/// request by the nearest handler and through a capability, both handlers,
+/// the stack's resumption and abandonment, the delimiters, and each memory
+/// form at each grade, mode and place.
+#[test]
+fn renders_effect_control_and_memory_commands()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::memory::AccessMode;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::memory::Place;
+
+    use crate::il::Introduces;
+    use crate::il::Route;
+
+    let mut arena = CommandArena::new();
+    let value = arena
+        .mint_producer(ProducerNode::Constructor {
+            tag: ConstructorTag::Tuple(ProducerArity::ZERO),
+            producers: Box::from([]),
+            consumers: Box::from([]),
+        })
+        .expect("a leaf mints");
+    let capability = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: 0_u32.into(),
+        })
+        .expect("a leaf mints");
+    let top = arena
+        .mint_consumer(ConsumerNode::Top)
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, value, top)
+        .expect("children resolve");
+    let ty = arena.annotations_mut().value_type_unit();
+    let signature = EffectSig::new("E".into(), [EffectOp {
+        name: "op".into(),
+        payload: ty,
+        reply: ty,
+    }])
+    .expect("one operation");
+    let held = DeBruijnIndex::from(0_u32);
+    let commands = [
+        CommandNode::Perform {
+            signature: signature.clone(),
+            operation: "op".into(),
+            route: Route::Nearest,
+            payload: value,
+            continuation: top,
+        },
+        CommandNode::Perform {
+            signature: signature.clone(),
+            operation: "op".into(),
+            route: Route::Capability(capability),
+            payload: value,
+            continuation: top,
+        },
+        CommandNode::Handle {
+            signature: signature.clone(),
+            introduces: Introduces::Nothing,
+            subject: body,
+            on_return: body,
+            clauses: alloc::sync::Arc::from([EffectClause {
+                operation: "op".into(),
+                body,
+            }]),
+            continuation: top,
+        },
+        CommandNode::Handle {
+            signature,
+            introduces: Introduces::Capability,
+            subject: body,
+            on_return: body,
+            clauses: alloc::sync::Arc::from([]),
+            continuation: top,
+        },
+        CommandNode::Resume {
+            stack: capability,
+            body,
+            continuation: top,
+        },
+        CommandNode::Abandon {
+            stack: capability,
+            continuation: top,
+        },
+        CommandNode::Reset {
+            body,
+            continuation: top,
+        },
+        CommandNode::Shift {
+            body,
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Hold {
+                value,
+                body,
+                grade: HoldGrade::Many,
+            },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Hold {
+                value,
+                body,
+                grade: HoldGrade::One,
+            },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Access {
+                mode: AccessMode::Exclusive { unwind: body },
+                held,
+                place: Place::At { index: value },
+                body,
+            },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Access {
+                mode: AccessMode::Shared,
+                held,
+                place: Place::Whole,
+                body,
+            },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Resume { view: held, value },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Abort { view: held },
+            continuation: top,
+        },
+        CommandNode::Memory {
+            form: MemoryForm::Consume { held },
+            continuation: top,
+        },
+    ];
+    let rendered: Vec<String> = commands
+        .into_iter()
+        .map(|command| {
+            let id = arena.mint_command(command).expect("children resolve");
+            render_command(&arena, id)
+        })
+        .collect();
+    assert_eq!(rendered, [
+        "perform \"E\".\"op\"((); ★)",
+        "exercise x0 \"E\".\"op\"((); ★)",
+        "handle \"E\" { ⟨() |+ ★⟩ | return(x; α) ⇒ ⟨() |+ ★⟩ | \"op\"(payload, k; α) ⇒ ⟨() |+ \
+         ★⟩ }; ★",
+        "scope \"E\" { (c) ⇒ ⟨() |+ ★⟩ | return(x; α) ⇒ ⟨() |+ ★⟩ }; ★",
+        "resume(x0; ⟨() |+ ★⟩; ★)",
+        "abandon(x0; ★)",
+        "reset(⟨() |+ ★⟩; ★)",
+        "shift(k; ⟨() |+ ★⟩; ★)",
+        "hold((); (l; α) ⇒ ⟨() |+ ★⟩; ★)",
+        "hold[1]((); (l; α) ⇒ ⟨() |+ ★⟩; ★)",
+        "access(l0[()]; (l; α) ⇒ ⟨() |+ ★⟩ | unwind(α) ⇒ ⟨() |+ ★⟩; ★)",
+        "access_shared(l0; (l; α) ⇒ ⟨() |+ ★⟩; ★)",
+        "writeback(l0, (); ★)",
+        "abort(l0; ★)",
+        "consume(l0; ★)",
+    ]);
+}
+
+/// The remaining heads render in their notation: a reified stack's three
+/// frames, a primitive, a constant, a fixpoint staged at a position, the
+/// force and projection arms of a copattern object, a recorded run, a list
+/// fold and the projection and force destructors.
+#[test]
+fn renders_frames_primitives_folds_and_projections()
+{
+    use gandr_core_term::control::StackFrame;
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::FixpointEvidence;
+    use gandr_kernel_term::StagedPosition;
+
+    let mut arena = CommandArena::new();
+    let value = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: 0_u32.into(),
+        })
+        .expect("a leaf mints");
+    let top = arena
+        .mint_consumer(ConsumerNode::Top)
+        .expect("a leaf mints");
+    let body = arena
+        .mint_cut(Polarity::Positive, value, top)
+        .expect("children resolve");
+    let unary = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.arguments().len() == 1)
+        .expect("a unary primitive");
+    let producers = [
+        ProducerNode::Reify(alloc::sync::Arc::from([
+            StackFrame::Apply(value),
+            StackFrame::Bind(body),
+            StackFrame::Project(Component::from(1_usize)),
+        ])),
+        ProducerNode::Primitive {
+            primitive: unary,
+            arguments: Arguments::Unary(value),
+        },
+        ProducerNode::Constant(ConstantIndex::from(7_usize)),
+        ProducerNode::Fixpoint {
+            body,
+            evidence: FixpointEvidence::Staged {
+                position: StagedPosition::from(2_usize),
+            },
+        },
+        ProducerNode::Cocase {
+            arms: Box::from([
+                CopatternArm {
+                    destructor: DestructorTag::Force,
+                    body,
+                },
+                CopatternArm {
+                    destructor: DestructorTag::Project(Component::from(1_usize)),
+                    body,
+                },
+            ]),
+        },
+        ProducerNode::Constructor {
+            tag: ConstructorTag::Recorded(alloc::sync::Arc::from([
+                gandr_core_term::session::RecordedMove::Sent(()),
+                gandr_core_term::session::RecordedMove::Closed,
+            ])),
+            producers: Box::from([value]),
+            consumers: Box::from([]),
+        },
+    ]
+    .map(|node| {
+        let id = arena.mint_producer(node).expect("children resolve");
+        render_producer(&arena, id)
+    });
+    assert_eq!(producers, [
+        "reify [apply(x0); bind(x; α) ⇒ ⟨x0 |+ ★⟩; project[1]]",
+        "prim.id(x0)",
+        "c7",
+        "fix[<2]{x; force(α) ⇒ ⟨x0 |+ ★⟩}",
+        "cocase {force(α) ⇒ ⟨x0 |+ ★⟩ | project[1](α) ⇒ ⟨x0 |+ ★⟩}",
+        "recorded[sent, closed](x0)",
+    ]);
+    let element = arena.annotations_mut().value_type_unit();
+    let consumers = [
+        ConsumerNode::ListFold {
+            element,
+            result: element,
+            on_nil: body,
+            on_cons: body,
+            continuation: top,
+        },
+        ConsumerNode::Destructor {
+            tag: DestructorTag::Project(Component::from(1_usize)),
+            producers: Box::from([]),
+            consumers: Box::from([top]),
+        },
+        ConsumerNode::Destructor {
+            tag: DestructorTag::Force,
+            producers: Box::from([]),
+            consumers: Box::from([top]),
+        },
+    ]
+    .map(|node| {
+        let id = arena.mint_consumer(node).expect("children resolve");
+        render_consumer(&arena, id)
+    });
+    assert_eq!(consumers, [
+        "fold {nil ⇒ ⟨x0 |+ ★⟩ | cons(head, result) ⇒ ⟨x0 |+ ★⟩}; ★",
+        "project[1](★)",
+        "force(★)",
+    ]);
 }

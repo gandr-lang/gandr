@@ -154,3 +154,104 @@ fn histograms_count_repeated_origins_without_inventing_categories()
     let shown = dump(&arena, &provenance, root);
     assert!(shown.starts_with("root [force]: ⟨{force(α) ⇒ ⟨() |+ α0⟩} |+ force(★)⟩\n"));
 }
+
+/// Every origin focusing records is named in the dump's head: the root of
+/// each control, memory and pure former, and a declaration's value.
+#[test]
+fn dumps_name_every_origin()
+{
+    use gandr_core_term::Zone;
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::memory::HoldGrade;
+    use gandr_core_term::memory::MemoryForm;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let ty = core.value_type_unit();
+    let signature = EffectSig::new("E".into(), [EffectOp {
+        name: "op".into(),
+        payload: ty,
+        reply: ty,
+    }])
+    .expect("one operation");
+    let returned = core.computation_return(unit);
+    let clauses = alloc::sync::Arc::from([EffectClause {
+        operation: "op".into(),
+        body: returned,
+    }]);
+    let performed = core.computation_perform(signature.clone(), "op".into(), unit);
+    let handled = core.computation_handle(
+        signature.clone(),
+        performed,
+        returned,
+        alloc::sync::Arc::clone(&clauses),
+    );
+    let exercised = core.computation_exercise(zero, signature.clone(), "op".into(), unit);
+    let scoped = core.computation_scope(signature, returned, returned, clauses);
+    let resumed = core.computation_resume(zero, returned);
+    let abandoned = core.computation_abandon(zero);
+    let shifted = core.computation_shift(returned);
+    let reset = core.computation_reset(returned);
+    let with = core.computation_with(&[returned, returned]);
+    let thunk = core.value_thunk(returned);
+    let forced = core.computation_force(thunk);
+    let fixed = core.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);
+    let lambda = core.computation_lambda(returned);
+    let pair = core.value_tuple(&[unit, unit]);
+    let split = core.computation_split(pair, 2_usize.into(), returned);
+    let projected = core.computation_tuple_projection(pair, 1_usize.into());
+    let nil = core.value_list_nil();
+    let folded = core.computation_list_fold(ty, ty, nil, returned, returned);
+    let function = core.computation_lambda(returned);
+    let bound = core.computation_bind(returned, function);
+    let bound = core.computation_application(bound, unit);
+    let held = core.computation_memory(MemoryForm::Hold {
+        value: unit,
+        body: returned,
+        grade: HoldGrade::Many,
+    });
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let mut heads: alloc::vec::Vec<alloc::string::String> = [
+        performed, handled, exercised, scoped, resumed, abandoned, reset, shifted, with, returned,
+        forced, fixed, lambda, split, projected, folded, bound, held,
+    ]
+    .into_iter()
+    .map(|computation| {
+        let root = focus_computation(&core, computation, &mut arena, &mut provenance)
+            .expect("each former focuses");
+        dump(&arena, &provenance, root)
+    })
+    .collect();
+    let top = crate::focus::focus_top_value(&core, unit, &mut arena, &mut provenance)
+        .expect("a closed value focuses");
+    heads.push(dump(&arena, &provenance, top));
+    let heads: alloc::vec::Vec<&str> = heads
+        .iter()
+        .map(|shown| shown.split_once(": ").map_or("", |(head, _)| head))
+        .collect();
+    assert_eq!(heads, [
+        "root [perform]",
+        "root [handle]",
+        "root [exercise]",
+        "root [scope]",
+        "root [resume]",
+        "root [abandon]",
+        "root [reset]",
+        "root [shift]",
+        "root [with]",
+        "root [return]",
+        "root [force]",
+        "root [fixpoint]",
+        "root [lambda]",
+        "root [case]",
+        "root [projection]",
+        "root [list-fold]",
+        "root [bind]",
+        "root [memory]",
+        "root [top-value]",
+    ]);
+}

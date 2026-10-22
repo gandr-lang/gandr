@@ -286,6 +286,7 @@ impl Ownership
     /// - witness: `ownership::tests::an_ignored_binder_is_dropped_on_entry`
     /// - witness: `ownership::tests::an_arm_drops_what_its_sibling_uses`
     /// - witness: `ownership::tests::a_kept_body_duplicates_its_captures_on_entry`
+    /// - witness: `ownership::tests::a_reified_bind_body_is_kept`
     /// - witness: `ownership::tests::a_linear_name_is_never_counted`
     /// - witness: `ownership::tests::a_nullary_match_reuses_nothing`
     /// - witness: `ownership::tests::a_branch_rebuilding_its_scrutinee_reuses_the_cell`
