@@ -3315,7 +3315,10 @@ impl TypeTable
     ///   a type of words as the path at its point, a session type by its
     ///   protocol's behaviour from its state; [`RoundTrip::Different`]
     ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
-    ///   lowering refused a closed signature or the whole source.
+    ///   lowering refused a closed signature or the whole source. Each type
+    ///   read is printed again under the same binders, with the names, labels
+    ///   and relations the reread recorded for it, standing also at every copy
+    ///   the put-back binders made of it.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -3332,6 +3335,7 @@ impl TypeTable
     ///   printed type of every source, failing on a class the findings do not
     ///   pin.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+    /// - witness: `typed::tests::a_record_parameter_reprints_with_its_labels_1655`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
@@ -3616,15 +3620,29 @@ impl TypeTable
             *read = last_parameter(&mut arena, declared, count, &mut carried)
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
-        // A type the lowering recorded as written as a relation stands at each
-        // copy a shift made of it, so a type read under a dropped binder
-        // reprints as written (#674). The copies are taken in the order the
-        // shifts made them, so a copy of a copy finds its source's relation;
-        // a type recorded twice keeps its first relation.
+        // A type the lowering recorded as written as a relation, or a pair it
+        // recorded labels for, stands at each copy a shift made of it, so a
+        // type read under a dropped binder reprints as written (#674, #1655).
+        // The copies are taken in the order the shifts made them, so a copy
+        // of a copy finds its source's; a type recorded twice keeps its first.
         let mut related: BTreeMap<ValueTypeId, Relation> = BTreeMap::new();
         for &(ty, relation) in &read_back.relations {
             related.entry(ty).or_insert(relation);
         }
+        // Each pair's first recorded label, by its place among the kept ones;
+        // a copy stands at its source's place, so a copy of a copy reaches
+        // the label recorded for the first.
+        let first = |kept: &[(ValueTypeId, String)]| -> BTreeMap<ValueTypeId, usize> {
+            let mut first = BTreeMap::new();
+            for (at, &(pair, _)) in kept.iter().enumerate() {
+                first.entry(pair).or_insert(at);
+            }
+            first
+        };
+        let mut binders = first(&read_back.pairs);
+        let mut seconds = first(&read_back.seconds);
+        let mut copied_binders: Vec<(ValueTypeId, usize)> = Vec::new();
+        let mut copied_seconds: Vec<(ValueTypeId, usize)> = Vec::new();
         for copy in carried {
             let Carried::ValueType(source, image) = copy
             else {
@@ -3634,6 +3652,27 @@ impl TypeTable
                 read_back.relations.push((image, relation));
                 related.entry(image).or_insert(relation);
             }
+            for (labels, copied) in [
+                (&mut binders, &mut copied_binders),
+                (&mut seconds, &mut copied_seconds),
+            ] {
+                if let Some(&at) = labels.get(&source) {
+                    let _first = labels.entry(image).or_insert(at);
+                    copied.push((image, at));
+                }
+            }
+        }
+        for (copied, kept) in [
+            (copied_binders, &mut read_back.pairs),
+            (copied_seconds, &mut read_back.seconds),
+        ] {
+            let labelled: Vec<(ValueTypeId, String)> = copied
+                .into_iter()
+                .filter_map(|(image, at)| {
+                    kept.get(at).map(|&(_, ref label)| (image, label.clone()))
+                })
+                .collect();
+            kept.extend(labelled);
         }
         printed
             .into_iter()
@@ -7090,6 +7129,40 @@ mod tests
         assert!(
             !record.is_empty() && record.iter().all(|&trip| *trip == RoundTrip::Equal),
             "the record whose dependency reads away reads back as its type: {trips:?}"
+        );
+    }
+
+    /// #1655: a dependent record a parameter is typed by, read back under the
+    /// parameter before it, reprints with the labels it was written and
+    /// printed with: the copy the read-back shifts under that parameter keeps
+    /// the labels the reread recorded.
+    #[test]
+    fn a_record_parameter_reprints_with_its_labels_1655()
+    {
+        let source = SourceText::from(
+            "def againAt(\n  b : Type,\n  w : #{ x : b, y : b, p : Path(b, x, y) }\n) -> -F \
+             Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {\n  here(w)\n}\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.reprinted))
+            .collect();
+        let record = "#{x : b, y : #{y : b, p : Path(b, x, y)}}";
+        assert!(
+            reads.iter().any(|&(ref spelled, _)| spelled == record),
+            "the record prints with its labels: {reads:?}"
+        );
+        assert!(
+            reads.iter().all(|&(ref spelled, ref again)| match *again {
+                Maybe::Present(ref again) => again == spelled,
+                Maybe::Absent(super::reprinted::Absent::Unspelled) => false,
+                Maybe::Absent(
+                    super::reprinted::Absent::Unlowered | super::reprinted::Absent::Unrun,
+                ) => true,
+            }),
+            "every printed type that lowers again reprints as itself: {reads:?}"
         );
     }
 
