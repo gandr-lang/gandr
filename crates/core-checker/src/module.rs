@@ -167,6 +167,10 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
+use crate::retire::Demand;
+use crate::retire::Polled;
+use crate::retire::Retirement;
+use crate::retire::Unretired;
 use crate::seal::SealTable;
 use crate::support::Supported;
 use crate::worlds::Entry;
@@ -1756,11 +1760,57 @@ impl ModuleRun
         &mut self,
         context: &mut CheckingContext<'_>,
         declarations: &[Declaration],
-        mut settle: Settle,
+        settle: Settle,
     ) where
         Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
     {
+        self.judge_retiring(context, declarations, settle, &Unretired)
+            .whole();
+    }
+
+    /// Judge `declarations` as [`judge`](Self::judge) does, polling
+    /// `retirement` before each of them.
+    ///
+    /// # Specification
+    /// - requires: as [`judge`](Self::judge).
+    /// - ensures: [`Polled::Whole`] when every poll answered wanted, the run
+    ///   then as [`judge`](Self::judge) leaves it; otherwise
+    ///   [`Polled::Retired`] with what the first poll to answer retired named,
+    ///   the declarations before that poll judged and none from it on.
+    ///   `retirement` is polled once before each declaration judged, and once
+    ///   more when it retires the run.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run polled to retirement before its second
+    ///   declaration judges the first alone, and the run nobody retires judges
+    ///   as [`judge`](Self::judge) does.
+    /// - witness: `module::tests::a_retired_run_judges_nothing_after_its_poll_1663`
+    #[spec(
+        captures: before = self.judged.len(),
+        ensures: |ret| if matches!(ret, Polled::Whole(())) {
+            self.judged.len() == before.saturating_add(declarations.len())
+        } else {
+            self.judged.len() < before.saturating_add(declarations.len())
+        },
+    )]
+    #[inline]
+    pub fn judge_retiring<Settle, Poll>(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+        declarations: &[Declaration],
+        mut settle: Settle,
+        retirement: &Poll,
+    ) -> Polled<(), Poll::Retired, ()>
+    where
+        Settle: FnMut(&mut CheckingContext<'_>, &Declaration, Verdict),
+        Poll: Retirement,
+    {
         for (index, declaration) in declarations.iter().enumerate() {
+            if let Demand::Retired(retired) = retirement.demand() {
+                return Polled::Retired(retired, ());
+            }
             let was = self.open;
             schedule(
                 context,
@@ -1815,6 +1865,7 @@ impl ModuleRun
                 verdict: decision.verdict,
             });
         }
+        Polled::Whole(())
     }
 
     /// Keep, from here on, what [`type_module`] keeps of each declaration

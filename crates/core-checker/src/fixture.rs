@@ -40,6 +40,8 @@ use crate::context::CheckingContext;
 use crate::formation::form_value_type;
 use crate::refusal::CheckRefusal;
 use crate::refusal::TypeNode;
+use crate::retire::Demand;
+use crate::retire::Retirement;
 
 /// Whether two runs of the judgement over one term refused it alike. A rule
 /// that mints a type as it judges mints it again in the second run, so a
@@ -1377,6 +1379,51 @@ pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
                 returned: Position(returned),
             },
         )
+}
+
+/// A poll that retires the work at its `at`th reading, counting every reading.
+#[derive(Debug)]
+pub struct RetireAt
+{
+    /// The reading that retires the work, counted from one.
+    pub at: usize,
+    /// How many times the work has been polled.
+    pub readings: core::cell::Cell<usize>,
+}
+
+impl Retirement for RetireAt
+{
+    type Retired = ();
+
+    /// Wanted until the `at`th reading, retired from it on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more reading counted; [`Demand::Retired`] once the count
+    ///   reaches `at`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses count the readings a readmission and a
+    ///   run made.
+    /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+    /// - witness: `module::tests::a_retired_run_judges_nothing_after_its_poll_1663`
+    #[spec(
+        captures: before = self.readings.get(),
+        ensures: |ret| self.readings.get() == before.saturating_add(1)
+            && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
+    )]
+    fn demand(&self) -> Demand<()>
+    {
+        let reading = self.readings.get().saturating_add(1);
+        self.readings.set(reading);
+        if reading >= self.at {
+            Demand::Retired(())
+        }
+        else {
+            Demand::Wanted
+        }
+    }
 }
 
 #[cfg(test)]
