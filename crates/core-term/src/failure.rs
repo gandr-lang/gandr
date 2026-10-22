@@ -87,9 +87,6 @@ impl TrackingIssue
     pub const THUNK_GRADE: Self = Self(1112);
     /// Delegation: an endpoint sent over another endpoint.
     pub const DELEGATION: Self = Self(1167);
-    /// A form the fragment refuses under a name that covers several features,
-    /// which names its own issue once its refusal is split by feature.
-    pub const UNSPLIT: Self = Self(1200);
     /// An unimplemented form or member whose feature no issue of its own
     /// tracks yet: the epic files one for it once a source reaches it.
     pub const UNFILED: Self = Self(1207);
@@ -152,6 +149,26 @@ impl TrackingIssue
     /// An annotation, `(e : T)`, read as a value where no ascription carries
     /// it.
     pub const ANNOTATION_VALUE: Self = Self(1543);
+    /// A declaration with effects or control, which the pure kernel does not
+    /// replay.
+    pub const KERNEL_EFFECTS: Self = Self(1624);
+    /// A declaration naming a capability, which the kernel does not replay.
+    pub const KERNEL_CAPABILITY: Self = Self(1625);
+    /// A declaration holding memory or a buffer, which the kernel does not
+    /// replay.
+    pub const KERNEL_MEMORY: Self = Self(1626);
+    /// A declaration naming a run, a recorded run or a ride, which the kernel
+    /// does not replay.
+    pub const KERNEL_RUN: Self = Self(1627);
+    /// A flow above level zero, which the kernel does not replay.
+    pub const KERNEL_HIGHER_FLOW: Self = Self(1628);
+    /// A sealed abstract type, which the kernel does not replay.
+    pub const KERNEL_ABSTRACT: Self = Self(1629);
+    /// A static lambda the readmission cannot normalise away, which the kernel
+    /// does not replay.
+    pub const KERNEL_STATIC_LAMBDA: Self = Self(1630);
+    /// A staged type in a term, which the kernel does not replay.
+    pub const KERNEL_STAGE: Self = Self(1631);
 
     /// The issue's page.
     ///

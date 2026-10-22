@@ -69,6 +69,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::Sort;
 use gandr_core_term::SortParameter;
+use gandr_core_term::TrackingIssue;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -4885,4 +4886,109 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
         }),
         "a rule naming an uncrossed declaration is withheld with its definition"
     );
+}
+
+#[test]
+fn each_former_the_kernel_refuses_names_its_issue()
+{
+    let mut arena = CoreArena::new();
+    let at = CoreNode::Term(TermNode::Value(arena.value_unit()));
+    let tracked = FailureClass::Unimplemented;
+    let rows = [
+        (
+            UnadmittedFormer::EffectRow,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Reify,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Stack,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Perform,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Handle,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Resume,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Reset,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Shift,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Abandon,
+            tracked(TrackingIssue::KERNEL_EFFECTS),
+        ),
+        (
+            UnadmittedFormer::Capability,
+            tracked(TrackingIssue::KERNEL_CAPABILITY),
+        ),
+        (
+            UnadmittedFormer::Exercise,
+            tracked(TrackingIssue::KERNEL_CAPABILITY),
+        ),
+        (
+            UnadmittedFormer::Scope,
+            tracked(TrackingIssue::KERNEL_CAPABILITY),
+        ),
+        (
+            UnadmittedFormer::Memory,
+            tracked(TrackingIssue::KERNEL_MEMORY),
+        ),
+        (
+            UnadmittedFormer::Buffer,
+            tracked(TrackingIssue::KERNEL_MEMORY),
+        ),
+        (UnadmittedFormer::Run, tracked(TrackingIssue::KERNEL_RUN)),
+        (
+            UnadmittedFormer::HigherFlow,
+            tracked(TrackingIssue::KERNEL_HIGHER_FLOW),
+        ),
+        (
+            UnadmittedFormer::Abstract,
+            tracked(TrackingIssue::KERNEL_ABSTRACT),
+        ),
+        (
+            UnadmittedFormer::StaticLambda,
+            tracked(TrackingIssue::KERNEL_STATIC_LAMBDA),
+        ),
+        (
+            UnadmittedFormer::Stage,
+            tracked(TrackingIssue::KERNEL_STAGE),
+        ),
+        (
+            UnadmittedFormer::NumericLiteral,
+            tracked(TrackingIssue::UNFILED),
+        ),
+        (
+            UnadmittedFormer::NumericAtom,
+            tracked(TrackingIssue::UNFILED),
+        ),
+        (UnadmittedFormer::ValueLift, tracked(TrackingIssue::UNFILED)),
+        (
+            UnadmittedFormer::SortParameter,
+            tracked(TrackingIssue::UNFILED),
+        ),
+        (UnadmittedFormer::TopUniverse, FailureClass::EngineFault),
+        (UnadmittedFormer::TypeLift, FailureClass::EngineFault),
+    ];
+    for (former, class) in rows {
+        assert_eq!(
+            Refusal::OutOfFragment { at, former }.classify(),
+            class,
+            "the bridge's refusal of {former:?}"
+        );
+    }
 }
