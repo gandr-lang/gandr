@@ -8,14 +8,22 @@
 //! reviewer sees. The innermost root directory a source sits under decides.
 //!
 //! `classify` decides a source's root from the directories containing it, never
-//! from its own name or text: the innermost directory named `strict` or
-//! `fixture` decides, a directory named `pending` directly inside a `fixture`
+//! from its own name or text: the innermost directory named `strict`, `fixture`
+//! or `ledger` decides, a directory named `pending` directly inside a `fixture`
 //! directory marks the pending set, and a path under none of them is strict.
 //! The walk classifies each source by its canonical path, so a relative path
 //! and a symbolic link to the same directory classify alike. The strict root
 //! settles under `CorpusRoot::Strict`, where `owes` and `refuses` are
 //! themselves refusals; the fixture root and the pending set settle under
 //! `CorpusRoot::Fixture`.
+//!
+//! A `ledger` directory is a fixture root because the ledgers' exemplars
+//! show the surface as the checker meets it today: an exemplar of a form the
+//! checker does not reach yet states the refusal it meets, and that
+//! expectation breaks when the checker grows to reach it. The alternative was a
+//! `fixture` directory inside the ledger, a second name for one place. The
+//! choice reverses if a project's own `ledger` directory must be strict, at
+//! which point the configured mapping below replaces the names.
 //!
 //! The alternative was a root named on the command line, which lets one
 //! invocation run a fixture source as strict. The choice reverses if a
@@ -51,6 +59,9 @@ const STRICT: &str = "strict";
 /// The directory name of the fixture root.
 const FIXTURE: &str = "fixture";
 
+/// The directory name of the ledgers, a fixture root of its own.
+const LEDGER: &str = "ledger";
+
 /// The directory name of the pending set, directly inside a fixture root.
 const PENDING: &str = "pending";
 
@@ -62,8 +73,8 @@ pub enum SourceRoot
     /// is held to *checks, owing nothing*, and `owes` and `refuses` are
     /// refused.
     Strict,
-    /// Under a `fixture` directory: the three expectation schemas are
-    /// admitted.
+    /// Under a `fixture` or `ledger` directory: the five expectation schemas
+    /// are admitted.
     Fixture,
     /// Under the `pending` directory directly inside a fixture root: the
     /// lowering is expected to refuse the source as a whole, as outside the
@@ -130,9 +141,9 @@ impl core::fmt::Display for SourceRoot
 ///   written, so a caller wanting the location a source really has passes its
 ///   canonical path.
 /// - ensures: only the directories containing the source are read, never its
-///   own file name. The innermost directory named `strict` or `fixture`
-///   decides, and a directory named `pending` decides when its own parent
-///   directory is named `fixture`; a path under none of them is
+///   own file name. The innermost directory named `strict`, `fixture` or
+///   `ledger` decides, and a directory named `pending` decides when its own
+///   parent directory is named `fixture`; a path under none of them is
 ///   [`SourceRoot::Strict`].
 /// - provides: the membership the walk settles each source under.
 /// - fails: never; every path classifies.
@@ -141,10 +152,11 @@ impl core::fmt::Display for SourceRoot
 ///   file.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — default membership, both root nestings, adjacent pending
-///   membership and root-like filenames have exact expected roots.
-///   Parent-directory components establish lexical rather than filesystem
-///   resolution. These fixtures do not enumerate every native path spelling.
+/// - hypothesis: L3 — default membership, both root nestings, the ledger root,
+///   adjacent pending membership and root-like filenames have exact expected
+///   roots. Parent-directory components establish lexical rather than
+///   filesystem resolution. These fixtures do not enumerate every native path
+///   spelling.
 /// - witness: `root::tests::a_path_under_no_root_is_strict`
 /// - witness: `root::tests::the_innermost_root_decides`
 /// - witness: `root::tests::pending_counts_only_directly_inside_a_fixture_root`
@@ -155,7 +167,7 @@ impl core::fmt::Display for SourceRoot
 #[spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
     let name = directory.file_name()?;
     if name == STRICT { Some(SourceRoot::Strict) }
-    else if name == FIXTURE { Some(SourceRoot::Fixture) }
+    else if name == FIXTURE || name == LEDGER { Some(SourceRoot::Fixture) }
     else if name == PENDING
         && directory.parent().and_then(Path::file_name) == Some(OsStr::new(FIXTURE))
     { Some(SourceRoot::Pending) }
@@ -169,7 +181,7 @@ pub fn classify(path: &Path) -> SourceRoot
         if directory == STRICT {
             root = SourceRoot::Strict;
         }
-        else if directory == FIXTURE {
+        else if directory == FIXTURE || directory == LEDGER {
             root = SourceRoot::Fixture;
         }
         else if directory == PENDING && parent == FIXTURE {
@@ -238,6 +250,10 @@ mod tests
             ("corpus/fixture/strict/a.gandr", SourceRoot::Strict),
             ("corpus/fixture/pending/model/a.gandr", SourceRoot::Pending),
             ("corpus/fixture/pending/strict/a.gandr", SourceRoot::Strict),
+            ("ledger/exemplars/syntax/a.gandr", SourceRoot::Fixture),
+            ("corpus/ledger/features/a.gandr", SourceRoot::Fixture),
+            ("corpus/strict/ledger/a.gandr", SourceRoot::Fixture),
+            ("corpus/ledger/strict/a.gandr", SourceRoot::Strict),
         ];
         for (path, root) in rows {
             assert_eq!(classify(Path::new(path)), root, "{path}");
@@ -252,6 +268,7 @@ mod tests
             ("fixture/model/pending/a.gandr", SourceRoot::Fixture),
             ("strict/pending/a.gandr", SourceRoot::Strict),
             ("pending/fixture/a.gandr", SourceRoot::Fixture),
+            ("ledger/pending/a.gandr", SourceRoot::Fixture),
         ];
         for (path, root) in rows {
             assert_eq!(classify(Path::new(path)), root, "{path}");

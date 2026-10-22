@@ -797,7 +797,7 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
     let clean = ran(gandr(&[ledger, exemplars, &committed]));
     assert_eq!(code(&clean), Code(0_i32), "{}", stdout(&clean));
     assert!(
-        stdout(&clean).ends_with(" exemplars verified, 0 findings\n"),
+        stdout(&clean).ends_with(" exhibiting, 0 findings\n"),
         "{}",
         stdout(&clean)
     );
@@ -825,7 +825,7 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
         "{}",
         stdout(&found)
     );
-    assert!(stdout(&found).ends_with(" exemplars verified, 1 finding\n"));
+    assert!(stdout(&found).ends_with(" exhibiting, 1 finding\n"));
 }
 
 #[test]

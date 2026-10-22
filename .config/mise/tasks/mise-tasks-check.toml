@@ -501,21 +501,22 @@ echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
 # One exemplar per committed rule of the syntax ledger and per attribute
 # (`ledger/exemplars/{syntax,attributes}`), verified by the driver: the files
 # and the rules match by name, each exemplar parses with no obligation and
-# holds a tile of its rule, and each attribute exemplar lowers with its
-# attribute filed. Every finding is printed, `<file>: <fault>`. These show a
-# form, not a program: many stand where the checker's fragment does not reach
-# yet (a shell block, a statement at the top level), so they are parsed and
-# lowered here and never checked.
+# holds a tile of its rule, each attribute exemplar lowers with its attribute
+# filed, and a rule exemplar marked `/// parse-only: <reason>` names its reason
+# and stays refused as a whole by the lowering. Every features exemplar states
+# only `checks`, `runs` or `normalizes`. Every finding is printed,
+# `<file>: <fault>`.
 ["check:syntax-exemplars"]
-description = "One verified exemplar per committed rule and attribute of the syntax ledger"
+description = "One verified exemplar per committed rule and attribute of the syntax ledger, and every features exemplar exhibiting"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
 
 # The features exemplars (`ledger/exemplars/features/<feature id>.gandr`),
 # one focused program per row of the features ledger, settled as an author
-# runs them: every declaration's `checks`, `runs` or `normalizes` holds. The
-# directory is outside the corpus's fixture root, so `owes` and `refuses` are
-# refused there: an exemplar exhibits, it does not refuse. The syntax and
-# attribute exemplars stay under `check:syntax-exemplars`.
+# runs them: every declaration's `checks`, `runs` or `normalizes` holds.
+# `ledger/` is a fixture root, so `gandr test` admits `owes` and `refuses`
+# there; `check:syntax-exemplars` refuses them in a features exemplar, which
+# exhibits, it does not refuse. The syntax and attribute exemplars stay under
+# `check:syntax-exemplars`.
 ["check:exemplars"]
 description = "Every features exemplar settles under `gandr test`"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars/features"
