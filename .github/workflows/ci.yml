@@ -577,6 +577,9 @@ jobs:
       - name: settle the features exemplars
         if: *plain-gate
         run: mise run check:exemplars
+      - name: check the features ledger
+        if: *plain-gate
+        run: mise run check:ledger
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state

@@ -46,6 +46,10 @@ includes = [".config/mise/tasks"]
 [tools]
 "cargo:dylint-link" = "6.2.0"
 "cargo:hotpath" = { version = "0.28.6", features = ["hotpath", "hotpath-mcp", "tui"] }
+# The features ledger's engine (`ledger/README.md`): one pinned sqlite3 writes
+# the same dump on every machine and in CI, and the conda build is the
+# prebuilt sqlite3 CLI mise resolves on every platform.
+"conda:sqlite" = "3.54.1"
 "github:aubepkg/aube" = "2.8.0"
 "github:crate-ci/typos" = "v1.51.1"
 "github:j178/prek" = "v0.5.6"
