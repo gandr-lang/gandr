@@ -41,7 +41,7 @@ use crate::replay::ReplayNode;
 /// - hypothesis: L3 — the engine retains pair order and negation branch
 ///   distinctions.
 /// - witness: `flow_universe::tests::one_way_classes_preserve_leaves`
-#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::Univalence { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil | Value::ListCons(..) => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }), AnyNode::ValueType(_) | AnyNode::CompType(_) => 0 })]
+#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) | Value::ListCons(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, Value::Constructor { .. } | Value::Record(_) | Value::SessionPath { .. } | Value::Univalence { .. } | Value::SessionFlow { .. } | Value::Stay { .. } | Value::ForwardFlow { .. } | Value::FunctionFlow { .. } | Value::Then { .. } | Value::FlowProduct(..) | Value::Here { .. } | Value::Returned(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) | Value::ListNil => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::ListCase { .. } => 3, Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::SigmaSplit { .. } | Computation::ListFold { .. } | Computation::PathTransport { .. } | Computation::TelescopeTransport { .. } | Computation::Ride { .. } | Computation::TelescopeRide { .. } | Computation::RelatedApplication { .. } | Computation::With(..) | Computation::Project(..) | Computation::Fixpoint { .. } => 1 }), AnyNode::ValueType(_) | AnyNode::CompType(_) => 0 })]
 fn children(
     arena: &TermArena,
     node: AnyNode,
@@ -54,7 +54,8 @@ fn children(
             },
             &Value::Injection(_, value) => vec![AnyNode::Value(value)],
             &Value::Thunk(body) => vec![AnyNode::Computation(body)],
-            &Value::Variable(_) | &Value::Literal(_) => Vec::new(),
+            &Value::Variable(_) | &Value::Literal(_) | &Value::ListNil => Vec::new(),
+            &Value::ListCons(head, tail) => vec![AnyNode::Value(head), AnyNode::Value(tail)],
             &Value::Constructor { .. }
             | &Value::Record(_)
             | &Value::SessionPath { .. }
@@ -74,8 +75,6 @@ fn children(
             | &Value::HigherEvaluation { .. }
             | &Value::QuantifiedEvaluation { .. }
             | &Value::Constant(_)
-            | &Value::ListNil
-            | &Value::ListCons(..)
             | &Value::Lift { .. }
             | &Value::Quote(_)
             | &Value::QuoteComputation(_)
@@ -94,8 +93,16 @@ fn children(
             } => core::iter::once(AnyNode::Value(scrutinee))
                 .chain(branches.iter().copied().map(AnyNode::Computation))
                 .collect(),
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => vec![
+                AnyNode::Value(list),
+                AnyNode::Computation(on_nil),
+                AnyNode::Computation(on_cons),
+            ],
             Computation::ListFold { .. }
-            | Computation::ListCase { .. }
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
             | Computation::TelescopeTransport { .. }
@@ -174,6 +181,10 @@ fn translate(
                     },
                     &Value::Thunk(body) => core.value_thunk(computations[&body]),
                     &Value::Literal(ref value) => core.value_literal(value.clone()),
+                    &Value::ListNil => core.value_list_nil(),
+                    &Value::ListCons(head, tail) => {
+                        core.value_list_cons(values[&head], values[&tail])
+                    },
                     &Value::Constructor { .. }
                     | &Value::Record(_)
                     | &Value::SessionPath { .. }
@@ -193,8 +204,6 @@ fn translate(
                     | &Value::HigherEvaluation { .. }
                     | &Value::QuantifiedEvaluation { .. }
                     | &Value::Constant(_)
-                    | &Value::ListNil
-                    | &Value::ListCons(..)
                     | &Value::Lift { .. }
                     | &Value::Quote(_)
                     | &Value::QuoteComputation(_)
@@ -221,8 +230,16 @@ fn translate(
                         branch_ids.extend(branches.iter().map(|branch| computations[branch]));
                         core.computation_case(values[&scrutinee], &branch_ids)
                     },
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => core.computation_list_case(
+                        values[&list],
+                        computations[&on_nil],
+                        computations[&on_cons],
+                    ),
                     Computation::ListFold { .. }
-                    | Computation::ListCase { .. }
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
                     | Computation::TelescopeTransport { .. }

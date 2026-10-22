@@ -578,10 +578,11 @@ fn session_flows_persist_and_refuse_by_family()
         }))
     );
 
-    // A List endpoint is outside the Flow_U vocabulary.
-    let list = arena.value_type_list(payload);
-    let list = arena.value_quote(list);
-    let (_, outside) = flow(&mut arena, (list, list), widening(), proofs);
+    // A thunk of a bare returner is outside the Flow_U vocabulary.
+    let returns = arena.comp_type_returner(payload);
+    let suspended = arena.value_type_thunk(returns);
+    let suspended = arena.value_quote(suspended);
+    let (_, outside) = flow(&mut arena, (suspended, suspended), widening(), proofs);
     assert!(matches!(
         synth_closed_value(&mut arena, outside),
         Err(KernelError::Flow(FlowError::UnsupportedType(_)))

@@ -236,8 +236,6 @@ pathological/identity/compound-endpoint-over-a-function.gandr:constantly:e3ca99e
 pathological/identity/compound-endpoint-over-a-function.gandr:refuted:97bc8cb3efdbf618
 pathological/identity/flow-back.gandr:<file>
 pathological/identity/flow-back.gandr:Schema:74adb3da7285d05d
-pathological/identity/flow-forward-unsupported.gandr:<file>
-pathological/identity/flow-forward-unsupported.gandr:Schema:44123cb20aed1d6f
 pathological/identity/flow-misdirected-boundary.gandr:<file>
 pathological/identity/flow-misdirected-boundary.gandr:Schema:9fc53f46019a37ee
 pathological/identity/flow-open-type.gandr:<file>

@@ -7,17 +7,21 @@
 //! `forward(f)` synthesises `Flow(Type, ⌜A⌝, ⌜B⌝)` when `f` synthesises the
 //! thunk type `U (A → F B)` of a pure non-dependent arrow, `f` is closed, both
 //! codes are first-order — the unit type, the base atoms, sums of at least one
-//! summand and products of any arity, as `equiv`'s — and the image of `f` at
-//! every pattern of `A`'s coverage is leaf-natural. The coverage is the one
-//! `equiv` decides over and the kernel replays: the unit value, a fresh
+//! summand, products of any arity and lists, as `equiv`'s — and the image of
+//! `f` at every pattern of `A`'s coverage is leaf-natural. The coverage is the
+//! one `equiv` decides over and the kernel replays: the unit value, a fresh
 //! variable at a base atom, each summand's patterns injected first summand
-//! first, and each tuple crossing its components' patterns lexicographically.
-//! At a pattern `p` standing under its leaves, the normaliser evaluates `f p`
-//! with every admitted definition unfolding; the image `thunk(λⁿ. return o)` is
-//! leaf-natural when `o` is built from canonical constructors of `B` and
-//! variables naming source leaves of the base type the target's position
-//! names. A literal, a fresh value, a leaf of another type or an application
-//! still stuck is [`CheckRefusal::ForwardUnsupported`]: the kernel's
+//! first, each tuple crossing its components' patterns lexicographically, and
+//! a list unfolded one cell: the empty list, then each element pattern consed
+//! onto a fresh rigid tail. At a pattern `p` standing under its leaves, the
+//! normaliser evaluates `f p` with every admitted definition unfolding; the
+//! image `thunk(λⁿ. return o)` is leaf-natural when `o` is built from
+//! canonical constructors of `B`, variables naming source leaves of the base
+//! type the target's position names, and variables naming source tails of a
+//! list type equivalent to the position's. A translator reads one cell of a
+//! list and moves its tail unread. A literal, a fresh value, a leaf of another
+//! type or an application still stuck — a translator recursing into the tail
+//! among them — is [`CheckRefusal::ForwardUnsupported`]: the kernel's
 //! `NonNatural`, decided before the kernel sees it. There is no round trip: a
 //! flow demands no inverse.
 //!
@@ -45,33 +49,6 @@
 //! admitted and orients each boundary by its variance, and trusts nothing the
 //! core decided.
 //!
-//! # Decisions
-//!
-//! - **Spelling and argument order.** `forward(f)` takes the one translator, as
-//!   `equiv(f, g)` takes two; `arrow(d, c)` takes the domain boundary then the
-//!   codomain boundary, the order the arrow `A → B` writes them. The record
-//!   names the forward statement and leaves the arrow's action unnamed; `arrow`
-//!   names the type former it acts through. The alternatives were an infix `d
-//!   ~> c`, which reads as a flow between the two boundaries rather than one
-//!   over them, and deriving the action from a function flow's classifier
-//!   alone, under which no direction can be refused. Reversal: a surface that
-//!   writes the arrow's action as congruence of `->` would elaborate to
-//!   `arrow`.
-//! - **Decided by computation.** The core evaluates the translator at the
-//!   kernel's coverage and checks naturality itself, so a translator the kernel
-//!   would refuse is refused by name at its source. The alternative was erasing
-//!   the bare translator and letting the kernel compute the images, which the
-//!   kernel's replay does not do: it checks supplied images. Reversal: none
-//!   while the kernel's forward flow carries its images.
-//! - **Synthesised from its translator.** `f` names both codes, as `equiv`'s
-//!   forward translator does. Reversal: a checking rule reading the codes from
-//!   `Flow(Type, A, B)` would admit a λ as the translator.
-//! - **Leaf-natural images only.** A constant at an infinite base leaf has no
-//!   finite certificate, and a sample of the leaf has no authority over every
-//!   value; the kernel refuses both, so the core does too. Reversal: a kernel
-//!   obligation that certifies a constant map at a finite type by its own
-//!   exhaustion.
-//!
 //! # What a consumer may assume
 //!
 //! A value's schema evolution is a `forward` from the old code to the new; the
@@ -96,6 +73,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::loose_reach;
 use crate::context::CheckingContext;
+use crate::conversion::Agreement;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -168,7 +146,7 @@ pub enum Directed
     Function(ValueTypeId),
 }
 
-/// A base atom a pattern's leaf stands at.
+/// The type a pattern binds at one leaf.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Leaf
 {
@@ -176,6 +154,8 @@ enum Leaf
     Integer,
     /// The string atom.
     String,
+    /// A rigid list tail, at this list type.
+    Tail(ValueTypeId),
 }
 
 /// The two codes the classifier of a forward translator names: `U (A → F B)`
@@ -323,7 +303,7 @@ fn flow_between(
 }
 
 /// Check that every type `code` reaches is the unit type, a base atom, a sum
-/// of at least one summand or a product.
+/// of at least one summand, a product or a list.
 ///
 /// # Specification
 /// - requires: `code` is formed under the judgement's binders.
@@ -340,8 +320,8 @@ fn flow_between(
 /// - measure: the types left, each replaced by its strictly smaller parts.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a list target refuses by name.
-/// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
+/// - hypothesis: L3 — an empty sum refuses by name; a pair and a list of
+///   integers pass.
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
@@ -362,6 +342,7 @@ fn first_order(
                 pending.extend(parts.iter().copied());
             },
             ValueTypeView::Product(parts) => pending.extend(parts.iter().copied()),
+            ValueTypeView::List(element) => pending.push(element),
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
@@ -370,7 +351,6 @@ fn first_order(
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Sum(_)
-            | ValueTypeView::List(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }
@@ -390,16 +370,16 @@ fn first_order(
     Ok(())
 }
 
-/// The base atom of each leaf `pattern` binds, by de Bruijn index.
+/// The leaf type of each variable `pattern` binds, by de Bruijn index.
 ///
 /// # Specification
 /// - requires: `pattern` is a pattern of `source`'s coverage.
-/// - ensures: one entry per index the pattern binds, the atom the source names
-///   at that variable's position.
+/// - ensures: one entry per index the pattern binds: the atom the source names
+///   at a base position, the list type at a cell's tail.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a pattern whose shape does
 ///   not follow its type; a weak-head or view refusal.
 /// - panics: none.
-/// - executable: none — the atom at each index is what the walk reads off the
+/// - executable: none — the leaf at each index is what the walk reads off the
 ///   type, so a predicate would restate the body.
 ///
 /// # Errors
@@ -411,9 +391,11 @@ fn first_order(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a record of a string and an integer reads its two leaves
-///   apart, so a field moved to a position of the other atom is refused.
+///   apart, so a field moved to a position of the other atom is refused; a list
+///   cell reads its head's leaves and its tail apart.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
+/// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
 fn leaves(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -426,10 +408,18 @@ fn leaves(
     let mut pending = Vec::from([(pattern, source)]);
     while let Some((value, ty)) = pending.pop() {
         let head = context.whnf_value_type(ty)?;
-        let leaf = match value_type_view(context.arena(), head)? {
-            ValueTypeView::Integer => Maybe::Present(Leaf::Integer),
-            ValueTypeView::String => Maybe::Present(Leaf::String),
+        let (leaf, variable) = match value_type_view(context.arena(), head)? {
+            ValueTypeView::Integer => (Leaf::Integer, value),
+            ValueTypeView::String => (Leaf::String, value),
             ValueTypeView::Unit => continue,
+            ValueTypeView::List(element) => match context.arena().value(value) {
+                Some(&Value::ListNil) => continue,
+                Some(&Value::ListCons(first, tail)) => {
+                    pending.push((first, element));
+                    (Leaf::Tail(head), tail)
+                },
+                _ => return Err(invariant),
+            },
             ValueTypeView::Product(parts) => {
                 let parts = parts.to_vec();
                 match context.arena().value(value) {
@@ -457,7 +447,6 @@ fn leaves(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
-            | ValueTypeView::List(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }
@@ -476,7 +465,7 @@ fn leaves(
         let Some(&Value::Variable {
             zone: Zone::Intuitionistic,
             index,
-        }) = context.arena().value(value)
+        }) = context.arena().value(variable)
         else {
             return Err(invariant);
         };
@@ -486,24 +475,27 @@ fn leaves(
             found.resize(length, Maybe::Absent(unread::Absent::Unbound));
         }
         let slot = found.get_mut(index).ok_or(invariant)?;
-        *slot = leaf;
+        *slot = Maybe::Present(leaf);
     }
     Ok(found)
 }
 
 /// Check that `output` is a canonical value of `target` whose base positions
-/// are variables naming source leaves of the same atom.
+/// are variables naming source leaves of the same atom and whose list tails
+/// are source tails of the same list type.
 ///
 /// # Specification
 /// - requires: `output` stands under the pattern's leaves; `leaves` is the
 ///   pattern's leaf table.
 /// - ensures: success exactly when every position of `target` is met by its own
 ///   former's canonical value — a tuple of the product's arity, an injection
-///   into an existing summand, the unit value — and every base position by a
-///   variable whose leaf is that base atom.
+///   into an existing summand, the unit value, the empty list or a cell — and
+///   every base position by a variable whose leaf is that base atom, and every
+///   other list position by a variable whose leaf is a tail of a list type
+///   equivalent to it.
 /// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` otherwise: a literal,
-///   a fresh or mistyped variable, an application still stuck; a weak-head or
-///   view refusal.
+///   a fresh or mistyped variable, an application still stuck; a weak-head,
+///   view or conversion refusal.
 /// - panics: none.
 ///
 /// # Errors
@@ -515,9 +507,12 @@ fn leaves(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a field copied naturally passes, and a constant string at
-///   a string field refuses by name, as the kernel refuses it as `NonNatural`.
+///   a string field refuses by name, as the kernel refuses it as `NonNatural`;
+///   a tail passes at its own list type and refuses at another, and a literal
+///   inside a list cell refuses by name.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
+/// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -537,6 +532,34 @@ fn natural(
         let wanted = match value_type_view(context.arena(), head)? {
             ValueTypeView::Integer => Leaf::Integer,
             ValueTypeView::String => Leaf::String,
+            ValueTypeView::List(element) => match context.arena().value(value) {
+                Some(&Value::ListNil) => continue,
+                Some(&Value::ListCons(first, tail)) => {
+                    pending.push((first, element));
+                    pending.push((tail, head));
+                    continue;
+                },
+                _ => {
+                    let Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index,
+                    }) = context.arena().value(value)
+                    else {
+                        return Err(unsupported);
+                    };
+                    let index = usize::try_from(u32::from(index)).ok().ok_or(unsupported)?;
+                    let Some(&Maybe::Present(Leaf::Tail(source))) = leaves.get(index)
+                    else {
+                        return Err(unsupported);
+                    };
+                    if crate::conversion::equivalent(context, source, head)?
+                        != Agreement::Convertible
+                    {
+                        return Err(unsupported);
+                    }
+                    continue;
+                },
+            },
             ValueTypeView::Unit => match context.arena().value(value) {
                 Some(&Value::Tuple(ref components)) if components.is_empty() => continue,
                 _ => return Err(unsupported),
@@ -566,7 +589,6 @@ fn natural(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
-            | ValueTypeView::List(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }

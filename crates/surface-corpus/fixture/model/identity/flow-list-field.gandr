@@ -1,0 +1,39 @@
+// A flow between types holding lists, after directed univalence (Gratzer,
+// Weinberger and Buchholtz, _Directed univalence in simplicial homotopy type
+// theory_, arXiv:2407.09146, Definition 1.2): a translator that moves a list
+// unread is decided at the empty list and at one cell over a rigid tail, and
+// riding the flow moves a record holding any list.
+
+/// A record with a list field, migrated by reordering its fields.
+module Roster {
+  type Old = String * List(Integer);
+  type New = List(Integer) * String;
+  /// The translator: the fields swapped, the scores moved unread.
+  @[ checks ]
+  def toNew(old : Old) -> -F New {
+    case old {
+      #{name, scores} => (scores, name)
+    }
+  }
+  /// The flow from the old record to the new, by its translator.
+  @[ checks ]
+  def upgrade : Flow(Type, Old, New) ;
+  def upgrade = forward(toNew) ;
+  /// A list kept whole: the flow from a list code to itself.
+  @[ checks ]
+  def wrap(xs : List(Integer)) -> -F List(Integer) {
+    xs
+  }
+  @[ checks ]
+  def lists : Flow(Type, List(Integer), List(Integer)) ;
+  def lists = forward(wrap) ;
+  /// One record ridden along the flow.
+  @[ checks ]
+  def moved(old : Old) -> -F New {
+    become ride(\X. X, upgrade, old)
+  }
+  /// A record of two scores migrated by a run.
+  @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]
+  def one : () => New ;
+  def one = thunk { become moved(("ada", cons(90, cons(85, nil)))) } ;
+}

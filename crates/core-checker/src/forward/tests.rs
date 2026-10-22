@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
+use gandr_core_term::Summand;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -274,20 +275,63 @@ fn what_the_rule_cannot_image_it_refuses_by_name()
         }))
     );
 
-    // A list code is outside the first-order vocabulary.
+    // A literal inside a list cell is no image of a source leaf.
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let list = arena.value_type_list(integer);
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let returned = arena.computation_return(bound);
-    let lambda = arena.computation_lambda(returned);
-    let same = arena.value_thunk(lambda);
+    let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let nil = arena.value_list_nil();
+    let on_nil = arena.computation_return(nil);
+    let zero = arena.value_literal(integer_literal());
+    let padded = arena.value_list_cons(zero, bound);
+    let cell = arena.value_list_cons(head, padded);
+    let on_cons = arena.computation_return(cell);
+    let case = arena.computation_list_case(bound, on_nil, on_cons);
+    let lambda = arena.computation_lambda(case);
+    let pad = arena.value_thunk(lambda);
     let translator = function(&mut arena, (list, list));
     let to_new = arena.value_constant(ConstantIndex::from(0_usize));
     let forward = arena.value_forward(to_new);
     let migrate = flow(&mut arena, (list, list));
     let report = judged(&mut arena, &[
-        declaration(At(0), translator, same),
+        declaration(At(0), translator, pad),
+        declaration(At(1), migrate, forward),
+    ]);
+    assert_eq!(
+        report.judged().get(1).map(Judged::verdict),
+        Some(Verdict::Refused(CheckRefusal::ForwardUnsupported {
+            at: forward
+        }))
+    );
+
+    // A translator reading past the first cell cases on the rigid tail, and
+    // its image is stuck there.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let list = arena.value_type_list(integer);
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let nil = arena.value_list_nil();
+    let on_nil = arena.computation_return(nil);
+    let one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let single = arena.value_list_cons(one, nil);
+    let on_last = arena.computation_return(single);
+    let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+    let rest = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let second = arena.value_list_cons(one, rest);
+    let both = arena.value_list_cons(first, second);
+    let on_more = arena.computation_return(both);
+    let tail = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let inner = arena.computation_list_case(tail, on_last, on_more);
+    let case = arena.computation_list_case(outer, on_nil, inner);
+    let lambda = arena.computation_lambda(case);
+    let deeper = arena.value_thunk(lambda);
+    let translator = function(&mut arena, (list, list));
+    let to_new = arena.value_constant(ConstantIndex::from(0_usize));
+    let forward = arena.value_forward(to_new);
+    let migrate = flow(&mut arena, (list, list));
+    let report = judged(&mut arena, &[
+        declaration(At(0), translator, deeper),
         declaration(At(1), migrate, forward),
     ]);
     assert_eq!(
@@ -439,6 +483,93 @@ fn directed_statements_cross_and_replay()
     );
 }
 
+/// A list code covers the empty list and one cell over a rigid tail: the
+/// identity keeps the tail, and `uncons` moves it unread into a product. Each
+/// flow decides two images, a list rides the second, and the kernel replays
+/// every erased certificate.
+#[test]
+fn a_list_migration_moves_its_tail_unread()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let integers = arena.value_type_list(integer);
+    let unit = arena.value_type_unit();
+    let cell = arena.value_type_product(&[integer, integers]);
+    let view = arena.value_type_sum(&[unit, cell]);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+
+    let returned = arena.computation_return(bound);
+    let lambda = arena.computation_lambda(returned);
+    let keep = arena.value_thunk(lambda);
+    let empty = arena.value_unit();
+    let none = arena.value_injection(Summand::from(0_usize), empty);
+    let pair = arena.value_tuple(&[head, bound]);
+    let some = arena.value_injection(Summand::from(1_usize), pair);
+    let on_nil = arena.computation_return(none);
+    let on_cons = arena.computation_return(some);
+    let case = arena.computation_list_case(bound, on_nil, on_cons);
+    let lambda = arena.computation_lambda(case);
+    let uncons = arena.value_thunk(lambda);
+
+    let keep_type = function(&mut arena, (integers, integers));
+    let uncons_type = function(&mut arena, (integers, view));
+    let kept_type = flow(&mut arena, (integers, integers));
+    let viewed_type = flow(&mut arena, (integers, view));
+    let to_keep = arena.value_constant(ConstantIndex::from(0_usize));
+    let kept = arena.value_forward(to_keep);
+    let to_view = arena.value_constant(ConstantIndex::from(2_usize));
+    let viewed = arena.value_forward(to_view);
+    let flowed = arena.value_constant(ConstantIndex::from(3_usize));
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(code, Level::zero());
+    let zero = arena.value_literal(integer_literal());
+    let nil = arena.value_list_nil();
+    let one = arena.value_list_cons(zero, nil);
+    let ride = arena.computation_ride(decoded, flowed, one);
+    let moved = arena.value_thunk(ride);
+    let returns_view = arena.comp_type_returner(view);
+    let suspended = arena.value_type_thunk(returns_view);
+    let module = [
+        declaration(At(0), keep_type, keep),
+        declaration(At(1), kept_type, kept),
+        declaration(At(2), uncons_type, uncons),
+        declaration(At(3), viewed_type, viewed),
+        declaration(At(4), suspended, moved),
+    ];
+    let report = judged(&mut arena, &module);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "both list flows are decided and a list rides the view: {report:?}"
+    );
+    for forward in [kept, viewed] {
+        let Some(&Directed::Forward(ref decided)) = report.directed().get(&forward)
+        else {
+            panic!("a forward records a forward decision");
+        };
+        assert_eq!(
+            (decided.images().len(), decided.dialogues().len()),
+            (2, 2),
+            "the empty list and one cell over the tail"
+        );
+    }
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(|entry| entry.outcome().clone())
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, crate::bridge::Outcome::Defined { .. })),
+        "the kernel replays every erased certificate: {outcomes:?}"
+    );
+}
+
 /// The rule reads only canonical shapes: an empty sum is not first-order, a
 /// pattern tuple short of its product is no pattern, and an output at a unit or
 /// a product is a tuple of exactly its arity.
@@ -456,6 +587,10 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
     let leaf = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let one = arena.value_tuple(&[leaf]);
     let two = arena.value_tuple(&[leaf, leaf]);
+    let integers = arena.value_type_list(integer);
+    let strings = arena.value_type_list(string);
+    let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let cell = arena.value_list_cons(head, leaf);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let unsupported = Err(CheckRefusal::ForwardUnsupported { at });
     assert_eq!(
@@ -480,5 +615,31 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
         super::natural(&mut context, at, two, single, &read),
         unsupported,
         "a product's value is a tuple of its own arity"
+    );
+
+    // A list is first-order; its cell reads the head and the tail apart, and
+    // the tail stands only at a list type equivalent to its own.
+    assert_eq!(super::first_order(&mut context, at, integers), Ok(()));
+    let read = super::leaves(&mut context, at, cell, integers).expect("a cell's leaves");
+    assert!(
+        matches!(*read.as_slice(), [
+            Maybe::Present(super::Leaf::Tail(_)),
+            Maybe::Present(super::Leaf::Integer)
+        ]),
+        "the tail innermost, the head past it: {read:?}"
+    );
+    assert_eq!(
+        super::natural(&mut context, at, leaf, integers, &read),
+        Ok(())
+    );
+    assert_eq!(
+        super::natural(&mut context, at, leaf, strings, &read),
+        unsupported,
+        "a tail at another list type"
+    );
+    assert_eq!(
+        super::natural(&mut context, at, head, integers, &read),
+        unsupported,
+        "an element leaf at a list position"
     );
 }
