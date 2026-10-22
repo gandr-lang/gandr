@@ -1359,9 +1359,10 @@ fn records_spell_their_fields_in_label_order()
 /// unless atomic, a product, a sum or a lazy product between its braces with
 /// any former bare among its entries, the arrow's domain bare up to a
 /// bridge, a decode as the code it reads, an abstract type by its name, a
-/// family bare when nullary and applied to its arguments otherwise, and a
-/// path type over its carrier and both endpoints. A free variable reads
-/// its context binder's name, past the binders the type opens itself. A
+/// family bare when nullary and applied to its arguments otherwise, a path
+/// type over its carrier and both endpoints, and a prefix type over its
+/// session code. A free variable reads its context binder's name, past the
+/// binders the type opens itself. A
 /// type the source records as a written relation spells as that relation,
 /// its operands read off the forward map or the flow's codes; the same
 /// record unrecorded spells as the record.
@@ -1421,6 +1422,7 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     let returns_path = core.comp_type_returner(path);
     let flow = core.value_type_flow(list, alias, one);
     let returns_flow = core.comp_type_returner(flow);
+    let prefix = core.value_type_prefix(alias);
     let opened = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let inner = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
@@ -1511,6 +1513,7 @@ fn every_type_former_spells_as_the_grammar_writes_it()
             CoreNode::CompType(returns_flow),
             "-F Flow(List(Integer), small, 1)",
         ),
+        (CoreNode::ValueType(prefix), "Prefix(small)"),
     ] {
         assert_eq!(
             spelled(&source, Root::Type(root)),

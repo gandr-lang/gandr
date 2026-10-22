@@ -1687,8 +1687,10 @@ impl fmt::Display for Shape
     ///   independent observation of the destination's failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — located reports exercise the diagnostic consumer, not
-    ///   exhaustive shape wording or destination failures.
+    /// - hypothesis: L3 — every required former, the run or prefix shape among
+    ///   them, titles a shape mismatch apart from every other; destination
+    ///   failures are outside this observation.
+    /// - witness: `locus::tests::every_checker_title_names_its_subject_and_payloads`
     /// - witness: `tests::diagnostics::a_type_mismatch_is_located_at_its_term`
     #[inline]
     fn fmt(

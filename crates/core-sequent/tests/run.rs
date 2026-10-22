@@ -2793,7 +2793,8 @@ fn run_motive(
 /// A transport of a recorded run along `ua(e)` runs as the match on the
 /// run's shape: each payload moves by its payload type's action, in move
 /// order, and the moves and labels are kept; a run of a recursive session,
-/// and of a session the motive does not quote, is refused by its head.
+/// a run of a session the motive does not quote, and an open play, which does
+/// not transport, are each refused by their own head.
 #[test]
 fn a_run_moves_its_payloads_along_a_path()
 {
@@ -2868,7 +2869,7 @@ fn a_run_moves_its_payloads_along_a_path()
         "the right run's payload never reads the binder and is kept"
     );
 
-    // `y. Run(mu t. !El y. t)` and `y. Run(y)` have no row.
+    // `y. Run(mu t. !El y. t)`, `y. Run(y)` and `y. Prefix(y)` have no row.
     let recursive = run_motive(
         &mut core,
         alloc::vec![
@@ -2883,9 +2884,11 @@ fn a_run_moves_its_payloads_along_a_path()
     );
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let unquoted = core.value_type_run(bound);
+    let open = core.value_type_prefix(bound);
     for (motive, head) in [
         (recursive, MotiveHead::RecursiveRun),
         (unquoted, MotiveHead::Run),
+        (open, MotiveHead::Prefix),
     ] {
         let transport = core.computation_path_transport(motive, path, kept);
         assert_eq!(

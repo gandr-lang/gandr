@@ -325,7 +325,17 @@ impl fmt::Display for MotiveHead
     /// Names the head.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the head's name, each head's apart from every other's.
+    /// - provides: the head a refused element transport names.
+    /// - fails: propagates the formatter's own write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every head reads apart from every other, a prefix
+    ///   type's among them.
+    /// - witness: `tests::refusals::motive_heads_read_apart`
     #[inline]
     fn fmt(
         &self,
@@ -481,7 +491,17 @@ fn occurrence(
 /// The head of a value type no transport row reads.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the head of `node`'s former; a base type, a product, a sum and a
+///   list share [`MotiveHead::Base`].
+/// - provides: the head a refused transport names.
+/// - panics: none.
+/// - executable: none — a clause would restate the match arm by arm.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive run, a run of no quoted session and a prefix
+///   type, each a motive that reads its binder, are refused by their own heads.
+/// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 fn head(node: &ValueType) -> MotiveHead
 {
     match *node {
