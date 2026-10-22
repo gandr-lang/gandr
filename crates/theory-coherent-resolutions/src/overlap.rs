@@ -947,6 +947,7 @@ where
 #[inline]
 #[must_use]
 #[spec(ensures: |output| *output == overlaps_between(left, right).into_iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).collect::<Vec<_>>())]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn root_overlaps_between<A>(
     left: (CellId, &Cell<A>),
     right: (CellId, &Cell<A>),
@@ -1038,6 +1039,7 @@ where
         && A::command_positions(left.1.lhs()).contains(&overlap.seam)
         && overlap.peak == A::apply_subst(&overlap.unifier, left.1.lhs())
         && matches!(A::subterm_cmd_at(&overlap.peak, &overlap.seam), Maybe::Present(ref sub) if *sub == A::apply_subst(&overlap.unifier, overlap.right_renamed.lhs()))))]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn interior_overlaps_between<A>(
     left: (CellId, &Cell<A>),
     right: (CellId, &Cell<A>),

@@ -886,7 +886,9 @@ default-features = false
 # - core-checker
 # - storage-schema
 # - surface-driver
+# - surface-lowering
 # - surface-lsp
+# - theory-coherent-resolutions
 [workspace.dependencies.hotpath]
 version = "0.28.6"
 default-features = false

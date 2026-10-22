@@ -17,7 +17,8 @@
 //! Everything is generic over the substrate's
 //! [`CellAlphabet`](gandr_theory_cell_complexes::CellAlphabet) and adds no cell
 //! vocabulary. The crate is `no_std` and depends on `alloc`, the substrate and
-//! `quenchant-shape`.
+//! `quenchant-shape`; its `hotpath` feature links `std` and the profiler, which
+//! times the overlap queries and normalization for the benchmark report.
 //!
 //! # Executable specifications
 //!
@@ -82,6 +83,10 @@
 #![no_std]
 
 extern crate alloc;
+// The profiler's instrumentation names `std`; it links only into the
+// benchmark build.
+#[cfg(feature = "hotpath")]
+extern crate std;
 
 mod boundary;
 mod completion;

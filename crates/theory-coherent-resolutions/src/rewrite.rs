@@ -147,6 +147,7 @@ quenchant_shape::reason_enum! {
     && (!bool::from(output.exhausted) || output.path.len() == usize::from(budget))
     && (!output.path.is_empty() || output.normal == *term)
     && bool::from(output.exhausted) == matches!(apply_once(store, &output.normal), Maybe::Present(_)))]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn normalize<A>(
     store: &CellStore<A>,
     term: &A::Cmd,

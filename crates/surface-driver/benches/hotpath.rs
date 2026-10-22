@@ -5,6 +5,7 @@
 //! | -------- | ------------ | ------------------ |
 //! | `closure check` | `gandr check` of the largest model source and its imports | the checker's per-declaration judgement and the kernel bridge's readmission |
 //! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
+//! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
 //! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
 //!
@@ -60,27 +61,44 @@ const PROGRAMS: [&str; 2] = ["pow:0..8", "double:0..8"];
 /// How many keystrokes the burst sends, one character erased by each.
 const BURST: usize = 8;
 
+/// The sources whose rule blocks complete: the group laws, a block whose pairs
+/// part at a non-value, and a block refused because its completion never ends.
+const COMPLETION: [&str; 3] = [
+    "../surface-corpus/fixture/model/identity/group-laws.gandr",
+    "../surface-corpus/fixture/model/desc/rules-completed.gandr",
+    "../surface-corpus/fixture/pathological/desc/rules-never-complete.gandr",
+];
+
+/// The path of a corpus source from the driver's manifest directory.
+///
+/// # Specification
+/// trivial.
+fn corpus(relative: &str) -> PathBuf
+{
+    std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative))
+        .expect("the corpus source exists")
+}
+
 /// The path of [`SOURCE`] from the driver's manifest directory.
 ///
 /// # Specification
 /// trivial.
 fn source() -> PathBuf
 {
-    std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SOURCE))
-        .expect("the model source exists")
+    corpus(SOURCE)
 }
 
-/// Check the closure of [`SOURCE`], visiting every step of the walk.
+/// Check `paths` and their closures, visiting every step of the walk.
 ///
 /// # Specification
 /// trivial.
-fn closure_check()
+fn check(paths: Vec<PathBuf>)
 {
     let Outcome::Run { walk, width, .. } = gandr_surface_dispatcher::dispatch(Invocation::Check {
         goals: Goals::Gated,
         lints: Lints::default(),
         grant: HostGrant::UNBOUNDED,
-        paths: vec![source()],
+        paths,
         width: Width::SERIAL,
     })
     else {
@@ -92,6 +110,24 @@ fn closure_check()
         panic!("the visitor never stops the walk");
     };
     core::hint::black_box(report);
+}
+
+/// Check the closure of [`SOURCE`].
+///
+/// # Specification
+/// trivial.
+fn closure_check()
+{
+    check(vec![source()]);
+}
+
+/// Check the [`COMPLETION`] sources, every rule block decided and completed.
+///
+/// # Specification
+/// trivial.
+fn rule_completion()
+{
+    check(COMPLETION.iter().map(|relative| corpus(relative)).collect());
 }
 
 /// Stage [`PROGRAMS`] and readmit every certificate they produce.
@@ -227,6 +263,7 @@ fn main()
 {
     hotpath::measure_block!("closure check", closure_check());
     hotpath::measure_block!("stage readmission", stage_readmission());
+    hotpath::measure_block!("rule completion", rule_completion());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());
     hotpath::measure_block!("lsp burst", lsp_burst());
 }

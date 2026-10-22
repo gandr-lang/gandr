@@ -789,6 +789,7 @@ impl fmt::Display for Spelled<'_>
         && second_order_overlap(&description.rules).is_some(),
     Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::NeverCompletes { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub(crate) fn decide<G>(
     description: &TheoryDesc<G>,
     at: ByteSpan,
