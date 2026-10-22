@@ -353,6 +353,11 @@ verdict_wrapper! {
 }
 
 verdict_wrapper! {
+    /// Whether one term embeds homeomorphically in another.
+    pub struct EmbeddingStatus;
+}
+
+verdict_wrapper! {
     /// Whether the lexicographic path order puts one term above another.
     pub struct PathOrderStatus;
 }

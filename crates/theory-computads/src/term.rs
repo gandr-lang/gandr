@@ -74,6 +74,10 @@ use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
+use crate::boundary::Reducibility;
+use crate::boundary::Renaming;
+use crate::boundary::RuleGrowth;
+
 /// The term alphabet marker.
 ///
 /// # Specification
@@ -802,6 +806,233 @@ fn anti_unify_terms(
         })
         .collect();
     Maybe::Present(Generalization { patterns, points })
+}
+
+/// Whether `later` is `earlier` with one subterm wrapped in a context, and
+/// wrapping it again and again leaves both sides of every repetition a normal
+/// form of rules with the left sides `lefts`.
+///
+/// The two rules, each read as the pair of its sides, generalize to one rule
+/// whose points hold a variable in each rule, renamed one to one, at all but
+/// one point, and at that one a term in `earlier` that `later`'s term there
+/// holds strictly inside it: one substitution makes both sides of either rule,
+/// so the wrapping is the same on both. Each repetition wraps the previous
+/// one's term at that point in the same context. A left side matches inside a
+/// repetition only where it reaches across fewer layers of the context than it
+/// has nodes, so the repetitions up to the largest left side's node count
+/// stand for all of them.
+///
+/// # Specification
+/// - ensures: positive exactly when the least general generalization of the two
+///   rules has exactly one point whose two arms are not both variables; every
+///   other point's arms, with every variable the generalization keeps standing
+///   for itself, relate the earlier rule's variables to the later's one to one;
+///   the later arm of that one point holds, below its root, a subterm spelling
+///   the earlier arm up to renaming its variables one to one; and for each
+///   count up to the largest node count of `lefts`, the generalization's sides
+///   with that arm wrapped that many more times in the context around that
+///   subterm hold no node a left side of `lefts` matches, each variable of a
+///   left side matching any subterm.
+/// - ensures: no rule grows from itself.
+/// - panics: none.
+/// - intension: one generalization of the two rules, one scan of the grown
+///   arm's subterms against the earlier arm, then one match of every left side
+///   at every node of each repetition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the second rule of a scope-extrusion family grows from
+///   its first, `par(□, q)` wrapped around the seed `nil`, and the third from
+///   the second, beside the family's own rules; a rule grows from no renaming
+///   of itself, from no rule wrapping two of its subterms, from no rule merging
+///   two of its variables, and from no rule replacing a subterm with one that
+///   does not hold it; and the family stops growing beside a rule flattening
+///   the third wrapping, or the fourth. Dropping the search inside the wrapped
+///   arm, the one-to-one renaming, the single wrapped point or the repetitions
+///   changes one of them.
+/// - witness: `term::tests::a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| earlier != later || !bool::from(ret))]
+pub fn rule_keeps_growing(
+    earlier: &(FreeTerm, FreeTerm),
+    later: &(FreeTerm, FreeTerm),
+    lefts: &[FreeTerm],
+) -> RuleGrowth
+{
+    let before = [Term::from(&earlier.0), Term::from(&earlier.1)];
+    let after = [Term::from(&later.0), Term::from(&later.1)];
+    let Maybe::Present(generalized) = anti_unify_terms(&[&before, &after])
+    else {
+        return RuleGrowth::from(false);
+    };
+    let points: BTreeSet<&Name> = generalized.points.iter().map(|point| &point.var).collect();
+    // A variable the generalization keeps stands for itself in both rules.
+    let mut renamed: BTreeMap<&Name, &Name> = generalized
+        .patterns
+        .iter()
+        .flat_map(Term::vars)
+        .filter(|var| !points.contains(var))
+        .map(|var| (var, var))
+        .collect();
+    let mut images: BTreeSet<&Name> = renamed.values().copied().collect();
+    let mut arms = TermSubst::default();
+    let mut grown: Option<(&Name, &Term, &Term)> = None;
+    for point in &generalized.points {
+        let mut pair = point.arms.iter().map(|arm| arm.binding.0.get(&point.var));
+        let (Some(Some(seed)), Some(Some(wrapped))) = (pair.next(), pair.next())
+        else {
+            return RuleGrowth::from(false);
+        };
+        if let (&[Head::Var(ref old)], &[Head::Var(ref new)]) =
+            (seed.0.as_slice(), wrapped.0.as_slice())
+        {
+            let one_to_one = match renamed.get(old) {
+                Some(&seen) => seen == new,
+                None => images.insert(new) && renamed.insert(old, new).is_none(),
+            };
+            if !one_to_one {
+                return RuleGrowth::from(false);
+            }
+        }
+        else if grown.replace((&point.var, seed, wrapped)).is_some() {
+            return RuleGrowth::from(false);
+        }
+        arms.0.insert(point.var.clone(), wrapped.clone());
+    }
+    let Some((var, seed, wrapped)) = grown
+    else {
+        return RuleGrowth::from(false);
+    };
+    let Some(hole) = (1 .. wrapped.0.len()).map(Count).find(|&start| {
+        wrapped
+            .0
+            .get(start.0 .. wrapped.end_of(start).0)
+            .is_some_and(|subterm| bool::from(renames(&seed.0, subterm)))
+    })
+    else {
+        return RuleGrowth::from(false);
+    };
+    let lefts: Vec<Term> = lefts.iter().map(Term::from).collect();
+    let repetitions = lefts.iter().map(|left| left.0.len()).max().unwrap_or(0);
+    let mut repeated = wrapped.clone();
+    for _ in 0 .. repetitions {
+        repeated = wrapped_around(wrapped, hole, &repeated);
+        if let Some(slot) = arms.0.get_mut(var) {
+            slot.clone_from(&repeated);
+        }
+        if generalized
+            .patterns
+            .iter()
+            .any(|pattern| bool::from(reducible(&arms.apply_once(pattern), &lefts)))
+        {
+            return RuleGrowth::from(false);
+        }
+    }
+    RuleGrowth::from(true)
+}
+
+/// `context` with the subterm starting at `hole` replaced by `inner`.
+///
+/// # Specification
+/// - requires: `hole` indexes a node of `context`.
+/// - ensures: the nodes of `context` before `hole`, then `inner`'s, then those
+///   of `context` after the subterm at `hole`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rule_keeps_growing`]: wrapping the seed's place
+///   anywhere else reaches no flattening rule at the depth it fires.
+/// - witness: `term::tests::a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping`
+#[spec(requires: hole.0 < context.0.len(), ensures: |ret| ret.0.len() == context.0.len().saturating_sub(context.end_of(hole).0.saturating_sub(hole.0)).saturating_add(inner.0.len()))]
+fn wrapped_around(
+    context: &Term,
+    hole: Count,
+    inner: &Term,
+) -> Term
+{
+    let end = context.end_of(hole);
+    Term(
+        context
+            .0
+            .iter()
+            .take(hole.0)
+            .chain(&inner.0)
+            .chain(context.0.iter().skip(end.0))
+            .cloned()
+            .collect(),
+    )
+}
+
+/// Whether a left side of `lefts` matches `term` at some node, each of its
+/// variables matching any subterm.
+///
+/// # Specification
+/// - ensures: positive exactly when some node of `term` starts a subterm that
+///   agrees with some left side at every node of the left side that is no
+///   variable, a variable of it standing for a whole subterm.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rule_keeps_growing`]: a flattening rule matching
+///   below the root of a repetition stops the family, and the family's own
+///   rules match none of its repetitions.
+/// - witness: `term::tests::a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping`
+#[spec(ensures: |ret| !bool::from(ret) || (!lefts.is_empty() && !term.0.is_empty()))]
+fn reducible(
+    term: &Term,
+    lefts: &[Term],
+) -> Reducibility
+{
+    Reducibility::from((0 .. term.0.len()).map(Count).any(|start| {
+        lefts.iter().any(|left| {
+            let mut at = start;
+            left.0.iter().all(|head| {
+                let Some(target) = term.0.get(at.0)
+                else {
+                    return false;
+                };
+                if matches!(*head, Head::Var(_)) {
+                    at = term.end_of(at);
+                    return true;
+                }
+                at = at.next();
+                head == target
+            })
+        })
+    }))
+}
+
+/// Whether `right` spells `left` up to renaming its variables one to one.
+///
+/// # Specification
+/// - ensures: positive exactly when the two tables have one length, agree at
+///   every node that is no variable, hold a variable where the other does, and
+///   pair each variable of either with one variable of the other.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`rule_keeps_growing`]: a seed holding two variables
+///   is found inside its wrapping, and one whose variables the wrapping merges
+///   is not.
+/// - witness: `term::tests::a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping`
+#[spec(ensures: |ret| !bool::from(ret) || left.len() == right.len())]
+fn renames(
+    left: &[Head],
+    right: &[Head],
+) -> Renaming
+{
+    let mut forward: BTreeMap<&Name, &Name> = BTreeMap::new();
+    let mut backward: BTreeMap<&Name, &Name> = BTreeMap::new();
+    Renaming::from(
+        left.len() == right.len()
+            && left.iter().zip(right).all(|pair| match pair {
+                (&Head::Var(ref from), &Head::Var(ref to)) => {
+                    *forward.entry(from).or_insert(to) == to
+                        && *backward.entry(to).or_insert(from) == from
+                },
+                (one, other) => one == other,
+            }),
+    )
 }
 
 impl CellAlphabet for TermAlphabet

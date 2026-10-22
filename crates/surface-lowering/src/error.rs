@@ -1295,6 +1295,17 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
+    /// Two rules of a block whose completion never ends: the rule it derives
+    /// from them wraps an earlier derived rule at one point, and no rule
+    /// rewrites any further wrapping, so every round derives a longer rule.
+    RulesNeverComplete
+    {
+        /// The bytes the later rule covers.
+        span: ByteSpan,
+        /// The bytes the earlier rule covers.
+        first: ByteSpan,
+    },
+
     /// Two rules of a block that match one term the coincidence check did not
     /// decide within its budget: a rewrite reaching no normal form within its
     /// steps, or a pair still parting once completion derived its most rules.
@@ -1741,6 +1752,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "this rule and an earlier one rewrite one term to two normal forms the path order \
                  orients neither way, so no rule derived from them joins the two",
             ),
+            Self::RulesNeverComplete { .. } => f.write_str(
+                "this rule and an earlier one rewrite one term to two normal forms, and each \
+                 rule completion derives to join them wraps the one before, so completion never \
+                 ends",
+            ),
             Self::RulesUndecided { .. } => write!(
                 f,
                 "this rule and an earlier one rewrite one term, and whether they agree is not \
@@ -1865,6 +1881,7 @@ impl LoweringRefusal<'_>
             | Self::RulesDiverge { span, .. }
             | Self::RulesOverlapSecondOrder { span, .. }
             | Self::RulesUncompleted { span, .. }
+            | Self::RulesNeverComplete { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::Unminted { span, .. } => Maybe::Present(span),
@@ -1930,7 +1947,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 54_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 55_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2180,6 +2197,10 @@ mod tests
                     Maybe::Present(SurfaceName::from("Tm")),
                     Maybe::Absent(crate::description_subject::Absent::Unwritten),
                 ],
+            },
+            LoweringRefusal::RulesNeverComplete {
+                span: s(101_usize, 102_usize),
+                first: s(0_usize, 1_usize),
             },
         ]
     }

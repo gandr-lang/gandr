@@ -513,6 +513,86 @@ fn a_groups_inverse_law_completes_to_the_rules_it_derives()
     });
 }
 
+/// A scope-extrusion block: completion joins `par(nu(nil()), q)` by
+/// `nu(par(nil, q)) ==> par(nil, q)`, that rule and `scope` by the same rule
+/// with `nil` wrapped in `par(□, q')`, and so on, one wrapping deeper every
+/// round (#1604).
+const SCOPE_EXTRUSION: &str = "theory S {
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : Proc) --> Proc;
+  rule gc : nu(nil()) ==> nil();
+  rule scope : par(nu(p), q) ==> nu(par(p, q));
+";
+
+#[test]
+fn a_scope_extrusion_family_never_completes()
+{
+    let block = alloc::format!("{SCOPE_EXTRUSION}}}");
+    let source = SourceText::from(block.as_str());
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(ref fault @ CoherenceFault::NeverCompletes { first, .. }) =
+            diagnostic.fault
+        else {
+            panic!("the family never completes: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            text(source, first).as_ref(),
+            "rule scope : par(nu(p), q) ==> nu(par(p, q))",
+            "the refusal names the written rule the family overlaps"
+        );
+        assert_eq!(
+            fault.to_string(),
+            "the rule completion derives at round 2, `nu(par(par(nil, q'), q)) ==> par(par(nil, \
+             q'), q)`, is the rule it derived at round 1, `nu(par(nil, q)) ==> par(nil, q)`, with \
+             one subterm wrapped, and no rule rewrites a further wrapping, so every round derives \
+             a longer rule",
+            "the second derived rule is refused, naming the first"
+        );
+        let [ref family, ..] = *module.declarations()
+        else {
+            panic!("the refused family")
+        };
+        assert_eq!(
+            family.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesNeverComplete {
+                span: diagnostic.span,
+                first
+            }),
+            "the family is refused under its own name"
+        );
+    });
+    // A rule flattening the third wrapping, or the fourth, stops the family
+    // after the second or the third derived rule, though each derived rule
+    // wraps the one before.
+    for flat in [
+        "rule flat : par(par(par(nil(), p), q), r) ==> par(par(nil(), q), r);",
+        "rule flat : par(par(par(par(nil(), p), q), r), s) ==> par(par(par(nil(), q), r), s);",
+    ] {
+        let block = alloc::format!("{SCOPE_EXTRUSION}  {flat}\n}}");
+        lowered(SourceText::from(block.as_str()), |module| {
+            assert!(
+                module.cells().diagnostics.is_empty(),
+                "{flat}: {:?}",
+                module.cells().diagnostics
+            );
+            let [ref cells] = *module.cells().declarations.as_slice()
+            else {
+                panic!("one block")
+            };
+            assert!(
+                matches!(cells.coincidence, Coincidence::Joined(_)),
+                "{flat}: the rules complete"
+            );
+        });
+    }
+}
+
 #[test]
 fn a_permuted_call_no_order_orients_is_uncompleted()
 {

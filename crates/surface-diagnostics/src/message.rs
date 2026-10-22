@@ -563,6 +563,11 @@ fn lowered(
             "this rule and an earlier one rewrite one term to two normal forms, and no rule the \
              order can orient joins them, so the block's rules are refused",
         ),
+        LoweringRefusal::RulesNeverComplete { .. } => f.write_str(
+            "this rule and an earlier one rewrite one term to two normal forms, and each rule \
+             completion derives to join them wraps the one before, so completion never ends and \
+             the block's rules are refused",
+        ),
         LoweringRefusal::RulesUndecided { .. } => f.write_str(
             "whether this rule and an earlier one agree was not decided within the check's \
              budget, so the block's rules are refused",
@@ -1376,6 +1381,7 @@ mod tests
             },
             LoweringRefusal::RulesDiverge { span, first: span },
             LoweringRefusal::RulesUncompleted { span, first: span },
+            LoweringRefusal::RulesNeverComplete { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },
             LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
             LoweringRefusal::BudgetExceeded {

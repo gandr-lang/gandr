@@ -509,7 +509,7 @@ impl Annotations
                     ret.context[0_usize] == Maybe::Present(Annotation { span: declared, label: Label::Declared }),
                 LoweringRefusal::ImportShadows { import, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: import, label: Label::First }),
-                LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesOverlapSecondOrder { first, .. } | LoweringRefusal::RulesUncompleted { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
+                LoweringRefusal::RulesDiverge { first, .. } | LoweringRefusal::RulesOverlapSecondOrder { first, .. } | LoweringRefusal::RulesUncompleted { first, .. } | LoweringRefusal::RulesNeverComplete { first, .. } | LoweringRefusal::RulesUndecided { first, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::Overlaps }),
                 LoweringRefusal::RulesNonLinear { copy, .. } =>
                     ret.context[0_usize] == Maybe::Present(Annotation { span: copy, label: Label::Copied }),
@@ -554,6 +554,7 @@ impl Annotations
             LoweringRefusal::RulesDiverge { first, .. }
             | LoweringRefusal::RulesOverlapSecondOrder { first, .. }
             | LoweringRefusal::RulesUncompleted { first, .. }
+            | LoweringRefusal::RulesNeverComplete { first, .. }
             | LoweringRefusal::RulesUndecided { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::Overlaps,

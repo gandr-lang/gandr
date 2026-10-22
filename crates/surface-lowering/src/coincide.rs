@@ -38,10 +38,18 @@
 //!    pair a rule makes with the rules before it is decided before any pair of
 //!    a later one, so a pair already joined is never decided again. A pair no
 //!    direction orients is refused as [`LoweringRefusal::RulesUncompleted`]. A
-//!    pair a reduct of which reaches no normal form within [`JOIN_STEPS`]
-//!    steps, or one that still parts once [`DERIVED_RULES`] rules are derived,
-//!    is refused as [`LoweringRefusal::RulesUndecided`], which reports the
-//!    budget and no verdict.
+//!    derived rule that embeds a rule derived from one of its pair's cells
+//!    (`embeds`), and is that rule with one subterm wrapped in a context, the
+//!    rest renamed, where no rule of the store rewrites any further wrapping
+//!    (`rule_keeps_growing`), is refused as
+//!    [`LoweringRefusal::RulesNeverComplete`] naming both rules
+//!    ([`CoherenceFault::NeverCompletes`]): each round wraps the rule before,
+//!    so completion never ends. A family a rule completion would derive later
+//!    from another pair stops is refused all the same. A pair a reduct of which
+//!    reaches no normal form within [`JOIN_STEPS`] steps, or one that still
+//!    parts once [`DERIVED_RULES`] rules are derived, is refused as
+//!    [`LoweringRefusal::RulesUndecided`], which reports the budget and no
+//!    verdict.
 //!
 //! A block that passes is orthogonal — no two of its rules overlap — or
 //! joined, with one replaying certificate per critical pair and one per
@@ -53,7 +61,8 @@
 //! `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`,
 //! `coincide::tests::a_rule_that_rebuilds_its_own_call_refuses_the_block`,
 //! `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`,
-//! `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`.
+//! `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`,
+//! `coincide::tests::a_scope_extrusion_family_never_completes`.
 //!
 //! A circuit rule is a congruence over the rewrite it binds — `add(x, y) ==>
 //! add(x′, y)` reads "a rewrite of `x` rewrites the sum" — not a rewrite of
@@ -139,6 +148,7 @@
 
 use alloc::borrow::Cow;
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
@@ -172,6 +182,7 @@ use gandr_theory_computads::command_reading;
 use gandr_theory_computads::elaborate_call;
 use gandr_theory_computads::presented_reading;
 use gandr_theory_computads::read_command;
+use gandr_theory_computads::rule_keeps_growing;
 use gandr_theory_computads::term_reading;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FreeTerm;
@@ -184,6 +195,7 @@ use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::derive_cell_var_meta;
+use gandr_theory_levitation::embeds;
 use gandr_theory_levitation::orient_rules;
 use gandr_theory_levitation::orient_rules_with;
 use gandr_theory_levitation::path_greater;
@@ -486,6 +498,71 @@ pub enum CoherenceFault
         /// The term both rules match.
         peak: Box<PairTerm>,
     },
+    /// The rule and an earlier one part, and the rule completion derives from
+    /// them wraps, at one point, a derived rule whose cell is one of the
+    /// pair's, where no rule rewrites any further wrapping: completion derives
+    /// a longer rule every round and never ends.
+    NeverCompletes
+    {
+        /// The earlier rule's written interval.
+        first: ByteSpan,
+        /// The derived rule the new one wraps, its left side then its right.
+        earlier: Box<(FreeTerm, FreeTerm)>,
+        /// The round that derived it.
+        earlier_round: DerivedRound,
+        /// The new rule, its left side then its right.
+        later: Box<(FreeTerm, FreeTerm)>,
+        /// The round that derived it.
+        later_round: DerivedRound,
+    },
+}
+
+/// A round of one reading's completion: the place of the rule it derives
+/// among the reading's derived rules, counted from one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DerivedRound(usize);
+
+impl From<usize> for DerivedRound
+{
+    /// The round numbered `round`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(round: usize) -> Self
+    {
+        Self(round)
+    }
+}
+
+impl From<DerivedRound> for usize
+{
+    /// The round's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(round: DerivedRound) -> Self
+    {
+        round.0
+    }
+}
+
+impl fmt::Display for DerivedRound
+{
+    /// Writes the round's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl CoherenceFault
@@ -511,6 +588,9 @@ impl CoherenceFault
             Self::Undecided { first, .. } | Self::Unfinished { first, .. } => {
                 LoweringRefusal::RulesUndecided { span, first }
             },
+            Self::NeverCompletes { first, .. } => {
+                LoweringRefusal::RulesNeverComplete { span, first }
+            },
         }
     }
 }
@@ -519,7 +599,8 @@ impl fmt::Display for CoherenceFault
 {
     /// Writes the fault with the terms it names in the inspection notation: the
     /// peak and both normal forms of a divergence or of a pair completion
-    /// leaves apart, the peak of an undecided or unfinished pair.
+    /// leaves apart, the peak of an undecided or unfinished pair, and both
+    /// derived rules of a completion that never ends.
     ///
     /// # Specification
     /// - ensures: one sentence per fault; a command the term reading cannot
@@ -540,6 +621,7 @@ impl fmt::Display for CoherenceFault
     /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
     /// - witness: `coincide::tests::a_third_cancellation_parts_the_circles_readings`
     /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
+    /// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
     #[inline]
     fn fmt(
         &self,
@@ -591,6 +673,19 @@ impl fmt::Display for CoherenceFault
                 "both rules rewrite `{}` to two normal forms still once completion has derived \
                  {DERIVED_RULES} rules",
                 Spelled(peak)
+            ),
+            Self::NeverCompletes {
+                ref earlier,
+                earlier_round,
+                ref later,
+                later_round,
+                ..
+            } => write!(
+                f,
+                "the rule completion derives at round {later_round}, `{} ==> {}`, is the rule it \
+                 derived at round {earlier_round}, `{} ==> {}`, with one subterm wrapped, and no \
+                 rule rewrites a further wrapping, so every round derives a longer rule",
+                later.0, later.1, earlier.0, earlier.1
             ),
         }
     }
@@ -667,7 +762,9 @@ impl fmt::Display for Spelled<'_>
 ///   third cancellation diverges at itself naming the one before; a group's
 ///   inverse law completes to the rules that join it, each derived rule's
 ///   certificate replaying over the cells before it, and two operations a pair
-///   leaves apart at one rank are uncompleted; reporting the earlier rule's
+///   leaves apart at one rank are uncompleted; a scope-extrusion family whose
+///   second derived rule wraps its first never completes, and beside a rule
+///   flattening its third wrapping completes; reporting the earlier rule's
 ///   span, deciding joinability first, reading the circle in the sequent store
 ///   alone, or deriving a rule between two constructor terms changes one of
 ///   them.
@@ -680,6 +777,7 @@ impl fmt::Display for Spelled<'_>
 /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
 /// - witness: `coincide::tests::a_data_blocks_derived_rule_is_a_pattern_rule`
 /// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
+/// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
 #[spec(captures: written = store.len(), ensures: |ret| match ret {
     Ok(Coincidence::Joined(ref certificates)) => (!certificates.commands.is_empty() || !certificates.terms.is_empty())
         && usize::from(store.len()) == usize::from(written).saturating_add(certificates.derived_commands.len()),
@@ -689,7 +787,7 @@ impl fmt::Display for Spelled<'_>
         && span.start() >= at.start() && span.end() <= at.end(),
     Err((_, CoherenceFault::OverlapsSecondOrder { .. })) => orient_rules(description) == Termination::Oriented
         && second_order_overlap(&description.rules).is_some(),
-    Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
+    Err((_, CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::NeverCompletes { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 pub(crate) fn decide<G>(
     description: &TheoryDesc<G>,
@@ -966,11 +1064,15 @@ where
     ///   with an operation at the left side's head orients — riding the
     ///   precedence the block's rules and the ranking rules derived so far
     ///   induce, or failing that ranking it — is
-    ///   [`CoherenceFault::Uncompleted`]; otherwise the oriented rule is
-    ///   appended to `store` with its certificate — the pair's two paths from
-    ///   the peak, the one reaching the rule's left side then firing the rule
-    ///   at the root — and `joining` resumed at the pair that parted, so a
-    ///   round decides that pair and the ones after it and no pair already
+    ///   [`CoherenceFault::Uncompleted`]; an oriented rule embedding a rule
+    ///   derived as one of the pair's cells, which [`rule_keeps_growing`] finds
+    ///   it wraps at one point where no left side of the written rules, those
+    ///   derived and it rewrites a further wrapping, is
+    ///   [`CoherenceFault::NeverCompletes`] naming both; otherwise the oriented
+    ///   rule is appended to `store` with its certificate — the pair's two
+    ///   paths from the peak, the one reaching the rule's left side then firing
+    ///   the rule at the root — and `joining` resumed at the pair that parted,
+    ///   so a round decides that pair and the ones after it and no pair already
     ///   joined again. A pair a reduct of which reaches no normal form within
     ///   [`JOIN_STEPS`] steps is [`CoherenceFault::Undecided`], and a divergent
     ///   pair met once [`DERIVED_RULES`] rules are derived is
@@ -984,10 +1086,13 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`decide`]: a constructor-headed divergence is
     ///   refused, a group's inverse law completes, and a divergence the order
-    ///   leaves apart is uncompleted.
+    ///   leaves apart is uncompleted; a scope-extrusion family is refused at
+    ///   its second derived rule, and completes beside a rule flattening its
+    ///   third wrapping.
     /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
     /// - witness: `coincide::tests::a_groups_inverse_law_completes_to_the_rules_it_derives`
     /// - witness: `coincide::tests::a_permuted_call_no_order_orients_is_uncompleted`
+    /// - witness: `coincide::tests::a_scope_extrusion_family_never_completes`
     #[spec(captures: before = store.len(), ensures: |ret| ret.as_ref().is_err()
         || ret.as_ref().is_ok_and(|completed| usize::from(store.len()) == usize::from(before).saturating_add(completed.1.len())
             && completed.1.iter().all(|derived| bool::from(derived.replay(store)))))]
@@ -1008,6 +1113,15 @@ where
         let mut joinability = first;
         let mut derived: Vec<DerivedRule<A>> = Vec::new();
         let (mut ranking, mut riding): (Rewrites, Rewrites) = (Vec::new(), Vec::new());
+        // The left side of every rule the store holds, and each derived rule's
+        // index by its cell.
+        let mut lefts: Vec<FreeTerm> = self
+            .description
+            .rules
+            .iter()
+            .map(|face| face.lhs.clone())
+            .collect();
+        let mut parents: BTreeMap<CellId, usize> = BTreeMap::new();
         loop {
             let (overlap, left, right) = match joinability {
                 Joinability::Joined(certificates) => return Ok((certificates, derived)),
@@ -1093,6 +1207,29 @@ where
             else {
                 return Err(uncompleted(overlap, left, right));
             };
+            lefts.push(rule.0.clone());
+            // A rule wrapping a rule its pair was derived from at one point,
+            // where no rule rewrites any further wrapping: completion derives
+            // a longer rule every round.
+            let repeated = [overlap.left, overlap.right]
+                .into_iter()
+                .filter_map(|cell| {
+                    let &index = parents.get(&cell)?;
+                    derived.get(index).map(|earlier| (index, earlier))
+                })
+                .find(|&(_, earlier)| {
+                    bool::from(embeds(&earlier.rule.0, &rule.0))
+                        && bool::from(rule_keeps_growing(&earlier.rule, &rule, &lefts))
+                });
+            if let Some((index, earlier)) = repeated {
+                return Err((span, CoherenceFault::NeverCompletes {
+                    first,
+                    earlier: Box::new(earlier.rule.clone()),
+                    earlier_round: DerivedRound::from(index.saturating_add(1)),
+                    later: Box::new(rule),
+                    later_round: DerivedRound::from(derived.len().saturating_add(1)),
+                }));
+            }
             let (Ok(left_reduct), Ok(right_reduct)) =
                 (overlap.left_reduct(store), overlap.right_reduct())
             else {
@@ -1122,6 +1259,7 @@ where
                 cell,
                 at: A::root_position(),
             });
+            let _previous = parents.insert(cell, derived.len());
             derived.push(DerivedRule {
                 cell,
                 rule,

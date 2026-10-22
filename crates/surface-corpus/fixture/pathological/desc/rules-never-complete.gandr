@@ -1,0 +1,18 @@
+// `gc` collects an empty restriction and `scope` extrudes one past a parallel
+// component. They overlap at `par(nu(nil()), q)`, which completion joins by
+// the rule `nu(par(nil, q)) ==> par(nil, q)`; that rule and `scope` overlap
+// in turn, joined by the same rule with `nil` wrapped in `par(□, q')`, and so
+// on, one wrapping deeper every round, where no rule rewrites a wrapping.
+// Completion never ends, and the block is refused by name at the second rule
+// it derives rather than once its budget of derived rules runs out (#1604).
+
+/// A restriction that extrudes its scope and is collected once empty.
+@[ refuses("RulesNeverComplete") ]
+theory Extrusion {
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper nu : (p : Proc) --> Proc;
+  rule gc : nu(nil()) ==> nil();
+  rule scope : par(nu(p), q) ==> nu(par(p, q));
+}

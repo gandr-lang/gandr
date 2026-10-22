@@ -224,6 +224,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
         LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
         LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
+        LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
         LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
@@ -589,6 +590,7 @@ mod tests
             LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
             LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
             LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
+            LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
             LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
             LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
             LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
@@ -879,6 +881,10 @@ mod tests
                 first: at,
             },
             LoweringRefusal::RulesUncompleted {
+                span: at,
+                first: at,
+            },
+            LoweringRefusal::RulesNeverComplete {
                 span: at,
                 first: at,
             },

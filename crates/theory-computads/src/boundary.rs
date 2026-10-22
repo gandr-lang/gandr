@@ -12,8 +12,9 @@
 //! The crate owns the nominal wrappers its own signatures cross: the indices
 //! its reports carry (`DeclinedFaceIndex`, `DeclinedOpIndex`), the counts its
 //! refusals carry (`OperationInputCount`, `ConstructorCount`,
-//! `RedexOccurrenceCount`), and one private verdict. A wrapper of another crate
-//! a signature here mentions is that crate's.
+//! `RedexOccurrenceCount`), the verdict on a rule's growth from an earlier one
+//! (`RuleGrowth`), and private verdicts. A wrapper of another crate a
+//! signature here mentions is that crate's.
 
 use core::fmt;
 
@@ -140,4 +141,21 @@ count_wrapper! {
 verdict_wrapper! {
     /// Whether a face states that an operation inverts a constructor.
     pub struct InverseFacePresence;
+}
+
+verdict_wrapper! {
+    /// Whether a rule is an earlier one with one subterm wrapped in a fixed
+    /// context, the rest renamed.
+    pub struct RuleGrowth;
+}
+
+verdict_wrapper! {
+    /// Whether some rule's left side matches a term at some node.
+    pub struct Reducibility;
+}
+
+verdict_wrapper! {
+    /// Whether one term spells another up to renaming its variables one to
+    /// one.
+    pub struct Renaming;
 }
