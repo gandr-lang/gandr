@@ -2114,9 +2114,9 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
 
 /// Each type the kernel has no former for is refused by its own name at its
 /// own node: a capability, a buffer, a stage, a region, a value held at a
-/// world, a flow above the smallest universe and the unknown type; a decoded
-/// code that is a reified stack, a linear endpoint, a hole or no code at all
-/// is refused where it stands, and a marked code decodes as what it marks.
+/// world and the unknown type; a decoded code that is a reified stack, a
+/// linear endpoint, a hole or no code at all is refused where it stands, and a
+/// marked code decodes as what it marks.
 #[test]
 fn each_type_outside_the_kernel_is_refused_by_name_where_it_stands()
 {
@@ -2137,8 +2137,6 @@ fn each_type_outside_the_kernel_is_refused_by_name_where_it_stands()
     let integer = arena.value_type_base(BaseType::Integer);
     let region = Region::Scoped(RegionDepth::from(1_u32));
     let at_type = |id| CoreNode::Type(TypeNode::Value(id));
-    let one = Level::zero().succ().expect("one is below the top");
-    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
     let code = arena.value_quote(integer);
     let unadmitted = |at, former| Refusal::OutOfFragment { at, former };
     let capability =
@@ -2150,7 +2148,6 @@ fn each_type_outside_the_kernel_is_refused_by_name_where_it_stands()
         inner: integer,
         world: World::Host,
     });
-    let higher = arena.value_type_flow(large, code, code);
     let unknown = arena.value_type_unknown();
     let unknown_computation = arena.comp_type_unknown();
     let stack = arena.value_reify(Arc::from([]));
@@ -2182,10 +2179,6 @@ fn each_type_outside_the_kernel_is_refused_by_name_where_it_stands()
         (at_type(located), Refusal::Located {
             at: at_type(located),
         }),
-        (
-            at_type(higher),
-            unadmitted(at_type(higher), UnadmittedFormer::HigherFlow),
-        ),
         (at_type(unknown), Refusal::Unknown {
             at: at_type(unknown),
         }),
@@ -5387,10 +5380,6 @@ fn each_former_the_kernel_refuses_names_its_issue()
             tracked(TrackingIssue::KERNEL_MEMORY),
         ),
         (UnadmittedFormer::Run, tracked(TrackingIssue::KERNEL_RUN)),
-        (
-            UnadmittedFormer::HigherFlow,
-            tracked(TrackingIssue::KERNEL_HIGHER_FLOW),
-        ),
         (
             UnadmittedFormer::Abstract,
             tracked(TrackingIssue::KERNEL_ABSTRACT),

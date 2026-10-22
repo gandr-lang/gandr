@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -19,11 +20,13 @@ use gandr_core_term::session::RecursionIndex;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_strata::Level;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Value as KernelValue;
@@ -668,6 +671,48 @@ fn stays_and_composites_record_their_simulation()
             Outcome::Defined { .. },
         ]),
         "the composite crosses as one replayed simulation, and a stay at a string as the kernel's stay: {outcomes:?}"
+    );
+}
+
+#[test]
+fn a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628()
+{
+    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
+    // def twice : Flow(Type[+, 1], Type, Type) = kept then kept ;
+    let mut arena = CoreArena::new();
+    let small = universe(&mut arena);
+    let large = arena.value_type_universe(
+        Sort::Ground(GroundSort::Value),
+        Level::constant(LevelConstant::from(1_u64)),
+    );
+    let code = arena.value_quote(small);
+    let stay = arena.value_stay(code);
+    let flow = arena.value_type_flow(large, code, code);
+    let kept = arena.value_constant(ConstantIndex::from(0_usize));
+    let then = arena.value_then(kept, kept);
+    let report = judged(&mut arena, &[
+        declaration(At(0), flow, stay),
+        declaration(At(1), flow, then),
+    ]);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "a stay at the code of a universe and its composite check at the universe above: {report:?}"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(|entry| entry.outcome().clone())
+        .collect();
+    assert!(
+        matches!(outcomes.as_slice(), [
+            Outcome::Defined { .. },
+            Outcome::Defined { .. },
+        ]),
+        "the kernel replays both at its flow over the level-one universe: {outcomes:?}"
     );
 }
 

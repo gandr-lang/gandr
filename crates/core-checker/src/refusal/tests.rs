@@ -291,7 +291,6 @@ fn each_unadmitted_former_carries_its_pinned_class()
         (UnadmittedFormer::Exercise, FailureClass::EngineFault),
         (UnadmittedFormer::Scope, FailureClass::EngineFault),
         (UnadmittedFormer::Run, FailureClass::EngineFault),
-        (UnadmittedFormer::HigherFlow, FailureClass::EngineFault),
         (UnadmittedFormer::Memory, FailureClass::EngineFault),
         (UnadmittedFormer::Buffer, FailureClass::EngineFault),
         (UnadmittedFormer::Abandon, FailureClass::EngineFault),

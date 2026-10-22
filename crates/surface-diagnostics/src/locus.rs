@@ -1890,7 +1890,6 @@ impl fmt::Display for Former
             | UnadmittedFormer::Run => {
                 "a recorded run or a ride at the pure kernel boundary, moved by the recorded-run consumer"
             },
-            | UnadmittedFormer::HigherFlow => "a flow at a universe above level zero",
             | UnadmittedFormer::Memory => "a memory form at the pure kernel boundary",
             | UnadmittedFormer::Stage => {
                 "a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel"
@@ -4241,7 +4240,6 @@ mod tests
             UnadmittedFormer::Exercise,
             UnadmittedFormer::Scope,
             UnadmittedFormer::Run,
-            UnadmittedFormer::HigherFlow,
             UnadmittedFormer::Memory,
             UnadmittedFormer::Stage,
             UnadmittedFormer::Buffer,
