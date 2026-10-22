@@ -1,0 +1,30 @@
+// A record pattern over a plain record binds a field the arm never reads:
+// the binder still answers at the field of its label, as a component of an
+// eager product does. Before #1883 the unread binder answered nothing, so the
+// editor showed no type at it.
+
+/// The lower bound of a span, its upper bound bound by label and unread.
+@[ checks ]
+def lower_bound(span : #{lower : Integer, upper : Integer}) -> -F Integer {
+  case span {
+    #{.upper = stop, .lower = start} => start
+  }
+}
+
+/// The span from three to nine starts at three.
+@[ runs("3") ]
+def span_start : () => Integer ;
+def span_start = lower_bound(#{lower = 3, upper = 9}) ;
+
+/// The same bound with both fields bound by position, the second unread.
+@[ checks ]
+def first_bound(span : #{lower : Integer, upper : Integer}) -> -F Integer {
+  case span {
+    #{start, stop} => start
+  }
+}
+
+/// The span from four to six starts at four.
+@[ runs("4") ]
+def span_first : () => Integer ;
+def span_first = first_bound(#{lower = 4, upper = 6}) ;

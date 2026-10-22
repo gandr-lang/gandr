@@ -113,6 +113,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
+use gandr_core_term::FieldLabel;
 use gandr_core_term::Sort;
 use gandr_core_term::TypeImporter;
 use gandr_core_term::Value;
@@ -4150,7 +4151,8 @@ quenchant_shape::reason_enum! {
 ///   each part at the type its place gives it — a data constructor's field at
 ///   the field's type, its parameters read at the family's arguments; a word
 ///   pattern's rest at the word's type; a product's, a pair's and a sum's
-///   components at their own; a dependent pair's first at its own and its
+///   components at their own; a record pattern's fields at the record type's
+///   field of the label each binds; a dependent pair's first at its own and its
 ///   second at its own, read under the first — and each span the lowering kept
 ///   for a typed pattern: one read as the pattern at that type, one read as a
 ///   constructor's name at the constructor's type, which takes the fields to
@@ -4211,6 +4213,7 @@ fn matched(
     // how many of that pattern's parts its type stands under.
     let mut typed: BTreeMap<PatternId, (ValueTypeId, Inside)> = BTreeMap::new();
     let mut pending: Vec<(PatternId, ValueTypeId, Inside)> = Vec::new();
+    let mut labelled: BTreeMap<PatternId, &[FieldLabel]> = BTreeMap::new();
     for (_, case) in module.origins().cases() {
         let Some(&Scrutinised { ty, within }) = scrutinised.get(&case.scrutinee)
         else {
@@ -4228,14 +4231,21 @@ fn matched(
         typed.clear();
         pending.clear();
         pending.extend(case.arms.iter().map(|arm| (arm.pattern, ty, None)));
+        labelled.clear();
+        labelled.extend(
+            case.labelled
+                .iter()
+                .map(|&(held, ref labels)| (held, labels.as_slice())),
+        );
         while let Some((pattern, ty, under)) = pending.pop() {
             if typed.insert(pattern, (ty, under)).is_some() {
                 continue;
             }
             if let Some(shape) = case.patterns.pattern(pattern) {
                 let head = exposed(arena, definitions, ty);
+                let labels = labelled.get(&pattern).copied();
                 pending.extend(
-                    parts(arena, &signatures, shape, head)
+                    parts(arena, &signatures, shape, labels, head)
                         .into_iter()
                         .map(|(part, part_ty, before)| (part, part_ty, Some((pattern, before)))),
                 );
@@ -4344,17 +4354,19 @@ fn exposed(
 }
 
 /// The parts of `pattern`, matched at `ty`, each at the type its place gives
-/// it and the number of earlier parts that type stands under.
+/// it and the number of earlier parts that type stands under; `labels` are the
+/// labels a record pattern binds, one per part.
 ///
 /// # Specification
 /// - requires: `ty` is a type of `arena` and `signatures` the module's data
 ///   families by constant.
 /// - ensures: as [`matched`] types the parts of one pattern; none for a pattern
-///   whose place it does not type, and none for a leaf. A part stands under no
-///   earlier part unless its type names one: a data constructor's field whose
-///   type names a field before it stands under every field before it at its
-///   declared type, and a dependent pair's second whose type names the first
-///   stands under the first.
+///   whose place it does not type, and none for a leaf. A record pattern's
+///   parts at a record type are each at the field of its label, or none when a
+///   label names no field. A part stands under no earlier part unless its type
+///   names one: a data constructor's field whose type names a field before it
+///   stands under every field before it at its declared type, and a dependent
+///   pair's second whose type names the first stands under the first.
 /// - provides: one step of [`matched`]'s walk.
 /// - fails: never.
 /// - panics: none.
@@ -4362,18 +4374,21 @@ fn exposed(
 /// # Adequacy
 /// - hypothesis: L3 — as [`matched`], and a record pattern over a product of
 ///   three and an indexed pattern over a sum of two, each part at its
-///   component.
+///   component, and a record pattern over a plain record, labelled and by
+///   position, each part at its label's field.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 /// - witness: `typed::tests::a_part_of_a_product_or_a_binary_sum_answers_at_its_component`
 /// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
+/// - witness: `typed::tests::an_unread_binder_of_a_plain_record_answers_at_its_field_1883`
 #[spec(ensures: |ret| ret.iter().all(|&(_, part, _)| arena.value_type(part).is_some())
     && (ret.is_empty() || matches!(*pattern, Pattern::Constructor { .. } | Pattern::Pair(..) | Pattern::Injection(..))))]
 fn parts(
     arena: &mut CoreArena,
     signatures: &BTreeMap<ConstantIndex, &DataSignature>,
     pattern: &Pattern,
+    labels: Option<&[FieldLabel]>,
     ty: ValueTypeId,
 ) -> Vec<(PatternId, ValueTypeId, Before)>
 {
@@ -4403,6 +4418,17 @@ fn parts(
                 },
                 Some(&ValueType::Product(ref components)) if usize::from(tag) == 0_usize => {
                     return at(components, fields);
+                },
+                Some(&ValueType::Record(ref record)) if usize::from(tag) == 0_usize => {
+                    let Some(labels) = labels
+                    else {
+                        return Vec::new();
+                    };
+                    let components: Option<Vec<ValueTypeId>> = labels
+                        .iter()
+                        .map(|label| record.get(label).copied())
+                        .collect();
+                    return components.map_or_else(Vec::new, |components| at(&components, fields));
                 },
                 Some(&ValueType::Sum(ref summands)) => {
                     return match summands.get(usize::from(tag)) {
@@ -6418,6 +6444,28 @@ mod tests
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from(ty)),
                 "`{needle}` answers at its component"
+            );
+        }
+    }
+
+    /// #1883: a binder no arm reads in a record pattern over a plain record
+    /// answers at the field of the label it binds, written out of the type's
+    /// order or by position.
+    #[test]
+    fn an_unread_binder_of_a_plain_record_answers_at_its_field_1883()
+    {
+        let source = SourceText::from(concat!(
+            "def low(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
+            "  case r {\n    #{.high = h, .low = l} => return l\n  }\n}\n",
+            "def first(r : #{low : Integer, high : Bool}) -> -F Integer {\n",
+            "  case r {\n    #{p, q} => return p\n  }\n}\n",
+        ));
+        let table = table(source);
+        for (needle, ty) in [("h, .low", "Bool"), ("q} =>", "Bool")] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "`{needle}` answers at its label's field"
             );
         }
     }
