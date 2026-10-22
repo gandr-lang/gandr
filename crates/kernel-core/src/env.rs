@@ -3061,6 +3061,7 @@ mod tests
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::SealExtent;
     use gandr_kernel_term::SealScope;
+    use gandr_kernel_term::Seam;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
 
@@ -3696,6 +3697,46 @@ mod tests
             super::Mention::Named,
             "a stopped walk keeps nothing it did not finish"
         );
+    }
+
+    /// The walk reaches a constant through every child slot of the formers
+    /// that hold one beside other children: each root names the constant
+    /// once, and nothing else.
+    #[test]
+    fn reachability_descends_into_every_former()
+    {
+        let mut arena = TermArena::new();
+        let constant = ConstantIndex::from(7_usize);
+        let code = arena.value_constant(constant);
+        let unit = arena.value_unit();
+        let done = arena.computation_return(unit);
+        let one = arena.value_type_unit();
+        let decoded = arena.value_type_element(code, Level::zero());
+        let returns = arena.comp_type_returner(decoded);
+        let static_pi = arena.value_type_static_pi(decoded, one);
+        let sigma = arena.value_type_sigma(one, decoded);
+        let fold = arena.computation_list_fold(one, one, code, done, done);
+        let related = arena.computation_related_application(code, (unit, unit), unit, done);
+        let roots = [
+            ("c ()", arena.value_static_application(code, unit)),
+            ("⌜F (El c)⌝", arena.value_quote_computation(returns)),
+            ("⌜El c ⇒ 1⌝", arena.value_quote(static_pi)),
+            ("⌜Σ 1. El c⌝", arena.value_quote(sigma)),
+            ("c then ()", arena.value_then(code, unit, Seam::Sequence)),
+            ("thunk (fold c)", arena.value_thunk(fold)),
+            ("thunk (apply c)", arena.value_thunk(related)),
+        ];
+        for (what, root) in roots {
+            assert_eq!(
+                super::BTreeSet::from([constant]),
+                super::collect_reachable(
+                    &arena,
+                    super::AnyNode::Value(root),
+                    super::CodeEdges::Follow
+                ),
+                "{what}"
+            );
+        }
     }
 
     #[test]

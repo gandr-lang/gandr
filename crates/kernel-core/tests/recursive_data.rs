@@ -3,6 +3,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_kernel_conversion_trace::ConversionDecision;
@@ -33,6 +34,7 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_kernel_term::ParameterPosition;
+use gandr_kernel_term::PathEvidence;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageId;
 use gandr_kernel_term::StagedPosition;
@@ -41,6 +43,7 @@ use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
+use gandr_kernel_term::session::Evidence;
 
 /// Where a one-parameter block's one field places the family `T A`, `A`
 /// its parameter, beside `List`, whose parameter is strictly positive,
@@ -136,6 +139,52 @@ enum Holder
     With,
     /// `thunk (transport c c)`.
     Transport,
+    /// `ua c`.
+    Univalence,
+    /// `here c`.
+    Here,
+    /// `⌜Flow(1, c, c)⌝`.
+    QuotedFlow,
+    /// `⌜Bridge(1, c, c)⌝`.
+    QuotedBridge,
+    /// `⌜El c⌝`, a computation type.
+    QuotedElement,
+    /// `⌜D c⌝`, a codata type over the first declaration.
+    QuotedCodata,
+    /// `thunk (case c of { return () })`.
+    Case,
+    /// `thunk (case c return F 1 of { return () })`.
+    DataCase,
+    /// `thunk (split c return F 1 as (_, _) in return ())`.
+    SigmaSplit,
+    /// `thunk ⟨return c⟩.0`.
+    Project,
+    /// `thunk (fold c { nil ↦ return (); _ :: _ ↦ return () })`.
+    ListFold,
+    /// `thunk (case c of { nil ↦ return (); _ :: _ ↦ return () })`.
+    ListCase,
+    /// `thunk (transport (T A) along c of c)`.
+    PathTransport,
+    /// `thunk (ride (T A) c c)`.
+    Ride,
+    /// `thunk (transport (F (T A)) along c from c over c of c)`.
+    TelescopeTransport,
+    /// `thunk (ride (F (T A)) c from c over c of c)`.
+    TelescopeRide,
+    /// `thunk (apply c at (c, c) by c in return ())`.
+    RelatedApplication,
+    /// A function flow from `c` to `c`.
+    FunctionFlow,
+    /// A forward flow translating by `c` with the output `c`.
+    ForwardFlow,
+    /// A session path over the payload paths `c`.
+    SessionPath,
+    /// A session flow over the payload paths `c`.
+    SessionFlow,
+    /// An equivalence with `c` forward and `c` backward.
+    Equivalence,
+    /// `⌜(T A) at a stage⌝`.
+    QuotedStaged,
 }
 
 /// `holder` around the quoted family, a value holding it: `own` is `T A`
@@ -188,6 +237,100 @@ fn held(
             arena.computation_with(&[returned])
         },
         Holder::Transport => arena.computation_transport(code, code),
+        Holder::Univalence => return arena.value_univalence(code),
+        Holder::Here => return arena.value_here(code),
+        Holder::QuotedFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_quote(flow);
+        },
+        Holder::QuotedBridge => {
+            let one = arena.value_type_unit();
+            let bridge = arena.value_type_bridge(one, code, code);
+            return arena.value_quote(bridge);
+        },
+        Holder::QuotedElement => {
+            let element = arena.comp_type_element(code, Level::zero());
+            return arena.value_quote_computation(element);
+        },
+        Holder::QuotedCodata => {
+            let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), vec![code]);
+            return arena.value_quote_computation(codata);
+        },
+        Holder::Case => {
+            let arm = arena.computation_return(unit);
+            arena.computation_case(code, &[arm])
+        },
+        Holder::DataCase => {
+            let arm = arena.computation_return(unit);
+            let one = arena.value_type_unit();
+            let motive = arena.comp_type_returner(one);
+            arena.computation_data_case(code, motive, vec![arm])
+        },
+        Holder::SigmaSplit => {
+            let body = arena.computation_return(unit);
+            let one = arena.value_type_unit();
+            let motive = arena.comp_type_returner(one);
+            arena.computation_sigma_split(code, motive, body)
+        },
+        Holder::Project => {
+            let returned = arena.computation_return(code);
+            arena.computation_project(Component::from(0_usize), returned)
+        },
+        Holder::ListFold => {
+            let (on_nil, on_cons) = (
+                arena.computation_return(unit),
+                arena.computation_return(unit),
+            );
+            arena.computation_list_fold(own, own, code, on_nil, on_cons)
+        },
+        Holder::ListCase => {
+            let (on_nil, on_cons) = (
+                arena.computation_return(unit),
+                arena.computation_return(unit),
+            );
+            arena.computation_list_case(code, on_nil, on_cons)
+        },
+        Holder::PathTransport => arena.computation_path_transport(own, code, code),
+        Holder::Ride => arena.computation_ride(own, code, code),
+        Holder::TelescopeTransport => {
+            let motive = arena.comp_type_returner(own);
+            arena.computation_telescope_transport(motive, code, code, code, code)
+        },
+        Holder::TelescopeRide => {
+            let motive = arena.comp_type_returner(own);
+            arena.computation_telescope_ride(motive, code, code, code, code)
+        },
+        Holder::RelatedApplication => {
+            let body = arena.computation_return(unit);
+            arena.computation_related_application(code, (code, code), code, body)
+        },
+        Holder::FunctionFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_function_flow(flow, code, code);
+        },
+        Holder::ForwardFlow => {
+            let one = arena.value_type_unit();
+            let flow = arena.value_type_flow(one, code, code);
+            return arena.value_forward_flow(flow, code, Box::from([code]), Arc::from(Vec::new()));
+        },
+        Holder::SessionPath => {
+            let one = arena.value_type_unit();
+            return arena.value_session_path(one, Arc::new(Evidence::default()), code);
+        },
+        Holder::SessionFlow => {
+            let one = arena.value_type_unit();
+            return arena.value_session_flow(one, Arc::new(Evidence::default()), code);
+        },
+        Holder::Equivalence => {
+            let one = arena.value_type_unit();
+            return arena.value_path_equiv(one, code, code, Arc::new(PathEvidence::default()));
+        },
+        Holder::QuotedStaged => {
+            let staged = arena.value_type_staged(own, Stage::At(StageId::from(0_usize)));
+            return arena.value_quote(staged);
+        },
     };
     arena.value_thunk(computation)
 }
@@ -616,6 +759,192 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
     let value = arena.value_thunk(body);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
     environment.add_decl(declaration)
+}
+
+/// The former a link's test is held in, and the elimination that reads it
+/// back.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Wrapper
+{
+    /// `#{t : test}`, read by `w.t`.
+    Record,
+    /// `test × 1`, read by `w.0`.
+    Product,
+    /// `test + 1`, read by a case.
+    Sum,
+    /// `Σ(_ : test). 1`, read by a split.
+    Sigma,
+    /// `List test`, its head read by a list case.
+    List,
+    /// `U ⟨Chain → F 1⟩`, read by projecting the forced pair.
+    With,
+    /// `U (Π(_ : 1). Chain → F 1)`, read by applying it to `()`.
+    Pi,
+}
+
+/// Admit `Chain` with `link : (prev : Chain, held : W test)`, `W` the
+/// wrapper and `test` at `U (Chain → F 1)`; then offer `λc. case c of {
+/// start ↦ return (); link ↦ λprev held. … }`, reading the test out of
+/// `held` and applying it to what `consumer` names.
+///
+/// # Specification
+/// - requires: `consumer` is not [`Consumer::Handed`].
+/// - ensures: the consumer is admitted exactly when it applies the test to the
+///   chain before the link, and otherwise refused as `StageNotBelow`.
+/// - panics: if `Chain` is refused.
+///
+/// # Errors
+/// The kernel's refusal of the consumer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the consumers differ only in the value the test is
+///   applied to, and the wrappers only in the former the field's stage is
+///   rebuilt through.
+/// - witness: `tests::recursive_data::a_wrapped_test_is_staged_through_its_wrapper`
+#[spec(requires: consumer != Consumer::Handed,
+       ensures: |ret| ret.is_ok() == (consumer == Consumer::Before)
+        && (ret.is_ok() || matches!(ret, Err(KernelError::StageNotBelow { .. }))))]
+fn wrapped_chain(
+    wrapper: Wrapper,
+    consumer: Consumer,
+) -> Result<CheckedId, KernelError>
+{
+    let mut environment = Environment::new();
+    let chain = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let own = arena.value_type_data(chain, vec![]);
+    let held = wrapping(arena, wrapper, own);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        vec![],
+        vec![vec![], vec![own, held]],
+        kind,
+    );
+    environment
+        .add_decl(declaration)
+        .expect("Chain is stratified");
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let own = arena.value_type_data(chain, vec![]);
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let done = arena.value_unit();
+    let on_start = arena.computation_return(done);
+    let applied = unwrapped(arena, wrapper, consumer);
+    let on_link = arena.computation_lambda(applied);
+    let on_link = arena.computation_lambda(on_link);
+    let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
+    let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+    let body = arena.computation_lambda(case);
+    let declared = consuming(arena, own, returns);
+    let value = arena.value_thunk(body);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, value);
+    environment.add_decl(declaration)
+}
+
+/// The link's second field: the test `U (Chain → F 1)` held in `wrapper`.
+///
+/// # Specification
+/// trivial.
+fn wrapping(
+    arena: &mut TermArena,
+    wrapper: Wrapper,
+    own: ValueTypeId,
+) -> ValueTypeId
+{
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(unit);
+    let tested = arena.comp_type_arrow(own, returns);
+    let test = arena.value_type_thunk(tested);
+    match wrapper {
+        Wrapper::Record => arena.value_type_record(BTreeMap::from([(
+            FieldLabel::from(String::from("t")),
+            test,
+        )])),
+        Wrapper::Product => arena.value_type_product(&[test, unit]),
+        Wrapper::Sum => arena.value_type_sum(&[test, unit]),
+        Wrapper::Sigma => arena.value_type_sigma(test, unit),
+        Wrapper::List => arena.value_type_list(test),
+        Wrapper::With => {
+            let with = arena.comp_type_with(&[tested]);
+            arena.value_type_thunk(with)
+        },
+        Wrapper::Pi => {
+            let pi = arena.comp_type_pi(unit, tested);
+            arena.value_type_thunk(pi)
+        },
+    }
+}
+
+/// The link branch's body under `held` 0, `prev` 1, `c` 2: the test read
+/// out of `held` and applied to `prev` or, for Curry's consumer, to `c`.
+///
+/// # Specification
+/// trivial.
+fn unwrapped(
+    arena: &mut TermArena,
+    wrapper: Wrapper,
+    consumer: Consumer,
+) -> ComputationId
+{
+    // The variable the test is applied to, `binders` binders below `held`.
+    let target = |arena: &mut TermArena, binders: u32| {
+        let index = match (consumer, binders) {
+            (Consumer::Before, 0) => 1,
+            (Consumer::Before, 1) | (Consumer::Itself | Consumer::Handed, 0) => 2,
+            (Consumer::Before, _) | (Consumer::Itself | Consumer::Handed, 1) => 3,
+            (Consumer::Itself | Consumer::Handed, _) => 4,
+        };
+        arena.value_variable(DeBruijnIndex::from(index))
+    };
+    let held = arena.value_variable(DeBruijnIndex::from(0));
+    let unit = arena.value_unit();
+    match wrapper {
+        Wrapper::Record | Wrapper::Product => {
+            let read = if wrapper == Wrapper::Record {
+                arena.computation_record_projection(held, FieldLabel::from(String::from("t")))
+            }
+            else {
+                arena.computation_tuple_projection(held, Component::from(0_usize))
+            };
+            let argument = target(arena, 1);
+            let applied = call(arena, DeBruijnIndex::from(0), argument);
+            arena.computation_bind(read, applied)
+        },
+        Wrapper::Sum => {
+            let argument = target(arena, 1);
+            let applied = call(arena, DeBruijnIndex::from(0), argument);
+            let on_unit = arena.computation_return(unit);
+            arena.computation_case(held, &[applied, on_unit])
+        },
+        Wrapper::Sigma => {
+            let argument = target(arena, 2);
+            let applied = call(arena, DeBruijnIndex::from(1), argument);
+            let one = arena.value_type_unit();
+            let returns = arena.comp_type_returner(one);
+            arena.computation_sigma_split(held, returns, applied)
+        },
+        Wrapper::List => {
+            let argument = target(arena, 2);
+            let applied = call(arena, DeBruijnIndex::from(1), argument);
+            let on_nil = arena.computation_return(unit);
+            arena.computation_list_case(held, on_nil, applied)
+        },
+        Wrapper::With => {
+            let forced = arena.computation_force(held);
+            let projected = arena.computation_project(Component::from(0_usize), forced);
+            let argument = target(arena, 0);
+            arena.computation_application(projected, argument)
+        },
+        Wrapper::Pi => {
+            let forced = arena.computation_force(held);
+            let instantiated = arena.computation_application(forced, unit);
+            let argument = target(arena, 0);
+            arena.computation_application(instantiated, argument)
+        },
+    }
 }
 
 /// `λx. case x [F Nat] of { zero ↦ on_zero; succ ↦ on_successor }`.
@@ -1350,6 +1679,29 @@ fn accessibility_is_decided_on_every_former()
         Holder::Bind,
         Holder::With,
         Holder::Transport,
+        Holder::Univalence,
+        Holder::Here,
+        Holder::QuotedFlow,
+        Holder::QuotedBridge,
+        Holder::QuotedElement,
+        Holder::QuotedCodata,
+        Holder::Case,
+        Holder::DataCase,
+        Holder::SigmaSplit,
+        Holder::Project,
+        Holder::ListFold,
+        Holder::ListCase,
+        Holder::PathTransport,
+        Holder::Ride,
+        Holder::TelescopeTransport,
+        Holder::TelescopeRide,
+        Holder::RelatedApplication,
+        Holder::FunctionFlow,
+        Holder::ForwardFlow,
+        Holder::SessionPath,
+        Holder::SessionFlow,
+        Holder::Equivalence,
+        Holder::QuotedStaged,
     ] {
         assert_eq!(
             placed(Placement::Held(holder)).map(drop),
@@ -1386,6 +1738,38 @@ fn currys_consumer_is_refused_at_its_call()
                 })
             ),
             "{consumer:?}: {refused:?}"
+        );
+    }
+}
+
+/// A link's test held inside a wrapper is staged through the wrapper: the
+/// consumer that unwraps it and applies it to the chain before the link is
+/// admitted, and the one that applies it to the link itself is refused at
+/// its call, whichever former holds the test.
+#[test]
+fn a_wrapped_test_is_staged_through_its_wrapper()
+{
+    for wrapper in [
+        Wrapper::Record,
+        Wrapper::Product,
+        Wrapper::Sum,
+        Wrapper::Sigma,
+        Wrapper::List,
+        Wrapper::With,
+        Wrapper::Pi,
+    ] {
+        let admitted = wrapped_chain(wrapper, Consumer::Before);
+        assert!(admitted.is_ok(), "{wrapper:?}: {admitted:?}");
+        let refused = wrapped_chain(wrapper, Consumer::Itself);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::StageNotBelow {
+                    found: Standing::Top,
+                    ..
+                })
+            ),
+            "{wrapper:?}: {refused:?}"
         );
     }
 }

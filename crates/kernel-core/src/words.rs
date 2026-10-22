@@ -1330,14 +1330,16 @@ where
 ///   with a loop arm carries the loop to the arm's image, as the loop
 ///   obligations the witnesses admit and refuse read them; a composite along
 ///   the inverse's returned transport runs that path and cancels to the empty
-///   word. The circle's corpus rows replay through the same reducts in
-///   `gandr-surface-corpus`'s
+///   word; a word of two letters moves a path one letter at a time, appended on
+///   the right and inverted on the left. The circle's corpus rows replay
+///   through the same reducts in `gandr-surface-corpus`'s
 ///   `kernel_export::kernel_loop_elimination_readmission`.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 /// - witness: `tests::native_formers::a_word_appends_on_its_first_word`
 /// - witness: `tests::native_formers::a_composite_over_a_call_to_the_empty_word_is_its_second_word_473`
+/// - witness: `tests::native_formers::a_word_of_two_letters_moves_a_path_letter_by_letter`
 #[spec(ensures: |ret| match ret {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,

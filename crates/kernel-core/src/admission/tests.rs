@@ -845,3 +845,30 @@ fn thread_counts_preserve_valid_and_poisoned_rows()
         assert_eq!(actual, expected);
     }
 }
+
+/// Every admission refusal renders a description no other one renders, so
+/// a reader of the refusal can tell its class without its payload.
+#[test]
+fn every_admission_refusal_describes_itself_apart()
+{
+    use alloc::string::ToString;
+
+    let cases = [
+        Refusal::Syntax(StageError::Exhausted),
+        Refusal::Malformed,
+        Refusal::SchemaWorkBound,
+        Refusal::Transparency,
+        Refusal::CorruptStep,
+        Refusal::MissingPoint(Point(0)),
+        Refusal::UnknownArm(Point(0)),
+        Refusal::Correlation(Point(0)),
+        Refusal::ClassifierMismatch,
+        Refusal::SidesMismatch,
+    ];
+    let descriptions = cases.each_ref().map(ToString::to_string);
+    for (position, description) in descriptions.iter().enumerate() {
+        for other in descriptions.iter().skip(position.saturating_add(1)) {
+            assert_ne!(description, other, "{description}");
+        }
+    }
+}
