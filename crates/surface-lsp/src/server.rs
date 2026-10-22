@@ -8472,8 +8472,10 @@ mod tests
                 "26:7 `m` variable→parameter",
                 "27:17 `m` variable→parameter",
                 "28:20 `m` variable→parameter",
+                "48:8 `t` variable→parameter",
+                "55:8 `d` variable→parameter",
             ],
-            "each use of the parameter `m` is a parameter; the family and its constructors \
+            "each use of a parameter (`m`, `t`, `d`) is a parameter; the family and its constructors \
              the highlighter already names"
         );
         assert_eq!(
@@ -8565,7 +8567,7 @@ mod tests
                 .collect()
         };
         assert_eq!(
-            read("data-maybe.gandr", 1 ..= u32::MAX),
+            read("data-maybe.gandr", 1 ..= 30),
             [
                 "8:5 `Maybe` type declaration",
                 "9:2 `None` enumMember declaration+value",

@@ -2091,6 +2091,17 @@ fn a_constructor_takes_its_slot_as_a_family_argument_421()
 }
 
 #[test]
+fn a_type_argument_names_the_type_its_constructor_shares_a_name_with_1855()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data Box : Type {{ Box : (x : Integer) --> Box; }}\ndef kept(b : Box) -> -F Maybe(Box) {{ (Some(b) : Maybe(Box)) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(

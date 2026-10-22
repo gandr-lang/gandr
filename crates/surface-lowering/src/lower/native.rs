@@ -432,6 +432,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The name is no constructor's, or its family is not yet declared.
             Unnamed,
+            /// The name stands at a place its data family declares a universe,
+            /// where it names a type.
+            TypePlace,
         }
     }
 }
@@ -1804,12 +1807,16 @@ impl<'source> Lowerer<'_, 'source>
     /// The constructor `name`, written at `site`, names: one of a data family
     /// admitted strictly before the declaration `site` belongs to, declared
     /// in `site`'s own source or, when that declares none, in one source it
-    /// imports unqualified.
+    /// imports unqualified. A data family's argument at a place the family
+    /// declares a universe names no constructor: no constructor is a value of
+    /// a universe, so the name there is a type's.
     ///
     /// # Specification
     /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: the constructor entered under `name` in the site's source, or
-    ///   else the one its unqualified imports answer, when its family's
+    /// - ensures: the type-place absence when `site` is a data family's
+    ///   argument at a parameter or index the family declares a universe;
+    ///   otherwise the constructor entered under `name` in the site's source,
+    ///   or else the one its unqualified imports answer, when its family's
     ///   admission position is strictly earlier than the site's declaration's;
     ///   otherwise the unnamed absence, two imports answering included.
     /// - fails: never.
@@ -1817,11 +1824,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor of an earlier family resolves, a name
-    ///   no family declares does not, and an imported family's constructor
-    ///   resolves in its importer.
+    ///   no family declares does not, an imported family's constructor resolves
+    ///   in its importer, and a type sharing its constructor's name is read as
+    ///   the type at a family's type place.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `lower::native::tests::a_constructor_is_no_value_inside_its_own_family`
+    /// - witness: `lower::native::tests::a_type_argument_names_the_type_its_constructor_shares_a_name_with_1855`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
             self.collected.owner_of(site.at.node),
@@ -1839,6 +1848,30 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(constructed::Absent::Unnamed);
         };
+        // No constructor is a value of a universe, so an argument at a place
+        // its data family declares one names a type.
+        if let Some(&argued) = self.argued.get(&site.at.node)
+            && let Some(form) = self.collected.data.get(argued.form)
+            && let Some(classifier) = argued.place.checked_sub(form.parameters.len()).map_or_else(
+                || {
+                    form.parameters
+                        .get(argued.place)
+                        .map(|parameter| parameter.classifier)
+                },
+                |index| form.indices.get(index).copied(),
+            )
+            && self.tree.node(classifier.node).is_some_and(|node| {
+                matches!(
+                    shape_of(self.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::Universe,
+                        ..
+                    })
+                )
+            })
+        {
+            return Maybe::Absent(constructed::Absent::TypePlace);
+        }
         let source = self.collected.unit.source_at(site.at.span.start());
         let (found, import) = match self.collected.constructors.get(&(source, name)) {
             Some(&found) => (found, None),

@@ -28,3 +28,29 @@ def kept(m : Maybe(Integer)) -> -F Path(Maybe(Integer), m, m) {
     Some(x) => here(m)
   }
 }
+
+/// One integer, its constructor named for its type.
+@[ checks ]
+data Tally : Type {
+  Tally : (count : Integer) --> Tally;
+}
+
+/// Two types side by side, its constructor named for its type.
+@[ checks ]
+data Duo(a : Type, b : Type) : Type {
+  Duo : (first : a, second : b) --> Duo(a, b);
+}
+
+/// A tally kept as present: `Tally` at `Maybe`'s type parameter names the
+/// type, not the constructor that shares its name (#1855).
+@[ checks ]
+def keptTally(t : Tally) -> -F Maybe(Tally) {
+  (Some(t) : Maybe(Tally))
+}
+
+/// A duo of tallies kept as present: `Duo(Tally, Tally)` at the same place
+/// is the type applied, and each `Tally` in it the type again (#1855).
+@[ checks ]
+def keptDuo(d : Duo(Tally, Tally)) -> -F Maybe(Duo(Tally, Tally)) {
+  (Some(d) : Maybe(Duo(Tally, Tally)))
+}
