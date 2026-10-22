@@ -444,7 +444,8 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///
     /// # Specification
     /// - ensures: [`RootAgreement::Clash`] only when no substitution unifies
-    ///   `lhs` and `rhs`, so a caller may skip [`CellAlphabet::unify_cmd`] on
+    ///   `lhs` and `rhs` and none instantiates `lhs` to `rhs`, so a caller may
+    ///   skip [`CellAlphabet::unify_cmd`] and [`CellAlphabet::match_cmd`] on
     ///   it; [`RootAgreement::May`] otherwise.
     /// - panics: none.
     /// - executable: none — an abstract declaration has no body; trait-wide

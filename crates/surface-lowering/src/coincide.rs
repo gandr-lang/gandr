@@ -1124,7 +1124,7 @@ where
             .collect();
         let mut parents: BTreeMap<CellId, usize> = BTreeMap::new();
         loop {
-            let (overlap, left, right) = match joinability {
+            let (overlap, left, left_steps, right, right_steps) = match joinability {
                 Joinability::Joined(certificates) => return Ok((certificates, derived)),
                 Joinability::Undecided(overlap) => {
                     let (span, first, _) = self.located(overlap.left, overlap.right);
@@ -1136,8 +1136,10 @@ where
                 Joinability::Diverges {
                     overlap,
                     left,
+                    left_steps,
                     right,
-                } => (overlap, left, right),
+                    right_steps,
+                } => (overlap, left, left_steps, right, right_steps),
             };
             let (span, first, later_cell) = self.located(overlap.left, overlap.right);
             let terms = (read(&left), read(&right));
@@ -1231,21 +1233,16 @@ where
                     later_round: DerivedRound::from(derived.len().saturating_add(1)),
                 }));
             }
-            let (Ok(left_reduct), Ok(right_reduct)) =
-                (overlap.left_reduct(store), overlap.right_reduct())
-            else {
-                return Err(uncompleted(overlap, left, right));
-            };
             let mut path_a = Vec::from([CellApp {
                 cell: overlap.left,
                 at: A::root_position(),
             }]);
-            path_a.extend(normalize(store, &left_reduct, budget).path);
+            path_a.extend(left_steps);
             let mut path_b = Vec::from([CellApp {
                 cell: overlap.right,
                 at: overlap.seam.clone(),
             }]);
-            path_b.extend(normalize(store, &right_reduct, budget).path);
+            path_b.extend(right_steps);
             let (lhs, rhs, from_lhs) = match direction {
                 RuleDirection::LeftToRight => (left, right, &mut path_a),
                 RuleDirection::RightToLeft => (right, left, &mut path_b),
