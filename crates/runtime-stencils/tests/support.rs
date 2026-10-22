@@ -102,9 +102,12 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// a closure's site, captures and environment are compared too; three
 /// primitive calls, answering an integer, an integer past 64 bits and a
 /// boolean; a reified stack resumed, its application frame and its bind
-/// frame, which reads a variable bound outside the stack; and a lazy product
+/// frame, which reads a variable bound outside the stack; a lazy product
 /// projected where it is built and after it was suspended, so an object
-/// answers the projection it is entered with.
+/// answers the projection it is entered with; and a captured stack resumed
+/// twice, whose frames return a pair bound outside the shift each time, so a
+/// replay that gave the copy no owner of its own frees the pair the second
+/// replay returns.
 ///
 /// # Specification
 /// trivial.
@@ -292,6 +295,31 @@ pub fn named() -> Vec<Named>
     push(
         "t <- return thunk { with { return 1 } { return 2 } { return 3 } }; project 1 (force t)",
         "⟨2 |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let pair = core.value_tuple(&[one, two]);
+    let bound = core.computation_return(pair);
+    let unit = core.value_unit();
+    let resumed_with = core.computation_return(unit);
+    let stack = innermost(&mut core);
+    let first = core.computation_resume(stack, resumed_with);
+    let again = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let second = core.computation_resume(again, resumed_with);
+    let twice = core.computation_bind(first, second);
+    let shifted = core.computation_shift(twice);
+    let held = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let answered = core.computation_return(held);
+    let rest = core.computation_bind(shifted, answered);
+    let body = core.computation_bind(bound, rest);
+    let root = core.computation_reset(body);
+    push(
+        "reset { x <- return (1, 2); _ <- shift k. { _ <- resume k { return () }; resume k { return () } }; return x }",
+        "⟨pair(1, 2) |+ ★⟩",
         core,
         root,
     );

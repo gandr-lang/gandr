@@ -45,8 +45,9 @@
 //!   which captures and replays frames by their code words: the function's
 //!   handler table names each handler's frame code, interface, capability slot
 //!   and clauses, and its window table the slot count of every frame label's
-//!   window, which a capture copies. A clause is laid out in its handler's
-//!   window and binds the payload the host wrote and the stack in hand.
+//!   window, which a capture copies, and the slots its frame owns. A clause is
+//!   laid out in its handler's window and binds the payload the host wrote and
+//!   the stack in hand.
 //! - **A linear variable is a cell.** A hold binds a cell holding the value and
 //!   an access a view cell lent its value, so a write-back reaches every window
 //!   that copied the binding; reading the variable reads the cell's first
@@ -82,19 +83,31 @@
 //!   still marked unfolding is a cycle and sticks at the constant. A constant
 //!   the definitions do not hold sticks where it is read; the value written is
 //!   immortal, so a read shares it uncounted.
-//! - **Every owner is counted.** A pure command — no effect, capture, reified
-//!   stack, memory form or fold, each named by [`Uncounted`] — inserts the
-//!   counting its ownership reading (`Ownership`, read once with the root and
-//!   each constant's definition a root of its own) places: before a node runs
-//!   it duplicates each name two of its children use, and on entry to a child
-//!   it drops each name the child ignores. A use of a name moves its owner into
-//!   what reads it. A match duplicates the matched object's fields into its
-//!   binders, then drops the object; a selection duplicates the field and drops
-//!   the record; a closure's entry duplicates each producer capture into its
-//!   window, then drops the closure it entered, which a fixpoint's own binder
-//!   keeps; a primitive's host drops its operands. A command holding any other
-//!   form inserts nothing and names the first such form: a value left uncounted
-//!   only leaks, while one dropped early is read after it is freed.
+//! - **Every owner is counted.** A command holding no memory form and no fold,
+//!   each named by [`Uncounted`], inserts the counting its ownership reading
+//!   (`Ownership`, read once with the root and each constant's definition a
+//!   root of its own) places: before a node runs it duplicates each name two of
+//!   its children use, and on entry to a child it drops each name the child
+//!   ignores. A use of a name moves its owner into what reads it. A match
+//!   duplicates the matched object's fields into its binders, then drops the
+//!   object; a selection duplicates the field and drops the record; a closure's
+//!   entry duplicates each producer capture into its window, then drops the
+//!   closure it entered, which a fixpoint's own binder keeps; a primitive's
+//!   host drops its operands. A command holding a memory form or a fold inserts
+//!   nothing and names the first such form: a value left uncounted only leaks,
+//!   while one dropped early is read after it is freed.
+//! - **A waiting frame owns what its block will consume.** The window table
+//!   names, per frame label, the slots of the names the frame's node selects,
+//!   one owner each; a handler's frame owns, besides its return clause's names,
+//!   one owner of each name its clauses keep and of its capability, and gives
+//!   them up when its return clause runs. A clause runs once per perform in its
+//!   handler's window, so it duplicates what it keeps on entry, before a binder
+//!   it ignores is dropped. A capture takes its frames off the region and their
+//!   owners with them, no count changed; a replay copies each window out with
+//!   an owner per entry, the stack keeping its own; the stack's release drops
+//!   them. A frame resuming a block midway, after a constant's unfolding, owns
+//!   the rest of the block, which no node names, so a counted capture across
+//!   one refuses.
 //!
 //! A closure site is recorded for every closure the function creates: the
 //! producer it suspends and its capture positions of the producer bindings
@@ -109,6 +122,7 @@
 //! it.
 
 use alloc::collections::BTreeSet;
+use core::ops::Range;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -571,8 +585,12 @@ enum Task
     /// continuation is loaded, and deliver the field to it.
     Selected(ConsumerId, Scope),
     /// A frame's block binding the value in hand and a covariable that falls
-    /// through: a handler's return clause, a reified stack's bind frame.
+    /// through: a reified stack's bind frame.
     Bound(CommandId, Scope),
+    /// A handler's frame, popped with the subject's answer in hand: the
+    /// handler gives up what it kept for its clauses and its capability, and
+    /// its return clause runs as a bound frame's block does.
+    Returned(CommandId, Scope),
     /// An operation clause, entered by the host with the captured stack in
     /// hand and the payload in its slot.
     Clause(CommandId, Scope),
@@ -804,6 +822,40 @@ pub struct Handler
     pub clauses: Vec<Clause>,
 }
 
+/// A label a frame resumes at in a window: what a capture copies of the
+/// window, and which of the copied values the frame owns.
+///
+/// While a frame waits, its window holds one owner of each intuitionistic
+/// name the block it resumes will consume; the slots holding them, one entry
+/// per owner, are the frame's run of the owner table. A capture takes the
+/// frame off the region, so those owners pass to the stack with no count
+/// changed; each replay copies them out with an owner of its own; the
+/// stack's release drops them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Window
+{
+    /// The label.
+    pub label: Label,
+    /// The window's slot count.
+    pub slots: Slots,
+    /// The frame's run of [`Lowered::owners`]; none for a frame that resumes
+    /// a block midway, after a constant's unfolding, whose owners are the
+    /// rest of the block's and no node's.
+    pub owners: Option<OwnerRun>,
+}
+
+/// A run of [`Lowered::owners`]: the slots a frame owns while it waits, one
+/// entry per owner.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct OwnerRun(pub Range<usize>);
+
 /// A lowered command: the function, its closure sites and the tables its
 /// objects and calls name.
 ///
@@ -833,8 +885,11 @@ pub struct Lowered
     /// The handlers the function installs.
     pub handlers: Vec<Handler>,
     /// Each label a frame resumes at in a window, with the window's slot
-    /// count: what a capture copies.
-    pub windows: Vec<(Label, Slots)>,
+    /// count and the slots its frame owns: what a capture copies.
+    pub windows: Vec<Window>,
+    /// The owner table: the slots each window's frame owns, as runs its
+    /// [`Window::owners`] names.
+    pub owners: Vec<Slot>,
     /// Each access's frame label with its unwind's label: what an abandoned
     /// stack runs for each access it captured.
     pub unwinds: Vec<(Label, Label)>,
@@ -853,23 +908,18 @@ pub struct Lowered
 /// Why a lowering inserts no counting.
 ///
 /// It holds a form whose ownership the counted fragment does not place. The
-/// counted fragment is the pure one — cuts, binders, constructors and their
-/// matches, functions, thunks, fixpoints, objects, primitives and constants —
-/// and such a lowering inserts nothing at all, since a value left uncounted
-/// only leaks while one dropped early is read after it is freed.
+/// counted fragment is all the rest — cuts, binders, constructors and their
+/// matches, functions, thunks, fixpoints, objects, primitives, constants,
+/// effects and their handlers, delimited control, suspended captures and
+/// reified stacks — and such a lowering inserts nothing at all, since a value
+/// left uncounted only leaks while one dropped early is read after it is
+/// freed.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Uncounted
 {
-    /// An effect: a perform, a handler, a resumption, an abandonment, a
-    /// reset or a shift, whose captured stack holds values in its frames.
-    Control,
-    /// A suspended capture: a covariable run as a value.
-    Capture,
-    /// A reified stack held as a value.
-    Stack,
     /// A memory cell or a linear name, whose ownership is the zone's.
     Memory,
     /// A fold, whose cell closure holds the fold's accumulator.
@@ -1020,9 +1070,12 @@ struct Lowering<'run>
     handlers: Vec<Handler>,
     /// The frame labels of the windows already closed, with their slot
     /// counts.
-    windows: Vec<(Label, Slots)>,
-    /// The frame labels of the current window, its slot count still open.
-    pending: Vec<Label>,
+    windows: Vec<Window>,
+    /// The frame labels of the current window, its slot count still open,
+    /// with their runs of the owner table.
+    pending: Vec<(Label, Option<OwnerRun>)>,
+    /// The slots each frame owns while it waits, as runs its window names.
+    owners: Vec<Slot>,
     /// Each access's frame label with its unwind's label.
     unwinds: Vec<(Label, Label)>,
     /// The consumer of each unmatched exit so far.
@@ -1633,15 +1686,130 @@ impl Lowering<'_>
     }
 
     /// A fresh label a frame resumes at in the current window, counted among
-    /// the labels a capture copies the window of.
+    /// the labels a capture copies the window of, its frame owning the run
+    /// `owners` of the owner table.
     ///
     /// # Specification
     /// trivial.
-    fn frame_label(&mut self) -> Label
+    fn frame_label(
+        &mut self,
+        owners: Option<OwnerRun>,
+    ) -> Label
     {
         let label = self.function.label();
-        self.pending.push(label);
+        self.pending.push((label, owners));
         label
+    }
+
+    /// No owners: the run of a frame whose block consumes nothing of its
+    /// window.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unowned(&self) -> OwnerRun
+    {
+        let at = self.owners.len();
+        OwnerRun(at .. at)
+    }
+
+    /// Record the owners a frame holds while it waits to run `node` in
+    /// `scope`, its block opening the binders `crossed` counts: the slot of
+    /// each intuitionistic name the node's support selects past them, one
+    /// owner each. Answers their run of the owner table, empty for a lowering
+    /// that does not count.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] for a node the arena does not hold;
+    /// [`Form::Unbound`] for a name no slot of `scope` holds.
+    fn owners(
+        &mut self,
+        node: NodeAddress,
+        scope: Scope,
+        crossed: Crossed,
+    ) -> Result<OwnerRun, Form>
+    {
+        let start = self.owners.len();
+        if self.counting {
+            let support = self.arena.node_scope(node).ok_or(Form::Dangling)?;
+            let depth = BinderDepth::from(usize::try_from(crossed.producers).unwrap_or(usize::MAX));
+            for index in support.producers().outside(Zone::Intuitionistic, depth) {
+                let name = Index(u32::from(index).saturating_sub(crossed.producers));
+                let slot = self.scopes.slot(scope, Binding::Producer, name)?;
+                self.owners.push(slot);
+            }
+        }
+        Ok(OwnerRun(start .. self.owners.len()))
+    }
+
+    /// The slots in `scope` of the names the handler `handle` keeps for its
+    /// clauses: each name a clause selects past its payload and its stack,
+    /// once however many clauses select it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Form::Dangling`] when `handle` is no handler; [`Form::Unbound`] for
+    /// a name no slot of `scope` holds.
+    fn kept(
+        &self,
+        handle: CommandId,
+        scope: Scope,
+    ) -> Result<BTreeSet<Slot>, Form>
+    {
+        let arena = self.arena;
+        let Some(&CommandNode::Handle { ref clauses, .. }) = arena.command(handle)
+        else {
+            return Err(Form::Dangling);
+        };
+        let mut kept = BTreeSet::new();
+        for clause in clauses.iter() {
+            let support = arena
+                .node_scope(NodeAddress::Command(clause.body))
+                .ok_or(Form::Dangling)?;
+            for index in support
+                .producers()
+                .outside(Zone::Intuitionistic, BinderDepth::from(2_usize))
+            {
+                let name = Index(u32::from(index).saturating_sub(2));
+                let _first = kept.insert(self.scopes.slot(scope, Binding::Producer, name)?);
+            }
+        }
+        Ok(kept)
+    }
+
+    /// Record the owners the frame of the handler `handle` holds while it
+    /// waits, in `scope`: each name its return clause `on_return` selects past
+    /// the value it binds, each name the handler keeps for its clauses, and
+    /// the capability in the slot `capability` when it introduces one. Answers
+    /// their run of the owner table, empty for a lowering that does not count.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::owners`] and [`Self::kept`].
+    fn handled(
+        &mut self,
+        handle: CommandId,
+        on_return: CommandId,
+        scope: Scope,
+        capability: Option<Slot>,
+    ) -> Result<OwnerRun, Form>
+    {
+        let returned = self.owners(NodeAddress::Command(on_return), scope, Crossed {
+            producers: 1,
+            covariables: 1,
+        })?;
+        if self.counting {
+            let kept = self.kept(handle, scope)?;
+            self.owners.extend(kept);
+            self.owners.extend(capability);
+        }
+        Ok(OwnerRun(returned.0.start .. self.owners.len()))
     }
 
     /// The word of `constant`, defined as `definition`, in the run's constant
@@ -1717,6 +1885,7 @@ impl Lowering<'_>
     ) -> Result<(), Form>
     {
         let arena = self.arena;
+        self.enter(NodeAddress::Command(id), scope)?;
         match *arena.command(id).ok_or(Form::Dangling)? {
             CommandNode::Cut { .. } => return Err(Form::Dangling),
             CommandNode::Perform {
@@ -1760,7 +1929,6 @@ impl Lowering<'_>
                 ref clauses,
                 continuation,
             } => {
-                let returned = self.frame_label();
                 let payload = self.scopes.depth(scope);
                 let mut entries = Vec::with_capacity(clauses.len());
                 for clause in clauses.iter() {
@@ -1772,7 +1940,6 @@ impl Lowering<'_>
                         payload,
                     });
                 }
-                self.blocks.push((returned, Task::Bound(on_return, scope)));
                 let (held, capability) = match introduces {
                     Introduces::Nothing => (scope, None),
                     Introduces::Capability => {
@@ -1780,6 +1947,9 @@ impl Lowering<'_>
                         (held, Some(slot))
                     },
                 };
+                let owners = self.handled(id, on_return, scope, capability)?;
+                let returned = self.frame_label(Some(owners));
+                self.blocks.push((returned, Task::Returned(id, scope)));
                 self.handlers.push(Handler {
                     label: returned,
                     signature: signature.name().clone(),
@@ -1809,6 +1979,15 @@ impl Lowering<'_>
                         Arity::try_from(1_usize).map_err(width)?,
                         Family::UNNAMED,
                     ));
+                    if self.counting {
+                        // The handler's frame owns the capability too, so its
+                        // address names no other object while the frame waits.
+                        self.tasks.push(Task::Emit(
+                            StencilId::Dup,
+                            slot.operand(),
+                            Operand::Unused,
+                        ));
+                    }
                     self.tasks
                         .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
                     self.tasks.push(Task::Emit(StencilId::Ctor1, low, family));
@@ -1959,8 +2138,8 @@ impl Lowering<'_>
                 };
                 let (viewed, view) = self.bind(scope, Binding::Linear);
                 let (inner, _) = self.bind(viewed, Binding::FallThrough);
-                let ended = self.frame_label();
-                let unwinding = self.frame_label();
+                let ended = self.frame_label(Some(self.unowned()));
+                let unwinding = self.frame_label(Some(self.unowned()));
                 self.unwinds.push((ended, unwinding));
                 let (unwound, _) = self.bind(scope, Binding::FallThrough);
                 self.blocks.push((ended, Task::Ended(view, unwinding, id)));
@@ -2146,12 +2325,48 @@ impl Lowering<'_>
                 self.tasks.push(Task::Command(body, inner));
                 Ok(())
             },
+            Task::Returned(handle, scope) => {
+                let &CommandNode::Handle {
+                    introduces,
+                    on_return,
+                    ..
+                } = self.arena.command(handle).ok_or(Form::Dangling)?
+                else {
+                    return Err(Form::Dangling);
+                };
+                if self.counting {
+                    for kept in self.kept(handle, scope)? {
+                        self.emit(StencilId::Drop, kept.operand(), Operand::Unused);
+                    }
+                    if matches!(introduces, Introduces::Capability) {
+                        // Dropped before the answer is bound over its slot.
+                        let capability = self.scopes.depth(scope);
+                        self.emit(StencilId::Drop, capability.operand(), Operand::Unused);
+                    }
+                }
+                self.tasks.push(Task::Bound(on_return, scope));
+                Ok(())
+            },
             Task::Clause(body, scope) => {
                 // The host wrote the payload's slot before entering.
                 let (with_payload, _) = self.bind(scope, Binding::Producer);
                 let (with_stack, stack) = self.bind(with_payload, Binding::Producer);
                 self.emit(StencilId::Bind, stack.operand(), Operand::Unused);
                 let (inner, _) = self.bind(with_stack, Binding::FallThrough);
+                if self.counting {
+                    // The handler keeps the clause's captures, since it runs
+                    // once per perform: each run duplicates what it names
+                    // before a binder it ignores is dropped, the stack among
+                    // them, which may hold the handler's last owners.
+                    let ownership = core::mem::take(&mut self.ownership);
+                    let entered = ownership
+                        .entry(NodeAddress::Command(body))
+                        .map_or(Err(Form::Unowned), |entry| {
+                            self.each_name(StencilId::Dup, inner, entry.entered)
+                        });
+                    self.ownership = ownership;
+                    entered?;
+                }
                 self.tasks.push(Task::Command(body, inner));
                 Ok(())
             },
@@ -2272,7 +2487,8 @@ impl Lowering<'_>
         let (inner, alpha) = self.bind(scope, Binding::Covariable);
         match *target {
             ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => {
-                let resume = self.frame_label();
+                let owners = self.owners(NodeAddress::Consumer(consumer), scope, Crossed::NONE)?;
+                let resume = self.frame_label(Some(owners));
                 self.emit(StencilId::Pushk, Operand::Code(resume), alpha.operand());
                 self.tasks.push(Task::Deliver(consumer, scope));
                 self.tasks.push(Task::Bind(resume));
@@ -2413,7 +2629,7 @@ impl Lowering<'_>
                 Some(Definition::Transparent(definition)) => {
                     let (word, entry) = self.global(constant, definition)?;
                     let slow = self.function.label();
-                    let resume = self.frame_label();
+                    let resume = self.frame_label((!self.counting).then(|| self.unowned()));
                     self.emit_two_way(
                         StencilId::Global,
                         Operand::Immediate(word),
@@ -2471,7 +2687,12 @@ impl Lowering<'_>
                         },
                         StackFrame::Bind(body) => {
                             let captures = self.captured(Suspension::Bind(body), scope)?;
-                            let label = self.frame_label();
+                            let owners =
+                                self.owners(NodeAddress::Command(body), scope, Crossed {
+                                    producers: 1,
+                                    covariables: 1,
+                                })?;
+                            let label = self.frame_label(Some(owners));
                             self.blocks.push((label, Task::Bound(body, scope)));
                             self.bounds.push(Bound {
                                 label,
@@ -2734,7 +2955,8 @@ impl Lowering<'_>
             ConsumerNode::MuTilde { .. }
             | ConsumerNode::Case { .. }
             | ConsumerNode::DataCase { .. } => {
-                let label = self.frame_label();
+                let owners = self.owners(NodeAddress::Consumer(id), scope, Crossed::NONE)?;
+                let label = self.frame_label(Some(owners));
                 self.emit(StencilId::Pushf, Operand::Code(label), Operand::Unused);
                 self.blocks.push((label, Task::Deliver(id, scope)));
             },
@@ -2788,7 +3010,7 @@ impl Lowering<'_>
                 }
             },
             ConsumerNode::Select { then, .. } => {
-                let label = self.frame_label();
+                let label = self.frame_label(Some(self.unowned()));
                 self.blocks.push((label, Task::Selected(id, scope)));
                 self.tasks.push(Task::Emit(
                     StencilId::Pushf,
@@ -2798,7 +3020,7 @@ impl Lowering<'_>
                 self.tasks.push(Task::Load(then, scope));
             },
             ConsumerNode::ListFold { continuation, .. } => {
-                let label = self.frame_label();
+                let label = self.frame_label(Some(self.unowned()));
                 self.blocks.push((label, Task::Fold(id, scope)));
                 self.tasks.push(Task::Emit(
                     StencilId::Pushf,
@@ -2855,11 +3077,11 @@ pub fn lower(
 ///   once per run at its first read, each closure site recorded with the
 ///   producer it suspends, and every owner counted where the command holds no
 ///   form [`Uncounted`] names. A command holding one counts nothing and records
-///   the first such form; one that suspends a capture is lowered with every cut
+///   the first such form. One that suspends a capture is lowered with every cut
 ///   delivering a variable or a constant to anything but a binder testing for
-///   one first, which runs it against that consumer. Which of the three the
-///   lowering is, one visit over the nodes the command reaches decides before
-///   it starts, and the command is lowered once. The trace of fusions is empty.
+///   one first, which runs it against that consumer. One visit over the nodes
+///   the command reaches decides both before it starts, and the command is
+///   lowered once. The trace of fusions is empty.
 /// - executable: none — running as the source means is observed only by running
 ///   both tiers against stated answers.
 ///
@@ -2883,13 +3105,13 @@ pub fn lower_unfused(
 ) -> Result<Lowered, Form>
 {
     let survey = survey(arena, definitions, root)?;
-    let ownership = if survey.pass == Pass::Counted {
+    let ownership = if survey.uncounted.is_none() {
         Ownership::of(arena, &survey.roots, &survey.reached).map_err(|_dangling| Form::Dangling)?
     }
     else {
         Ownership::default()
     };
-    let (pass, uncounted) = (survey.pass, survey.uncounted);
+    let (checked, uncounted) = (survey.checked, survey.uncounted);
     let mut lowering = Lowering {
         arena,
         definitions,
@@ -2902,7 +3124,7 @@ pub fn lower_unfused(
         bodies: Vec::new(),
         window: 0,
         globals: Vec::new(),
-        checked: pass == Pass::Checked,
+        checked,
         heads: Vec::new(),
         literals: Vec::new(),
         codes: Vec::new(),
@@ -2912,8 +3134,9 @@ pub fn lower_unfused(
         handlers: Vec::new(),
         windows: Vec::new(),
         pending: Vec::new(),
+        owners: Vec::new(),
         unwinds: Vec::new(),
-        counting: pass == Pass::Counted,
+        counting: uncounted.is_none(),
         ownership,
     };
     let mut entry: Option<Position> = None;
@@ -2934,8 +3157,12 @@ pub fn lower_unfused(
             Some(at) => lowering.function.set_a(at, window.operand()),
         }
         let slots = Slots(usize::try_from(window.0).map_err(|_overflow| Form::HeaderWidth)?);
-        for label in core::mem::take(&mut lowering.pending) {
-            lowering.windows.push((label, slots));
+        for (label, owners) in core::mem::take(&mut lowering.pending) {
+            lowering.windows.push(Window {
+                label,
+                slots,
+                owners,
+            });
         }
         let Some(body) = lowering.bodies.pop()
         else {
@@ -2977,6 +3204,7 @@ pub fn lower_unfused(
         callees: lowering.callees,
         handlers: lowering.handlers,
         windows: lowering.windows,
+        owners: lowering.owners,
         unwinds: lowering.unwinds,
         unmatched: lowering.unmatched,
         globals: lowering
@@ -2989,26 +3217,6 @@ pub fn lower_unfused(
     Ok(lowered)
 }
 
-/// A pass of the lowering: whether it counts owners, and whether a cut
-/// delivering a variable or a constant tests it for a suspended capture
-/// first.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Pass
-{
-    /// Counted, with no delivery tests; the pass a pure function needs.
-    Counted,
-    /// Uncounted, with no delivery tests; the pass a function that holds a
-    /// form outside the counted fragment but creates no suspended capture
-    /// needs.
-    Uncounted,
-    /// Uncounted, every such delivery testing; the pass a function that
-    /// creates a suspended capture needs.
-    Checked,
-}
-
 /// What one visit over a command finds before it is lowered.
 ///
 /// # Specification
@@ -3016,8 +3224,9 @@ enum Pass
 #[derive(Debug)]
 struct Survey
 {
-    /// The pass lowering it needs.
-    pass: Pass,
+    /// Whether a cut delivering a variable or a constant tests it for a
+    /// suspended capture first: whether the command creates one.
+    checked: bool,
     /// The first form outside the counted fragment it holds.
     uncounted: Option<Uncounted>,
     /// The roots its ownership is read from: the command, then each
@@ -3065,14 +3274,14 @@ fn survey(
         for &node in reached.get(from ..).unwrap_or_default() {
             let form = match node {
                 NodeAddress::Command(id) => match *arena.command(id).ok_or(Form::Dangling)? {
-                    CommandNode::Cut { .. } => None,
-                    CommandNode::Memory { .. } => Some(Uncounted::Memory),
-                    CommandNode::Perform { .. }
+                    CommandNode::Cut { .. }
+                    | CommandNode::Perform { .. }
                     | CommandNode::Handle { .. }
                     | CommandNode::Resume { .. }
                     | CommandNode::Abandon { .. }
                     | CommandNode::Reset { .. }
-                    | CommandNode::Shift { .. } => Some(Uncounted::Control),
+                    | CommandNode::Shift { .. } => None,
+                    CommandNode::Memory { .. } => Some(Uncounted::Memory),
                 },
                 NodeAddress::Producer(id) => match *arena.producer(id).ok_or(Form::Dangling)? {
                     ProducerNode::Variable {
@@ -3080,9 +3289,8 @@ fn survey(
                     } => Some(Uncounted::Memory),
                     ProducerNode::Mu { .. } => {
                         captured = true;
-                        Some(Uncounted::Capture)
+                        None
                     },
-                    ProducerNode::Reify(_) => Some(Uncounted::Stack),
                     ProducerNode::Constant(constant) => {
                         if let Some(Definition::Transparent(definition)) = definitions.get(constant)
                             && unfolded.insert(definition)
@@ -3098,7 +3306,8 @@ fn survey(
                     | ProducerNode::Constructor { .. }
                     | ProducerNode::Thunk { .. }
                     | ProducerNode::Fixpoint { .. }
-                    | ProducerNode::Cocase { .. } => None,
+                    | ProducerNode::Cocase { .. }
+                    | ProducerNode::Reify(_) => None,
                 },
                 NodeAddress::Consumer(id) => match *arena.consumer(id).ok_or(Form::Dangling)? {
                     ConsumerNode::ListFold { .. } => Some(Uncounted::Fold),
@@ -3114,13 +3323,8 @@ fn survey(
             first = first.or(form);
         }
     }
-    let pass = match (first, captured) {
-        (None, _) => Pass::Counted,
-        (Some(_), false) => Pass::Uncounted,
-        (Some(_), true) => Pass::Checked,
-    };
     Ok(Survey {
-        pass,
+        checked: captured,
         uncounted: first,
         roots,
         reached,
@@ -3185,9 +3389,10 @@ mod tests
         );
     }
 
-    /// A pure command naming a bound pair twice duplicates it, and counts;
-    /// the same command under a reset holds a form outside the counted
-    /// fragment, so it inserts no counting at all and names the effect.
+    /// A pure command naming a bound pair twice duplicates it, and counts,
+    /// under a reset too; the same command as a fold's empty branch holds a
+    /// form outside the counted fragment, so it inserts no counting at all and
+    /// names the fold.
     #[test]
     fn a_command_outside_the_counted_fragment_counts_nothing()
     {
@@ -3201,23 +3406,33 @@ mod tests
         let body = core.computation_return(both);
         let pure = core.computation_bind(bound, body);
         let reset = core.computation_reset(pure);
+        let nil = core.value_list_nil();
+        let cell = core.computation_return(unit);
+        let unit_type = core.value_type_unit();
+        let fold = core.computation_list_fold(unit_type, unit_type, nil, pure, cell);
         let mut commands = CommandArena::new();
-        let pure = focus_computation(&core, pure, &mut commands, &mut Provenance::new())
-            .expect("the pure program focuses");
-        let reset = focus_computation(&core, reset, &mut commands, &mut Provenance::new())
-            .expect("the reset focuses");
-        let counted = lower(&commands, &Definitions::new(), pure).expect("the pure program lowers");
-        assert_eq!(None, counted.uncounted, "a pure command counts");
-        assert!(
-            counted
+        let mut provenance = Provenance::new();
+        let duplicates = |lowered: &Lowered| {
+            lowered
                 .function
                 .instructions()
                 .iter()
-                .any(|instruction| instruction.stencil == StencilId::Dup),
-            "the pair named twice is duplicated"
-        );
-        let uncounted = lower(&commands, &Definitions::new(), reset).expect("the reset lowers");
-        assert_eq!(Some(Uncounted::Control), uncounted.uncounted);
+                .any(|instruction| instruction.stencil == StencilId::Dup)
+        };
+        for (counted, name) in [(pure, "the pure program"), (reset, "the reset")] {
+            let root = focus_computation(&core, counted, &mut commands, &mut provenance)
+                .expect("the program focuses");
+            let counted = lower(&commands, &Definitions::new(), root).expect("the program lowers");
+            assert_eq!(None, counted.uncounted, "{name} counts");
+            assert!(
+                duplicates(&counted),
+                "{name} duplicates the pair named twice"
+            );
+        }
+        let fold = focus_computation(&core, fold, &mut commands, &mut provenance)
+            .expect("the fold focuses");
+        let uncounted = lower(&commands, &Definitions::new(), fold).expect("the fold lowers");
+        assert_eq!(Some(Uncounted::Fold), uncounted.uncounted);
         assert!(
             !uncounted.function.instructions().iter().any(|instruction| {
                 matches!(
@@ -3225,7 +3440,7 @@ mod tests
                     StencilId::Dup | StencilId::DupFields | StencilId::Drop
                 )
             }),
-            "nothing is counted under a reset"
+            "nothing is counted in a fold"
         );
     }
 

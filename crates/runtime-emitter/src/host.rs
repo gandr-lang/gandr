@@ -31,6 +31,16 @@
 //!   copies each window afresh, moving each mark into the captured frames by
 //!   the distance the frames moved; a mark at or below the captured frames'
 //!   base names a frame of the tail and stays.
+//! - Counted, a frame owns what its block will consume: the values in the slots
+//!   the window table names for its label, one owner per entry, or a stub
+//!   frame's word that is a value. A capture takes its frames off the region,
+//!   so their owners pass to the stack unchanged. A replay gives each copy an
+//!   owner of its own and gives up the stack, or, holding the stack's last
+//!   owner, moves the owners into the copies and frees the stack; an
+//!   abandonment gives the stack up, and the stack's release drops what its
+//!   frames own. A capability a perform is handed is given up once its handler
+//!   is found. A payload the host is offered stays: the run's moved values map
+//!   back to it, so a reply naming it lays out as the same object.
 //! - A held binding and a view are cells, so a write-back reaches every window
 //!   that copied the binding. A view holds the value lent, how it ended and the
 //!   held cell; its access's frame, popped, writes a resumed value back and
@@ -89,12 +99,14 @@ use crate::lower::Lowered;
 use crate::lower::Reach;
 use crate::lower::Reified;
 use crate::lower::Slot;
+use crate::lower::Window;
 use crate::lower::integer_word;
 use crate::seam::HostRequest;
 use crate::seam::HostValues;
 use crate::seam::Offer;
 use crate::seam::Offered;
 use crate::transfer::Moved;
+use crate::transfer::Owners;
 use crate::transfer::Sites;
 use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
@@ -203,7 +215,7 @@ pub struct Calls<'run, 'host>
     /// The handlers the function installs.
     handlers: &'run [Handler],
     /// Each frame label with its window's slot count.
-    windows: &'run [(Label, Slots)],
+    windows: &'run [Window],
     /// Each access's frame code with its unwind's code.
     unwinds: BTreeMap<Word, Word>,
     /// The heads a head object names, by family.
@@ -227,7 +239,8 @@ pub struct Calls<'run, 'host>
     /// Why the host last refused a call, when it named a reason.
     refused: Option<Refused>,
     /// Whether the function counts owners, so a primitive gives up the
-    /// operands it was handed.
+    /// operands it was handed, a control call the stack or capability it was
+    /// handed, and a replay copies a stack's owners out.
     counted: bool,
 }
 
@@ -485,7 +498,17 @@ impl<'run, 'host> Calls<'run, 'host>
                     Reach::Nearest => (None, first),
                     Reach::Capability => (Some(first), second),
                 };
-                self.perform(runtime, (signature, operation, at), capability, payload)
+                let performed =
+                    self.perform(runtime, (signature, operation, at), capability, payload);
+                if let (true, Some(capability)) = (self.counted, capability) {
+                    let sites = self.sites;
+                    // SAFETY: a counted perform owns the capability it was
+                    // handed, read no more once its handler is found.
+                    unsafe {
+                        give_up(runtime, capability, |object| owned(object, sites));
+                    }
+                }
+                performed
             },
             Callee::Shift(_) => self.shift(runtime),
             Callee::Replay(_) => self.replay(runtime, first),
@@ -703,8 +726,8 @@ impl<'run, 'host> Calls<'run, 'host>
         }
         self.windows
             .iter()
-            .find(|&&(label, _)| codes.label(label) == code)
-            .map(|&(_, slots)| Some(slots))
+            .find(|window| codes.label(window.label) == code)
+            .map(|window| Some(window.slots))
             .ok_or(Refusal::Operands)
     }
 
@@ -895,14 +918,17 @@ impl<'run, 'host> Calls<'run, 'host>
         Err(Refusal::Operands)
     }
 
-    /// Copy the frames from `from` to the top into a stack.
+    /// Copy the frames from `from` to the top into a stack. The frames leave
+    /// the region, so in a counted run what they own passes to the stack with
+    /// no count changed.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Errors
-    /// [`Refusal::Operands`] for a frame the function never pushes; as
-    /// [`stack`] otherwise.
+    /// [`Refusal::Operands`] for a frame the function never pushes, or, in a
+    /// counted run, one that resumes a block midway, whose owners no node
+    /// names; as [`stack`] otherwise.
     fn capture(
         &self,
         runtime: &mut Runtime,
@@ -923,6 +949,9 @@ impl<'run, 'host> Calls<'run, 'host>
                 word,
                 window: self.window(code)?,
             });
+            if self.counted && matches!(self.sites.owners(code), Some(Owners::Unplaced)) {
+                return Err(Refusal::Operands);
+            }
             cursor = cursor.wrapping_add(2);
         }
         stack(
@@ -991,7 +1020,9 @@ impl<'run, 'host> Calls<'run, 'host>
 
     /// Push the frames of `stack` above the top, each window copied afresh
     /// and each mark into the captured frames moved with them; answers the
-    /// stack.
+    /// stack. Counted, each frame's copy gains an owner of each value the
+    /// frame owns and the stack is given up, unless it was the stack's last
+    /// owner, whose frames' owners move into the copies.
     ///
     /// # Specification
     /// trivial.
@@ -1022,6 +1053,11 @@ impl<'run, 'host> Calls<'run, 'host>
         if top > runtime.frame_limit() {
             return Err(Refusal::Frames);
         }
+        // A stack no other owner holds gives its frames' owners to the
+        // copies; any other lends them, each copy gaining an owner of its own.
+        let unique = self.counted
+            // SAFETY: a stack is preceded by its count word.
+            && unsafe { *count_word(stack) } == COUNT_ONE;
         let mut copies: BTreeMap<Word, Word> = BTreeMap::new();
         let mut words = Vec::new();
         for index in 0 .. count {
@@ -1068,8 +1104,37 @@ impl<'run, 'host> Calls<'run, 'host>
             unsafe {
                 *frame.wrapping_add(1) = resumed;
             }
+            if self.counted && !unique {
+                match self.sites.owners(code) {
+                    Some(Owners::Window(slots)) => {
+                        let window = resumed.to_pointer::<Word>();
+                        for &slot in slots {
+                            // SAFETY: the fresh window holds its frame's
+                            // owned slots.
+                            share(unsafe { *slot_in(window, slot)? });
+                        }
+                    },
+                    Some(Owners::Word) => share(resumed),
+                    Some(Owners::Unplaced) | None => {},
+                }
+            }
         }
         runtime.set_frame_top(top);
+        if unique {
+            // SAFETY: the stack's one owner is the replay's, and its frames'
+            // owners moved into the copies.
+            unsafe {
+                runtime.reclaim(stack);
+            }
+        }
+        else if self.counted {
+            let sites = self.sites;
+            // SAFETY: a counted replay owns the stack it was handed, which
+            // another owner keeps.
+            unsafe {
+                give_up(runtime, stack, |object| owned(object, sites));
+            }
+        }
         Ok(stack)
     }
 
@@ -1122,6 +1187,14 @@ impl<'run, 'host> Calls<'run, 'host>
             top = next;
         }
         runtime.set_frame_top(top);
+        if self.counted {
+            let sites = self.sites;
+            // SAFETY: a counted abandonment owns the stack it was handed, a
+            // value of the run's heap, and reads it no more.
+            unsafe {
+                give_up(runtime, stack, |object| owned(object, sites));
+            }
+        }
         unit(runtime)
     }
 
@@ -1880,6 +1953,25 @@ pub unsafe fn give_up<Owned>(
         // SAFETY: as above.
         unsafe {
             *count = Word::from(usize::from(word).wrapping_sub(1));
+        }
+    }
+}
+
+/// Count one more owner of `value`, a value of a counted run: its count grows
+/// by one, unless it is immortal.
+///
+/// # Specification
+/// trivial.
+fn share(value: Word)
+{
+    let count = count_word(value);
+    // SAFETY: a value of a counted run addresses an object of its heap or an
+    // immortal constant, each preceded by its count word.
+    let word = unsafe { *count };
+    if word != COUNT_IMMORTAL {
+        // SAFETY: as above; a heap object's count word is the run's.
+        unsafe {
+            *count = Word::from(usize::from(word).wrapping_add(1));
         }
     }
 }
