@@ -155,7 +155,7 @@ use gandr_core_sequent::ReadbackRefusal;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
-use gandr_core_sequent::focus_value;
+use gandr_core_sequent::focus_definition;
 use gandr_core_sequent::read_back_terminal;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -773,7 +773,7 @@ impl<'source> Program<'source>
             let (definition, slot) = match (verdict, body) {
                 (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
-                    match focus_value(core, body, &mut arena, &mut provenance) {
+                    match focus_definition(core, body, &mut arena, &mut provenance) {
                         Ok(producer) => (
                             Definition::Transparent(producer),
                             Slot::Defined(references(core, body)),
@@ -790,7 +790,7 @@ impl<'source> Program<'source>
                 (Some(Verdict::Refused(_)), _) => match lowered.outcome() {
                     DeclarationOutcome::Completed { body, .. }
                     | DeclarationOutcome::Bodied { body } => {
-                        focus_value(core, body, &mut arena, &mut provenance).map_or(
+                        focus_definition(core, body, &mut arena, &mut provenance).map_or(
                             (Definition::Opaque, Slot::Opaque(Opacity::Refused)),
                             |producer| {
                                 (
