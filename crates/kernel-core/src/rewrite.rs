@@ -584,6 +584,12 @@ impl Rewrite
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shift's goals reach the session memo: a walk over
+    ///   thirteen distinct supports files thirteen entries under the shift's
+    ///   plane, so a goal no session key names leaves the plane empty.
+    /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
     #[inline]
     const fn goal(
         self,
@@ -1423,13 +1429,17 @@ where
 ///   sharing distinguish memo-induced result changes, not errors common to both
 ///   recurrence implementations. L3 on zero shifts, saturated variables and
 ///   unreadable roots: exact ids and watermarks separate needless minting and
-///   invalid memo aliases.
+///   invalid memo aliases. L3 on a share's endpoint: read at the root, read
+///   again under a binder when it is closed, kept under a binder when it is
+///   open, and a twin of equal content minted apart kept, each asserted
+///   exactly.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
 /// - witness: `tests::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
 /// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
 /// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
 /// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 /// - witness: `encoding::tests::a_rewrite_under_an_inactive_memo_encodes_nothing_487`
+/// - witness: `rewrite::tests::sharing_an_endpoint_binds_its_node_and_raises_the_rest`
 #[spec(ensures: |ret| (!matches!(rewrite, Rewrite::Shift { amount, .. } if amount.0 == 0)
     || ret == outcome_of(root)) && match (root, ret) {
     (AnyNode::Value(source), RewriteOutcome::Value(result)) => arena.value(source).is_some() || result == source,
