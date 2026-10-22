@@ -78,19 +78,21 @@ options = ["lint", "--error-on-warnings"]
 includes = ["*.toml"]
 
 # The syntax ledger's machine form is generated, one rule per line, and
-# `check:syntax-ledger` owns its bytes.
+# `check:syntax-ledger` owns its bytes; the input method's table is generated
+# from its pinned sources, one command per line, and `check:input-table` owns
+# its bytes.
 [formatter.oxfmt]
 command = "oxfmt"
 options = ["--config", ".oxfmtrc.json"]
-includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs", "*.ts"]
-excludes = ["ledger/syntax.json"]
+includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs", "*.mts", "*.ts"]
+excludes = ["ledger/syntax.json", "contrib/gandr-vscode/src/input/table.json"]
 
 # Check-only: type-aware lint, the TypeScript checker included.
 [formatter.oxlint]
 priority = 1
 command = "oxlint"
 options = ["--config", ".oxlintrc.json"]
-includes = ["*.ts"]
+includes = ["*.ts", "*.mts"]
 
 [formatter.typos]
 command = "typos"

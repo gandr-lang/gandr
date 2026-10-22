@@ -1536,6 +1536,8 @@ jobs:
       - *install-policy-tools
       - name: type-check, lint, bundle, and package the extension
         run: mise run check:extension
+      - name: check the input table against its pinned sources
+        run: mise run check:input-table
 
   # Completed queue runs supply successful builds independently of their test
   # verdict. A new queue ref can read these artifacts even when it cannot read
