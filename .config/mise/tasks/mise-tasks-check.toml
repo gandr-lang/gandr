@@ -525,9 +525,10 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # re-dumps byte-identical, and every `parent` resolves; every path a row
 # names exists — a `crate` a directory under `crates/` or a `contrib/` path, a
 # `corpus` entry a path from the root or under `crates/surface-corpus/` (a
-# `::item` suffix naming a test inside it), an `exemplar` a file; and every
-# features exemplar is named by a row. Every finding is printed before the
-# gate fails.
+# `::item` suffix naming a test inside it), an `exemplar` a file outside
+# `pathological/`, which holds refusals; and every file under
+# `ledger/exemplars/features/` is named by a row. Every finding is printed
+# before the gate fails.
 ["check:ledger"]
 description = "The features ledger round-trips, keeps its constraints and names paths that exist"
 run = '''
@@ -560,6 +561,10 @@ while IFS='|' read -r id column paths; do
       corpus) [[ -e ${path%%::*} || -e crates/surface-corpus/${path%%::*} ]] ;;
       exemplar) [[ -f $path ]] ;;
     esac || { echo "$id: $column \`$path\` does not exist" >&2; failed=1; }
+    if [[ $column == exemplar && $path == */pathological/* ]]; then
+      echo "$id: exemplar \`$path\` shows a refusal; an exemplar is a model or strict program" >&2
+      failed=1
+    fi
   done
 done < <(sqlite3 -separator '|' "$db" "
   SELECT id, 'crate', crate FROM feature WHERE crate IS NOT NULL
