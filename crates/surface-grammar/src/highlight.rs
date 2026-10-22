@@ -156,13 +156,13 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// compound bridge tiles and the binders' tiles included.
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "bind", "break", "case",
-    "close", "co", "codata", "continue", "data", "def", "drop", "dup", "else", "end", "ext",
-    "extern", "feed", "fn", "for", "forall", "force", "fork", "from", "glob", "handle", "hold",
-    "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "leta", "loop", "migrate",
-    "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+",
-    "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run",
-    "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit",
-    "unpack", "unwind", "val", "where", "while", "with", "world",
+    "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else", "end",
+    "ext", "extern", "feed", "fn", "for", "forall", "force", "fork", "from", "glob", "handle",
+    "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "leta", "loop",
+    "migrate", "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack",
+    "package", "pi+", "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return",
+    "rule", "run", "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type",
+    "type(", "unit", "unpack", "unwind", "val", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
@@ -180,7 +180,7 @@ const PRIMITIVE_TYPES: &[&str] = &[
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
-const DEFINERS: &[&str] = &["data", "def", "obs", "op", "oper", "rec", "rule"];
+const DEFINERS: &[&str] = &["data", "def", "derive", "obs", "op", "oper", "rec", "rule"];
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[

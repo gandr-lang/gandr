@@ -1317,6 +1317,20 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
+    /// A `derive` declaration whose statement its theory's completed rules
+    /// do not prove.
+    UnderivedRule
+    {
+        /// The bytes of the declaration.
+        span: ByteSpan,
+        /// The rule's name.
+        rule: SurfaceName<'source>,
+        /// The theory's name.
+        theory: SurfaceName<'source>,
+        /// Why the theory does not derive it.
+        fault: crate::derive::DeriveFault,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -1783,6 +1797,12 @@ impl fmt::Display for LoweringRefusal<'_>
                 crate::coincide::JOIN_STEPS,
                 crate::coincide::DERIVED_RULES
             ),
+            Self::UnderivedRule {
+                rule,
+                theory,
+                fault,
+                ..
+            } => write!(f, "the theory `{theory}` does not derive `{rule}`: {fault}"),
             Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -1902,6 +1922,7 @@ impl LoweringRefusal<'_>
             | Self::RulesUncompleted { span, .. }
             | Self::RulesNeverComplete { span, .. }
             | Self::RulesUndecided { span, .. }
+            | Self::UnderivedRule { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::Unminted { span, .. } => Maybe::Present(span),
             Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {

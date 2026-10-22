@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RuleFace;
 use quenchant_shape::shape::Maybe;
@@ -446,6 +447,20 @@ pub struct WrittenUse
     pub named: ByteSpan,
 }
 
+/// Where a `derive` declaration writes the two sides of the rule it states
+/// over a theory: each side's term and its nodes in pre-order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenDerived
+{
+    /// The left side, and where each of its nodes is written.
+    pub left: (FreeTerm, WrittenTerm),
+    /// The right side, and where each of its nodes is written.
+    pub right: (FreeTerm, WrittenTerm),
+}
+
 /// Where a described declaration's members are written.
 ///
 /// Each list but `uses` is parallel to the one the description reads its
@@ -474,4 +489,7 @@ pub struct WrittenMembers
     /// The names an `ext` member writes for the face and the boundary
     /// constant it is stated over.
     pub uses: Vec<WrittenUse>,
+    /// For a `theory`, the rules `derive` declarations state over it, in the
+    /// order they are collected.
+    pub derived: Vec<WrittenDerived>,
 }

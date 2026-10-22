@@ -292,6 +292,8 @@ impl FormName
     pub const DATA: Self = Self("data_declaration");
     /// The world declaration `world w ;`.
     pub const WORLD_DECLARATION: Self = Self("world_declaration");
+    /// The derived rule `derive r : l <=> r in T`.
+    pub const DERIVE_DECLARATION: Self = Self("derive_declaration");
     /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
     /// the declaration.
     pub const DATA_GENERATOR: Self = Self("data_generator");

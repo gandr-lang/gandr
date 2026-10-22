@@ -1,0 +1,11 @@
+// A statement a theory's completed rules rewrite to two normal forms is no
+// rule the theory derives: the twin of the model's `invMul`. Commutativity
+// holds in the parity group, but the group's rules leave its two sides apart,
+// and a group need not be abelian.
+
+// The group's unit, associativity and inverse laws.
+import "../../model/identity/group-laws.gandr" ;
+
+/// Commutativity, refused: its sides are their own normal forms.
+@[ refuses("UnderivedRule") ]
+derive comm : mul(x, y) <=> mul(y, x) in Group

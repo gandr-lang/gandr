@@ -1062,11 +1062,12 @@ impl Typer<'_>
     ///   members.
     /// - ensures: as the module documentation states for a theory: each sort,
     ///   operation and law at what its `Model(S)` component states, each port
-    ///   at its sort, each node of a law at its sort, each written sort at its
-    ///   universe, each circuit's ports and wires at their sorts, a nested
-    ///   model's `Model(T)` at its universe and its `T` at `code`; and each
-    ///   written sort's head and each operation applied, beside the name tile
-    ///   of the member it names.
+    ///   at its sort, each node of a law at its sort, each node of a rule a
+    ///   `derive` declaration states over the theory at the sort the theory
+    ///   writes for it, each written sort at its universe, each circuit's ports
+    ///   and wires at their sorts, a nested model's `Model(T)` at its universe
+    ///   and its `T` at `code`; and each written sort's head and each operation
+    ///   applied, beside the name tile of the member it names.
     /// - fails: never; a presentation whose members cannot be read records
     ///   nothing, and a component the derivation cannot state records none of
     ///   the nodes its type would read, save a binding operation's ports, which
@@ -1081,6 +1082,7 @@ impl Typer<'_>
     ///   circuit answer at the types asserted; the identity-return `lam`'s
     ///   binder answers at its indexed sort and its name nowhere.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `described::tests::a_derived_rule_answers_each_side_node_at_its_sort`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
     fn theory(
@@ -1282,6 +1284,21 @@ impl Typer<'_>
                 self.law_side(&scope, binders, &declared, side, nodes, read);
             }
             scope.binders.truncate(base);
+        }
+        // A rule a `derive` declaration states is a law no component states:
+        // its nodes read at the sorts the theory writes.
+        for derived in &written.derived {
+            let unstated = Unstated::of(&presented, &derived.left.0);
+            for &(ref side, ref nodes) in [&derived.left, &derived.right] {
+                self.law_side(
+                    &scope,
+                    &[],
+                    &declared,
+                    side,
+                    nodes,
+                    Reading::Written(&unstated),
+                );
+            }
         }
         for member in &written.circuits {
             self.circuit(&scope, &members, member, &declared.heads);

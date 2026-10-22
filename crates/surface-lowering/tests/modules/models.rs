@@ -14,6 +14,7 @@ use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::TelescopeFault;
+use gandr_surface_lowering::derive::DeriveFault;
 use gandr_surface_lowering::model::ModelFault;
 
 use super::Amounts;
@@ -991,5 +992,79 @@ fn a_pattern_at_a_model_type_splits_its_fields()
                 Judgement::Checked | Judgement::Declared
             )),
         "the consumer splits the record and reads the packed counter: {judgements:?}"
+    );
+}
+
+/// A group presented by three laws, whose completion derives the inverse of a
+/// product.
+const GROUP: &str = "theory Grp {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> \
+                     G;\n  oper mul : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  \
+                     rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));\n  rule invL : \
+                     mul(inv(x), x) <=> e();\n}\n";
+
+/// `derive invMul` takes nine slots, one for each of the eight rules
+/// completion derives on the way to it and then its own, each stating its law
+/// over every model of the group with the model's operations and laws read
+/// off it, and each proof checks; a later declaration reads the rule through
+/// the theory's path.
+#[test]
+fn a_derived_rule_reads_the_model_it_quantifies_over()
+{
+    let source = format!(
+        "{GROUP}derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\ndef \
+         uses(m : Model(Grp)) -> -F Unit {{\n  run law <- Grp.invMul(m);\n  return unit\n}}\n"
+    );
+    let mut lowered = lower(source.as_str());
+    let found = rows(&lowered);
+    let derived: Vec<_> = found
+        .iter()
+        .filter(|&&(_, role, _)| role == Role::Derived)
+        .collect();
+    let paths: Vec<&str> = derived
+        .iter()
+        .map(|&&(ref path, ..)| path.as_str())
+        .collect();
+    assert!(
+        derived.len() == 9_usize
+            && derived
+                .iter()
+                .all(|&&(_, _, amounts)| amounts == Amounts::Completed),
+        "the statement and the lemmas below it each lower to a type and a proof: {found:?}"
+    );
+    assert_eq!(
+        paths.split_last(),
+        Some((&"Grp.invMul", &["invMul"; 8][..])),
+        "the statement is named as a later declaration reads it, under its theory"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "every lemma, the statement and its use check: {judgements:?}"
+    );
+}
+
+/// A statement the group's completion rewrites to two normal forms is no rule
+/// the group derives: commutativity is refused by name, under the rule's own.
+#[test]
+fn a_rule_the_theory_does_not_derive_is_refused()
+{
+    let written = "derive comm : mul(x, y) <=> mul(y, x) in Grp";
+    let source = format!("{GROUP}{written}\n");
+    let found = rows(&lower(source.as_str()));
+    assert_eq!(
+        found.last(),
+        Some(&row(
+            "comm",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::UnderivedRule {
+                span: span_of(source.as_str(), written, 0_usize),
+                rule: name("comm"),
+                theory: name("Grp"),
+                fault: DeriveFault::Apart,
+            })
+        )),
+        "the two sides normalise apart: {found:?}"
     );
 }

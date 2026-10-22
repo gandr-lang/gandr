@@ -48,6 +48,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
@@ -192,6 +193,86 @@ enum Members<'source, 'model>
     },
     /// The fields of a bundled model before the one being minted.
     Fields(Fields<'model>),
+    /// The fields of a bundled model bound outside the type being minted,
+    /// each read as its projection.
+    Projected(Projected<'model>),
+}
+
+/// A bundled model bound just outside the telescope a type is read under,
+/// each of its fields read as the projection of it the record's nesting
+/// gives.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Projected<'model>
+{
+    /// The components, in signature order.
+    components: &'model [ModelComponent],
+    /// Whether each one's link binds, in the same order.
+    binds: &'model [Dependent],
+}
+
+impl Projected<'_>
+{
+    /// The value the field named `name` is read as under `context`.
+    ///
+    /// # Specification
+    /// - requires: the model is bound just outside `context`.
+    /// - ensures: the model's variable, counting the binding binders of
+    ///   `context`, projected as the record nests the field: the field of its
+    ///   name when no link binds; otherwise the second component taken once per
+    ///   field before it, then the first unless the field is the last; every
+    ///   node but the value returned carrying `origin`, which the caller
+    ///   records.
+    /// - fails: none for a name no component bears.
+    /// - panics: none.
+    /// - executable: none — the value is nodes of the arena, which the checker
+    ///   reads at the model's record type.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group's operations and law read off the model a
+    ///   derived rule quantifies over.
+    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+    fn head(
+        self,
+        name: &Name,
+        context: Context<'_>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<ValueId>
+    {
+        let place = self
+            .components
+            .iter()
+            .rposition(|component| component.name == *name)?;
+        let telescope = context.dependent.iter().filter(|binds| binds.0).count();
+        let index = DeBruijnIndex::from(u32::try_from(telescope).ok()?);
+        let mut steps = Vec::new();
+        if self.binds.iter().any(|binds| binds.0) {
+            steps.resize(place, Component::from(1_usize));
+            if place.saturating_add(1) < self.components.len() {
+                steps.push(Component::from(0_usize));
+            }
+        }
+        let mut value = sink.arena.value_variable(Zone::Intuitionistic, index);
+        if steps.is_empty() && !self.binds.iter().any(|binds| binds.0) {
+            sink.origins.record_value(value, origin);
+            let computation = sink.arena.computation_record_projection(
+                value,
+                FieldLabel::from(String::from(name.as_ref())),
+            );
+            sink.origins.record_computation(computation, origin);
+            return Some(sink.arena.value_returned(computation));
+        }
+        for step in steps {
+            sink.origins.record_value(value, origin);
+            let computation = sink.arena.computation_tuple_projection(value, step);
+            sink.origins.record_computation(computation, origin);
+            value = sink.arena.value_returned(computation);
+        }
+        Some(value)
+    }
 }
 
 /// The fields of a bundled model a later field reads: the components before
@@ -917,6 +998,20 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 None
             },
+            Members::Projected(projected) => {
+                if !sort.indices.is_empty() {
+                    return Err(Missing::Unlowered);
+                }
+                let code = projected
+                    .head(&sort.sort, context, sink, minting.origin)
+                    .ok_or(Missing::Unlowered)?;
+                sink.origins.record_value(code, minting.origin);
+                let id = sink
+                    .arena
+                    .value_type_element(code, Level::constant(Universe::FUSS_FREE.level));
+                sink.origins.record_value_type(id, minting.origin);
+                return Ok(id);
+            },
         };
         let Some(component) = structure
             .and_then(|structure| self.collected.structures.get(usize::from(structure)))
@@ -1222,24 +1317,16 @@ impl<'source> Lowerer<'_, 'source>
                 (sink.arena.value_constant(constant), read)
             },
             Members::Fields(fields) => {
-                let read = match fields
-                    .before
-                    .iter()
-                    .rfind(|component| component.name == *name)
-                    .map(|component| &component.form)
-                {
-                    Some(&Ok(ModelForm::Operation { .. })) => MemberRead::Applied,
-                    Some(&Ok(ModelForm::Constant(_))) => MemberRead::Held,
-                    Some(
-                        &(Ok(
-                            ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_),
-                        )
-                        | Err(_)),
-                    )
-                    | None => return Err(Missing::Unlowered),
-                };
+                let read = member_read(fields.before, name)?;
                 let index = fields.index(name, context).ok_or(Missing::Unlowered)?;
                 (sink.arena.value_variable(Zone::Intuitionistic, index), read)
+            },
+            Members::Projected(projected) => {
+                let read = member_read(projected.components, name)?;
+                let head = projected
+                    .head(name, context, sink, minting.origin)
+                    .ok_or(Missing::Unlowered)?;
+                (head, read)
             },
         };
         sink.origins.record_value(head, minting.origin);
@@ -3072,3 +3159,41 @@ fn variable<'source>(
         u32::try_from(after).unwrap_or(u32::MAX),
     ))
 }
+
+/// How a term reads the operation or constant `name` among `components`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an operation applied and a constant held, read off the last
+///   component of the name.
+/// - fails: [`Missing::Unlowered`] for a name no operation or constant bears.
+/// - panics: none.
+/// - executable: none — the result is the lookup itself.
+///
+/// # Errors
+/// [`Missing::Unlowered`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a group's operations applied and its unit held, read off
+///   the model a derived rule quantifies over.
+/// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
+fn member_read<'source>(
+    components: &[ModelComponent],
+    name: &Name,
+) -> Result<MemberRead, Missing<'source>>
+{
+    match components
+        .iter()
+        .rfind(|component| component.name == *name)
+        .map(|component| &component.form)
+    {
+        Some(&Ok(ModelForm::Operation { .. })) => Ok(MemberRead::Applied),
+        Some(&Ok(ModelForm::Constant(_))) => Ok(MemberRead::Held),
+        Some(
+            &(Ok(ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_)) | Err(_)),
+        )
+        | None => Err(Missing::Unlowered),
+    }
+}
+
+mod derived;

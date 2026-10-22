@@ -245,6 +245,10 @@ pub enum Insertion
     /// `fn (x : A)`, never the argument the lambda binds apart, its return,
     /// the ascription at `-F A` or the bind that names it `x`.
     Parameter,
+    /// A node of the law and the proof a derived rule's statement or one of
+    /// its lemmas mints, every one located at the statement's name: the
+    /// source writes the rule, never the steps that prove it.
+    Derived,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

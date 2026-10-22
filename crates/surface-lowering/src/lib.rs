@@ -354,6 +354,7 @@ mod certify;
 pub mod circuit;
 mod classify;
 pub mod coincide;
+pub mod derive;
 pub mod desc_cells;
 pub mod described;
 pub mod description;

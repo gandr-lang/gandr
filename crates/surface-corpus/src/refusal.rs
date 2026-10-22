@@ -654,6 +654,9 @@ pub enum RefusalName
     /// A critical pair of a block's rules the coincidence check's budget left
     /// undecided.
     RulesUndecided,
+    /// A `derive` declaration whose statement its theory's completed rules
+    /// do not prove.
+    UnderivedRule,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -837,7 +840,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 197_usize] = [
+    pub const VOCABULARY: [Self; 198_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -957,6 +960,7 @@ impl RefusalName
         Self::RulesUncompleted,
         Self::RulesNeverComplete,
         Self::RulesUndecided,
+        Self::UnderivedRule,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -1142,6 +1146,7 @@ impl RefusalName
         (Self::RulesUncompleted, b"RulesUncompleted") |
         (Self::RulesNeverComplete, b"RulesNeverComplete") |
         (Self::RulesUndecided, b"RulesUndecided") |
+        (Self::UnderivedRule, b"UnderivedRule") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -1462,6 +1467,7 @@ impl RefusalName
             Self::RulesUncompleted => "RulesUncompleted",
             Self::RulesNeverComplete => "RulesNeverComplete",
             Self::RulesUndecided => "RulesUndecided",
+            Self::UnderivedRule => "UnderivedRule",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
             Self::UnknownMold => "UnknownMold",
@@ -2068,6 +2074,8 @@ impl Refusal<'_>
         RefusalName::RulesNeverComplete) |
         (Self::Lowering(LoweringRefusal::RulesUndecided { .. }),
         RefusalName::RulesUndecided) |
+        (Self::Lowering(LoweringRefusal::UnderivedRule { .. }),
+        RefusalName::UnderivedRule) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -2289,7 +2297,8 @@ impl Refusal<'_>
         RefusalName::RulesOverlapSecondOrder) | (LoweringRefusal::RulesUncompleted { .. },
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesNeverComplete { .. },
         RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
-        RefusalName::RulesUndecided) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
+        RefusalName::UnderivedRule) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
@@ -2377,6 +2386,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesUncompleted { .. } => RefusalName::RulesUncompleted,
         LoweringRefusal::RulesNeverComplete { .. } => RefusalName::RulesNeverComplete,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
+        LoweringRefusal::UnderivedRule { .. } => RefusalName::UnderivedRule,
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,

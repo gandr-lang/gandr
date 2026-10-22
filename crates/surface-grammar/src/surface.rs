@@ -445,6 +445,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "cons_pattern",
     "continue_expression",
     "data_declaration",
+    "derive_declaration",
     "equivalence_type",
     "for_expression",
     "glob_expression",

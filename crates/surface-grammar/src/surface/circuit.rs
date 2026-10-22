@@ -72,7 +72,8 @@ use crate::model::Sym;
 /// - ensures: the `theory` block declaration, then the top-level `oper` and
 ///   `rule` declaration, each keyword-led with its members, ports and body
 ///   statements inlined, over tiles and [`Sort::Type`] and [`Sort::Expression`]
-///   holes.
+///   holes, then the `derive` declaration naming a rule a theory's completion
+///   derives.
 /// - fails: `precs` does not hold `item.singleton`.
 /// - panics: none.
 /// - intension: members, ports and body statements are inlined rather than
@@ -91,13 +92,14 @@ use crate::model::Sym;
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 2 && rules.iter().zip(["theory_declaration", "circuit_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 3 && rules.iter().zip(["theory_declaration", "circuit_declaration", "derive_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
     let mut out = Vec::new();
     theory_declaration(&mut out, item);
     circuit_declarations(&mut out, item);
+    derive_declaration(&mut out, item);
     Ok(out)
 }
 
@@ -222,6 +224,53 @@ fn circuit_declarations(
         AdaptationReason("inlined statement: the feedback back-edge `feed w1? : (ports) <arrow> (ports) ;` — the only cycle-forming statement — rides the same alternation, first-token-discriminated by the contextual `feed` keyword"),
     ));
     out.push(declaration);
+}
+
+/// Append the `derive` declaration.
+///
+/// `derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp` names a
+/// rule the completion of the theory `Grp` derives, so the rule reads at a
+/// model of the theory by that name. Its sides are expressions over the
+/// theory's operations, its arrow the rule arrow grid's, and the theory the
+/// type identifier after `in`. The form closes on that identifier, a tile, so
+/// the right side's expression hole is form-interior: `in` follows it, and
+/// no expression continues with `in`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: appends the named item rule at `p`, preserving the existing
+///   prefix.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For an existing sentinel rule and the built-in item band, L3
+///   exact prefix, declaration order and band observations catch overwritten
+///   prefixes, wrong provenance and wrong precedence; longer arbitrary prefixes
+///   are not exhausted.
+/// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "derive_declaration" && rule.provenance().0 == "derive_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
+fn derive_declaration(
+    out: &mut Vec<Rule>,
+    p: Prec,
+)
+{
+    out.push(r(
+        RuleName("derive_declaration"),
+        Provenance("derive_declaration"),
+        Sort::Item,
+        p,
+        seq([
+            t(TileLabel("derive")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            h(Sort::Expression),
+            circuit_rule_face_arrow(),
+            h(Sort::Expression),
+            t(TileLabel("in")),
+            t(TileLabel("type_identifier")),
+        ]),
+    ));
 }
 
 /// Build a `theory` member led by `oper`, `obs` or `rule`.
@@ -1178,6 +1227,7 @@ mod tests
     use gandr_theory_graphs::PrecSpec;
 
     use super::circuit_declarations;
+    use super::derive_declaration;
     use super::rules;
     use super::theory_declaration;
     use crate::PbgError;
@@ -1205,11 +1255,13 @@ mod tests
         )];
         theory_declaration(&mut out, item);
         circuit_declarations(&mut out, item);
+        derive_declaration(&mut out, item);
         assert_eq!(
             [
                 RuleName("sentinel"),
                 RuleName("theory_declaration"),
-                RuleName("circuit_declaration")
+                RuleName("circuit_declaration"),
+                RuleName("derive_declaration")
             ],
             out.iter().map(Rule::name).collect::<Vec<_>>().as_slice()
         );

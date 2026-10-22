@@ -572,6 +572,15 @@ fn lowered(
             "whether this rule and an earlier one agree was not decided within the check's \
              budget, so the block's rules are refused",
         ),
+        LoweringRefusal::UnderivedRule {
+            rule,
+            theory,
+            fault,
+            ..
+        } => write!(
+            f,
+            "the theory `{theory}` does not derive `{rule}`: {fault}"
+        ),
         LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
             "the source is too large to read within the allowance of {budget} steps"
@@ -1390,6 +1399,12 @@ mod tests
             LoweringRefusal::RulesUncompleted { span, first: span },
             LoweringRefusal::RulesNeverComplete { span, first: span },
             LoweringRefusal::RulesUndecided { span, first: span },
+            LoweringRefusal::UnderivedRule {
+                span,
+                rule: name,
+                theory: name,
+                fault: gandr_surface_lowering::derive::DeriveFault::Apart,
+            },
             LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),

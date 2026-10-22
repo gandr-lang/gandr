@@ -495,8 +495,8 @@ fn finish<'source>(
 /// # Specification
 /// - requires: the declaration and container coordinates belong to the module;
 ///   name segments contain no period.
-/// - ensures: the container path followed by the declaration’s own name, joined
-///   with periods.
+/// - ensures: the container path — a derived rule's statement's theory —
+///   followed by the declaration’s own name, joined with periods.
 /// - provides: an arena-coordinate-independent declaration key for these
 ///   fixtures.
 /// - fails: never.
@@ -509,9 +509,11 @@ fn finish<'source>(
 /// - witness: `tests::modules::nested_modules_lower_as_parent_members_and_project`
 #[spec(
         ensures: |ret| {
-            let prefix: &[SurfaceName<'_>] = match declaration.container() {
-                | gandr_surface_lowering::Container::TopLevel(_) => &[],
-                | gandr_surface_lowering::Container::Module(index) => module
+            let theory = module.theory_of(declaration);
+            let prefix: &[SurfaceName<'_>] = match (theory.as_ref(), declaration.container()) {
+                | (Some(theory), _) => core::slice::from_ref(theory),
+                | (None, gandr_surface_lowering::Container::TopLevel(_)) => &[],
+                | (None, gandr_surface_lowering::Container::Module(index)) => module
                     .structures()
                     .get(usize::from(index))
                     .map_or(&[], LoweredStructure::path),
@@ -558,9 +560,11 @@ fn dotted(
                     |(&(ref path, role, amounts), declaration)| {
                         role == declaration.role()
                             && {
-                                let prefix: &[SurfaceName<'_>] = match declaration.container() {
-                                    | gandr_surface_lowering::Container::TopLevel(_) => &[],
-                                    | gandr_surface_lowering::Container::Module(index) => lowered
+                                let theory = lowered.module.theory_of(declaration);
+                                let prefix: &[SurfaceName<'_>] = match (theory.as_ref(), declaration.container()) {
+                                    | (Some(theory), _) => core::slice::from_ref(theory),
+                                    | (None, gandr_surface_lowering::Container::TopLevel(_)) => &[],
+                                    | (None, gandr_surface_lowering::Container::Module(index)) => lowered
                                         .module
                                         .structures()
                                         .get(usize::from(index))

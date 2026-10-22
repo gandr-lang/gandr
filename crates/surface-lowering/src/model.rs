@@ -764,6 +764,75 @@ pub(crate) fn derive_members(
     circuits: &[PresentedCircuit],
 ) -> ModelSignature
 {
+    let (heads, mut components) = derive_heads(members);
+    for law in &members.laws {
+        components.push(ModelComponent {
+            name: law.name.clone(),
+            named: law.named,
+            form: infer::derive_law(&heads, law),
+        });
+    }
+    for circuit in circuits {
+        components.push(ModelComponent {
+            name: circuit.name.clone(),
+            named: circuit.named,
+            form: Err(ModelFault::Circuit),
+        });
+    }
+
+    ModelSignature { components }
+}
+
+/// Derive the law each of `laws` states over the sorts and operations of
+/// `members`, as a law the theory writes derives, without adding it to the
+/// theory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one form per law, in order, each the form [`derive_members`]
+///   gives a law of `members` written with the same sides.
+/// - fails: never; a fault is kept on its law.
+/// - panics: none.
+/// - executable: none — as [`derive_members`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rule a group's completion derives states its telescope
+///   and endpoints over the group's own operations.
+/// - witness: `derive::tests::a_derived_rule_states_its_law_over_the_theory`
+#[must_use]
+pub(crate) fn derive_laws(
+    members: &Members,
+    laws: &[PresentedLaw],
+) -> Vec<Result<ModelForm, ModelFault>>
+{
+    let (heads, _components) = derive_heads(members);
+    laws.iter()
+        .map(|law| infer::derive_law(&heads, law))
+        .collect()
+}
+
+/// The heads of `members`' sorts and operations, each beside its derived
+/// component, as [`derive_members`] states them before the laws.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one component per presented sort and operation, in that order,
+///   each group in written order, and each one's head by its name, a builtin
+///   type a port names held as a closed sort.
+/// - fails: never; a fault is kept on its component.
+/// - panics: none.
+/// - executable: none — as [`derive_members`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`derive_members`].
+/// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+fn derive_heads(
+    members: &Members
+) -> (
+    BTreeMap<Name, Result<infer::Head, ModelFault>>,
+    Vec<ModelComponent>,
+)
+{
     let mut heads: BTreeMap<Name, Result<infer::Head, ModelFault>> = BTreeMap::new();
     let mut components = Vec::new();
     for sort in &members.sorts {
@@ -838,22 +907,8 @@ pub(crate) fn derive_members(
             form,
         });
     }
-    for law in &members.laws {
-        components.push(ModelComponent {
-            name: law.name.clone(),
-            named: law.named,
-            form: infer::derive_law(&heads, law),
-        });
-    }
-    for circuit in circuits {
-        components.push(ModelComponent {
-            name: circuit.name.clone(),
-            named: circuit.named,
-            form: Err(ModelFault::Circuit),
-        });
-    }
 
-    ModelSignature { components }
+    (heads, components)
 }
 
 /// Whether a telescope binder is named after it, and so binds.

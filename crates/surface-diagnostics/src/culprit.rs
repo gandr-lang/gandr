@@ -226,6 +226,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
         LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
         LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
+        LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
         LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
@@ -606,6 +607,7 @@ mod tests
             LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
             LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
             LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
+            LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
             LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
             LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
             LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
@@ -905,6 +907,12 @@ mod tests
             LoweringRefusal::RulesUndecided {
                 span: at,
                 first: at,
+            },
+            LoweringRefusal::UnderivedRule {
+                span: at,
+                rule: name,
+                theory: name,
+                fault: gandr_surface_lowering::derive::DeriveFault::Apart,
             },
             LoweringRefusal::BudgetExceeded {
                 budget: LoweringBudget::from(1_usize),

@@ -1,0 +1,12 @@
+/// `derive_declaration`: a rule a theory's completion derives, stated outside
+/// the theory and proved for every model; here an involution applied four
+/// times.
+@[ checks ]
+theory Involution {
+  sort G : Type;
+  oper inv : (x : G) --> G;
+  rule invInv : inv(inv(x)) <=> x;
+}
+
+@[ checks ]
+derive four : inv(inv(inv(inv(x)))) <=> x in Involution

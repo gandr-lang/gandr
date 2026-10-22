@@ -330,6 +330,50 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
     );
 }
 
+/// A rule a `derive` declaration states over a theory answers as the theory's
+/// own rules do: each application and variable of either side at the sort
+/// the theory writes, and each operation applied at its type.
+#[test]
+fn a_derived_rule_answers_each_side_node_at_its_sort()
+{
+    let source = SourceText::from(
+        "theory Grp {\n  sort G : Type;\n  oper e : G;\n  oper inv : (x : G) --> G;\n  oper mul \
+         : (x : G, y : G) --> G;\n  rule unitL : mul(e(), x) <=> x;\n  rule assoc : mul(mul(x, \
+         y), z) <=> mul(x, mul(y, z));\n  rule invL : mul(inv(x), x) <=> e();\n}\nderive invMul \
+         : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Grp\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let left = entry(
+        &types,
+        span("invMul : ", "inv(mul(x, y))"),
+        DescribedRole::Term,
+    );
+    assert!(code(left).is_some(), "the left side at its sort");
+    for (around, inner) in [
+        ("inv(mul(x, y))", "mul(x, y)"),
+        ("inv(mul(x, y))", "x"),
+        ("<=> mul(inv(y)", "mul(inv(y), inv(x))"),
+        ("<=> mul(inv(y)", "inv(y)"),
+        ("inv(x)) in", "x"),
+    ] {
+        assert_eq!(
+            code(entry(&types, span(around, inner), DescribedRole::Term)),
+            code(left),
+            "`{inner}` in `{around}` at the group's one sort"
+        );
+    }
+    let applied = entry(&types, span(": inv(mul(x, y))", "inv"), DescribedRole::Term);
+    let declared = entry(&types, span("oper inv", "inv"), DescribedRole::Name);
+    assert_eq!(applied.ty, declared.ty, "a head at its operation's type");
+}
+
 #[test]
 fn a_circuit_wire_takes_its_sort_from_whichever_reading_reaches_it()
 {
