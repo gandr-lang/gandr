@@ -1091,7 +1091,7 @@ impl<'text> Submission<'text>
     ///   field with the batch step. This finite shared-pipeline agreement is
     ///   not an independent semantic proof; the predicate checks the moved
     ///   scalar observations without copying the composition.
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     #[spec(
         captures: before = (self.root, self.text, self.base, self.standing),
         ensures: |ret| {
@@ -2021,7 +2021,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   independent bounded relational checks; L2 — generated edit chains
     ///   compare the resumed checkpoints and judged items with a from-scratch
     ///   session and resubmit each text.
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::incremental::an_edit_judges_exactly_the_items_its_support_logs_separate`
     /// - witness: `tests::incremental::a_retyped_definition_dirties_its_reader_and_nothing_else`
@@ -2075,7 +2075,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — every corpus source, an importer among them, submits
     ///   as the walk composes it.
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     #[inline]
     pub fn submit_unit<'text>(
         &mut self,
@@ -2191,7 +2191,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   checks; a judged revision renders the reports its submission renders.
     ///   The predicate avoids cloning prior session state or repeating parsing,
     ///   judgement, evaluation or storage.
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::session::failed_submission_retains_latest_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
@@ -2427,7 +2427,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - hypothesis: L3 — every corpus source, an importer among them, submits
     ///   as the walk composes it; an importer submitted twice lowers its
     ///   closure once.
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
     #[inline]
     pub fn judge_unit_reading<'text, Read>(
@@ -2507,7 +2507,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`judge_unit_reading`](Self::judge_unit_reading).
-    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
     /// - witness: `tests::session::a_retired_judgement_leaves_the_next_its_resume_1547`
     fn judge_with<'text, Read, Poll>(

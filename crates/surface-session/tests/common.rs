@@ -2,6 +2,7 @@
 //! the corpus roots, and the batch judgement a resume is compared with.
 
 use core::fmt;
+use core::num::NonZeroUsize;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -23,6 +24,8 @@ use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_session::Session;
@@ -52,6 +55,18 @@ pub fn backend() -> BackendArtifact
     BackendArtifact::from(b"gandr-surface-session tests".as_slice())
 }
 
+/// Three threads: wider than one, narrower than the host. The corpus sweeps
+/// mold at this width because a session defaults to every performance core,
+/// and sweeps beside a workspace run each claiming every core oversubscribe the
+/// host until one outruns the per-test limit.
+///
+/// # Specification
+/// trivial.
+pub fn three() -> Width
+{
+    Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2)))
+}
+
 /// A fresh session over memory stores, for a source under `root`.
 ///
 /// # Specification
@@ -65,7 +80,7 @@ pub fn backend() -> BackendArtifact
 ///   exact standings and census values. Initial absence and root preservation
 ///   distinguish a stale or misconfigured fixture.
 /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
-/// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+/// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
 #[spec(
     ensures: |ret| {
     ret.root() == root && usize::from(ret.lowerings()) == 0_usize
@@ -159,7 +174,7 @@ pub fn submit<'text>(
 /// - hypothesis: L3 — every checked-in strict and fixture source is submitted
 ///   with its own root and compared with the batch walk. Wrong root selection
 ///   changes the source set and standings.
-/// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+/// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
 #[spec(
     ensures: |ret| {
     ret
