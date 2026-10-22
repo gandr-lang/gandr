@@ -1575,6 +1575,97 @@ fn two_imports_binding_one_name_refuse_its_use()
     );
 }
 
+/// #1834: a type member written at a source's top level names its type in a
+/// source importing it unqualified, which reaches the import; two imports
+/// writing one name refuse its use, naming it; and an import's own imports
+/// are not re-exported.
+#[test]
+fn an_imported_top_level_type_member_names_its_type_1834()
+{
+    let pbg = grammar();
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let (base, other, imported, both) = ([on(0_usize)], [on(1_usize)], [on(2_usize)], [
+        on(0_usize),
+        on(1_usize),
+    ]);
+    let (text, unit) = laid(&[
+        (
+            SourceText::from("type Band = #{low : Integer, high : Integer} ;"),
+            &[],
+        ),
+        (SourceText::from("type Band = Integer ;"), &[]),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\ndef wide : Band ;\ndef wide = #{low = 1, high = 2} ;",
+            ),
+            &base,
+        ),
+        (
+            SourceText::from("import \"./wide.gandr\" ;\ndef far : Band ;\ndef far = wide ;"),
+            &imported,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\ndef either : Band ;\ndef \
+                 either = 1 ;",
+            ),
+            &both,
+        ),
+        (
+            SourceText::from("import \"./other.gandr\" ;\ndef narrow : Band ;\ndef narrow = 3 ;"),
+            &other,
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let outcome = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(gandr_surface_lowering::LoweredDeclaration::outcome)
+    };
+    for read in ["wide", "narrow"] {
+        assert!(
+            !matches!(outcome(read), Some(DeclarationOutcome::Refused(_))),
+            "`{read}` names the synonym its import writes: {:?}",
+            outcome(read)
+        );
+    }
+    assert!(
+        matches!(
+            outcome("either"),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { name, .. }))
+                if name == SurfaceName::from("Band")
+        ),
+        "two imports writing `Band` refuse its use: {:?}",
+        outcome("either")
+    );
+    assert!(
+        matches!(
+            outcome("far"),
+            Some(DeclarationOutcome::Refused(
+                LoweringRefusal::UnresolvedTypeHead { .. }
+            ))
+        ),
+        "an import's own import is not re-exported: {:?}",
+        outcome("far")
+    );
+    let imports: Vec<ByteSpan> = module
+        .imports()
+        .iter()
+        .map(ImportDeclaration::span)
+        .collect();
+    for (index, label) in [(0_usize, "wide"), (4_usize, "narrow")] {
+        assert!(
+            imports
+                .get(index)
+                .is_some_and(|import| module.reached_imports().contains(import)),
+            "`{label}`'s import is reached through the synonym"
+        );
+    }
+}
+
 #[test]
 fn a_model_of_an_imported_theory_derives_its_signature_726()
 {

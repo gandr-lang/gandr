@@ -9850,11 +9850,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   otherwise the type member [`Self::type_member_named`] answers.
     /// - provides: the one scope a stated type is named in, bare or applied.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when a walk outruns the
-    ///   allowance.
+    ///   allowance; [`LoweringRefusal::ImportShadows`] when two imports write a
+    ///   type member of the name, as [`Self::type_member_named`] refuses it.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::BudgetExceeded`].
+    /// [`LoweringRefusal::BudgetExceeded`] and
+    /// [`LoweringRefusal::ImportShadows`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a component named in a signature, a member named in a
@@ -9896,8 +9898,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// The type member `name` names at `site`: one written before it in the
-    /// module its declaration belongs to, in an enclosing one, or at its
-    /// source's top level.
+    /// module its declaration belongs to, in an enclosing one, at its source's
+    /// top level, or at the top level of a source it imports unqualified.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -9905,22 +9907,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration owning `site` — its module, each module enclosing it, then
     ///   its source's top level — that declares a type member of the name,
     ///   written wholly before `site`, answers it, the last such of that
-    ///   container; a site no declaration owns, or a name no such member has,
-    ///   answers nothing.
+    ///   container; past the top level, the member its source's unqualified
+    ///   imports answer, as [`Collected::imported_type_member`] reads them, the
+    ///   import marked reached. A site no declaration owns, or a name no such
+    ///   member has, answers nothing.
     /// - provides: the body scope of a type member.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
-    ///   allowance.
+    ///   allowance; [`LoweringRefusal::ImportShadows`] when two imports write a
+    ///   type member of the name, naming both.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::BudgetExceeded`].
+    /// [`LoweringRefusal::BudgetExceeded`] and
+    /// [`LoweringRefusal::ImportShadows`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a member's signature naming an earlier type member of
     ///   its own module, and one naming a member it precedes, separate the
-    ///   scope from the module's whole body.
+    ///   scope from the module's whole body; a synonym an import writes, one
+    ///   two imports write, and one only an import of the import writes,
+    ///   separate the import fallback.
     /// - witness: `tests::modules::a_type_member_is_named_only_after_it_is_written`
     /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
+    /// - witness: `tests::namespace::an_imported_top_level_type_member_names_its_type_1834`
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(member)) => member.name == name
@@ -9961,9 +9970,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(&member) = written {
                 return Ok(Maybe::Present(member));
             }
-            let Container::Module(module) = container
-            else {
-                return Ok(Maybe::Absent(named::Absent::Unresolved));
+            let module = match container {
+                Container::Module(module) => module,
+                Container::TopLevel(source) => {
+                    return match self.collected.imported_type_member(source, name) {
+                        Ok(Maybe::Present((member, import))) => {
+                            self.collected.reach(import);
+                            Ok(Maybe::Present(member))
+                        },
+                        Ok(Maybe::Absent(_)) => Ok(Maybe::Absent(named::Absent::Unresolved)),
+                        Err(ambiguity) => Err(LoweringRefusal::ImportShadows {
+                            span: site.at.span,
+                            name,
+                            import: ambiguity.import,
+                            other: ambiguity.other,
+                        }),
+                    };
+                },
             };
             let Some(structure) = self.collected.structures.get(usize::from(module))
             else {
