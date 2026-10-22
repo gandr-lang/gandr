@@ -453,11 +453,14 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # that depends on one, however indirectly. A changed lockfile, workspace
 # manifest, toolchain pin or `.cargo/` file, or no base to compare with
 # (main's push, a dispatch), reaches every crate. A closure that misses the
-# series' package skips the timing upload. hotpath names a function
-# `<module>::<fn>`, or `<impl_type>::<fn>` where the attribute names one,
-# without its crate, so a crate's names are read from its
-# `#[cfg_attr(feature = "hotpath", hotpath::measure…)]` attributes; a series'
-# own `measure_block!` labels belong to its package. CI_BASE_SHA names the
+# series' package skips the timing upload. hotpath names a function by its
+# full module path, `<crate>::<module>::<fn>`, with `<impl_type>::` before
+# the function where the attribute names one, and an ignore pattern must
+# match that whole name. A crate's names are read from its
+# `#[cfg_attr(feature = "hotpath", hotpath::measure…)]` attributes, each
+# pattern the crate's library name, `*` and the file's module: the file
+# names only the innermost module, and `*` stands for any modules around it.
+# A series' own `measure_block!` labels belong to its package. CI_BASE_SHA names the
 # base. The upload is skipped under act, which holds no OIDC token.
 ["ci:hotpath"]
 description = "Run a hotpath series and upload its allocation and timing reports"
@@ -493,7 +496,8 @@ if [[ -n "$base" ]] && git fetch --quiet --depth=1 origin "$base" \
 fi
 cargo metadata --locked --format-version 1 > "$scratch/metadata.json"
 # The first line is `in` or `out`, for the series' package; then the
-# directory of each workspace crate outside the closure, one per line.
+# directory and the library name of each workspace crate outside the
+# closure, a tab between them, one per line.
 jq -r --rawfile changed "$scratch/changed" --argjson every "$every" --arg package "$package" '
   def grow($crates; $deps):
     . as $reached
@@ -502,26 +506,31 @@ jq -r --rawfile changed "$scratch/changed" --argjson every "$every" --arg packag
   .workspace_root as $root
   | .workspace_members as $members
   | [.packages[] | select(.id as $id | ($members | index($id)) != null)
-      | {id, name, dir: (.manifest_path | ltrimstr($root + "/") | rtrimstr("Cargo.toml"))}] as $crates
+      | {id, name, dir: (.manifest_path | ltrimstr($root + "/") | rtrimstr("Cargo.toml")),
+         lib: (([.targets[] | select(.kind | index("lib"))] | first | .name) // .name | gsub("-"; "_"))}] as $crates
   | ([.resolve.nodes[] | {key: .id, value: [.deps[].pkg]}] | from_entries) as $deps
   | ($changed | split("\u0000") | map(select(length > 0))) as $files
   | ($every or any($files[]; . == "Cargo.lock" or . == "Cargo.toml" or . == "rust-toolchain.toml" or startswith(".cargo/"))) as $all
   | (if $all then [$crates[].id]
      else [$crates[] | select(.dir as $dir | any($files[]; startswith($dir))) | .id] | grow($crates; $deps) end) as $closure
   | (if any($crates[]; .name == $package and (.id as $id | ($closure | index($id)) != null)) then "in" else "out" end),
-    ($crates[] | select(.id as $id | ($closure | index($id)) == null) | .dir)
+    ($crates[] | select(.id as $id | ($closure | index($id)) == null) | "\(.dir)\t\(.lib)")
 ' "$scratch/metadata.json" > "$scratch/outside"
 if [[ $(head -n 1 "$scratch/outside") != in ]]; then
   echo "the change reaches no crate $package depends on: no $series-timing upload"
   exit 0
 fi
-tail -n +2 "$scratch/outside" | while IFS= read -r dir; do
+tail -n +2 "$scratch/outside" | while IFS=$'\t' read -r dir lib; do
   [[ -d "$root/${dir}src" ]] || continue
-  find "$root/${dir}src" -name '*.rs' -exec awk '
-    FNR == 1 { stem = FILENAME; sub(/.*\//, "", stem); sub(/\.rs$/, "", stem); pending = 0 }
+  find "$root/${dir}src" -name '*.rs' -exec awk -v lib="$lib" '
+    FNR == 1 {
+      stem = FILENAME; sub(/\.rs$/, "", stem); sub(/\/mod$/, "", stem); sub(/.*\//, "", stem)
+      module = stem == "lib" ? lib : lib "::*" stem
+      pending = 0
+    }
     /hotpath::measure/ {
-      pending = 1; owner = stem
-      if (match($0, /impl_type = "[^"]+"/)) owner = substr($0, RSTART + 13, RLENGTH - 14)
+      pending = 1; owner = module
+      if (match($0, /impl_type = "[^"]+"/)) owner = module "::" substr($0, RSTART + 13, RLENGTH - 14)
       next
     }
     pending && match($0, /fn [A-Za-z_][A-Za-z0-9_]*/) { print owner "::" substr($0, RSTART + 3, RLENGTH - 3); pending = 0 }
