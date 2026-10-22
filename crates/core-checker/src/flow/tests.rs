@@ -718,6 +718,84 @@ fn a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628()
 }
 
 #[test]
+fn a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837()
+{
+    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
+    // def same : Path(Type[+, 1], Type, Type) = here(Type) ;
+    // def rode : () => Type = thunk { ride(\X. X, kept, Integer) } ;
+    // def moved : () => Type = thunk { transport(\X. X, same, Integer) } ;
+    // def small : () => Integer = thunk { ride(\X. X, stay(Integer), 0) } ;
+    let mut arena = CoreArena::new();
+    let small = universe(&mut arena);
+    let one = Level::constant(LevelConstant::from(1_u64));
+    let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one.clone());
+    let code = arena.value_quote(small);
+    let stay = arena.value_stay(code);
+    let flow = arena.value_type_flow(large, code, code);
+    let here = arena.value_here(code);
+    let path = arena.value_type_path(large, code, code);
+    let binder = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_element(binder, Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let quoted = arena.value_quote(integer);
+    let kept = arena.value_constant(ConstantIndex::from(0_usize));
+    let same = arena.value_constant(ConstantIndex::from(1_usize));
+    let ride = arena.computation_ride(motive, kept, quoted);
+    let transport = arena.computation_path_transport(motive, same, quoted);
+    let returns_type = arena.comp_type_returner(small);
+    let suspended_type = arena.value_type_thunk(returns_type);
+    let rode = arena.value_thunk(ride);
+    let moved = arena.value_thunk(transport);
+    let integer_stay = arena.value_stay(quoted);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let small_ride = arena.computation_ride(motive, integer_stay, zero);
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended_integer = arena.value_type_thunk(returns_integer);
+    let level_zero = arena.value_thunk(small_ride);
+    let report = judged(&mut arena, &[
+        declaration(At(0), flow, stay),
+        declaration(At(1), path, here),
+        declaration(At(2), suspended_type, rode),
+        declaration(At(3), suspended_type, moved),
+        declaration(At(4), suspended_integer, level_zero),
+    ]);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "a ride and a transport along the level-one universe check, and so does a ride at level zero: {report:?}"
+    );
+    for at in [ride, transport] {
+        let family = report.motives().get(&at).copied();
+        assert!(
+            family.is_some_and(|family| matches!(
+                arena.value_type(family),
+                Some(&gandr_core_term::ValueType::Element { code: read, ref target })
+                    if read == binder && *target == one
+            )),
+            "the motive reads its binder at the carrier's level: {family:?}"
+        );
+    }
+    assert!(
+        !report.motives().contains_key(&small_ride),
+        "a ride at level zero forms its written motive and records none"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(|entry| entry.outcome().clone())
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Outcome::Defined { .. })),
+        "the kernel replays the ride and the transport at their recorded motives: {outcomes:?}"
+    );
+}
+
+#[test]
 fn motives_ride_only_covariantly()
 {
     let mut arena = CoreArena::new();
@@ -784,7 +862,7 @@ fn motives_ride_only_covariantly()
         beside,
     ]
     .iter()
-    .map(|&motive| computed(&arena, at, motive))
+    .map(|&motive| computed(&arena, at, motive, &Level::zero()))
     .collect();
     let unsupported = Err(CheckRefusal::RideUnsupported { at });
     assert_eq!(
@@ -800,6 +878,12 @@ fn motives_ride_only_covariantly()
             unsupported,
         ],
         "a decode of the code, a pair of it and a flow singleton compute; a record of it, a thunk returning it, a decode above level zero, a flow whose carrier reads it and one whose target only contains it do not"
+    );
+    let one = Level::zero().succ().unwrap();
+    assert_eq!(
+        [lifted, decoded].map(|motive| computed(&arena, at, motive, &one)),
+        [Ok(()), unsupported],
+        "along a flow one universe up, the decode at that level computes and the decode at level zero does not"
     );
 }
 

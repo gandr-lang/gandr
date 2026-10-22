@@ -1013,3 +1013,57 @@ fn unchanged_paths_keep_their_ids_beside_a_lift()
     );
     assert_readmitted(&mut session);
 }
+
+/// A fill whose body rides along a flow above level zero forms its motive at
+/// the carrier's level where the batch run never judged it, and the session
+/// readmits the fill at that motive: the family reaches the report the bridge
+/// reads only through the fill's judgement, #1837.
+#[test]
+fn a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837()
+{
+    // def kept : Flow(Type[+, 1], Type, Type) = stay(Type) ;
+    // def rode : () => Type = ? ; filled as thunk { ride(\X. X, kept, Integer) }
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(
+        Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let one = Level::zero().succ().expect("one is below the top");
+    let large = arena.value_type_universe(
+        Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        one.clone(),
+    );
+    let code = arena.value_quote(small);
+    let stay = arena.value_stay(code);
+    let flow = arena.value_type_flow(large, code, code);
+    let binder = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = arena.value_type_element(binder, Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let quoted = arena.value_quote(integer);
+    let kept = arena.value_constant(ConstantIndex::from(0_usize));
+    let ride = arena.computation_ride(motive, kept, quoted);
+    let rode = arena.value_thunk(ride);
+    let returns_type = arena.comp_type_returner(small);
+    let suspended_type = arena.value_type_thunk(returns_type);
+    let declarations = [
+        declaration(At(0), flow, Maybe::Present(stay)),
+        declaration(At(1), suspended_type, Maybe::Absent(body::Absent::Hole)),
+    ];
+    let mut session = Session::new(&mut arena, &declarations, CheckBudget::DEFAULT);
+    assert!(
+        session.report().motives().is_empty(),
+        "the batch run forms no motive: the ride is only written by the fill"
+    );
+    session
+        .fill(ConstantIndex::from(1_usize), rode)
+        .expect("the ride along the level-one flow checks");
+    let family = session.report().motives().get(&ride).copied();
+    assert!(
+        family.is_some_and(|family| matches!(
+            session.arena().value_type(family),
+            Some(&ValueType::Element { code: read, ref target }) if read == binder && *target == one
+        )),
+        "the fill's judgement reports the motive at the carrier's level: {family:?}"
+    );
+    assert_readmitted(&mut session);
+}

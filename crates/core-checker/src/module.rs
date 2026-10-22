@@ -125,7 +125,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
@@ -503,6 +505,9 @@ pub struct ModuleReport
     flows: BTreeMap<ValueId, crate::flow::Statement>,
     /// The forward and function flows the run decided, by node.
     directed: BTreeMap<ValueId, crate::forward::Directed>,
+    /// The family each transport or ride above level zero formed its motive
+    /// as, by node.
+    motives: BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's type conversions
@@ -685,6 +690,25 @@ impl ModuleReport
     pub const fn directed(&self) -> &BTreeMap<ValueId, crate::forward::Directed>
     {
         &self.directed
+    }
+
+    /// The family each transport or ride above level zero formed its motive
+    /// as, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ride and a transport above level zero report the
+    ///   family at the carrier's level, by a batch run and by a fill, and a run
+    ///   with none reports an empty table, so an emptied or padded table shows.
+    /// - witness: `flow::tests::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
+    /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
+    #[inline]
+    #[must_use]
+    pub const fn motives(&self) -> &BTreeMap<ComputationId, ValueTypeId>
+    {
+        &self.motives
     }
 
     /// The reflexivities the run checked, by node, with the dialogues relating
@@ -1621,6 +1645,7 @@ pub fn check_declaration_supported(
     && &ret.equivalences == context.equivalences()
     && &ret.flows == context.flows()
     && &ret.directed == context.directed()
+    && &ret.motives == context.motives()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
     && &ret.natives == context.natives()
@@ -1941,6 +1966,7 @@ impl ModuleRun
             equivalences: context.equivalences().clone(),
             flows: context.flows().clone(),
             directed: context.directed().clone(),
+            motives: context.motives().clone(),
             reflexivities: context.reflexivities().clone(),
             relations: context.relations().clone(),
             laws: context.laws().clone(),
@@ -2058,8 +2084,10 @@ where
 /// - hypothesis: L1 — a fill using a rule the batch run never decided is
 ///   readmitted only when its decision reaches the bridge.
 /// - witness: `elaboration::tests::incremental_equals_from_scratch`
+/// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
-    && context.relations().keys().all(|at| report.relations.contains_key(at)))]
+    && context.relations().keys().all(|at| report.relations.contains_key(at))
+    && context.motives().keys().all(|at| report.motives.contains_key(at)))]
 pub fn absorb(
     report: &mut ModuleReport,
     context: &CheckingContext<'_>,
@@ -2086,6 +2114,9 @@ pub fn absorb(
             .iter()
             .map(|(&at, directed)| (at, directed.clone())),
     );
+    report
+        .motives
+        .extend(context.motives().iter().map(|(&at, &family)| (at, family)));
     report.reflexivities.extend(
         context
             .reflexivities()
