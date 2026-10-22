@@ -7293,7 +7293,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   annotation, or the signature of the definition it is — its parentheses
     ///   stripped, each element written as a constructor, a call or a list
     ///   takes `T` as its own, as a constructor's field gives the constructor
-    ///   written in it its type.
+    ///   written in it its type. A list ending a body that answers `-F List(T)`
+    ///   or returns `List(T)`, or carried such an answer by the list it is an
+    ///   element of, gives each such element `T` as the answer it returns, read
+    ///   under the answer's frame and carried to the list's.
     /// - provides: the introduction of the native list from its elements.
     /// - fails: yields the wrong-sort refusal where no value is read, and the
     ///   element list's refusal for an element out of shape, both naming the
@@ -7311,9 +7314,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each asserted as the exact cons chain read back out of the arena; a
     ///   list where a computation is read refused; and a list of a
     ///   parameterised family's constructors, and a list of such lists, under
-    ///   their annotation, each constructor classified by the element type.
+    ///   their annotation and at a body's tail, each constructor classified by
+    ///   the element type.
     /// - witness: `lower::tests::a_list_literal_lowers_to_its_cons_cells_1544`
     /// - witness: `lower::native::tests::a_listed_constructor_takes_the_element_type_1544`
+    /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
     #[spec(
         ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::List(_))),
     )]
@@ -7341,18 +7346,30 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         // An element type the list is written at classifies each constructor,
         // call or list among its elements, as a field's type does the
-        // constructor written in it.
-        let written = match (
+        // constructor written in it; one the list answers is carried to them as
+        // the answer each returns.
+        let (stated, answered) = match (
             self.classifiers.get(&site.at.node),
             self.inherited.get(&site.at.node),
         ) {
             (Some(&written), _) | (None, Some(&native::Classifier::Written(written))) => {
-                Some(written)
+                (Some(written), None)
             },
-            (None, Some(_) | None) => None,
+            (None, Some(&native::Classifier::Answered { answer, .. })) => {
+                (self.answered_list(answer)?, Some(answer))
+            },
+            (None, Some(_)) => (None, None),
+            (None, None) => match self
+                .answers
+                .get(&site.at.node)
+                .filter(|_| self.exits.contains(&site.at.node))
+            {
+                Some(&answer) => (self.answered_list(answer)?, Some(answer)),
+                None => (None, None),
+            },
         };
-        if let Some(written) = written
-            && let Maybe::Present(typed) = self.unwrapped(written)?
+        if let Some(stated) = stated
+            && let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
                 type_former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
@@ -7371,7 +7388,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         )
                     })
                 {
-                    let _first = self.classifiers.insert(element, element_type);
+                    match answered {
+                        Some(answer) => {
+                            let carried = native::Classifier::Answered {
+                                answer: native::Answer {
+                                    node: element_type,
+                                    frame: answer.frame,
+                                    over: native::Over::Returning,
+                                },
+                                frame,
+                            };
+                            let _first = self.inherited.insert(element, carried);
+                        },
+                        None => {
+                            let _first = self.classifiers.insert(element, element_type);
+                        },
+                    }
                 }
             }
         }
@@ -7384,6 +7416,51 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, Plan::List(elements));
 
         Ok(())
+    }
+
+    /// The value type an answer returns, as the node that writes it: the
+    /// returned type of a written `-F A`, or the type a returning answer
+    /// writes.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the operand of the answer's node, its parentheses stripped,
+    ///   when the answer is written and the node a returner type of one
+    ///   operand; the node itself when the answer returns it; nothing for a
+    ///   loop arm's, a valued answer or another written type.
+    /// - fails: the walk's refusal reading the node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function result `-F List(T)` and a thunk signed `()
+    ///   => List(T)`, each giving a listed constructor its element type.
+    /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |node| match answer.over {
+        native::Over::Returning => *node == Some(answer.node),
+        native::Over::Written => true,
+        native::Over::Loop { .. } | native::Over::Valued { .. } => node.is_none(),
+    }))]
+    fn answered_list(
+        &mut self,
+        answer: native::Answer,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        match answer.over {
+            native::Over::Returning => Ok(Some(answer.node)),
+            native::Over::Written => match self.unwrapped(answer.node)? {
+                Maybe::Present(returner) if returner.former == Former::ReturnerType => {
+                    match *returner.operands.as_slice() {
+                        [returned] => Ok(Some(returned)),
+                        _ => Ok(None),
+                    }
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => Ok(None),
+            },
+            native::Over::Loop { .. } | native::Over::Valued { .. } => Ok(None),
+        }
     }
 
     /// Classify a thunk, `thunk { … }`.

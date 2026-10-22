@@ -1,0 +1,34 @@
+// A list of optional values standing where a body ends: each element takes
+// the element type the body answers, as a constructor at the same tail takes
+// the answer itself. `Maybe` is the one `data-maybe.gandr` declares. Before
+// #1602 each constructor among the elements was refused for want of a stated
+// type.
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr" ;
+
+/// A present value and an absent one, at the type the function returns.
+@[ checks ]
+def around(n : Integer) -> -F List(Maybe(Integer)) {
+  [Some(n), None]
+}
+
+/// The same list ending a thunk whose signature writes the value function
+/// space it returns.
+@[ checks ]
+def suspended : () => List(Maybe(Integer)) ;
+def suspended = thunk { [None, Some(2)] } ;
+
+/// Lists in a list: each inner list takes the element type the outer one
+/// answers, and gives its own to its constructors.
+@[ checks ]
+def grouped() -> -F List(List(Maybe(Integer))) {
+  [[Some(3)], [], [None]]
+}
+
+/// The element type names a parameter: `Maybe(a)`, read where the function's
+/// parameters bind.
+@[ checks ]
+def wrapped(a : Type, x : a) -> -F List(Maybe(a)) {
+  [Some(x), None]
+}

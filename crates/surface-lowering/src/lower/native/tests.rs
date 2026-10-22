@@ -2040,6 +2040,34 @@ fn a_listed_constructor_takes_the_element_type_1544()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// #1602: a list ending a body gave its elements nothing of the type the body
+/// answers, so a constructor of a family with parameters among them was
+/// refused as unannotated. The answer's element type, read under the answer's
+/// frame, classifies each, a nested list's included.
+#[test]
+fn a_listed_constructor_takes_the_answered_element_type_1602()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def returned(n : Integer) -> -F List(Maybe(Integer)) {{ [Some(n), None] }}\n\
+         def alias : () => List(Maybe(Integer)) ;\ndef alias = thunk {{ [None, Some(2)] }} ;\n\
+         def nested() -> -F List(List(Maybe(Integer))) {{ [[Some(3)], [None]] }}\n\
+         def polymorphic(a : Type, x : a) -> -F List(Maybe(a)) {{ [Some(x), None] }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["returned", "alias", "nested", "polymorphic"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_constructor_takes_its_slot_as_a_family_argument_421()
 {
