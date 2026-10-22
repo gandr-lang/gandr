@@ -2,11 +2,12 @@
 // the types of them (the HoTT book's § 2.10; Behr and Kock, _Tracelet Hopf
 // Algebras and Decomposition Spaces_, EPTCS 372, 2022). The critical pair of
 // the presented integers at `S(P(S(x)))` joins at `S(x)` two ways, and each
-// way is a certificate: a path from the peak to the join. Two boundaries that
-// convert have certificate types that `ua` makes one, and a consumer of one
-// boundary's certificates is carried to the other's unchanged. Identifying the
-// two certificates of one boundary by `here` waits on the kernel relating
-// reflexivities whose points a rule relates (#1723).
+// way is a certificate: a path from the peak to the join. The two are one
+// path, so certificate identity is an identification in the presented type
+// rather than a relation beside it; certificates no rule relates stay apart
+// (the pathological twin). Two boundaries that convert have certificate types
+// that `ua` makes one, and a consumer of one boundary's certificates is
+// carried to the other's unchanged.
 
 // The presented integers and `up`.
 import "./circle-base.gandr" ;
@@ -23,6 +24,13 @@ def atRoot(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
 @[ checks ]
 def inside(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
   cong(up, here(x))
+}
+
+/// The two certificates of the peak's boundary are one path: the rules
+/// convert both to the reflexivity at the join.
+@[ checks ]
+def identified(x : Int) -> -F Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x)) {
+  here(atRoot(x))
 }
 
 /// The certificate types of the peak's boundary and of the join's own, one

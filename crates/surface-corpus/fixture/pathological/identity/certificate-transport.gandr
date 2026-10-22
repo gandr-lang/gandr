@@ -1,0 +1,14 @@
+// Two certificates no rule relates are not one path: the twin of the model's
+// `identified`. The circle's loop and the reflexivity at its point are both
+// paths from the point to itself, and nothing converts one to the other, so
+// the identification of certificates is the presented type's own paths and
+// not a quotient of them.
+
+// The circle and its loop.
+import "../../model/identity/circle-base.gandr" ;
+
+/// The loop beside the reflexivity at the point, refused: they are two
+/// certificates of one boundary that no rule identifies.
+@[ refuses("EndpointMismatch") ]
+def loopIsHere : Path(Path(Circle, Base, Base), loop, here(Base)) ;
+def loopIsHere = here(loop) ;
