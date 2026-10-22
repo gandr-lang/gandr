@@ -23,3 +23,25 @@ def unwound() -> -F Integer {
   };
   pure x
 }
+
+/// A list built where it runs.
+@[ checks ]
+def built(a : Integer) -> -F List(Integer) {
+  pure cons(a, cons(2, nil))
+}
+
+/// An abandoned access whose unwind reads a list the scope reads again after:
+/// the unwind and the rest of the scope each hold the list.
+@[ runs("cons(9, cons(1, cons(2, nil)))") ]
+def unwound_kept() -> -F List(Integer) {
+  run ys <- built(1);
+  hold x = 1;
+  run r : Integer <- handle c : Proc {
+    access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { run _ <- pure ys; pure unit };
+    pure 0
+  } with {
+    pure(y) => pure y,
+    oper exit(code, k) => { abandon(k); pure 7 }
+  };
+  pure cons(9, ys)
+}

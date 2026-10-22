@@ -142,12 +142,15 @@ pub struct Sites<'lowered>
     by_code: BTreeMap<Word, &'lowered Site>,
     /// What each literal frame resumes as, by its code word.
     frames: BTreeMap<Word, Resumed<'lowered>>,
-    /// What each frame of a counted function owns, by its code word.
+    /// What each frame owns, by its code word.
     owners: BTreeMap<Word, Owners<'lowered>>,
+    /// Each fold cell closure's owned capture positions, by its entry's code
+    /// word.
+    cells: BTreeMap<Word, &'lowered [Slot]>,
 }
 
-/// What a frame of a counted run's stack owns, by its code word: what a
-/// replay copies out with an owner of its own and the stack's release drops.
+/// What a frame of a run's stack owns, by its code word: what a replay
+/// copies out with an owner of its own and the stack's release drops.
 ///
 /// # Specification
 /// trivial.
@@ -166,9 +169,9 @@ pub enum Owners<'lowered>
 
 impl<'lowered> Sites<'lowered>
 {
-    /// Index `lowered`'s closure sites and reified bind frames, and the
-    /// application and projection stubs, by their code words in `codes`;
-    /// for a counted function, what each of its frames owns too.
+    /// Index `lowered`'s closure sites, fold cell closures and reified bind
+    /// frames, the application and projection stubs, and what each frame
+    /// owns, by their code words in `codes`.
     ///
     /// # Specification
     /// trivial.
@@ -186,18 +189,16 @@ impl<'lowered> Sites<'lowered>
         frames.insert(codes.stub(Stub::Apply), Resumed::Apply);
         frames.insert(codes.stub(Stub::Project), Resumed::Project);
         let mut owners = BTreeMap::new();
-        if lowered.uncounted.is_none() {
-            for window in &lowered.windows {
-                let owned = window
-                    .owners
-                    .as_ref()
-                    .and_then(|run| lowered.owners.get(run.0.clone()))
-                    .map_or(Owners::Unplaced, Owners::Window);
-                owners.insert(codes.label(window.label), owned);
-            }
-            owners.insert(codes.stub(Stub::Apply), Owners::Word);
-            owners.insert(codes.stub(Stub::Argument), Owners::Word);
+        for window in &lowered.windows {
+            let owned = window
+                .owners
+                .as_ref()
+                .and_then(|run| lowered.owners.get(run.0.clone()))
+                .map_or(Owners::Unplaced, Owners::Window);
+            owners.insert(codes.label(window.label), owned);
         }
+        owners.insert(codes.stub(Stub::Apply), Owners::Word);
+        owners.insert(codes.stub(Stub::Argument), Owners::Word);
         Self {
             by_code: lowered
                 .sites
@@ -206,11 +207,15 @@ impl<'lowered> Sites<'lowered>
                 .collect(),
             frames,
             owners,
+            cells: lowered
+                .cells
+                .iter()
+                .map(|cell| (codes.label(cell.label), cell.captures.as_slice()))
+                .collect(),
         }
     }
 
-    /// What the frame resuming at `code` owns, for a counted function's
-    /// frame; none for a frame that owns nothing or a function that counts
+    /// What the frame resuming at `code` owns; none for a frame that owns
     /// nothing.
     ///
     /// # Specification
@@ -398,13 +403,13 @@ fn children(
 
 /// The values `object` owns, which its release drops.
 ///
-/// A constructor owns its fields and a closure its producer captures, as
-/// [`children`] reads them. A stack owns what each of its frames owns, as its
-/// sites' owner table reads them: the values in a window frame's owned slots
-/// of its window copy, one per entry, and the word of an application's or a
-/// fold cell's frame. A cell and a closure no site records own none here:
-/// what their words own is the insertion's to state, and until it does their
-/// release frees the block alone.
+/// A constructor owns its fields, as [`children`] reads them, and a closure
+/// its producer captures, at the positions its site or, for a fold's cell
+/// closure, its cell record names. A stack owns what each of its frames owns,
+/// as its sites' owner table reads them: the values in a window frame's owned
+/// slots of its window copy, one per entry, and the word of an application's
+/// or a fold cell's frame. A cell owns none: no code releases one, so the
+/// value a held cell holds keeps its owner until the run ends.
 ///
 /// # Specification
 /// trivial.
@@ -416,6 +421,19 @@ pub fn owned(
     let header = Header::from_word(field(object, Field(0)));
     match header.kind() {
         Ok(Kind::Cell) | Err(_) => Vec::new(),
+        Ok(Kind::Closure) => {
+            let code = field(object, Field(1));
+            let captures = sites
+                .by_code
+                .get(&code)
+                .map(|site| site.captures.as_slice())
+                .or_else(|| sites.cells.get(&code).copied())
+                .unwrap_or_default();
+            captures
+                .iter()
+                .map(|slot| field(object, slot_field(*slot, Field(2))))
+                .collect()
+        },
         Ok(Kind::Stack) => {
             let mut held = Vec::new();
             for (code, word) in stack_frames(object, Field(usize::from(header.arity()))) {
@@ -436,7 +454,6 @@ pub fn owned(
             | Kind::Tuple
             | Kind::Injection
             | Kind::Data
-            | Kind::Closure
             | Kind::Head
             | Kind::Literal
             | Kind::Opaque

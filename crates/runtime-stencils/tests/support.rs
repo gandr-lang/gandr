@@ -104,10 +104,13 @@ fn innermost(core: &mut CoreArena) -> ValueId
 /// boolean; a reified stack resumed, its application frame and its bind
 /// frame, which reads a variable bound outside the stack; a lazy product
 /// projected where it is built and after it was suspended, so an object
-/// answers the projection it is entered with; and a captured stack resumed
+/// answers the projection it is entered with; a captured stack resumed
 /// twice, whose frames return a pair bound outside the shift each time, so a
 /// replay that gave the copy no owner of its own frees the pair the second
-/// replay returns.
+/// replay returns; and a fold over a list built where it runs, whose cell
+/// branch pairs each head with a pair bound outside the fold that the answer
+/// holds too, so a walk that gave a tail or a capture no owner of its own
+/// reads a freed cell.
 ///
 /// # Specification
 /// trivial.
@@ -320,6 +323,41 @@ pub fn named() -> Vec<Named>
     push(
         "reset { x <- return (1, 2); _ <- shift k. { _ <- resume k { return () }; resume k { return () } }; return x }",
         "⟨pair(1, 2) |+ ★⟩",
+        core,
+        root,
+    );
+
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Integer(1));
+    let two = integer(&mut core, Integer(2));
+    let three = integer(&mut core, Integer(3));
+    let seven = integer(&mut core, Integer(7));
+    let eight = integer(&mut core, Integer(8));
+    let outer = core.value_tuple(&[seven, eight]);
+    let bound = core.computation_return(outer);
+    let nil = core.value_list_nil();
+    let last = core.value_list_cons(three, nil);
+    let middle = core.value_list_cons(two, last);
+    let list = core.value_list_cons(one, middle);
+    let unit = core.value_unit();
+    let on_nil = core.computation_return(unit);
+    let head = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let folded = innermost(&mut core);
+    let kept = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let tagged = core.value_tuple(&[head, kept]);
+    let cell = core.value_tuple(&[tagged, folded]);
+    let on_cons = core.computation_return(cell);
+    let unit_type = core.value_type_unit();
+    let fold = core.computation_list_fold(unit_type, unit_type, list, on_nil, on_cons);
+    let answer = innermost(&mut core);
+    let again = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let both = core.value_tuple(&[answer, again]);
+    let answered = core.computation_return(both);
+    let rest = core.computation_bind(fold, answered);
+    let root = core.computation_bind(bound, rest);
+    push(
+        "y <- return (7, 8); z <- fold [1, 2, 3] { nil ⇒ return (); cons h r ⇒ return ((h, y), r) }; return (z, y)",
+        "⟨pair(pair(pair(1, pair(7, 8)), pair(pair(2, pair(7, 8)), pair(pair(3, pair(7, 8)), ()))), pair(7, 8)) |+ ★⟩",
         core,
         root,
     );
