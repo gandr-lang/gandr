@@ -626,6 +626,90 @@ fn a_run_rides_forward_and_refuses_by_move()
 }
 
 #[test]
+fn a_prefix_admits_an_open_run_and_refuses_by_move()
+{
+    let mut arena = CoreArena::new();
+    let end = seat(&mut arena, Seat::End);
+    let prefix = arena.value_type_prefix(end);
+    let complete = arena.value_type_run(end);
+    // A run stopped after its first receive: a prefix, never a run.
+    let open = run(&mut arena, &[RecordedMove::Received(Word::Task)]);
+    let opened = declaration(At(0), prefix, open);
+    let unfinished = declaration(At(1), complete, open);
+    // A complete run and the empty one are prefixes too.
+    let served = retiring(&mut arena);
+    let closed = declaration(At(2), prefix, served);
+    let empty = run(&mut arena, &[]);
+    let unstarted = declaration(At(3), prefix, empty);
+    // A move the monitor refuses is refused by name at either extent.
+    let crossed = run(&mut arena, &[RecordedMove::Sent(Word::Task)]);
+    let wrong_way = declaration(At(4), prefix, crossed);
+    let overrun = run(&mut arena, &[
+        RecordedMove::Received(Word::Task),
+        RecordedMove::Selected(Branch::Report.label()),
+        RecordedMove::Sent(Word::Progress),
+        RecordedMove::Offered(Branch::Retire.label()),
+        RecordedMove::Closed,
+        RecordedMove::Received(Word::Task),
+    ]);
+    let past_end = declaration(At(5), prefix, overrun);
+    // A prefix does not stand where a run is declared.
+    let held = arena.value_constant(ConstantIndex::from(0_usize));
+    let promoted = declaration(At(6), complete, held);
+    let report = judged(&mut arena, &[
+        opened, unfinished, closed, unstarted, wrong_way, past_end, promoted,
+    ]);
+    for position in [0, 2, 3] {
+        assert!(
+            matches!(
+                verdict(&report, At(position)),
+                Some(Verdict::Checked { .. })
+            ),
+            "declaration {position} is a prefix: {report:?}"
+        );
+    }
+    assert_eq!(
+        [1, 4, 5].map(|position| verdict(&report, At(position))),
+        [
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: open,
+                fault: RunFault::Incomplete(RunStep::from(1_u32)),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: crossed,
+                fault: RunFault::WrongDirection(RunStep::from(0_u32)),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: overrun,
+                fault: RunFault::ResumeAfterEnd(RunStep::from(5_u32)),
+            })),
+        ],
+        "the open run is no run, and a refused move is named at a prefix: {report:?}"
+    );
+    assert!(
+        matches!(
+            verdict(&report, At(6)),
+            Some(Verdict::Refused(CheckRefusal::TypeMismatch(_)))
+        ),
+        "a prefix is not a run: {report:?}"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    assert!(
+        matches!(
+            readmission
+                .readmitted()
+                .first()
+                .map(bridge::Readmitted::outcome),
+            Some(Outcome::Refused(bridge::Refusal::OutOfFragment {
+                former: UnadmittedFormer::Run,
+                ..
+            }))
+        ),
+        "a prefix stays on the checker's side: {readmission:?}"
+    );
+}
+
+#[test]
 fn stays_and_composites_record_their_simulation()
 {
     let mut arena = CoreArena::new();

@@ -192,6 +192,7 @@ pub fn component(
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Prefix(_)
                 | ValueTypeView::Sum(_)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
@@ -219,6 +220,7 @@ pub fn component(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -342,6 +344,7 @@ pub fn flow_component(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer

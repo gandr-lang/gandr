@@ -999,6 +999,10 @@ pub enum ValueType
     /// `Run(s)`: the complete recorded runs of the session code `s`, each a
     /// finite trace the protocol's monitor accepts.
     Run(ValueId),
+    /// `Prefix(s)`: the recorded prefixes of the session code `s`, each a
+    /// finite trace the protocol's monitor accepts as far as it goes, closed
+    /// or still open.
+    Prefix(ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
@@ -3176,7 +3180,8 @@ fn equal_syntax(
                     {
                         pending.push(VT(a, b));
                     }
-                    else if let (&ValueType::Run(a), &ValueType::Run(b)) =
+                    else if let (&ValueType::Run(a), &ValueType::Run(b))
+                    | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =
                         (matched_left_value, matched_right_value)
                     {
                         pending.push(V(a, b));

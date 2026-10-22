@@ -409,6 +409,9 @@ pub enum TypeFormer
     /// `Run(S)`, the value type of the complete recorded runs of the session
     /// code `S`, which is read as a value.
     Run,
+    /// `Prefix(S)`, the value type of the recorded prefixes of the session
+    /// code `S`, closed or still open, which is read as a value.
+    Prefix,
 }
 
 /// The nullary type heads, with the spellings the surface writes them as.
@@ -450,11 +453,12 @@ const TYPE_ATOMS: [(&str, TypeAtom); 6_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 4_usize] = [
+const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
     ("+U", TypeFormer::Thunk),
     ("-F", TypeFormer::Returner),
     ("List", TypeFormer::List),
     ("Run", TypeFormer::Run),
+    ("Prefix", TypeFormer::Prefix),
 ];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
@@ -2143,6 +2147,7 @@ mod tests
             ("-F", TypeFormer::Returner),
             ("List", TypeFormer::List),
             ("Run", TypeFormer::Run),
+            ("Prefix", TypeFormer::Prefix),
         ];
 
         for (spelling, former) in expected {

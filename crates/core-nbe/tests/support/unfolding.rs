@@ -163,7 +163,7 @@ pub struct Unfolded(pub u64);
                     ValueType::World(ref ty) => 1_u64.saturating_add(u64::try_from(ty.types().count()).unwrap_or(u64::MAX)),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
-                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 2,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 2,
                 }
             },
             CoreNode::CompType(id) => {
@@ -523,7 +523,9 @@ pub fn unfolded(
                         CoreNode::Value(left),
                         CoreNode::Value(right),
                     ]),
-                    ValueType::Run(session) => pending.push(CoreNode::Value(session)),
+                    ValueType::Run(session) | ValueType::Prefix(session) => {
+                        pending.push(CoreNode::Value(session));
+                    },
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         pending.extend(parts.iter().map(|&part| CoreNode::ValueType(part)));
                     },

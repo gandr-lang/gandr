@@ -159,6 +159,9 @@ pub enum ValueTypeView<'arena>
     },
     /// `Run(s)`: the complete recorded runs of the session code `s`.
     Run(ValueId),
+    /// `Prefix(s)`: the recorded prefixes of the session code `s`, closed or
+    /// still open.
+    Prefix(ValueId),
     /// A sum of its summands, in order; the empty sum is the empty type.
     Sum(&'arena [ValueTypeId]),
     /// Finite lists over one element type.
@@ -362,6 +365,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Path { carrier, left, right }) => matches!(arena.value_type(value_type), Some(&ValueType::Path { carrier: found, left: first, right: second }) if found == carrier && first == left && second == right),
     | Ok(ValueTypeView::Flow { carrier, source, target }) => matches!(arena.value_type(value_type), Some(&ValueType::Flow { carrier: found, source: first, target: second }) if found == carrier && first == source && second == target),
     | Ok(ValueTypeView::Run(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Run(found)) if found == session),
+    | Ok(ValueTypeView::Prefix(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Prefix(found)) if found == session),
     | Ok(ValueTypeView::Sum(summands)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == *summands)),
     | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
     | Ok(ValueTypeView::Product(components)) => !components.is_empty() && arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == *components)),
@@ -428,6 +432,7 @@ pub fn value_type_view(
             target,
         }),
         ValueType::Run(session) => Ok(ValueTypeView::Run(session)),
+        ValueType::Prefix(session) => Ok(ValueTypeView::Prefix(session)),
         ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),

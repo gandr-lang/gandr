@@ -1466,7 +1466,9 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    ValueType::Run(session) => one(value(session), Lowering::NONE),
+                    ValueType::Run(session) | ValueType::Prefix(session) => {
+                        one(value(session), Lowering::NONE)
+                    },
                     ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]

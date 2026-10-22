@@ -692,6 +692,7 @@ pub fn decode_bridge(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -1090,11 +1091,13 @@ fn convert(
                         pending.push(values(a, b));
                         true
                     },
-                    // A run type is invariant in its protocol: a subtype's run
-                    // may take an offer its supertype lacks, so moving a run
-                    // along a subtyping is the checked `ride`, never a
-                    // silent subsumption.
-                    (ValueTypeView::Run(left), ValueTypeView::Run(right)) => {
+                    // A run or prefix type is invariant in its protocol: a
+                    // subtype's run may take an offer its supertype lacks, so
+                    // moving a run along a subtyping is the checked `ride`,
+                    // never a silent subsumption. A run is no prefix: the two
+                    // formers do not convert.
+                    (ValueTypeView::Run(left), ValueTypeView::Run(right))
+                    | (ValueTypeView::Prefix(left), ValueTypeView::Prefix(right)) => {
                         pending.push(Pairing::Codes(left, right));
                         true
                     },
@@ -1328,6 +1331,7 @@ fn convert(
                         | ValueTypeView::Path { .. }
                         | ValueTypeView::Flow { .. }
                         | ValueTypeView::Run(_)
+                        | ValueTypeView::Prefix(_)
                         | ValueTypeView::Data { .. }
                         | ValueTypeView::Record(_)
                         | ValueTypeView::Sum(..)
@@ -1810,6 +1814,7 @@ fn value_head(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -2060,6 +2065,7 @@ fn relocated_values(
             | ValueTypeView::Path { .. }
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer

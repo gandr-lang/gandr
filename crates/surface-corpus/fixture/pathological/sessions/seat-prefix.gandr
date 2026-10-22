@@ -1,0 +1,33 @@
+// The twin of `../../model/sessions/seat-prefix.gandr`: an open record is no
+// run, and a move the protocol refuses is refused at a prefix as at a run
+// (#1861).
+
+/// The seat's protocol over plain strings: a dispatch received, then reports
+/// and the choice to continue or retire, or a handoff that ends it.
+module Seat {
+  type SeatEnd = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end
+  };
+}
+
+/// The seat that took its task and reported has not finished: no run.
+@[ refuses("RunNotAdmitted") ]
+def reporting : Run(Seat.SeatEnd) ;
+def reporting = recorded(received("task"), selected(report), sent("progress")) ;
+
+/// A seat that answers its task with the operator's offer moves the wrong
+/// way: refused by name, open as it is.
+@[ refuses("RunNotAdmitted") ]
+def crossed : Prefix(Seat.SeatEnd) ;
+def crossed = recorded(received("task"), offered(next)) ;
+
+/// A prefix of the protocol, its task received.
+@[ checks ]
+def opened : Prefix(Seat.SeatEnd) ;
+def opened = recorded(received("task")) ;
+
+/// The prefix declared a run: no prefix converts to a run.
+@[ refuses("TypeMismatch") ]
+def promoted : Run(Seat.SeatEnd) ;
+def promoted = opened ;

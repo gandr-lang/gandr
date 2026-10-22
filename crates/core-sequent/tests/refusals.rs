@@ -228,6 +228,7 @@ fn motive_heads_read_apart()
         MotiveHead::Flow,
         MotiveHead::Run,
         MotiveHead::RecursiveRun,
+        MotiveHead::Prefix,
         MotiveHead::Base,
         MotiveHead::Sigma,
         MotiveHead::Thunk,

@@ -242,7 +242,8 @@ impl Image
                 ValueType::Element {
                     code: ref mut body, ..
                 }
-                | ValueType::Run(ref mut body),
+                | ValueType::Run(ref mut body)
+                | ValueType::Prefix(ref mut body),
             )
             | Self::CompType(CompType::Element {
                 code: ref mut body, ..
@@ -890,6 +891,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Path { .. }
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
+                                | ValueType::Prefix(_)
                                 | ValueType::Base(_)
                                 | ValueType::Sigma { .. }
                                 | ValueType::List(_)

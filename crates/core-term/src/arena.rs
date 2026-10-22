@@ -2758,6 +2758,19 @@ impl CoreArena
         self.alloc_value_type(ValueType::Run(session))
     }
 
+    /// Mint the prefix type `Prefix(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_prefix(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Prefix(session))
+    }
+
     /// Mint directed transport `ride(P, f, x)`, the motive under one
     /// intuitionistic binder.
     ///

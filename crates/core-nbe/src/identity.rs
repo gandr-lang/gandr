@@ -271,6 +271,7 @@ pub fn clause(
             | ValueType::Session(_)
             | ValueType::Flow { .. }
             | ValueType::Run(_)
+            | ValueType::Prefix(_)
             | ValueType::Staged { .. }
             | ValueType::Kept { .. }
             | ValueType::World(_) => Clause::Unclassified,

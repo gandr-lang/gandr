@@ -542,6 +542,8 @@ pub enum Former<'source, Node>
     FunctionFlow(Node, Node),
     /// The recorded runs of a session code, `Run(s)`.
     RunType(Node),
+    /// The recorded prefixes of a session code, `Prefix(s)`.
+    PrefixType(Node),
     /// The returner over its value: `v` where a path through a body ends,
     /// `pure v` anywhere else.
     Return(Node),

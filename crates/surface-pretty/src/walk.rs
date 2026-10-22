@@ -422,7 +422,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -467,6 +467,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Relation { .. }
         | Former::Data { .. }
         | Former::RunType(_)
+        | Former::PrefixType(_)
         | Former::Located { .. }
         | Former::Kept { .. } => Kind::ValueType,
         Former::Returner(_)
@@ -1191,6 +1192,7 @@ where
         | Former::Back(child)
         | Former::Forward(child)
         | Former::RunType(child)
+        | Former::PrefixType(child)
         | Former::Return(child)
         | Former::Abandon(child)
         | Former::Force(child)
@@ -2064,6 +2066,8 @@ enum Bracket
     Arrow,
     /// The recorded runs of a session code, `Run(s)`.
     Run,
+    /// The recorded prefixes of a session code, `Prefix(s)`.
+    Prefix,
     /// A type quoted where an expression stands, `type(T)`.
     TypeQuote,
     /// A loop's end with a value, `break(v)`.
@@ -2098,6 +2102,7 @@ impl Bracket
             Self::Forward => "forward(",
             Self::Arrow => "arrow(",
             Self::Run => "Run(",
+            Self::Prefix => "Prefix(",
             Self::TypeQuote => "type(",
             Self::Break => "break(",
         })
@@ -5187,6 +5192,7 @@ impl Walk<'_, '_>
                 | Former::Forward(_)
                 | Former::FunctionFlow(..)
                 | Former::RunType(_)
+                | Former::PrefixType(_)
                 | Former::Return(_)
                 | Former::Bind(..)
                 | Former::Force(_)
@@ -6446,6 +6452,10 @@ impl Walk<'_, '_>
             Former::RunType(_) => Some(writes(
                 Production("type_application"),
                 Join::Bracket(Bracket::Run),
+            )),
+            Former::PrefixType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Prefix),
             )),
             Former::Ua {
                 stratum,
@@ -8609,6 +8619,7 @@ impl Walk<'_, '_>
             | Former::Forward(_)
             | Former::FunctionFlow(..)
             | Former::RunType(_)
+            | Former::PrefixType(_)
             | Former::Return(_)
             | Former::Bind(..)
             | Former::Force(_)
@@ -8678,7 +8689,7 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
@@ -9047,6 +9058,7 @@ impl Walk<'_, '_>
                     | Bracket::Back
                     | Bracket::Forward
                     | Bracket::Run
+                    | Bracket::Prefix
                     | Bracket::TypeQuote
                     | Bracket::Break => {
                         let body = self.pop()?;

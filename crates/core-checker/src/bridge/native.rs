@@ -199,6 +199,7 @@ impl Erasure<'_, '_>
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
+                    | ValueType::Prefix(_)
                     | ValueType::Base(_)
                     | ValueType::Sigma { .. }
                     | ValueType::List(_)
@@ -496,6 +497,7 @@ impl Erasure<'_, '_>
                     | ValueType::Path { .. }
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
+                    | ValueType::Prefix(_)
                     | ValueType::Base(_)
                     | ValueType::Sigma { .. }
                     | ValueType::List(_)

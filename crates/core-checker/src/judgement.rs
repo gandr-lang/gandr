@@ -2171,9 +2171,9 @@ enum Frame
     /// then be a static classifier — a universe or a static Pi — at its weak
     /// head.
     FormStaticPi(ValueTypeId),
-    /// A run type waits on its protocol's check. A run stays on the checker's
-    /// side, so a session type formed beneath this frame may read a binder
-    /// outside it, as no session type elsewhere may.
+    /// A run or prefix type waits on its protocol's check. Both stay on the
+    /// checker's side, so a session type formed beneath this frame may read a
+    /// binder outside it, as no session type elsewhere may.
     RunProtocol,
     /// A list cell, or a pair checked against a dependent pair, waits on its
     /// first component's check; the second then checks against the second
@@ -5207,7 +5207,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `term` is a recorded run.
     /// - ensures: one queued check per payload, in move order, once the
-    ///   protocol of the run type `expected` accepts the run's skeleton.
+    ///   protocol of the run or prefix type `expected` accepts the run's
+    ///   skeleton.
     /// - fails: as [`crate::flow::run_premises`].
     /// - panics: none.
     ///
@@ -6537,15 +6538,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   of the first; a static Pi forms both classifiers, then awaits their
     ///   check as static classifiers; a path type and a flow type form their
     ///   carrier, open or closed, then check each endpoint against it, source
-    ///   first; a run type checks its protocol against the value universe
-    ///   beneath a run frame; a session type forms each payload, then awaits
-    ///   their check as no session types — its payloads read no binder outside
-    ///   it unless a run frame waits beneath it, a run staying on the checker's
-    ///   side; a capability forms the payload and reply of every operation its
-    ///   authority grants, and is refused when consumable. A former formed at
-    ///   once leaves the frames as found, but for a data type, a record, a
-    ///   product, a sum, a session type and a capability, which queue their
-    ///   components; one that descends leaves them no shorter.
+    ///   first; a run or prefix type checks its protocol against the value
+    ///   universe beneath a run frame; a session type forms each payload, then
+    ///   awaits their check as no session types — its payloads read no binder
+    ///   outside it unless a run frame waits beneath it, a run or prefix
+    ///   staying on the checker's side; a capability forms the payload and
+    ///   reply of every operation its authority grants, and is refused when
+    ///   consumable. A former formed at once leaves the frames as found, but
+    ///   for a data type, a record, a product, a sum, a session type and a
+    ///   capability, which queue their components; one that descends leaves
+    ///   them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`]; [`CheckRefusal::NotAnAbstractType`]
@@ -6622,7 +6624,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
             },
-            ValueTypeView::Run(protocol) => {
+            ValueTypeView::Run(protocol) | ValueTypeView::Prefix(protocol) => {
                 let universe = crate::flow::universe(self.context.arena_mut());
                 self.wait(Frame::RunProtocol);
                 Ok(Step::Descend(Goal::Value {
@@ -7023,6 +7025,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Prefix(_)
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -7094,6 +7097,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Prefix(_)
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -9376,6 +9380,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer

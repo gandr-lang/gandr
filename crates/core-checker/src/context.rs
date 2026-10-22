@@ -3219,6 +3219,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
+                | ValueTypeView::Prefix(_)
                 | ValueTypeView::Sum(_)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
@@ -3519,6 +3520,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Path { .. }
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
+                    | ValueTypeView::Prefix(_)
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
