@@ -1,0 +1,18 @@
+// Two rules of a nominal theory that overlap below an abstraction. A rule's
+// abstraction is one head at any depth, so the checker finds the pair there
+// as the kernel does (#1709).
+
+/// `inner` rewrites the restriction inside `nu(bind a . nu(bind b . z()))` to
+/// `nu(bind a . w())`, a normal form, while `outer` rewrites the whole term to
+/// `z()`. The completion orients the two reducts into a rule of their own, and
+/// the kernel replays it from the pair.
+@[ checks ]
+theory Nested {
+  sort Name : Atom;
+  sort P : Type;
+  oper z : () --> P;
+  oper w : () --> P;
+  oper nu : (p : bind (a : Name) . P) --> P;
+  rule inner : nu(bind a . z()) ==> w();
+  rule outer : nu(bind a . nu(bind b . p)) ==> p where a # p, b # p;
+}
