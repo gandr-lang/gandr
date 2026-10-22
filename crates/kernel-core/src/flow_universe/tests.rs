@@ -604,6 +604,95 @@ fn one_way_classes_preserve_leaves()
     computes(&mut arena, identity, sample_pair, sample_pair);
 }
 
+/// A list code's forward flow images the empty list and one cell over a rigid
+/// tail. The tail moves unread, bare or under cells the image conses, and the
+/// kernel replays each image rather than trusting it: an image that drops the
+/// tail is natural in shape and refused at its replay.
+#[test]
+fn a_list_flow_moves_its_tail_unread()
+{
+    let mut arena = TermArena::new();
+    let text = arena.value_type_base(BaseType::String);
+    let texts = arena.value_type_list(text);
+    let code = arena.value_quote(texts);
+    let sample = arena.value_literal(Literal::Text(StringLiteral::new("leaf".into())));
+    let nil = arena.value_list_nil();
+    let one = arena.value_list_cons(sample, nil);
+    let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let cell = arena.value_list_cons(head, tail);
+
+    let identity = returning(&mut arena, tail);
+    let images = vec![
+        image(
+            &mut arena,
+            identity,
+            (nil, nil),
+            nil,
+            BinderDepth::default(),
+        ),
+        image(
+            &mut arena,
+            identity,
+            (one, one),
+            cell,
+            BinderDepth::from(2_u32),
+        ),
+    ];
+    let kept = forward(&mut arena, (code, code), identity, images);
+    admit(&mut arena, kept).expect("the identity at a list code");
+    computes(&mut arena, kept, one, one);
+
+    // The first cell repeated over the tail: one list case reads one cell,
+    // its cell branch binding the head, then the tail.
+    let repeated = arena.value_list_cons(head, cell);
+    let on_nil = arena.computation_return(nil);
+    let on_cons = arena.computation_return(repeated);
+    let case = arena.computation_list_case(tail, on_nil, on_cons);
+    let lambda = arena.computation_lambda(case);
+    let repeat = arena.value_thunk(lambda);
+    let twice = arena.value_list_cons(sample, one);
+    let images = vec![
+        image(&mut arena, repeat, (nil, nil), nil, BinderDepth::default()),
+        image(
+            &mut arena,
+            repeat,
+            (one, twice),
+            repeated,
+            BinderDepth::from(2_u32),
+        ),
+    ];
+    let repeat = forward(&mut arena, (code, code), repeat, images);
+    admit(&mut arena, repeat).expect("the first cell repeated");
+    computes(&mut arena, repeat, one, twice);
+
+    let dropped = arena.value_list_cons(head, nil);
+    let images = vec![
+        image(
+            &mut arena,
+            identity,
+            (nil, nil),
+            nil,
+            BinderDepth::default(),
+        ),
+        image(
+            &mut arena,
+            identity,
+            (one, one),
+            dropped,
+            BinderDepth::from(2_u32),
+        ),
+    ];
+    let forged = forward(&mut arena, (code, code), identity, images);
+    assert!(
+        matches!(
+            admit(&mut arena, forged),
+            Err(KernelError::Flow(FlowError::ForwardReplay { pattern, .. })) if pattern.0 == 1
+        ),
+        "the dropped tail is refused at the cell's replay"
+    );
+}
+
 /// **Permanent.** A translator that returns one string literal for every
 /// string maps an infinite Base leaf to a constant: no leaf-natural image
 /// exists, and forward admission refuses the literal by name.

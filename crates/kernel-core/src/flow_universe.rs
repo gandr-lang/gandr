@@ -338,8 +338,8 @@ pub struct FlowType
 ///
 /// # Adequacy
 /// - hypothesis: L3 — session endpoints decode; a session flow given as a path
-///   and a session path given as a flow each refuse as `FamilyMismatch`; a List
-///   endpoint refuses.
+///   and a session path given as a flow each refuse as `FamilyMismatch`; a
+///   thunk of a bare returner refuses.
 /// - witness: `session::tests::session_flows_persist_and_refuse_by_family`
 #[spec(ensures: |ret| match ret {
     Ok(flow) => matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(source, target))

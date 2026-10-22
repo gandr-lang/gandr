@@ -1,19 +1,22 @@
+// What a forward flow cannot decide, after directed univalence (Gratzer,
+// Weinberger and Buchholtz, _Directed univalence in simplicial homotopy type
+// theory_, arXiv:2407.09146, Definition 1.2): a translator's image may only
+// move the source's leaves, so one that writes a literal where a leaf stood
+// is refused.
+
+/// A record migrated by a translator that drops a field's value.
 module Schema {
   type Old = String * Integer;
   type New = Integer * String;
+  /// The translator: the age moved, the name replaced by a literal.
   @[ checks ]
   def anonymise(old : Old) -> -F New {
     case old {
       #{name, age} => (age, "anonymous")
     }
   }
+  /// A literal is no image of a source leaf, so no flow forwards by it.
   @[ refuses("ForwardUnsupported") ]
   def scrub : Flow(Type, Old, New) ;
   def scrub = forward(anonymise) ;
-  @[ checks ]
-  def wrap(xs : List(Integer)) -> -F List(Integer) {
-    xs
-  }
-  @[ refuses("ForwardUnsupported") ]
-  def lists = forward(wrap) ;
 }
