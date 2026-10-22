@@ -1081,9 +1081,8 @@ impl<'run, 'host> Calls<'run, 'host>
         let count = usize::from(header.arity());
         let base = runtime.frame_top();
         let top = base.wrapping_add(count.saturating_mul(2));
-        if top > runtime.frame_limit() {
-            return Err(Refusal::Frames);
-        }
+        hold_frames(top, runtime.frame_limit())?;
+        let captured = Captured { low, high, base };
         // A stack no other owner holds gives its frames' owners to the
         // copies; any other lends them, each copy gaining an owner of its own.
         // SAFETY: a stack is preceded by its count word.
@@ -1109,15 +1108,7 @@ impl<'run, 'host> Calls<'run, 'host>
                         for slot in 0 .. slots.0 {
                             // SAFETY: the stored window holds its slots.
                             let held = unsafe { *stored.wrapping_add(slot) };
-                            let address = usize::from(held);
-                            words.push(if address > low && address <= high {
-                                Word::from_pointer(
-                                    base.wrapping_byte_add(address.wrapping_sub(low)),
-                                )
-                            }
-                            else {
-                                held
-                            });
+                            words.push(captured.moved(held));
                         }
                         let fresh = allocate_window(runtime, &words)?;
                         let _first = copies.insert(word, fresh);
@@ -1208,9 +1199,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 continue;
             };
             let next = top.wrapping_add(2);
-            if next > runtime.frame_limit() {
-                return Err(Refusal::Frames);
-            }
+            hold_frames(next, runtime.frame_limit())?;
             // SAFETY: as above.
             let window = unsafe { *at.wrapping_add(1) };
             if let Some(Owners::Window(slots)) = self.sites.owners(code) {
@@ -1316,9 +1305,7 @@ impl<'run, 'host> Calls<'run, 'host>
             ABORTED => {
                 let top = runtime.frame_top();
                 let next = top.wrapping_add(2);
-                if next > runtime.frame_limit() {
-                    return Err(Refusal::Frames);
-                }
+                hold_frames(next, runtime.frame_limit())?;
                 let code = self.codes.stub(Stub::Answer);
                 // SAFETY: the frame fits below the region's limit.
                 unsafe {
@@ -2103,5 +2090,148 @@ pub extern "C" fn enter(
             record.refuse(refusal);
             Word::ZERO
         },
+    }
+}
+
+/// Check that frames reaching up to `top` fit the frame region whose limit is
+/// `limit`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::Frames`] when `top` passes `limit`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — frames reaching exactly the limit fit and one frame more
+///   does not; a strict, an equal or a reversed comparison changes one answer.
+///   No named program fills the frame region.
+/// - witness: `host::tests::frames_fit_their_region_up_to_its_limit`
+fn hold_frames(
+    top: *mut Word,
+    limit: *mut Word,
+) -> Result<(), Refusal>
+{
+    if top > limit {
+        return Err(Refusal::Frames);
+    }
+    Ok(())
+}
+
+/// A stack's captured frames as a replay moves them: they stood in
+/// `(low, high]` of the region they were captured from, as their marks read,
+/// and their copies stand from `base`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Captured
+{
+    /// The frame region's top below the captured frames.
+    low: usize,
+    /// The frame region's top above them.
+    high: usize,
+    /// Where their copies start.
+    base: *mut Word,
+}
+
+impl Captured
+{
+    /// The word `held`, read from a captured frame's window, with a mark
+    /// into the captured frames moved as far as the frames moved.
+    ///
+    /// A mark is the region's top just above the frame it names: a captured
+    /// frame's is past `low` and at most `high`. A mark at `low` names the
+    /// frame below the captured ones, which stays where it stood, and so
+    /// does every other word.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mark at each end of the captured frames moves and
+    ///   the word at `low` and the one past `high` stay; either bound written
+    ///   loose or strict changes one answer.
+    /// - witness: `host::tests::a_replay_moves_the_marks_into_its_frames_alone`
+    fn moved(
+        self,
+        held: Word,
+    ) -> Word
+    {
+        let address = usize::from(held);
+        if address > self.low && address <= self.high {
+            Word::from_pointer(self.base.wrapping_byte_add(address.wrapping_sub(self.low)))
+        }
+        else {
+            held
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_runtime_stencils::Refusal;
+    use gandr_runtime_stencils::Word;
+
+    use super::Captured;
+    use super::hold_frames;
+
+    /// Frames fill their region up to its limit, and one frame past it is
+    /// refused before it is written.
+    #[test]
+    fn frames_fit_their_region_up_to_its_limit()
+    {
+        let mut region = [Word::ZERO; 4];
+        let base = (&raw mut region).cast::<Word>();
+        let limit = base.wrapping_add(4);
+        assert_eq!(Ok(()), hold_frames(base, limit), "no frame");
+        assert_eq!(Ok(()), hold_frames(limit, limit), "frames up to the limit");
+        assert_eq!(
+            Err(Refusal::Frames),
+            hold_frames(limit.wrapping_add(2), limit),
+            "one frame past the limit"
+        );
+    }
+
+    /// A replay moves each mark into the frames it copies by as far as the
+    /// frames moved, the marks of the first and the last captured frame
+    /// alike, and leaves the mark of the frame below them and a word past
+    /// them where they were.
+    #[test]
+    fn a_replay_moves_the_marks_into_its_frames_alone()
+    {
+        let mut from = [Word::ZERO; 8];
+        let mut to = [Word::ZERO; 8];
+        let from = (&raw mut from).cast::<Word>();
+        let to = (&raw mut to).cast::<Word>();
+        let mark = |region: *mut Word, index: usize| Word::from_pointer(region.wrapping_add(index));
+        let low = usize::from(mark(from, 2));
+        let high = usize::from(mark(from, 6));
+        let captured = Captured {
+            low,
+            high,
+            base: to,
+        };
+        assert_eq!(
+            mark(to, 2),
+            captured.moved(mark(from, 4)),
+            "the first captured frame's mark"
+        );
+        assert_eq!(
+            mark(to, 4),
+            captured.moved(mark(from, 6)),
+            "the last captured frame's mark"
+        );
+        assert_eq!(
+            mark(from, 2),
+            captured.moved(mark(from, 2)),
+            "the frame below stays"
+        );
+        assert_eq!(
+            mark(from, 7),
+            captured.moved(mark(from, 7)),
+            "a word past the frames stays"
+        );
     }
 }

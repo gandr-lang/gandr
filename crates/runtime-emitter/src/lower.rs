@@ -1072,6 +1072,27 @@ pub struct Lowered
 /// rather than being copied into a function larger than a region.
 const INSTRUCTIONS: usize = 1 << 18;
 
+/// Check that `function` holds no more instructions than one lowering emits.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Form::Oversized`] once `function` holds more than [`INSTRUCTIONS`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function of exactly the ceiling is held and one
+///   instruction more is refused; a strict, an equal or a reversed comparison
+///   changes one answer. No named program reaches the ceiling.
+/// - witness: `lower::tests::a_function_holds_up_to_the_instruction_ceiling`
+fn hold_size(function: &Function) -> Result<(), Form>
+{
+    if function.instructions().len() > INSTRUCTIONS {
+        return Err(Form::Oversized);
+    }
+    Ok(())
+}
+
 /// Push the value in hand onto the frame region: a constructor's field or a
 /// call's argument.
 const PUSH: Task = Task::Emit(StencilId::Push, Operand::Unused, Operand::Unused);
@@ -1986,9 +2007,12 @@ impl Lowering<'_>
     /// - hypothesis: L2 — a handler resuming its stack twice answers as it
     ///   states. A handler's frame that keeps none of its clauses' names leaks
     ///   them, which no answer shows: the clause duplicates what it names on
-    ///   entry, so only the drops at the handler's return go missing.
+    ///   entry, so only the drops at the handler's return go missing. L3 — a
+    ///   handler whose clause alone names a pair bound outside it owns the
+    ///   pair's slot in its frame and drops it at its return.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_handler_keeps_what_its_clauses_name_past_their_binders`
     fn kept(
         &self,
         handle: CommandId,
@@ -2557,9 +2581,7 @@ impl Lowering<'_>
         task: Task,
     ) -> Result<(), Form>
     {
-        if self.function.instructions().len() > INSTRUCTIONS {
-            return Err(Form::Oversized);
-        }
+        hold_size(&self.function)?;
         match task {
             Task::Emit(stencil, a, b) => {
                 self.emit(stencil, a, b);
@@ -4074,6 +4096,9 @@ mod tests
     use gandr_core_sequent::Provenance;
     use gandr_core_sequent::focus_computation;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
 
     use super::*;
 
@@ -4481,5 +4506,91 @@ mod tests
             !inlines(DestructorTag::Force, 0, 0),
             "a level answering another head"
         );
+    }
+
+    /// A function holds as many instructions as one lowering emits, and one
+    /// more is refused as oversized.
+    #[test]
+    fn a_function_holds_up_to_the_instruction_ceiling()
+    {
+        let mut function = Function::default();
+        let halt = Instruction {
+            stencil: StencilId::Halt,
+            a: Operand::Unused,
+            b: Operand::Unused,
+            alt: Alt::None,
+        };
+        assert_eq!(Ok(()), hold_size(&function), "an empty function");
+        for _instruction in 0 .. INSTRUCTIONS {
+            let _at = function.push(halt);
+        }
+        assert_eq!(Ok(()), hold_size(&function), "a function at the ceiling");
+        let _past = function.push(halt);
+        assert_eq!(
+            Err(Form::Oversized),
+            hold_size(&function),
+            "one instruction past the ceiling"
+        );
+    }
+
+    /// A handler whose operation clause answers a pair bound outside it, and
+    /// whose return clause names nothing, keeps that pair while its frame
+    /// waits: its frame owns the pair's slot, and its return gives it up.
+    #[test]
+    fn a_handler_keeps_what_its_clauses_name_past_their_binders()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let outer = core.value_tuple(&[unit, unit]);
+        let bound = core.computation_return(outer);
+        let payload = core.value_type_unit();
+        let signature = EffectSig::new(EffectName::from("E"), [EffectOp {
+            name: OperationName::from("op"),
+            payload,
+            reply: payload,
+        }])
+        .expect("one operation");
+        let performed =
+            core.computation_perform(signature.clone(), OperationName::from("op"), unit);
+        let answered = core.computation_return(unit);
+        let subject = core.computation_bind(performed, answered);
+        let on_return = core.computation_return(unit);
+        // reason: past the clause's stack `x0` and payload `x1`, the pair is
+        // `x2`.
+        let kept = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+        let clause = core.computation_return(kept);
+        let handled = core.computation_handle(
+            signature,
+            subject,
+            on_return,
+            alloc::sync::Arc::from([EffectClause {
+                operation: OperationName::from("op"),
+                body: clause,
+            }]),
+        );
+        let root = core.computation_bind(bound, handled);
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        let lowered = lower(&commands, &Definitions::new(), root).expect("the program lowers");
+        let handler = lowered
+            .handlers
+            .first()
+            .expect("the program installs one handler");
+        let window = lowered
+            .windows
+            .iter()
+            .find(|window| window.label == handler.label)
+            .expect("the handler's frame resumes in a window");
+        let run = window
+            .owners
+            .clone()
+            .expect("the handler's frame owns a run");
+        let owned = &lowered.owners[run.0];
+        assert_eq!(1, owned.len(), "the frame owns the pair alone: {owned:?}");
+        let dropped = lowered.function.instructions().iter().any(|instruction| {
+            instruction.stencil == StencilId::Drop && instruction.a == owned[0].operand()
+        });
+        assert!(dropped, "the handler's return gives the pair up");
     }
 }
