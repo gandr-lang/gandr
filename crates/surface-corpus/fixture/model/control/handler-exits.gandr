@@ -151,6 +151,52 @@ def handed_on() -> -F Integer {
   }
 }
 
+/// A function stating a continuation's type resumes the continuation it is
+/// handed, as the clause that bound it would (#1387).
+@[ checks ]
+def resume_stack(j : Stack(-F Unit, -F Integer)) -> -F Integer {
+  j(unit)
+}
+
+/// A clause hands its continuation to `resume_stack`, which resumes the body;
+/// the body's value passes through the `pure` clause, as in `resumed`.
+@[ runs("101") ]
+def resumed_on() -> -F Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => resume_stack(k)
+  }
+}
+
+/// A type member may abbreviate a continuation's type: a function stating the
+/// member resumes the continuation it is handed as one stating the stack does
+/// (#1651).
+module Conts {
+  type K = Stack(-F Unit, -F Integer);
+
+  /// `resume_stack`, through the member.
+  @[ checks ]
+  def aliased(j : K) -> -F Integer {
+    j(unit)
+  }
+}
+
+/// A clause hands its continuation to the function stating the member, which
+/// resumes the body.
+@[ runs("101") ]
+def resumed_aliased() -> -F Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => Conts.aliased(k)
+  }
+}
+
 /// A continuation runs from a computation, never from a value type.
 @[ refuses("OutOfFragment.WrongSort") ]
 def from_a_value(k : Stack(Integer, -F Integer)) -> -F Integer {

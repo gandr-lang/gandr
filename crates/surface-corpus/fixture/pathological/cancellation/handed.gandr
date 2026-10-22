@@ -1,0 +1,31 @@
+// A clause owes the rest of its scope exactly one end once that rest holds a
+// task's end. A function handed the rest could resume it twice or never, so
+// a continuation that owes an end is never handed on.
+
+// The task's protocol.
+import "../../model/cancellation/cancel-base.gandr" ;
+
+/// Resumes the stack it is handed: a stack a parameter holds owes nothing
+/// (#1387).
+@[ checks ]
+def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit {
+  j(unit)
+}
+
+/// A scope whose exit clause hands the rest to `resume_stack` while its task's
+/// end is open (#1387).
+@[ refuses("ContinuationAsValue") ]
+def handed() -> -F Unit {
+  handle c : Proc {
+    fork (task : Cancel.Join) {
+      send(task, Cancel.notes);
+      close(task)
+    } as found;
+    c.exit(1);
+    recv(found) as text;
+    close(found)
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => resume_stack(k)
+  }
+}
