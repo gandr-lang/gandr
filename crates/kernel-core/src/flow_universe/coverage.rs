@@ -292,6 +292,9 @@ enum Leaf
     Base(BaseType),
     /// A rigid list tail, at this list type.
     Tail(ValueTypeId),
+    /// The translator's own image of a cell's tail, at the flow's target: the
+    /// leaf a recursive image binds after the pattern's.
+    Image(ValueTypeId),
 }
 
 /// One canonical source shape, with independent typed leaves.
@@ -540,7 +543,7 @@ fn source_leaf(
         (Some(value), Some(classifier)) if value.components().is_some() => value.components().map(<[_]>::len) == classifier.product_parts().map(<[_]>::len),
         (Some(&Value::Injection(summand, _)), Some(classifier)) => classifier.summands().is_some_and(|summands| usize::from(summand) < summands.len()),
         (Some(&Value::Variable(index)), Some(&ValueType::Base(base))) => source_leaf(leaves, index) == Some(Leaf::Base(base)),
-        (Some(&Value::Variable(index)), Some(&ValueType::List(_))) => matches!(source_leaf(leaves, index), Some(Leaf::Tail(_))),
+        (Some(&Value::Variable(index)), Some(&ValueType::List(_))) => matches!(source_leaf(leaves, index), Some(Leaf::Tail(_) | Leaf::Image(_))),
         (Some(&Value::ListNil | &Value::ListCons(..)), Some(&ValueType::List(_))) => true,
         _ => false,
     }),
@@ -564,7 +567,7 @@ fn natural(
                 }
             },
             (Some(&Value::Variable(index)), &ValueType::List(_)) => {
-                let Some(Leaf::Tail(source)) = source_leaf(leaves, index)
+                let Some(Leaf::Tail(source) | Leaf::Image(source)) = source_leaf(leaves, index)
                 else {
                     return Err(FlowError::NonNatural(value));
                 };
@@ -595,11 +598,26 @@ fn natural(
     Ok(())
 }
 
-/// Open one image `thunk(λ…λ. return o)` binding one lambda per pattern leaf.
+/// An image's output, opened beneath its binders.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Opened
+{
+    /// `thunk(λ…λ. return o)`: one lambda per pattern leaf.
+    Plain(ValueId),
+    /// `thunk(λ…λ. λr. return o)` at a cell of a list source: one lambda per
+    /// pattern leaf, then `r`, the translator's own image of the cell's tail.
+    Recursive(ValueId),
+}
+
+/// Open one image `thunk(λ…λ. return o)` binding one lambda per pattern leaf,
+/// and at a cell of a list source one more for the translator's image of the
+/// cell's tail.
 ///
 /// # Specification
-/// - ensures: the output `o` beneath exactly one lambda per leaf; its variables
-///   name the pattern's leaves, the last at de Bruijn zero.
+/// - ensures: the output `o` beneath exactly one lambda per leaf, plus one when
+///   `source` is a list, the pattern is a cell and the image binds it; its
+///   variables name the pattern's leaves, the last at de Bruijn zero, or under
+///   the extra lambda the tail's image at zero and the leaves above it.
 /// - fails: `NonNatural` naming the image for any other shape, a different
 ///   binder count among them; `Budget` on exhausted traversal.
 /// - panics: none.
@@ -608,12 +626,17 @@ fn natural(
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an image binding one leaf too few refuses by name.
+/// - hypothesis: L3 — an image binding one leaf too few refuses by name, and
+///   one binding a leaf too many refuses unless the pattern is a list cell.
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
+/// - witness: `flow_universe::tests::a_list_flow_recurses_into_its_tail`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
-        Ok(_) => matches!(arena.value(image), Some(&Value::Thunk(_))),
+        Ok(Opened::Plain(_)) => matches!(arena.value(image), Some(&Value::Thunk(_))),
+        Ok(Opened::Recursive(_)) => matches!(arena.value_type(source), Some(&ValueType::List(_)))
+            && matches!(arena.value(pattern.value), Some(&Value::ListCons(..)))
+            && matches!(arena.value(image), Some(&Value::Thunk(_))),
         Err(FlowError::NonNatural(named)) => named == image,
         Err(FlowError::Budget) => true,
         Err(_) => false,
@@ -622,15 +645,15 @@ fn natural(
 fn peel(
     arena: &TermArena,
     image: ValueId,
-    leaves: &[Leaf],
+    (source, pattern): (ValueTypeId, &Pattern),
     allowance: &mut Allowance,
-) -> Result<ValueId, FlowError>
+) -> Result<Opened, FlowError>
 {
     let Some(&Value::Thunk(mut body)) = arena.value(image)
     else {
         return Err(FlowError::NonNatural(image));
     };
-    for _leaf in leaves {
+    for _leaf in &pattern.leaves {
         allowance.charge()?;
         let Some(&Computation::Lambda(inner)) = arena.computation(body)
         else {
@@ -638,8 +661,14 @@ fn peel(
         };
         body = inner;
     }
+    let cell = matches!(arena.value_type(source), Some(&ValueType::List(_)))
+        && matches!(arena.value(pattern.value), Some(&Value::ListCons(..)));
     match arena.computation(body) {
-        Some(&Computation::Return(output)) => Ok(output),
+        Some(&Computation::Return(output)) => Ok(Opened::Plain(output)),
+        Some(&Computation::Lambda(inner)) if cell => match arena.computation(inner) {
+            Some(&Computation::Return(output)) => Ok(Opened::Recursive(output)),
+            _ => Err(FlowError::NonNatural(image)),
+        },
         _ => Err(FlowError::NonNatural(image)),
     }
 }
@@ -652,8 +681,12 @@ fn peel(
 /// - ensures: one image and one dialogue per source shape; each image opens to
 ///   a leaf-natural target shape, and the translator applied to the shape
 ///   converts with its return by ordinary kernel replay of the dialogue,
-///   unfolding only what `unfoldings` admits. The kernel chooses the source,
-///   the action and the positive claim.
+///   unfolding only what `unfoldings` admits. At a cell of a list source the
+///   image may bind the translator's own image of the tail after the leaves:
+///   the return is then bound after the translator applied to the tail, and the
+///   image stands at the target wherever a tail may, so by induction on the
+///   list every image is natural. The kernel chooses the source, the action and
+///   the positive claim.
 /// - fails: `Coverage`, `NonNatural`, `ForwardReplay`, or construction errors.
 /// - panics: none.
 ///
@@ -663,9 +696,11 @@ fn peel(
 /// # Adequacy
 /// - hypothesis: L3 — omitted constructors, constant Base maps and false traces
 ///   cannot certify a forward action, and a tampered image refuses by name at
-///   readmission.
+///   readmission; a cell's image over the translator's image of its tail
+///   replays against the bound return.
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::formation_boundaries_refuse`
+/// - witness: `flow_universe::tests::a_list_flow_recurses_into_its_tail`
 #[spec(ensures: |ret| match ret {
     Ok(()) => u64::from(budget) > 0 && !images.is_empty() && images.len() == dialogues.len(),
     Err(FlowError::ForwardReplay { pattern, verdict }) => pattern.0 < images.len() && verdict != KernelVerdict::Convertible,
@@ -688,11 +723,27 @@ pub fn forward(
     for (position, ((pattern, &image), dialogue)) in
         patterns.into_iter().zip(images).zip(dialogues).enumerate()
     {
-        let output = peel(arena, image, &pattern.leaves, &mut allowance)?;
-        natural(arena, output, flow.target, &pattern.leaves, &mut allowance)?;
+        let opened = peel(arena, image, (flow.source, &pattern), &mut allowance)?;
+        let mut leaves = pattern.leaves;
+        let output = match opened {
+            Opened::Plain(output) => output,
+            Opened::Recursive(output) => {
+                leaves.push(Leaf::Image(flow.target));
+                output
+            },
+        };
+        natural(arena, output, flow.target, &leaves, &mut allowance)?;
         let force = arena.computation_force(translator);
         let application = arena.computation_application(force, pattern.value);
-        let expected = arena.computation_return(output);
+        let returned = arena.computation_return(output);
+        let expected = match opened {
+            Opened::Plain(_) => returned,
+            Opened::Recursive(_) => {
+                let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
+                let recursion = arena.computation_application(force, tail);
+                arena.computation_bind(recursion, returned)
+            },
+        };
         let verdict = crate::replay::replay(
             arena,
             unfoldings,

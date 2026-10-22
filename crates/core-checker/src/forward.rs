@@ -19,11 +19,16 @@
 //! canonical constructors of `B`, variables naming source leaves of the base
 //! type the target's position names, and variables naming source tails of a
 //! list type equivalent to the position's. A translator reads one cell of a
-//! list and moves its tail unread. A literal, a fresh value, a leaf of another
-//! type or an application still stuck — a translator recursing into the tail
-//! among them — is [`CheckRefusal::ForwardUnsupported`]: the kernel's
-//! `NonNatural`, decided before the kernel sees it. There is no round trip: a
-//! flow demands no inverse.
+//! list and moves its tail unread, or recurses into it: at a cell of a list
+//! source, an image whose evaluation waits on one bound computation `y ← M;
+//! return o` is read as `thunk(λⁿ. λr. return o)`, `r` the translator's own
+//! image of the tail, standing at the target wherever a tail may, and its
+//! dialogue converts the translator at the cell with `r ← f t; return o`. By
+//! induction on the list every image is then natural. A literal, a fresh value,
+//! a leaf of another type or an application still stuck is
+//! [`CheckRefusal::ForwardUnsupported`]: the kernel's `NonNatural`, decided
+//! before the kernel sees it. There is no round trip: a flow demands no
+//! inverse.
 //!
 //! `arrow(d, c)` synthesises `Flow(Type, ⌜U (A → F B)⌝, ⌜U (A' → F B')⌝)` from
 //! `d : Flow(Type, A', A)` and `c : Flow(Type, B, B')`: the domain flow runs
@@ -64,6 +69,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -156,6 +163,9 @@ enum Leaf
     String,
     /// A rigid list tail, at this list type.
     Tail(ValueTypeId),
+    /// The translator's own image of a cell's tail, at the target: the leaf a
+    /// recursive image binds after the cell's.
+    Image(ValueTypeId),
 }
 
 /// The two codes the classifier of a forward translator names: `U (A → F B)`
@@ -203,7 +213,9 @@ pub fn codes(
 /// - ensures: on success the classifier `Flow(Type, ⌜A⌝, ⌜B⌝)` and, at each
 ///   pattern of `A`'s coverage in the kernel's order, the image `thunk(λⁿ.
 ///   return o)` of the translator and the machine's trace that the translator
-///   applied to the pattern converts to returning `o`.
+///   applied to the pattern converts to returning `o`; at a cell of a list
+///   source whose translator recurses into the tail, the image `thunk(λⁿ. λr.
+///   return o)` and the trace to `r ← f t; return o`.
 /// - provides: the decision the judgement's `forward` rule makes and the record
 ///   the bridge erases.
 /// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` for an open
@@ -224,11 +236,12 @@ pub fn codes(
 /// # Adequacy
 /// - hypothesis: L3 — a field-dropping migration between two records images
 ///   every pattern naturally and its dialogues replay in the kernel; a constant
-///   string into a string field, an open translator and a list code refuse by
-///   name.
+///   string into a string field and an open translator refuse by name; a list
+///   ridden along a record flow images its cell over its own image of the tail.
 /// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::directed_statements_cross_and_replay`
+/// - witness: `forward::tests::a_list_ridden_along_a_flow_recurses_into_its_tail`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(ref decided) => !decided.images.is_empty() && decided.images.len() == decided.dialogues.len(),
@@ -265,7 +278,18 @@ pub fn decide(
         let claim = arena.value_thunk(body);
         let Maybe::Present(evaluation) = context.evaluate_claim(claim)?
         else {
-            return Err(unsupported);
+            let (image, dialogue) = recursive(
+                context,
+                at,
+                translator,
+                (claim, applied),
+                pattern,
+                (source, target),
+                &leaves,
+            )?;
+            images.push(image);
+            dialogues.push(dialogue);
+            continue;
         };
         let output = evaluation.returned();
         natural(context, at, output, target, &leaves)?;
@@ -284,6 +308,110 @@ pub fn decide(
         images: Arc::from(images),
         dialogues: Arc::from(dialogues),
     })
+}
+
+/// Image one cell of a list source whose translator recurses into the tail:
+/// the image binds the translator's own image of the tail after the cell's
+/// leaves.
+///
+/// # Specification
+/// - requires: `pattern` is a pattern of `source`'s coverage; `applied` is the
+///   translator applied to it and `claim` that application closed under the
+///   pattern's binders, whose evaluation does not return; `leaves` is the
+///   pattern's leaf table.
+/// - ensures: when `source` is a list and `pattern` a cell whose claim reads
+///   back as `y ← M; return o`, the image `thunk(λⁿ. λr. return o)` and the
+///   machine's trace that the translator applied to the cell converts to `r ← f
+///   t; return o`, `t` the cell's tail, with `o` leaf-natural over the cell's
+///   leaves and `r` standing at the target.
+/// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` otherwise: a source
+///   that is no list, a pattern that is no cell, a reading that returns or
+///   stalls on anything but one bound computation, an output that is not
+///   leaf-natural, or a bound computation that does not convert with the
+///   translator at the tail; a weak-head, view or reading refusal as those
+///   raise it.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list ridden along a record flow images its cell over
+///   its own image of the tail and replays in the kernel; a cell whose output
+///   reverses the tail's image is refused by name.
+/// - witness: `forward::tests::a_list_ridden_along_a_flow_recurses_into_its_tail`
+#[spec(ensures: |ret| match ret {
+    | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
+    | Ok((image, _)) => matches!(context.arena().value(image), Some(&Value::Thunk(_))),
+    | Err(_) => true,
+})]
+fn recursive(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    translator: ValueId,
+    (claim, applied): (ValueId, ComputationId),
+    pattern: crate::equiv::Pattern,
+    (source, target): (ValueTypeId, ValueTypeId),
+    leaves: &[Maybe<Leaf, unread::Absent>],
+) -> Result<(ValueId, Vec<ConversionDecision<()>>), CheckRefusal>
+{
+    let unsupported = CheckRefusal::ForwardUnsupported { at };
+    let head = context.whnf_value_type(source)?;
+    let ValueTypeView::List(_) = value_type_view(context.arena(), head)?
+    else {
+        return Err(unsupported);
+    };
+    let Some(&Value::ListCons(_, tail)) = context.arena().value(pattern.value())
+    else {
+        return Err(unsupported);
+    };
+    let stalled = match context.read_claim(claim) {
+        Ok(crate::code::Reading::Stuck(stalled)) => stalled,
+        Ok(crate::code::Reading::Returned(_)) | Err(CheckRefusal::Undecided { .. }) => {
+            return Err(unsupported);
+        },
+        Err(refusal) => return Err(refusal),
+    };
+    let arena = context.arena();
+    let Some(&Value::Thunk(mut body)) = arena.value(stalled.normal())
+    else {
+        return Err(unsupported);
+    };
+    for _ in 0 .. pattern.binders().0 {
+        let Some(&Computation::Lambda(inner)) = arena.computation(body)
+        else {
+            return Err(unsupported);
+        };
+        body = inner;
+    }
+    let Some(&Computation::Bind(_, rest)) = arena.computation(body)
+    else {
+        return Err(unsupported);
+    };
+    let Some(&Computation::Return(output)) = arena.computation(rest)
+    else {
+        return Err(unsupported);
+    };
+    let mut extended = Vec::with_capacity(leaves.len().saturating_add(1));
+    extended.push(Maybe::Present(Leaf::Image(target)));
+    extended.extend_from_slice(leaves);
+    natural(context, at, output, target, &extended)?;
+    let arena = context.arena_mut();
+    let forced = arena.computation_force(translator);
+    let recursion = arena.computation_application(forced, tail);
+    let returned = arena.computation_return(output);
+    let expected = arena.computation_bind(recursion, returned);
+    let Maybe::Present(dialogue) =
+        context.trace_conversion(at, (applied, expected), pattern.binders())?
+    else {
+        return Err(unsupported);
+    };
+    let arena = context.arena_mut();
+    let mut image = returned;
+    for _ in 0 ..= pattern.binders().0 {
+        image = arena.computation_lambda(image);
+    }
+    Ok((arena.value_thunk(image), dialogue))
 }
 
 /// `Flow(Type, ⌜from⌝, ⌜to⌝)`.
@@ -482,7 +610,7 @@ fn leaves(
 
 /// Check that `output` is a canonical value of `target` whose base positions
 /// are variables naming source leaves of the same atom and whose list tails
-/// are source tails of the same list type.
+/// are source tails, or the translator's image of one, of the same list type.
 ///
 /// # Specification
 /// - requires: `output` stands under the pattern's leaves; `leaves` is the
@@ -491,8 +619,8 @@ fn leaves(
 ///   former's canonical value — a tuple of the product's arity, an injection
 ///   into an existing summand, the unit value, the empty list or a cell — and
 ///   every base position by a variable whose leaf is that base atom, and every
-///   other list position by a variable whose leaf is a tail of a list type
-///   equivalent to it.
+///   other list position by a variable whose leaf is a tail, or a tail's image,
+///   of a list type equivalent to it.
 /// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` otherwise: a literal,
 ///   a fresh or mistyped variable, an application still stuck; a weak-head,
 ///   view or conversion refusal.
@@ -548,7 +676,8 @@ fn natural(
                         return Err(unsupported);
                     };
                     let index = usize::try_from(u32::from(index)).ok().ok_or(unsupported)?;
-                    let Some(&Maybe::Present(Leaf::Tail(source))) = leaves.get(index)
+                    let Some(&Maybe::Present(Leaf::Tail(source) | Leaf::Image(source))) =
+                        leaves.get(index)
                     else {
                         return Err(unsupported);
                     };
