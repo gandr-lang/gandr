@@ -83,6 +83,7 @@ use anodized::spec;
 pub use gandr_core_term::FailureClass;
 pub use gandr_core_term::TrackingIssue;
 
+use crate::derive::DeriveFault;
 use crate::description::MemberFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -167,6 +168,17 @@ impl LoweringRefusal<'_>
                     | MemberFault::AtomOccurrence,
                 ..
             }
+            | Self::UnderivedRule {
+                fault: DeriveFault::Indexed
+                    | DeriveFault::Erased
+                    | DeriveFault::Unstated(
+                        ModelFault::ManyOut
+                            | ModelFault::Circuit
+                            | ModelFault::Binding
+                            | ModelFault::Abstraction,
+                    ),
+                ..
+            }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
@@ -177,6 +189,10 @@ impl LoweringRefusal<'_>
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
+            | Self::UnderivedRule {
+                fault: DeriveFault::Undecided,
+                ..
+            }
             | Self::UnknownMold { .. }
             | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::OutOfFragment { .. }
@@ -232,6 +248,7 @@ impl LoweringRefusal<'_>
             | Self::RulesOverlapSecondOrder { .. }
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
+            | Self::UnderivedRule { .. }
             | Self::AcrossHandler { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -300,6 +317,7 @@ impl LoweringRefusal<'_>
                 ..
             } => out_of_fragment(form, sort, boundary),
             Self::UnstatedComponent { fault, .. } => unstated(fault),
+            Self::UnderivedRule { fault, .. } => underived(fault),
             Self::UndescribedMember { fault, .. } => undescribed(fault),
             Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
@@ -591,6 +609,41 @@ fn unstated(fault: ModelFault) -> FailureClass
     }
 }
 
+/// The class of a statement its theory's completed rules do not prove.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a theory stating an indexed sort or a nested model, a peak
+///   variable no term stands for and a component the derivation of models
+///   classifies unimplemented are unimplemented; a side rewriting past the step
+///   budget is an engine fault; two sides apart, a side stating no law and
+///   rules that are no terminating, confluent system are malformed source, as a
+///   component malformed in the theory is.
+/// - provides: the lowering classifier's arm for `UnderivedRule`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the apart fault is pinned in the class table.
+/// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
+#[spec(
+    ensures: |ret| matches!(ret, FailureClass::EngineFault) == matches!(fault, DeriveFault::Undecided),
+)]
+#[must_use]
+fn underived(fault: DeriveFault) -> FailureClass
+{
+    match fault {
+        DeriveFault::Indexed | DeriveFault::Erased => {
+            FailureClass::Unimplemented(TrackingIssue::UNFILED)
+        },
+        DeriveFault::Unstated(component) => unstated(component),
+        DeriveFault::Undecided => FailureClass::EngineFault,
+        DeriveFault::Apart | DeriveFault::Incoherent | DeriveFault::Unsorted(_) => {
+            FailureClass::MalformedSource
+        },
+    }
+}
+
 /// The class of a description member the route or its cell layer does not
 /// read.
 ///
@@ -705,7 +758,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 62_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 63_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -963,6 +1016,12 @@ mod tests
             LoweringRefusal::UnguardedCorecursion {
                 span: empty,
                 name: SurfaceName::from("ones"),
+            },
+            LoweringRefusal::UnderivedRule {
+                span: empty,
+                rule: SurfaceName::from("comm"),
+                theory: SurfaceName::from("Grp"),
+                fault: crate::derive::DeriveFault::Apart,
             },
         ]
     }

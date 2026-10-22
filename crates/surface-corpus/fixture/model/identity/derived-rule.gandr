@@ -1,0 +1,93 @@
+// A rule a theory's completion derives, stated as a declaration of its own
+// and proved for every model: `derive r : l <=> r in T` holds when the
+// theory's completed rules rewrite both sides to one normal form, and the
+// rewrites are the proof. The group's laws derive the inverse of a product:
+// each rule completion derived on the way is proved first, from the two paths
+// of its certificate, then the statement from both sides' rewrites to their
+// common normal form (Knuth and Bendix, _Simple Word Problems in Universal
+// Algebras_, 1970, § 7). The rule is read at a model as the theory's member
+// `Group.invMul`.
+
+// The group's unit, associativity and inverse laws.
+import "./group-laws.gandr" ;
+
+/// The inverse of a product, in every group.
+@[ checks ]
+derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
+
+/// A bit.
+@[ checks ]
+data Bit : Type {
+  Zero : Bit;
+  One : Bit;
+}
+
+/// Exclusive or.
+@[ checks ]
+def xor(a : Bit, b : Bit) -> -F Bit {
+  case a {
+    Zero => b,
+    One => case b {
+      Zero => One,
+      One => Zero,
+    },
+  }
+}
+
+/// The group of order two: zero is the unit, exclusive or the product, and
+/// each bit its own inverse; the two elements the presentation names are one
+/// and zero.
+module Parity : Model(Group) {
+  type G = Bit;
+  def e = Zero;
+  def a = One;
+  def b = Zero;
+  def inv(x : Bit) -> -F Bit { x }
+  def mul(x : Bit, y : Bit) -> -F Bit { become xor(x, y) }
+  @[ checks ]
+  def unitL(x : Bit) -> -F Path(Bit, mul(e, x), x) { here(x) }
+  @[ checks ]
+  def unitR(x : Bit) -> -F Path(Bit, mul(x, e), x) {
+    case x {
+      Zero => here(Zero),
+      One => here(One),
+    }
+  }
+  @[ checks ]
+  def assoc(x : Bit, y : Bit, z : Bit) -> -F Path(Bit, mul(mul(x, y), z), mul(x, mul(y, z))) {
+    case x {
+      Zero => here(xor(y, z)),
+      One => case y {
+        Zero => here(xor(One, z)),
+        One => case z {
+          Zero => here(Zero),
+          One => here(One),
+        },
+      },
+    }
+  }
+  @[ checks ]
+  def invInv(x : Bit) -> -F Path(Bit, inv(inv(x)), x) { here(x) }
+  @[ checks ]
+  def invE() -> -F Path(Bit, inv(e), e) { here(Zero) }
+  @[ checks ]
+  def invL(x : Bit) -> -F Path(Bit, mul(inv(x), x), e) {
+    case x {
+      Zero => here(Zero),
+      One => here(Zero),
+    }
+  }
+}
+
+/// The parity group, as a model.
+@[ checks ]
+def parityGroup : Model(Group) ;
+def parityGroup = pack Parity at Model(Group) ;
+
+/// The derived rule read at the parity group, at one and zero: both sides are
+/// one.
+@[ checks ]
+def invMulParity() -> -F Path(Bit, One, One) {
+  run law <- Group.invMul(parityGroup);
+  become law(One, Zero)
+}

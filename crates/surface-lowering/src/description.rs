@@ -1755,6 +1755,8 @@ fn split_members(
     result
 }
 
+pub(crate) mod derive;
+
 mod family;
 
 mod joins;

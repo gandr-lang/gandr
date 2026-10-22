@@ -1617,6 +1617,45 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     );
 }
 
+/// A rule derived in a theory another source declares is read under the
+/// theory's name from the deriving source: `T.r` resolves to the statement, as
+/// it does beside a theory of the same source.
+#[test]
+fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "theory Inv {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
+                 inv(inv(x)) <=> x;\n}",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\nderive four : inv(inv(inv(inv(x)))) <=> x in Inv\ndef \
+                 again = Inv.four ;",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let again = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "again")
+        .map(|declaration| format!("{:?}", declaration.outcome()));
+    assert!(
+        again
+            .as_ref()
+            .is_some_and(|outcome| !outcome.starts_with("Refused")),
+        "`Inv.four` reads the statement the importer derives: {again:?}"
+    );
+}
+
 /// The include faults a lowering's descriptions report, in the order the
 /// unit's sources write them.
 ///

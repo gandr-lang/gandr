@@ -189,7 +189,12 @@ impl Lowerer<'_, '_>
                     let _minted = sink.value(code, written);
                     let _replaced = self.kind_checks.insert(slot, (kind, code));
                 },
-                Role::Declared | Role::Held | Role::Operation | Role::Words | Role::Parameter => {},
+                Role::Declared
+                | Role::Held
+                | Role::Operation
+                | Role::Derived
+                | Role::Words
+                | Role::Parameter => {},
             }
         }
     }

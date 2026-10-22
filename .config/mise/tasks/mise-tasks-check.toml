@@ -131,6 +131,7 @@ unproduced = [
   { rule = "command_substitution", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "data_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "def_value", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "derive_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "double_quoted_string", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "drop_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
   { rule = "dup_expression", reason = "reserved: the lowering refuses it (`FragmentBoundary::Reserved`), so no core term carries it" },

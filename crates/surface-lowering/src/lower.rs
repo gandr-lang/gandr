@@ -3182,6 +3182,9 @@ struct Lowerer<'run, 'source>
     supplied: BTreeSet<NodeIndex>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each derived rule's minted type and proof, by slot: a `derive`
+    /// declaration's statement and each lemma its proof rests on.
+    derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// Each `theory` block's definition, `S : Theory`, as its minted type and
     /// value, by slot.
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
@@ -3976,6 +3979,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_descriptions(sink)?;
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
+        self.mint_derived_rules(sink);
         self.mint_instances(sink);
 
         self.end_source();
@@ -4135,6 +4139,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let declarations = self.assemble(&mut origins);
         let structures = self.structures();
         let in_scope = self.in_scope(resumed);
+        // A derived rule's statement is read under its theory's name, `T.r`.
+        let qualified: BTreeMap<ConstantIndex, SurfaceName<'source>> = self
+            .collected
+            .derived
+            .iter()
+            .filter_map(|(&slot, derived)| {
+                let entry = self.collected.slots.get(usize::from(slot))?;
+                (self.collected.owner_of(entry.introduced_by.node) == Maybe::Present(slot))
+                    .then(|| (entry.constant, self.name_at(derived.theory)))
+            })
+            .collect();
         let Self {
             collected,
             recognition,
@@ -4236,7 +4251,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_reached_imports(reached)
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
-        .with_supplies(supplies))
+        .with_supplies(supplies)
+        .with_qualified(qualified))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -4493,6 +4509,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             nullary: BTreeMap::new(),
             supplied: BTreeSet::new(),
             operated: BTreeMap::new(),
+            derivations: BTreeMap::new(),
             presented: BTreeMap::new(),
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),
@@ -4700,19 +4717,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: the collection pass has run.
-    /// - ensures: each top-level declaration is declared as a definition, and
-    ///   each top-level module as a namespace governing exactly the components
-    ///   it exports — a value component as a component, a type component as a
-    ///   type, a nested module as a namespace of its own, walked by an explicit
-    ///   worklist — each tagged with its name tile's bytes and displacing the
-    ///   builtin subtree it lands on; every exported value component's full
-    ///   path is recorded with the slot a reference reads — the member, or the
-    ///   witness an opaque ascription exports in its place — and every exported
-    ///   type component's with what it reads. A declaration the shadow policy
-    ///   refuses holds [`LoweringRefusal::ShadowedBuiltin`] at its name,
-    ///   offered at its declaration form, and a module so refused files a held
-    ///   slot carrying it; the scope keeps the builtin. Module members and
-    ///   hidden members are declared nowhere in the outermost scope.
+    /// - ensures: each top-level declaration is declared as a definition — a
+    ///   `theory` block's governing the path `T.r` of each rule a `derive`
+    ///   declaration of its source derives in it, as a component, and a theory
+    ///   an earlier source declares gaining `T.r` from the deriving source on —
+    ///   and each top-level module as a namespace governing exactly the
+    ///   components it exports — a value component as a component, a type
+    ///   component as a type, a nested module as a namespace of its own, walked
+    ///   by an explicit worklist — each tagged with its name tile's bytes and
+    ///   displacing the builtin subtree it lands on; every exported value
+    ///   component's full path is recorded with the slot a reference reads —
+    ///   the member, or the witness an opaque ascription exports in its place —
+    ///   and every exported type component's with what it reads. A declaration
+    ///   the shadow policy refuses holds [`LoweringRefusal::ShadowedBuiltin`]
+    ///   at its name, offered at its declaration form, and a module so refused
+    ///   files a held slot carrying it; the scope keeps the builtin. Module
+    ///   members and hidden members are declared nowhere in the outermost
+    ///   scope.
     /// - provides: the outermost half of the module's names, and the governance
     ///   of every module path.
     /// - fails: never; a refusal is carried by its declaration.
@@ -4759,14 +4780,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.collected
                         .slots
                         .get(usize::from(*slot))
-                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness))
+                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness | Role::Derived))
                 })
         },
     )]
     fn declare(&mut self)
     {
         let (first_slot, first_structure) = (self.current.slots, self.current.structures);
-        for slot in self.collected.slots.iter_mut().skip(first_slot) {
+        let mut derived: BTreeMap<SlotIndex, Vec<(SurfaceName<'source>, SlotIndex, ByteSpan)>> =
+            BTreeMap::new();
+        for (&slot, rule) in self.collected.derived.range(SlotIndex::from(first_slot) ..) {
+            let Some(entry) = self.collected.slots.get(usize::from(slot))
+            else {
+                continue;
+            };
+            if self.collected.owner_of(entry.introduced_by.node) == Maybe::Present(slot) {
+                derived.entry(rule.presented).or_default().push((
+                    entry.name,
+                    slot,
+                    entry.named.span,
+                ));
+            }
+        }
+        for (position, slot) in self.collected.slots.iter_mut().enumerate().skip(first_slot) {
             if !matches!(slot.container, Container::TopLevel(_)) || slot.role != Role::Declared {
                 continue;
             }
@@ -4776,6 +4812,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 &NamePath::root(),
                 Binding::new(Recognized::Definition, RecognitionSite::Source(site)),
             );
+            for &(rule, statement, at) in derived
+                .get(&SlotIndex::from(position))
+                .map_or(&[][..], Vec::as_slice)
+            {
+                let _fresh = subtree.insert(
+                    &NamePath::from(Vec::from([Segment::from(rule.as_ref())])),
+                    Binding::new(Recognized::ModuleComponent, RecognitionSite::Source(at)),
+                );
+                let _replaced = self.exported.insert(
+                    NamePath::from(Vec::from([
+                        Segment::from(slot.name.as_ref()),
+                        Segment::from(rule.as_ref()),
+                    ])),
+                    statement,
+                );
+            }
             let declared =
                 self.recognition
                     .declare(Segment::from(slot.name.as_ref()), subtree, site);
@@ -4784,6 +4836,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     span: site,
                     name: slot.name,
                 });
+            }
+        }
+        // A rule derived in a theory an earlier source declares joins that
+        // theory's namespace from here on: `T.r` reads the statement.
+        for (&presented, rules) in derived.range(.. SlotIndex::from(first_slot)) {
+            let Some(theory) = self.collected.slots.get(usize::from(presented))
+            else {
+                continue;
+            };
+            for &(rule, statement, at) in rules {
+                let path = NamePath::from(Vec::from([
+                    Segment::from(theory.name.as_ref()),
+                    Segment::from(rule.as_ref()),
+                ]));
+                self.recognition.declare_component(&path, at);
+                let _replaced = self.exported.insert(path, statement);
             }
         }
         let mut tops: Vec<StructureIndex> = Vec::new();
@@ -5178,6 +5246,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Operand::Words(_)
                     | Operand::Loop { .. }
                     | Operand::Operation
+                    | Operand::Derived
                     | Operand::Signature
                     | Operand::Presented
                     | Operand::Code
@@ -16330,7 +16399,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(Half { operand: Operand::Member(target), .. })
                     if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_)))))
             && [slot.signature, slot.definition].into_iter().any(|half| matches!(half,
-                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
+                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
         ),
     )]
     fn lowers_a_half(
@@ -16363,6 +16432,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Words(_)
                         | Operand::Loop { .. }
                         | Operand::Operation
+                        | Operand::Derived
                         | Operand::Presented
                         | Operand::Code
                         | Operand::Model(_),
@@ -16381,13 +16451,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a stored refusal takes precedence, then a refusal a check
     ///   after minting filed; a world declaration is the world it names; a data
     ///   declaration, or a described family the decoder admitted, `Theory`
-    ///   among them, is the index of its minted signature; an operation, and a
-    ///   `theory` block's definition, is the type and body minted for it; an
-    ///   abstract slot is the abstract type it lowered to, and a kind witness
-    ///   the check of its type member's code at the kind; otherwise the
-    ///   available signature — written, a function tail's, the type a model
-    ///   derives, or the annotation an unsigned definition's whole value is
-    ///   written under — and body select Completed, Uncompleted or Bodied.
+    ///   among them, is the index of its minted signature; an operation, a
+    ///   derived rule and a `theory` block's definition are each the type and
+    ///   body minted for it; an abstract slot is the abstract type it lowered
+    ///   to, and a kind witness the check of its type member's code at the
+    ///   kind; otherwise the available signature — written, a function tail's,
+    ///   the type a model derives, or the annotation an unsigned definition's
+    ///   whole value is written under — and body select Completed, Uncompleted
+    ///   or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -16436,6 +16507,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else if let Maybe::Present(Half { operand: Operand::Operation, .. }) = slot.definition {
                 ret == self.operated.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
             }
+            else if let Maybe::Present(Half { operand: Operand::Derived, .. }) = slot.definition {
+                ret == self.derivations.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
+            }
             else if let Maybe::Present(Half { operand: Operand::Presented, .. }) = slot.definition {
                 ret == self.presented.get(&position).map_or(Maybe::Absent(lowered::Absent::Unminted), |&(declared_type, body)| Maybe::Present(DeclarationOutcome::Completed { declared_type, body }))
             }
@@ -16455,7 +16529,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => self.annotated_type(slot),
                 };
@@ -16468,7 +16542,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
                 };
@@ -16574,6 +16648,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
             );
         }
         if let Maybe::Present(Half {
+            operand: Operand::Derived,
+            ..
+        }) = slot.definition
+        {
+            return self.derivations.get(&position).map_or(
+                Maybe::Absent(lowered::Absent::Unminted),
+                |&(declared_type, body)| {
+                    Maybe::Present(DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    })
+                },
+            );
+        }
+        if let Maybe::Present(Half {
             operand: Operand::Presented,
             ..
         }) = slot.definition
@@ -16623,6 +16712,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Words(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
+                | Operand::Derived
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
@@ -16643,6 +16733,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Words(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
+                | Operand::Derived
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
@@ -17174,7 +17265,8 @@ impl Sink<'_>
                 | Insertion::Relation
                 | Insertion::Words
                 | Insertion::Method
-                | Insertion::Parameter,
+                | Insertion::Parameter
+                | Insertion::Derived,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }

@@ -163,6 +163,8 @@ const COUNTED: &[&str] = &[
     "item data_declaration name",
     "item def_value",
     "item def_value name",
+    "item derive_declaration",
+    "item derive_declaration name",
     "item extern_block",
     "item extern_block name",
     "item import_declaration",

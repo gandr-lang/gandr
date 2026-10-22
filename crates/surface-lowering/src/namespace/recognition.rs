@@ -1034,6 +1034,50 @@ impl Recognition
         let path = NamePath::from(Vec::from([name]));
         self.scope.graft_visible(&path, subtree);
     }
+
+    /// Bind the component at `path`, `owner.component` and written at `site`,
+    /// under the declaration an earlier source bound under `owner`: `path`
+    /// resolves to it, every other path as before.
+    ///
+    /// # Specification
+    /// - requires: `path` has two segments, the first a declaration's name.
+    /// - ensures: `path` resolves to a module component; the export and the
+    ///   shadow record are unchanged, and the visible namespace holds at most
+    ///   one binding more.
+    /// - provides: a rule a `derive` declaration derives in a theory it
+    ///   imports, read as `T.r` from the deriving source.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule derived in an imported theory, read through
+    ///   the theory's name by a definition of the deriving source.
+    /// - witness: `tests::namespace::a_rule_derived_in_an_imported_theory_is_read_under_its_name`
+    #[spec(
+        captures: before = (
+            self.handler.shadowed.len(),
+            usize::from(self.scope.visible().binding_count()),
+            self.scope.export().binding_count(),
+        ),
+        ensures: self.handler.shadowed.len() == before.0
+            && self.scope.export().binding_count() == before.2
+            && usize::from(self.scope.visible().binding_count()) <= before.1.saturating_add(1)
+            && matches!(self.resolve(path), Maybe::Present(&Recognized::ModuleComponent)),
+    )]
+    #[inline]
+    pub fn declare_component(
+        &mut self,
+        path: &NamePath,
+        site: ByteSpan,
+    )
+    {
+        let mut subtree = Trie::empty();
+        let _fresh = subtree.insert(
+            &NamePath::root(),
+            Binding::new(Recognized::ModuleComponent, RecognitionSite::Source(site)),
+        );
+        self.scope.graft_visible(path, subtree);
+    }
 }
 
 #[cfg(test)]

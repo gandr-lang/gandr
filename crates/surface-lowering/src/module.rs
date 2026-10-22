@@ -325,6 +325,8 @@ use crate::unit::UnitKey;
 
 mod data;
 
+mod derive;
+
 mod functor;
 
 mod model;
@@ -342,6 +344,7 @@ pub use self::data::DataForm;
 pub use self::data::Generators;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
+pub use self::derive::DerivedSlot;
 use self::functor::Applied;
 pub use self::functor::Functor;
 pub use self::functor::FunctorIndex;
@@ -701,6 +704,10 @@ pub enum Role
     /// An operation a `data` family declares and the module can call: entered
     /// in no namespace, its body compiled from its rules.
     Operation,
+    /// A rule a theory's completion derives, `derive r : l <=> r in T`, or a
+    /// lemma its proof rests on: entered in no name table, the statement read
+    /// through its theory's path `T.r`.
+    Derived,
     /// The abstract type an opaque ascription declares for one abstract
     /// component of its signature: admitted before the module's members,
     /// entered in no name table, and named through the namespace as the atom
@@ -1033,6 +1040,10 @@ pub enum Operand
     /// An operation of the data declaration that wrote this half, its body
     /// compiled from its rules by the plan the collection keeps for its slot.
     Operation,
+    /// A rule a theory's completion derives, or a lemma its proof rests on:
+    /// its type and proof minted from the plan the collection keeps for its
+    /// slot.
+    Derived,
     /// A top-level `oper`, which lowers to no core term, a refusal held beside
     /// a `theory` block, or a root child that is no declaration: the half that
     /// carries the refusal and the expectation stating it.
@@ -1346,6 +1357,9 @@ pub struct Collected<'source>
     pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
     /// Each callable operation's plan, by its slot.
     pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
+    /// Each derived rule's plan, by its slot: the statement of a `derive`
+    /// declaration, and each lemma its proof rests on.
+    pub derived: BTreeMap<SlotIndex, DerivedSlot>,
     /// Each callable operation's slot, by the source declaring it and its
     /// name: operations are declared at the top level only.
     pub operation_names: BTreeMap<(SourceIndex, SurfaceName<'source>), SlotIndex>,
@@ -2455,6 +2469,7 @@ pub fn begin_collection<'source>(
         constructors: BTreeMap::new(),
         operations: BTreeMap::new(),
         operation_names: BTreeMap::new(),
+        derived: BTreeMap::new(),
         abstracts: BTreeMap::new(),
         decorated: Vec::new(),
         module_docs: Vec::new(),
@@ -2746,6 +2761,14 @@ pub fn collect_source<'source>(
         let former = collector.root_former(child)?;
         if former == Former::AttributeBlock {
             decorations.push(child);
+            continue;
+        }
+        if collector.derives(child)?.0 {
+            if let Some(refusal) = strayed(collector.derive(child, &decorations))? {
+                strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
+                after_stray = true;
+            }
+            decorations.clear();
             continue;
         }
         if former == Former::WorldDeclaration {
@@ -7096,6 +7119,7 @@ impl<'source> Collector<'_, 'source>
                 | Operand::Words(_)
                 | Operand::Loop { .. }
                 | Operand::Operation
+                | Operand::Derived
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
@@ -8614,6 +8638,9 @@ pub struct LoweredModule<'source>
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    /// The theory each derived rule's statement is read under, `T` in `T.r`,
+    /// by the statement's position.
+    qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -8659,6 +8686,7 @@ impl<'source> LoweredModule<'source>
             operation_rules: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
             supplies: BTreeMap::new(),
+            qualified: BTreeMap::new(),
         }
     }
 
@@ -8710,6 +8738,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.operation_rules = operation_rules;
+        self
+    }
+
+    /// This module, carrying `qualified`, the theory each derived rule's
+    /// statement is read under, by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_qualified(
+        mut self,
+        qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
+    ) -> Self
+    {
+        self.qualified = qualified;
         self
     }
 
@@ -9253,14 +9297,31 @@ impl<'source> LoweredModule<'source>
         &self.structures
     }
 
+    /// The theory `declaration` is read under when it is a derived rule's
+    /// statement, `T` in `T.r`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn theory_of(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> Option<SurfaceName<'source>>
+    {
+        self.qualified.get(&declaration.constant()).copied()
+    }
+
     /// The structured name of `declaration`: the path of the module it is
-    /// declared in, then its own name.
+    /// declared in, then its own name; a derived rule's statement's, its
+    /// theory's name then its own.
     ///
     /// # Specification
     /// - requires: `declaration` is one of this module's declarations.
     /// - ensures: one segment for a top-level declaration, and the enclosing
     ///   module's path followed by the name for a member, so a member nested at
-    ///   depth `n` has `n + 1` segments.
+    ///   depth `n` has `n + 1` segments; two for a derived rule's statement,
+    ///   `T.r`, as a later declaration reads it.
     /// - provides: the name a declaration exports under.
     /// - fails: never.
     /// - panics: none.
@@ -9269,12 +9330,15 @@ impl<'source> LoweredModule<'source>
     /// - hypothesis: L3 — nested and top-level declarations preserve the
     ///   ordered container segments before their own name.
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`
     /// - witness: `module::tests::structured_export_omits_invalid_segments_and_keeps_the_last_declared_name`
     #[spec(
         ensures: |ret| {
-            let prefix = match declaration.container() {
-                | Container::TopLevel(_) => &[][..],
-                | Container::Module(index) => self
+            let theory = self.theory_of(declaration);
+            let prefix = match (theory.as_ref(), declaration.container()) {
+                | (Some(theory), _) => core::slice::from_ref(theory),
+                | (None, Container::TopLevel(_)) => &[][..],
+                | (None, Container::Module(index)) => self
                     .structures
                     .get(index.0)
                     .map_or(&[][..], |module| module.path.as_slice()),
@@ -9292,9 +9356,10 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> Vec<SurfaceName<'source>>
     {
-        let mut path = match declaration.container() {
-            Container::TopLevel(_) => Vec::new(),
-            Container::Module(structure) => self
+        let mut path = match (self.theory_of(declaration), declaration.container()) {
+            (Some(theory), _) => Vec::from([theory]),
+            (None, Container::TopLevel(_)) => Vec::new(),
+            (None, Container::Module(structure)) => self
                 .structures
                 .get(structure.0)
                 .map_or_else(Vec::new, |module| module.path.clone()),

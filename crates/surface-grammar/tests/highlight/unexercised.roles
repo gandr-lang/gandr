@@ -1921,3 +1921,6 @@
 3098 VariableParam circuit_declaration identifier L[,] R[) ,]
 3099 VariableParam circuit_declaration _ L[,] R[) ,]
 3100 Other circuit_declaration , L[_ identifier] R[)]
+3107 Operator derive_declaration --> L[<expression>] R[<expression>]
+3108 Operator derive_declaration <-> L[<expression>] R[<expression>]
+3109 Operator derive_declaration ==> L[<expression>] R[<expression>]

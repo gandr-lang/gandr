@@ -1481,7 +1481,8 @@ impl TypeTable
             // present, located at the declaration; nor does a term of the
             // access a method call is, below the call, located at the call; nor
             // does a term of the bind a typed lambda parameter is read through,
-            // located at the lambda.
+            // located at the lambda; nor does a term of the law or the proof a
+            // derived rule mints, located at the statement's name.
             if let Maybe::Present(origin) = origin
                 && !matches!(
                     origin.provenance(),
@@ -1491,6 +1492,7 @@ impl TypeTable
                             | Insertion::Words
                             | Insertion::Method
                             | Insertion::Parameter
+                            | Insertion::Derived
                     )
                 )
             {
