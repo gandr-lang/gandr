@@ -2132,6 +2132,7 @@ fn evaluated_pair(
 ///   beneath a static lambda, a variable beneath a dependent arrow's binder
 ///   inside a quote, and a type decoding a variable, each reach asserted.
 /// - witness: `code::tests::the_loose_reach_counts_only_binders_outside_the_root`
+/// - witness: `code::tests::the_loose_reach_descends_every_former_and_subtracts_only_its_binders`
 #[inline]
 #[spec(ensures: |ret| match (root, ret) {
     | (CoreNode::Term(TermNode::Value(at)), Ok(reach)) => match core.value(at) {

@@ -574,6 +574,7 @@ pub fn binders(
 /// # Adequacy
 /// - hypothesis: L3 — as [`reaches`] and [`abstracts`].
 /// - witness: `capability::tests::a_bound_region_outlives_every_scope_and_no_held_one_1221`
+/// - witness: `capability::tests::a_binder_is_named_through_every_former`
 fn first_region<Chosen>(
     arena: &CoreArena,
     root: TypeNode,

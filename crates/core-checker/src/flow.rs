@@ -768,6 +768,7 @@ fn convertible(
 ///   source is refused, a code under an arrow's domain is refused and one under
 ///   its codomain passes.
 /// - witness: `flow::tests::motives_ride_only_covariantly`
+/// - witness: `flow::tests::a_code_rides_beneath_exactly_the_covariant_formers`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,

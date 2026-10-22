@@ -1193,7 +1193,7 @@ fn pair_components(
 /// - hypothesis: L3 — as [`pair_components`], the identity of a written tuple
 ///   of three reads its three components, and a tuple transported along a
 ///   univalence path at a product reads its components' transports.
-/// - witness: `judgement::tests::a_tuple_of_paths_checks_at_the_identity_of_a_product`
+/// - witness: `judgement::tests::a_transported_tuple_reads_its_components_transports`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |components| components.len() == usize::from(width) && components.iter().all(|&component| context.arena().value(component).is_some())))]
 fn tuple_components(
     context: &mut CheckingContext<'_>,
@@ -2391,6 +2391,7 @@ impl Frame
     /// - hypothesis: L3 — a refusal under a thunk's force names each pending
     ///   rule by its own frame.
     /// - witness: `judgement::tests::a_refusal_keeps_the_rules_it_stood_inside`
+    /// - witness: `judgement::tests::each_rule_a_refusal_stood_inside_is_named_by_its_own_role`
     #[spec(ensures: |ret| matches!(self, Self::ListFold { .. }) == matches!(ret, FrameRole::ListFold(_)))]
     const fn role(self) -> FrameRole
     {

@@ -2041,6 +2041,122 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
     assert_eq!(decoded.declarations().len(), 1);
 }
 
+/// Every effect and control former a pure body may not hold is refused by
+/// its own name at its own node, whichever it is.
+#[test]
+fn each_effect_former_is_refused_by_name_where_it_stands()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let returned = arena.computation_return(unit);
+    let interface = EffectSig::new(EffectName::from("IO"), [EffectOp {
+        name: OperationName::from("emit"),
+        payload: unit_type,
+        reply: unit_type,
+    }])
+    .expect("one operation");
+    let rows = [
+        (
+            arena.computation_perform(interface.clone(), "emit".into(), unit),
+            UnadmittedFormer::Perform,
+        ),
+        (arena.computation_abandon(unit), UnadmittedFormer::Abandon),
+        (arena.computation_shift(returned), UnadmittedFormer::Shift),
+        (
+            arena.computation_exercise(unit, interface.clone(), "emit".into(), unit),
+            UnadmittedFormer::Exercise,
+        ),
+        (
+            arena.computation_scope(interface, returned, returned, [].into()),
+            UnadmittedFormer::Scope,
+        ),
+    ];
+    for (computation, former) in rows {
+        let at = CoreNode::Term(TermNode::Computation(computation));
+        assert_eq!(
+            erase(&mut arena, at).1,
+            Err(Refusal::OutOfFragment { at, former }),
+            "{former:?} is refused by name, at its node"
+        );
+    }
+}
+
+/// A list case, an application, a telescope transport and a marked
+/// computation each erase to the kernel former they stand for, a mark
+/// leaving only what it marks; a hole is refused where it stands.
+#[test]
+fn each_pure_former_erases_to_its_kernel_former()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::MarkIndex;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let zero = arena.value_literal(integer_literal());
+    let unit = arena.value_unit();
+    let nil = arena.value_list_nil();
+    let returned = arena.computation_return(zero);
+    let lambda = arena.computation_lambda(returned);
+    let marked_value = arena.value_mark(MarkIndex::from(0_u32), zero);
+    let rows = [
+        (
+            arena.computation_list_case(nil, returned, returned),
+            "ListCase",
+        ),
+        (arena.computation_application(lambda, zero), "Application"),
+        (
+            arena.computation_telescope_transport(returns_integer, unit, unit, unit, unit),
+            "TelescopeTransport",
+        ),
+        (
+            arena.computation_mark(MarkIndex::from(0_u32), returned),
+            "Return",
+        ),
+    ];
+    for (computation, former) in rows {
+        let (target, image) = erase(
+            &mut arena,
+            CoreNode::Term(TermNode::Computation(computation)),
+        );
+        let Ok(AnyNode::Computation(image)) = image
+        else {
+            panic!("{former}: a pure computation erases to a computation, not {image:?}");
+        };
+        let erased = alloc::format!("{:?}", target.computation(image));
+        assert!(
+            erased.starts_with(&alloc::format!("Some({former}")),
+            "{former}: {erased}"
+        );
+    }
+    let returns_marked = arena.computation_return(marked_value);
+    let (target, image) = erase(
+        &mut arena,
+        CoreNode::Term(TermNode::Computation(returns_marked)),
+    );
+    let Ok(AnyNode::Computation(image)) = image
+    else {
+        panic!("a return erases to a computation");
+    };
+    assert!(
+        matches!(target.computation(image), Some(&gandr_kernel_term::Computation::Return(value))
+            if target.value(value) == Some(&gandr_kernel_term::Value::Literal(integer_literal()))),
+        "a marked value erases to what it marks"
+    );
+    let hole = arena.computation_hole(HoleId::from(0_u32));
+    let at = CoreNode::Term(TermNode::Computation(hole));
+    assert!(
+        matches!(erase(&mut arena, at).1, Err(Refusal::Hole { at: refused, .. }) if refused == at),
+        "a hole is refused at its node"
+    );
+}
+
 #[test]
 fn a_lazy_product_crosses_as_its_kernel_nodes()
 {
@@ -2710,6 +2826,70 @@ fn a_funext_returning_a_literal_crosses_with_the_literal()
             ),
             "the literal crosses as itself on either side: {:?}",
             readmission.readmitted()[2].outcome()
+        );
+    }
+}
+
+/// A funext between functions that return a pair of literals, or a declared
+/// constant, crosses with the pair, or the constant at its readmitted
+/// position, on both sides of its one component.
+#[test]
+fn a_funext_returning_a_pair_or_a_constant_crosses_with_it()
+{
+    // def c : Integer = 0 ;
+    // def f, g : U (() -> F T) = λ_. return v ;
+    // def same : Path(U (…), f, g) = funext(f, g) ;
+    for returns_pair in [true, false] {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let zero = arena.value_literal(integer_literal());
+        let answer = if returns_pair {
+            arena.value_type_product(&[integer, string])
+        }
+        else {
+            integer
+        };
+        let returns = arena.comp_type_returner(answer);
+        let arrow = arena.comp_type_arrow(unit_type, returns);
+        let function = arena.value_type_thunk(arrow);
+        let [left, right] = [(), ()].map(|()| {
+            let returned = if returns_pair {
+                let first = arena.value_literal(integer_literal());
+                let second = arena.value_literal(text_literal());
+                arena.value_tuple(&[first, second])
+            }
+            else {
+                arena.value_constant(ConstantIndex::from(0_usize))
+            };
+            let body = arena.computation_return(returned);
+            let lambda = arena.computation_lambda(body);
+            arena.value_thunk(lambda)
+        });
+        let [left_constant, right_constant] =
+            [1_usize, 2_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+        let path = arena.value_type_path(function, left_constant, right_constant);
+        let funext = arena.value_funext(left_constant, right_constant);
+        let declared = Maybe::Present(function);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
+            declaration(At(1), declared, Maybe::Present(left)),
+            declaration(At(2), declared, Maybe::Present(right)),
+            declaration(At(3), Maybe::Present(path), Maybe::Present(funext)),
+        ]);
+        assert!(
+            matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+            "pair {returns_pair}: both functions return the same value: {:?}",
+            report.judged()[3].verdict()
+        );
+        assert!(
+            matches!(
+                readmission.readmitted()[3].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "pair {returns_pair}: the value crosses as itself on either side: {:?}",
+            readmission.readmitted()[3].outcome()
         );
     }
 }

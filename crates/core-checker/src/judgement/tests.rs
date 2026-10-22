@@ -3964,3 +3964,339 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn each_rule_a_refusal_stood_inside_is_named_by_its_own_role()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_kernel_term::Component;
+    use gandr_kernel_term::Summand;
+
+    use crate::failure::FoldPremise;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let zero = arena.value_literal(integer_literal());
+    let stray = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(9_u32));
+    let bad = arena.computation_force(zero);
+    let fine = arena.computation_return(zero);
+    let nil = arena.value_list_nil();
+    let cons = arena.value_list_cons(zero, nil);
+    let list = arena.value_type_list(integer);
+    let either = arena.value_type_sum(&[integer, integer]);
+    let path = arena.value_type_path(integer, zero, zero);
+    let probe = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+        name: OperationName::from("poke"),
+        payload: integer,
+        reply: integer,
+    }])
+    .expect("one operation");
+    let poking = |body| -> Arc<[EffectClause]> {
+        Arc::from([EffectClause {
+            operation: OperationName::from("poke"),
+            body,
+        }])
+    };
+    let poked = arena.computation_perform(probe.clone(), OperationName::from("poke"), zero);
+    let lambda = arena.computation_lambda(fine);
+    let arrow = arena.comp_type_arrow(integer, returns_integer);
+    let ascribed = arena.computation_ascribe(lambda, arrow);
+    let bodies = [
+        (arena.computation_bind(bad, fine), FrameRole::BindBound),
+        (arena.computation_bind(fine, bad), FrameRole::BindBody),
+        (
+            arena.computation_application(bad, zero),
+            FrameRole::ApplicationHead,
+        ),
+        (
+            arena.computation_application(ascribed, stray),
+            FrameRole::ApplicationArgument,
+        ),
+        (
+            arena.computation_case(stray, &[fine]),
+            FrameRole::CaseScrutinee,
+        ),
+        (
+            arena.computation_split(stray, ComponentCount::from(2_usize), fine),
+            FrameRole::SplitScrutinee,
+        ),
+        (
+            arena.computation_list_case(stray, fine, fine),
+            FrameRole::ListCaseScrutinee,
+        ),
+        (arena.computation_reset(bad), FrameRole::Reset),
+        (arena.computation_abandon(stray), FrameRole::Abandon),
+        (arena.computation_resume(stray, fine), FrameRole::Resume),
+        (
+            arena.computation_transport(stray, zero),
+            FrameRole::TransportPath,
+        ),
+        (
+            arena.computation_tuple_projection(stray, Component::from(0_usize)),
+            FrameRole::NativeProjection,
+        ),
+        (arena.computation_return(stray), FrameRole::ReturnValue),
+        (
+            arena.computation_list_fold(integer, integer, stray, fine, fine),
+            FrameRole::ListFold(FoldPremise::Input),
+        ),
+        (
+            arena.computation_list_fold(integer, integer, nil, bad, fine),
+            FrameRole::ListFold(FoldPremise::Nil),
+        ),
+        (
+            arena.computation_list_fold(integer, integer, cons, fine, bad),
+            FrameRole::ListFold(FoldPremise::Cons),
+        ),
+        (
+            arena.computation_project(Component::from(0_usize), bad),
+            FrameRole::Project,
+        ),
+        (
+            arena.computation_path_transport(integer, stray, zero),
+            FrameRole::ElementTransportPath,
+        ),
+        (
+            arena.computation_ride(integer, stray, zero),
+            FrameRole::RideFlow,
+        ),
+        (
+            arena.computation_telescope_transport(returns_integer, stray, zero, zero, zero),
+            FrameRole::TelescopePath,
+        ),
+        (
+            arena.computation_exercise(stray, probe.clone(), OperationName::from("poke"), zero),
+            FrameRole::ExerciseCapability,
+        ),
+        (
+            arena.computation_handle(probe.clone(), bad, fine, poking(fine)),
+            FrameRole::HandlerSubject,
+        ),
+        (
+            arena.computation_handle(probe.clone(), fine, bad, poking(fine)),
+            FrameRole::HandlerReturn,
+        ),
+        (
+            arena.computation_handle(probe.clone(), poked, fine, poking(bad)),
+            FrameRole::HandlerClause,
+        ),
+        (
+            arena.computation_scope(probe, bad, fine, poking(fine)),
+            FrameRole::ScopeSubject,
+        ),
+        (
+            arena.computation_data_case(stray, returns_integer, Vec::from([fine])),
+            FrameRole::NativeCase,
+        ),
+    ];
+    let thunks = bodies.map(|(body, role)| (arena.value_thunk(body), suspended, role));
+    let values = [
+        (
+            arena.value_list_cons(stray, nil),
+            list,
+            FrameRole::PairSecond,
+        ),
+        (
+            arena.value_injection(Summand::from(1_usize), stray),
+            either,
+            FrameRole::InjectionPayload,
+        ),
+        (arena.value_here(stray), path, FrameRole::HereEndpoints),
+        (arena.value_stay(stray), path, FrameRole::StaySynthesised),
+        (arena.value_then(stray, zero), path, FrameRole::ThenFirst),
+        (
+            arena.value_path_product(stray, zero),
+            path,
+            FrameRole::PathProductFirst,
+        ),
+        (arena.value_funext(stray, zero), path, FrameRole::FunextLeft),
+        (
+            arena.value_equiv(stray, zero),
+            path,
+            FrameRole::EquivForward,
+        ),
+        (
+            arena.value_univalence(stray, zero),
+            path,
+            FrameRole::UnivalenceRecord,
+        ),
+        (
+            arena.value_flow_product(stray, zero),
+            path,
+            FrameRole::FlowProductFirst,
+        ),
+        (
+            arena.value_forward(stray),
+            path,
+            FrameRole::ForwardTranslator,
+        ),
+        (
+            arena.value_static_application(stray, zero),
+            integer,
+            FrameRole::StaticSpine,
+        ),
+    ];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (value, ty, role) in thunks.into_iter().chain(values) {
+        let expected = form_value_type(&mut context, ty).expect("every expected type forms");
+        let failure = check_value_with_failure(&mut context, value, expected)
+            .expect_err("a refused child refuses its parent");
+        assert!(
+            failure
+                .obligations()
+                .iter()
+                .any(|obligation| obligation.role() == role),
+            "{role:?} among {:?}",
+            failure
+                .obligations()
+                .iter()
+                .map(Obligation::role)
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            matches!(
+                failure.refusal(),
+                CheckRefusal::UnboundIndex { at, .. } if at == stray
+            ) || matches!(
+                failure.refusal(),
+                CheckRefusal::ShapeMismatch { at: TermNode::Value(at), .. } if at == zero
+            ),
+            "{role:?}: the refusal is the refused child's own, {:?}",
+            failure.refusal()
+        );
+    }
+}
+
+/// A list, a recorded run and a fixpoint are checking-only: each refuses
+/// synthesis by its own form; a lazy pair checked at a type that is no lazy
+/// product is refused for its shape; a world's capability, which only an
+/// entry opens, is no type a program writes.
+#[test]
+fn checking_only_forms_and_unwritable_types_are_refused_by_name()
+{
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldType;
+    use gandr_kernel_term::FixpointEvidence;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let zero = arena.value_literal(integer_literal());
+    let nil = arena.value_list_nil();
+    let cons = arena.value_list_cons(zero, nil);
+    let recorded = arena.value_recorded(Arc::from([]));
+    let returned = arena.computation_return(zero);
+    let lambda = arena.computation_lambda(returned);
+    let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::Partial);
+    let lazy = arena.computation_with(&[returned]);
+    let capability = arena.value_type_world(WorldType::Capability(World::Host));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (value, form) in [
+        (nil, CheckingForm::List(nil)),
+        (cons, CheckingForm::List(cons)),
+        (recorded, CheckingForm::Run(recorded)),
+    ] {
+        assert_eq!(
+            synthesise_value(&mut context, value).map(|produced| produced.produced().id()),
+            Err(CheckRefusal::NotSynthesisable { form }),
+            "{form:?}"
+        );
+    }
+    assert_eq!(
+        synthesise_comp(&mut context, fixpoint).map(|produced| produced.produced().id()),
+        Err(CheckRefusal::NotSynthesisable {
+            form: CheckingForm::Fixpoint(fixpoint),
+        }),
+        "a fixpoint is checked at the type it unrolls to"
+    );
+    let expected = form_comp_type(&mut context, returns_integer).unwrap();
+    assert_eq!(
+        check_comp(&mut context, lazy, expected).map(drop),
+        Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(lazy),
+            wanted: ExpectedShape::With,
+            found: TypeNode::Computation(returns_integer),
+        }),
+        "a lazy pair wants a lazy product"
+    );
+    assert_eq!(
+        form_value_type(&mut context, capability).map(drop),
+        Err(CheckRefusal::CapabilityConsumable(capability)),
+        "a world's capability is no written type"
+    );
+}
+
+/// A written tuple reads its own components; a tuple transported at a
+/// product reads each component transported in its own factor; any other
+/// inhabitant reads its projections.
+#[test]
+fn a_transported_tuple_reads_its_components_transports()
+{
+    use gandr_core_term::ComponentCount;
+    use gandr_kernel_term::Component;
+
+    use super::tuple_components;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let product = arena.value_type_product(&[integer, string]);
+    let zero = arena.value_literal(integer_literal());
+    let path = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let written = arena.value_tuple(&[zero, path]);
+    let transported = arena.computation_path_transport(product, path, written);
+    let transported = arena.value_returned(transported);
+    let other = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let two = ComponentCount::from(2_usize);
+    assert_eq!(
+        tuple_components(&mut context, written, two),
+        Ok(Vec::from([zero, path])),
+        "a written tuple reads its own components"
+    );
+    let moved =
+        tuple_components(&mut context, transported, two).expect("a transported tuple reads");
+    let read: Vec<_> = moved
+        .iter()
+        .map(|&component| match context.arena().value(component) {
+            Some(&Value::Returned(formed)) => context.arena().computation(formed).cloned(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [
+            Some(Computation::PathTransport {
+                motive: integer,
+                path,
+                value: zero,
+            }),
+            Some(Computation::PathTransport {
+                motive: string,
+                path,
+                value: path,
+            }),
+        ],
+        "each component moves along the path in its own factor"
+    );
+    let projected = tuple_components(&mut context, other, two).expect("any inhabitant reads");
+    let read: Vec<_> = projected
+        .iter()
+        .map(|&component| match context.arena().value(component) {
+            Some(&Value::Returned(formed)) => context.arena().computation(formed).cloned(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [0_usize, 1].map(|index| Some(Computation::TupleProjection(other, Component::from(index)))),
+        "any other inhabitant reads its projections"
+    );
+}

@@ -632,3 +632,143 @@ fn a_bound_region_outlives_every_scope_and_no_held_one_1221()
         "both binders are named, the capability's included"
     );
 }
+
+/// A region binder kept under any former a type is built from is named,
+/// a family's or codata type's quoted argument and a capability's operations
+/// included.
+#[test]
+fn a_binder_is_named_through_every_former()
+{
+    use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::RegionBinder;
+    use gandr_core_term::world::WorldType;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::FieldLabel;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    use super::binders;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let binder = RegionBinder::from(0_u32);
+    let kept = arena.value_type_kept(integer, Region::Bound(binder));
+    let returns_kept = arena.comp_type_returner(kept);
+    let quoted = arena.value_quote(kept);
+    let quoted_computation = arena.value_quote_computation(returns_kept);
+    let operations = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+        name: OperationName::from("poke"),
+        payload: kept,
+        reply: unit,
+    }])
+    .expect("one operation");
+    let rows: Vec<(TypeNode, &str)> = Vec::from([
+        (
+            TypeNode::Value(
+                arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([quoted])),
+            ),
+            "a family's quoted argument",
+        ),
+        (
+            TypeNode::Value(arena.value_type_data(
+                ConstantIndex::from(0_usize),
+                Vec::from([quoted_computation]),
+            )),
+            "a family's quoted computation type",
+        ),
+        (
+            TypeNode::Value(arena.value_type_record(BTreeMap::from([(
+                FieldLabel::from(String::from("x")),
+                kept,
+            )]))),
+            "a record field",
+        ),
+        (
+            TypeNode::Value(arena.value_type_sum(&[unit, kept])),
+            "a summand",
+        ),
+        (
+            TypeNode::Value(arena.value_type_lift(kept, Level::zero())),
+            "a lift",
+        ),
+        (
+            TypeNode::Value(arena.value_type_path(kept, zero, zero)),
+            "a path's carrier",
+        ),
+        (
+            TypeNode::Value(arena.value_type_flow(kept, zero, zero)),
+            "a flow's carrier",
+        ),
+        (
+            TypeNode::Value(arena.value_type_staged(kept, Stage::At(StageId::from(0_usize)))),
+            "a staged base",
+        ),
+        (
+            TypeNode::Value(arena.value_type_static_pi(unit, kept)),
+            "a static pi",
+        ),
+        (
+            TypeNode::Value(arena.value_type_sigma(kept, unit)),
+            "a sigma",
+        ),
+        (
+            TypeNode::Value(arena.value_type_stack(returns_unit, returns_kept)),
+            "a stack",
+        ),
+        (
+            TypeNode::Value(arena.value_type_world(WorldType::At {
+                inner: kept,
+                world: World::Host,
+            })),
+            "a value held at a world",
+        ),
+        (
+            TypeNode::Value(arena.value_type_capability(
+                EffectRow::singleton(operations.clone()),
+                CapabilityGrade::Durable,
+                Region::Scoped(RegionDepth::from(1_u32)),
+            )),
+            "a capability's operations",
+        ),
+        (
+            TypeNode::Computation(
+                arena.comp_type_returner_with_effects(unit, EffectRow::singleton(operations)),
+            ),
+            "a returner's effects",
+        ),
+        (
+            TypeNode::Computation(arena.comp_type_with(&[returns_unit, returns_kept])),
+            "a lazy product",
+        ),
+        (
+            TypeNode::Computation(
+                arena.comp_type_codata(ConstantIndex::from(0_usize), Vec::from([quoted])),
+            ),
+            "a codata type's quoted argument",
+        ),
+        (
+            TypeNode::Computation(arena.comp_type_codata(
+                ConstantIndex::from(0_usize),
+                Vec::from([quoted_computation]),
+            )),
+            "a codata type's quoted computation type",
+        ),
+    ]);
+    for (root, former) in rows {
+        assert_eq!(
+            binders(&arena, root),
+            Ok(BTreeSet::from([binder])),
+            "{former}"
+        );
+    }
+}

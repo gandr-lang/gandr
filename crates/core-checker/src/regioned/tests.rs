@@ -127,3 +127,102 @@ fn a_definition_abstracting_no_region_reads_as_declared()
         "a type keeping its value at a scope names no binder"
     );
 }
+
+/// A binder kept under a thunk's answer, a list, a product, a sum, an arrow
+/// or a dependent arrow, or held by a capability, is placed at the region the
+/// argument shows at the same position; an argument whose shape parts ways
+/// with the parameter's, a declaration that is no function, and a spine
+/// longer than the arrows each show nothing, so the binder stands at the
+/// call's own region.
+#[test]
+fn a_binder_is_shown_through_every_former_the_two_types_share()
+{
+    use gandr_core_term::Renaming;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+
+    type Wrap = fn(&mut CoreArena, ValueTypeId) -> ValueTypeId;
+
+    let scoped = |depth: u32| Region::Scoped(RegionDepth::from(depth));
+    let binder = RegionBinder::from(0_u32);
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let finishes = arena.comp_type_returner(unit);
+    let at_r = arena.value_type_kept(integer, Region::Bound(binder));
+    let at_scope = arena.value_type_kept(integer, scoped(1));
+    let wrappers: [(&str, Wrap); 6] = [
+        ("a thunk's answer", |arena, inner| {
+            let returns = arena.comp_type_returner(inner);
+            arena.value_type_thunk(returns)
+        }),
+        ("a list", |arena, inner| arena.value_type_list(inner)),
+        ("a product", |arena, inner| {
+            let unit = arena.value_type_unit();
+            arena.value_type_product(&[unit, inner])
+        }),
+        ("a sum", |arena, inner| {
+            let unit = arena.value_type_unit();
+            arena.value_type_sum(&[inner, unit])
+        }),
+        ("an arrow's domain", |arena, inner| {
+            let unit = arena.value_type_unit();
+            let returns = arena.comp_type_returner(unit);
+            let arrow = arena.comp_type_arrow(inner, returns);
+            arena.value_type_thunk(arrow)
+        }),
+        ("a dependent arrow's codomain", |arena, inner| {
+            let unit = arena.value_type_unit();
+            let returns = arena.comp_type_returner(inner);
+            let pi = arena.comp_type_pi(unit, returns);
+            arena.value_type_thunk(pi)
+        }),
+    ];
+    let mut rows: Vec<(&str, ValueTypeId, ValueTypeId, Region)> = Vec::new();
+    for (former, wrap) in wrappers {
+        let parameter = wrap(&mut arena, at_r);
+        let argument = wrap(&mut arena, at_scope);
+        rows.push((former, parameter, argument, scoped(1)));
+    }
+    let held = |arena: &mut CoreArena, region| {
+        arena.value_type_capability(EffectRow::default(), CapabilityGrade::Durable, region)
+    };
+    let held_at_r = held(&mut arena, Region::Bound(binder));
+    let held_at_scope = held(&mut arena, scoped(1));
+    rows.push(("a capability", held_at_r, held_at_scope, scoped(1)));
+    let listed = arena.value_type_list(at_r);
+    let paired = arena.value_type_product(&[at_scope, at_scope]);
+    rows.push(("a list read against a product", listed, paired, scoped(3)));
+    let one = arena.value_type_product(&[at_r]);
+    rows.push(("products of two lengths", one, paired, scoped(3)));
+    for (former, parameter, argument, region) in rows {
+        let arrow = arena.comp_type_arrow(parameter, finishes);
+        let declared = arena.value_type_thunk(arrow);
+        let spine = [arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))];
+        let mut expected = Renaming::new();
+        expected.region(binder, region);
+        assert_eq!(
+            placement(&arena, declared, (&spine, scoped(3)), |_index| Ok(argument)),
+            Ok(Maybe::Present(expected)),
+            "{former}"
+        );
+    }
+    let spine = [0_u32, 1]
+        .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+    let mut innermost = Renaming::new();
+    innermost.region(binder, scoped(3));
+    let returns_at_r = arena.comp_type_returner(at_r);
+    let suspended = arena.value_type_thunk(returns_at_r);
+    assert_eq!(
+        placement(&arena, at_r, (&spine, scoped(3)), |_index| Ok(at_scope)),
+        Ok(Maybe::Present(innermost.clone())),
+        "a declaration that is no function reads no argument"
+    );
+    assert_eq!(
+        placement(&arena, suspended, (&spine, scoped(3)), |_index| Ok(
+            at_scope
+        )),
+        Ok(Maybe::Present(innermost)),
+        "arguments past the last arrow read nothing"
+    );
+}

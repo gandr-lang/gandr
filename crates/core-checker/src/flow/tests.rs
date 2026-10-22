@@ -735,6 +735,95 @@ fn motives_ride_only_covariantly()
     );
 }
 
+/// The code rides beneath every covariant former — a sum, a list, a lift, a
+/// staged or kept type, a lazy pair, a static Pi's or a dependent arrow's
+/// codomain, a decode of a computation type — and is refused under a
+/// domain, a dependent pair, a family's argument, a stack, a codata type
+/// and any compound value.
+#[test]
+fn a_code_rides_beneath_exactly_the_covariant_formers()
+{
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_unit();
+    let at = arena.computation_return(unit);
+    let unit_type = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit_type);
+    let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let decoded = arena.value_type_element(code, Level::zero());
+    let returns_decoded = arena.comp_type_returner(decoded);
+    let lazy = arena.comp_type_with(&[returns_unit, returns_decoded]);
+    let pi_codomain = arena.comp_type_pi(unit_type, returns_decoded);
+    let pi_domain = arena.comp_type_pi(decoded, returns_unit);
+    let decoded_computation = arena.comp_type_element(code, Level::zero());
+    let wrapped = arena.value_tuple(&[code]);
+    let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), Vec::from([code]));
+    let riding = [
+        (arena.value_type_sum(&[unit_type, decoded]), "a summand"),
+        (arena.value_type_list(decoded), "a list"),
+        (arena.value_type_lift(decoded, Level::zero()), "a lift"),
+        (
+            arena.value_type_staged(decoded, Stage::At(StageId::from(0_usize))),
+            "a staged type",
+        ),
+        (
+            arena.value_type_kept(decoded, Region::Scoped(RegionDepth::from(1_u32))),
+            "a kept type",
+        ),
+        (
+            arena.value_type_static_pi(unit_type, decoded),
+            "a static Pi's codomain",
+        ),
+        (arena.value_type_thunk(lazy), "a lazy pair"),
+        (
+            arena.value_type_thunk(pi_codomain),
+            "a dependent arrow's codomain",
+        ),
+        (
+            arena.value_type_thunk(decoded_computation),
+            "a decoded computation type",
+        ),
+    ];
+    let refused = [
+        (
+            arena.value_type_static_pi(decoded, unit_type),
+            "a static Pi's domain",
+        ),
+        (
+            arena.value_type_thunk(pi_domain),
+            "a dependent arrow's domain",
+        ),
+        (
+            arena.value_type_sigma(decoded, unit_type),
+            "a dependent pair",
+        ),
+        (
+            arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([code])),
+            "a family's argument",
+        ),
+        (
+            arena.value_type_stack(returns_decoded, returns_unit),
+            "a stack",
+        ),
+        (arena.value_type_thunk(codata), "a codata type"),
+        (arena.value_type_run(wrapped), "a compound value"),
+    ];
+    for (motive, former) in riding {
+        assert_eq!(covariant(&arena, at, motive), Ok(()), "{former}");
+    }
+    for (motive, former) in refused {
+        assert_eq!(
+            covariant(&arena, at, motive),
+            Err(CheckRefusal::NonCovariantMotive { at }),
+            "{former}"
+        );
+    }
+}
+
 /// A quoted session type is a session code only at its protocol's root; the
 /// same session past its root is read as some other code.
 #[test]

@@ -109,6 +109,7 @@ fn placed(
 ///   kept at a scope shows that scope, a thunk's answer shows through it, and
 ///   an argument kept nowhere shows nothing.
 /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
+/// - witness: `regioned::tests::a_binder_is_shown_through_every_former_the_two_types_share`
 #[spec(captures: before = shown.len(), ensures: |ret| ret.is_err() || shown.len() >= before)]
 fn shown_by(
     arena: &CoreArena,
@@ -265,6 +266,7 @@ fn shown_by(
 ///   naming no binder reads as it stands.
 /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
 /// - witness: `regioned::tests::a_definition_abstracting_no_region_reads_as_declared`
+/// - witness: `regioned::tests::a_binder_is_shown_through_every_former_the_two_types_share`
 pub fn placement<Found>(
     arena: &CoreArena,
     declared: ValueTypeId,

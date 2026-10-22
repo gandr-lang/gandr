@@ -1135,6 +1135,88 @@ fn invariant_capabilities_agree_on_authority_grade_and_region()
     }
 }
 
+/// Kept types agree on their region exactly, and a kept type is a subtype
+/// of another only where its region outlives the other's, and of the plain
+/// type it keeps; a value held at a world and a world's capability agree
+/// only at one world.
+#[test]
+fn kept_and_located_types_agree_on_their_region_and_world()
+{
+    use gandr_core_term::ValueTypeId;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldType;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let scoped = |depth: u32| Region::Scoped(RegionDepth::from(depth));
+    let shallow = arena.value_type_kept(integer, scoped(1));
+    let shallow_twin = arena.value_type_kept(integer, scoped(1));
+    let deep = arena.value_type_kept(integer, scoped(2));
+    let elsewhere = World::Declared(ConstantIndex::from(0_usize));
+    let mut located = |inner, world| arena.value_type_world(WorldType::At { inner, world });
+    let at_host = located(integer, World::Host);
+    let at_host_twin = located(integer, World::Host);
+    let at_elsewhere = located(integer, elsewhere);
+    let held_host = arena.value_type_world(WorldType::Capability(World::Host));
+    let held_host_twin = arena.value_type_world(WorldType::Capability(World::Host));
+    let held_elsewhere = arena.value_type_world(WorldType::Capability(elsewhere));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let invariant =
+        |left: ValueTypeId, right: ValueTypeId| Pairing::Values(left.into(), right.into());
+    let sub = |left: ValueTypeId, right: ValueTypeId| Pairing::SubValues(left.into(), right.into());
+    for (pairing, agreement, what) in [
+        (
+            invariant(shallow, shallow_twin),
+            Agreement::Convertible,
+            "one region agrees",
+        ),
+        (
+            invariant(shallow, deep),
+            Agreement::Apart,
+            "two regions are apart",
+        ),
+        (
+            sub(shallow, deep),
+            Agreement::Convertible,
+            "a region outliving another is its subtype",
+        ),
+        (
+            sub(deep, shallow),
+            Agreement::Apart,
+            "a region outlived by another is not",
+        ),
+        (
+            sub(integer, shallow),
+            Agreement::Convertible,
+            "a plain value may be kept anywhere",
+        ),
+        (
+            invariant(at_host, at_host_twin),
+            Agreement::Convertible,
+            "one world agrees",
+        ),
+        (
+            invariant(at_host, at_elsewhere),
+            Agreement::Apart,
+            "two worlds are apart",
+        ),
+        (
+            invariant(held_host, held_host_twin),
+            Agreement::Convertible,
+            "one world's capability agrees",
+        ),
+        (
+            invariant(held_host, held_elsewhere),
+            Agreement::Apart,
+            "two worlds' capabilities are apart",
+        ),
+    ] {
+        assert_eq!(convert(&mut context, pairing), Ok(agreement), "{what}");
+    }
+}
+
 /// A path type converts with a data type only when the carrier's words name
 /// that data type at the endpoints: over a carrier with no words, the path
 /// and an unrelated parameterless data type are apart in either order.

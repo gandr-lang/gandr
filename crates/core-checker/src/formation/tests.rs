@@ -766,3 +766,106 @@ fn a_path_code_is_closed_first_order_and_inhabited()
         );
     }
 }
+
+/// A stack, a staged type, a kept type, a capability's operations and a
+/// value held at a world each stand at the level of what they carry; a world
+/// capability, a buffer and a run stand at zero; a family or codata
+/// declaration not in scope is refused by name.
+#[test]
+fn each_carrying_former_stands_at_the_level_of_what_it_carries()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldType;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageId;
+
+    use super::level_of;
+
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit = arena.value_type_unit();
+    let returns_small = arena.comp_type_returner(small);
+    let returns_unit = arena.comp_type_returner(unit);
+    let operations = EffectSig::new(EffectName::from("Probe"), [EffectOp {
+        name: OperationName::from("poke"),
+        payload: small,
+        reply: unit,
+    }])
+    .expect("one operation");
+    let one = Level::zero().succ().expect("one is below the top");
+    let session = arena.value_unit();
+    let rows = [
+        (
+            arena.value_type_stack(returns_small, returns_unit),
+            one.clone(),
+            "a stack",
+        ),
+        (
+            arena.value_type_staged(small, Stage::At(StageId::from(0_usize))),
+            one.clone(),
+            "a staged type",
+        ),
+        (
+            arena.value_type_kept(small, Region::Scoped(RegionDepth::from(1_u32))),
+            one.clone(),
+            "a kept type",
+        ),
+        (
+            arena.value_type_capability(
+                EffectRow::singleton(operations),
+                CapabilityGrade::Durable,
+                Region::Scoped(RegionDepth::from(1_u32)),
+            ),
+            one.clone(),
+            "a capability",
+        ),
+        (
+            arena.value_type_world(WorldType::At {
+                inner: small,
+                world: World::Host,
+            }),
+            one,
+            "a value held at a world",
+        ),
+        (
+            arena.value_type_world(WorldType::Capability(World::Host)),
+            Level::zero(),
+            "a world capability",
+        ),
+        (arena.value_type_buffer(), Level::zero(), "a buffer"),
+        (arena.value_type_run(session), Level::zero(), "a run"),
+    ];
+    let family = arena.value_type_data(ConstantIndex::from(4_usize), Vec::new());
+    let codata = arena.comp_type_codata(ConstantIndex::from(5_usize), Vec::new());
+    let context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (ty, level, former) in rows {
+        assert_eq!(
+            level_of(&context, TypeNode::Value(ty)),
+            Ok(level),
+            "{former}"
+        );
+    }
+    assert_eq!(
+        level_of(&context, TypeNode::Value(family)),
+        Err(CheckRefusal::NotADataType(ConstantIndex::from(4_usize))),
+        "a family not in scope is no data type"
+    );
+    assert!(
+        matches!(
+            level_of(&context, TypeNode::Computation(codata)),
+            Err(CheckRefusal::Codata {
+                fault: crate::codata::CodataFault::Undeclared,
+                ..
+            })
+        ),
+        "a codata type not in scope is undeclared"
+    );
+}

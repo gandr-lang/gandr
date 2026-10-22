@@ -90,6 +90,179 @@ fn a_refusal_compares_the_types_it_names()
     );
 }
 
+/// Every refusal that names types reports them on its own sides: a sort,
+/// level, family-argument or `over` mismatch and an amplified capability
+/// expect the checked type and found the synthesised one; a forged
+/// capability expects the type it stood at; a dependent bind or stack and a
+/// compound endpoint found the computation type their body synthesised; and
+/// each refusal naming one classifier, capability or code found that.
+#[test]
+fn each_refusal_naming_types_reports_them_on_its_own_sides()
+{
+    use gandr_kernel_term::ConstantIndex;
+
+    use super::ArgumentPosition;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let list = arena.value_type_list(unit);
+    let returns_unit = arena.comp_type_returner(unit);
+    let returns_list = arena.comp_type_returner(list);
+    let term = arena.value_unit();
+    let body = arena.computation_return(term);
+    let unnamed = Maybe::Absent(compared::Absent::Unnamed);
+    let both = Compared {
+        expected: Maybe::Present(TypeNode::Value(unit)),
+        found: Maybe::Present(TypeNode::Value(list)),
+    };
+    let found_list = Compared {
+        expected: unnamed,
+        found: Maybe::Present(TypeNode::Value(list)),
+    };
+    let found_body = Compared {
+        expected: unnamed,
+        found: Maybe::Present(TypeNode::Computation(returns_list)),
+    };
+    let rows = [
+        (
+            CheckRefusal::SortMismatch {
+                at: term,
+                synthesised: list,
+                expected: unit,
+            },
+            both,
+        ),
+        (
+            CheckRefusal::LevelMismatch {
+                at: term,
+                synthesised: list,
+                expected: unit,
+            },
+            both,
+        ),
+        (
+            CheckRefusal::FamilyArgumentClassifier {
+                at: term,
+                position: ArgumentPosition::from(1_u32),
+                synthesised: list,
+                expected: unit,
+            },
+            both,
+        ),
+        (
+            CheckRefusal::NotOver {
+                at: term,
+                synthesised: list,
+                expected: unit,
+            },
+            both,
+        ),
+        (
+            CheckRefusal::CapabilityAmplified(Mismatch::Value {
+                at: term,
+                synthesised: list,
+                expected: unit,
+            }),
+            both,
+        ),
+        (
+            CheckRefusal::CapabilityAmplified(Mismatch::Computation {
+                at: body,
+                synthesised: returns_list,
+                expected: returns_unit,
+            }),
+            Compared {
+                expected: Maybe::Present(TypeNode::Computation(returns_unit)),
+                found: Maybe::Present(TypeNode::Computation(returns_list)),
+            },
+        ),
+        (
+            CheckRefusal::CapabilityForged {
+                at: term,
+                expected: unit,
+            },
+            Compared {
+                expected: Maybe::Present(TypeNode::Value(unit)),
+                found: unnamed,
+            },
+        ),
+        (
+            CheckRefusal::CapabilityEscaped {
+                at: TermNode::Value(term),
+                found: TypeNode::Value(list),
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::DependentBind {
+                at: body,
+                synthesised: returns_list,
+            },
+            found_body,
+        ),
+        (
+            CheckRefusal::DependentStack {
+                at: term,
+                synthesised: returns_list,
+            },
+            found_body,
+        ),
+        (
+            CheckRefusal::CompoundEndpoint {
+                at: term,
+                synthesised: returns_list,
+            },
+            found_body,
+        ),
+        (
+            CheckRefusal::StaticClassifierExpected {
+                at: unit,
+                found: list,
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::CapabilityOutsideAuthority {
+                at: body,
+                capability: list,
+            },
+            found_list,
+        ),
+        (CheckRefusal::CapabilityConsumable(list), found_list),
+        (
+            CheckRefusal::CapabilityUngranted {
+                constant: ConstantIndex::from(0_usize),
+                declared: list,
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::FunextUnsupported {
+                at: term,
+                classifier: list,
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::EquivUnsupported {
+                at: term,
+                classifier: list,
+            },
+            found_list,
+        ),
+        (
+            CheckRefusal::UncertifiedStratum {
+                at: term,
+                code: list,
+            },
+            found_list,
+        ),
+    ];
+    for (refusal, compared) in rows {
+        assert_eq!(refusal.compared(), compared, "{refusal:?}");
+    }
+}
+
 #[test]
 fn each_unadmitted_former_carries_its_pinned_class()
 {
