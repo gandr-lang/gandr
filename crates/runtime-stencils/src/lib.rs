@@ -762,6 +762,13 @@ impl Runtime
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closure entered and returned from leaves the
+    ///   region's top where it found it; a top read as null or elsewhere moves
+    ///   it.
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     #[inline]
     #[must_use]
     pub const fn window_top(&self) -> *mut Word

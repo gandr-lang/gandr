@@ -296,6 +296,17 @@ impl Binding
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   and a body that returns or ends in a tail call gives its window back.
+    ///   A covariable read from the wrong slot or delivered the wrong way
+    ///   answers wrongly; a window kept grows the region the counts read.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     const fn space(self) -> Self
     {
         match self {
@@ -467,6 +478,17 @@ impl Scopes
     ///
     /// # Errors
     /// [`Form::Unbound`] when the chain holds fewer covariables.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   and a body that returns or ends in a tail call gives its window back.
+    ///   A covariable read from the wrong slot or delivered the wrong way
+    ///   answers wrongly; a window kept grows the region the counts read.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     fn covariable(
         &self,
         scope: Scope,
@@ -487,6 +509,17 @@ impl Scopes
     ///
     /// # Errors
     /// [`Form::Unbound`] when the chain holds fewer covariables.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   and a body that returns or ends in a tail call gives its window back.
+    ///   A covariable read from the wrong slot or delivered the wrong way
+    ///   answers wrongly; a window kept grows the region the counts read.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     fn delivery(
         &self,
         scope: Scope,
@@ -509,6 +542,21 @@ impl Scopes
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   among them a split and a nominal match that rebuild their dying
+    ///   scrutinee, a split that builds a triple before the pair it rebuilds, a
+    ///   split whose scrutinee a thunk shares, and a nominal branch answering a
+    ///   function past its constructor's fields; the counts rebuild a unique
+    ///   scrutinee in its own block and a shared one in a fresh block. A token
+    ///   built into with the wrong fields, never built into, or overwriting a
+    ///   shared cell changes an answer or a count.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+    /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+    /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
     fn outward(
         &self,
         scope: Scope,
@@ -554,6 +602,17 @@ impl Scopes
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   and a body that returns or ends in a tail call gives its window back.
+    ///   A covariable read from the wrong slot or delivered the wrong way
+    ///   answers wrongly; a window kept grows the region the counts read.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     fn enclose(
         &mut self,
         scope: Scope,
@@ -3169,6 +3228,17 @@ impl Lowering<'_>
     /// # Errors
     /// [`Form::Dangling`] for a consumer the arena does not hold;
     /// [`Form::Unbound`] as [`Scopes::delivery`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   and a body that returns or ends in a tail call gives its window back.
+    ///   A covariable read from the wrong slot or delivered the wrong way
+    ///   answers wrongly; a window kept grows the region the counts read.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_body_gives_its_window_back_at_its_tail_call_and_its_return`
+    /// - witness: `tests::count::a_returned_body_gives_its_window_back`
+    /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
     fn returns_through(
         &self,
         then: ConsumerId,
@@ -3223,6 +3293,21 @@ impl Lowering<'_>
     ///
     /// # Errors
     /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   among them a split and a nominal match that rebuild their dying
+    ///   scrutinee, a split that builds a triple before the pair it rebuilds, a
+    ///   split whose scrutinee a thunk shares, and a nominal branch answering a
+    ///   function past its constructor's fields; the counts rebuild a unique
+    ///   scrutinee in its own block and a shared one in a fresh block. A token
+    ///   built into with the wrong fields, never built into, or overwriting a
+    ///   shared cell changes an answer or a count.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+    /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+    /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
     fn matched(
         &mut self,
         id: ConsumerId,
@@ -3333,6 +3418,21 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   among them a split and a nominal match that rebuild their dying
+    ///   scrutinee, a split that builds a triple before the pair it rebuilds, a
+    ///   split whose scrutinee a thunk shares, and a nominal branch answering a
+    ///   function past its constructor's fields; the counts rebuild a unique
+    ///   scrutinee in its own block and a shared one in a fresh block. A token
+    ///   built into with the wrong fields, never built into, or overwriting a
+    ///   shared cell changes an answer or a count.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+    /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+    /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
     fn reuse(
         &mut self,
         id: ConsumerId,
@@ -3356,6 +3456,21 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   among them a split and a nominal match that rebuild their dying
+    ///   scrutinee, a split that builds a triple before the pair it rebuilds, a
+    ///   split whose scrutinee a thunk shares, and a nominal branch answering a
+    ///   function past its constructor's fields; the counts rebuild a unique
+    ///   scrutinee in its own block and a shared one in a fresh block. A token
+    ///   built into with the wrong fields, never built into, or overwriting a
+    ///   shared cell changes an answer or a count.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+    /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+    /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
     fn give_up(
         &mut self,
         held: Slot,
@@ -3385,6 +3500,21 @@ impl Lowering<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named programs answer alike on both executors,
+    ///   among them a split and a nominal match that rebuild their dying
+    ///   scrutinee, a split that builds a triple before the pair it rebuilds, a
+    ///   split whose scrutinee a thunk shares, and a nominal branch answering a
+    ///   function past its constructor's fields; the counts rebuild a unique
+    ///   scrutinee in its own block and a shared one in a fresh block. A token
+    ///   built into with the wrong fields, never built into, or overwriting a
+    ///   shared cell changes an answer or a count.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+    /// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+    /// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
     fn token(
         &mut self,
         built: ProducerId,
@@ -3851,6 +3981,21 @@ struct Level
 ///
 /// # Errors
 /// [`Form::Dangling`] for a node the arena does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the named programs answer alike on both executors, among
+///   them a split and a nominal match that rebuild their dying scrutinee, a
+///   split that builds a triple before the pair it rebuilds, a split whose
+///   scrutinee a thunk shares, and a nominal branch answering a function past
+///   its constructor's fields; the counts rebuild a unique scrutinee in its own
+///   block and a shared one in a fresh block. A token built into with the wrong
+///   fields, never built into, or overwriting a shared cell changes an answer
+///   or a count.
+/// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+/// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+/// - witness: `lower::tests::a_nominal_branch_rebuilds_in_place_into_its_scrutinee`
+/// - witness: `tests::count::a_unique_scrutinee_is_rebuilt_in_its_own_block`
+/// - witness: `tests::count::a_shared_scrutinee_is_rebuilt_in_a_fresh_block`
 fn inlined(
     arena: &CommandArena,
     branch: ProducerId,
