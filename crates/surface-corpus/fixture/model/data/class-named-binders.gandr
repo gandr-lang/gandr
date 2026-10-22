@@ -1,0 +1,44 @@
+// A name spelled as a lexical class, `number` or `constructor`, is a name
+// wherever a name is read: a field, a parameter, a pattern's binder and the
+// variable that reads it back. Before #1863 a pattern read such a binder as a
+// token of the class, a malformed literal.
+
+/// An integer wrapped under a field named `number`.
+@[ checks ]
+data Wrap : Type {
+  Wrapped : (number : Integer) --> Wrap;
+}
+
+/// The wrapped integer, bound by a binder named `number`.
+@[ runs("7") ]
+def unwrapped() -> -F Integer {
+  case (Wrapped(7) : Wrap) {
+    Wrapped(number) => number
+  }
+}
+
+/// The wrapped integer, bound by a binder named `constructor`.
+@[ runs("8") ]
+def constructed() -> -F Integer {
+  case (Wrapped(8) : Wrap) {
+    Wrapped(constructor) => constructor
+  }
+}
+
+/// The wrapped integer, bound by a binder named `character`.
+@[ runs("9") ]
+def charactered() -> -F Integer {
+  case (Wrapped(9) : Wrap) {
+    Wrapped(character) => character
+  }
+}
+
+/// A literal pattern beside a catch-all binder named `number`: the literal
+/// still reads as a number, the binder as a name.
+@[ runs("1") ]
+def literal() -> -F Integer {
+  case 3 {
+    3 => 1,
+    number => number
+  }
+}
