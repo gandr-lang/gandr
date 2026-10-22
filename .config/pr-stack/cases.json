@@ -514,5 +514,106 @@
       }
     ],
     "output": "[]"
+  },
+  {
+    "name": "a required context still running holds the landing, and one never reported is waited for (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"check Clippy wall\",\"test the workspace (linux)\"]}"
+  },
+  {
+    "name": "a check the rules do not require never holds the landing: the mutants report still running (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T07:59:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-22T07:58:56Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "report the mutants of the change (linux)",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "a required context red at its newest run fails the wait, a re-run green over an old failure passes it (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T08:05:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-22T07:59:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"test the workspace (linux)\"],\"pending\":[]}"
+  },
+  {
+    "name": "a required commit status reads by its state: pending waits, success passes (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title", "detect changed-file categories"]
+    },
+    "input": [
+      {
+        "__typename": "StatusContext",
+        "context": "lint the pull request title",
+        "state": "PENDING",
+        "startedAt": "2026-10-22T07:57:40Z"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "detect changed-file categories",
+        "state": "SUCCESS",
+        "startedAt": "2026-10-22T07:58:39Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"lint the pull request title\"]}"
   }
 ]
