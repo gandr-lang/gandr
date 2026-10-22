@@ -15,6 +15,8 @@ mod agreement;
 #[path = "../../runtime-stencils/tests/count.rs"]
 mod count;
 #[cfg(test)]
+mod forms;
+#[cfg(test)]
 mod seam;
 #[cfg(test)]
 #[path = "../../runtime-stencils/tests/support.rs"]
