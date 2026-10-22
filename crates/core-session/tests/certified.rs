@@ -459,6 +459,94 @@ fn recorded_runs_transport_only_forward()
 }
 
 #[test]
+fn a_prefix_advances_open_and_refuses_by_move()
+{
+    let old = seat();
+    let wide = widened();
+    let evidence = evidence(&old, &wide, Relation::Subtype);
+    let advance_prefix = gandr_core_session::certified::advance_prefix;
+    // A seat that took its task and reported, its offer still owed: open.
+    let open = [
+        Move::Receive(payload(DISPATCH)),
+        Move::Select("report".into()),
+        Move::Send(payload(REPORT)),
+    ];
+    assert!(matches!(
+        replay(&old, &open),
+        Err(ReplayError::IncompleteRun { .. })
+    ));
+    assert!(
+        matches!(
+            gandr_core_session::certified::advance((&old, &wide), &evidence, &open),
+            Err(TransportError::Replay(ReplayError::IncompleteRun { .. }))
+        ),
+        "a complete-run transport refuses the open play"
+    );
+    let moved = advance_prefix((&old, &wide), &evidence, &open).expect("open play moves forward");
+    assert_eq!(moved, open);
+    assert!(
+        matches!(
+            replay(&wide, &moved),
+            Err(ReplayError::IncompleteRun {
+                at: MoveIndex(3),
+                ..
+            })
+        ),
+        "the image is open where the play is"
+    );
+    assert_eq!(
+        advance_prefix((&old, &wide), &evidence, &[]).expect("the empty play"),
+        Vec::<Move>::new()
+    );
+    // A complete run moves as the complete-run transport moves it.
+    let complete = [
+        Move::Receive(payload(DISPATCH)),
+        Move::Select("handoff".into()),
+        Move::Send(payload(HANDOFF)),
+        Move::End,
+    ];
+    let whole = advance_prefix((&old, &wide), &evidence, &complete).expect("complete play");
+    assert_eq!(replay(&wide, &whole), Ok(Completion));
+    assert_eq!(
+        Some(whole),
+        gandr_core_session::certified::advance((&old, &wide), &evidence, &complete).ok()
+    );
+    // A move the source protocol does not offer is the source monitor's refusal.
+    assert!(matches!(
+        advance_prefix((&old, &wide), &evidence, &[Move::Select("report".into())]),
+        Err(TransportError::Replay(ReplayError::Refused { .. }))
+    ));
+    // An open play through an offer the target drops refuses at that move.
+    let source = session(vec![
+        Node::Offer([("keep".into(), NodeId(1)), ("removed".into(), NodeId(3))].into()),
+        Node::Send(REPORT, NodeId(2)),
+        Node::End,
+        Node::Send(REPORT, NodeId(4)),
+        Node::End,
+    ]);
+    let target = session(vec![
+        Node::Offer([("keep".into(), NodeId(1))].into()),
+        Node::Send(REPORT, NodeId(2)),
+        Node::End,
+    ]);
+    let relation = self::evidence(&source, &target, Relation::Subtype);
+    assert_eq!(
+        advance_prefix((&source, &target), &relation, &[Move::Offer("keep".into())])
+            .expect("a common peer choice, still open"),
+        [Move::Offer("keep".into())]
+    );
+    assert!(matches!(
+        advance_prefix((&source, &target), &relation, &[Move::Offer(
+            "removed".into()
+        )]),
+        Err(TransportError::Move {
+            at: MoveIndex(0),
+            reason: Refusal::WrongLabel
+        })
+    ));
+}
+
+#[test]
 fn a_code_binds_only_the_graph_it_was_encoded_from()
 {
     let mut arena = TermArena::new();

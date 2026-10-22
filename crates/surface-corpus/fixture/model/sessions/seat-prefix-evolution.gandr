@@ -1,0 +1,23 @@
+// A seat's open play carried across its protocol's evolution: the moves a
+// seat has made so far ride forward along the simulation to the widened
+// protocol, as a complete run does (`./seat-evolution.gandr`), and stay open
+// there, the seat's next move still owed (Gay and Hole, _Subtyping for
+// Session Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z).
+
+// The seat's protocol, its messages and the widening.
+import "./seat-evolution.gandr" ;
+
+// The open play `reporting`: the seat took its task and reported, its next
+// move the offer to go on or retire.
+import "./seat-prefix.gandr" ;
+
+/// An open play ridden forward along the simulation (#1318).
+@[ checks ]
+def carried(play : Prefix(Seat.SeatEnd)) -> -F Prefix(Evolution.SeatEnd′) {
+  become ride(\X. Prefix(X), Evolution.sub, play)
+}
+
+/// The open play ridden forward: the record is unchanged, still open.
+@[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"))") ]
+def upgraded : () => Prefix(Evolution.SeatEnd′) ;
+def upgraded = thunk { become carried(reporting) } ;
