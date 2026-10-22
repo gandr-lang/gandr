@@ -106,6 +106,7 @@ pub use crate::alphabet::PositionOrder;
 pub use crate::alphabet::RootAgreement;
 pub use crate::alphabet::SeamRole;
 pub use crate::alphabet::anti_unification;
+pub use crate::alphabet::command_below;
 pub use crate::alphabet::command_subterm;
 pub use crate::alphabet::path_order;
 pub use crate::boundary::CellCount;

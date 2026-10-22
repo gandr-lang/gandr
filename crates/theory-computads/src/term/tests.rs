@@ -165,6 +165,72 @@ fn positions_preserve_prefix_boundaries_and_splice_siblings()
 }
 
 #[test]
+fn the_walk_below_a_position_agrees_with_the_listing()
+{
+    let x = FreeTerm::var("x");
+    let free = FreeTerm::results([
+        turn("Succ", turn("Succ", x.clone())),
+        FreeTerm::op("add", [
+            ctor("Zero", []),
+            FreeTerm::op("add", [x, ctor("Zero", [])]),
+        ]),
+    ]);
+    let term = Term::from(&free);
+    let listed = TermAlphabet::command_positions(&term);
+    let off = TermAlphabet::position_at_path(&[PositionStep::from(2_usize)]);
+    let mut below: Vec<(TermPos, Term)> = Vec::new();
+    let mut offered = Vec::new();
+    for above in listed.iter().chain([&off]) {
+        below.clear();
+        below.extend(
+            listed
+                .iter()
+                .filter(|at| TermAlphabet::position_order(above, at) == PositionOrder::Encloses)
+                .filter_map(|at| match TermAlphabet::subterm_cmd_at(&term, at) {
+                    Maybe::Present(subterm) => Some((at.clone(), subterm)),
+                    Maybe::Absent(_) => None,
+                }),
+        );
+        offered.clear();
+        assert_eq!(
+            Maybe::Absent(command_below::Absent::NoneAccepted),
+            TermAlphabet::first_command_below(&term, above, |subterm| {
+                offered.push(subterm.clone());
+                false
+            }),
+            "nothing is accepted below {above:?}"
+        );
+        assert!(
+            below
+                .iter()
+                .map(|&(_, ref subterm)| subterm)
+                .eq(offered.iter()),
+            "the subterms below {above:?}, in the listing's order"
+        );
+        for (place, &(ref at, ref subterm)) in below.iter().enumerate() {
+            let mut passes = 0_usize;
+            let found = TermAlphabet::first_command_below(&term, above, |candidate| {
+                passes += 1;
+                candidate == subterm
+            });
+            let accepted = below.get(passes.wrapping_sub(1));
+            assert!(
+                passes <= place + 1 && accepted.is_some_and(|&(_, ref first)| first == subterm),
+                "the walk stops at the first {subterm:?} below {above:?}, at or before {at:?}"
+            );
+            assert_eq!(
+                accepted.map(|&(ref first, _)| first),
+                match found {
+                    Maybe::Present(ref first) => Some(first),
+                    Maybe::Absent(_) => None,
+                },
+                "it answers where it stopped"
+            );
+        }
+    }
+}
+
+#[test]
 fn substitution_walks_are_transactional_and_bounded()
 {
     let x = Name::from("x");

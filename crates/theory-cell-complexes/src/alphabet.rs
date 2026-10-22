@@ -238,6 +238,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why no command below a position is accepted.
+    pub mod command_below {
+        /// The reason the search found none.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No command position the position strictly encloses holds a
+            /// subterm the predicate accepts.
+            NoneAccepted,
+        }
+    }
+}
+
 /// A refused command splice.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CommandSpliceRefusal
@@ -699,6 +712,55 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
         pos: &Self::Pos,
     ) -> Maybe<Self::Cmd, command_subterm::Absent>;
 
+    /// The first command position `above` strictly encloses whose subterm
+    /// `accepts`.
+    ///
+    /// # Specification
+    /// - ensures: the first position of [`CellAlphabet::command_positions`], in
+    ///   its order, that `above` encloses under
+    ///   [`CellAlphabet::position_order`] and whose
+    ///   [`CellAlphabet::subterm_cmd_at`] `accepts`; `above` itself is never
+    ///   offered.
+    /// - provides: [`command_below::Absent::NoneAccepted`] when `accepts` holds
+    ///   at no such position.
+    /// - panics: none.
+    /// - intension: by default every position listed and every subterm below
+    ///   `above` read owned; an alphabet whose subterms are ranges of one table
+    ///   walks the range below `above` alone and offers each subterm from one
+    ///   reused buffer.
+    /// - executable: none — `accepts` is a closure the clause would call a
+    ///   second time.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the sequent alphabet, whose only command is its
+    ///   root, a predicate accepting everything finds nothing below the root,
+    ///   below a child or below a position off the term; the term alphabet's
+    ///   walk is held to this default over every position of nested terms.
+    ///   Offering `above` itself, a position beside it or a later position
+    ///   first changes the answer.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
+    #[inline]
+    fn first_command_below<F>(
+        cmd: &Self::Cmd,
+        above: &Self::Pos,
+        mut accepts: F,
+    ) -> Maybe<Self::Pos, command_below::Absent>
+    where
+        F: FnMut(&Self::Cmd) -> bool,
+    {
+        for at in Self::command_positions(cmd) {
+            if Self::position_order(above, &at) != PositionOrder::Encloses {
+                continue;
+            }
+            if let Maybe::Present(subterm) = Self::subterm_cmd_at(cmd, &at)
+                && accepts(&subterm)
+            {
+                return Maybe::Present(at);
+            }
+        }
+        Maybe::Absent(command_below::Absent::NoneAccepted)
+    }
+
     /// `cmd` with `replacement` spliced in at `pos`.
     ///
     /// # Specification
@@ -1105,6 +1167,12 @@ mod tests
                 Err(CommandSpliceRefusal::OffTerm),
                 A::splice_cmd_at(term, &absent, ground.clone())
             );
+            for above in [&root, &prod, &absent] {
+                assert_eq!(
+                    Maybe::Absent(command_below::Absent::NoneAccepted),
+                    A::first_command_below(term, above, |_| true)
+                );
+            }
         }
         assert_eq!(
             A::hole_of(&MetaVar::producer("x")),
