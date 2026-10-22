@@ -31,6 +31,7 @@ use gandr_theory_virtual_doctrines::Protype;
 use gandr_theory_virtual_doctrines::RelationRef;
 use gandr_theory_virtual_doctrines::SignatureRef;
 use gandr_theory_virtual_doctrines::TermRef;
+use gandr_theory_virtual_doctrines::vdc::DerivationError;
 
 /// # Specification
 /// trivial.
@@ -538,6 +539,7 @@ fn description_registry_retains_generic_grades_and_first_identity()
         table.get(&id),
         Maybe::Absent(description_lookup::Absent::Unregistered)
     );
+    assert!(bool::from(table.is_empty()));
     assert_eq!(
         table.insert(original.clone()),
         SignatureRef::single(id.clone())
@@ -551,7 +553,141 @@ fn description_registry_retains_generic_grades_and_first_identity()
     table.insert(duplicate);
     assert_eq!(table.get(&id), Maybe::Present(&original));
     assert_eq!(
+        usize::from(table.len()),
+        2,
+        "the duplicate is appended, not merged"
+    );
+    assert!(!bool::from(table.is_empty()));
+    assert_eq!(
         table.get(&NominalId::new(8_u64.into(), "Graded")),
         Maybe::Absent(description_lookup::Absent::Unregistered)
     );
+}
+
+/// A body under two binders reaches past the inner one to the outer one, and
+/// a variable whose type is not the expected one is refused with both types.
+#[test]
+fn a_body_reads_each_binder_at_its_own_type()
+{
+    let cells = CellStore::new();
+    let checker = Checker::new(&[], &cells);
+    let ctx = Context::new();
+    let diagonal = path(&signature(NameRef::from("A")));
+    let ty = Protype::extend_r(
+        Protype::unit(),
+        Protype::extend_r(diagonal.clone(), Protype::unit()),
+    );
+    let body = |name| {
+        Proterm::lam(
+            variable(NameRef::from("x")),
+            Proterm::lam(variable(NameRef::from("y")), Proterm::var(variable(name))),
+        )
+    };
+    assert_eq!(
+        checker.check(&ctx, &[], &body(NameRef::from("x")), &ty),
+        Ok(())
+    );
+    assert_eq!(
+        checker.check(&ctx, &[], &body(NameRef::from("y")), &ty),
+        Err(CheckError::Mismatch {
+            expected: Box::new(Protype::unit()),
+            found: Box::new(diagonal),
+        })
+    );
+}
+
+/// A projection of a reflexivity proof is refused: a path is not a product.
+#[test]
+fn a_projection_of_a_path_is_refused()
+{
+    let cells = CellStore::new();
+    let checker = Checker::new(&[], &cells);
+    let sig = signature(NameRef::from("A"));
+    for projection in [Proterm::proj_l(refl(&sig)), Proterm::proj_r(refl(&sig))] {
+        assert_eq!(
+            checker.synth(&Context::new(), &[], &projection),
+            Err(CheckError::ExpectedProduct)
+        );
+    }
+}
+
+/// A composite's seam with a further composite reads that composite's own
+/// outer boundary: its target on the left, its source on the right.
+#[test]
+fn a_nested_composite_meets_its_seam_at_its_outer_boundary()
+{
+    let [a, b, c, d] = ["A", "B", "C", "D"].map(|name| signature(NameRef::from(name)));
+    let cells = CellStore::new();
+    let checker = Checker::new(&[], &cells);
+    let ctx = Context::new();
+    let step = |src, tgt| relation_type(relation(src, tgt, Vec::new()));
+    let inner = Protype::compose(step(&b, &c), c.clone(), step(&c, &d));
+    assert_eq!(
+        checker.check_protype(
+            &ctx,
+            &Protype::compose(inner.clone(), d.clone(), step(&d, &a))
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        checker.check_protype(
+            &ctx,
+            &Protype::compose(step(&a, &b), b.clone(), inner.clone())
+        ),
+        Ok(())
+    );
+    // Each seam below is the one a walk into the wrong side would meet.
+    assert_eq!(
+        checker.check_protype(
+            &ctx,
+            &Protype::compose(inner.clone(), c.clone(), step(&c, &a))
+        ),
+        Err(CheckError::ComposeSeamMismatch)
+    );
+    assert_eq!(
+        checker.check_protype(&ctx, &Protype::compose(step(&a, &c), c.clone(), inner)),
+        Err(CheckError::ComposeSeamMismatch)
+    );
+}
+
+/// Every refusal of the checker, and the graft refusal, renders apart from
+/// every other.
+#[test]
+fn every_refusal_renders_apart()
+{
+    let mut cells = CellStore::new();
+    let cell = cells.insert(ground_step(NameRef::from("A"), NameRef::from("B")));
+    let id = DerivationId::new(DerivationIndex::from(0_usize));
+    let refusals = [
+        CheckError::UnboundVar(variable(NameRef::from("p"))),
+        CheckError::UnboundDerivation(id),
+        CheckError::UndeclaredTermVar(Name::from("x")),
+        CheckError::UnknownRelationGenerator(cell),
+        CheckError::ReflOffDiagonal,
+        CheckError::NotEngineBacked,
+        CheckError::CertDoesNotReplay(id),
+        CheckError::ComposeSeamMismatch,
+        CheckError::Mismatch {
+            expected: Box::new(Protype::unit()),
+            found: Box::new(path(&signature(NameRef::from("A")))),
+        },
+        CheckError::ExpectedCompose,
+        CheckError::ExpectedExtension,
+        CheckError::ExpectedProduct,
+        CheckError::ExpectedPath,
+        CheckError::ExpectedUnit,
+        CheckError::NotASeam,
+        CheckError::CannotSynthesize,
+        CheckError::MalformedSyntax,
+    ]
+    .map(|refusal| refusal.to_string());
+    let mut rendered = refusals.to_vec();
+    rendered.push(DerivationError::MissingOuter.to_string());
+    for (index, text) in rendered.iter().enumerate() {
+        assert!(!text.is_empty());
+        assert!(
+            rendered[index + 1 ..].iter().all(|other| other != text),
+            "`{text}` renders like a later refusal"
+        );
+    }
 }

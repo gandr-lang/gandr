@@ -70,6 +70,7 @@ impl WCartesianAction
     ///   are refused by the law suite. The predicate observes status coherence
     ///   and nominal-boundary refusal, not the coordinate laws alone.
     /// - witness: `tests::laws::tests::w_cartesian_action_preserves_projections_diagonal_and_structure`
+    /// - witness: `tests::laws::tests::w_cartesian_action_refuses_a_boundary_that_is_not_a_product`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

@@ -188,6 +188,77 @@ mod tests
         );
     }
 
+    /// A context answers a name by its innermost binding: its variance and
+    /// its signature, and that it is declared. An undeclared name has neither
+    /// and is not declared.
+    #[test]
+    fn a_context_answers_a_name_by_its_innermost_binding()
+    {
+        let other = SignatureRef::single(NominalId::new(1_u64.into(), "Other"));
+        let ctx = DirectedContext::new()
+            .with_var(NameRef::from("m"), OpSig::covariant(nat_sig()))
+            .with_var(NameRef::from("m"), OpSig::contravariant(other.clone()))
+            .with_var(NameRef::from("k"), OpSig::covariant(nat_sig()));
+        assert_eq!(
+            ctx.variance_of(NameRef::from("m")),
+            Maybe::Present(Variance::Contravariant),
+            "the inner `m` is the one in scope"
+        );
+        assert_eq!(
+            ctx.signature_of(NameRef::from("m")),
+            Maybe::Present(&other),
+            "and it ranges over its own signature"
+        );
+        assert_eq!(
+            ctx.signature_of(NameRef::from("k")),
+            Maybe::Present(&nat_sig())
+        );
+        assert!(bool::from(ctx.declares(NameRef::from("k"))));
+        assert!(!bool::from(ctx.declares(NameRef::from("z"))));
+        assert!(matches!(
+            ctx.signature_of(NameRef::from("z")),
+            Maybe::Absent(_)
+        ));
+        assert!(matches!(
+            ctx.variance_of(NameRef::from("z")),
+            Maybe::Absent(_)
+        ));
+        assert!(bool::from(OpSig::covariant(nat_sig()).is_covariant()));
+        assert!(!bool::from(OpSig::contravariant(nat_sig()).is_covariant()));
+    }
+
+    /// A variance refusal names the variable and both variances, or that it
+    /// occurs at both polarities.
+    #[test]
+    fn a_variance_refusal_names_its_variable()
+    {
+        assert_eq!(
+            VarianceError::Mismatch {
+                var: n(NameRef::from("m")),
+                declared: Variance::Contravariant,
+                derived: Variance::Covariant,
+            }
+            .to_string(),
+            "variable m is declared contravariant but derived covariant"
+        );
+        assert_eq!(
+            VarianceError::Mismatch {
+                var: n(NameRef::from("m")),
+                declared: Variance::Covariant,
+                derived: Variance::Contravariant,
+            }
+            .to_string(),
+            "variable m is declared covariant but derived contravariant"
+        );
+        assert_eq!(
+            VarianceError::MixedHole {
+                var: n(NameRef::from("r"))
+            }
+            .to_string(),
+            "variable r occurs at both polarities"
+        );
+    }
+
     proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
     /// `op` is an involution on the reflected signature alone.
@@ -250,6 +321,26 @@ mod tests
             check_directed_j(&scrut, &symmetry),
             "the symmetry motive is refused (directed J is polarity-restricted)"
         );
+        assert_eq!(
+            JError::MotiveNotCovariant.to_string(),
+            "directed motive places its moving endpoint contravariantly"
+        );
+    }
+
+    /// The base case: transport along the reflexive hom at the fixed endpoint
+    /// is that reflexive hom again, whichever covariant motive carries it.
+    #[test]
+    fn directed_j_on_the_reflexive_hom_is_the_reflexive_hom()
+    {
+        let c = vt(NameRef::from("c"));
+        let diagonal = DirectedHom::refl(nat_sig(), c.clone());
+        assert_eq!(diagonal, DirectedHom::new(nat_sig(), c.clone(), c.clone()));
+        for motive in [MotiveShape::CovariantTarget, MotiveShape::Constant] {
+            assert_eq!(
+                check_directed_j(&diagonal, &DirectedJ::new(motive, c.clone())),
+                Ok(diagonal.clone())
+            );
+        }
     }
 
     #[test]
@@ -582,6 +673,11 @@ mod tests
             assert!(
                 matches!(obstruction, gandr_theory_decomposition_spaces::CompositionObstruction::Cycle { cycle } if cycle.len() >= 2),
                 "the decline carries the variable-flow cycle"
+            );
+            assert_eq!(
+                outcome.tracelet(),
+                Err(obstruction),
+                "a declined cut answers its obstruction, not a certificate"
             );
         }
         else {

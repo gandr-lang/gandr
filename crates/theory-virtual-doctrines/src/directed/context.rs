@@ -247,6 +247,7 @@ impl DirectedContext
     ///   executable; the variance laws exercise declared versus derived
     ///   polarity.
     /// - witness: `tests::directed::tests::a_producer_hole_sorted_contravariantly_is_rejected`
+    /// - witness: `tests::directed::tests::a_context_answers_a_name_by_its_innermost_binding`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -278,9 +279,9 @@ impl DirectedContext
     #[inline]
     /// # Adequacy
     /// - hypothesis: L1 — exact innermost-signature projection and absence are
-    ///   executable. The opposite law observes signature preservation
-    ///   independently of the polarity.
-    /// - witness: `tests::directed::tests::op_is_an_involution_on_reflected_signatures`
+    ///   executable. A name bound twice at different signatures, beside an
+    ///   undeclared one, observes both.
+    /// - witness: `tests::directed::tests::a_context_answers_a_name_by_its_innermost_binding`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -312,7 +313,7 @@ impl DirectedContext
     /// # Adequacy
     /// - hypothesis: L3 — declaration membership separates constrained engine
     ///   holes from undeclared ones.
-    /// - witness: `tests::directed::tests::an_undeclared_hole_is_unconstrained`
+    /// - witness: `tests::directed::tests::a_context_answers_a_name_by_its_innermost_binding`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

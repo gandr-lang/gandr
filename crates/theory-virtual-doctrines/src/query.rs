@@ -268,7 +268,7 @@ impl<'store> Query<'store>
     /// - hypothesis: L1 — the predicate observes both generator filters.
     ///   Confluence classification and exhaustiveness follow the engine
     ///   enumeration, not membership alone.
-    /// - witness: `tests::laws::tests::the_seam_family_is_the_overlap_indexed_multi_sum`
+    /// - witness: `tests::laws::tests::the_extension_candidates_are_the_critical_pairs_among_the_generators`
     #[spec(ensures: |out| out.iter().all(|candidate| rel.generators.contains(&candidate.left) && rel.generators.contains(&candidate.right)))]
     pub fn extension_candidates(
         &self,
