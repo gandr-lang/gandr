@@ -236,10 +236,11 @@
 //! substitution, outer binder first, so the substitution law is the one-binder
 //! law twice and is replayed, never assumed. The replay reduces:
 //!
-//! | path and identity over it        | reduct                                       |
-//! | -------------------------------- | -------------------------------------------- |
-//! | both `here(_)`                   | `return v`                                   |
-//! | the path `here(c)`               | `tr(z. C[c, z], q, v)`, the one-binder rows  |
+//! | path and identity over it          | reduct                                       |
+//! | ---------------------------------- | -------------------------------------------- |
+//! | any, with `C` reading neither entry | `return v`, the constant row                |
+//! | both `here(_)`                     | `return v`                                   |
+//! | the path `here(c)`                 | `tr(z. C[c, z], q, v)`, the one-binder rows  |
 //!
 //! Anything else stays neutral. `J` is this transport in the singleton,
 //! `tr₂(Π y. Π q : Path(A, a, y). F C, p, here(a), here(p), d)`: the identity
@@ -2684,10 +2685,11 @@ pub(crate) struct TelescopeStep
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term reduces or sticks without panicking.
-/// - ensures: the value when both identities are `here`; when only the path is
-///   `here(c)`, the one-binder transport along the over identity in the fibre
-///   family `z. C[c, z]`; otherwise `Stuck`, as for a motive that is no
-///   telescope.
+/// - ensures: the value when the motive's returned type reads neither entry,
+///   along any path, as the one-binder constant row; otherwise the value when
+///   both identities are `here`; when only the path is `here(c)`, the
+///   one-binder transport along the over identity in the fibre family `z. C[c,
+///   z]`; otherwise `Stuck`, as for a motive that is no telescope.
 /// - provides: the replay's telescope transport computation.
 /// - fails: `ArenaFault` on an unreadable motive layer, path or over identity.
 /// - panics: none.
@@ -2697,9 +2699,12 @@ pub(crate) struct TelescopeStep
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `here` along both identities returns the value; `here`
-///   along the path transports in the fibre; a neutral path sticks.
+///   along the path transports in the fibre; a neutral path sticks; a closed
+///   path that is no reflexivity returns the value in a motive constant in both
+///   entries and sticks in one reading the endpoint.
 /// - witness: `element_identity::tests::telescope_transport_along_here_reduces`
 /// - witness: `element_identity::tests::j_derived_in_the_singleton_checks_and_computes`
+/// - witness: `element_identity::tests::telescope_transport_in_a_constant_motive_returns_its_value_along_any_path`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
@@ -2724,6 +2729,13 @@ where
         Maybe::Present(Telescope { body, .. }) => body,
         Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
     };
+    if binder_use(arena, table, memo, Family::Type(body)) == BinderUse::Ignored {
+        let unit = arena.value_unit();
+        let outer = substitute_value_type(arena, table, memo, body, unit);
+        if binder_use(arena, table, memo, Family::Type(outer)) == BinderUse::Ignored {
+            return Ok(Reduction::Reduced(arena.computation_return(value)));
+        }
+    }
     let point = match arena.value(path) {
         Some(&Value::Here { point, .. }) => point,
         Some(_) => return Ok(Reduction::Stuck),

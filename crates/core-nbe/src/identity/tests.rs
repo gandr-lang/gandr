@@ -352,6 +352,91 @@ fn telescope_transport_along_a_stuck_path_is_stuck()
     );
 }
 
+/// The telescope motive `Π (y : Unit). Π (z : Path(Unit, (), y)). F C` of
+/// based path induction at the unit type, returning `body`.
+///
+/// # Specification
+/// trivial.
+fn unit_telescope(
+    core: &mut CoreArena,
+    body: ValueTypeId,
+) -> gandr_core_term::CompTypeId
+{
+    let unit = core.value_type_unit();
+    let centre = core.value_unit();
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let singleton = core.value_type_path(unit, centre, end);
+    let returned = core.comp_type_returner(body);
+    let entry = core.comp_type_pi(singleton, returned);
+    core.comp_type_pi(unit, entry)
+}
+
+#[test]
+fn telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_value()
+{
+    let mut core = CoreArena::new();
+    let seven = literal(&mut core, Word::Seven);
+    let carrier = text_type(&mut core);
+    let motive = unit_telescope(&mut core, carrier);
+    let evidence = core.value_unit();
+    let centre = core.value_unit();
+    let start = core.value_here(centre);
+    let over = core.value_here(evidence);
+    let transported = core.computation_telescope_transport(motive, evidence, start, over, seven);
+    let returned = core.computation_return(seven);
+    assert_eq!(
+        normalises_to(&mut core, transported, returned),
+        CertificateEquality::Equal,
+        "along a closed path that is no reflexivity, a motive reading neither entry returns its value"
+    );
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let unit = core.value_type_unit();
+    let reading = core.value_type_path(unit, end, end);
+    let motive = unit_telescope(&mut core, reading);
+    let reflexive = core.value_here(centre);
+    let transported =
+        core.computation_telescope_transport(motive, evidence, start, over, reflexive);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    assert_eq!(
+        eval_computation(&core, &mut domain, definitions, ample(), transported).err(),
+        Some(crate::eval::EvalFault::TransportedNonPath),
+        "a motive reading the path's endpoint has no row along it"
+    );
+}
+
+#[test]
+fn a_telescope_motive_reads_an_entry_when_its_returned_type_names_one()
+{
+    let mut core = CoreArena::new();
+    let carrier = text_type(&mut core);
+    let five = literal(&mut core, Word::Five);
+    let inner = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let outer = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let past = core.value_variable(gandr_core_term::Zone::Intuitionistic, 2_u32.into());
+    let reads = |core: &mut CoreArena, left, right| {
+        let body = core.value_type_path(carrier, left, right);
+        super::telescope_read(core, body).expect("the returned type is read")
+    };
+    assert_eq!(
+        reads(&mut core, five, past),
+        crate::free::Membership::Absent,
+        "a returned type naming only what lies past both entries reads neither"
+    );
+    assert_eq!(
+        reads(&mut core, five, outer),
+        crate::free::Membership::Held,
+        "naming the path's endpoint reads an entry"
+    );
+    assert_eq!(
+        reads(&mut core, inner, five),
+        crate::free::Membership::Held,
+        "naming the identity over the path reads an entry"
+    );
+}
+
 #[test]
 fn transport_through_a_product_is_componentwise()
 {

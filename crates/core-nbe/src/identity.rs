@@ -669,5 +669,45 @@ pub(crate) fn binder_read(
         .holds(DeBruijnIndex::from(0_u32)))
 }
 
+/// Whether a telescope motive's returned type reads either of its two
+/// entries: the path's endpoint `y` or the identity over it `z`.
+///
+/// # Specification
+/// - requires: `body` is the returned type `C` of a telescope motive `Π (y :
+///   A). Π (z : B). F C`, read under both entries, `z` innermost.
+/// - ensures: [`Membership::Absent`] exactly when no node of `body` reads the
+///   index either entry binds.
+/// - provides: the guard of the telescope transport's constant-motive row.
+/// - fails: the free-index walk's fault for a dangling node.
+/// - panics: none.
+/// - executable: none — the free-index walk is the only reading of the clause,
+///   so a predicate would restate the body.
+///
+/// # Errors
+/// A [`FreeFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned type naming neither entry, one naming only the
+///   endpoint and one naming only the identity over it separate the answers.
+/// - witness: `identity::tests::a_telescope_motive_reads_an_entry_when_its_returned_type_names_one`
+pub(crate) fn telescope_read(
+    core: &CoreArena,
+    body: ValueTypeId,
+) -> Result<Membership, FreeFault>
+{
+    let mut free = FreeIndices::default();
+    let held = free.of_type(core, body)?.intuitionistic();
+    Ok(
+        if held.holds(DeBruijnIndex::from(0_u32)) == Membership::Held
+            || held.holds(DeBruijnIndex::from(1_u32)) == Membership::Held
+        {
+            Membership::Held
+        }
+        else {
+            Membership::Absent
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests;
