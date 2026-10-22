@@ -118,6 +118,7 @@
 //! [`TileKind`]: gandr_surface_grammar::TileKind
 
 mod exemplars;
+mod features;
 mod recovery;
 mod standing;
 
@@ -164,6 +165,13 @@ use serde_json::json;
 pub use self::exemplars::ExemplarFault;
 pub use self::exemplars::ExemplarFinding;
 pub use self::exemplars::ExemplarReport;
+pub use self::features::Area;
+pub use self::features::Feature;
+pub use self::features::FeatureId;
+pub use self::features::FeatureLedger;
+pub use self::features::Malformed;
+pub use self::features::ShownFeature;
+pub use self::features::Status;
 pub use self::recovery::RecoveryFinding;
 pub use self::recovery::RecoveryReport;
 
@@ -177,7 +185,8 @@ const JSON: &str = "syntax.json";
 /// it.
 const REGENERATE: &str = "gandr ledger syntax --write ledger";
 
-/// Which ledger a `gandr ledger` invocation writes or verifies, and where.
+/// Which ledger a `gandr ledger` invocation writes, verifies or reads, and
+/// where.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LedgerTask
 {
@@ -204,6 +213,26 @@ pub enum LedgerTask
         /// The directory holding `syntax/`.
         directory: PathBuf,
     },
+    /// The features of the ledger under `root`, narrowed to an area and a
+    /// status where named.
+    List
+    {
+        /// The tree holding `ledger/features.sql`.
+        root: PathBuf,
+        /// The area, where one is named.
+        area: Option<Area>,
+        /// The status, where one is named.
+        status: Option<Status>,
+    },
+    /// One feature of the ledger under `root`, with its exemplars' sources and
+    /// its corpus witnesses.
+    Show
+    {
+        /// The tree holding `ledger/features.sql` and the paths it names.
+        root: PathBuf,
+        /// The feature.
+        id: FeatureId,
+    },
 }
 
 /// What a ledger task did.
@@ -216,6 +245,11 @@ pub enum LedgerRun
     Verified(ExemplarReport),
     /// What a recovery sweep found.
     Swept(RecoveryReport),
+    /// The features a list matched, in the ledger's order.
+    Listed(Vec<Feature>),
+    /// The feature a show named, boxed: its row's thirteen columns make it
+    /// the largest variant inline.
+    Shown(Box<ShownFeature>),
 }
 
 /// Why a ledger could not be generated or written.
@@ -274,6 +308,45 @@ pub enum LedgerFault
         /// Why.
         error: String,
     },
+    /// A file of the features ledger, or an exemplar it names, could not be
+    /// read.
+    Unread
+    {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
+    /// A line of the features ledger is not what the reader reads.
+    Features
+    {
+        /// The ledger's file.
+        path: PathBuf,
+        /// The line, counted from one.
+        line: usize,
+        /// What is wrong with it.
+        malformed: Malformed,
+    },
+    /// A spelling of no status.
+    Status
+    {
+        /// The spelling.
+        spelling: String,
+    },
+    /// An area no feature is in.
+    NoArea
+    {
+        /// The area asked for.
+        area: String,
+        /// The ledger's areas, in byte order, separated by commas.
+        areas: String,
+    },
+    /// An id no feature has.
+    NoFeature
+    {
+        /// The id asked for.
+        id: String,
+    },
 }
 
 impl core::fmt::Display for LedgerFault
@@ -316,6 +389,27 @@ impl core::fmt::Display for LedgerFault
                 "{}: the rule's exemplar cannot be read: {error}",
                 path.display()
             ),
+            Self::Unread {
+                ref path,
+                ref error,
+            } => write!(f, "{}: cannot read: {error}", path.display()),
+            Self::Features {
+                ref path,
+                line,
+                malformed,
+            } => write!(f, "{}:{line}: {malformed}", path.display()),
+            Self::Status { ref spelling } => write!(
+                f,
+                "`{spelling}` is no status: implemented, partial, planned or declined"
+            ),
+            Self::NoArea {
+                ref area,
+                ref areas,
+            } => write!(
+                f,
+                "no feature is in the area `{area}`; the areas are {areas}"
+            ),
+            Self::NoFeature { ref id } => write!(f, "no feature is `{id}`"),
         }
     }
 }
@@ -323,7 +417,7 @@ impl core::fmt::Display for LedgerFault
 impl LedgerTask
 {
     /// Generate the task's ledger and write its files, verify its exemplars,
-    /// or sweep them for recovery.
+    /// sweep them for recovery, or read the features ledger.
     ///
     /// # Specification
     /// - requires: nothing; a syntax ledger's directory is created when it is
@@ -336,45 +430,52 @@ impl LedgerTask
     ///   directory against the committed rules and the registered attributes
     ///   (the `exemplars` module). Under [`LedgerTask::Recovery`], the report
     ///   of the recovery sweep over the directory's syntax exemplars (the
-    ///   `recovery` module).
+    ///   `recovery` module). Under [`LedgerTask::List`] and
+    ///   [`LedgerTask::Show`], what [`FeatureLedger::listed`] and
+    ///   [`FeatureLedger::shown`] answer of the root's features ledger.
     /// - provides: `gandr ledger syntax --write <directory>`, `gandr ledger
-    ///   exemplars <directory>` and `gandr ledger recovery <directory>`.
+    ///   exemplars <directory>`, `gandr ledger recovery <directory>`, `gandr
+    ///   ledger list` and `gandr ledger show <id>`.
     /// - fails: the ledger cannot be built, a committed rule's exemplar cannot
-    ///   be read, a file cannot be written, or an exemplar directory cannot be
-    ///   listed.
+    ///   be read, a file cannot be written, an exemplar directory cannot be
+    ///   listed, or the features ledger cannot be read or answer.
     /// - panics: none.
     ///
     /// # Errors
-    /// What [`SyntaxLedger::build`] and [`SyntaxLedger::admitted`] report,
-    /// [`LedgerFault::Unwritable`] naming the file, or
-    /// [`LedgerFault::Unreadable`] naming the directory.
+    /// What [`SyntaxLedger::build`], [`SyntaxLedger::admitted`],
+    /// [`FeatureLedger::read`], [`FeatureLedger::listed`] and
+    /// [`FeatureLedger::shown`] report, [`LedgerFault::Unwritable`] naming the
+    /// file, or [`LedgerFault::Unreadable`] naming the directory.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run into an empty directory writes both files with
     ///   the rendered bytes, a second run writes the same bytes, and a
     ///   directory under a file is refused naming the path; the committed
     ///   exemplars verify with no finding; a definition's exemplar is swept
-    ///   tile by tile. Arbitrary filesystem failures are outside these
-    ///   observations.
+    ///   tile by tile; the features ledger lists and shows. Arbitrary
+    ///   filesystem failures are outside these observations.
     /// - witness: `ledger::tests::a_run_writes_both_files_and_repeats_them_exactly`
     /// - witness: `ledger::tests::an_unwritable_directory_is_refused_by_path`
     /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
     /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
+    /// - witness: `ledger::features::tests::a_list_narrows_to_an_area_and_a_status`
+    /// - witness: `ledger::features::tests::a_feature_shows_its_exemplar_whole_and_its_corpus`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |run| match (self, run) {
         (&Self::Syntax { .. }, &LedgerRun::Written(ref paths)) => paths.len() == 2,
-        (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) | (&Self::Recovery { .. }, &LedgerRun::Swept(_)) => true,
-        (&Self::Syntax { .. } | &Self::Exemplars { .. } | &Self::Recovery { .. }, &LedgerRun::Written(_) | &LedgerRun::Verified(_) | &LedgerRun::Swept(_)) => false,
+        (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) | (&Self::Recovery { .. }, &LedgerRun::Swept(_))
+            | (&Self::List { .. }, &LedgerRun::Listed(_)) | (&Self::Show { .. }, &LedgerRun::Shown(_)) => true,
+        (&Self::Syntax { .. } | &Self::Exemplars { .. } | &Self::Recovery { .. } | &Self::List { .. } | &Self::Show { .. },
+            &LedgerRun::Written(_) | &LedgerRun::Verified(_) | &LedgerRun::Swept(_) | &LedgerRun::Listed(_) | &LedgerRun::Shown(_)) => false,
     }))]
     #[inline]
     pub fn run(&self) -> Result<LedgerRun, LedgerFault>
     {
-        let ledger = SyntaxLedger::build()?;
         match *self {
             Self::Syntax {
                 ref directory,
                 ref exemplars,
             } => {
-                let ledger = ledger.admitted(exemplars)?;
+                let ledger = SyntaxLedger::build()?.admitted(exemplars)?;
                 std::fs::create_dir_all(directory).map_err(|error| LedgerFault::Unwritable {
                     path: directory.clone(),
                     error,
@@ -384,6 +485,7 @@ impl LedgerTask
                 Ok(LedgerRun::Written(vec![markdown, json]))
             },
             Self::Exemplars { ref directory } => {
+                let ledger = SyntaxLedger::build()?;
                 let pbg = built_in().map_err(LedgerFault::Grammar)?;
                 let rules: Vec<RuleName> = ledger
                     .rules
@@ -397,6 +499,16 @@ impl LedgerTask
                 let pbg = built_in().map_err(LedgerFault::Grammar)?;
                 recovery::sweep(&pbg, directory).map(LedgerRun::Swept)
             },
+            Self::List {
+                ref root,
+                ref area,
+                status,
+            } => FeatureLedger::read(root)?
+                .listed(area.as_ref(), status)
+                .map(LedgerRun::Listed),
+            Self::Show { ref root, ref id } => FeatureLedger::read(root)?
+                .shown(id)
+                .map(|shown| LedgerRun::Shown(Box::new(shown))),
         }
     }
 }

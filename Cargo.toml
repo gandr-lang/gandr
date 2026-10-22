@@ -504,6 +504,7 @@ path = "crates/surface-diagnostics"
 # - surface-diagnostics (dev)
 # - surface-driver
 # - surface-lsp
+# - surface-mcp
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session

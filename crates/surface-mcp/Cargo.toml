@@ -12,12 +12,14 @@ publish.workspace = true
 
 # The server reads the language server's shared workspace: its documents, the
 # diagnostics last published for each, and its read-only requests answered
-# off them. The wire is newline-delimited JSON, built and read through
-# serde_json's value tree.
+# off them; and the dispatcher's features ledger reader, which the language
+# server already links. The wire is newline-delimited JSON, built and read
+# through serde_json's value tree.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+gandr-surface-dispatcher.workspace = true
 gandr-surface-lsp.workspace = true
 serde_json.workspace = true
 
