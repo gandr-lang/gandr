@@ -622,6 +622,12 @@ impl InitializeParams
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a client declaring no resolve support, one resolving
+    ///   the tooltip alone and one resolving the label's locations, each
+    ///   asserted at the hint it is sent.
+    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
     #[inline]
     #[must_use]
     pub fn resolves_hint_locations(&self) -> ResolvesHintLocations
@@ -1025,6 +1031,11 @@ impl From<HintResolveSupport> for ResolvesHintLocations
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — properties naming the tooltip alone, and the tooltip
+    ///   with `label.location`, each asserted at the hint its client is sent.
+    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
     #[inline]
     fn from(support: HintResolveSupport) -> Self
     {
@@ -3379,6 +3390,11 @@ impl fmt::Display for HintLabel
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every hint's label over two corpus sources, each
+    ///   asserted at its exact text.
+    /// - witness: `inlay::tests::each_binder_that_writes_no_type_is_hinted`
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,

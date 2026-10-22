@@ -6972,6 +6972,12 @@ fn initial_collapsing(params: &Value) -> FoldsCollapsed
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `initialize` with no capabilities, with resolve support
+///   for the tooltip alone and for the label's locations, each asserted at the
+///   hint its client is sent.
+/// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 fn initial_deferring(params: &Value) -> ResolvesHintLocations
 {
     InitializeParams::deserialize(params)
@@ -11150,9 +11156,10 @@ mod tests
 
     /// #764: the hint of `r`, bound by `run r <- minus(p, d)` in a corpus
     /// importer, names `Nat`, which the importer's base declares. A client
-    /// that resolves no hint gets the name located at once; one that resolves
-    /// a label's locations gets it unlocated with the document to resolve it
-    /// from, and its resolution is the located hint.
+    /// that resolves no hint, or resolves other properties alone (#1620), gets
+    /// the name located at once; one that resolves a label's locations gets it
+    /// unlocated with the document to resolve it from, and its resolution is
+    /// the located hint.
     #[test]
     fn an_inlay_hint_links_the_families_its_type_names_764()
     {
@@ -11207,6 +11214,14 @@ mod tests
             hint_of_r(&mut opened(serde_json::json!({}))),
             located,
             "a client resolving nothing gets `Nat` located at its declaration in the base"
+        );
+        assert_eq!(
+            hint_of_r(&mut opened(
+                serde_json::json!({"textDocument": {"inlayHint": {
+                "resolveSupport": {"properties": ["tooltip"]}}}})
+            )),
+            located,
+            "a client resolving only the tooltip gets `Nat` located at once"
         );
         let mut deferring = opened(serde_json::json!({"textDocument": {"inlayHint": {
             "resolveSupport": {"properties": ["tooltip", "label.location"]}}}}));
