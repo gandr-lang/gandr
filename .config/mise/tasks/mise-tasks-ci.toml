@@ -229,6 +229,37 @@ env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = ".config/mise/scope cargo nextest run --workspace --locked --profile nightly"
 
+# Each crate's tests with every feature it declares on, which no gate builds:
+# the gate tests each crate with its default features alone (#1785). A crate
+# that declares no feature beyond `default` has nothing to turn on, and its
+# gate run already is this one. The crates declaring features, sorted by name,
+# rotate over three nights, the i-th on the nights whose day number is i
+# modulo 3. On the arm64 runner, from the plain state, the whole set builds in
+# four and a half minutes: with the sweeps' seven to fourteen, that is over
+# the nightly's fifteen minutes summed. A third builds in 2m20s to 2m44s, its
+# job in 194 to 216 s. A new feature puts its crate on the rotation by being
+# declared. GANDR_SWEEP_NIGHT=<day> replays another night, as for the sweeps;
+# `--all` runs every such crate.
+["ci:all-features"]
+description = "Each crate's tests with every feature on, over the night's third of the crates that declare features"
+tools.jq = "1.8.1"
+usage = '''
+flag "--all" help="every crate that declares a feature, not the night's third"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+nights=3
+night=${GANDR_SWEEP_NIGHT:-$(($(date -u +%s) / 86400))}
+mapfile -t crates < <(cargo metadata --locked --no-deps --format-version 1 | jq -r '[.packages[] | select(.features | keys - ["default"] | length > 0) | .name] | sort[]')
+packages=()
+for index in "${!crates[@]}"; do
+  if [[ ${usage_all:-false} == true ]] || ((index % nights == night % nights)); then packages+=(--package "${crates[index]}"); fi
+done
+echo "night $night: ${packages[*]}"
+.config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" --all-features "${packages[@]}"
+'''
+
 # The enforcing suite, instrumented into target/coverage so it never shares
 # the cached enforcing state, under the `coverage` nextest profile (its own
 # limit, each sweep over its sample — .config/nextest.toml says why). The

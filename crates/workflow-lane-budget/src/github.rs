@@ -18,6 +18,9 @@ use crate::report::Standing;
 /// The `gh api` route listing the CI workflow's runs.
 const RUNS: &str = "repos/{owner}/{repo}/actions/workflows/ci.yml/runs";
 
+/// The `gh api` route listing the nightly workflow's runs.
+const NIGHTLY_RUNS: &str = "repos/{owner}/{repo}/actions/workflows/nightly.yml/runs";
+
 /// The query keeping the runs a landing window samples: merge-queue and
 /// pull-request runs, newest first.
 const RUN_QUERY: &str =
@@ -27,17 +30,21 @@ const RUN_QUERY: &str =
 /// runs, newest first.
 const SCHEDULED_QUERY: &str = ".workflow_runs[] | .id";
 
-/// Which of the CI workflow's runs a report samples.
+/// Which workflow runs a report samples.
 ///
 /// # Specification
-/// - provides: the two windows a report reads.
+/// - provides: the three windows a report reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Window
 {
-    /// Merge-queue and pull-request runs, which hold every landing lane.
+    /// Merge-queue and pull-request runs of the CI workflow, which hold every
+    /// landing lane.
     Landing,
-    /// The daily scheduled runs, which alone hold the daily lanes.
+    /// The CI workflow's daily scheduled runs, which alone hold the daily
+    /// lanes.
     Scheduled,
+    /// The nightly workflow's scheduled runs, which hold the nightly lanes.
+    Nightly,
 }
 
 /// The query printing each successful job's seconds and name.
@@ -203,15 +210,16 @@ pub(crate) fn run(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// The newest runs of the CI workflow in `window`.
+/// The newest runs in `window`.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: at most `count` run identifiers, newest first: for
-///   [`Window::Landing`] the merge-queue and pull-request runs among the last
-///   hundred completed runs; for [`Window::Scheduled`] the last completed
-///   scheduled runs, which the listing itself narrows to, since a day's hundred
-///   landing runs would crowd them out.
+///   [`Window::Landing`] the CI workflow's merge-queue and pull-request runs
+///   among its last hundred completed runs; for [`Window::Scheduled`] its last
+///   completed scheduled runs, which the listing itself narrows to, since a
+///   day's hundred landing runs would crowd them out; for [`Window::Nightly`]
+///   the nightly workflow's last completed scheduled runs, a dispatch left out.
 /// - provides: the window a report samples.
 /// - fails: [`BudgetError::Gh`] when `gh` fails or prints a line that is not a
 ///   run identifier.
@@ -224,10 +232,12 @@ pub(crate) fn run(
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` listing three landing runs read with a count
 ///   of two yields the first two; one printing garbage is refused; the
-///   scheduled window asks for scheduled runs alone and reads its own list.
+///   scheduled window asks for scheduled runs alone and reads its own list; the
+///   nightly window asks the nightly workflow for its scheduled runs.
 /// - witness: `tests::cli::an_over_budget_lane_opens_the_issue`
 /// - witness: `tests::cli::a_failing_gh_is_reported_with_its_message`
 /// - witness: `tests::cli::a_daily_lane_is_sampled_over_the_scheduled_runs`
+/// - witness: `tests::cli::a_nightly_lane_is_sampled_over_the_nightly_runs`
 #[inline]
 pub fn recent_runs(
     count: RunCount,
@@ -239,7 +249,10 @@ pub fn recent_runs(
         "api",
         "--method",
         "GET",
-        RUNS,
+        match window {
+            Window::Landing | Window::Scheduled => RUNS,
+            Window::Nightly => NIGHTLY_RUNS,
+        },
         "-f",
         "status=completed",
         "-f",
@@ -247,7 +260,9 @@ pub fn recent_runs(
     ]);
     match window {
         Window::Landing => command.args(["--jq", RUN_QUERY]),
-        Window::Scheduled => command.args(["-f", "event=schedule", "--jq", SCHEDULED_QUERY]),
+        Window::Scheduled | Window::Nightly => {
+            command.args(["-f", "event=schedule", "--jq", SCHEDULED_QUERY])
+        },
     };
     let text = run(&mut command, Feed::Nothing)?;
     text.lines()

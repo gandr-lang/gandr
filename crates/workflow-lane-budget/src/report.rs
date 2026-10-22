@@ -328,9 +328,25 @@ fn rows(
         .collect()
 }
 
+/// The lanes a scheduled window alone holds: the runs sampled and one row
+/// per such lane.
+///
+/// # Specification
+/// - provides: one scheduled table of the report.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Scheduled
+{
+    /// The window the runs were drawn from: never [`Window::Landing`].
+    window: Window,
+    /// The runs sampled, newest first.
+    runs: Vec<RunId>,
+    /// One row per budget, in order.
+    rows: Vec<Row>,
+}
+
 /// The report: the landing runs sampled and one row per budgeted lane, then,
-/// when a lane runs only in the daily scheduled run, the scheduled runs
-/// sampled and one row per such lane.
+/// for each scheduled window holding lanes of its own, its runs sampled and
+/// one row per such lane.
 ///
 /// # Specification
 /// - provides: what the nightly run prints and files.
@@ -341,10 +357,8 @@ pub struct Report
     runs: Vec<RunId>,
     /// One row per budget, in the budget table's order.
     rows: Vec<Row>,
-    /// The scheduled runs sampled, newest first.
-    daily_runs: Vec<RunId>,
-    /// One row per daily budget, in order; empty without one.
-    daily: Vec<Row>,
+    /// One table per scheduled window given budgets, in the order given.
+    scheduled: Vec<Scheduled>,
 }
 
 impl Report
@@ -355,7 +369,7 @@ impl Report
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the rows [`rows`] gives for `budgets` and `samples`, and no
-    ///   daily row.
+    ///   scheduled table.
     /// - provides: the report.
     /// - fails: never.
     /// - panics: none.
@@ -375,35 +389,38 @@ impl Report
         Self {
             runs,
             rows: rows(budgets, samples),
-            daily_runs: Vec::new(),
-            daily: Vec::new(),
+            scheduled: Vec::new(),
         }
     }
 
-    /// The report with the lanes only the daily scheduled run holds: each of
-    /// `budgets` summarised over `samples`, the jobs of the scheduled `runs`.
+    /// The report with the lanes only the scheduled `window` holds: each of
+    /// `budgets` summarised over `samples`, the jobs of that window's `runs`.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the landing rows unchanged; one daily row per budget, in
-    ///   order, whose median is the lower median of the samples of its lane,
-    ///   none cone-classified, and whose count is theirs; samples of lanes
-    ///   without a daily budget are ignored.
-    /// - provides: the second table and its share of the standing.
+    /// - requires: `window` is a scheduled window, never [`Window::Landing`].
+    /// - ensures: the landing rows and earlier tables unchanged; one more table
+    ///   after them, of `window`, with one row per budget, in order, whose
+    ///   median is the lower median of the samples of its lane, none
+    ///   cone-classified, and whose count is theirs; samples of lanes without a
+    ///   budget here are ignored.
+    /// - provides: a scheduled table and its share of the standing.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the grouping is the clause.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a daily lane over budget in the scheduled runs beside
-    ///   a landing lane whose job those runs also hold; a scheduled sample
-    ///   counted in a landing row, or a daily row left out of the standing,
+    ///   a landing lane whose job those runs also hold, and a nightly lane held
+    ///   over the nightly runs beside both; a scheduled sample counted in
+    ///   another table's row, or a scheduled row left out of the standing,
     ///   changes the report.
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+    /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
     #[inline]
     #[must_use]
-    pub fn with_daily(
+    pub fn with_scheduled(
         mut self,
+        window: Window,
         budgets: &[Budget],
         runs: Vec<RunId>,
         samples: Vec<Sample>,
@@ -413,8 +430,11 @@ impl Report
             .into_iter()
             .map(|sample| (Cone::Surface, sample))
             .collect();
-        self.daily = rows(budgets, samples);
-        self.daily_runs = runs;
+        self.scheduled.push(Scheduled {
+            window,
+            runs,
+            rows: rows(budgets, samples),
+        });
         self
     }
 
@@ -422,18 +442,20 @@ impl Report
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Standing::Over`] exactly when some row, landing or daily,
-    ///   is over; [`Standing::Within`] otherwise, unmeasured rows included.
+    /// - ensures: [`Standing::Over`] exactly when some row, landing or
+    ///   scheduled, is over; [`Standing::Within`] otherwise, unmeasured rows
+    ///   included.
     /// - provides: whether the issue is opened or closed.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause would walk every row, the body itself.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Row::standing`], and a daily row over beside
-    ///   landing rows within.
+    /// - hypothesis: L3 — as [`Row::standing`], and a daily or a nightly row
+    ///   over beside landing rows within.
     /// - witness: `report::tests::a_lane_over_its_budget_puts_the_report_over`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+    /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
     #[inline]
     #[must_use]
     pub fn standing(&self) -> Standing
@@ -441,7 +463,7 @@ impl Report
         if self
             .rows
             .iter()
-            .chain(&self.daily)
+            .chain(self.scheduled.iter().flat_map(|table| &table.rows))
             .any(|row| row.standing() == Standing::Over)
         {
             Standing::Over
@@ -454,7 +476,8 @@ impl Report
 
 /// Writes `rows`, sampled over `window`, as the report's Markdown table: lane,
 /// class, median, budget, sample count and standing, the class `daily` for a
-/// row of the scheduled window.
+/// row of the CI workflow's scheduled window and `nightly` for one of the
+/// nightly workflow's.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -466,9 +489,10 @@ impl Report
 /// - executable: none — the formatter exposes no readable output buffer.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Report::new`] and [`Report::with_daily`].
+/// - hypothesis: L3 — as [`Report::new`] and [`Report::with_scheduled`].
 /// - witness: `report::tests::the_report_lists_every_budget_in_order`
 /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+/// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
 fn table(
     f: &mut fmt::Formatter<'_>,
     rows: &[Row],
@@ -485,6 +509,7 @@ fn table(
         let class: &dyn fmt::Display = match window {
             Window::Landing => &row.cone,
             Window::Scheduled => &"daily",
+            Window::Nightly => &"nightly",
         };
         writeln!(
             f,
@@ -514,22 +539,23 @@ impl fmt::Display for Report
 {
     /// Writes the report as Markdown: a sentence naming the window, a table
     /// of lane, class, median, budget, sample count and standing, and the
-    /// runs; then, with a daily row, the same for the scheduled runs.
+    /// runs; then the same for each scheduled window given budgets.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one table row per budget, in order, the class beside each
-    ///   row, and an unmeasured median written as `—`; the daily table only
-    ///   when a daily budget was given.
+    ///   row, and an unmeasured median written as `—`; a scheduled window's
+    ///   table only when budgets were given for it.
     /// - provides: the job summary and the issue body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Report::new`] and [`Report::with_daily`].
+    /// - hypothesis: L3 — as [`Report::new`] and [`Report::with_scheduled`].
     /// - witness: `report::tests::the_report_lists_every_budget_in_order`
     /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
+    /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
     #[inline]
     fn fmt(
         &self,
@@ -545,17 +571,22 @@ impl fmt::Display for Report
         )?;
         table(f, &self.rows, Window::Landing)?;
         writeln!(f, "\nRuns: {}.", listed(&self.runs))?;
-        if self.daily.is_empty() {
-            return Ok(());
+        for scheduled in &self.scheduled {
+            let held = match scheduled.window {
+                Window::Landing | Window::Scheduled => {
+                    "of `ci.yml`, for the lanes only the daily run holds"
+                },
+                Window::Nightly => "of `nightly.yml`, for its lanes",
+            };
+            writeln!(
+                f,
+                "\nMedian job time over the last {} scheduled runs {held}.\n",
+                scheduled.runs.len()
+            )?;
+            table(f, &scheduled.rows, scheduled.window)?;
+            writeln!(f, "\nRuns: {}.", listed(&scheduled.runs))?;
         }
-        writeln!(
-            f,
-            "\nMedian job time over the last {} scheduled runs of `ci.yml`, for the lanes \
-             only the daily run holds.\n",
-            self.daily_runs.len()
-        )?;
-        table(f, &self.daily, Window::Scheduled)?;
-        writeln!(f, "\nRuns: {}.", listed(&self.daily_runs))
+        Ok(())
     }
 }
 
@@ -575,6 +606,7 @@ mod tests
     use crate::budget::Lane;
     use crate::budget::Seconds;
     use crate::cone::Cone;
+    use crate::github::Window;
 
     #[test]
     fn a_sample_reads_seconds_then_name()
@@ -783,7 +815,8 @@ mod tests
         assert_eq!(report.standing(), Standing::Within);
         // The scheduled runs hold a Clippy job too, far over its budget; only
         // the landing runs measure it.
-        let report = report.with_daily(
+        let report = report.with_scheduled(
+            Window::Scheduled,
             &daily,
             vec!["9".parse::<RunId>().unwrap(), "8".parse().unwrap()],
             vec![
@@ -808,6 +841,62 @@ mod tests
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | mutate the night's crate (linux) | daily | 14m 10s | 14m 0s | 2 | **over** |\n\
              \nRuns: 9, 8.\n"
+        );
+        assert_eq!(report.standing(), Standing::Over);
+    }
+
+    #[test]
+    fn a_nightly_lane_is_held_over_the_nightly_runs()
+    {
+        let sample = |time: u64, lane: &str| Sample {
+            lane: Lane::from(lane),
+            time: Seconds::from(time),
+        };
+        let landing = ["check Clippy wall=300".parse::<Budget>().unwrap()];
+        let daily = ["mutate the night's crate (linux)=840"
+            .parse::<Budget>()
+            .unwrap()];
+        let nightly = ["test every crate with every feature on=240"
+            .parse::<Budget>()
+            .unwrap()];
+        let report = Report::new(&landing, vec!["12".parse::<RunId>().unwrap()], vec![(
+            Cone::Surface,
+            sample(200, "check Clippy wall"),
+        )])
+        .with_scheduled(
+            Window::Scheduled,
+            &daily,
+            vec!["9".parse::<RunId>().unwrap()],
+            vec![
+                sample(800, "mutate the night's crate (linux)"),
+                sample(900, "test every crate with every feature on"),
+            ],
+        );
+        assert_eq!(report.standing(), Standing::Within);
+        // The daily runs' all-features job, far over, is not the nightly
+        // lane's; the nightly runs alone measure it.
+        let report = report.with_scheduled(
+            Window::Nightly,
+            &nightly,
+            vec!["6".parse::<RunId>().unwrap(), "5".parse().unwrap()],
+            vec![
+                sample(250, "test every crate with every feature on"),
+                sample(260, "test every crate with every feature on"),
+            ],
+        );
+        let text = report.to_string();
+        assert!(
+            text.ends_with(
+                "| mutate the night's crate (linux) | daily | 13m 20s | 14m 0s | 1 | within |\n\
+                 \nRuns: 9.\n\
+                 \nMedian job time over the last 2 scheduled runs of `nightly.yml`, for its \
+                 lanes.\n\n\
+                 | lane | class | median | budget | jobs | standing |\n\
+                 | --- | --- | ---: | ---: | ---: | --- |\n\
+                 | test every crate with every feature on | nightly | 4m 10s | 4m 0s | 2 | **over** |\n\
+                 \nRuns: 6, 5.\n"
+            ),
+            "{text}"
         );
         assert_eq!(report.standing(), Standing::Over);
     }

@@ -24,7 +24,9 @@
 //! run holds, such as the nightly mutation run, is a `--daily` budget and is
 //! sampled over the scheduled runs alone, in a table of its own; the listing
 //! asks for scheduled runs, since a day's landing runs fill any window of the
-//! newest hundred.
+//! newest hundred. A lane of the nightly workflow, such as the all-features
+//! tests, is a `--nightly` budget, sampled over that workflow's scheduled runs
+//! in a third table; a dispatch is not a night.
 //!
 //! A landing that touches the kernel or core stack — a file under
 //! `crates/kernel-*` or `crates/core-*`, `Cargo.lock`, `rust-toolchain.toml`

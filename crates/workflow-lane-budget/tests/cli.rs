@@ -222,8 +222,8 @@ fn a_malformed_budget_exits_two()
     assert_eq!(output.status.code(), Some(2_i32));
     assert!(
         String::from_utf8_lossy(&output.stderr).contains(
-            "`mutate the night's crate (linux):deep=840` names the deep cone; a daily lane is \
-             held to one budget over the scheduled runs"
+            "`mutate the night's crate (linux):deep=840` names the deep cone; a scheduled lane \
+             is held to one budget over its scheduled runs"
         ),
         "{}",
         String::from_utf8_lossy(&output.stderr)
@@ -283,6 +283,55 @@ fn a_daily_lane_is_sampled_over_the_scheduled_runs()
         !log.contains("actions/runs/9 "),
         "a scheduled run is not cone-classified: {log}"
     );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn a_nightly_lane_is_sampled_over_the_nightly_runs()
+{
+    let scratch = scratch!("nightly");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=250",
+            "--daily",
+            "mutate the night's crate (linux)=75",
+            "--nightly",
+            "check Clippy wall=550",
+        ],
+        "[]",
+        "",
+        "all"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The nightly workflow's scheduled runs 6 and 5 hold a Clippy job of 600
+    // and 500 seconds; the landing runs hold one of 300 and 200. Each table
+    // reads its own window, the nightly one after the daily one.
+    assert!(
+        stdout.contains(
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with(
+            "\nRuns: 9, 8.\n\nMedian job time over the last 2 scheduled runs of `nightly.yml`, \
+             for its lanes.\n\n| lane | class | median | budget | jobs | standing |\n| --- | --- \
+             | ---: | ---: | ---: | --- |\n| check Clippy wall | nightly | 8m 20s | 9m 10s | 2 | \
+             within |\n\nRuns: 6, 5.\n"
+        ),
+        "{stdout}"
+    );
+    let log = log!(scratch);
+    assert!(log.contains("workflows/nightly.yml/runs"), "{log}");
+    assert!(log.contains("/runs/6/jobs"), "{log}");
+    assert!(log.contains("/runs/5/jobs"), "{log}");
+    assert!(!log.contains("/runs/4/jobs"), "{log}");
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
