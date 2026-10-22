@@ -34,6 +34,7 @@
 //! | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. | The same discrete clause. |
 //! | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. | The matching branch's bridge. |
 //! | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. | A tuple of the component bridges. |
+//! | Data, read through [`Interfaces`] | Matching constructors relate as the right-nested product of their fields' relations, Unit at a constructor of no field; different constructors give Empty; a neutral value suspends. A type holding itself, or one the admission log does not declare, is refused as an unsupported type. | Function identity covers it constructor by constructor and replays at it; the evidence operations here check their endpoints without the admission log, so none of them reads a constructor. | The same clause: the fields' bridges, paired as a product's. |
 //! | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises; it lowers to the persisted `Path` at the thunk type in identity mode and to the persisted `Bridge` in bridge mode. | `here` reflexivity, higher-evaluation (ap), quantified-evaluation and pointwise introduction; application transport replays both returners. | The family over argument bridges, introduced only by a higher or a quantified evaluation; no `here`, no related application. |
 //! | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. | The relation lifting: Unit at two nils, Empty at a nil and a cons, and at two conses the heads' bridge beside the tails' persisted `Bridge`; a neutral list suspends. |
 //! | Value universe | Identity at level zero: native `PathUniverse` of the two indexed codes. Bridge at every level: the relation `El A → El B → F U`. | Native path reflexivity and certified translator replay. | A relation thunk, supplied, never derived from the codes. |
@@ -119,7 +120,8 @@
 //! conversion gains no function-extensionality rule.
 //!
 //! Universal introductions cover closed functions. Coverage uses Unit,
-//! matching Sum injections, Product combinations and fresh rigid Base
+//! matching Sum injections, Product combinations, a data type's constructors
+//! in tag order over their fields' combinations, and fresh rigid Base
 //! variables; the relation premise identifies each discrete Base pair, without
 //! sampling literals. A function coordinate of the argument, at a thunk type
 //! `T`, binds the inner fibre itself: two functions and their identity, `f₀
@@ -241,7 +243,8 @@
 //! synthesize a type from, so synthesis refuses it as `EmptyCase`. The empty
 //! sum is an output fibre here, not an input code in the fold's closed
 //! vocabulary. As an ordinary native leaf it remains a legitimate
-//! bounded-alias target. The fold reads the unit and binary sums and products;
+//! bounded-alias target. The fold reads the unit, binary sums and products,
+//! and the data types the admission log declares that do not hold themselves;
 //! a product or sum of another arity is refused as an unsupported type until
 //! the fold is n-ary.
 //!
@@ -276,6 +279,7 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -400,6 +404,11 @@ pub enum Domain
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RelationId(usize);
 
+/// A data clause's address in its relation's constructor table.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct DataId(usize);
+
 /// A relation combinator; children are local addresses in a flat program.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Clause
@@ -426,6 +435,10 @@ enum Clause
     Function(RelationId, RelationId),
     /// One list constructor, with its recursive tail delayed in guarded syntax.
     List(RelationId),
+    /// A data type's constructors, the table entry holding each one's field
+    /// relations: matching constructors relate their fields independently,
+    /// as a product of them, and different constructors have empty fibre.
+    Data(DataId),
     /// Split the left endpoint; both branches share the right endpoint type.
     CaseLeft(RelationId, RelationId),
     /// Split the right endpoint; both branches share the left endpoint type.
@@ -557,6 +570,9 @@ pub struct Relation
     mode: Mode,
     /// Constructor-ordered program storage.
     nodes: Vec<Node>,
+    /// Each data clause's constructors in tag order, each as its fields'
+    /// relations in declaration order.
+    data: Vec<Vec<Vec<RelationId>>>,
     /// The final combinator.
     root: RelationId,
 }
@@ -743,6 +759,7 @@ impl core::error::Error for RelationError
         && relation.nodes.iter().enumerate().all(|(index, node)| node.source == node.target && match node.clause {
             Clause::Product(a, b) | Clause::Sum(a, b) | Clause::Function(a, b) => a.0 < index && b.0 < index,
             Clause::List(element) => element.0 < index,
+            Clause::Data(data) => relation.data.get(data.0).is_some_and(|constructors| constructors.iter().flatten().all(|field| field.0 < index)),
             Clause::Universe | Clause::Certificate => mode == Mode::Identity,
             Clause::Relation => mode == Mode::Bridge,
             Clause::Unit | Clause::Discrete | Clause::Atom { .. } => true,
@@ -773,6 +790,10 @@ pub fn interpret(
     let mut pending = Vec::from([(root, false)]);
     let mut formed = BTreeMap::new();
     let mut nodes = Vec::new();
+    let mut data = Vec::new();
+    // The data types whose fields are being read: a field reaching one of
+    // them recurs.
+    let mut expanding = BTreeSet::new();
     while let Some((ty, expanded)) = pending.pop() {
         if formed.contains_key(&ty) {
             continue;
@@ -876,8 +897,38 @@ pub fn interpret(
                 (Some(_), Mode::Identity) => return Err(RelationError::AtomTransport(ty)),
                 (None, _) => return Err(RelationError::AbstractInterface(ty)),
             },
-            ValueType::Data { .. }
-            | ValueType::Record(_)
+            ValueType::Data { .. } => {
+                let (_, constructors) =
+                    crate::flow_universe::data_signature(arena, interfaces.entries(), ty)
+                        .ok_or(RelationError::UnsupportedType(ty))?;
+                if !expanded {
+                    if !expanding.insert(ty) {
+                        return Err(RelationError::UnsupportedType(ty));
+                    }
+                    pending.push((ty, true));
+                    pending.extend(
+                        constructors
+                            .iter()
+                            .flatten()
+                            .rev()
+                            .map(|&field| (field, false)),
+                    );
+                    continue;
+                }
+                expanding.remove(&ty);
+                let mut table = Vec::with_capacity(constructors.len());
+                for fields in constructors {
+                    let mut relations = Vec::with_capacity(fields.len());
+                    for field in fields {
+                        relations.push(*formed.get(field).ok_or(RelationError::Arena)?);
+                    }
+                    table.push(relations);
+                }
+                let id = DataId(data.len());
+                data.push(table);
+                Clause::Data(id)
+            },
+            ValueType::Record(_)
             | ValueType::Session { .. }
             | ValueType::PathUniverse(..)
             | ValueType::FlowUniverse(..)
@@ -900,7 +951,12 @@ pub fn interpret(
         formed.insert(ty, id);
     }
     let root = *formed.get(&root).ok_or(RelationError::Arena)?;
-    Ok(Interpretation::Elements(Relation { mode, nodes, root }))
+    Ok(Interpretation::Elements(Relation {
+        mode,
+        nodes,
+        data,
+        root,
+    }))
 }
 
 /// Decode a quote without guessing at a neutral code.
@@ -1093,6 +1149,32 @@ impl Relation
         self.nodes.get(id.0).copied().ok_or(RelationError::Arena)
     }
 
+    /// Resolve a data clause's constructors, each as its fields' relations.
+    ///
+    /// # Specification
+    /// - ensures: returns the clause's table entry or `Arena`.
+    /// - fails: `Arena` for an unresolved address.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shape's two constructors keep their one and two
+    ///   field relations in tag order.
+    /// - witness: `identity_recursion::tests::a_data_type_relates_its_constructors_fieldwise`
+    #[spec(ensures: |ret| match ret { Ok(constructors) => self.data.get(data.0).map(Vec::as_slice) == Some(constructors), Err(RelationError::Arena) => data.0 >= self.data.len(), Err(_) => false })]
+    fn constructors(
+        &self,
+        data: DataId,
+    ) -> Result<&[Vec<RelationId>], RelationError>
+    {
+        self.data
+            .get(data.0)
+            .map(Vec::as_slice)
+            .ok_or(RelationError::Arena)
+    }
+
     /// A constant Unit or Empty bridge over two independently checked codes.
     ///
     /// # Specification
@@ -1148,6 +1230,7 @@ impl Relation
                 target,
                 clause,
             }]),
+            data: Vec::new(),
             root: RelationId(0),
         })
     }
@@ -1203,12 +1286,14 @@ impl Relation
             },
         };
         let offset = RelationOffset(left.nodes.len());
+        let data_offset = left.data.len();
         let right_root = relocate(right.root, offset);
         for mut node in right.nodes {
             node.clause = match node.clause {
                 Clause::Product(a, b) => Clause::Product(relocate(a, offset), relocate(b, offset)),
                 Clause::Sum(a, b) => Clause::Sum(relocate(a, offset), relocate(b, offset)),
                 Clause::List(element) => Clause::List(relocate(element, offset)),
+                Clause::Data(data) => Clause::Data(DataId(data.0.saturating_add(data_offset))),
                 Clause::Function(a, b) => {
                     Clause::Function(relocate(a, offset), relocate(b, offset))
                 },
@@ -1227,6 +1312,19 @@ impl Relation
                 | Clause::Atom { .. }) => clause,
             };
             left.nodes.push(node);
+        }
+        for table in right.data {
+            left.data.push(
+                table
+                    .into_iter()
+                    .map(|fields| {
+                        fields
+                            .into_iter()
+                            .map(|field| relocate(field, offset))
+                            .collect()
+                    })
+                    .collect(),
+            );
         }
         let clause = match index {
             CaseIndex::Left => Clause::CaseLeft(left.root, right_root),

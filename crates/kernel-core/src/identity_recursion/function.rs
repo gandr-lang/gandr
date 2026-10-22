@@ -7,6 +7,7 @@ use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
@@ -222,6 +223,7 @@ impl Relation
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::List(_)
+            | Clause::Data(_)
             | Clause::CaseLeft(..)
             | Clause::CaseRight(..) => Err(RelationError::Classifier),
         }
@@ -392,6 +394,7 @@ impl Relation
                         | Clause::Product(..)
                         | Clause::Function(..)
                         | Clause::List(_)
+                        | Clause::Data(_)
                         | Clause::CaseLeft(..)
                         | Clause::CaseRight(..) => {
                             for left in &first {
@@ -439,6 +442,40 @@ impl Relation
                                 }
                             }
                         },
+                    }
+                    joined
+                },
+                // Each constructor in tag order, its fields' patterns crossed
+                // as a right-nested product's.
+                Clause::Data(data) => {
+                    let constructors = self.constructors(data)?;
+                    if !expanded {
+                        pending.push((relation, true));
+                        pending.extend(
+                            constructors
+                                .iter()
+                                .flatten()
+                                .rev()
+                                .map(|&field| (field, false)),
+                        );
+                        continue;
+                    }
+                    let total = constructors.iter().map(Vec::len).sum::<usize>();
+                    let start = values
+                        .len()
+                        .checked_sub(total)
+                        .ok_or(RelationError::Arena)?;
+                    let mut fields = values.drain(start ..);
+                    let mut joined = Vec::new();
+                    for (tag, relations) in constructors.iter().enumerate() {
+                        let own = fields.by_ref().take(relations.len()).collect::<Vec<_>>();
+                        joined.extend(constructor_patterns(
+                            arena,
+                            &mut table,
+                            &mut allowance,
+                            (node.source, ConstructorTag::from(tag)),
+                            own,
+                        )?);
                     }
                     joined
                 },
@@ -1050,6 +1087,7 @@ impl Relation
                 | Clause::Sum(..)
                 | Clause::Function(..)
                 | Clause::List(_)
+                | Clause::Data(_)
                 | Clause::CaseLeft(..)
                 | Clause::CaseRight(..) => None,
             })
@@ -1106,6 +1144,7 @@ impl Relation
                 | Clause::CaseLeft(first, second)
                 | Clause::CaseRight(first, second) => pending.extend([first, second]),
                 Clause::List(element) => pending.push(element),
+                Clause::Data(data) => pending.extend(self.constructors(data)?.iter().flatten()),
                 Clause::Unit
                 | Clause::Empty
                 | Clause::Discrete
@@ -1252,6 +1291,139 @@ impl Relation
             (Component(0), budget),
         )
     }
+}
+
+/// One constructor's fields crossed so far: the binders, both sides' field
+/// values and the right-nested proof of the fields related.
+struct Crossing
+{
+    /// The crossing's binders, ordered outermost first.
+    context: Vec<ValueTypeId>,
+    /// The source's fields.
+    lefts: Vec<ValueId>,
+    /// The target's fields.
+    rights: Vec<ValueId>,
+    /// Evidence of the fields related, paired right-nested.
+    proof: ValueId,
+}
+
+/// The related patterns of one constructor: its fields' patterns crossed as a
+/// right-nested product's, the first field's outermost and read past the
+/// later fields' binders, each side applied to the constructor; the proof is
+/// the right-nested pair of the fields' proofs, the unit value for a
+/// constructor without fields.
+///
+/// # Specification
+/// - requires: `fields` holds each field's patterns in declaration order.
+/// - ensures: one pattern per choice of a pattern at every field, in the order
+///   a nested product's patterns take, each side a constructor of `datatype` at
+///   `tag` over the field values the choice makes.
+/// - fails: Budget when `allowance` runs out or a telescope's length leaves the
+///   binder range.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a circle covers as one pattern over one integer, a
+///   rectangle as one over two, the first field read past the second's binder.
+/// - witness: `identity_recursion::function::tests::a_data_domain_covers_as_its_constructors`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |patterns| !patterns.is_empty()
+    && patterns.iter().all(|pattern| matches!(arena.value(pattern.left), Some(&Value::Constructor { datatype, tag: held, .. }) if datatype == shape.0 && held == shape.1))))]
+fn constructor_patterns(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    allowance: &mut Allowance,
+    shape: (ValueTypeId, ConstructorTag),
+    fields: Vec<Vec<RelatedPattern>>,
+) -> Result<Vec<RelatedPattern>, RelationError>
+{
+    let (datatype, tag) = shape;
+    let mut fields = fields.into_iter().rev();
+    let Some(last) = fields.next()
+    else {
+        let value = arena.value_constructor(datatype, tag, Vec::new());
+        return Ok(Vec::from([RelatedPattern {
+            context: Vec::new(),
+            left: value,
+            right: value,
+            proof: arena.value_unit(),
+        }]));
+    };
+    let mut rest = last
+        .into_iter()
+        .map(|pattern| Crossing {
+            context: pattern.context,
+            lefts: Vec::from([pattern.left]),
+            rights: Vec::from([pattern.right]),
+            proof: pattern.proof,
+        })
+        .collect::<Vec<_>>();
+    for field in fields {
+        let mut crossed = Vec::with_capacity(field.len().saturating_mul(rest.len()));
+        for left in &field {
+            for right in &rest {
+                allowance.charge()?;
+                let depth =
+                    u32::try_from(right.context.len()).map_err(|_error| RelationError::Budget)?;
+                let mut shift = |value| {
+                    shift_value(
+                        arena,
+                        table,
+                        &mut NullMemo,
+                        value,
+                        BinderDepth::default(),
+                        BinderDepth::from(depth),
+                    )
+                };
+                let source = shift(left.left);
+                let target = if left.left == left.right {
+                    source
+                }
+                else {
+                    shift(left.right)
+                };
+                let proof = shift(left.proof);
+                let mut context =
+                    Vec::with_capacity(left.context.len().saturating_add(right.context.len()));
+                context.extend_from_slice(&left.context);
+                context.extend_from_slice(&right.context);
+                let mut lefts = Vec::with_capacity(right.lefts.len().saturating_add(1));
+                lefts.push(source);
+                lefts.extend_from_slice(&right.lefts);
+                let mut rights = Vec::with_capacity(right.rights.len().saturating_add(1));
+                rights.push(target);
+                rights.extend_from_slice(&right.rights);
+                crossed.push(Crossing {
+                    context,
+                    lefts,
+                    rights,
+                    proof: arena.value_tuple(&[proof, right.proof]),
+                });
+            }
+        }
+        rest = crossed;
+    }
+    Ok(rest
+        .into_iter()
+        .map(|crossing| {
+            let shared = crossing.lefts == crossing.rights;
+            let left = arena.value_constructor(datatype, tag, crossing.lefts);
+            let right = if shared {
+                left
+            }
+            else {
+                arena.value_constructor(datatype, tag, crossing.rights)
+            };
+            RelatedPattern {
+                context: crossing.context,
+                left,
+                right,
+                proof: crossing.proof,
+            }
+        })
+        .collect())
 }
 
 /// Cross the thunk seam and apply, leaving the pure returner unreduced.

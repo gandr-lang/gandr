@@ -764,9 +764,11 @@ pub enum CheckRefusal
     /// functions have free variables no coverage reaches; the classifier must
     /// be a thunk of a pure non-dependent arrow, dependent arrows keeping their
     /// own evaluation; the result and every function argument's domain and
-    /// result must be built from the unit type, the base atoms and binary sums
-    /// and products, since a function argument over functions would need
-    /// function identity between the inputs it is applied at.
+    /// result must be built from the unit type, the base atoms, binary sums
+    /// and products, and data types that do not hold themselves, since a
+    /// function argument over functions would need function identity between
+    /// the inputs it is applied at and a data type holding itself has no
+    /// finite coverage.
     FunextUnsupported
     {
         /// The `funext`.

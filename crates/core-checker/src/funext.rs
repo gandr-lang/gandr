@@ -9,10 +9,12 @@
 //! against it, both functions are closed, and at every input the coverage of
 //! `A` reaches the two agree. The coverage is the kernel's: the unit value, a
 //! fresh variable at a base atom, each injection of a binary sum's coverages,
-//! each pairing of a binary product's, and at a function argument of type `T`
-//! two functions and their identity, `f₀ f₁ : T, p : Path(T, f₀, f₁)`, the
-//! left input reading `f₀` and the right `f₁` — in the kernel's order, each
-//! input standing under its own pattern binders.
+//! each pairing of a binary product's, each constructor of a data type in tag
+//! order over its fields' coverages crossed as a product's, and at a function
+//! argument of type `T` two functions and their identity,
+//! `f₀ f₁ : T, p : Path(T, f₀, f₁)`, the left input reading `f₀` and the right
+//! `f₁` — in the kernel's order, each input standing under its own pattern
+//! binders.
 //!
 //! At an input under `n` binders the normaliser reads `thunk (λⁿ. force f v₀)`
 //! and `thunk (λⁿ. force g v₁)` to their normal forms, every admitted
@@ -42,7 +44,8 @@
 //! thunk of a pure non-dependent arrow, because dependent arrows have their own
 //! reserved evaluation and an effect relates nothing pointwise; a domain or
 //! result reaching a list, a universe or a certificate, because those
-//! identities are observed or certified rather than covered; a function
+//! identities are observed or certified rather than covered; a data type
+//! holding itself, because its constructors' coverage never ends; a function
 //! argument whose own domain or result is not first order, because its inputs
 //! would need function identity between them; a function-valued result,
 //! because its output evidence is itself a function identity; and a coverage
@@ -75,16 +78,17 @@
 //!   domain is itself higher order, which needs nested function identity
 //!   between the inputs it is applied at.
 //! - **First order elsewhere.** The outer result, and the domain and result of
-//!   every function argument, are built from the unit type, the base atoms and
-//!   binary sums and products: the fragment where every input is a pattern and
-//!   every result a first-order value the bridge translates as it stands.
-//!   Reversal: a function-valued result needs the bridge to erase nested
-//!   evidence for it.
+//!   every function argument, are built from the unit type, the base atoms,
+//!   binary sums and products, and data types that do not hold themselves: the
+//!   fragment where every input is a pattern and every result a first-order
+//!   value the bridge translates as it stands. Reversal: a function-valued
+//!   result needs the bridge to erase nested evidence for it.
 //! - **Synthesised from its first function.** `f` names the classifier, so a λ
 //!   written in its place does not synthesise and is refused as any such λ is.
 //!   Reversal: a checking rule against `Path(T, f, g)` reads `T` from the
 //!   expected type instead.
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -97,6 +101,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -240,8 +246,8 @@ struct Pattern
     coordinates: Vec<Coordinate>,
 }
 
-/// A coverage task: a type to cover, or a binary former whose two coverages
-/// are ready to join.
+/// A coverage task: a type to cover, or a former whose coverages are ready to
+/// join.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Task
 {
@@ -251,6 +257,23 @@ enum Task
     Sum,
     /// Pair the two coverages beneath, the second on top.
     Product,
+    /// Cross this many field coverages beneath, the last on top, and apply
+    /// this data type's constructor of this tag to each crossing.
+    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// Join the coverages of this many constructors, the last on top, and
+    /// close this data declaration, which opened them.
+    Data(ConstantIndex, usize),
+}
+
+/// A step of the first-order walk: a type to read, or a data declaration
+/// whose fields have all been read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Walk
+{
+    /// Read the type.
+    Visit(ValueTypeId),
+    /// Close the data declaration.
+    Close(ConstantIndex),
 }
 
 /// One node of the decision's pre-order walk: the telescope a step stands in
@@ -545,14 +568,17 @@ fn arrow(
     Ok(Maybe::Present((domain, result)))
 }
 
-/// `ty`, when it is built from the unit type, the base atoms and binary sums
-/// and products alone: a result the bridge translates as it stands.
+/// `ty`, when it is built from the unit type, the base atoms, binary sums and
+/// products, and data types whose constructors' fields are such types and
+/// never reach the data type again: a result the bridge translates as it
+/// stands.
 ///
 /// # Specification
 /// - requires: `ty` is formed under the judgement's binders.
 /// - ensures: `ty` exactly when every type the walk reaches, read at its weak
-///   head, is the unit type, a base atom, or a sum or product of exactly two;
-///   otherwise [`outside::Absent::Former`].
+///   head, is the unit type, a base atom, a sum or product of exactly two, or a
+///   data type [`crate::equiv::data_signature`] reads that its own fields do
+///   not reach; otherwise [`outside::Absent::Former`].
 /// - fails: a weak-head or view refusal as those raise it.
 /// - panics: none.
 ///
@@ -561,12 +587,15 @@ fn arrow(
 ///
 /// # Termination
 /// - reason: a `while let` worklist over the finite type tree, not recursion.
-/// - measure: the types left, each replaced by its strictly smaller children.
+/// - measure: the types left, each replaced by its strictly smaller children; a
+///   data type is opened at most once on any path, held open until its fields
+///   are walked.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a binary sum of units is first order and a thunk type is
-///   not.
+///   not; a shape of integers is first order and the naturals are not.
 /// - witness: `funext::tests::what_the_rule_cannot_show_it_refuses_by_name`
+/// - witness: `funext::tests::a_data_domain_covers_as_its_constructors`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => found == ty,
     | Ok(Maybe::Absent(reason)) => reason == outside::Absent::Former,
@@ -577,16 +606,43 @@ fn first_order(
     ty: ValueTypeId,
 ) -> Result<Maybe<ValueTypeId, outside::Absent>, CheckRefusal>
 {
-    let mut pending = Vec::from([ty]);
-    while let Some(part) = pending.pop() {
+    let mut pending = Vec::from([Walk::Visit(ty)]);
+    // The data declarations whose fields are being walked: a field reaching
+    // one of them recurs.
+    let mut open = BTreeSet::new();
+    while let Some(step) = pending.pop() {
+        let part = match step {
+            Walk::Visit(part) => part,
+            Walk::Close(declaration) => {
+                open.remove(&declaration);
+                continue;
+            },
+        };
         let head = context.whnf_value_type(part)?;
         match value_type_view(context.arena(), head)? {
             ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
             ValueTypeView::Sum(&[first, second]) | ValueTypeView::Product(&[first, second]) => {
-                pending.extend([first, second]);
+                pending.extend([Walk::Visit(first), Walk::Visit(second)]);
             },
-            ValueTypeView::Data { .. }
-            | ValueTypeView::Record(_)
+            ValueTypeView::Data { declaration, .. } => {
+                if !open.insert(declaration) {
+                    return Ok(Maybe::Absent(outside::Absent::Former));
+                }
+                let Maybe::Present(signature) = crate::equiv::data_signature(context, head)?
+                else {
+                    return Ok(Maybe::Absent(outside::Absent::Former));
+                };
+                pending.push(Walk::Close(declaration));
+                pending.extend(
+                    signature
+                        .constructors()
+                        .iter()
+                        .flatten()
+                        .copied()
+                        .map(Walk::Visit),
+                );
+            },
+            ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -663,6 +719,9 @@ fn coverage(
     let mut allowance = u64::from(ReplayBudget::DEFAULT);
     let mut tasks = Vec::from([Task::Cover(domain)]);
     let mut built: Vec<Vec<Pattern>> = Vec::new();
+    // The data declarations whose constructors are being covered: a field
+    // reaching one of them recurs.
+    let mut open = BTreeSet::new();
     while let Some(task) = tasks.pop() {
         let Some(left) = allowance.checked_sub(1)
         else {
@@ -726,8 +785,27 @@ fn coverage(
                     ValueTypeView::Product(&[first, second]) => {
                         tasks.extend([Task::Product, Task::Cover(second), Task::Cover(first)]);
                     },
-                    ValueTypeView::Data { .. }
-                    | ValueTypeView::Record(_)
+                    ValueTypeView::Data { declaration, .. } => {
+                        if open.contains(&declaration) {
+                            return Ok(Maybe::Absent(outside::Absent::Former));
+                        }
+                        let Maybe::Present(signature) =
+                            crate::equiv::data_signature(context, head)?
+                        else {
+                            return Ok(Maybe::Absent(outside::Absent::Former));
+                        };
+                        open.insert(declaration);
+                        tasks.push(Task::Data(declaration, signature.constructors().len()));
+                        for (tag, fields) in signature.constructors().iter().enumerate().rev() {
+                            tasks.push(Task::Constructor(
+                                head,
+                                ConstructorTag::from(tag),
+                                fields.len(),
+                            ));
+                            tasks.extend(fields.iter().rev().copied().map(Task::Cover));
+                        }
+                    },
+                    ValueTypeView::Record(_)
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::PathUniverse(..)
                     | ValueTypeView::Path { .. }
@@ -831,6 +909,87 @@ fn coverage(
                     }
                 }
                 built.push(joined);
+            },
+            // Each step crosses the crossings so far with the next field's
+            // patterns: the earlier sides and their coordinates shift past the
+            // new field's binders, so every variable stays distinct, and the
+            // first field's patterns stay outermost, as a pair's do.
+            Task::Constructor(datatype, tag, arity) => {
+                let start = built
+                    .len()
+                    .checked_sub(arity)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let mut crossings =
+                    Vec::from([(Vec::<(ValueId, ValueId)>::new(), 0_u32, Vec::new())]);
+                for field in built.drain(start ..) {
+                    let mut crossed = Vec::new();
+                    for &(ref sides, binders, ref coordinates) in &crossings {
+                        for next in &field {
+                            let Some(rest) = allowance.checked_sub(1)
+                            else {
+                                return Ok(Maybe::Absent(outside::Absent::Allowance));
+                            };
+                            allowance = rest;
+                            let past = Binders::from(next.binders);
+                            let arena = context.arena_mut();
+                            let mut shifted = Vec::with_capacity(sides.len().saturating_add(1));
+                            for &(left, right) in sides {
+                                let left_shifted =
+                                    gandr_core_term::shift_value(arena, left, past).settle(arena);
+                                let right_shifted = if left == right {
+                                    left_shifted
+                                }
+                                else {
+                                    gandr_core_term::shift_value(arena, right, past).settle(arena)
+                                };
+                                shifted.push((left_shifted, right_shifted));
+                            }
+                            shifted.push((next.left, next.right));
+                            let mut beneath = coordinates
+                                .iter()
+                                .map(|coordinate: &Coordinate| coordinate.beneath(past))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            beneath.extend_from_slice(&next.coordinates);
+                            let binders = binders
+                                .checked_add(next.binders)
+                                .ok_or(CheckRefusal::MachineInvariant)?;
+                            crossed.push((shifted, binders, beneath));
+                        }
+                    }
+                    crossings = crossed;
+                }
+                let arena = context.arena_mut();
+                let mut joined = Vec::with_capacity(crossings.len());
+                for (sides, binders, coordinates) in crossings {
+                    let (lefts, rights): (Vec<ValueId>, Vec<ValueId>) = sides.into_iter().unzip();
+                    let shared = lefts == rights;
+                    let left = arena.value_constructor(datatype, tag, lefts);
+                    let right = if shared {
+                        left
+                    }
+                    else {
+                        arena.value_constructor(datatype, tag, rights)
+                    };
+                    joined.push(Pattern {
+                        binders,
+                        left,
+                        right,
+                        coordinates,
+                    });
+                }
+                built.push(joined);
+            },
+            // The constructors' coverages in tag order, the data type closed.
+            Task::Data(declaration, count) => {
+                let start = built
+                    .len()
+                    .checked_sub(count)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let joined = built.drain(start ..).flatten().collect();
+                built.push(joined);
+                if !open.remove(&declaration) {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
             },
         }
     }

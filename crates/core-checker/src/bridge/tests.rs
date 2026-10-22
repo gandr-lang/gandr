@@ -3254,6 +3254,71 @@ fn a_funext_returning_a_pair_or_a_constant_crosses_with_it()
     }
 }
 
+/// A funext between functions that return a constructor crosses with the
+/// constructor on both sides of its one component, the data type crossed
+/// before it, and the kernel readmits it.
+#[test]
+fn a_funext_returning_a_constructor_crosses_with_it()
+{
+    // data Two : Type { Both : (a : Integer, b : Integer) --> Two } ;
+    // def f, g : U (() -> F Two) = λ_. return Both(0, 0) ;
+    // def same : Path(U (…), f, g) = funext(f, g) ;
+    use alloc::sync::Arc;
+
+    use gandr_core_term::DataSignature;
+    use gandr_kernel_term::ConstructorTag;
+
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let signature = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::from([integer, integer])]),
+        kind,
+    ));
+    let two = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let unit_type = arena.value_type_unit();
+    let returns = arena.comp_type_returner(two);
+    let arrow = arena.comp_type_arrow(unit_type, returns);
+    let function = arena.value_type_thunk(arrow);
+    let [left, right] = [(), ()].map(|()| {
+        let zero = arena.value_literal(integer_literal());
+        let both =
+            arena.value_constructor(two, ConstructorTag::from(0_usize), Vec::from([zero, zero]));
+        let body = arena.computation_return(both);
+        let lambda = arena.computation_lambda(body);
+        arena.value_thunk(lambda)
+    });
+    let [left_constant, right_constant] =
+        [1_usize, 2_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    let path = arena.value_type_path(function, left_constant, right_constant);
+    let funext = arena.value_funext(left_constant, right_constant);
+    let declared = Maybe::Present(function);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        Declaration::data(
+            ConstantIndex::from(0_usize),
+            signature,
+            OriginToken::from(0_usize),
+        ),
+        declaration(At(1), declared, Maybe::Present(left)),
+        declaration(At(2), declared, Maybe::Present(right)),
+        declaration(At(3), Maybe::Present(path), Maybe::Present(funext)),
+    ]);
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "both functions return the same constructor: {:?}",
+        report.judged()[3].verdict()
+    );
+    assert!(
+        matches!(
+            readmission.readmitted()[3].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the constructor crosses as itself on either side: {:?}",
+        readmission.readmitted()[3].outcome()
+    );
+}
+
 #[test]
 fn a_quantified_funext_crosses_as_a_quantified_evaluation()
 {

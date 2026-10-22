@@ -4,6 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
@@ -228,7 +229,7 @@ impl Relation
             && fibers.nodes.iter().enumerate().all(|(id, node)| match *node { Fiber::Product(a, b) => a.0 < id && b.0 < id, Fiber::Unit | Fiber::Empty | Fiber::Universe(..) | Fiber::Certificate(..) | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } | Fiber::Relation { .. } | Fiber::Recursive { .. } | Fiber::Atom { .. } => true })
             && self.node(relation).is_ok_and(|node| matches!((node.clause, fibers.get(fibers.root)),
                 (Clause::Unit, Ok(Fiber::Unit)) | (Clause::Empty, Ok(Fiber::Empty)) | (Clause::Universe, Ok(Fiber::Universe(..))) | (Clause::Certificate, Ok(Fiber::Certificate(..))) | (Clause::Relation, Ok(Fiber::Relation { .. })) | (Clause::Atom { .. }, Ok(Fiber::Atom { .. })) | (Clause::Product(..), Ok(Fiber::Product(..))) | (Clause::Function(..), Ok(Fiber::Function { .. }))
-                | (Clause::Discrete | Clause::Sum(..) | Clause::List(_) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),
+                | (Clause::Discrete | Clause::Sum(..) | Clause::List(_) | Clause::Data(_) | Clause::CaseLeft(..) | Clause::CaseRight(..), Ok(_)))),
         Err(RelationError::RecursiveObservationRequired) => self.mode == Mode::Identity && self.nodes.iter().any(|node| matches!(node.clause, Clause::List(_))),
         Err(_) => true,
     })]
@@ -428,6 +429,55 @@ impl Relation
                                 _ => Fiber::Suspended(left, right),
                             }
                         },
+                        // Matching constructors relate their fields as a
+                        // product, right-nested with the first field
+                        // outermost: one pair fewer than fields above the
+                        // fields' visits, the first on top.
+                        Clause::Data(data) => {
+                            match (
+                                result.constructor(arena, left)?,
+                                result.constructor(arena, right)?,
+                            ) {
+                                (Construction::Known(tag, _), Construction::Known(other, _))
+                                    if tag != other =>
+                                {
+                                    Fiber::Empty
+                                },
+                                (
+                                    Construction::Known(tag, fields),
+                                    Construction::Known(_, others),
+                                ) => {
+                                    let relations = self
+                                        .constructors(data)?
+                                        .get(usize::from(tag))
+                                        .ok_or(RelationError::Arena)?;
+                                    if relations.len() != fields.len()
+                                        || relations.len() != others.len()
+                                    {
+                                        return Err(RelationError::Arena);
+                                    }
+                                    if relations.is_empty() {
+                                        Fiber::Unit
+                                    }
+                                    else {
+                                        for _ in 1 .. relations.len() {
+                                            tasks.push(Task::Pair);
+                                        }
+                                        for ((&relation, &x), &y) in
+                                            relations.iter().zip(fields).zip(others).rev()
+                                        {
+                                            let left = result.index(Index::Value(x), &mut shared);
+                                            let right = result.index(Index::Value(y), &mut shared);
+                                            tasks.push(Task::Visit(relation, left, right));
+                                        }
+                                        continue;
+                                    }
+                                },
+                                (Construction::Neutral, _) | (_, Construction::Neutral) => {
+                                    Fiber::Suspended(left, right)
+                                },
+                            }
+                        },
                         clause @ (Clause::CaseLeft(first, second)
                         | Clause::CaseRight(first, second)) => {
                             let index = match clause {
@@ -443,6 +493,7 @@ impl Relation
                                 | Clause::Sum(..)
                                 | Clause::Function(..)
                                 | Clause::List(_)
+                                | Clause::Data(_)
                                 | Clause::CaseRight(..) => right,
                             };
                             let injection = result.injection(arena, index)?;
@@ -466,6 +517,7 @@ impl Relation
                                         | Clause::Sum(..)
                                         | Clause::Function(..)
                                         | Clause::List(_)
+                                        | Clause::Data(_)
                                         | Clause::CaseRight(..) => (left, payload),
                                     };
                                     tasks.push(Task::Visit(relation, left, right));
@@ -492,6 +544,15 @@ enum Injection
     /// A visible injection and its payload.
     Known(Side, ValueId),
     /// Case evaluation is suspended on this index.
+    Neutral,
+}
+
+/// A constructor observation; absence means a neutral, not a malformed value.
+enum Construction<'arena>
+{
+    /// A visible constructor's tag and fields.
+    Known(ConstructorTag, &'arena [ValueId]),
+    /// The index's constructor is not visible.
     Neutral,
 }
 
@@ -880,6 +941,47 @@ impl Fibers
                 _ => Ok(ListShape::Neutral),
             },
             Index::First(_) | Index::Second(_) => Ok(ListShape::Neutral),
+        }
+    }
+
+    /// Observe a data constructor without deciding equality of neutral
+    /// indices.
+    ///
+    /// # Specification
+    /// - ensures: a visible constructor's tag and fields, or a neutral
+    ///   observation for anything else, a projection of a neutral product among
+    ///   them.
+    /// - fails: `Arena` on an unreadable index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shape variable never selects a constructor, so its
+    ///   identity with a written shape stays suspended.
+    /// - witness: `identity_recursion::tests::a_data_type_relates_its_constructors_fieldwise`
+    #[spec(ensures: |ret| match ret {
+        Ok(Construction::Known(tag, fields)) => self.get_index(index).is_ok_and(|term| matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Constructor { tag: found, fields: ref held, .. }) if found == tag && held.as_slice() == fields))),
+        Ok(Construction::Neutral) => self.get_index(index).is_ok_and(|term| !matches!(term, Index::Value(value) if matches!(arena.value(value), Some(&Value::Constructor { .. })))),
+        Err(RelationError::Arena) => self.get_index(index).is_err(),
+        Err(_) => false,
+    })]
+    fn constructor<'arena>(
+        &self,
+        arena: &'arena TermArena,
+        index: IndexId,
+    ) -> Result<Construction<'arena>, RelationError>
+    {
+        let index = self.get_index(index)?;
+        match index {
+            Index::Value(value) => match arena.value(value) {
+                Some(&Value::Constructor {
+                    tag, ref fields, ..
+                }) => Ok(Construction::Known(tag, fields)),
+                _ => Ok(Construction::Neutral),
+            },
+            Index::First(_) | Index::Second(_) => Ok(Construction::Neutral),
         }
     }
 
