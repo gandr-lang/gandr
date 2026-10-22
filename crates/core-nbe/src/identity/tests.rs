@@ -390,8 +390,10 @@ fn telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_va
         "along a closed path that is no reflexivity, a motive reading neither entry returns its value"
     );
     let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let over_end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
     let unit = core.value_type_unit();
-    let reading = core.value_type_path(unit, end, end);
+    let singleton = core.value_type_path(unit, centre, end);
+    let reading = core.value_type_path(singleton, over_end, over_end);
     let motive = unit_telescope(&mut core, reading);
     let reflexive = core.value_here(centre);
     let transported =
@@ -403,7 +405,44 @@ fn telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_va
     assert_eq!(
         eval_computation(&core, &mut domain, definitions, ample(), transported).err(),
         Some(crate::eval::EvalFault::TransportedNonPath),
-        "a motive reading the path's endpoint has no row along it"
+        "a motive reading the path's endpoint at a carrier other than the unit has no row along it"
+    );
+}
+
+#[test]
+fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let centre = core.value_unit();
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let back = core.value_type_path(unit, end, centre);
+    let motive = unit_telescope(&mut core, back);
+    let evidence = core.value_unit();
+    let start = core.value_here(centre);
+    let over = core.value_here(evidence);
+    let returned = core.computation_return(centre);
+    let transported = core.computation_telescope_transport(motive, evidence, start, over, start);
+    assert_eq!(
+        normalises_to(&mut core, transported, returned),
+        CertificateEquality::Equal,
+        "along native evidence, the family of paths back to the centre returns the unit fibre's \
+             one inhabitant"
+    );
+    let path = stuck(&mut core, ConstantIndex::from(0_usize));
+    let held = core.computation_telescope_transport(motive, path, start, over, start);
+    assert_eq!(
+        normalises_to(&mut core, held, returned),
+        CertificateEquality::Equal,
+        "along a stuck path it returns the unit too"
+    );
+    let reflexive = core.value_here(centre);
+    let along_here = core.computation_telescope_transport(motive, reflexive, start, start, start);
+    let operand = core.computation_return(start);
+    assert_eq!(
+        normalises_to(&mut core, along_here, operand),
+        CertificateEquality::Equal,
+        "along reflexivity the operand returns unchanged"
     );
 }
 
