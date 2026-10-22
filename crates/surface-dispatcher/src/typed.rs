@@ -3627,14 +3627,19 @@ impl TypeTable
             *read = last_parameter(&mut arena, declared, count, &mut carried)
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
-        // A type the lowering recorded as written as a relation, or a pair it
-        // recorded labels for, stands at each copy a shift made of it, so a
-        // type read under a dropped binder reprints as written (#674, #1655).
-        // The copies are taken in the order the shifts made them, so a copy
-        // of a copy finds its source's; a type recorded twice keeps its first.
+        // A type the lowering recorded as written as a relation, a pair it
+        // recorded labels for, or a dependent arrow it recorded its binder's
+        // name for, stands at each copy a shift made of it, so a type read
+        // under a dropped binder reprints as written (#674, #1655, #1751). The
+        // copies are taken in the order the shifts made them, so a copy of a
+        // copy finds its source's; a type recorded twice keeps its first.
         let mut related: BTreeMap<ValueTypeId, Relation> = BTreeMap::new();
         for &(ty, relation) in &read_back.relations {
             related.entry(ty).or_insert(relation);
+        }
+        let mut named: BTreeMap<CompTypeId, String> = BTreeMap::new();
+        for &(arrow, ref name) in &read_back.arrows {
+            named.entry(arrow).or_insert_with(|| name.clone());
         }
         // Each pair's first recorded label, by its place among the kept ones;
         // a copy stands at its source's place, so a copy of a copy reaches
@@ -3651,9 +3656,16 @@ impl TypeTable
         let mut copied_binders: Vec<(ValueTypeId, usize)> = Vec::new();
         let mut copied_seconds: Vec<(ValueTypeId, usize)> = Vec::new();
         for copy in carried {
-            let Carried::ValueType(source, image) = copy
-            else {
-                continue;
+            let (source, image) = match copy {
+                Carried::ValueType(source, image) => (source, image),
+                Carried::CompType(source, image) => {
+                    if let Some(name) = named.get(&source).cloned() {
+                        read_back.arrows.push((image, name.clone()));
+                        named.entry(image).or_insert(name);
+                    }
+                    continue;
+                },
+                Carried::Value(..) | Carried::Computation(..) => continue,
             };
             if let Some(&relation) = related.get(&source) {
                 read_back.relations.push((image, relation));
@@ -7160,6 +7172,42 @@ mod tests
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == record),
             "the record prints with its labels: {reads:?}"
+        );
+        assert!(
+            reads.iter().all(|&(ref spelled, ref again)| match *again {
+                Maybe::Present(ref again) => again == spelled,
+                Maybe::Absent(super::reprinted::Absent::Unspelled) => false,
+                Maybe::Absent(
+                    super::reprinted::Absent::Unlowered | super::reprinted::Absent::Unrun,
+                ) => true,
+            }),
+            "every printed type that lowers again reprints as itself: {reads:?}"
+        );
+    }
+
+    /// #1751: a dependent arrow a parameter is typed by, read back under the
+    /// parameters before it, two of them dropped from the reread as no later
+    /// type names them, reprints with the binder name it was written and
+    /// printed with: the copy the read-back shifts under them keeps the name
+    /// the reread recorded.
+    #[test]
+    fn an_arrow_parameter_reprints_with_its_binder_name_1751()
+    {
+        let source = SourceText::from(
+            "def k(\n  a : Type,\n  b : Type,\n  t : a => b,\n  g : b => a,\n  s : (x : a) => \
+             Path(a, g(t(x)), x),\n  h : b => a,\n  r : (y : b) => Path(b, t(h(y)), y),\n  y : \
+             b\n) -> -F Path((y : b) => Path(b, t(h(y)), y), r, r) { return here(r) }\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.reprinted))
+            .collect();
+        let arrow = "(y : b) => Path(b, t(h(y)), y)";
+        assert!(
+            reads.iter().any(|&(ref spelled, _)| spelled == arrow),
+            "the arrow prints with its written binder: {reads:?}"
         );
         assert!(
             reads.iter().all(|&(ref spelled, ref again)| match *again {
