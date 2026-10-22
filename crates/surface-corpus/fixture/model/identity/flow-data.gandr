@@ -1,0 +1,81 @@
+// A flow between data types given by a translator, after directed
+// univalence (Gratzer, Weinberger and Buchholtz, _Directed univalence in
+// simplicial homotopy type theory_, arXiv:2407.09146, Definition 1.2): a data
+// type is covered as the sum of its constructors, each the product of its
+// fields, so a translator that only moves fields between constructors gives
+// a flow, and riding it moves a value of the old type to the new.
+
+/// The old type: one constructor of one integer field.
+@[ checks ]
+data Old : Type {
+  Mk : (n : Integer) --> Old;
+}
+
+/// The new type: the same field under another constructor.
+@[ checks ]
+data Other : Type {
+  Make : (n : Integer) --> Other;
+}
+
+/// The old shapes.
+@[ checks ]
+data Shape : Type {
+  Circle : (r : Integer) --> Shape;
+  Rect : (w : Integer, h : Integer) --> Shape;
+}
+
+/// The new shapes: the circle renamed, the rectangle's sides swapped.
+@[ checks ]
+data Figure : Type {
+  Round : (r : Integer) --> Figure;
+  Box : (h : Integer, w : Integer) --> Figure;
+}
+
+/// One field moved to a constructor of another name.
+module Rename {
+  /// The translator: the field moved to the new constructor.
+  @[ checks ]
+  def toOther(old : Old) -> -F Other {
+    case old {
+      Mk(n) => Make(n)
+    }
+  }
+  /// The flow from the old type to the new, by its translator.
+  @[ checks ]
+  def renamed : Flow(Type, Old, Other) ;
+  def renamed = forward(toOther) ;
+  /// One value ridden along the flow.
+  @[ checks ]
+  def moved(old : Old) -> -F Other {
+    become ride(\X. X, renamed, old)
+  }
+  /// A value migrated by a run.
+  @[ runs("Make(3)") ]
+  def one : () => Other ;
+  def one = thunk { become moved(Mk(3)) } ;
+}
+
+/// Each constructor moved to its twin, a constructor's fields swapped.
+module Shapes {
+  /// The translator: each shape to its figure, the sides swapped.
+  @[ checks ]
+  def toFigure(shape : Shape) -> -F Figure {
+    case shape {
+      Circle(r) => Round(r),
+      Rect(w, h) => Box(h, w)
+    }
+  }
+  /// The flow from the old shapes to the new.
+  @[ checks ]
+  def redrawn : Flow(Type, Shape, Figure) ;
+  def redrawn = forward(toFigure) ;
+  /// A list of shapes ridden along the flow in the family of lists.
+  @[ checks ]
+  def all(shapes : List(Shape)) -> -F List(Figure) {
+    become ride(\X. List(X), redrawn, shapes)
+  }
+  /// Two shapes migrated by a run.
+  @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]
+  def two : () => List(Figure) ;
+  def two = thunk { become all(cons(Circle(1), cons(Rect(2, 3), nil))) } ;
+}

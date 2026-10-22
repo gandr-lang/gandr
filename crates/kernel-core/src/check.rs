@@ -1433,6 +1433,7 @@ where
                         ValueType::FlowUniverse(..) => {
                             let endpoints = crate::flow_universe::endpoints(
                                 arena,
+                                judgement.entries,
                                 id,
                                 crate::replay::ReplayBudget::DEFAULT,
                             )
@@ -2941,6 +2942,7 @@ where
                         )?;
                         let endpoints = crate::flow_universe::endpoints(
                             arena,
+                            judgement.entries,
                             flow_type,
                             crate::ReplayBudget::DEFAULT,
                         )
@@ -2988,6 +2990,7 @@ where
                         )?;
                         let endpoints = crate::flow_universe::forward_type(
                             arena,
+                            judgement.entries,
                             flow_type,
                             crate::ReplayBudget::DEFAULT,
                         )
@@ -4620,6 +4623,7 @@ where
                     let first_type = produced.value_type()?;
                     let endpoints = crate::flow_universe::universe_reading(
                         arena,
+                        judgement.entries,
                         first_type,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
@@ -4632,6 +4636,7 @@ where
                     let second_type = produced.value_type()?;
                     let second = crate::flow_universe::universe_reading(
                         arena,
+                        judgement.entries,
                         second_type,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
@@ -4643,6 +4648,7 @@ where
                     let classifier = arena.value_type_flow_universe(source, target);
                     let _decoded = crate::flow_universe::endpoints(
                         arena,
+                        judgement.entries,
                         classifier,
                         crate::replay::ReplayBudget::DEFAULT,
                     )
@@ -5038,6 +5044,7 @@ where
                     let result = crate::flow_universe::forward(
                         arena,
                         &unfoldings,
+                        judgement.entries,
                         endpoints,
                         translator,
                         (&images, &dialogues),

@@ -1,0 +1,52 @@
+// What a forward flow between data types does not decide yet, after directed
+// univalence (Gratzer, Weinberger and Buchholtz, _Directed univalence in
+// simplicial homotopy type theory_, arXiv:2407.09146, Definition 1.2): a data
+// type is covered constructor by constructor only when each field is a closed
+// type of the vocabulary, so a field naming a parameter and a type holding
+// itself are refused. Each refusal names #1835, whose steps take them.
+
+/// A box of any type: its field names the parameter.
+@[ checks ]
+data Box(a : Type) : Type {
+  Boxed : (x : a) --> Box(a);
+}
+
+/// The naturals: the successor's field holds the type itself.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A box of integers repacked as itself.
+module Repack {
+  /// The translator: the field moved back into its constructor.
+  @[ checks ]
+  def rebox(box : Box(Integer)) -> -F Box(Integer) {
+    case box {
+      Boxed(x) => Boxed(x)
+    }
+  }
+  /// A field naming a parameter is covered at the parameters' instance only
+  /// once #1835 takes it, so no flow forwards by it yet.
+  @[ refuses("ForwardUnsupported") ]
+  def repacked : Flow(Type, Box(Integer), Box(Integer)) ;
+  def repacked = forward(rebox) ;
+}
+
+/// The naturals renumbered as themselves.
+module Renumber {
+  /// The translator: each constructor to itself, the predecessor moved.
+  @[ checks ]
+  def step(n : Nat) -> -F Nat {
+    case n {
+      Zero => Zero,
+      Succ(m) => Succ(m)
+    }
+  }
+  /// A type holding itself is covered as a list is, its own field a tail,
+  /// only once #1835 takes it, so no flow forwards by it yet.
+  @[ refuses("ForwardUnsupported") ]
+  def renumbered : Flow(Type, Nat, Nat) ;
+  def renumbered = forward(step) ;
+}

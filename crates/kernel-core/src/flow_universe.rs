@@ -210,6 +210,7 @@ use gandr_kernel_term::ValueTypeId;
 use crate::conv::Convertibility;
 use crate::conv::convert_values;
 use crate::conv::convertible_value_types;
+use crate::env::AdmittedDeclaration;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 
@@ -325,9 +326,10 @@ pub struct FlowType
 ///
 /// # Specification
 /// - ensures: each endpoint is a quoted code of the `Flow_U` vocabulary: a
-///   first-order code, a function code over first-order codes, or a finite
-///   guarded session code. The returned roots are the quoted types. Session
-///   payload typing belongs to ordinary native formation.
+///   first-order code, a data type among them read from `entries`, the admitted
+///   prefix; a function code over first-order codes; or a finite guarded
+///   session code. The returned roots are the quoted types. Session payload
+///   typing belongs to ordinary native formation.
 /// - fails: `FamilyMismatch` for a `Path_U` classifier, `ExpectedFlow` for any
 ///   other classifier, or a code-walk refusal.
 /// - panics: none.
@@ -352,14 +354,15 @@ pub struct FlowType
 #[inline]
 pub fn endpoints(
     arena: &TermArena,
+    entries: &[AdmittedDeclaration],
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
 {
     let (source, target) = universe_codes(arena, classifier)?;
     let mut allowance = Allowance(u64::from(budget));
-    let source = coverage::vocabulary(arena, source, &mut allowance, budget)?;
-    let target = coverage::vocabulary(arena, target, &mut allowance, budget)?;
+    let source = coverage::vocabulary(arena, source, entries, &mut allowance, budget)?;
+    let target = coverage::vocabulary(arena, target, entries, &mut allowance, budget)?;
     Ok(FlowType { source, target })
 }
 
@@ -394,7 +397,8 @@ fn universe_codes(
     }
 }
 
-/// Decode a forward flow's classifier: `Flow_U` between two first-order codes.
+/// Decode a forward flow's classifier: `Flow_U` between two first-order codes,
+/// a data type among them read from `entries`, the admitted prefix.
 ///
 /// # Specification
 /// - ensures: both quoted types pass the first-order walk.
@@ -412,14 +416,15 @@ fn universe_codes(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(..))) && arena.value_type(flow.source).is_some()))]
 pub(crate) fn forward_type(
     arena: &TermArena,
+    entries: &[AdmittedDeclaration],
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
 {
     let (source, target) = universe_codes(arena, classifier)?;
     let mut allowance = Allowance(u64::from(budget));
-    let source = coverage::code(arena, source, &mut allowance)?;
-    let target = coverage::code(arena, target, &mut allowance)?;
+    let source = coverage::code(arena, source, entries, &mut allowance)?;
+    let target = coverage::code(arena, target, entries, &mut allowance)?;
     Ok(FlowType { source, target })
 }
 
@@ -545,8 +550,8 @@ pub(crate) fn ends(
 /// Read a flow classifier as a universe flow and decode its endpoints.
 ///
 /// # Specification
-/// - ensures: `Flow_U(x, y)` decodes as [`endpoints`]; `Flow(U₀, x, y)` at the
-///   level-zero value universe decodes as `Flow_U(x, y)`.
+/// - ensures: `Flow_U(x, y)` decodes as [`endpoints`] over `entries`; `Flow(U₀,
+///   x, y)` at the level-zero value universe decodes as `Flow_U(x, y)`.
 /// - fails: `ExpectedFlow` for a flow at any other carrier, otherwise as
 ///   [`ends`] and [`endpoints`].
 /// - panics: none.
@@ -560,6 +565,7 @@ pub(crate) fn ends(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| arena.value_type(flow.source).is_some() && arena.value_type(flow.target).is_some()))]
 pub(crate) fn universe_reading(
     arena: &mut TermArena,
+    entries: &[AdmittedDeclaration],
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
@@ -572,7 +578,7 @@ pub(crate) fn universe_reading(
             Reading::Element => return Err(FlowError::ExpectedFlow(classifier)),
         },
     };
-    endpoints(arena, universe, budget)
+    endpoints(arena, entries, universe, budget)
 }
 
 /// Whether two flow classifiers agree as the two readings of one classifier.

@@ -1,6 +1,8 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -9,7 +11,9 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
@@ -311,11 +315,105 @@ fn the_empty_sum_has_no_coverage()
     let hollow = arena.value_type_product(&[unit, void]);
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     for code in [void, hollow] {
-        let covered = super::coverage(&mut context, code);
+        let covered = super::coverage(&mut context, code, super::Vocabulary::Containers);
         assert!(
             matches!(covered, Ok(Maybe::Absent(super::uncovered::Absent::Former))),
             "a sum of no summand covers nothing the rule decides over, alone or in a product: \
              {covered:?}"
+        );
+    }
+}
+
+/// `Shape { Circle(r), Rect(w, h) }` over integers covers, in the data
+/// vocabulary only, as its two constructors in tag order, each over fresh
+/// variables at its fields, the first field outermost. A data type holding
+/// itself, and one whose field names its parameter, have no coverage.
+#[test]
+fn a_data_type_covers_as_its_constructors_fields()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let large = arena.value_type_universe(
+        Sort::Ground(GroundSort::Value),
+        Level::zero().succ().expect("the successor of zero"),
+    );
+    let integer = arena.value_type_base(BaseType::Integer);
+    let shapes = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::from([integer]), Vec::from([integer, integer])]),
+        kind,
+    ));
+    let own = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let naturals = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::new(), Vec::from([own])]),
+        kind,
+    ));
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(parameter, Level::zero());
+    let boxes = Arc::new(DataSignature::new(
+        Vec::from([kind]),
+        Vec::from([Vec::from([element])]),
+        large,
+    ));
+    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let natural = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let code = arena.value_quote(integer);
+    let boxed = arena.value_type_data(ConstantIndex::from(2_usize), Vec::from([code]));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (position, signature) in [shapes, naturals, boxes].into_iter().enumerate() {
+        context
+            .adopt_data(ConstantIndex::from(position), signature)
+            .expect("the signature forms");
+    }
+
+    let Ok(Maybe::Present(patterns)) =
+        super::coverage(&mut context, shape, super::Vocabulary::Data)
+    else {
+        panic!("a shape covers in the data vocabulary");
+    };
+    let read = patterns
+        .iter()
+        .map(|pattern| {
+            let Some(&Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            }) = context.arena().value(pattern.value())
+            else {
+                panic!("a constructor pattern");
+            };
+            let indices = fields
+                .iter()
+                .map(|&field| match context.arena().value(field) {
+                    Some(&Value::Variable { index, .. }) => u32::from(index),
+                    _ => panic!("an integer field is a fresh variable"),
+                })
+                .collect::<Vec<_>>();
+            (datatype, tag, pattern.binders().0, indices)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        Vec::from([
+            (shape, ConstructorTag::from(0_usize), 1, Vec::from([0])),
+            (shape, ConstructorTag::from(1_usize), 2, Vec::from([1, 0])),
+        ]),
+        "one pattern per constructor, in tag order, the first field outermost"
+    );
+    assert_eq!(
+        super::coverage(&mut context, shape, super::Vocabulary::Containers),
+        Ok(Maybe::Absent(super::uncovered::Absent::Former)),
+        "a universe path's vocabulary holds no data type"
+    );
+    for (code, what) in [
+        (natural, "a data type holding itself"),
+        (boxed, "a field naming its parameter"),
+    ] {
+        assert_eq!(
+            super::coverage(&mut context, code, super::Vocabulary::Data),
+            Ok(Maybe::Absent(super::uncovered::Absent::Former)),
+            "{what}"
         );
     }
 }

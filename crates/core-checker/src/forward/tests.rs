@@ -1,8 +1,10 @@
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
 use gandr_core_term::Summand;
 use gandr_core_term::Value;
@@ -13,6 +15,7 @@ use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
@@ -21,6 +24,7 @@ use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
+use crate::equiv::Vocabulary;
 use crate::fixture::integer_literal;
 use crate::fixture::text_literal;
 use crate::forward::Directed;
@@ -726,11 +730,14 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let unsupported = Err(CheckRefusal::ForwardUnsupported { at });
     assert_eq!(
-        super::first_order(&mut context, at, empty),
+        super::first_order(&mut context, at, empty, Vocabulary::Data),
         unsupported,
         "an empty sum is not first-order"
     );
-    assert_eq!(super::first_order(&mut context, at, pair), Ok(()));
+    assert_eq!(
+        super::first_order(&mut context, at, pair, Vocabulary::Data),
+        Ok(())
+    );
     assert_eq!(
         super::leaves(&mut context, at, one, pair),
         Err(CheckRefusal::MachineInvariant),
@@ -751,7 +758,10 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
 
     // A list is first-order; its cell reads the head and the tail apart, and
     // the tail stands only at a list type equivalent to its own.
-    assert_eq!(super::first_order(&mut context, at, integers), Ok(()));
+    assert_eq!(
+        super::first_order(&mut context, at, integers, Vocabulary::Data),
+        Ok(())
+    );
     let read = super::leaves(&mut context, at, cell, integers).expect("a cell's leaves");
     assert!(
         matches!(*read.as_slice(), [
@@ -774,4 +784,94 @@ fn the_rule_reads_canonical_shapes_at_their_own_arity()
         unsupported,
         "an element leaf at a list position"
     );
+}
+
+/// A data type is first-order in the data vocabulary only, and not when it
+/// holds itself; a constructor pattern reads its fields' leaves at the types
+/// its tag gives them; and an output at a data type is one of its
+/// constructors over exactly its own fields, each a leaf of its own atom.
+#[test]
+fn data_shapes_are_read_constructor_by_constructor()
+{
+    let mut arena = CoreArena::new();
+    let at = arena.value_unit();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let shapes = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::from([integer]), Vec::from([integer, string])]),
+        kind,
+    ));
+    let own = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let naturals = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::new(), Vec::from([own])]),
+        kind,
+    ));
+    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let natural = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let near = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let far = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let rectangle = |arena: &mut CoreArena, fields: &[ValueId]| {
+        arena.value_constructor(shape, ConstructorTag::from(1_usize), fields.to_vec())
+    };
+    let labelled = rectangle(&mut arena, &[far, near]);
+    let swapped = rectangle(&mut arena, &[near, far]);
+    let short = rectangle(&mut arena, &[far]);
+    let past = arena.value_constructor(shape, ConstructorTag::from(2_usize), Vec::new());
+    let circle = arena.value_constructor(shape, ConstructorTag::from(0_usize), Vec::from([far]));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (position, signature) in [shapes, naturals].into_iter().enumerate() {
+        context
+            .adopt_data(ConstantIndex::from(position), signature)
+            .expect("the signature forms");
+    }
+    let unsupported = Err(CheckRefusal::ForwardUnsupported { at });
+    assert_eq!(
+        super::first_order(&mut context, at, shape, Vocabulary::Data),
+        Ok(())
+    );
+    for (code, vocabulary, what) in [
+        (
+            shape,
+            Vocabulary::Containers,
+            "a data type outside the vocabulary",
+        ),
+        (natural, Vocabulary::Data, "a data type holding itself"),
+    ] {
+        assert_eq!(
+            super::first_order(&mut context, at, code, vocabulary),
+            unsupported,
+            "{what}"
+        );
+    }
+
+    let read = super::leaves(&mut context, at, labelled, shape).expect("a rectangle's leaves");
+    assert_eq!(
+        read,
+        Vec::from([
+            Maybe::Present(super::Leaf::String),
+            Maybe::Present(super::Leaf::Integer)
+        ]),
+        "each field at its declared atom, the later one innermost"
+    );
+    for output in [labelled, circle] {
+        assert_eq!(
+            super::natural(&mut context, at, output, shape, &read),
+            Ok(()),
+            "a constructor over leaves of its fields' atoms"
+        );
+    }
+    for (output, what) in [
+        (swapped, "a field moved onto a leaf of the other atom"),
+        (short, "a constructor short of its fields"),
+        (past, "a tag past the table"),
+    ] {
+        assert_eq!(
+            super::natural(&mut context, at, output, shape, &read),
+            unsupported,
+            "{what}"
+        );
+    }
 }
