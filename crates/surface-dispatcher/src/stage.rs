@@ -846,6 +846,21 @@ mod tests
         ] {
             assert_eq!(spelling.parse::<ProgramSpec>(), Err(error), "{spelling}");
         }
+        let reasons = [
+            SpecError::Shape,
+            SpecError::Body,
+            SpecError::Exponent,
+            SpecError::Reversed,
+        ]
+        .map(|error| error.to_string());
+        assert_eq!(
+            reasons
+                .iter()
+                .collect::<alloc::collections::BTreeSet<_>>()
+                .len(),
+            reasons.len(),
+            "each refusal reads apart: {reasons:?}"
+        );
     }
 
     /// The run of `programs` on `pool`: each program's line, the digest and
@@ -897,6 +912,34 @@ mod tests
         assert_ne!(
             printed(&reordered, &pool).1,
             printed(&spellings[.. 2], &pool).1
+        );
+        let run = Staging::new(spellings[.. 1].to_vec(), Width::SERIAL)
+            .run(&Pool::new(Width::SERIAL))
+            .unwrap();
+        let [ref staged] = *run.programs()
+        else {
+            panic!("one program is staged");
+        };
+        assert_eq!(staged.spec(), spellings[0]);
+        assert!(staged.outcome().is_ok(), "the program is checked");
+        let digest = run.digest().to_string();
+        assert!(
+            digest.len() == 16 && digest.chars().all(|digit| digit.is_ascii_hexdigit()),
+            "a digest is sixteen hexadecimal digits: {digest}"
+        );
+        let verdicts = [
+            StageVerdict::Readmitted,
+            StageVerdict::Refused,
+            StageVerdict::Faulted,
+        ]
+        .map(|verdict| verdict.to_string());
+        assert_eq!(
+            verdicts
+                .iter()
+                .collect::<alloc::collections::BTreeSet<_>>()
+                .len(),
+            3,
+            "each verdict reads apart: {verdicts:?}"
         );
     }
 
