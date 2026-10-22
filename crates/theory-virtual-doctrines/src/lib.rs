@@ -2,6 +2,34 @@
 //!
 //! Engine facts are checked by certificate replay. The public law suite
 //! witnesses cartesian action, restriction, composition and directed rules.
+//!
+//! # Boundaries
+//!
+//! The double category is a strict reflection of the rewriting engine, at the
+//! level of sets. Objects are signatures by their nominal identity; tight
+//! arrows are renamings of a signature's names, composed associatively and
+//! unitally on the nose; a cell is a derivation whose identity is the replay
+//! of the certificates it elaborates to ([`Vdc::cells_equal`]), decided true
+//! or false rather than inhabited. An isomorphism of signatures is data, an
+//! [`IsoWitness`] whose two derivations round-trip under replay, and two
+//! isomorphic signatures stay two objects.
+//!
+//! Univalence is never assumed in this crate. The univalent reading, where
+//! equivalent presentations are equal and the convolution of rule algebras
+//! (Behr, Melliès and Zeilberger) acts on the objects the reflected site's
+//! equivalences name, is derived above, from `ua` over the certified strata.
+//! Those strata rest on the decisions replay makes in the certificate layer
+//! and in the kernel, so a step at the space level that changes what this
+//! crate reflects or checks would be circular.
+//!
+//! # References
+//!
+//! - Nicolas Behr, Paul-André Melliès and Noam Zeilberger. “Convolution
+//!   Products on Double Categories and Categorification of Rule Algebras.”
+//!   _FSCD 2023_, paper 17.
+//!   [doi:10.4230/LIPIcs.FSCD.2023.17](https://doi.org/10.4230/LIPIcs.FSCD.2023.17)
+//!   — the convolution product the univalent reading places on equivalence
+//!   classes of presentations.
 
 #![no_std]
 

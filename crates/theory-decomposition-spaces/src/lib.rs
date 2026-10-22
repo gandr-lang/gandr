@@ -5,6 +5,27 @@
 //! join. Its verdict is presentation-sensitive; an admitted graft preserves the
 //! replay boundary. Pathway acceptance is relative to the shift guard.
 //!
+//! # Boundaries
+//!
+//! The algebra is a 2-Segal set, not a space. A certificate is a finite value
+//! with a boundary, a composite is a value built from two, and the identity
+//! of certificates is the replay relation of the certificates crate: decided
+//! true or false, never a type whose elements are identifications.
+//! [`compose_invertible`] descends to that relation; [`compose_directed`]'s
+//! verdict reads the cells a certificate recorded, so it is a function of the
+//! representative and not of its class. Unitality, which every 2-Segal space
+//! has (Feller and others), is a hypothesis at the level of sets, so it is
+//! discharged here rather than inherited: the unit on a seam is two empty
+//! paths, and grafting it on either side is a unit up to replay.
+//!
+//! Univalence is never assumed in this crate. Reading the algebra as a
+//! 2-Segal space, where unitality is free and the equivalence with augmented
+//! stable double Segal objects (Bergner, Osorno, Ozornova, Rovelli and
+//! Scheimbauer) carries no side condition, belongs above it, derived from `ua`
+//! over the certified strata. Those strata rest on the decisions replay makes
+//! here and in the kernel, so a step at the space level that changes what
+//! this crate composes or admits would be circular.
+//!
 //! # References
 //!
 //! - Imma Gálvez-Carrillo, Joachim Kock and Andrew Tonks. “Decomposition
@@ -26,6 +47,15 @@
 //!   tracelet composition and shift-quotient line. The implemented independence
 //!   relation is the stricter guarded, trivial-overlap relation; this crate
 //!   does not claim the paper's full quotient or a Hopf algebra.
+//! - Matthew Feller, Richard Garner, Joachim Kock, May U. Proulx and Mark
+//!   Weber. “Every 2-Segal Space Is Unital.” _Communications in Contemporary
+//!   Mathematics_ 23 (2021), 2050055.
+//!   [doi:10.1142/S0219199720500558](https://doi.org/10.1142/S0219199720500558).
+//! - Julia E. Bergner, Angélica M. Osorno, Viktoriya Ozornova, Martina Rovelli
+//!   and Claudia I. Scheimbauer. “2-Segal Objects and the Waldhausen
+//!   Construction.” _Algebraic & Geometric Topology_ 21 (2021), 1267–1326.
+//!   [doi:10.2140/agt.2021.21.1267](https://doi.org/10.2140/agt.2021.21.1267)
+//!   — the edge between this layer and the doctrine layer.
 
 // Module documentation that predates the shape lint: 7 headings outside the
 // vocabulary. Each allow leaves with the rewrite that clears its count.
