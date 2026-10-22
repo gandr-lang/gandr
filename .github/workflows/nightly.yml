@@ -204,11 +204,35 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
-      # The recovery sweep first (`mise run ledger:recovery`, #1782): every
-      # literal tile of every syntax exemplar missed and deleted, built from
-      # the same enforcing state as the sweeps. Its causes and counts are the
-      # job summary, the whole backlog visible whether or not it is filed;
-      # the report goes to `recovery-file`, which holds the write token.
+      - name: run the night's sweeps
+        run: mise run ci:sweeps-nightly
+
+  # The recovery sweep (`mise run ledger:recovery`, #1782): every literal
+  # tile of every syntax exemplar missed and deleted, built from the same
+  # enforcing state as the sweeps, in a job of its own beside them: the two
+  # together outrun one job's fifteen minutes. Its causes and counts are the
+  # job summary, the whole backlog visible whether or not it is filed; the
+  # report goes to `recovery-file`, which holds the write token.
+  recovery:
+    name: sweep the exemplars for recovery, specifications enforced
+    needs: [ci-image-ref, freshness]
+    if: *main-moved
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 15
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *identify-build-state
+      - *restore-test-state
+      - *find-build-state
+      - *unpack-build-state
+      - *fetch-dependencies
       - name: sweep the exemplars for recovery
         env:
           RUSTFLAGS: --cfg anodized_panic
@@ -230,8 +254,6 @@ jobs:
           name: recovery-report
           path: recovery.out/report.txt
           retention-days: 7
-      - name: run the night's sweeps
-        run: mise run ci:sweeps-nightly
 
   # Each crate's tests with every feature it declares on, a third of those
   # crates a night (`mise run ci:all-features` says which), in the plain
@@ -266,12 +288,12 @@ jobs:
   # The recovery sweep's causes, filed (`mise run ci:recovery-file`): one
   # issue per first error and mutation kind, at most three new a night, a
   # cause already filed skipped. Only the scheduled run files; a dispatch
-  # prints what it would file. The report comes from the sweeps job, so this
-  # job builds nothing.
+  # prints what it would file. The report comes from the recovery job, so
+  # this job builds nothing.
   recovery-file:
     name: file the recovery sweep's causes
-    needs: [ci-image-ref, sweeps]
-    if: ${{ !cancelled() && needs.sweeps.result != 'skipped' }}
+    needs: [ci-image-ref, recovery]
+    if: ${{ !cancelled() && needs.recovery.result != 'skipped' }}
     runs-on: *linux
     permissions:
       contents: read
@@ -323,10 +345,10 @@ jobs:
   # this job does not sample. The daily mutation run is the one lane held
   # over the scheduled runs (`--daily`): fourteen minutes, its job's own
   # limit, so a night over it means the night's sizing failed. This
-  # workflow's own all-features lane is held over its scheduled runs
-  # (`--nightly`): about 1.5 times the 194 to 216 s each third of its crates
-  # took on a dispatch, so the workflow stays within fifteen minutes summed
-  # beside the sweeps.
+  # workflow's own all-features and recovery lanes are held over its
+  # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each third
+  # of the all-features crates took on a dispatch, and the 210 s the recovery
+  # sweep's setup and run took inside the sweeps job.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -367,4 +389,5 @@ jobs:
           --budget "report the mutants of the change (linux)=300"
           --daily "mutate the night's crate (linux)=840"
           --nightly "test every crate with every feature on=300"
+          --nightly "sweep the exemplars for recovery, specifications enforced=320"
           >> "$GITHUB_STEP_SUMMARY"
