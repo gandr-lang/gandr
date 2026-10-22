@@ -74,6 +74,11 @@ impl Retirement for Unretired
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission nobody retires takes every step: each
+    ///   certificate it reaches is replayed.
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
     #[inline]
     fn demand(&self) -> Demand<Infallible>
     {
@@ -98,6 +103,11 @@ impl<Whole, Held> Polled<Whole, Infallible, Held>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission nobody retires answers the whole
+    ///   readmission, every declaration with its outcome.
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
     #[inline]
     pub fn whole(self) -> Whole
     {
