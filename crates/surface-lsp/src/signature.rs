@@ -595,6 +595,12 @@ impl Signatures
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a documented parameter answers its run at its name
+    ///   tile, and a tile no run documents answers nothing.
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
     #[must_use]
     pub fn parameter(
         &self,
@@ -619,6 +625,13 @@ impl Signatures
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — documented and undocumented parameters of a list and a
+///   telescope, each asserted at its exact documentation.
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
+/// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn parameters_documented(
     unit: &Unit,
     own: &[Head],
@@ -943,6 +956,13 @@ impl Form
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every head of the corpus sources, each asserted at
+    ///   its exact label, parameters and documentation.
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn heads(
         &self,
         grammar: &Pbg,
@@ -1020,6 +1040,12 @@ impl Depth
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a run inside a parameter list and one before the
+    ///   head, each asserted at the parameter or the head it documents.
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn after(
         self,
         written: SourceText<'_>,
@@ -1039,6 +1065,11 @@ impl Depth
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Form::heads`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn head(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1091,6 +1122,13 @@ impl Label
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — heads laid over one line and over several, each
+    ///   asserted at its exact label.
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn copy(
         &mut self,
         text: SourceText<'_>,
@@ -1153,6 +1191,11 @@ impl Label
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Label::copy`].
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn space(
         &mut self,
         rest: SourceText<'_>,
@@ -1171,6 +1214,11 @@ impl Label
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Label::copy`].
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn verbatim(
         &mut self,
         at: ByteOffset,
@@ -1192,6 +1240,12 @@ impl Label
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every parameter's label range, asserted as the text
+    ///   it covers in the head's label.
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn place(
         &self,
         span: ByteSpan,
@@ -1222,6 +1276,11 @@ impl Label
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Label::place`].
+    /// - witness: `signature::tests::each_head_reads_its_parameters`
+    /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn parameters(
         &self,
         entries: Vec<Entry>,
@@ -1258,6 +1317,11 @@ struct Entry
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Label::copy`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn labelled(
     tree: &SyntaxTree<'_>,
     text: SourceText<'_>,
@@ -1306,6 +1370,12 @@ fn labelled(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run laid inside a parameter list is left out of the
+///   label the head is answered with.
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn docs_under(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -1341,6 +1411,13 @@ fn docs_under(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a documented parameter is keyed by its name tile, read
+///   back at that tile.
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
+/// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn first_tile(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -1394,6 +1471,11 @@ fn spelled(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Form::heads`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn parameters(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1433,6 +1515,12 @@ fn parameters(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Form::heads`].
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn entries(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1491,6 +1579,11 @@ fn entries(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binder typed by a function and a constructor's
+///   telescope, each asserted at its parameters.
+/// - witness: `signature::tests::each_head_reads_its_parameters`
 fn domains(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1595,6 +1688,12 @@ impl<'grammar> Operands<'grammar>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor's telescope, documented and not, asserted
+///   at each parameter.
+/// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn telescope(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -2137,6 +2236,104 @@ mod tests
                 ]),
                 Some(String::from("Addition.")),
             ),
+        ]);
+    }
+
+    /// A run documents the one parameter or member written after it: not the
+    /// member after a documented telescope, not a function type's domain it
+    /// sits inside, which the label leaves out; a parameter whose type holds a
+    /// comma is one parameter; the documented parameters are keyed by their
+    /// name tiles.
+    #[test]
+    fn a_run_documents_only_what_it_is_written_before_1800()
+    {
+        let text = "data Nat : Type {\n  Zero : Nat;\n  Succ : (\n    /// The predecessor.\n    n : \
+                    Nat\n  ) --> Nat;\n  Two : Nat;\n  /// Three.\n  Three : Nat;\n}\ndef apply(\n  f \
+                    : (\n    /// The argument.\n    x : Nat\n  ) -> -F Nat,\n  /// The pair.\n  p : \
+                    (a : Nat, b : Nat),\n  y : Nat\n) -> -F Nat { y }\ndef use(\n  h : (\n    /// \
+                    The index.\n    i : Nat\n  ) => Nat\n) -> -F Nat { 0 }\n";
+        let grammar = grammar().expect("the grammar builds");
+        let roles = roles().expect("the roles build");
+        let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
+        let heads = Signatures::of(grammar, roles, parsed.tree(), &Unit::single());
+        let spelled = |span: super::ByteSpan| {
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+                .unwrap_or_default()
+        };
+        let read: Vec<_> = heads
+            .own
+            .iter()
+            .map(|&((_, named), ref signature)| {
+                let parameters: Vec<_> = signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        (
+                            signature
+                                .label
+                                .get(parameter.place.start .. parameter.place.end)
+                                .unwrap_or_default(),
+                            parameter.documentation.as_deref(),
+                        )
+                    })
+                    .collect();
+                (
+                    spelled(named),
+                    signature.label.as_str(),
+                    parameters,
+                    signature.documentation.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(read, [
+            ("Nat", "Nat : Type", Vec::new(), None),
+            ("Zero", "Zero : Nat", Vec::new(), None),
+            (
+                "Succ",
+                "Succ : (n : Nat) --> Nat",
+                Vec::from([("n : Nat", Some("The predecessor."))]),
+                None
+            ),
+            ("Two", "Two : Nat", Vec::new(), None),
+            ("Three", "Three : Nat", Vec::new(), Some("Three.")),
+            (
+                "apply",
+                "apply(f : (x : Nat) -> -F Nat, p : (a : Nat, b : Nat), y : Nat) -> -F Nat",
+                Vec::from([
+                    ("f : (x : Nat) -> -F Nat", None),
+                    ("p : (a : Nat, b : Nat)", Some("The pair.")),
+                    ("y : Nat", None),
+                ]),
+                None
+            ),
+            (
+                "f",
+                "f : (x : Nat) -> -F Nat",
+                Vec::from([("(x : Nat)", None)]),
+                None
+            ),
+            (
+                "use",
+                "use(h : (i : Nat) => Nat) -> -F Nat",
+                Vec::from([("h : (i : Nat) => Nat", None)]),
+                None
+            ),
+            (
+                "h",
+                "h : (i : Nat) => Nat",
+                Vec::from([("i : Nat", Some("The index."))]),
+                None
+            ),
+        ]);
+        let documented: Vec<_> = heads
+            .documented
+            .iter()
+            .map(|&((_, named), ref documentation)| (spelled(named), documentation.as_str()))
+            .collect();
+        assert_eq!(documented, [
+            ("n", "The predecessor."),
+            ("p", "The pair."),
+            ("i", "The index.")
         ]);
     }
 }
