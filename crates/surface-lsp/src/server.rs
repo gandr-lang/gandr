@@ -62,17 +62,24 @@ use std::io::BufRead;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+use std::sync::PoisonError;
 use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_core_incremental::DiscardingCheckpointStore;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Delivered;
+use gandr_surface_dispatcher::Demand;
 use gandr_surface_dispatcher::Freshness;
 use gandr_surface_dispatcher::Generations;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::forget;
@@ -239,14 +246,16 @@ use crate::quiet::publishable;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Finished;
+use crate::recheck::Rechecked;
 use crate::recheck::Taken;
 use crate::recheck::Timing;
 use crate::recheck::Tried;
 use crate::recheck::admission;
 use crate::recheck::forms;
 use crate::recheck::grammar;
+use crate::recheck::judge_laid;
+use crate::recheck::lay;
 use crate::recheck::open;
-use crate::recheck::recheck;
 use crate::recheck::settle;
 use crate::recheck::trial;
 use crate::relocate::Moves;
@@ -380,8 +389,11 @@ struct Document
     /// Its whole text, with the reading and the hover table the requests
     /// about it share.
     text: HeldText,
-    /// The session holding its forms between synchronisations.
-    session: DocumentSession,
+    /// The session holding its forms between synchronisations, held by its
+    /// judgement while one runs on the pool.
+    session: Arc<Mutex<DocumentSession>>,
+    /// Where its judgement stands.
+    judgement: Judgement,
     /// Where its last change left the caret: the end of the text the last
     /// ranged change inserted.
     caret: Maybe<ByteOffset, uncareted::Absent>,
@@ -396,6 +408,20 @@ struct Document
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
     proposals: Vec<Proposal>,
+    /// The requests about it read while its judgement was due or running, in
+    /// the order read, answered once it is published.
+    asked: Vec<Asked>,
+}
+
+/// A request held until its document's judgement is published.
+struct Asked
+{
+    /// The request's identifier.
+    id: RequestId,
+    /// Its method.
+    method: Method,
+    /// Its parameters.
+    params: Value,
 }
 
 impl Document
@@ -413,12 +439,125 @@ impl Document
         Self {
             version,
             text: HeldText::new(),
-            session: open(uri),
+            session: Arc::new(Mutex::new(open(uri))),
+            judgement: Judgement::Settled,
             caret: Maybe::Absent(uncareted::Absent::Unranged),
             checked: Vec::new(),
             named: Vec::new(),
             published: Vec::new(),
             proposals: Vec::new(),
+            asked: Vec::new(),
+        }
+    }
+
+    /// The answers owed the requests it holds, now its text changed under
+    /// them or it was let go: `ContentModified`, in the order they were read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn withdrawn(&mut self) -> Vec<Outgoing>
+    {
+        self.asked
+            .drain(..)
+            .map(|asked| Withdrawn::Modified.response(asked.id))
+            .collect()
+    }
+
+    /// Its session, waiting for the judgement that holds it, if one does: a
+    /// request reading another copy whose judgement runs answers once that
+    /// judgement is done, never from a part of the workspace.
+    ///
+    /// # Specification
+    /// trivial.
+    fn session(&self) -> Lent<'_>
+    {
+        Lent(locked(&self.session))
+    }
+
+    /// What the hovers of its text read, as [`HeldText::hovering`] makes it for
+    /// the document at `uri` with each import read as `shadows` holds it; the
+    /// lend ends before it returns, so a request visiting every copy reads
+    /// this one too.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovering(
+        &self,
+        uri: &DocumentUri,
+        shadows: &dyn Shadows,
+    ) -> Result<&Hovering, Unlent>
+    {
+        let lent = self.session();
+        Ok(self.text.hovering(&uri.path(), lent.as_ref()?, shadows))
+    }
+}
+
+/// A copy's session as a request reads it.
+#[repr(transparent)]
+struct Lent<'copy>(MutexGuard<'copy, DocumentSession>);
+
+/// Why a request reads no session of a copy: its grammar did not build.
+#[derive(Clone, Copy, Debug)]
+struct Unlent;
+
+impl Lent<'_>
+{
+    /// The session, or why there is none to read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn as_ref(&self) -> Result<&Session<DiscardingCheckpointStore, InMemoryBlockStore>, Unlent>
+    {
+        self.0.as_ref().map_err(|_unbuilt| Unlent)
+    }
+
+    /// The session, or the fault that kept its grammar from building.
+    ///
+    /// # Specification
+    /// trivial.
+    fn whole(&self) -> &DocumentSession
+    {
+        &self.0
+    }
+}
+
+/// Where a copy's judgement stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Judgement
+{
+    /// What it published is its judgement at its version.
+    Settled,
+    /// Its text or its closure changed: it is judged once the message that
+    /// changed it was handled.
+    Due(Refresh),
+    /// Its judgement runs on the pool.
+    Running(Refresh),
+}
+
+/// Whether a copy's next judgement asks a client that refreshes its semantic
+/// tokens or its inlay hints for them again: its closure changed, so each use
+/// is classified, and each binder typed, by a judgement the client never asked
+/// after.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Refresh(bool);
+
+impl Judgement
+{
+    /// Due, refreshing when this or the judgement it supersedes refreshes.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn due(
+        self,
+        refresh: Refresh,
+    ) -> Self
+    {
+        match self {
+            Self::Settled => Self::Due(refresh),
+            Self::Due(Refresh(was)) | Self::Running(Refresh(was)) => {
+                Self::Due(Refresh(was || refresh.0))
+            },
         }
     }
 }
@@ -902,41 +1041,53 @@ impl fmt::Display for Logged
     }
 }
 
-/// The kernel admissions one connection started, running on the driver's
-/// pool, with the line of each synchronisation that waits for its admission.
+/// The judgements and kernel admissions one connection started.
+///
+/// They run on the driver's pool; beside them wait the line of each
+/// synchronisation whose admission runs and the progress ends whose
+/// judgements run.
 ///
 /// # Specification
 /// - provides: the half of every synchronisation that runs while the connection
 ///   reads its next frame: a later revision of the same document retires the
-///   admission at its next declaration, and the next admission resumes from
-///   what it crossed.
-/// - panics: an admission's panic resumes where it is delivered.
-/// - executable: none — the admissions run on the pool's threads;
-///   [`Server::admit`] and [`Server::admitted`] carry the executable clauses.
+///   judgement before its next item and the admission at its next declaration,
+///   and the next of each resumes from what the retired one left.
+/// - panics: a judgement's or an admission's panic resumes where it is
+///   delivered.
+/// - executable: none — the work runs on the pool's threads; [`Server::admit`]
+///   and [`Server::admitted`] carry the executable clauses.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Server::admit`].
 /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+/// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
 #[derive(Debug)]
 pub struct Admissions<'pool>
 {
+    /// The running judgements, one generation per document.
+    judgements: Generations<'pool, DocumentUri, Submission, Rechecked>,
+    /// The version each running judgement judges.
+    judging: BTreeMap<DocumentUri, DocumentVersion>,
+    /// Progress ends to write once no judgement they wait for runs.
+    ending: Vec<(BTreeSet<DocumentUri>, Vec<Outgoing>)>,
     /// The running admissions, one generation per document.
     generations: Generations<'pool, DocumentUri, Submission, Finished>,
     /// The line of each document's synchronisation whose admission runs.
     waiting: BTreeMap<DocumentUri, Logged>,
-    /// How many admissions were submitted; the next is numbered after them.
+    /// How many judgements and admissions were submitted; the next is
+    /// numbered after them.
     submitted: Submission,
 }
 
-/// One admission's place among those a connection submitted.
+/// One judgement's or admission's place among those a connection submitted.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Submission(u64);
 
 impl<'pool> Admissions<'pool>
 {
-    /// No admission, on `pool`, each ended admission waking its connection's
-    /// loop through `waking`.
+    /// No judgement and no admission, on `pool`, each that ended waking its
+    /// connection's loop through `waking`.
     ///
     /// # Specification
     /// trivial.
@@ -947,11 +1098,55 @@ impl<'pool> Admissions<'pool>
         waking: Changes,
     ) -> Self
     {
+        let judged = waking.clone();
         Self {
+            judgements: Generations::waking(pool, Arc::new(move || judged.admitted())),
+            judging: BTreeMap::new(),
+            ending: Vec::new(),
             generations: Generations::waking(pool, Arc::new(move || waking.admitted())),
             waiting: BTreeMap::new(),
             submitted: Submission(0_u64),
         }
+    }
+
+    /// The next submission's number.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn next(&mut self) -> Submission
+    {
+        self.submitted = Submission(self.submitted.0.saturating_add(1));
+        self.submitted
+    }
+
+    /// Write `end` once no judgement running now runs: at once when none
+    /// does, otherwise by [`Server::admitted`] once each was delivered.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `end` when no judgement runs, and nothing otherwise, `end`
+    ///   then waiting for the documents whose judgement runs.
+    /// - provides: the end of the progress an open or a closure's change
+    ///   reports, written once its judgements were published.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open's progress ends after its publication.
+    /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
+    #[spec(ensures: |ret| ret.is_empty() || self.judging.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn ended(
+        &mut self,
+        end: Vec<Outgoing>,
+    ) -> Vec<Outgoing>
+    {
+        if self.judging.is_empty() || end.is_empty() {
+            return end;
+        }
+        self.ending
+            .push((self.judging.keys().cloned().collect(), end));
+        Vec::new()
     }
 }
 
@@ -965,29 +1160,32 @@ pub enum Awaiting
     All,
 }
 
-/// What settling a connection's ended admissions produced.
+/// What settling a connection's ended judgements and admissions produced.
 ///
-/// The diagnostics to publish in place of those a disagreeing admission's
-/// synchronisation published, and the lines of the synchronisations whose
-/// admission ended.
+/// The messages to write, the lines of the judgements published, which arm
+/// the quiet deadlines, and the lines of the synchronisations that wait for
+/// nothing more.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Settled
 {
-    /// The corrections to write, in order.
-    pub corrections: Vec<Outgoing>,
+    /// The messages to write, in order: each judgement's publication and the
+    /// requests it answers or owes, each admission's correction, and the
+    /// progress ends nothing waits for any more.
+    pub messages: Vec<Outgoing>,
+    /// The line of each judgement published, in order.
+    pub judged: Vec<Logged>,
     /// The lines to log, in order.
     pub log: Vec<Logged>,
 }
 
-/// What handling one message produced: the messages to write, in order, the
-/// lines to log, and whether the session goes on.
+/// What handling one message produced: the messages to write, in order, and
+/// whether the session goes on. What a synchronisation logs comes with its
+/// judgement's publication, from [`Server::admitted`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Outcome
 {
     /// The messages to write, in order.
     pub messages: Vec<Outgoing>,
-    /// The lines to log, in order.
-    pub log: Vec<Logged>,
     /// Whether the session goes on.
     pub flow: Flow,
 }
@@ -1002,7 +1200,18 @@ impl Outcome
     {
         Self {
             messages: Vec::new(),
-            log: Vec::new(),
+            flow: Flow::Continue,
+        }
+    }
+
+    /// The messages `messages` to write; the session goes on.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn saying(messages: Vec<Outgoing>) -> Self
+    {
+        Self {
+            messages,
             flow: Flow::Continue,
         }
     }
@@ -1013,11 +1222,7 @@ impl Outcome
     /// trivial.
     fn say(message: Outgoing) -> Self
     {
-        Self {
-            messages: vec![message],
-            log: Vec::new(),
-            flow: Flow::Continue,
-        }
+        Self::saying(vec![message])
     }
 }
 
@@ -1460,16 +1665,19 @@ impl Workspace
     ///   result per change, each the [`crate::recheck::trial`] of the latest
     ///   copy's text with that change alone applied as a synchronisation
     ///   applies it — a ranged change splices its text over the range, one
-    ///   naming no range is the whole text — ranked as the trial ranks them.
-    ///   Every copy, its session and its published diagnostics are unchanged.
+    ///   naming no range is the whole text — ranked as the trial ranks them,
+    ///   once a running judgement of that copy is done. Every copy, its session
+    ///   and its published diagnostics are unchanged.
     /// - provides: batched candidate fills at a hole or over a declaration's
     ///   body, for another face.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fill spliced over a hole and a whole replacement
-    ///   are judged and ranked, and the document reads back as it was.
+    ///   are judged and ranked, and the document reads back as it was; a copy
+    ///   its judgement holds is tried once that judgement is done.
     /// - witness: `server::tests::a_workspace_tries_candidate_fills`
+    /// - witness: `server::tests::a_proposal_is_kept_only_once_it_checks`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(version, ref tried)|
         tried.len() == changes.len() && self.documents.get(uri).is_some_and(|held| held.document.version == version)))]
     #[inline]
@@ -1494,15 +1702,13 @@ impl Workspace
             .iter()
             .map(|text| SourceText::from(text.as_str()))
             .collect();
-        Some((
-            document.version,
-            crate::recheck::trial(
-                uri,
-                &document.session,
-                &candidates,
-                &self.shadowing(held.latest),
-            ),
-        ))
+        let tried = crate::recheck::trial(
+            uri,
+            document.session().whole(),
+            &candidates,
+            &self.shadowing(held.latest),
+        );
+        Some((document.version, tried))
     }
 
     /// Keep `proposal`, a model's fill of a range of the latest copy of the
@@ -2403,20 +2609,21 @@ impl Server
     /// - requires: nothing; any body is admissible input.
     /// - ensures: a request is answered exactly once, under its own identifier,
     ///   as the lifecycle and the method decide, from the documents `workspace`
-    ///   holds, whichever connection opened them; a notification is never
-    ///   answered, and a document synchronisation publishes the document's
-    ///   diagnostics off its session's judgement of the whole text, at this
-    ///   connection's verbosity, and logs one timing line, its admission left
-    ///   for [`Server::admit`] — opening and changing it publish its
-    ///   diagnostics at its new version, to this connection and to every other
-    ///   holding it open, and closing it publishes none to this connection and
-    ///   forgets it once no connection holds it. A configuration change that
-    ///   names another verbosity republishes every document this connection
-    ///   holds, to it alone. A body that is not a message is answered with the
-    ///   error the protocol owes it. `exit` ends the session.
-    /// - provides: the whole of a connection's behaviour but the admission
-    ///   [`Server::admit`] starts after it and [`Server::admitted`] settles;
-    ///   [`serve`] and the hub only move bytes.
+    ///   holds, whichever connection opened them — now, or once the copy it
+    ///   names is published when that copy's judgement is due or running, as
+    ///   [`Server::answer`] states; a notification is never answered, and a
+    ///   document synchronisation makes this connection's copy due, judged by
+    ///   [`Server::admit`] after it and published by [`Server::admitted`] —
+    ///   opening and changing it judge it at its new version, published to this
+    ///   connection and to every other holding it open, and closing it
+    ///   publishes none to this connection and forgets it once no connection
+    ///   holds it. A configuration change that names another verbosity makes
+    ///   every document this connection holds due. A body that is not a message
+    ///   is answered with the error the protocol owes it. `exit` ends the
+    ///   session.
+    /// - provides: the whole of a connection's behaviour but the judgement and
+    ///   the admission [`Server::admit`] starts after it and
+    ///   [`Server::admitted`] settles; [`serve`] and the hub only move bytes.
     /// - fails: never; every refusal is a message to the client.
     /// - panics: none.
     ///
@@ -2435,8 +2642,7 @@ impl Server
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     #[spec(
         captures: phase = self.phase,
-        ensures: |ret| ret.log.len() <= ret.messages.len()
-            && (self.phase == phase || matches!((phase, self.phase),
+        ensures: |ret| (self.phase == phase || matches!((phase, self.phase),
                 (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
             && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
                 ret.messages.is_empty() && ending == self.closed() },
@@ -2470,7 +2676,12 @@ impl Server
     ///   published, so a burst of changes is judged once, at its last; a change
     ///   of a document this connection holds and whose syntax tree its client
     ///   asked for asks the client for the tree again under each URI it asked
-    ///   by, after the change's own messages.
+    ///   by, after the change's own messages. A request of a running session,
+    ///   neither withdrawn nor `shutdown`, whose `textDocument` names a copy
+    ///   this connection holds whose judgement is due or running is held on the
+    ///   copy and answered nothing now: [`Server::admitted`] answers it once
+    ///   the copy is published, and a change or close of the copy first answers
+    ///   it `ContentModified`.
     /// - provides: the step of [`serve`] and of each hub connection, which read
     ///   ahead of the message they handle.
     /// - fails: never; every refusal is a message to the client.
@@ -2488,8 +2699,7 @@ impl Server
     /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
     #[spec(
         captures: phase = self.phase,
-        ensures: |ret| ret.log.len() <= ret.messages.len()
-            && (self.phase == phase || matches!((phase, self.phase),
+        ensures: |ret| (self.phase == phase || matches!((phase, self.phase),
                 (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
             && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
                 ret.messages.is_empty() && ending == self.closed() },
@@ -2522,6 +2732,23 @@ impl Server
                 {
                     return self.execute(workspace, id, params);
                 }
+                if withdrawn.is_none()
+                    && self.phase == Phase::Running
+                    && method.as_ref() != "shutdown"
+                    && let Some(document) = params
+                        .pointer("/textDocument/uri")
+                        .and_then(Value::as_str)
+                        .and_then(|uri| workspace.documents.get_mut(&DocumentUri::from(uri)))
+                        .and_then(|held| match held.own_mut(self.peer) {
+                            Maybe::Present(document) => Some(document),
+                            Maybe::Absent(_) => None,
+                        })
+                        // Its publication waits for a judgement, due or running.
+                        .filter(|document| !matches!(document.judgement, Judgement::Settled))
+                {
+                    document.asked.push(Asked { id, method, params });
+                    return Outcome::quiet();
+                }
                 let answered = match withdrawn {
                     Some(withdrawn) => withdrawn.response(id),
                     None => self.request(workspace, id, &method, params),
@@ -2533,7 +2760,6 @@ impl Server
                             unregister(UnregistrationParams::watched_files()),
                             answered,
                         ]),
-                        log: Vec::new(),
                         flow: Flow::Continue,
                     }
                 }
@@ -2570,8 +2796,9 @@ impl Server
     /// - requires: a change of the same document follows in what the client
     ///   sent.
     /// - ensures: the copy holds the version and the text the change brings it
-    ///   to and no proposal, as a judged change leaves it; nothing is
-    ///   published, logged or asked.
+    ///   to and no proposal, as a judged change leaves it, and the requests it
+    ///   held are answered `ContentModified`; nothing is published, logged or
+    ///   asked.
     /// - fails: never; unreadable parameters and a document this connection
     ///   holds no copy of are ignored.
     /// - panics: none.
@@ -2580,7 +2807,9 @@ impl Server
     /// - hypothesis: L3 — a burst of changes in one frame publishes once, at
     ///   its last version, over the text every change leaves.
     /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
-    #[spec(ensures: |ret| ret.messages.is_empty() && ret.log.is_empty() && ret.flow == Flow::Continue)]
+    #[spec(ensures: |ret| ret.flow == Flow::Continue
+        && ret.messages.iter().all(|message| matches!(*message,
+            Outgoing::Failure { ref error, .. } if error.code == ErrorCode::CONTENT_MODIFIED)))]
     fn deferred(
         &self,
         workspace: &mut Workspace,
@@ -2594,13 +2823,15 @@ impl Server
         else {
             return Outcome::quiet();
         };
+        let mut outcome = Outcome::quiet();
         if let Some(held) = workspace.documents.get_mut(&text_document.uri) {
             held.promote(self.peer);
             if let Maybe::Present(document) = held.own_mut(self.peer) {
                 edited(document, text_document.version, content_changes);
+                outcome.messages = document.withdrawn();
             }
         }
-        Outcome::quiet()
+        outcome
     }
 
     /// Run the command `params` names, answering request `id`:
@@ -2623,7 +2854,7 @@ impl Server
     ///   document's next edit, an unknown command and arguments of another
     ///   shape, each asserted at its exact messages.
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
-    #[spec(ensures: |ret| ret.flow == Flow::Continue && ret.log.is_empty()
+    #[spec(ensures: |ret| ret.flow == Flow::Continue
         && matches!(ret.messages.as_slice(),
             [Outgoing::Failure { .. }]
             | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]))]
@@ -2685,7 +2916,6 @@ impl Server
                 ),
                 success(id, Answer::Nothing),
             ]),
-            log: Vec::new(),
             flow: Flow::Continue,
         }
     }
@@ -2747,124 +2977,240 @@ impl Server
         }
     }
 
-    /// Start the kernel admission each synchronisation logged in `log` left,
-    /// its diagnostics already published, on `admissions`' pool, and return
-    /// the lines to log now.
+    /// Start the judgement of each copy this connection holds that is due on
+    /// `admissions`' pool, and return the lines to log now.
     ///
     /// # Specification
-    /// - requires: `log` is the log of the outcome [`Server::handle`] returned
-    ///   last, its messages already written.
-    /// - ensures: each line naming a document of which this connection holds a
-    ///   copy at the line's version first retires the admission a previous line
-    ///   of the document still waits for, that line returned with its admission
-    ///   retired; then, when the copy's session holds an admission, the
-    ///   admission is started on the pool, polling its retirement before each
-    ///   declaration, and the line waits for it, delivered by
-    ///   [`Server::admitted`]. Every other line is returned, its timing saying
-    ///   why nothing was admitted.
-    /// - provides: the first half of every synchronisation's admission; the
-    ///   connection reads its next frame while the kernel works.
+    /// - requires: the outcome [`Server::handle`] returned last was written.
+    /// - ensures: each copy this connection holds whose judgement is due first
+    ///   retires the admission its last judgement left, if it still runs, that
+    ///   line returned with its admission retired; then the copy is laid out,
+    ///   each import read as the editors hold it, and its judgement is started
+    ///   on the pool at this connection's verbosity and spelling, retiring the
+    ///   copy's judgement still running, polling its own retirement before it
+    ///   takes the session, once it holds it, and before each item; the copy's
+    ///   judgement runs, delivered by [`Server::admitted`], and no copy is left
+    ///   due.
+    /// - provides: the first half of every synchronisation; the connection
+    ///   reads its next frame while the copy is judged.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a change during an admission retires it at its next
-    ///   declaration, its line logged as retired, and the next admission
-    ///   resumes from what it crossed.
+    /// - hypothesis: L3 — a change during a judgement retires it before its
+    ///   next item, and the next judgement judges as if it never ran; a change
+    ///   during an admission retires it, its line logged as retired.
+    /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
-    /// - witness: `server::tests::an_admission_follows_its_synchronisation`
     #[spec(
-        captures: lines = log.len(),
-        ensures: |ret| ret.len() <= lines.saturating_mul(2),
+        captures: copies = workspace.documents.len(),
+        ensures: |ret| ret.len() <= copies,
     )]
     #[inline]
     #[must_use]
     pub fn admit(
         &self,
         workspace: &mut Workspace,
-        log: Vec<Logged>,
         admissions: &mut Admissions<'_>,
     ) -> Vec<Logged>
     {
-        let mut now = Vec::with_capacity(log.len());
-        for mut logged in log {
-            if let Some(superseded) = admissions.waiting.remove(&logged.uri) {
-                admissions.generations.retire(&logged.uri);
-                now.push(Logged {
+        let due: Vec<DocumentUri> = workspace
+            .documents
+            .iter()
+            .filter(|&(_, held)| {
+                matches!(held.own(self.peer),
+                    Maybe::Present(document) if matches!(document.judgement, Judgement::Due(_)))
+            })
+            .map(|(uri, _)| uri.clone())
+            .collect();
+        let mut retired = Vec::new();
+        for uri in due {
+            // The admission the copy's last judgement left judges a text or a
+            // closure that is no longer the copy's.
+            if let Some(superseded) = admissions.waiting.remove(&uri) {
+                admissions.generations.retire(&uri);
+                retired.push(Logged {
                     timing: superseded.timing.retired(),
                     ..superseded
                 });
             }
-            let document = workspace
-                .documents
-                .get_mut(&logged.uri)
-                .and_then(|held| match held.own_mut(self.peer) {
-                    Maybe::Present(document) => Some(document),
-                    Maybe::Absent(_) => None,
-                })
-                .filter(|document| document.version == logged.version);
-            let Some(document) = document
+            let shadows = workspace.shadowing(self.peer);
+            let Some((judging, version)) =
+                workspace
+                    .documents
+                    .get(&uri)
+                    .and_then(|held| match held.own(self.peer) {
+                        Maybe::Present(document) => Some((
+                            Judging::of(
+                                &uri,
+                                document,
+                                &shadows,
+                                (self.verbosity, self.style.spelling, self.quiet),
+                            ),
+                            document.version,
+                        )),
+                        Maybe::Absent(_) => None,
+                    })
             else {
-                now.push(logged);
                 continue;
             };
-            match admission(&mut document.session, logged.timing) {
-                Taken::Unrun(timing) => {
-                    logged.timing = timing;
-                    now.push(logged);
-                },
-                Taken::Running(admitting) => {
-                    admissions.submitted = Submission(admissions.submitted.0.saturating_add(1));
-                    let _started = admissions.generations.submit(
-                        logged.uri.clone(),
-                        admissions.submitted,
-                        move |watch| match admitting.run(watch) {
-                            Polled::Whole(finished) => Ok(finished),
-                            Polled::Retired(retired, ()) => Err(retired),
-                        },
-                    );
-                    let _first = admissions.waiting.insert(logged.uri.clone(), logged);
-                },
+            let submission = admissions.next();
+            let _started = admissions
+                .judgements
+                .submit(uri.clone(), submission, move |watch| {
+                    match judging.run(watch) {
+                        Polled::Whole(rechecked) => Ok(rechecked),
+                        Polled::Retired(retired, ()) => Err(retired),
+                    }
+                });
+            let _superseded = admissions.judging.insert(uri.clone(), version);
+            if let Some(held) = workspace.documents.get_mut(&uri)
+                && let Maybe::Present(document) = held.own_mut(self.peer)
+                && let Judgement::Due(refresh) = document.judgement
+            {
+                document.judgement = Judgement::Running(refresh);
             }
         }
-        now
+        retired
     }
 
-    /// Settle the admissions `admissions` holds that ended, waiting for the
-    /// rest when `awaiting` says so, and return what to publish and log.
+    /// Settle the judgements and admissions `admissions` holds that ended,
+    /// waiting for the rest when `awaiting` says so, and return what to write
+    /// and log.
     ///
     /// # Specification
-    /// - requires: every admission `admissions` holds was started by
-    ///   [`Server::admit`] of this connection over `workspace`.
-    /// - ensures: each delivered admission whose document this connection still
-    ///   holds at its line's version settles into the copy's session, as
-    ///   [`settle`] states, its line carrying its wall; a kernel disagreement
-    ///   adds one diagnostic notification at the line's URI and version whose
-    ///   one diagnostic names it, recorded as the copy's publication and as all
-    ///   it checked, and the line holds nothing. A delivered admission whose
-    ///   copy is gone is logged as retired. With [`Awaiting::All`], no
-    ///   admission is left running.
-    /// - provides: the second half of every synchronisation's admission, on the
+    /// - requires: every judgement and admission `admissions` holds was started
+    ///   by [`Server::admit`] of this connection over `workspace`.
+    /// - ensures: each delivered judgement whose copy this connection still
+    ///   holds at the version it judged, its judgement still running, is
+    ///   published as [`publication`] states, recorded as the copy's
+    ///   publication, its line among the judged; each request the copy held is
+    ///   then answered in the order read, as [`Server::handle`] answers it.
+    ///   When the copy's session then holds an admission, the admission is
+    ///   started on the pool, polling its retirement before each declaration,
+    ///   and the line waits for it; otherwise the line is logged, its timing
+    ///   saying why nothing was admitted. Once a delivery published a copy made
+    ///   due by its closure, a client that refreshes its semantic tokens or its
+    ///   inlay hints is asked for them again, once. A progress end is written
+    ///   once no judgement it waits for runs. Then each delivered admission
+    ///   whose document this connection still holds at its line's version
+    ///   settles into the copy's session, as [`settle`] states, its line
+    ///   carrying its wall; a kernel disagreement adds one diagnostic
+    ///   notification at the line's URI and version whose one diagnostic names
+    ///   it, recorded as the copy's publication and as all it checked, and the
+    ///   line holds nothing. A delivered admission whose copy is gone is logged
+    ///   as retired. With [`Awaiting::All`], no judgement or admission is left
+    ///   running and no progress end left waiting.
+    /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
     /// - fails: never; a disagreement is a diagnostic.
-    /// - panics: resumes an admission's panic.
+    /// - panics: resumes a judgement's or an admission's panic.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a change's logged line gains the admission's wall and
-    ///   publishes nothing more when the kernel agrees.
+    /// - hypothesis: L3 — a change's publication follows its judgement, its
+    ///   line gains the admission's wall and publishes nothing more when the
+    ///   kernel agrees.
     /// - witness: `server::tests::an_admission_follows_its_synchronisation`
+    /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
-    #[spec(ensures: |ret| ret.corrections.len() <= ret.log.len())]
+    #[spec(ensures: |ret| ret.judged.len() <= ret.messages.len()
+        && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
+            && admissions.waiting.is_empty() && admissions.ending.is_empty())))]
     #[inline]
     #[must_use]
     pub fn admitted(
-        &self,
+        &mut self,
         workspace: &mut Workspace,
         admissions: &mut Admissions<'_>,
         awaiting: Awaiting,
     ) -> Settled
     {
         let mut settled = Settled::default();
+        let mut refresh = Refresh(false);
+        loop {
+            let delivered = match awaiting {
+                Awaiting::Ended => admissions.judgements.ready(),
+                Awaiting::All => admissions.judgements.wait(),
+            };
+            let Maybe::Present(Delivered {
+                slot: uri,
+                output: rechecked,
+                ..
+            }) = delivered
+            else {
+                break;
+            };
+            let Some(version) = admissions.judging.remove(&uri)
+            else {
+                continue;
+            };
+            for &mut (ref mut waiting, _) in &mut admissions.ending {
+                let _delivered = waiting.remove(&uri);
+            }
+            // A copy let go, changed in a burst since, or due again for its
+            // closure publishes at its next judgement instead.
+            let document = workspace
+                .documents
+                .get_mut(&uri)
+                .and_then(|held| match held.own_mut(self.peer) {
+                    Maybe::Present(document) => Some(document),
+                    Maybe::Absent(_) => None,
+                })
+                .filter(|document| document.version == version);
+            let Some(document) = document
+            else {
+                continue;
+            };
+            let Judgement::Running(refreshing) = document.judgement
+            else {
+                continue;
+            };
+            let (message, mut line) = publication(&uri, document, rechecked);
+            settled.judged.push(line.clone());
+            let asked = core::mem::take(&mut document.asked);
+            let taken = admission(&mut locked(&document.session), line.timing);
+            refresh = Refresh(refresh.0 || refreshing.0);
+            workspace.published_by(self.peer, &message);
+            settled.messages.push(message);
+            for Asked { id, method, params } in asked {
+                let answered = self.request(workspace, id, &method, params);
+                settled.messages.push(answered);
+            }
+            match taken {
+                Taken::Unrun(timing) => {
+                    line.timing = timing;
+                    settled.log.push(line);
+                },
+                Taken::Running(admitting) => {
+                    let submission = admissions.next();
+                    let _started =
+                        admissions
+                            .generations
+                            .submit(uri.clone(), submission, move |watch| {
+                                match admitting.run(watch) {
+                                    Polled::Whole(finished) => Ok(finished),
+                                    Polled::Retired(retired, ()) => Err(retired),
+                                }
+                            });
+                    let _first = admissions.waiting.insert(uri, line);
+                },
+            }
+        }
+        if refresh.0 && self.phase == Phase::Running {
+            if self.refreshing.tokens.0 {
+                settled.messages.push(self.asked(Refreshed::Tokens));
+            }
+            if self.refreshing.hints.0 {
+                settled.messages.push(self.asked(Refreshed::Hints));
+            }
+        }
+        let (ended, waiting): (Vec<_>, Vec<_>) = core::mem::take(&mut admissions.ending)
+            .into_iter()
+            .partition(|&(ref waiting, _)| waiting.is_empty());
+        admissions.ending = waiting;
+        settled
+            .messages
+            .extend(ended.into_iter().flat_map(|(_, end)| end));
         loop {
             let delivered = match awaiting {
                 Awaiting::Ended => admissions.generations.ready(),
@@ -2896,7 +3242,7 @@ impl Server
                 settled.log.push(logged);
                 continue;
             };
-            let admitted = settle(&mut document.session, finished);
+            let admitted = settle(&mut locked(&document.session), finished);
             logged.timing = admitted.timing;
             if let Maybe::Present(fault) = admitted.fault {
                 document.checked = vec![fault.clone()];
@@ -2907,7 +3253,7 @@ impl Server
                     diagnostics: vec![fault],
                 });
                 workspace.published_by(self.peer, &correction);
-                settled.corrections.push(correction);
+                settled.messages.push(correction);
             }
             settled.log.push(logged);
         }
@@ -3167,7 +3513,7 @@ impl Server
             .collect()
     }
 
-    /// Recheck the copies this connection holds whose closures name a file of
+    /// Make due the copies this connection holds whose closures name a file of
     /// `changed`, the hub's watch having seen them change on disk.
     ///
     /// # Specification
@@ -3178,151 +3524,101 @@ impl Server
     /// - provides: the hub's watch's change, handled as the client's own
     ///   notification would be.
     /// - panics: none.
+    /// - executable: none — what it changes is which copies are due, which
+    ///   [`Server::admit`] reads and the witness observes as publications.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a hub connection whose client watches nothing
     ///   republishes an open document when a file it imports is rewritten on
     ///   disk.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
-    #[spec(ensures: |ret| ret.messages.is_empty() || (self.phase == Phase::Running && !self.watching.0))]
     #[inline]
-    #[must_use]
     pub fn changed_on_disk(
-        &mut self,
+        &self,
         workspace: &mut Workspace,
         changed: &[PathBuf],
-    ) -> Outcome
+    )
     {
-        if self.phase != Phase::Running || self.watching.0 {
-            return Outcome::quiet();
+        if self.phase == Phase::Running && !self.watching.0 {
+            self.resynchronise(workspace, Picks::Naming(changed, Origin::Disk));
         }
-        self.resynchronise(workspace, Picks::Naming(changed, Origin::Disk))
     }
 
-    /// Recheck the copies this connection holds whose closures name a file of
+    /// Make due the copies this connection holds whose closures name a file of
     /// `changed`, another connection's editor having changed its copy of each.
     ///
     /// # Specification
     /// - requires: `changed` is sorted, as [`named_path`] names each file.
     /// - ensures: on a running connection, every copy it holds whose closure,
-    ///   at its last judgement, named a file of `changed` is rechecked, each
-    ///   import read as the editors hold it, and republished in URI order, at
-    ///   its version, to this connection alone, one timing line each; on any
-    ///   other, nothing.
+    ///   at its last judgement, named a file of `changed` is made due, each
+    ///   import read as the editors hold it when [`Server::admit`] judges it;
+    ///   on any other, nothing.
     /// - provides: another connection's edit, reaching the importers this one
     ///   holds.
     /// - panics: none.
+    /// - executable: none — as [`Server::changed_on_disk`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a hub connection holding an importer republishes it
     ///   when another connection's editor changes the base it imports, and
     ///   again when that editor closes the base.
     /// - witness: `hub::tests::an_editor_s_copy_shadows_the_disk_for_every_connection`
-    #[spec(ensures: |ret| ret.messages.is_empty() || self.phase == Phase::Running)]
     #[inline]
-    #[must_use]
     pub fn edited_elsewhere(
-        &mut self,
+        &self,
         workspace: &mut Workspace,
         changed: &[PathBuf],
-    ) -> Outcome
+    )
     {
-        if self.phase != Phase::Running {
-            return Outcome::quiet();
+        if self.phase == Phase::Running {
+            self.resynchronise(workspace, Picks::Naming(changed, Origin::Editor));
         }
-        self.resynchronise(workspace, Picks::Naming(changed, Origin::Editor))
     }
 
-    /// After the copy of the file at `path` changed or was let go, recheck the
-    /// copies this connection holds whose closures name it, into `outcome`,
-    /// and tell every other connection whose copies name it.
+    /// After the copy of the file at `path` changed or was let go, make due the
+    /// copies this connection holds whose closures name it, and tell every
+    /// other connection whose copies name it.
     ///
     /// # Specification
     /// trivial.
     fn reclosed(
-        &mut self,
+        &self,
         workspace: &mut Workspace,
         path: &Path,
-        outcome: &mut Outcome,
     )
     {
         workspace.edited(path, self.peer);
-        let rechecked = self.resynchronise(workspace, Picks::File(path));
-        outcome.messages.extend(rechecked.messages);
-        outcome.log.extend(rechecked.log);
+        self.resynchronise(workspace, Picks::File(path));
     }
 
-    /// Recheck the copies this connection holds that `picks` picks,
-    /// republishing each to this connection alone, each import read as the
-    /// editors hold it, and, when a copy was rechecked because its closure
-    /// changed, ask a client that refreshes its semantic tokens or its inlay
-    /// hints for them again: each use is classified, and each binder typed, by
-    /// the new judgement.
+    /// Make due the copies this connection holds that `picks` picks, each
+    /// asking a client that refreshes its semantic tokens or its inlay hints
+    /// for them again once it is published when its closure changed.
     ///
     /// # Specification
     /// trivial.
     fn resynchronise(
-        &mut self,
+        &self,
         workspace: &mut Workspace,
         picks: Picks<'_>,
-    ) -> Outcome
+    )
     {
         let peer = self.peer;
         if let Picks::Naming(changed, Origin::Disk) | Picks::Under(changed) = picks {
             forget(changed);
         }
         let paths = &workspace.paths;
-        let chosen = |document: &Document| picked(picks, paths, &document.named).0;
-        let mut outcome = Outcome::quiet();
-        if !workspace
-            .documents
-            .values()
-            .any(|held| matches!(held.own(peer), Maybe::Present(document) if chosen(document)))
-        {
-            return outcome;
-        }
-        let mut pending = core::mem::take(&mut workspace.documents);
-        while let Some((uri, mut held)) = pending.pop_first() {
+        let refresh = Refresh(!matches!(picks, Picks::Every));
+        for held in workspace.documents.values_mut() {
             if let Maybe::Present(document) = held.own_mut(peer)
-                && chosen(document)
+                && picked(picks, paths, &document.named).0
             {
-                if !matches!(picks, Picks::Every) {
+                if refresh.0 {
                     document.text.reclose();
                 }
-                let shadows = Shadowing {
-                    held: &workspace.documents,
-                    pending: Some(&pending),
-                    paths,
-                    peer,
-                    files: &workspace.files,
-                    reporting: &workspace.reporting,
-                    watched: &workspace.watched,
-                };
-                let rechecked = synchronised(
-                    &uri,
-                    document,
-                    &shadows,
-                    self.verbosity,
-                    self.style.spelling,
-                    self.quiet,
-                );
-                outcome.messages.extend(rechecked.messages);
-                outcome.log.extend(rechecked.log);
-            }
-            let _kept = workspace.documents.insert(uri, held);
-        }
-        for message in &outcome.messages {
-            workspace.published_by(peer, message);
-        }
-        if !matches!(picks, Picks::Every) && self.phase == Phase::Running {
-            if self.refreshing.tokens.0 {
-                outcome.messages.push(self.asked(Refreshed::Tokens));
-            }
-            if self.refreshing.hints.0 {
-                outcome.messages.push(self.asked(Refreshed::Hints));
+                document.judgement = document.judgement.due(refresh);
             }
         }
-        outcome
     }
 
     /// The response to the request `id` calling `method` with `params`.
@@ -4173,43 +4469,40 @@ impl Server
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: notifications preserve the lifecycle and never send
-    ///   responses. Exit ends the session; running-state opens and changes
-    ///   publish this connection's copy of the document at its supplied version
-    ///   to this connection alone, log one timing line, and make that copy the
-    ///   latest; a change holds back the diagnostics of the form under the
-    ///   caret it leaves, as [`publishable`] states, while the quiet interval
-    ///   is not zero. An open gives this connection a copy with a session of
-    ///   its own when it holds none, then sets the copy's text and version;
-    ///   every other connection's copy is untouched. A change applies each
-    ///   content change in order to this connection's copy, as [`apply`]
-    ///   states; an empty change list preserves text. Close lets this
-    ///   connection's copy go, forgets the document once no connection holds a
-    ///   copy, and publishes a versionless empty diagnostic list to this
-    ///   connection, even for an unknown URI. A running-state configuration
-    ///   change whose `gandr` section names a quiet interval takes it, and one
-    ///   naming a presentation form takes it for every later hover. One that
-    ///   names a verbosity or a presentation spelling other than this
-    ///   connection's takes them, then republishes every copy this connection
-    ///   holds, in URI order, at its version, to this connection alone, logging
-    ///   one timing line each; otherwise, one that names a zero interval
+    /// - ensures: notifications preserve the lifecycle, never send responses
+    ///   and log nothing. Exit ends the session; running-state opens and
+    ///   changes make this connection's copy of the document due at its
+    ///   supplied version, judged after the message by [`Server::admit`] and
+    ///   published by [`Server::admitted`], and make that copy the latest. An
+    ///   open gives this connection a copy with a session of its own when it
+    ///   holds none, then sets the copy's text and version; every other
+    ///   connection's copy is untouched. A change applies each content change
+    ///   in order to this connection's copy, as [`apply`] states; an empty
+    ///   change list preserves text. A change or a close of a copy first
+    ///   answers each request it holds `ContentModified`, in the order read.
+    ///   Close lets this connection's copy go, forgets the document once no
+    ///   connection holds a copy, and publishes a versionless empty diagnostic
+    ///   list to this connection, even for an unknown URI. A running-state
+    ///   configuration change whose `gandr` section names a quiet interval
+    ///   takes it, and one naming a presentation form takes it for every later
+    ///   hover. One that names a verbosity or a presentation spelling other
+    ///   than this connection's takes them, then makes every copy this
+    ///   connection holds due; otherwise, one that names a zero interval
     ///   publishes what each copy holds back, as [`Server::release`] states,
     ///   and one naming neither changes nothing. A running-state `initialized`
     ///   from a client that watches files asks it, in one
     ///   `client/registerCapability` request, to watch every gandr source for
     ///   `workspace/didChangeWatchedFiles`; from any other client it sends
-    ///   nothing. A running-state watched-files change rechecks every copy this
-    ///   connection holds whose closure, at its last judgement, named a changed
-    ///   file no connection holds, as [`named_path`] names it, and republishes
-    ///   each in URI order, at its version, to this connection alone, logging
-    ///   one timing line each; a copy whose closure names none is untouched.
-    ///   Each import is judged as the editors hold it, as [`Workspace`] states:
-    ///   after an open, a change or a close of a copy whose file some copy's
-    ///   closure names, every copy this connection holds whose closure names it
-    ///   is rechecked and republished after the copy's own publication, and
-    ///   every other hub connection whose copies name it hears it changed. When
-    ///   that rechecks a copy for what its closure names, a client that
-    ///   refreshes its semantic tokens is then asked for them again, once.
+    ///   nothing. A running-state watched-files change makes due every copy
+    ///   this connection holds whose closure, at its last judgement, named a
+    ///   changed file no connection holds, as [`named_path`] names it; a copy
+    ///   whose closure names none is untouched. Each import is judged as the
+    ///   editors hold it, as [`Workspace`] states: after an open, a change or a
+    ///   close of a copy whose file some copy's closure names, every copy this
+    ///   connection holds whose closure names it is made due, and every other
+    ///   hub connection whose copies name it hears it changed. A copy made due
+    ///   for what its closure names asks a client that refreshes its semantic
+    ///   tokens or its inlay hints for them again once it is published.
     ///   Unknown, malformed and out-of-phase notifications leave documents
     ///   alone.
     /// - provides: document synchronization, configuration, file watching, the
@@ -4245,58 +4538,39 @@ impl Server
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| {
-            let published = ret.messages.iter().filter(|message| matches!(**message,
-                Outgoing::Notification { params: Notified::Published(_), .. })).count();
             self.phase == phase
             && (ret.messages.len() <= 1
-                || matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
-                    | "workspace/didChangeConfiguration" | "workspace/didChangeWatchedFiles" | "initialized"
-                    | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles"))
-            && match method.as_ref() {
-                "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeWatchedFiles"
-                | "workspace/didCreateFiles" | "workspace/didDeleteFiles" | "workspace/didRenameFiles" =>
-                    ret.log.len() == published,
-                "textDocument/didClose" => ret.log.len() == published.saturating_sub(1),
-                "workspace/didChangeConfiguration" => ret.log.len() <= published,
-                _ => ret.log.is_empty(),
-            }
+                || matches!(method.as_ref(), "workspace/didChangeConfiguration" | "initialized"
+                    | "textDocument/didChange" | "textDocument/didClose"))
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
-            && if ret.messages.is_empty() { workspace.documents.len() == count } else {
-                phase == Phase::Running && ret.messages.iter().all(|message| match *message {
-                    Outgoing::Notification { params: Notified::Published(ref params), .. } => {
-                        let current = workspace.documents.get(&params.uri).is_some_and(|held| matches!(held.own(self.peer),
-                            Maybe::Present(document) if params.version == Some(document.version)));
-                        match method.as_ref() {
-                            "textDocument/didOpen" | "textDocument/didChange" | "workspace/didChangeConfiguration"
-                            | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles" | "workspace/didDeleteFiles"
-                            | "workspace/didRenameFiles" => current,
-                            "textDocument/didClose" => current || (params.version.is_none() && params.diagnostics.is_empty()
-                                && workspace.documents.get(&params.uri)
-                                    .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_)))),
-                            _ => false,
-                        }
-                    },
-                    Outgoing::Notification { params: Notified::Told(_), .. } =>
-                        matches!(method.as_ref(), "initialized" | "workspace/didChangeConfiguration"),
-                    Outgoing::Request { method: called, .. } => match method.as_ref() {
-                        "initialized" => (called == "client/registerCapability" && self.watching.0)
-                            || (called == "workspace/configuration" && self.pulling.0),
-                        "workspace/didChangeConfiguration" => called == "workspace/configuration" && self.pulling.0,
-                        "workspace/didChangeWorkspaceFolders" => {
-                            called == "workspace/workspaceFolders" && self.listing.0
-                        },
-                        "textDocument/didOpen" | "textDocument/didChange" | "textDocument/didClose"
-                        | "workspace/didChangeWatchedFiles" | "workspace/didCreateFiles"
-                        | "workspace/didDeleteFiles" | "workspace/didRenameFiles" => {
-                            (called == "workspace/semanticTokens/refresh" && self.refreshing.tokens.0)
-                                || (called == "workspace/inlayHint/refresh" && self.refreshing.hints.0)
-                        },
-                        _ => false,
-                    },
-                    Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
-                    | Outgoing::Failure { .. } | Outgoing::Progress(_) => false,
-                })
+            && match method.as_ref() {
+                "textDocument/didOpen" => workspace.documents.len() <= count.saturating_add(1),
+                "textDocument/didClose" => workspace.documents.len().saturating_add(1) >= count,
+                _ => workspace.documents.len() == count,
             }
+            && (ret.messages.is_empty() || phase == Phase::Running)
+            && ret.messages.iter().all(|message| match *message {
+                Outgoing::Notification { params: Notified::Published(ref params), .. } =>
+                    method.as_ref() == "textDocument/didClose" && params.version.is_none()
+                        && params.diagnostics.is_empty()
+                        && workspace.documents.get(&params.uri)
+                            .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
+                Outgoing::Notification { params: Notified::Told(_), .. } =>
+                    matches!(method.as_ref(), "initialized" | "workspace/didChangeConfiguration"),
+                Outgoing::Request { method: called, .. } => match method.as_ref() {
+                    "initialized" => (called == "client/registerCapability" && self.watching.0)
+                        || (called == "workspace/configuration" && self.pulling.0),
+                    "workspace/didChangeConfiguration" => called == "workspace/configuration" && self.pulling.0,
+                    "workspace/didChangeWorkspaceFolders" => {
+                        called == "workspace/workspaceFolders" && self.listing.0
+                    },
+                    _ => false,
+                },
+                Outgoing::Failure { ref error, .. } => error.code == ErrorCode::CONTENT_MODIFIED
+                    && matches!(method.as_ref(), "textDocument/didChange" | "textDocument/didClose"),
+                Outgoing::Notification { params: Notified::Traced(_), .. } | Outgoing::Success { .. }
+                | Outgoing::Progress(_) => false,
+            })
         },
     )]
     fn notification(
@@ -4309,7 +4583,6 @@ impl Server
         match (self.phase, method.as_ref()) {
             (_, "exit") => Outcome {
                 messages: Vec::new(),
-                log: Vec::new(),
                 flow: Flow::Exit(self.closed()),
             },
             (Phase::Running, "textDocument/didOpen") => {
@@ -4341,27 +4614,17 @@ impl Server
                 document.text.replace(text_document.text);
                 document.caret = Maybe::Absent(uncareted::Absent::Unranged);
                 document.proposals.clear();
-                let mut outcome = synchronised(
-                    &uri,
-                    document,
-                    &workspace.shadowing(self.peer),
-                    self.verbosity,
-                    self.style.spelling,
-                    self.quiet,
-                );
+                document.judgement = document.judgement.due(Refresh(false));
                 // The first copy of a file stands in for its disk text, so
                 // what its importers read changes only where the two differ.
                 let named = workspace.named(&held.path).filter(|path| {
                     !first || differs_from_disk(path, held.document.text.source()).0
                 });
                 let _kept = workspace.documents.insert(uri, held);
-                for message in &outcome.messages {
-                    workspace.published_by(self.peer, message);
-                }
                 if let Some(path) = named {
-                    self.reclosed(workspace, &path, &mut outcome);
+                    self.reclosed(workspace, &path);
                 }
-                outcome
+                Outcome::quiet()
             },
             (Phase::Running, "textDocument/didChange") => {
                 let Ok(DidChangeParams {
@@ -4376,34 +4639,20 @@ impl Server
                     return Outcome::quiet();
                 };
                 held.promote(self.peer);
-                let mut outcome = match held.own_mut(self.peer) {
+                let changed = match held.own_mut(self.peer) {
                     Maybe::Present(document) => {
                         edited(document, text_document.version, content_changes);
-                        synchronised(
-                            &uri,
-                            document,
-                            &workspace.shadowing(self.peer),
-                            self.verbosity,
-                            self.style.spelling,
-                            self.quiet,
-                        )
+                        document.judgement = document.judgement.due(Refresh(false));
+                        Some(document.withdrawn())
                     },
-                    Maybe::Absent(_) => Outcome::quiet(),
+                    Maybe::Absent(_) => None,
                 };
-                let named = if outcome.messages.is_empty() {
-                    None
-                }
-                else {
-                    workspace.named(&held.path)
-                };
+                let named = changed.as_ref().and_then(|_| workspace.named(&held.path));
                 let _kept = workspace.documents.insert(uri, held);
-                for message in &outcome.messages {
-                    workspace.published_by(self.peer, message);
-                }
                 if let Some(path) = named {
-                    self.reclosed(workspace, &path, &mut outcome);
+                    self.reclosed(workspace, &path);
                 }
-                outcome
+                Outcome::saying(changed.unwrap_or_default())
             },
             (Phase::Running, "textDocument/didClose") => {
                 let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
@@ -4414,8 +4663,12 @@ impl Server
                 let _unoffered = self.announced.remove(&text_document.uri);
                 self.viewing
                     .retain(|&(ref viewed, _)| *viewed != text_document.uri);
+                let mut messages = Vec::new();
                 let named = match workspace.documents.remove_entry(&text_document.uri) {
-                    Some((uri, held)) => {
+                    Some((uri, mut held)) => {
+                        if let Maybe::Present(document) = held.own_mut(self.peer) {
+                            messages = document.withdrawn();
+                        }
                         // The disk stands in for the last copy, so what its
                         // importers read changes only where the two differ.
                         let named = workspace.named(&held.path);
@@ -4427,15 +4680,15 @@ impl Server
                     },
                     None => None,
                 };
-                let mut outcome = Outcome::say(publish(PublishParams {
+                if let Some(path) = named {
+                    self.reclosed(workspace, &path);
+                }
+                messages.push(publish(PublishParams {
                     uri: text_document.uri,
                     version: None,
                     diagnostics: Vec::new(),
                 }));
-                if let Some(path) = named {
-                    self.reclosed(workspace, &path, &mut outcome);
-                }
-                outcome
+                Outcome::saying(messages)
             },
             (Phase::Running, "workspace/didChangeConfiguration") => {
                 match serde_json::from_value::<ConfigurationParams>(params) {
@@ -4486,21 +4739,24 @@ impl Server
                 self.resynchronise(
                     workspace,
                     Picks::Naming(&changed_paths(&changes), Origin::Disk),
-                )
+                );
+                Outcome::quiet()
             },
             (Phase::Running, "workspace/didCreateFiles" | "workspace/didDeleteFiles") => {
                 let Ok(FilesParams { files }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
                 };
-                self.resynchronise(workspace, Picks::Under(&changed_paths(&files)))
+                self.resynchronise(workspace, Picks::Under(&changed_paths(&files)));
+                Outcome::quiet()
             },
             (Phase::Running, "workspace/didRenameFiles") => {
                 let Ok(RenameFilesParams { files }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
                 };
-                self.resynchronise(workspace, Picks::Under(&renamed_paths(&files)))
+                self.resynchronise(workspace, Picks::Under(&renamed_paths(&files)));
+                Outcome::quiet()
             },
             (Phase::Running, "workspace/didChangeWorkspaceFolders") => {
                 let Ok(FoldersChangedParams { event }) = serde_json::from_value(params)
@@ -4528,13 +4784,13 @@ impl Server
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
     /// pulled: the quiet interval, the inline completion trigger and the form
-    /// at once, and the verbosity and spelling by republishing every copy it
-    /// holds when either changed.
+    /// at once, and the verbosity and spelling by making every copy it holds
+    /// due when either changed.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each setting `settings` names is this connection's; the
-    ///   copies are republished when the verbosity or the spelling changed, and
+    ///   copies are made due when the verbosity or the spelling changed, and
     ///   released of what they hold back when the quiet interval is zero;
     ///   nothing is written otherwise.
     /// - fails: never.
@@ -4545,8 +4801,7 @@ impl Server
     ///   section applied as a pushed one.
     /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
     /// - witness: `server::tests::a_pulled_setting_applies_as_a_pushed_one`
-    #[spec(ensures: |ret| ret.log.len() <= ret.messages.len()
-        && settings.verbosity().is_none_or(|verbosity| self.verbosity == verbosity))]
+    #[spec(ensures: |_| settings.verbosity().is_none_or(|verbosity| self.verbosity == verbosity))]
     fn configured(
         &mut self,
         workspace: &mut Workspace,
@@ -4580,9 +4835,7 @@ impl Server
         }
         self.verbosity = verbosity.unwrap_or(self.verbosity);
         self.style.spelling = spelling.unwrap_or(self.style.spelling);
-        let republished = self.resynchronise(workspace, Picks::Every);
-        outcome.messages.extend(republished.messages);
-        outcome.log.extend(republished.log);
+        self.resynchronise(workspace, Picks::Every);
         outcome
     }
 
@@ -4619,7 +4872,7 @@ impl Server
     /// - witness: `server::tests::a_fill_kept_elsewhere_is_offered_to_its_editor_once`
     /// - witness: `server::tests::an_unread_folder_change_lists_the_folders_whole`
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
-    #[spec(ensures: |ret| ret.log.len() <= ret.messages.len() && ret.flow == Flow::Continue)]
+    #[spec(ensures: |ret| ret.flow == Flow::Continue)]
     fn response(
         &mut self,
         workspace: &mut Workspace,
@@ -4888,21 +5141,13 @@ impl Workspace
         };
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
         let written = document.text.reading().spans();
-        let judged = document.session.as_ref().map_or_else(
+        let judged = document.hovering(uri, &self.shadowing(peer)).map_or_else(
             |_| Resolved {
                 spans: written.to_vec(),
                 unresolved: Vec::new(),
                 marks: Vec::new(),
             },
-            |session| {
-                classified(
-                    written,
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer))
-                        .table(),
-                )
-            },
+            |hovering| classified(written, hovering.table()),
         );
         let spans = match window {
             Window::Whole => judged.spans,
@@ -4966,20 +5211,17 @@ impl Workspace
             ByteOffset::from(usize::from(range.start.byte(&index))),
             ByteOffset::from(usize::from(range.end.byte(&index))),
         );
-        Answer::Hints(match (document.session.as_ref(), window) {
-            (Ok(session), Ok(window)) if window.start() < window.end() => hints(
-                (
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
-                    document.text.reading().tiles(),
+        Answer::Hints(
+            match (document.hovering(uri, &self.shadowing(peer)), window) {
+                (Ok(hovering), Ok(window)) if window.start() < window.end() => hints(
+                    (hovering, document.text.reading().tiles()),
+                    (uri, &index),
+                    window,
+                    (style, deferring),
                 ),
-                (uri, &index),
-                window,
-                (style, deferring),
-            ),
-            (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
-        })
+                (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
+            },
+        )
     }
 
     /// The inlay hint drawn at `position` of the copy of the document at
@@ -5015,15 +5257,10 @@ impl Workspace
         else {
             return None;
         };
-        let session = document.session.as_ref().ok()?;
+        let hovering = document.hovering(uri, &self.shadowing(peer)).ok()?;
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
         hint_at(
-            (
-                document
-                    .text
-                    .hovering(&uri.path(), session, &self.shadowing(peer)),
-                document.text.reading().tiles(),
-            ),
+            (hovering, document.text.reading().tiles()),
             (uri, &index),
             position,
             style,
@@ -5061,17 +5298,9 @@ impl Workspace
             return Answer::Nothing;
         };
         let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        Answer::Sources(document.session.as_ref().map_or_else(
+        Answer::Sources(document.hovering(uri, &self.shadowing(peer)).map_or_else(
             |_| Vec::new(),
-            |session| {
-                copied(
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
-                    (uri, &index),
-                    ranges,
-                )
-            },
+            |hovering| copied(hovering, (uri, &index), ranges),
         ))
     }
 
@@ -5213,7 +5442,7 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let shown = document.session.as_ref().map_or(
+        let shown = document.session().as_ref().map_or(
             Maybe::Absent(crate::hover::hovered::Absent::Unparsed),
             |session| {
                 hover(
@@ -5278,7 +5507,11 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let (Ok(session), Ok(grammar), Ok(forms)) = (document.session.as_ref(), grammar(), forms())
+        let (Ok(grammar), Ok(forms)) = (grammar(), forms())
+        else {
+            return Answer::Nothing;
+        };
+        let Ok(hovering) = document.hovering(uri, &self.shadowing(peer))
         else {
             return Answer::Nothing;
         };
@@ -5286,9 +5519,7 @@ impl Workspace
             grammar,
             forms,
             document.text.source(),
-            document
-                .text
-                .hovering(&uri.path(), session, &self.shadowing(peer)),
+            hovering,
             (uri, position),
             presented,
         ))
@@ -5328,27 +5559,22 @@ impl Workspace
         else {
             return Vec::new();
         };
-        let (Ok(session), Ok(grammar), Ok(forms), Some((version, published))) = (
-            document.session.as_ref(),
-            grammar(),
-            forms(),
-            self.published(uri),
-        )
+        let (Ok(grammar), Ok(forms), Some((version, published))) =
+            (grammar(), forms(), self.published(uri))
         else {
             return Vec::new();
         };
         if version != document.version {
             return Vec::new();
         }
+        let Ok(hovering) = document.hovering(uri, &self.shadowing(peer))
+        else {
+            return Vec::new();
+        };
         let found = holes(
             (grammar, forms),
             (document.text.source(), document.text.reading().spans()),
-            (
-                document
-                    .text
-                    .hovering(&uri.path(), session, &self.shadowing(peer)),
-                printer,
-            ),
+            (hovering, printer),
             (uri, asked),
         );
         let changes: Vec<ContentChange> = found
@@ -5449,16 +5675,11 @@ impl Workspace
         else {
             return Answer::Resolved(Box::new(item));
         };
-        let Ok(session) = document.session.as_ref()
+        let Ok(hovering) = document.hovering(uri, &self.shadowing(peer))
         else {
             return Answer::Resolved(Box::new(item));
         };
-        Answer::Resolved(Box::new(resolved(
-            item,
-            document
-                .text
-                .hovering(&uri.path(), session, &self.shadowing(peer)),
-        )))
+        Answer::Resolved(Box::new(resolved(item, hovering)))
     }
 
     /// What a workspace-symbol request for `query` answers `peer`: the names
@@ -5500,11 +5721,10 @@ impl Workspace
             else {
                 continue;
             };
-            let Ok(session) = document.session.as_ref()
+            let Ok(hovering) = document.hovering(uri, &shadows)
             else {
                 continue;
             };
-            let hovering = document.text.hovering(&uri.path(), session, &shadows);
             let own = hovering.table().own_source();
             for entry in hovering.found().matching(query) {
                 let target = if entry.source == own {
@@ -5587,15 +5807,12 @@ impl Workspace
             return Answer::Nothing;
         };
         document
-            .session
-            .as_ref()
-            .map_or(Answer::Nothing, |session| {
+            .hovering(uri, &self.shadowing(peer))
+            .map_or(Answer::Nothing, |hovering| {
                 help(
                     document.text.source(),
                     document.text.reading(),
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    hovering,
                     position,
                     offsets,
                 )
@@ -5638,15 +5855,12 @@ impl Workspace
             return Answer::Nothing;
         };
         document
-            .session
-            .as_ref()
-            .map_or(Answer::Nothing, |session| {
+            .hovering(uri, &self.shadowing(peer))
+            .map_or(Answer::Nothing, |hovering| {
                 targets(
                     document.text.source(),
                     uri,
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
+                    hovering,
                     position,
                     goto,
                     linked,
@@ -5685,16 +5899,9 @@ impl Workspace
             return Answer::Nothing;
         };
         document
-            .session
-            .as_ref()
-            .map_or(Answer::Nothing, |session| {
-                highlights(
-                    document.text.source(),
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
-                    position,
-                )
+            .hovering(uri, &self.shadowing(peer))
+            .map_or(Answer::Nothing, |hovering| {
+                highlights(document.text.source(), hovering, position)
             })
     }
 
@@ -5728,16 +5935,9 @@ impl Workspace
             return Answer::Nothing;
         };
         document
-            .session
-            .as_ref()
-            .map_or(Answer::Nothing, |session| {
-                mirrored(
-                    document.text.source(),
-                    document
-                        .text
-                        .hovering(&uri.path(), session, &self.shadowing(peer)),
-                    position,
-                )
+            .hovering(uri, &self.shadowing(peer))
+            .map_or(Answer::Nothing, |hovering| {
+                mirrored(document.text.source(), hovering, position)
             })
     }
 
@@ -5811,11 +6011,10 @@ impl Workspace
         else {
             return None;
         };
-        let session = document.session.as_ref().ok()?;
         let Some(name) = placed(
             document.text.source(),
             &named_path(&uri.path()),
-            document.text.hovering(&uri.path(), session, &shadows),
+            document.hovering(uri, &shadows).ok()?,
             position,
         )
         else {
@@ -5887,7 +6086,7 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let Ok(session) = document.session.as_ref()
+        let Ok(hovering) = document.hovering(uri, &shadows)
         else {
             return Answer::Nothing;
         };
@@ -5896,7 +6095,7 @@ impl Workspace
                 uri,
                 path: &named_path(&uri.path()),
                 text: document.text.source(),
-                hovering: document.text.hovering(&uri.path(), session, &shadows),
+                hovering,
             },
             position,
             &|path| self.locate(path),
@@ -6035,12 +6234,12 @@ impl Workspace
     {
         let path = named_path(&uri.path());
         if let Maybe::Present(document) = self.view(uri, peer) {
-            let session = document.session.as_ref().ok()?;
+            let hovering = document.hovering(uri, shadows).ok()?;
             return Some(read(Read {
                 uri,
                 path: &path,
                 text: document.text.source(),
-                hovering: document.text.hovering(&uri.path(), session, shadows),
+                hovering,
             }));
         }
         let text = std::fs::read_to_string(&path).ok()?;
@@ -6111,21 +6310,18 @@ impl Workspace
             return Answer::Nothing;
         };
         let mut found = lenses(uri, &document.proposals, applies);
-        if let Ok(session) = document.session.as_ref() {
+        if let Ok(hovering) = document.hovering(uri, &shadows) {
             found.extend(
-                declared(
-                    document.text.source(),
-                    document.text.hovering(&uri.path(), session, &shadows),
-                )
-                .into_iter()
-                .map(|range| CodeLens {
-                    range,
-                    command: None,
-                    data: Some(LensData {
-                        uri: uri.clone(),
-                        position: range.start,
+                declared(document.text.source(), hovering)
+                    .into_iter()
+                    .map(|range| CodeLens {
+                        range,
+                        command: None,
+                        data: Some(LensData {
+                            uri: uri.clone(),
+                            position: range.start,
+                        }),
                     }),
-                }),
             );
         }
         found.sort_by_key(|lens| lens.range);
@@ -6198,8 +6394,9 @@ impl Workspace
     /// # Specification
     /// - requires: `shadows` reads the copies `peer` is answered from.
     /// - ensures: `visit` is called once per document visited, in the order
-    ///   above, until it fails; a document whose session holds no grammar, a
-    ///   file that cannot be read and a path no URI names are passed over.
+    ///   above, until it fails, a copy whose judgement runs visited once that
+    ///   judgement is done; a document whose session holds no grammar, a file
+    ///   that cannot be read and a path no URI names are passed over.
     /// - provides: the documents a reference or rename request reads, so the
     ///   two cannot answer a different set.
     /// - fails: the first failure `visit` returns.
@@ -6227,7 +6424,7 @@ impl Workspace
             else {
                 continue;
             };
-            let Ok(session) = document.session.as_ref()
+            let Ok(hovering) = document.hovering(held, shadows)
             else {
                 continue;
             };
@@ -6235,7 +6432,7 @@ impl Workspace
                 uri: held,
                 path: &named_path(&held.path()),
                 text: document.text.source(),
-                hovering: document.text.hovering(&held.path(), session, shadows),
+                hovering,
             })?;
         }
         let Ok(grammar) = grammar()
@@ -6322,12 +6519,11 @@ impl Workspace
         else {
             return Answer::Nothing;
         };
-        let Ok(session) = document.session.as_ref()
+        let Ok(table) = document.hovering(uri, &shadows)
         else {
             return Answer::Nothing;
         };
         let text = document.text.source();
-        let table = document.text.hovering(&uri.path(), session, &shadows);
         let renamable = placed(text, &named_path(&uri.path()), table, position)
             .is_some_and(|name| matches!(self.renamable(&name), Ok(())));
         if !renamable {
@@ -6404,14 +6600,14 @@ impl Workspace
         else {
             return Ok(Answer::Nothing);
         };
-        let Ok(session) = document.session.as_ref()
+        let Ok(hovering) = document.hovering(uri, &shadows)
         else {
             return Ok(Answer::Nothing);
         };
         let Some(name) = placed(
             document.text.source(),
             &named_path(&uri.path()),
-            document.text.hovering(&uri.path(), session, &shadows),
+            hovering,
             position,
         )
         else {
@@ -6555,20 +6751,14 @@ impl Workspace
     ) -> Result<(), String>
     {
         let renamed = spliced(text, found, new_name);
-        let fresh;
-        let session = match self.view(uri, peer) {
-            Maybe::Present(document) => &document.session,
-            Maybe::Absent(_) => {
-                fresh = open(uri);
-                &fresh
+        let candidates = [text, SourceText::from(renamed.as_str())];
+        let held = match self.view(uri, peer) {
+            Maybe::Present(document) => {
+                Some(trial(uri, document.session().whole(), &candidates, shadows))
             },
+            Maybe::Absent(_) => None,
         };
-        let tried = trial(
-            uri,
-            session,
-            &[text, SourceText::from(renamed.as_str())],
-            shadows,
-        );
+        let tried = held.unwrap_or_else(|| trial(uri, &open(uri), &candidates, shadows));
         let of = |index: usize| {
             tried
                 .iter()
@@ -7062,25 +7252,139 @@ fn edited(
     }
 }
 
-/// Recheck `document`, open at `uri`, at `verbosity` and in `spelling`,
-/// holding back for
-/// `quiet` the diagnostics of the form under its caret: the notification
-/// publishing the rest and the line logging what the recheck cost.
+/// `session`, waiting for the judgement that holds it, if one does.
+///
+/// A judgement superseded before it took the session never takes it, and one
+/// running holds it for one judgement at most, so the loop waits for no more
+/// than a running judgement of another copy, or a superseded one's last poll.
 ///
 /// # Specification
-/// - requires: nothing.
+/// trivial.
+fn locked(session: &Mutex<DocumentSession>) -> MutexGuard<'_, DocumentSession>
+{
+    // A judgement that panicked resumes its panic where it is delivered;
+    // until then the session it left is read as it is.
+    session.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// One copy's judgement, taken off the serving loop: what it judges, owned,
+/// and the session it judges in.
+struct Judging
+{
+    /// The document.
+    uri: DocumentUri,
+    /// The copy's session.
+    session: Arc<Mutex<DocumentSession>>,
+    /// The copy's text at the version judged.
+    text: String,
+    /// The import closure the text is laid out in, read on the loop.
+    laid: Maybe<Laid, laid::Absent>,
+    /// Whether the judgement keeps its type table.
+    wanted: Tables,
+    /// The connection's verbosity, spelling and the caret whose form the
+    /// publication holds back.
+    rendering: (Verbosity, Spelling, Maybe<ByteOffset, formless::Absent>),
+    /// When the synchronisation began, laying the text out.
+    started: Instant,
+}
+
+impl Judging
+{
+    /// The judgement of `document`, open at `uri`, each import read as
+    /// `shadows` holds it, at `verbosity` and in `spelling`, the form under its
+    /// caret held back while `quiet` is not zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(
+        uri: &DocumentUri,
+        document: &Document,
+        shadows: &dyn Shadows,
+        (verbosity, spelling, quiet): (Verbosity, Spelling, Duration),
+    ) -> Self
+    {
+        let started = Instant::now();
+        let caret = match document.caret {
+            Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
+        };
+        Self {
+            uri: uri.clone(),
+            session: Arc::clone(&document.session),
+            text: String::from(<&str>::from(document.text.source())),
+            laid: lay(uri, document.text.source(), shadows),
+            wanted: document.text.wanted.get(),
+            rendering: (verbosity, spelling, caret),
+            started,
+        }
+    }
+
+    /// Judge the text in the session, polling `retirement` before taking the
+    /// session, once it holds it, and before each item.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: retired at the first two polls, [`Polled::Retired`] and the
+    ///   session untouched; otherwise the session keeps a type table exactly
+    ///   when the copy wanted one, and the answer is [`judge_laid`]'s.
+    /// - provides: the half of a synchronisation that runs on the pool: a
+    ///   judgement retired before it takes the session never holds it, and one
+    ///   that takes it after its successor was submitted lets it go unjudged.
+    /// - fails: never; a fault is a diagnostic.
+    /// - panics: only by propagating a panic of the judgement.
+    /// - executable: none — the judgement runs under the session's lock, and
+    ///   [`judge_laid`] carries the clauses of what it answers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change during a judgement retires it, and the next
+    ///   judges as if no retired one ran before it.
+    /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
+    fn run<Poll>(
+        self,
+        retirement: &Poll,
+    ) -> Polled<Rechecked, Poll::Retired, ()>
+    where
+        Poll: Retirement,
+    {
+        if let Demand::Retired(retired) = retirement.demand() {
+            return Polled::Retired(retired, ());
+        }
+        let mut session = locked(&self.session);
+        if let Demand::Retired(retired) = retirement.demand() {
+            return Polled::Retired(retired, ());
+        }
+        if let Ok(ref mut judging) = *session {
+            judging.keep(self.wanted);
+        }
+        let judged = judge_laid(
+            &self.uri,
+            &mut session,
+            (SourceText::from(self.text.as_str()), self.laid),
+            self.rendering,
+            (self.started, retirement),
+        );
+        drop(session);
+        judged
+    }
+}
+
+/// The publication of `rechecked`, the judgement of `document`, open at `uri`,
+/// at its version, holding back the diagnostics of the form under its caret:
+/// the notification publishing the rest and the line logging what the
+/// recheck cost.
+///
+/// # Specification
+/// - requires: `rechecked` is [`Judging::run`] of the copy at its version.
 /// - ensures: one diagnostic notification naming the supplied URI and held
-///   version, with the diagnostics the document's session judges for its whole
-///   text, each import read as `shadows` holds it, rendered at `verbosity` with
-///   their types in `spelling`, followed by the hints [`unused`] answers off
-///   the recheck's unused binders and those [`unreached`] answers off its
-///   imports no lookup reached, less those [`publishable`] holds for the form
-///   under the document's caret while `quiet` is not zero; the copy records
-///   every judged diagnostic and hint as checked. One log line names the same
-///   URI and version, its admission pending when the judgement left one, and
-///   whether the publication held any.
-/// - provides: the publication shared by open, change and configuration
-///   notifications.
+///   version, with the diagnostics the judgement rendered, followed by the
+///   hints [`unused`] answers off its unused binders and those [`unreached`]
+///   answers off its imports no lookup reached, less those [`publishable`]
+///   holds for the form under the document's caret; the copy records every
+///   judged diagnostic and hint as checked, and its judgement as settled. One
+///   log line names the same URI and version, its admission pending when the
+///   judgement left one, and whether the publication held any.
+/// - provides: the publication shared by open, change, closure and
+///   configuration synchronisations.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -7094,37 +7398,18 @@ fn edited(
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `server::tests::a_configuration_change_republishes_at_its_verbosity`
 /// - witness: `tests::editor::scenarios::typing_a_declaration_holds_its_diagnostics_until_its_terminator`
-#[spec(ensures: |ret| ret.flow == Flow::Continue
-    && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics",
-        params: Notified::Published(ref params), .. }]
+#[spec(ensures: |ret| document.judgement == Judgement::Settled
+    && matches!(ret.0, Outgoing::Notification { method: "textDocument/publishDiagnostics",
+        params: Notified::Published(ref params), .. }
         if params.uri == *uri && params.version == Some(document.version)
             && params.diagnostics.len() <= document.checked.len())
-    && matches!(*ret.log.as_slice(), [ref logged] if logged.uri == *uri && logged.version == document.version))]
-fn synchronised(
+    && ret.1.uri == *uri && ret.1.version == document.version)]
+fn publication(
     uri: &DocumentUri,
     document: &mut Document,
-    shadows: &dyn Shadows,
-    verbosity: Verbosity,
-    spelling: Spelling,
-    quiet: Duration,
-) -> Outcome
+    mut rechecked: Rechecked,
+) -> (Outgoing, Logged)
 {
-    let caret = match document.caret {
-        Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
-        Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
-    };
-    if let Ok(session) = document.session.as_mut() {
-        session.keep(document.text.wanted.get());
-    }
-    let mut rechecked = recheck(
-        uri,
-        &mut document.session,
-        document.text.source(),
-        shadows,
-        verbosity,
-        spelling,
-        caret,
-    );
     let index = LineIndex::new(<&str>::from(document.text.source()).into());
     rechecked
         .diagnostics
@@ -7139,26 +7424,26 @@ fn synchronised(
     document.checked = rechecked.diagnostics;
     document.named = rechecked.named;
     document.text.judged_over(rechecked.laid, rechecked.table);
-    Outcome {
-        messages: vec![publish(PublishParams {
+    document.judgement = Judgement::Settled;
+    (
+        publish(PublishParams {
             uri: uri.clone(),
             version: Some(document.version),
             diagnostics: published,
-        })],
-        log: vec![Logged {
+        }),
+        Logged {
             uri: uri.clone(),
             version: document.version,
             timing: rechecked.timing,
             holding,
-        }],
-        flow: Flow::Continue,
-    }
+        },
+    )
 }
 
 /// Serve the protocol over `input` and `output` until the session ends.
 ///
 /// Each synchronisation's timing line goes to `log`, its user's configuration
-/// names `spelling`, and its kernel admissions run on `pool`.
+/// names `spelling`, and its judgements and kernel admissions run on `pool`.
 ///
 /// # Specification
 /// - requires: nothing of the streams; `input` carries the client's frames,
@@ -7166,26 +7451,27 @@ fn synchronised(
 /// - ensures: each frame read is handled by one [`Server`] over a workspace
 ///   whose configured spelling is `spelling`: the progress the work it starts
 ///   reports, as [`Server::reported`] states, begins first, and every message
-///   it produces is written as one frame, in order; then the admissions its
-///   synchronisations left start on `pool`, as [`Server::admit`] states, the
-///   progress ends, and every line logged that waits for no admission is
-///   written to `log` with a line terminator, before the next frame is read. An
-///   admission that ended is settled before the next frame, as
-///   [`Server::admitted`] states, each correction written as one frame and its
-///   line logged. A synchronisation whose publication held a diagnostic back
-///   arms its document's deadline the server's quiet interval later, and one
-///   that held nothing, or whose correction replaced what it held, disarms it;
-///   a deadline that passes with no frame read publishes what the document
-///   holds back, as [`Server::release`] states. The session ends at `exit` or
-///   at a stream closed at a frame boundary, as [`Server::closed`] states, once
-///   every admission still running ended and was settled, its line logged and
-///   nothing more written to `output`. A line `log` refuses is dropped: the log
-///   is the operator's, and the protocol never depends on it.
+///   it produces is written as one frame, in order; then the judgements its
+///   synchronisations made due and the admissions they left start on `pool`, as
+///   [`Server::admit`] states, and every line logged that waits for no
+///   admission is written to `log` with a line terminator, before the next
+///   frame is read; the progress ends once no judgement running then runs. A
+///   judgement or an admission that ended is settled before the next frame, as
+///   [`Server::admitted`] states, each message it produces written as one frame
+///   and its lines logged. A publication that held a diagnostic back arms its
+///   document's deadline the server's quiet interval later, and one that held
+///   nothing, or whose correction replaced what it held, disarms it; a deadline
+///   that passes with no frame read publishes what the document holds back, as
+///   [`Server::release`] states. The session ends at `exit` or at a stream
+///   closed at a frame boundary, as [`Server::closed`] states, once every
+///   judgement and admission still running ended and was settled, its line
+///   logged and nothing more written to `output`. A line `log` refuses is
+///   dropped: the log is the operator's, and the protocol never depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
 /// - fails: the first [`TransportFault`] of either protocol stream, and
 ///   [`TransportFault::Encode`] for a message that does not encode.
-/// - panics: resumes an admission's panic.
+/// - panics: resumes a judgement's or an admission's panic.
 /// - executable: none — generic streams expose neither their consumed nor
 ///   emitted transcript; the returned ending or fault cannot reconstruct
 ///   lifecycle transitions, frame order or the failing stream operation.
@@ -7198,13 +7484,14 @@ fn synchronised(
 ///   to `exit`, asserted frame by frame; L3 — a session closed without `exit`,
 ///   one whose stream breaks inside a frame, an editor-shaped edit to a large
 ///   document whose log carries one timing line per synchronisation, a held
-///   diagnostic published once the document is quiet, and a change during an
-///   admission retiring it.
+///   diagnostic published once the document is quiet, and a change during a
+///   judgement and during an admission retiring each.
 /// - witness: `tests::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `tests::session::a_stream_closed_without_exit_ends_abruptly`
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+/// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
 #[inline]
 pub fn serve<Input, Output, Log>(
     input: &mut Input,
@@ -7255,9 +7542,8 @@ where
         for message in &outcome.messages {
             written(output, message)?;
         }
-        deadlines.note(&outcome.log, server.quiet(), Instant::now());
-        let now = server.admit(&mut workspace, outcome.log, &mut admissions);
-        for message in &reported.end {
+        let now = server.admit(&mut workspace, &mut admissions);
+        for message in &admissions.ended(reported.end) {
             written(output, message)?;
         }
         logged((output, log), &server, &now)?;
@@ -7310,14 +7596,17 @@ where
     Ok(())
 }
 
-/// Write what settling `server`'s admissions produced: each correction to
-/// `output`, then each line, disarming the deadline of each document whose
-/// correction replaced what it held.
+/// Write what settling `server`'s judgements and admissions produced: each
+/// message to `output`, then each line, arming the deadline of each document
+/// whose publication held a diagnostic back and disarming that of each whose
+/// publication or correction holds nothing.
 ///
 /// # Specification
 /// - requires: nothing of the streams.
-/// - ensures: each correction as one frame, in order; the deadlines as
-///   [`Deadlines::settled`] states; then the lines as [`logged`] states.
+/// - ensures: each message as one frame, in order; the deadlines as
+///   [`Deadlines::note`] states of the judged lines at the server's quiet
+///   interval from now, then as [`Deadlines::settled`] states of the lines;
+///   then the lines as [`logged`] states.
 /// - fails: the first fault of `output`.
 /// - panics: none.
 /// - executable: none — the streams are opaque.
@@ -7326,8 +7615,10 @@ where
 /// [`TransportFault`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an admission's line is logged once it settles.
+/// - hypothesis: L3 — a publication's line is logged once its admission
+///   settles, and a held diagnostic is published once the document is quiet.
 /// - witness: `tests::session::an_importer_edit_offers_the_kernel_its_own_declarations_776`
+/// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
 fn wrote_settled<Output, Log>(
     (output, log): (&mut Output, &mut Log),
     server: &Server,
@@ -7338,9 +7629,10 @@ where
     Output: Write,
     Log: Write,
 {
-    for message in &settled.corrections {
+    for message in &settled.messages {
         written(output, message)?;
     }
+    deadlines.note(&settled.judged, server.quiet(), Instant::now());
     deadlines.settled(&settled.log);
     logged((output, log), server, &settled.log)
 }
@@ -7454,7 +7746,9 @@ mod tests
 
     impl Connected
     {
-        /// What the connection makes of `body`.
+        /// What the connection makes of `body`, the judgements and admissions
+        /// it starts run to their ends and settled after it: its messages, then
+        /// theirs.
         ///
         /// # Specification
         /// trivial.
@@ -7463,30 +7757,25 @@ mod tests
             body: &Body,
         ) -> Outcome
         {
-            self.server.handle(&mut self.workspace, body)
+            let mut outcome = self.server.handle(&mut self.workspace, body);
+            outcome.messages.extend(self.settle().messages);
+            outcome
         }
 
-        /// The admissions `log` left, run to their ends and settled: the
-        /// corrections, and every line in the order it was logged.
+        /// The judgements and admissions the messages handled so far started,
+        /// run to their ends and settled: the messages they produce, and every
+        /// line in the order it was logged.
         ///
         /// # Specification
         /// trivial.
-        fn admit(
-            &mut self,
-            log: Vec<Logged>,
-        ) -> Settled
+        fn settle(&mut self) -> Settled
         {
-            let mut lines = self
-                .server
-                .admit(&mut self.workspace, log, &mut self.admissions);
+            let mut log = self.server.admit(&mut self.workspace, &mut self.admissions);
             let settled =
                 self.server
                     .admitted(&mut self.workspace, &mut self.admissions, Awaiting::All);
-            lines.extend(settled.log);
-            Settled {
-                corrections: settled.corrections,
-                log: lines,
-            }
+            log.extend(settled.log);
+            Settled { log, ..settled }
         }
 
         /// How the connection ends if its stream closes now.
@@ -9299,8 +9588,9 @@ mod tests
                 "languageId": "gandr", "version": version, "text": "def one : Integer ;\ndef one = 1 ;\n"},
                 "contentChanges": []}});
             let classified = crate::rpc::classify(&Body::from(change.to_string().into_bytes()));
-            let outcome = server.server.answer(&mut server.workspace, classified, &[]);
-            serde_json::to_value(server.server.traced(&outcome.log)).expect("the traces encode")
+            let _outcome = server.server.answer(&mut server.workspace, classified, &[]);
+            let settled = server.settle();
+            serde_json::to_value(server.server.traced(&settled.log)).expect("the traces encode")
         };
         let set = |server: &mut Connected, value: &str| {
             let message = serde_json::json!({"jsonrpc": "2.0", "method": "$/setTrace", "params": {"value": value}});
@@ -10567,8 +10857,20 @@ mod tests
         let reported = |server: &mut Connected, message: &Value| {
             let classified = crate::rpc::classify(&Body::from(message.to_string().into_bytes()));
             let reported = server.server.reported(&server.workspace, &classified);
-            let outcome = server.server.answer(&mut server.workspace, classified, &[]);
-            let _admitted = server.admit(outcome.log);
+            let _outcome = server.server.answer(&mut server.workspace, classified, &[]);
+            let _now = server
+                .server
+                .admit(&mut server.workspace, &mut server.admissions);
+            // The end waits for the judgements the message started, and is
+            // written as they are settled.
+            let mut end = server.admissions.ended(reported.end);
+            end.extend(
+                server
+                    .settle()
+                    .messages
+                    .into_iter()
+                    .filter(|message| matches!(*message, Outgoing::Progress(_))),
+            );
             let encoded = |messages: &[Outgoing]| {
                 Value::Array(
                     messages
@@ -10577,7 +10879,7 @@ mod tests
                         .collect(),
                 )
             };
-            (encoded(&reported.begin), encoded(&reported.end))
+            (encoded(&reported.begin), encoded(&end))
         };
         let open = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
             "textDocument": {"uri": uri("importer.gandr"), "languageId": "gandr", "version": 1_i32,
@@ -12395,7 +12697,10 @@ mod tests
                 .into_bytes(),
             )
         };
-        let republished = server.handle(&configure(r#""json""#));
+        let _configured = server
+            .server
+            .handle(&mut server.workspace, &configure(r#""json""#));
+        let republished = server.settle();
         let published: Vec<Value> = republished
             .messages
             .iter()
@@ -12609,24 +12914,32 @@ mod tests
                 "contentChanges":[{"text":"def g : Integer ;\ndef g = 1 ;\n"}]}}"#
                 .to_vec(),
         );
-        let outcome = server.handle(&body);
-        let [ref published] = *outcome.log.as_slice()
+        let changed = server.server.handle(&mut server.workspace, &body);
+        assert_eq!(
+            changed.messages,
+            Vec::new(),
+            "the change publishes nothing before its judgement"
+        );
+        let settled = server.settle();
+        let [ref published] = *settled.judged.as_slice()
         else {
-            panic!("one timing line per synchronisation");
+            panic!("one timing line per synchronisation: {:?}", settled.judged);
         };
         assert!(
             !published.to_string().contains("admitted"),
             "the diagnostics are published before the admission: {published}"
         );
-        let admitted = server.admit(outcome.log);
-        assert_eq!(
-            admitted.corrections,
-            Vec::new(),
-            "the kernel agrees, so nothing replaces the published diagnostics"
+        assert!(
+            matches!(*settled.messages.as_slice(), [Outgoing::Notification {
+                method: "textDocument/publishDiagnostics",
+                ..
+            }]),
+            "the kernel agrees, so nothing replaces the published diagnostics: {:?}",
+            settled.messages
         );
-        let [ref admitted] = *admitted.log.as_slice()
+        let [ref admitted] = *settled.log.as_slice()
         else {
-            panic!("the admission keeps the line");
+            panic!("the admission keeps the line: {:?}", settled.log);
         };
         assert!(
             admitted.to_string().contains(", admitted in "),
@@ -12638,13 +12951,64 @@ mod tests
                 .to_vec(),
         );
         let _cleared = server.handle(&closed);
-        let stale = server.handle(&body).log;
+        let stale = server.server.handle(&mut server.workspace, &body);
         assert_eq!(
-            stale,
+            stale.messages,
             Vec::new(),
-            "a change to a closed document logs nothing"
+            "a change to a closed document says nothing"
         );
-        assert_eq!(server.admit(stale), Settled::default());
+        assert_eq!(server.settle(), Settled::default(), "and judges nothing");
+    }
+
+    /// One of the two pool threads a gated job holds.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Gated(u8);
+
+    /// A pool of two threads, both held by a job waiting on its gate until the
+    /// gate is dropped, and the generations that hold them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn gated(
+        pool: &Pool
+    ) -> (
+        Generations<'_, Gated, Gated, ()>,
+        Vec<std::sync::mpsc::Sender<()>>,
+    )
+    {
+        let mut blocking: Generations<'_, Gated, Gated, ()> = Generations::new(pool);
+        let (started, began) = std::sync::mpsc::channel();
+        let mut gates = Vec::new();
+        for thread in 0_u8 .. 2_u8 {
+            gates.push(blocked(&mut blocking, Gated(thread), &started));
+        }
+        for _thread in 0_u8 .. 2_u8 {
+            began.recv().expect("each blocking job starts");
+        }
+        (blocking, gates)
+    }
+
+    /// Submit to `blocking`, as `slot`, a job that says it `started` and then
+    /// waits on the gate returned until it is dropped.
+    ///
+    /// # Specification
+    /// trivial.
+    fn blocked(
+        blocking: &mut Generations<'_, Gated, Gated, ()>,
+        slot: Gated,
+        started: &std::sync::mpsc::Sender<()>,
+    ) -> std::sync::mpsc::Sender<()>
+    {
+        let (gate, opened) = std::sync::mpsc::channel::<()>();
+        let started = started.clone();
+        let _blocked = blocking.submit(slot, slot, move |_| {
+            started.send(()).expect("the test waits for the start");
+            opened
+                .recv()
+                .map_err(|_closed| gandr_surface_dispatcher::Retired)
+        });
+        gate
     }
 
     /// #1547: a change that arrives while its document's admission waits for
@@ -12656,32 +13020,14 @@ mod tests
         let pool = Pool::new(Width::Threads(Threads::from(
             core::num::NonZeroUsize::MIN.saturating_add(1),
         )));
-        // Both of the pool's threads wait on a gate, so the admissions queue
-        // behind them.
-        let mut blocking: Generations<'_, u8, u8, ()> = Generations::new(&pool);
-        let (started, began) = std::sync::mpsc::channel();
-        let mut gates = Vec::new();
-        for thread in 0_u8 .. 2_u8 {
-            let (gate, opened) = std::sync::mpsc::channel::<()>();
-            gates.push(gate);
-            let started = started.clone();
-            let _blocked = blocking.submit(thread, thread, move |_| {
-                started.send(()).expect("the test waits for the start");
-                opened
-                    .recv()
-                    .map_err(|_closed| gandr_surface_dispatcher::Retired)
-            });
-        }
-        for _thread in 0_u8 .. 2_u8 {
-            began.recv().expect("each blocking job starts");
-        }
+        let (mut blocking, mut gates) = gated(&pool);
         let Connected {
             mut server,
             mut workspace,
             ..
         } = initialized();
         let mut admissions = Admissions::new(&pool, Inbox::default().changes());
-        let opened = server.handle(
+        let _opened = server.handle(
             &mut workspace,
             &Body::from(
                 br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
@@ -12690,13 +13036,26 @@ mod tests
                     .to_vec(),
             ),
         );
-        let waiting = server.admit(&mut workspace, opened.log, &mut admissions);
         assert_eq!(
-            waiting,
+            server.admit(&mut workspace, &mut admissions),
             Vec::new(),
-            "the opening's line waits for its admission"
+            "the opening's judgement waits for the pool"
         );
-        let changed = server.handle(
+        // A third blocking job queues behind the judgement: once it starts, the
+        // judgement has run, and both threads are held again.
+        let (started, began) = std::sync::mpsc::channel();
+        gates.push(blocked(&mut blocking, Gated(2_u8), &started));
+        drop(gates.remove(0));
+        began
+            .recv()
+            .expect("the third blocking job starts after the judgement");
+        let judged = server.admitted(&mut workspace, &mut admissions, Awaiting::Ended);
+        assert_eq!(
+            (judged.judged.len(), judged.log.len()),
+            (1_usize, 0_usize),
+            "the opening is published, and its line waits for its admission: {judged:?}"
+        );
+        let _changed = server.handle(
             &mut workspace,
             &Body::from(
                 br#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
@@ -12705,10 +13064,10 @@ mod tests
                     .to_vec(),
             ),
         );
-        let retired = server.admit(&mut workspace, changed.log, &mut admissions);
+        let retired = server.admit(&mut workspace, &mut admissions);
         let [ref retired] = *retired.as_slice()
         else {
-            panic!("the change logs the opening's line at once: {retired:?}");
+            panic!("the change's judgement logs the opening's line at once: {retired:?}");
         };
         assert!(
             retired.to_string().contains("at version 1: ")
@@ -12717,7 +13076,11 @@ mod tests
         );
         drop(gates);
         let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
-        assert_eq!(settled.corrections, Vec::new(), "the kernel agrees");
+        assert_eq!(
+            settled.judged.len(),
+            settled.messages.len(),
+            "the kernel agrees: the change's publication alone is written"
+        );
         let [ref admitted] = *settled.log.as_slice()
         else {
             panic!("the change's admission settles once: {:?}", settled.log);
@@ -12727,6 +13090,132 @@ mod tests
                 && admitted.to_string().contains(", admitted in ")
                 && admitted.to_string().ends_with(", 2/2 declarations crossed"),
             "the change's admission crosses the revision whole: {admitted}"
+        );
+        assert!(matches!(
+            blocking.wait(),
+            quenchant_shape::shape::Maybe::Absent(_)
+        ));
+    }
+
+    /// #1547: a change that arrives while its document's judgement waits for
+    /// the pool retires it: only the change is published, its line judging
+    /// what a connection opening the changed text judges, and a request read
+    /// while the opening's judgement ran is answered `ContentModified` by the
+    /// change; one read while the change's runs is answered once it publishes.
+    #[test]
+    fn a_change_during_a_judgement_retires_it_1547()
+    {
+        let opened = r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+            {"uri":"file:///tmp/example.gandr","languageId":"gandr","version":1,
+             "text":"def f : Integer ;\ndef f = 1 ;\n"}}}"#;
+        let edited = "def f : Integer ;\ndef f = 1 ;\ndef g : Integer ;\ndef g = f ;\n";
+        let hover = |id: u8| {
+            Body::from(
+                format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"method":"textDocument/hover","params":{{
+                        "textDocument":{{"uri":"file:///tmp/example.gandr"}},
+                        "position":{{"line":0,"character":4}}}}}}"#
+                )
+                .into_bytes(),
+            )
+        };
+        let pool = Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::MIN.saturating_add(1),
+        )));
+        let (mut blocking, gates) = gated(&pool);
+        let Connected {
+            mut server,
+            mut workspace,
+            ..
+        } = initialized();
+        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        let _opened = server.handle(&mut workspace, &Body::from(opened.as_bytes().to_vec()));
+        let _judging = server.admit(&mut workspace, &mut admissions);
+        assert_eq!(
+            server.handle(&mut workspace, &hover(2_u8)).messages,
+            Vec::new(),
+            "a request about a document being judged is held"
+        );
+        let changed = server.handle(
+            &mut workspace,
+            &Body::from(
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                    "textDocument": {"uri": "file:///tmp/example.gandr", "version": 2_i32},
+                    "contentChanges": [{"text": edited}]}})
+                .to_string()
+                .into_bytes(),
+            ),
+        );
+        assert_eq!(
+            serde_json::to_value(&changed.messages).expect("the messages encode"),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":2,"error":{"code":-32801,"message":"the document changed before the request was read"}}]"#
+            )),
+            "the change answers the held request `ContentModified`"
+        );
+        let _rejudging = server.admit(&mut workspace, &mut admissions);
+        assert_eq!(
+            server.handle(&mut workspace, &hover(3_u8)).messages,
+            Vec::new(),
+            "a request read while the change is judged is held too"
+        );
+        drop(gates);
+        let settled = server.admitted(&mut workspace, &mut admissions, Awaiting::All);
+        let versions: Vec<Option<i64>> = settled
+            .messages
+            .iter()
+            .map(|message| serde_json::to_value(message).expect("a message encodes"))
+            .filter(|message| {
+                message.get("method").and_then(Value::as_str)
+                    == Some("textDocument/publishDiagnostics")
+            })
+            .map(|message| message.pointer("/params/version").and_then(Value::as_i64))
+            .collect();
+        assert_eq!(
+            versions,
+            [Some(2_i64)],
+            "the opening's judgement was retired, so only the change publishes"
+        );
+        assert!(
+            settled.messages.iter().any(|message| matches!(*message,
+                Outgoing::Success { ref id, .. } if *id == RequestId::from(serde_json::json!(3_i64)))),
+            "the request held during the change's judgement is answered once it publishes: {:?}",
+            settled.messages
+        );
+        let [ref judged] = *settled.judged.as_slice()
+        else {
+            panic!("the change is judged once: {:?}", settled.judged);
+        };
+        let mut fresh = initialized();
+        let _fresh = fresh.server.handle(
+            &mut fresh.workspace,
+            &Body::from(
+                serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                    "textDocument": {"uri": "file:///tmp/example.gandr", "languageId": "gandr",
+                        "version": 2_i32, "text": edited}}})
+                .to_string()
+                .into_bytes(),
+            ),
+        );
+        let opening = fresh.settle();
+        let [ref first] = *opening.judged.as_slice()
+        else {
+            panic!("the fresh opening is judged once: {:?}", opening.judged);
+        };
+        let census = |line: &Logged| {
+            line.to_string()
+                .split(", ")
+                .find(|part| part.ends_with(" items judged"))
+                .map(String::from)
+        };
+        assert!(
+            census(judged).is_some(),
+            "the change's line counts its items: {judged}"
+        );
+        assert_eq!(
+            census(judged),
+            census(first),
+            "the change judges what opening its text judges, as if the retired judgement never ran: {judged}"
         );
         assert!(matches!(
             blocking.wait(),
@@ -12870,11 +13359,13 @@ mod tests
         let read = |text: &str| crate::rpc::classify(&Body::from(text.as_bytes().to_vec()));
         let answer = |server: &mut Connected, message: &str, later: &[&str]| {
             let later: Vec<Classified> = later.iter().map(|&text| read(text)).collect();
-            let outcome = server
+            let mut outcome = server
                 .server
                 .answer(&mut server.workspace, read(message), &later);
-            let versions: Vec<String> = outcome
-                .log
+            let settled = server.settle();
+            outcome.messages.extend(settled.messages);
+            let versions: Vec<String> = settled
+                .judged
                 .iter()
                 .map(|logged| logged.version.to_string())
                 .collect();
@@ -13017,6 +13508,41 @@ mod tests
         assert_eq!(server.closed(), Served::Clean);
     }
 
+    /// One of several connections over a workspace they share, served as the
+    /// hub serves it.
+    #[repr(transparent)]
+    struct Connection
+    {
+        /// The connection's server.
+        server: Server,
+    }
+
+    impl Connection
+    {
+        /// What the connection makes of `body` over `workspace`: the message's
+        /// own messages, then those of settling the judgements and admissions
+        /// it started, each run to its end on [`SERIAL`].
+        ///
+        /// # Specification
+        /// trivial.
+        fn handle(
+            &mut self,
+            workspace: &mut Workspace,
+            body: &Body,
+        ) -> Outcome
+        {
+            let mut outcome = self.server.handle(workspace, body);
+            let mut admissions = Admissions::new(&SERIAL, Inbox::default().changes());
+            let _logged = self.server.admit(workspace, &mut admissions);
+            outcome.messages.extend(
+                self.server
+                    .admitted(workspace, &mut admissions, Awaiting::All)
+                    .messages,
+            );
+            outcome
+        }
+    }
+
     /// Two running connections, numbered 1 and 2, over one workspace.
     ///
     /// # Specification
@@ -13031,16 +13557,24 @@ mod tests
     ///   connection left waiting.
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
     #[spec(ensures: |ret| ret.0.documents.is_empty()
-        && ret.1.iter().all(|connection| connection.phase == super::Phase::Running))]
-    fn two_connections() -> (Workspace, [Server; 2])
+        && ret.1.iter().all(|connection| connection.server.phase == super::Phase::Running))]
+    fn two_connections() -> (Workspace, [Connection; 2])
     {
         let mut workspace = Workspace::default();
         let initialize =
             Body::from(br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#.to_vec());
         let connections = [1_u64, 2_u64].map(|number| {
-            let mut server = Server::new(Peer::from(number));
-            assert_eq!(server.handle(&mut workspace, &initialize).messages.len(), 1);
-            server
+            let mut connection = Connection {
+                server: Server::new(Peer::from(number)),
+            };
+            assert_eq!(
+                connection
+                    .handle(&mut workspace, &initialize)
+                    .messages
+                    .len(),
+                1
+            );
+            connection
         });
         (workspace, connections)
     }
@@ -13071,7 +13605,7 @@ mod tests
     /// # Specification
     /// trivial.
     fn hovered(
-        server: &mut Server,
+        server: &mut Connection,
         workspace: &mut Workspace,
     ) -> Value
     {
@@ -13429,13 +13963,41 @@ mod tests
             ),
         ));
         let inbox = crate::quiet::Inbox::default();
-        workspace.hear_edits(first.peer, inbox.changes());
+        workspace.hear_edits(first.server.peer, inbox.changes());
         let held = version(&workspace);
         let stale = serde_json::from_value(serde_json::json!(3_i32)).expect("a version");
         assert_eq!(
             workspace.propose(&uri, stale, fill(hole, Json("42"), None)),
             Err(ProposalRefusal::Stale { held })
         );
+        // A running judgement holds the copy's session: a trial waits for it
+        // and reads the copy whole.
+        let session = workspace
+            .documents
+            .get(&uri)
+            .map(|held| alloc::sync::Arc::clone(&held.document.session))
+            .expect("the document is held");
+        std::thread::scope(|scope| {
+            let (took, taken) = std::sync::mpsc::channel();
+            let session = &session;
+            let judging = scope.spawn(move || {
+                let held = session.lock().expect("no judgement panicked");
+                took.send(()).expect("the test waits for the session");
+                std::thread::sleep(core::time::Duration::from_millis(50));
+                drop(held);
+            });
+            taken.recv().expect("the judgement takes the session");
+            assert!(
+                workspace
+                    .trial(&uri, &[ContentChange {
+                        range: Some(hole),
+                        text: String::from("42"),
+                    }])
+                    .is_some_and(|(_, tried)| tried.len() == 1),
+                "a copy its judgement holds is tried once the judgement is done"
+            );
+            judging.join().expect("the judgement ends");
+        });
         assert!(
             matches!(
                 workspace.propose(&uri, held, fill(hole, Json("\"one\""), None)),

@@ -272,17 +272,18 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`], [`Server::admit`] and [`Server::admitted`] state, over
 ///   the documents every connection shares, the workspace's configured spelling
-///   `spelling`, its kernel admissions running on `pool`, each connection
-///   answered from its own copy: its answers and publications reach it in the
-///   order its handling made them, and each synchronisation's timing line goes
-///   to `log`. For a connection whose client watches no file, the hub watches
-///   the files its copies' closures name, as [`Server::followed`] reads them,
-///   and a change to one on disk is handled as [`Server::changed_on_disk`]
-///   states; a watch that cannot start is said once in `log` and the hub serves
-///   on unwatched. A connection ends at `exit`, at the end of its stream, or at
-///   a stream fault; it then holds nothing and its socket is shut. The hub
-///   returns once no connection has been open for `linger`, its socket file
-///   removed first so a late client starts a fresh hub.
+///   `spelling`, its judgements and kernel admissions running on `pool`, each
+///   connection answered from its own copy: its answers and publications reach
+///   it in the order its handling made them, and each synchronisation's timing
+///   line goes to `log`. For a connection whose client watches no file, the hub
+///   watches the files its copies' closures name, as [`Server::followed`] reads
+///   them, and a change to one on disk is handled as
+///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
+///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
+///   the end of its stream, or at a stream fault; it then holds nothing and its
+///   socket is shut. The hub returns once no connection has been open for
+///   `linger`, its socket file removed first so a late client starts a fresh
+///   hub.
 /// - provides: the engine hub's whole lifetime.
 /// - fails: when accepting fails for a reason other than having nothing to
 ///   accept.
@@ -441,7 +442,7 @@ fn connection<Log>(
     if writer.is_ok() {
         let _ended = paced(&mut reading, inbox, |met, deadlines| {
             let mut held = lock(workspace);
-            let (reported, outcome) = match met {
+            let (reported, messages, flow) = match met {
                 Met::Closed => {
                     let settled = server.admitted(&mut held, &mut admissions, Awaiting::All);
                     drop(held);
@@ -466,10 +467,19 @@ fn connection<Log>(
                 },
                 Met::Admitted => {
                     let settled = server.admitted(&mut held, &mut admissions, Awaiting::Ended);
+                    // The watch follows what the published judgements' closures
+                    // name before the client hears them, so a change it makes on
+                    // hearing one is seen.
+                    if let Some(ref mut watch) = *lock(disk)
+                        && let Some(watched) = watch.follow(peer, &changes, server.followed(&held))
+                    {
+                        held.watched_on_disk(watched);
+                    }
                     drop(held);
-                    for message in settled.corrections {
+                    for message in settled.messages {
                         drop(outbox.send(message));
                     }
+                    deadlines.note(&settled.judged, server.quiet(), Instant::now());
                     deadlines.settled(&settled.log);
                     logged(&server, &settled.log, (log, &outbox));
                     return Ok(ControlFlow::Continue(()));
@@ -479,21 +489,24 @@ fn connection<Log>(
                     for message in reported.begin {
                         drop(outbox.send(message));
                     }
-                    (reported.end, server.changed_on_disk(&mut held, &paths))
+                    server.changed_on_disk(&mut held, &paths);
+                    (reported.end, Vec::new(), Flow::Continue)
                 },
                 Met::Edited(paths) => {
                     let reported = server.reported_elsewhere(&held, &paths);
                     for message in reported.begin {
                         drop(outbox.send(message));
                     }
-                    (reported.end, server.edited_elsewhere(&mut held, &paths))
+                    server.edited_elsewhere(&mut held, &paths);
+                    (reported.end, Vec::new(), Flow::Continue)
                 },
                 Met::Frame { message, later } => {
                     let reported = server.reported(&held, &message);
                     for message in reported.begin {
                         drop(outbox.send(message));
                     }
-                    (reported.end, server.answer(&mut held, message, later))
+                    let outcome = server.answer(&mut held, message, later);
+                    (reported.end, outcome.messages, outcome.flow)
                 },
             };
             // The watch is armed before the client hears the judgement, so a
@@ -503,17 +516,16 @@ fn connection<Log>(
             {
                 held.watched_on_disk(watched);
             }
-            for message in outcome.messages {
+            for message in messages {
                 drop(outbox.send(message));
             }
-            for message in reported {
+            let now = server.admit(&mut held, &mut admissions);
+            for message in admissions.ended(reported) {
                 drop(outbox.send(message));
             }
-            deadlines.note(&outcome.log, server.quiet(), Instant::now());
-            let now = server.admit(&mut held, outcome.log, &mut admissions);
             drop(held);
             logged(&server, &now, (log, &outbox));
-            Ok(match outcome.flow {
+            Ok(match flow {
                 Flow::Exit(_) => {
                     let settled =
                         server.admitted(&mut lock(workspace), &mut admissions, Awaiting::All);

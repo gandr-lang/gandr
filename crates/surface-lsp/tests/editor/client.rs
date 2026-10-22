@@ -609,8 +609,8 @@ impl Streams
 
 impl Joined
 {
-    /// Handle `message` as `serve` does — the message, then the admission
-    /// its log leaves, settled — and return every message written.
+    /// Handle `message` as `serve` does — the message, then the judgements and
+    /// admissions it starts, settled — and return every message written.
     ///
     /// # Specification
     /// trivial.
@@ -624,7 +624,7 @@ impl Joined
         let outcome = self.server.handle(&mut shared.workspace, &body);
         let _logged = self
             .server
-            .admit(&mut shared.workspace, outcome.log, &mut self.admissions);
+            .admit(&mut shared.workspace, &mut self.admissions);
         let admitted =
             self.server
                 .admitted(&mut shared.workspace, &mut self.admissions, Awaiting::All);
@@ -632,7 +632,7 @@ impl Joined
         let messages: Vec<Value> = outcome
             .messages
             .iter()
-            .chain(&admitted.corrections)
+            .chain(&admitted.messages)
             .map(|written| serde_json::to_value(written).expect("a written message encodes"))
             .collect();
         if self.record == Record::Kept {

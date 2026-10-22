@@ -377,7 +377,7 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
 /// wall of the admission after it.
 ///
 /// # Specification
-/// - requires: constructed by [`recheck`], its admission's wall added by
+/// - requires: constructed by [`judge_laid`], its admission's wall added by
 ///   [`settle`].
 /// - ensures: names the census and the walls of one synchronisation.
 /// - panics: none.
@@ -574,41 +574,46 @@ pub struct Rechecked
     pub timing: Timing,
 }
 
-/// Judge `text`, the document at `uri`, in its `session`, each import of its
-/// closure read as `shadows` holds it, read its diagnostics off the judgement
+/// Judge `text`, the document at `uri`, in its `session` over `laid`, the
+/// closure [`lay`] laid it out in, polling `retirement` before each item the
+/// incremental pass adopts or judges; read its diagnostics off the judgement
 /// at `verbosity`, their types in `spelling`, and find the form holding `caret`
-/// in the tree the judgement parsed.
+/// in the tree the judgement parsed, the wall measured from `started`.
 ///
 /// # Specification
-/// - requires: `session` was opened for `uri`; any text is admissible input.
-/// - ensures: the text is judged once, and each diagnostic the dispatcher's
-///   walk yields for the judgement's step under `gandr check --goals` becomes
-///   one LSP diagnostic, in that order, as [`diagnostic`] writes it at
-///   `verbosity`, every type it names in `spelling`: the range of its primary
-///   annotation, else of its innermost located context, the refusal's
-///   vocabulary name as its code, described at its tracking issue's address
-///   when the refusal is unimplemented, its message, primary label, unlocated
-///   contexts, note and tracking issue as its message, each context annotation
-///   and then each located context, outermost first, as a related location
-///   carrying its label, then each mark it makes in an import at that import's
-///   file, and the severity of a goal as information, of a warning as a
-///   warning, of a note as a hint and of every other diagnostic as an error; a
-///   diagnostic locating nothing in the document, and a ledger line, at the
-///   document's origin. A fault that keeps the document from composing, and a
-///   grammar that did not build, is one error at the origin naming it. The
-///   unused binders and the imports no lookup reached are the composition's,
-///   moved back by the document's base; none when the judgement faulted or
-///   refused the document whole. The lay-out is the one judged, `named` taken
-///   out of it, and [`laid::Absent::Alone`] when the grammar did not build. The
-///   timing carries the judgement's form census, the incremental checker's
-///   census, and the wall of the whole recheck; its admission is pending when
-///   the judgement left one. The form is [`caret_form`] of the judged tree at
-///   `caret`, `caret`'s own reason when it is absent, and
-///   [`formless::Absent::Unparsed`] when the judgement faulted or the grammar
-///   did not build. A text the session last judged, submitted again, molds no
-///   form and judges no item, and its diagnostics are the ones its previous
-///   recheck produced.
-/// - provides: the one recheck every synchronisation publishes.
+/// - requires: `session` was opened for `uri`; `laid` is [`lay`] of `text`; any
+///   text is admissible input.
+/// - ensures: while every poll answers wanted, [`Polled::Whole`]: the text is
+///   judged once, and each diagnostic the dispatcher's walk yields for the
+///   judgement's step under `gandr check --goals` becomes one LSP diagnostic,
+///   in that order, as [`diagnostic`] writes it at `verbosity`, every type it
+///   names in `spelling`: the range of its primary annotation, else of its
+///   innermost located context, the refusal's vocabulary name as its code,
+///   described at its tracking issue's address when the refusal is
+///   unimplemented, its message, primary label, unlocated contexts, note and
+///   tracking issue as its message, each context annotation and then each
+///   located context, outermost first, as a related location carrying its
+///   label, then each mark it makes in an import at that import's file, and the
+///   severity of a goal as information, of a warning as a warning, of a note as
+///   a hint and of every other diagnostic as an error; a diagnostic locating
+///   nothing in the document, and a ledger line, at the document's origin. A
+///   fault that keeps the document from composing, and a grammar that did not
+///   build, is one error at the origin naming it. The unused binders and the
+///   imports no lookup reached are the composition's, moved back by the
+///   document's base; none when the judgement faulted or refused the document
+///   whole. The lay-out is the one judged, `named` taken out of it, and
+///   [`laid::Absent::Alone`] when the grammar did not build. The timing carries
+///   the judgement's form census, the incremental checker's census, and the
+///   wall of the whole recheck; its admission is pending when the judgement
+///   left one. The form is [`caret_form`] of the judged tree at `caret`,
+///   `caret`'s own reason when it is absent, and [`formless::Absent::Unparsed`]
+///   when the judgement faulted or the grammar did not build. A text the
+///   session last judged, submitted again, molds no form and judges no item,
+///   and its diagnostics are the ones its previous judgement produced. Retired
+///   before an item, [`Polled::Retired`], the session left as
+///   [`Session::judge_reading_retiring`] leaves it.
+/// - provides: the one judgement every synchronisation publishes, on whatever
+///   thread runs it.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
 /// - intension: one submission per call, and one projection per span end.
@@ -621,7 +626,9 @@ pub struct Rechecked
 ///   annotations then its rules in order, an unlocated rule in its message, and
 ///   a pending source at its ledger line; L3 — a change to nothing, the whole
 ///   text replaced by itself and one character by itself, publishes the bytes
-///   opening published and counts no form molded and no item judged.
+///   opening published and counts no form molded and no item judged; L3 — a
+///   judgement retired by a later change leaves the next one judging what it
+///   would have with no retired one before it.
 /// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `tests::session::an_edit_that_changes_nothing_republishes_the_same_bytes`
@@ -631,39 +638,48 @@ pub struct Rechecked
 /// - witness: `recheck::tests::an_unlocated_context_is_appended_to_the_message`
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-#[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
-    diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
-        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION | Severity::HINT)
-        && diagnostic.related_information.iter().all(|related|
-            related.location.range.start <= related.location.range.end)))]
+/// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
+#[spec(ensures: |ret| match ret {
+    Polled::Whole(ref rechecked) => rechecked.diagnostics.iter().all(|diagnostic|
+        diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
+            && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION | Severity::HINT)
+            && diagnostic.related_information.iter().all(|related|
+                related.location.range.start <= related.location.range.end)),
+    Polled::Retired(..) => true,
+})]
 #[must_use]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub fn recheck(
+pub fn judge_laid<Poll>(
     uri: &DocumentUri,
     session: &mut DocumentSession,
-    text: SourceText<'_>,
-    shadows: &dyn Shadows,
-    verbosity: Verbosity,
-    spelling: Spelling,
-    caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
-) -> Rechecked
+    (text, mut laid): (SourceText<'_>, Maybe<Laid, laid::Absent>),
+    (verbosity, spelling, caret): (
+        Verbosity,
+        Spelling,
+        Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
+    ),
+    (started, retirement): (Instant, &Poll),
+) -> Polled<Rechecked, Poll::Retired, ()>
+where
+    Poll: Retirement,
 {
-    let started = Instant::now();
-    let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| Rechecked {
-        diagnostics: vec![diagnostic],
-        unused: Vec::new(),
-        unreached: Vec::new(),
-        form: Maybe::Absent(formless::Absent::Unparsed),
-        named,
-        laid,
-        table: Maybe::Absent(tabled::Absent::Untabled),
-        timing: Timing {
-            forms: FormCensus::default(),
-            judged: Maybe::Absent(judged::Absent::Unchecked),
-            wall: started.elapsed(),
-            admitted: Maybe::Absent(admitted::Absent::Unadmitted),
-            crossed: Maybe::Absent(admitted::Absent::Unadmitted),
-        },
+    let unchecked = |diagnostic: Diagnostic, named: Vec<PathBuf>, laid| {
+        Polled::Whole(Rechecked {
+            diagnostics: vec![diagnostic],
+            unused: Vec::new(),
+            unreached: Vec::new(),
+            form: Maybe::Absent(formless::Absent::Unparsed),
+            named,
+            laid,
+            table: Maybe::Absent(tabled::Absent::Untabled),
+            timing: Timing {
+                forms: FormCensus::default(),
+                judged: Maybe::Absent(judged::Absent::Unchecked),
+                wall: started.elapsed(),
+                admitted: Maybe::Absent(admitted::Absent::Unadmitted),
+                crossed: Maybe::Absent(admitted::Absent::Unadmitted),
+            },
+        })
     };
     let session = match *session {
         Ok(ref mut session) => session,
@@ -679,7 +695,6 @@ pub fn recheck(
     // A document that imports a sibling is judged over it, laid out as the
     // walk lays its file out; the caret and the form it is in are measured
     // from the document's own start.
-    let mut laid = laid_out(uri, session.root(), text, shadows);
     let (base, named) = match laid {
         Maybe::Present(ref mut laid) => (laid.base, core::mem::take(&mut laid.named)),
         Maybe::Absent(_) => (SyntaxOffset::from(0_usize), Vec::new()),
@@ -698,17 +713,18 @@ pub fn recheck(
     };
     let slot = ClosureSlot::new();
     let outcome = match laid {
-        Maybe::Present(ref laid) => session.judge_unit_reading(
+        Maybe::Present(ref laid) => session.judge_unit_reading_retiring(
             SourceText::from(laid.text.as_str()),
-            &laid.unit,
-            laid.base,
+            (&laid.unit, laid.base),
             &slot,
             read,
+            retirement,
         ),
-        Maybe::Absent(_) => session.judge_reading(text, read),
+        Maybe::Absent(_) => session.judge_reading_retiring(text, read, retirement),
     };
     let mut submission = match outcome {
-        Ok(submission) => submission,
+        Ok(Polled::Whole(submission)) => submission,
+        Ok(Polled::Retired(retired, ())) => return Polled::Retired(retired, ()),
         Err(fault) => {
             let fault = fault.to_string();
             return unchecked(Diagnostic::at_origin(fault), named, laid);
@@ -748,7 +764,7 @@ pub fn recheck(
         Composed::Refused(_) => Vec::new(),
     };
     let diagnostics = diagnostics_of(submission, (uri, placed), text, verbosity, spelling);
-    Rechecked {
+    Polled::Whole(Rechecked {
         diagnostics,
         unused,
         unreached,
@@ -763,7 +779,63 @@ pub fn recheck(
             admitted: Maybe::Absent(pending),
             crossed: Maybe::Absent(pending),
         },
-    }
+    })
+}
+
+/// The import closure `text`, the document at `uri`, is laid out in under the
+/// root its path classifies, each import read as `shadows` holds it, or why it
+/// is judged alone.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the lay-out [`judge_laid`] judges `text` over, under the root
+///   [`open`] gives the document's session.
+/// - provides: the half of a synchronisation that reads the workspace, run
+///   where the workspace is, so the judgement can run elsewhere.
+/// - fails: never; a closure that cannot be laid out is judged alone.
+/// - panics: none.
+/// - executable: none — the lay-out reads the files and the workspace's copies;
+///   [`judge_laid`]'s witnesses judge over it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`judge_laid`].
+/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+pub fn lay(
+    uri: &DocumentUri,
+    text: SourceText<'_>,
+    shadows: &dyn Shadows,
+) -> Maybe<Laid, laid::Absent>
+{
+    laid_out(uri, classify(&uri.path()), text, shadows)
+}
+
+/// [`judge_laid`] of `text`, laid out by [`lay`], never retired: the whole
+/// synchronisation the tests drive on their own thread.
+///
+/// # Specification
+/// trivial.
+#[cfg(test)]
+pub fn recheck(
+    uri: &DocumentUri,
+    session: &mut DocumentSession,
+    text: SourceText<'_>,
+    shadows: &dyn Shadows,
+    verbosity: Verbosity,
+    spelling: Spelling,
+    caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
+) -> Rechecked
+{
+    let started = Instant::now();
+    let laid = lay(uri, text, shadows);
+    judge_laid(
+        uri,
+        session,
+        (text, laid),
+        (verbosity, spelling, caret),
+        (started, &gandr_surface_dispatcher::Unretired),
+    )
+    .whole()
 }
 
 /// What admitting a rechecked document produced: the diagnostic replacing the
@@ -1052,9 +1124,10 @@ pub struct Tried
 /// # Specification
 /// - requires: `session` was opened for `uri`; any texts are admissible input.
 /// - ensures: one result per candidate, in the order `Session::trial` ranks
-///   them, each carrying the diagnostics [`recheck`] would publish at the user
-///   verbosity for the candidate's text in a session that has accepted nothing;
-///   a fault is one error at the origin naming it. The session is unchanged.
+///   them, each carrying the diagnostics [`judge_laid`] would publish at the
+///   user verbosity for the candidate's text in a session that has accepted
+///   nothing; a fault is one error at the origin naming it. The session is
+///   unchanged.
 /// - provides: the language server's view of a batch of candidate fills.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -1294,7 +1367,7 @@ fn reported(step: Step<'_>) -> Step<'_>
 /// # Specification
 /// - requires: `index` was built from the text `found` is about; `found` is no
 ///   ledger line; `laid`, when given, is the unit `found` was judged in.
-/// - ensures: as [`recheck`] states for one diagnostic. A span the model
+/// - ensures: as [`judge_laid`] states for one diagnostic. A span the model
 ///   locates lies inside the text on character boundaries, so it always
 ///   projects; the origin stands in for one that would not. The range is the
 ///   primary annotation's; with none in the text, the innermost located

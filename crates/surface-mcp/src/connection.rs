@@ -565,9 +565,14 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use gandr_surface_lsp::Admissions;
+    use gandr_surface_lsp::Awaiting;
     use gandr_surface_lsp::Body;
+    use gandr_surface_lsp::Inbox;
     use gandr_surface_lsp::Peer;
+    use gandr_surface_lsp::Pool;
     use gandr_surface_lsp::Server;
+    use gandr_surface_lsp::Width;
     use gandr_surface_lsp::Workspace;
     use serde_json::Value;
     use serde_json::json;
@@ -592,8 +597,9 @@ mod tests
         (workspace, server)
     }
 
-    /// Have `server` handle `message` over `workspace`, dropping what it
-    /// answers.
+    /// Have `server` handle `message` over `workspace`, then run the
+    /// judgements and admissions it started to their ends, as a served
+    /// connection does, dropping what it answers.
     ///
     /// # Specification
     /// trivial.
@@ -605,6 +611,10 @@ mod tests
     {
         let body = Body::from(message.to_string().into_bytes());
         drop(server.handle(workspace, &body));
+        let pool = Pool::new(Width::SERIAL);
+        let mut admissions = Admissions::new(&pool, Inbox::default().changes());
+        drop(server.admit(workspace, &mut admissions));
+        drop(server.admitted(workspace, &mut admissions, Awaiting::All));
     }
 
     /// The `didOpen` of `uri` at `version` with `text`.
