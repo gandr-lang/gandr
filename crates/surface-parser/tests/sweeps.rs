@@ -117,13 +117,18 @@ const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
 /// a whole or cut-short row that moved is a tree change, each answered by the
 /// change that causes it.
 ///
-/// The whole matrix is some forty thousand parses (`mise run ci:recovery`, and
+/// The whole matrix is some two hundred thousand parses, two for each of the
+/// corpus's hundred thousand significant tokens (`mise run ci:recovery`, and
 /// the `sweeps` profile), and the rewrite always runs it; the `nightly`
-/// profile parses the night's slice of it. The sample, [`RECOVERY`], parses
-/// forty-eight sources and every source the change touches: each one's whole
-/// row and the rows of every sixteenth significant token. Every source's
-/// record is still required to exist, and every record to have a source, under
-/// every profile.
+/// profile parses the night's slice of it. A queue entry that changes the
+/// parser, its grammar or its syntax tree (`crates/surface-parser/`,
+/// `crates/surface-grammar/`, `crates/surface-syntax/`) reaches every record,
+/// and the plain lane runs the whole matrix for it, about a minute; the
+/// enforcing shards keep the sample, where the whole matrix would take half an
+/// hour. The sample, [`RECOVERY`], parses forty-eight sources and every source
+/// the change touches: each one's whole row and the rows of every sixteenth
+/// significant token. Every source's record is still required to exist, and
+/// every record to have a source, under every profile.
 #[test]
 fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
 {

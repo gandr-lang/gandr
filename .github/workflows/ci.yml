@@ -387,6 +387,9 @@ jobs:
       # Same fail-open for the extension, including a dispatch with no diff.
       # A Rust-only pull request or queue entry does not pay for the lane.
       extension: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true' }}
+      # A change to the parser, its grammar or its syntax tree reaches every
+      # recovery record (#1434); the same fail-open.
+      parser: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true' }}
     env:
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
     steps:
@@ -406,7 +409,7 @@ jobs:
         shell: bash
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
-          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring)' >> "$GITHUB_OUTPUT"
+          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/")) | tostring)' >> "$GITHUB_OUTPUT"
 
   # Finds the pin-file tag of this checkout and whether it is published. A pull
   # request from a fork cannot publish with its read-only token, so a missing
@@ -505,6 +508,7 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_RECOVERY: ${{ needs.changes.outputs.parser }}
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
@@ -544,6 +548,12 @@ jobs:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'check:tests' || env.CI_DOCS == 'true' && 'check:doctests' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
+      # A change that reaches the recovery records sweeps every one of them at
+      # every row, about a minute plain; the enforcing shards keep their
+      # sample, where every row would take half an hour (#1434).
+      - name: sweep every recovery record the change reaches
+        if: ${{ env.CI_RECOVERY == 'true' }}
+        run: mise run ci:recovery
       # Witness discovery lists the enforcing test inventory, so it runs where
       # that graph is already built: anywhere else it compiles the graph again.
       # The gate binary comes from the revision's cache when present.
