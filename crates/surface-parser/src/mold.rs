@@ -262,6 +262,8 @@ use gandr_theory_graphs::Dir;
 
 use crate::Frontier;
 use crate::MeldState;
+use crate::closing::TileSpelling;
+use crate::closing::tile_spelling;
 use crate::label::Lexeme;
 use crate::label::Token;
 use crate::meld::CandidateLabels;
@@ -922,7 +924,9 @@ const STATEMENT_LEADS: &[&str] = &[
 /// # Specification
 /// - requires: `text` is the token's exact source slice.
 /// - ensures: returns the deterministic label menu for the lexeme; empty for
-///   [`Lexeme::Space`] and [`Lexeme::Unknown`].
+///   [`Lexeme::Space`] and [`Lexeme::Unknown`]. A word's menu leads with its
+///   own text, save a lowercase word spelled as a lexical class's label
+///   (`number`, `constructor`), whose menu is a name's alone.
 /// - provides: the molder's per-token candidate-label source.
 /// - fails: never.
 /// - panics: none.
@@ -938,7 +942,7 @@ const STATEMENT_LEADS: &[&str] = &[
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
 #[must_use]
-#[spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0)))]
+#[spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0) || (matches!(lexeme, Lexeme::LowerWord) && tile_spelling(CandidateLabel::from(text.0)) != TileSpelling::Literal(text.0))))]
 pub fn candidate_labels<'text>(
     lexeme: Lexeme,
     text: TokenText<'text>,
@@ -948,7 +952,11 @@ pub fn candidate_labels<'text>(
     let mut labels = TokenLabels::new();
     match lexeme {
         Lexeme::LowerWord => {
-            labels.push(CandidateLabel::from(text));
+            // A word spelled as a lexical class's label (`number`,
+            // `constructor`) is a name, never a token of that class.
+            if tile_spelling(CandidateLabel::from(text)) == TileSpelling::Literal(text) {
+                labels.push(CandidateLabel::from(text));
+            }
             // A reserved keyword is never an identifier; only its keyword tile
             // is a candidate (tree-sitter `word` reservation).
             if !KEYWORDS.contains(&text) {
@@ -5089,6 +5097,18 @@ mod tests
                 CandidateLabel::from("hole_name")
             ]
         );
+        // A word spelled as a lexical class's label is a name, never a token
+        // of the class (#1863: `number` molded to the numeral tile).
+        for class in ["number", "constructor", "typed_number"] {
+            assert_eq!(
+                candidate_labels(Lexeme::LowerWord, TokenText::from(class)).as_slice(),
+                [
+                    CandidateLabel::from("identifier"),
+                    CandidateLabel::from("type_variable"),
+                    CandidateLabel::from("hole_name")
+                ]
+            );
+        }
         // A reserved primitive/type keyword molds only to its own tile.
         assert_eq!(
             candidate_labels(Lexeme::UpperWord, TokenText::from("Integer")).as_slice(),
