@@ -327,12 +327,6 @@ pending/model/12-typed-holes.gandr:<file>
 pending/model/12-typed-holes.gandr:block:bdb534fba3e8f253
 pending/model/13-shell-blocks.gandr:<file>
 pending/model/13-shell-blocks.gandr:shell_block:4685e3887a250618
-pending/model/21-ffi-native-call.gandr:<file>
-pending/model/21-ffi-native-call.gandr:doubled:051819a67769cdb0
-pending/model/21-ffi-native-call.gandr:testlib:dc7ebfe198d0a205
-pending/model/22-ffi-effect-and-capability.gandr:<file>
-pending/model/22-ffi-effect-and-capability.gandr:call_expression:2987644244f7550b
-pending/model/22-ffi-effect-and-capability.gandr:read:3f325e390bfaec26
 pending/model/23-shell-scripts-compute.gandr:<file>
 pending/model/23-shell-scripts-compute.gandr:banner:ca41b6835970842d
 pending/model/24-shell-conditionals.gandr:<file>
@@ -378,12 +372,6 @@ pending/pathological/eliminator-answer-type-tail-rung-only.gandr:<file>
 pending/pathological/eliminator-answer-type-tail-rung-only.gandr:if_expression:64b471d079d0c18f
 pending/pathological/eliminator-answer-type-value-typed.gandr:<file>
 pending/pathological/eliminator-answer-type-value-typed.gandr:if_expression:ae72aa21a223d861
-pending/pathological/ffi-interior-nul.gandr:<file>
-pending/pathological/ffi-interior-nul.gandr:call_expression:d895d9497aee0f83
-pending/pathological/ffi-interior-nul.gandr:gandr_test_strlen:b0de05fa63b3d9cb
-pending/pathological/ffi-wrong-arity.gandr:<file>
-pending/pathological/ffi-wrong-arity.gandr:call_expression:0c6ca16adc6f3b0e
-pending/pathological/ffi-wrong-arity.gandr:pow:91ad1a9670d82c1a
 pending/pathological/host-module-uncalled-selection.gandr:<file>
 pending/pathological/host-module-uncalled-selection.gandr:fs:11aaa92671b726d9
 pending/pathological/host-module-unknown-member.gandr:<file>
