@@ -1265,7 +1265,8 @@ fn convert(
                         };
                         match crate::session::relate(context, left, right, relation)? {
                             Maybe::Present(payloads) => {
-                                pending.extend(payloads.into_iter().map(|(left, right)| {
+                                pending.extend(payloads.into_iter().map(|pair| {
+                                    let (left, right) = pair.types;
                                     Pairing::Values(Relocated::from(left), Relocated::from(right))
                                 }));
                                 true

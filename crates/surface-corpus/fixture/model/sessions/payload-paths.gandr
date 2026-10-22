@@ -1,0 +1,53 @@
+// Two protocols that differ only in how their messages are encoded are one
+// type, once each pair of payload types that differ is paid with a path:
+// bisimilarity up to an equivalence of the payloads, the paths the session
+// certificate carries to the kernel (Gay and Hole, _Subtyping for Session
+// Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z, relate
+// payloads by type equality; the path generalises the equality to an
+// equivalence).
+
+/// A verdict of three cases nested to the right, renested to the left.
+@[ checks ]
+def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
+  case c {
+    +{.0 = u} => +{.0 = +{.0 = u}},
+    +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
+    +{.1 = +{.1 = u}} => +{.1 = u}
+  }
+}
+
+/// A verdict of three cases nested to the left, renested to the right.
+@[ checks ]
+def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
+  case c {
+    +{.0 = +{.0 = u}} => +{.0 = u},
+    +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},
+    +{.1 = u} => +{.1 = +{.1 = u}}
+  }
+}
+
+/// The two nestings are one type, the two maps inverse by computation.
+@[ checks ]
+def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) ;
+def nestings = equiv(toLeft, toRight) ;
+
+/// A judge that hears a verdict and acknowledges it, written over either
+/// nesting, and a judge that hears two verdicts.
+module Judge {
+  type Right = ?(Unit + (Unit + Unit)). !Unit. end;
+  type Left = ?((Unit + Unit) + Unit). !Unit. end;
+  type RightTwice = ?(Unit + (Unit + Unit)). ?(Unit + (Unit + Unit)). end;
+  type LeftTwice = ?((Unit + Unit) + Unit). ?((Unit + Unit) + Unit). end;
+}
+
+/// The two judges are one protocol along the path between the nestings: the
+/// acknowledgements' payloads convert, so only the verdict's pair is owed.
+@[ checks ]
+def renested : Path(Type, Judge.Right, Judge.Left) ;
+def renested = bisim(Judge.Right, Judge.Left, nestings) ;
+
+/// Each verdict a judge hears is its own payload pair, so hearing two owes
+/// two paths, in the order the protocol hears them.
+@[ checks ]
+def renestedTwice : Path(Type, Judge.RightTwice, Judge.LeftTwice) ;
+def renestedTwice = bisim(Judge.RightTwice, Judge.LeftTwice, (nestings, nestings)) ;

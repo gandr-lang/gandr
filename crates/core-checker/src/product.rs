@@ -473,7 +473,7 @@ pub fn native(
     | Err(CheckRefusal::ShapeMismatch { found, .. }) => found == TypeNode::Value(classifier),
     | Err(_) => true,
 })]
-fn certificate(
+pub fn certificate(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     classifier: ValueTypeId,

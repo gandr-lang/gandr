@@ -860,8 +860,12 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) =>
             actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
-        | (Some(&Value::SessionRelated { relation, source, target }), Former::SessionRelated(actual, actual_source, actual_target)) =>
-            relation == actual && actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
+        | (Some(&Value::SessionRelated { relation, source, target, payloads }), Former::SessionRelated(actual, actual_source, actual_target, actual_paths)) =>
+            relation == actual && actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target)
+                && actual_paths == match self.arena.value(payloads) {
+                    Some(&Value::Tuple(ref components)) if components.is_empty() => None,
+                    _ => Some(CoreNode::Value(payloads)),
+                },
         | (Some(&Value::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
             stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
                 && actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
@@ -978,7 +982,16 @@ impl<'arena> CoreSource<'arena>
                 relation,
                 source,
                 target,
-            } => Former::SessionRelated(relation, CoreNode::Value(source), CoreNode::Value(target)),
+                payloads,
+            } => Former::SessionRelated(
+                relation,
+                CoreNode::Value(source),
+                CoreNode::Value(target),
+                match self.arena.value(payloads) {
+                    Some(&Value::Tuple(ref components)) if components.is_empty() => None,
+                    _ => Some(CoreNode::Value(payloads)),
+                },
+            ),
             Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
             Value::Then(first, second) => {
                 Former::Then(CoreNode::Value(first), CoreNode::Value(second))

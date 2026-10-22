@@ -1,0 +1,70 @@
+// A bisimilarity paid with a univalence between two nominal types: the path
+// checks, but it names no native certificate for the kernel's session
+// obligation, and `equiv` refuses nominal data (#1316).
+
+/// A bit.
+@[ checks ]
+data Bit : Type {
+  Zero : Bit;
+  One : Bit;
+}
+
+/// An answer.
+@[ checks ]
+data Answer : Type {
+  No : Answer;
+  Yes : Answer;
+}
+
+/// A bit read as an answer.
+@[ checks ]
+def decode(b : Bit) -> -F Answer {
+  case b {
+    Zero => No,
+    One => Yes,
+  }
+}
+
+/// An answer written as a bit.
+@[ checks ]
+def encode(a : Answer) -> -F Bit {
+  case a {
+    No => Zero,
+    Yes => One,
+  }
+}
+
+/// Encoding a decoded bit gives the bit back.
+@[ checks ]
+def encoded(b : Bit) -> -F Path(Bit, encode(decode(b)), b) {
+  case b {
+    Zero => here(Zero),
+    One => here(One),
+  }
+}
+
+/// Decoding an encoded answer gives the answer back.
+@[ checks ]
+def decoded(a : Answer) -> -F Path(Answer, decode(encode(a)), a) {
+  case a {
+    No => here(No),
+    Yes => here(Yes),
+  }
+}
+
+/// The bits and the answers are one type, by univalence.
+@[ checks ]
+def codes : Path(Type, Bit, Answer) ;
+def codes = ua((decode, ((encode, encoded), (encode, decoded)))) ;
+
+/// A protocol that hears a bit, and one that hears an answer.
+module Ask {
+  type Coded = ?Bit. end;
+  type Decoded = ?Answer. end;
+}
+
+/// #1739: the two protocols paid with the univalence. The path checks against
+/// the pair it is owed, but a univalence is no native certificate.
+@[ refuses("ShapeMismatch") ]
+def oneProtocol : Path(Type, Ask.Coded, Ask.Decoded) ;
+def oneProtocol = bisim(Ask.Coded, Ask.Decoded, codes) ;

@@ -188,11 +188,6 @@ impl CoreArena
             | Value::FunctionFlow(first, second)
             | Value::ListCons(first, second)
             | Value::StaticApplication(first, second)
-            | Value::SessionRelated {
-                source: first,
-                target: second,
-                ..
-            }
             | Value::Ua {
                 forward: first,
                 backward: second,
@@ -210,6 +205,16 @@ impl CoreArena
                 self.value_type_into(&mut union, path_type, at);
                 self.value_into(&mut union, forward, at);
                 self.value_into(&mut union, backward, at);
+            },
+            Value::SessionRelated {
+                source,
+                target,
+                payloads,
+                ..
+            } => {
+                self.value_into(&mut union, source, at);
+                self.value_into(&mut union, target, at);
+                self.value_into(&mut union, payloads, at);
             },
             Value::Recorded(ref moves) => {
                 for movement in moves.iter() {

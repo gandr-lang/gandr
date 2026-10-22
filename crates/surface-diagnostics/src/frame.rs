@@ -199,6 +199,7 @@ pub fn sentence(role: FrameRole) -> Sentence
             "checking the record of this univalence and the codes it relates"
         },
         FrameRole::SessionStatement => "relating the two protocols of this session statement",
+        FrameRole::SessionPayloads => "checking the payload paths of this session equivalence",
         FrameRole::StaySynthesised => "synthesising the point of this stay",
         FrameRole::ThenFirst => "synthesising the first flow of this composite",
         FrameRole::ThenSecond => {
@@ -596,6 +597,7 @@ mod tests
             FrameRole::UnivalenceRecord,
             FrameRole::UnivalenceChecked,
             FrameRole::SessionStatement,
+            FrameRole::SessionPayloads,
             FrameRole::StaySynthesised,
             FrameRole::ThenFirst,
             FrameRole::ThenSecond,

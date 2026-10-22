@@ -137,7 +137,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x0f";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x10";
 
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0a";
@@ -1504,6 +1504,7 @@ where
             relation,
             source,
             target,
+            payloads,
         } => {
             writer.tag(Tag(0x62));
             writer.tag(Tag(match relation {
@@ -1512,6 +1513,7 @@ where
             }));
             write_index(writer, source)?;
             write_index(writer, target)?;
+            write_index(writer, payloads)?;
         },
         ContentNode::Stay(point) => {
             writer.tag(Tag(0x63));
@@ -3778,6 +3780,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             },
             source: read_index(reader)?,
             target: read_index(reader)?,
+            payloads: read_index(reader)?,
         },
         0x63 => ContentNode::Stay(read_index(reader)?),
         0x64 => ContentNode::Then(read_index(reader)?, read_index(reader)?),

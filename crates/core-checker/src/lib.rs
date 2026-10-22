@@ -277,7 +277,9 @@
 //! A, B)`, and `sim(A, B)` that the first is a Gay–Hole subtype of the
 //! second, at the directed `Flow(Type, A, B)`; the session engine decides each
 //! and the kernel replays the engine's pairs at `Path_U` and `Flow_U`, trusting
-//! nothing the engine searched. `Run(S)` classifies the finite recorded traces
+//! nothing the engine searched. `bisim(A, B, p)` relates two protocols whose
+//! payload types differ, `p` a path for each pair of payload types that do
+//! not convert. `Run(S)` classifies the finite recorded traces
 //! the protocol's monitor accepts, and `ride(\X. Run(X), f, r)` moves a run
 //! along a flow by the recorded-run consumer, refusing by move a run the
 //! target does not admit. A consumer may take a protocol's receipts as its

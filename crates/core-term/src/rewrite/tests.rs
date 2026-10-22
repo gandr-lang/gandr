@@ -3490,7 +3490,11 @@ pub fn formers() -> Vec<Witnessed>
         }),
         ("session identity", |a, c| {
             let unit = a.value_unit();
-            a.value_session_related(SessionRelation::Equivalence, unit, c)
+            a.value_session_related(SessionRelation::Equivalence, unit, c, unit)
+        }),
+        ("session identity's payload paths", |a, c| {
+            let unit = a.value_unit();
+            a.value_session_related(SessionRelation::Equivalence, unit, unit, c)
         }),
         ("stay", |a, c| a.value_stay(c)),
         ("then", |a, c| {

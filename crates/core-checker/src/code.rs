@@ -2244,11 +2244,6 @@ pub fn loose_reach(
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)
-                    | Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | Value::Ua {
                         forward: first,
                         backward: second,
@@ -2258,6 +2253,16 @@ pub fn loose_reach(
                     | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));
                         work.push((CoreNode::Term(TermNode::Value(second)), depth));
+                    },
+                    Value::SessionRelated {
+                        source,
+                        target,
+                        payloads,
+                        ..
+                    } => {
+                        work.push((CoreNode::Term(TermNode::Value(source)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(target)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(payloads)), depth));
                     },
                     Value::PathRefl(body)
                     | Value::Here(body)

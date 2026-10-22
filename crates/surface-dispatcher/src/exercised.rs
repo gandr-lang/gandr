@@ -896,17 +896,20 @@ fn formers(
                         ..
                     }
                     | Value::ListCons(first, second)
-                    | Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
                     | Value::FunctionFlow(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
+                },
+                Some(&Value::SessionRelated {
+                    source,
+                    target,
+                    payloads,
+                    ..
+                }) => {
+                    worklist.extend([source, target, payloads].map(Node::Value));
                 },
                 Some(&Value::Tuple(ref components)) => {
                     worklist.extend(components.iter().map(|&component| Node::Value(component)));

@@ -103,6 +103,7 @@ fn every_role_has_its_own_name()
         FrameRole::ForkChild,
         FrameRole::ForkParent,
         FrameRole::SessionStatement,
+        FrameRole::SessionPayloads,
         FrameRole::StaySynthesised,
         FrameRole::ThenFirst,
         FrameRole::ThenSecond,

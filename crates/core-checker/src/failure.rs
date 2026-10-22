@@ -289,6 +289,8 @@ pub enum FrameRole
     ForkParent,
     /// A session statement waits on its two codes, then the engine decides it.
     SessionStatement,
+    /// A bisimilarity waits on its payload paths, then elaborates them.
+    SessionPayloads,
     /// A stay waits on its point's type.
     StaySynthesised,
     /// A composite waits on its first flow.
@@ -458,6 +460,7 @@ impl fmt::Display for FrameRole
             Self::ForkChild => "ForkChild",
             Self::ForkParent => "ForkParent",
             Self::SessionStatement => "SessionStatement",
+            Self::SessionPayloads => "SessionPayloads",
             Self::StaySynthesised => "StaySynthesised",
             Self::ThenFirst => "ThenFirst",
             Self::ThenSecond => "ThenSecond",

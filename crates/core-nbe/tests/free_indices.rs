@@ -412,7 +412,10 @@ fn values() -> [Former; 18]
                     a.value_then(f0, f1),
                     a.value_flow_product(f2, f3),
                     a.value_function_flow(f4, f5),
-                    a.value_session_related(SessionRelation::Subtyping, f6, f7),
+                    {
+                        let unpaid = a.value_tuple(&[]);
+                        a.value_session_related(SessionRelation::Subtyping, f6, f7, unpaid)
+                    },
                 ];
                 beside(a, &flows)
             },

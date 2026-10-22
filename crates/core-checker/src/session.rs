@@ -518,6 +518,21 @@ pub(crate) fn engine(session: &SessionType) -> Result<Session, CheckRefusal>
         .map_err(|_fault| CheckRefusal::MachineInvariant)
 }
 
+/// One send or receive pair the engine visited: the payload slot each
+/// protocol names there and the type it holds, left first.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PayloadPair
+{
+    /// The two payload slots, the kernel's numbering of each session's
+    /// payloads.
+    pub slots: (
+        gandr_kernel_term::session::PayloadSlot,
+        gandr_kernel_term::session::PayloadSlot,
+    ),
+    /// The two payload types.
+    pub types: (ValueTypeId, ValueTypeId),
+}
+
 /// Two session types the engine related: the candidate evidence the kernel
 /// replays, and the payload pairs conversion still compares.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -525,8 +540,8 @@ pub(crate) struct Related
 {
     /// The engine's coinductive pairs, over the protocols' node positions.
     pub evidence: gandr_kernel_term::session::Evidence,
-    /// The payload types of every send and receive pair, left first.
-    pub payloads: Vec<(ValueTypeId, ValueTypeId)>,
+    /// Every send and receive pair, in the order of the engine's pairs.
+    pub payloads: Vec<PayloadPair>,
 }
 
 /// Relate the session types `left` and `right` by `relation`: the engine's
@@ -552,9 +567,9 @@ pub(crate) struct Related
 /// - witness: `session::tests::equivalence_sees_through_unfolding_and_payloads`
 /// - witness: `session::tests::subtyping_follows_gay_and_hole_at_endpoints`
 #[spec(ensures: |ret| match ret {
-    | Ok(Maybe::Present(ref pairs)) => pairs.iter().all(|&(first, second)| {
-        session_at(context, left).is_ok_and(|session| session.payloads().contains(&first))
-            && session_at(context, right).is_ok_and(|session| session.payloads().contains(&second))
+    | Ok(Maybe::Present(ref pairs)) => pairs.iter().all(|pair| {
+        session_at(context, left).is_ok_and(|session| session.payloads().contains(&pair.types.0))
+            && session_at(context, right).is_ok_and(|session| session.payloads().contains(&pair.types.1))
     }),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
@@ -563,7 +578,7 @@ pub(crate) fn relate(
     left: ValueTypeId,
     right: ValueTypeId,
     relation: Relation,
-) -> Result<Maybe<Vec<(ValueTypeId, ValueTypeId)>, related::Absent>, CheckRefusal>
+) -> Result<Maybe<Vec<PayloadPair>, related::Absent>, CheckRefusal>
 {
     let left = session_at(context, left)?;
     let right = session_at(context, right)?;
@@ -620,11 +635,11 @@ pub(crate) fn related(
         .node(ProtocolState::from(position))
     {
         Ok(&(ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. })) => {
+            let slot = usize::from(payload);
             session
                 .payloads()
-                .get(usize::from(payload))
-                .copied()
-                .map(Some)
+                .get(slot)
+                .map(|&ty| Some((gandr_kernel_term::session::PayloadSlot(slot), ty)))
                 .ok_or(CheckRefusal::MachineInvariant)
         },
         Ok(_) => Ok(None),
@@ -632,11 +647,14 @@ pub(crate) fn related(
     };
     let mut payloads = Vec::new();
     for pair in &evidence.pairs {
-        if let (Some(a), Some(b)) = (
+        if let (Some((left_slot, a)), Some((right_slot, b))) = (
             payload(left, pair.source.0)?,
             payload(right, pair.target.0)?,
         ) {
-            payloads.push((a, b));
+            payloads.push(PayloadPair {
+                slots: (left_slot, right_slot),
+                types: (a, b),
+            });
         }
     }
     Ok(Maybe::Present(Related { evidence, payloads }))

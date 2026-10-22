@@ -1487,8 +1487,8 @@ Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
-Value::PathEquiv { .. } => 3,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
+Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
@@ -1619,11 +1619,6 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     | &Value::Then(first, second)
                     | &Value::FlowProduct(first, second)
                     | &Value::FunctionFlow(first, second)
-                    | &Value::SessionRelated {
-                        source: first,
-                        target: second,
-                        ..
-                    }
                     | &Value::Ua {
                         forward: first,
                         backward: second,
@@ -1633,6 +1628,16 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 ) => {
                     self.tasks.push(open(Node::Value(second), depth));
                     self.tasks.push(open(Node::Value(first), depth));
+                },
+                Some(&Value::SessionRelated {
+                    source,
+                    target,
+                    payloads,
+                    ..
+                }) => {
+                    self.tasks.push(open(Node::Value(payloads), depth));
+                    self.tasks.push(open(Node::Value(target), depth));
+                    self.tasks.push(open(Node::Value(source), depth));
                 },
                 Some(&Value::Tuple(ref components)) => self.tasks.extend(
                     components
@@ -2315,8 +2320,8 @@ Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
-Value::PathEquiv { .. } => 3,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
+Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
@@ -2495,15 +2500,23 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 relation,
                 source,
                 target,
+                payloads,
             } => {
+                let rewritten_payloads = Self::value(&mut self.results, payloads);
                 let rewritten_target = Self::value(&mut self.results, target);
                 let rewritten_source = Self::value(&mut self.results, source);
-                if (rewritten_source, rewritten_target) == (source, target) {
+                if (rewritten_source, rewritten_target, rewritten_payloads)
+                    == (source, target, payloads)
+                {
                     id
                 }
                 else {
-                    self.arena
-                        .value_session_related(relation, rewritten_source, rewritten_target)
+                    self.arena.value_session_related(
+                        relation,
+                        rewritten_source,
+                        rewritten_target,
+                        rewritten_payloads,
+                    )
                 }
             },
             Value::Stay(point) => {
@@ -5150,8 +5163,17 @@ fn survey_value(
         Value::StaticApplication(head, argument) => {
             next.extend([Position::Value(head, own), Position::Value(argument, own)]);
         },
-        Value::SessionRelated { source, target, .. } => {
-            next.extend([Position::Value(source, own), Position::Value(target, own)]);
+        Value::SessionRelated {
+            source,
+            target,
+            payloads,
+            ..
+        } => {
+            next.extend([
+                Position::Value(source, own),
+                Position::Value(target, own),
+                Position::Value(payloads, region),
+            ]);
         },
         Value::Recorded(ref moves) => {
             next.extend(

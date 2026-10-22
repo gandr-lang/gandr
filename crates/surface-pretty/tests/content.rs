@@ -497,7 +497,14 @@ fn corpus() -> Vec<(What, Body)>
         (What("session relation"), |a| {
             let ended = ended(a);
             let code = a.value_quote(ended);
-            a.value_session_related(SessionRelation::Subtyping, code, code)
+            let unpaid = a.value_tuple(&[]);
+            a.value_session_related(SessionRelation::Subtyping, code, code, unpaid)
+        }),
+        (What("session relation with payload paths"), |a| {
+            let ended = ended(a);
+            let code = a.value_quote(ended);
+            let paths = a.value_path_refl(code);
+            a.value_session_related(SessionRelation::Equivalence, code, code, paths)
         }),
         (What("function flow"), |a| {
             let unit_type = a.value_type_unit();

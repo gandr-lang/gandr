@@ -1437,7 +1437,7 @@ fn session_statements_lower_to_their_formers()
     assert!(
         matches!(
             arena.value(body),
-            Some(&Value::SessionRelated { relation: SessionRelation::Subtyping, source, target })
+            Some(&Value::SessionRelated { relation: SessionRelation::Subtyping, source, target, .. })
                 if quoted(source) && quoted(target) && source != target
         ),
         "`sim` reads both protocols as values, in order"

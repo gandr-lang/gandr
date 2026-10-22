@@ -312,7 +312,8 @@ fn statement(
     (source, target): (ValueId, ValueId),
 ) -> (Declaration, ValueId)
 {
-    let at = arena.value_session_related(relation, source, target);
+    let unit = arena.value_tuple(&[]);
+    let at = arena.value_session_related(relation, source, target, unit);
     let identity = super::identity(arena, relation, (source, target));
     (declaration(position, identity, at), at)
 }
@@ -947,5 +948,130 @@ fn a_ride_between_session_codes_is_fixed_only_for_a_constant_motive()
         ride(&mut context, moving, flow).map(|ridden| ridden.moving),
         Err(CheckRefusal::RideUnsupported { at: moving }),
         "a decode between session codes is unsupported"
+    );
+}
+
+/// The quote of `?P. end` at its root, for the payload type `payload`.
+///
+/// # Specification
+/// trivial.
+fn asking(
+    arena: &mut CoreArena,
+    payload: ValueTypeId,
+) -> ValueId
+{
+    let protocol = Protocol::new(
+        alloc::vec![
+            ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        ProtocolState::from(0_usize),
+        PayloadCount::from(1_usize),
+    )
+    .unwrap();
+    let session = SessionType::new(Arc::new(protocol), Arc::from([payload].as_slice())).unwrap();
+    let ty = arena.value_type_session(session);
+    arena.value_quote(ty)
+}
+
+/// Two protocols that receive `Unit * Unit` and `Unit` are bisimilar owing one
+/// path between the payload types: written as an equivalence, it elaborates
+/// to the native certificate the kernel checks against the owed pair; left
+/// out, the protocols are not equivalent; bound by a parameter, it names no
+/// certificate.
+#[test]
+fn a_bisimulation_owes_a_path_per_differing_payload_pair()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let pair = arena.value_type_product(&[unit, unit]);
+    let (paired, single) = (asking(&mut arena, pair), asking(&mut arena, unit));
+    let one = arena.value_unit();
+    let ones = arena.value_tuple(&[one, one]);
+    let [forget, double] = [one, ones].map(|result| {
+        let body = arena.computation_return(result);
+        let lambda = arena.computation_lambda(body);
+        arena.value_thunk(lambda)
+    });
+    let [forgetting, doubling] = [(pair, unit), (unit, pair)].map(|(domain, codomain)| {
+        let returns = arena.comp_type_returner(codomain);
+        let arrow = arena.comp_type_arrow(domain, returns);
+        arena.value_type_thunk(arrow)
+    });
+    let translators = [0_usize, 1_usize].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    let paths = arena.value_equiv(translators[0], translators[1]);
+    let identity = super::identity(&mut arena, SessionRelation::Equivalence, (paired, single));
+    let paid = arena.value_session_related(SessionRelation::Equivalence, paired, single, paths);
+    let report = judged(&mut arena, &[
+        declaration(At(0), forgetting, forget),
+        declaration(At(1), doubling, double),
+        declaration(At(2), identity, paid),
+    ]);
+    assert!(
+        matches!(verdict(&report, At(2)), Some(Verdict::Checked { .. })),
+        "the equivalence pays the one differing pair: {report:?}"
+    );
+    let slot = gandr_kernel_term::session::PayloadSlot;
+    assert_eq!(
+        report
+            .flows()
+            .get(&paid)
+            .map(|statement| statement.evidence().payloads.clone()),
+        Some(alloc::vec![(slot(0), slot(0))]),
+        "the evidence names the owed slot pair once"
+    );
+    assert!(
+        matches!(
+            report.natives().get(&paths).and_then(|&native| arena.value(native)),
+            Some(gandr_core_term::Value::Tuple(natives))
+                if matches!(**natives, [native] if matches!(arena.value(native), Some(gandr_core_term::Value::PathEquiv { .. })))
+        ),
+        "the path elaborates to a tuple of one native certificate"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    assert!(
+        matches!(
+            readmission.readmitted(),
+            [.., entry] if matches!(entry.outcome(), Outcome::Defined { .. })
+        ),
+        "the kernel checks the certificate against the pair it covers: {:?}",
+        readmission.readmitted()
+    );
+    let unpaid = arena.value_session_related(SessionRelation::Equivalence, paired, single, one);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let opened = arena.value_session_related(SessionRelation::Equivalence, paired, single, bound);
+    let returned = arena.computation_return(opened);
+    let lambda = arena.computation_lambda(returned);
+    let parameter = arena.value_thunk(lambda);
+    let universe = universe(&mut arena);
+    let (pair_code, unit_code) = (arena.value_quote(pair), arena.value_quote(unit));
+    let domain = arena.value_type_path(universe, pair_code, unit_code);
+    let codomain = arena.comp_type_returner(identity);
+    let arrow = arena.comp_type_arrow(domain, codomain);
+    let declared = arena.value_type_thunk(arrow);
+    let report = judged(&mut arena, &[
+        declaration(At(0), identity, unpaid),
+        declaration(At(1), declared, parameter),
+    ]);
+    assert_eq!(
+        verdict(&report, At(0)),
+        Some(Verdict::Refused(CheckRefusal::SessionNotEquivalent {
+            at: unpaid
+        })),
+        "without the path the protocols are not equivalent"
+    );
+    assert!(
+        matches!(
+            verdict(&report, At(1)),
+            Some(Verdict::Refused(CheckRefusal::ShapeMismatch {
+                at: crate::refusal::TermNode::Value(at),
+                wanted: crate::refusal::ExpectedShape::PathUniverse,
+                ..
+            })) if at == bound
+        ),
+        "a path a parameter binds names no certificate: {report:?}"
     );
 }

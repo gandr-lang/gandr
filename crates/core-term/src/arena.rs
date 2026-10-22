@@ -2621,7 +2621,9 @@ impl CoreArena
         })
     }
 
-    /// Mint a session identity statement, `bisim(a, b)` or `sim(a, b)`.
+    /// Mint a session identity statement, `bisim(a, b)`, `bisim(a, b, p)` or
+    /// `sim(a, b)`, `payloads` the empty tuple when no payload path is
+    /// written.
     ///
     /// # Specification
     /// trivial.
@@ -2631,12 +2633,14 @@ impl CoreArena
         relation: crate::session::SessionRelation,
         source: ValueId,
         target: ValueId,
+        payloads: ValueId,
     ) -> ValueId
     {
         self.alloc_value(Value::SessionRelated {
             relation,
             source,
             target,
+            payloads,
         })
     }
 

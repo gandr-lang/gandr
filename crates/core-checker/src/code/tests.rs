@@ -876,7 +876,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
             "a recorded payload",
         ),
         (
-            value(arena.value_session_related(SessionRelation::Subtyping, unit, five)),
+            value(arena.value_session_related(SessionRelation::Subtyping, unit, five, unit)),
             6,
             "a session relation",
         ),

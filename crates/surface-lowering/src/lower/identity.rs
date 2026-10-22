@@ -136,6 +136,7 @@
 //!
 //! `bisim(A, B)` and `sim(A, B)` read two session codes as values and stand
 //! as values of `Path(Type, A, B)` and of the directed `Flow(Type, A, B)`;
+//! `bisim(A, B, p)` reads its payload paths `p` as a value too.
 //! `gandr_core_checker`'s flow rules decide both by the session engine and
 //! record the decisions the kernel replays. `Flow(A, a, b)` is read as
 //! `Path(A, a, b)` is. `stay(a)` is the identity flow, `f then g` composes
@@ -482,7 +483,7 @@ pub(super) enum Operation
     Cong,
     /// `cons(h, t)`.
     Cons,
-    /// `bisim(A, B)`.
+    /// `bisim(A, B)` or `bisim(A, B, p)`.
     Bisim,
     /// `sim(A, B)`.
     Sim,
@@ -1605,17 +1606,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   loops is the empty word of their words, as [`Self::looped_point`]
     ///   reads it; `funext(f, g)`, `equiv(f, g)`, `pathProduct(p, q)`,
     ///   `flowProduct(p, q)`, `cons(h, t)`, `bisim(A, B)` and `sim(A, B)` stand
-    ///   as values reading both operands as values; `ua(e)` stands as a value
-    ///   reading its record as a value, its forward map derived from it;
-    ///   `transport(\X. T, p, v)` and `ride(\X. T, f, v)` stand as computations
-    ///   reading their motive, path or flow and value as values, the transport
-    ///   read as a value being the value it returns, as a derived operation is,
-    ///   since it runs nothing, and `transport(M, p, z₀, q, v)` as a
-    ///   computation reading its motive as a value type and the other four as
-    ///   values; `back(p)` and `cong(f, p)` stand as computations derived as
-    ///   [`Self::derive`] does; `recorded(m₀, …, mₙ)` stands as a value over
-    ///   its moves, each read as [`Self::recorded_move`] reads it. Every
-    ///   operand is read under the site's frame.
+    ///   as values reading both operands as values, and `bisim(A, B, p)` all
+    ///   three; `ua(e)` stands as a value reading its record as a value, its
+    ///   forward map derived from it; `transport(\X. T, p, v)` and `ride(\X. T,
+    ///   f, v)` stand as computations reading their motive, path or flow and
+    ///   value as values, the transport read as a value being the value it
+    ///   returns, as a derived operation is, since it runs nothing, and
+    ///   `transport(M, p, z₀, q, v)` as a computation reading its motive as a
+    ///   value type and the other four as values; `back(p)` and `cong(f, p)`
+    ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
+    ///   …, mₙ)` stands as a value over its moves, each read as
+    ///   [`Self::recorded_move`] reads it. Every operand is read under the
+    ///   site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
     ///   `forward`, `ua` or `back`, two to `funext`, `equiv`, `pathProduct`,
@@ -1786,9 +1788,11 @@ impl<'source> Lowerer<'_, 'source>
                     Operation::FlowProduct => Plan::FlowProduct(left, right),
                     Operation::Cons => Plan::ListCons(left, right),
                     Operation::Bisim => {
-                        Plan::SessionRelated(SessionRelation::Equivalence, left, right)
+                        Plan::SessionRelated(SessionRelation::Equivalence, left, right, None)
                     },
-                    Operation::Sim => Plan::SessionRelated(SessionRelation::Subtyping, left, right),
+                    Operation::Sim => {
+                        Plan::SessionRelated(SessionRelation::Subtyping, left, right, None)
+                    },
                     Operation::Arrow => Plan::FunctionFlow(left, right),
                     Operation::Here
                     | Operation::Funext
@@ -1802,6 +1806,16 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Recorded => Plan::Funext(left, right),
                 };
                 self.plan(site, plan);
+                Ok(())
+            },
+            (Operation::Bisim, 3_usize, Some(left), Some(right), Some(paths)) => {
+                for operand in [left, right, paths] {
+                    self.read(operand, Reading::Value(frame));
+                }
+                self.plan(
+                    site,
+                    Plan::SessionRelated(SessionRelation::Equivalence, left, right, Some(paths)),
+                );
                 Ok(())
             },
             (
