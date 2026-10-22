@@ -16,8 +16,11 @@ use gandr_kernel_core::NonInferableForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Component;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -345,13 +348,242 @@ fn refusals() -> Vec<Refusal>
                 })
             },
         },
+        Refusal {
+            what: "thunk (λf. x <- force f; return ()) : U(U(1 → F 1) → F 1)",
+            build: |a| {
+                let f = a.value_variable(DeBruijnIndex::from(0));
+                let forced = a.computation_force(f);
+                let after = done(a);
+                let bound = a.computation_bind(forced, after);
+                let lambda = a.computation_lambda(bound);
+                let body = a.value_thunk(lambda);
+                let one = a.value_type_unit();
+                let function = consumer_of(a, one);
+                (consumer_of(a, function), body)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ComputationShapeMismatch {
+                    expected: ExpectedComputationShape::Returner,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λf. y <- (x <- force f; return ()); return ()) : U(U(1 → F 1) → F 1)",
+            build: |a| {
+                let f = a.value_variable(DeBruijnIndex::from(0));
+                let forced = a.computation_force(f);
+                let after = done(a);
+                let inner = a.computation_bind(forced, after);
+                let last = done(a);
+                let outer = a.computation_bind(inner, last);
+                let lambda = a.computation_lambda(outer);
+                let body = a.value_thunk(lambda);
+                let one = a.value_type_unit();
+                let function = consumer_of(a, one);
+                (consumer_of(a, function), body)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ComputationShapeMismatch {
+                    expected: ExpectedComputationShape::Returner,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λf. (force f) ()) : U(U(F 1) → F 1)",
+            build: |a| {
+                let f = a.value_variable(DeBruijnIndex::from(0));
+                let forced = a.computation_force(f);
+                let unit = a.value_unit();
+                let applied = a.computation_application(forced, unit);
+                let lambda = a.computation_lambda(applied);
+                let body = a.value_thunk(lambda);
+                let one = a.value_type_unit();
+                let returns = a.comp_type_returner(one);
+                let thunk = a.value_type_thunk(returns);
+                (consumer_of(a, thunk), body)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ComputationShapeMismatch {
+                    expected: ExpectedComputationShape::Arrow,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λv. x <- case v of {}; return ()) : U(0 → F 1)",
+            build: |a| {
+                let v = a.value_variable(DeBruijnIndex::from(0));
+                let case = a.computation_case(v, &[]);
+                let after = done(a);
+                let bound = a.computation_bind(case, after);
+                let lambda = a.computation_lambda(bound);
+                let body = a.value_thunk(lambda);
+                let empty = a.value_type_empty();
+                (consumer_of(a, empty), body)
+            },
+            refused: |error| {
+                *error
+                    == KernelError::NotInferable {
+                        form: NonInferableForm::EmptyCase,
+                    }
+            },
+        },
+        Refusal {
+            what: "thunk (x <- fix rec. return (); return ()) : U(F 1)",
+            build: |a| {
+                let inner = done(a);
+                let fixpoint = a.computation_fixpoint(inner, FixpointEvidence::Partial);
+                let after = done(a);
+                let bound = a.computation_bind(fixpoint, after);
+                let body = a.value_thunk(bound);
+                let one = a.value_type_unit();
+                let returns = a.comp_type_returner(one);
+                (a.value_type_thunk(returns), body)
+            },
+            refused: |error| {
+                *error
+                    == KernelError::NotInferable {
+                        form: NonInferableForm::Fixpoint,
+                    }
+            },
+        },
+        Refusal {
+            what: "zero of 1 : 1, a constructor of no data type",
+            build: |a| {
+                let one = a.value_type_unit();
+                let constructed =
+                    a.value_constructor(one, ConstructorTag::from(0_usize), Vec::new());
+                (one, constructed)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Data,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (case () return F 1 of { return () }) : U(F 1)",
+            build: |a| {
+                let unit = a.value_unit();
+                let one = a.value_type_unit();
+                let returns = a.comp_type_returner(one);
+                let arm = done(a);
+                let case = a.computation_data_case(unit, returns, Vec::from([arm]));
+                (a.value_type_thunk(returns), a.value_thunk(case))
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Data,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "#{a = ()} : 1",
+            build: |a| {
+                let unit = a.value_unit();
+                let body = record(a, [(&Name("a"), unit)]);
+                (a.value_type_unit(), body)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Record,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (().a) : U(F 1)",
+            build: |a| {
+                let unit = a.value_unit();
+                let projected =
+                    a.computation_record_projection(unit, FieldLabel::from(String::from("a")));
+                let one = a.value_type_unit();
+                let returns = a.comp_type_returner(one);
+                (a.value_type_thunk(returns), a.value_thunk(projected))
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Record,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λx. x.a) : U(Σ(_ : 1). 1 → F 1)",
+            build: |a| {
+                let one = a.value_type_unit();
+                let pair = a.value_type_sigma(one, one);
+                projected_from(a, pair)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Record,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λx. x.a) : U(Lift 1 → F 1)",
+            build: |a| {
+                let one = a.value_type_unit();
+                let above = Level::zero().succ().expect("level one");
+                let lifted = a.value_type_lift(one, above);
+                projected_from(a, lifted)
+            },
+            refused: |error| {
+                matches!(error, KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Record,
+                    ..
+                })
+            },
+        },
+        Refusal {
+            what: "thunk (λx. x.a) : U((1 ⇒ 1) → F 1), a static function type over a runtime domain",
+            build: |a| {
+                let one = a.value_type_unit();
+                let static_pi = a.value_type_static_pi(one, one);
+                projected_from(a, static_pi)
+            },
+            refused: |error| matches!(error, KernelError::StaticClassifierExpected { .. }),
+        },
     ])
+}
+
+/// `thunk (λx. x.a) : U(domain → F 1)`: a field projected from a variable
+/// of `domain`.
+///
+/// # Specification
+/// trivial.
+fn projected_from(
+    arena: &mut TermArena,
+    domain: ValueTypeId,
+) -> (ValueTypeId, ValueId)
+{
+    let x = arena.value_variable(DeBruijnIndex::from(0));
+    let projected = arena.computation_record_projection(x, FieldLabel::from(String::from("a")));
+    let lambda = arena.computation_lambda(projected);
+    (consumer_of(arena, domain), arena.value_thunk(lambda))
+}
+
+/// `return ()`.
+///
+/// # Specification
+/// trivial.
+fn done(arena: &mut TermArena) -> ComputationId
+{
+    let unit = arena.value_unit();
+    arena.computation_return(unit)
 }
 
 /// Each definition is refused by the error naming its mismatch: a value of
 /// the wrong introduction form for its type, a record missing a declared
-/// field, a form no type is synthesized for where synthesis is asked, and an
-/// eliminator applied to a value of another type.
+/// field, a form no type is synthesized for where synthesis is asked, an
+/// eliminator applied to a value of another type, a bind over a computation
+/// that returns nothing, and an application of one that takes nothing.
 #[test]
 fn each_ill_shaped_definition_is_refused_by_its_mismatch()
 {
@@ -376,8 +608,8 @@ struct Admission
 }
 
 /// The eliminators the refusals misapply, each at a value of the type it
-/// eliminates, and a lifted value synthesized beside a record's declared
-/// fields.
+/// eliminates, a lifted value synthesized beside a record's declared
+/// fields, and a fixpoint applied where its type is checked.
 ///
 /// # Specification
 /// trivial.
@@ -437,13 +669,27 @@ fn admissions() -> Vec<Admission>
                 (record_type(a, [(&Name("x"), one)]), body)
             },
         },
+        Admission {
+            what: "thunk ((fix rec. λn. return ()) ()) : U(F 1)",
+            build: |a| {
+                let inner = done(a);
+                let lambda = a.computation_lambda(inner);
+                let fixpoint = a.computation_fixpoint(lambda, FixpointEvidence::Partial);
+                let unit = a.value_unit();
+                let applied = a.computation_application(fixpoint, unit);
+                let one = a.value_type_unit();
+                let returns = a.comp_type_returner(one);
+                (a.value_type_thunk(returns), a.value_thunk(applied))
+            },
+        },
     ])
 }
 
 /// Each eliminator is admitted at a value of the type it eliminates: a split
 /// of a dependent pair, a case on a list, the second projection of a pair,
-/// and a lift synthesized where a record holds a field its type does not
-/// declare.
+/// a lift synthesized where a record holds a field its type does not
+/// declare, and a fixpoint applied at its argument's type, checked where it
+/// synthesizes nothing.
 #[test]
 fn each_eliminator_is_admitted_at_the_type_it_eliminates()
 {

@@ -569,3 +569,60 @@ fn empty_elimination_is_native_and_has_no_introduction()
     check_closed_value(&mut decoded_arena, body, declared)
         .expect("decoded empty elimination checks");
 }
+
+/// Every relation refusal renders a description no other one renders, so a
+/// reader of the refusal can tell its class without its payload.
+#[test]
+fn every_relation_refusal_describes_itself_apart()
+{
+    use alloc::boxed::Box;
+    use alloc::string::ToString;
+
+    use super::Component;
+    use super::EvaluationSide;
+    use crate::path_universe::PathError;
+    use crate::replay::KernelVerdict;
+
+    let mut arena = TermArena::new();
+    let ty = arena.value_type_unit();
+    let value = arena.value_unit();
+    let cases = [
+        RelationError::Arena,
+        RelationError::UnsupportedCode(value),
+        RelationError::UnsupportedType(ty),
+        RelationError::AbstractInterface(ty),
+        RelationError::AtomTransport(ty),
+        RelationError::Typing(Box::new(KernelError::ArenaFault)),
+        RelationError::Path(Box::new(PathError::Budget)),
+        RelationError::Boundary,
+        RelationError::NonFibrant,
+        RelationError::NeutralFiber,
+        RelationError::Evidence,
+        RelationError::Classifier,
+        RelationError::HigherEvaluationRequired,
+        RelationError::Coverage,
+        RelationError::Pointwise(Component(0), Box::new(KernelError::ArenaFault)),
+        RelationError::Evaluation(
+            Component(0),
+            EvaluationSide::Left,
+            KernelVerdict::NotConvertible,
+        ),
+        RelationError::Evaluation(
+            Component(0),
+            EvaluationSide::Right,
+            KernelVerdict::NotConvertible,
+        ),
+        RelationError::QuantifiedStep(Component(0)),
+        RelationError::HigherOrderDomain(Component(0)),
+        RelationError::RecursiveObservationRequired,
+        RelationError::HigherFieldRequired,
+        RelationError::CertificateOperationRequired,
+        RelationError::Budget,
+    ];
+    let descriptions = cases.each_ref().map(ToString::to_string);
+    for (position, description) in descriptions.iter().enumerate() {
+        for other in descriptions.iter().skip(position.saturating_add(1)) {
+            assert_ne!(description, other, "{description}");
+        }
+    }
+}

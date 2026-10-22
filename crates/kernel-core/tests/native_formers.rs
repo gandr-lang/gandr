@@ -2302,6 +2302,64 @@ fn a_word_appends_on_its_first_word()
 }
 
 #[test]
+fn a_word_of_two_letters_moves_a_path_letter_by_letter()
+{
+    /// Which endpoint of the family the transport moves.
+    #[derive(Clone, Copy, Debug)]
+    enum Moving
+    {
+        /// `y. Path(S, Base, y)`: the word is appended.
+        Right,
+        /// `y. Path(S, y, Base)`: the word's inverse is prepended.
+        Left,
+    }
+    let mut environment = one_loop();
+    // `Path(Path(S, Base, Base), tr(family, loop ∷ loop ∷ ε, ε), right)` at
+    // reflexivity on `right`: the word splits into its first letter and the
+    // rest, and the empty path moves along each in turn.
+    let mut moves_to = |moving: Moving, tag: usize| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let point = build(arena, Built::Point);
+        let empty = build(arena, Built::Empty);
+        let twice = |arena: &mut TermArena, tag: usize| {
+            let once = arena.value_constructor(words, ConstructorTag::from(tag), vec![empty]);
+            arena.value_constructor(words, ConstructorTag::from(tag), vec![once])
+        };
+        let along = twice(arena, 1);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let family = match moving {
+            Moving::Right => arena.value_type_path(carrier, point, bound),
+            Moving::Left => arena.value_type_path(carrier, bound, point),
+        };
+        let moved = arena.computation_path_transport(family, along, empty);
+        let moved = arena.value_returned(moved);
+        let at_point = arena.value_type_path(carrier, point, point);
+        let right = twice(arena, tag);
+        let declared = arena.value_type_path(at_point, moved, right);
+        let body = arena.value_here(right);
+        let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(staged)
+    };
+    for (moving, reached, missed) in [(Moving::Right, 1, 2), (Moving::Left, 2, 1)] {
+        let admitted = moves_to(moving, reached);
+        assert!(admitted.is_ok(), "{moving:?}: {admitted:?}");
+        let refused = moves_to(moving, missed);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::Identity(
+                    gandr_kernel_core::IdentityError::EndpointsDiffer { .. }
+                ))
+            ),
+            "{moving:?}: {refused:?}"
+        );
+    }
+}
+
+#[test]
 fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
 {
     /// Which side of the composite is a held call.

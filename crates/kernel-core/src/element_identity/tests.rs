@@ -3356,3 +3356,145 @@ fn transport_along_then_holds_a_stuck_first_leg()
         KernelVerdict::Convertible
     );
 }
+
+/// Each relation and higher-field refusal reaches the kernel under the
+/// identity refusal of its own name: a typing or path refusal inside passes
+/// through unchanged, a layer keeps its position, and a refusal no
+/// well-formed reading reaches is an arena fault.
+#[test]
+fn each_relation_refusal_translates_to_its_own_name()
+{
+    use crate::error::KernelError as Kernel;
+    use crate::higher_field::HigherError;
+    use crate::higher_field::HigherId;
+    use crate::identity_recursion::Component;
+    use crate::identity_recursion::EvaluationSide;
+    use crate::identity_recursion::RelationError as Relation;
+    use crate::path_universe::PathError;
+    use crate::witness::value_type_witness;
+
+    let mut arena = TermArena::new();
+    let ty = arena.value_type_unit();
+    let value = arena.value_unit();
+    let witness = value_type_witness(&arena, ty);
+    let typing = Kernel::UnboundConstant {
+        index: ConstantIndex::from(0_usize),
+    };
+    let identity = Kernel::Identity;
+    let relations = [
+        (
+            Relation::UnsupportedType(ty),
+            identity(IdentityError::OutsideFold(witness)),
+        ),
+        (
+            Relation::AbstractInterface(ty),
+            identity(IdentityError::NeutralFibre),
+        ),
+        (
+            Relation::NeutralFiber,
+            identity(IdentityError::NeutralFibre),
+        ),
+        (
+            Relation::AtomTransport(ty),
+            identity(IdentityError::AtomTransport(witness)),
+        ),
+        (Relation::Typing(Box::new(typing.clone())), typing.clone()),
+        (
+            Relation::Pointwise(Component(0), Box::new(typing.clone())),
+            typing,
+        ),
+        (
+            Relation::Path(Box::new(PathError::Budget)),
+            Kernel::Path(PathError::Budget),
+        ),
+        (Relation::Evidence, identity(IdentityError::EmptyFibre)),
+        (
+            Relation::HigherFieldRequired,
+            identity(IdentityError::HigherFieldRequired),
+        ),
+        (
+            Relation::HigherEvaluationRequired,
+            identity(IdentityError::HigherEvaluationRequired),
+        ),
+        (
+            Relation::RecursiveObservationRequired,
+            identity(IdentityError::RecursiveObservation),
+        ),
+        (
+            Relation::CertificateOperationRequired,
+            identity(IdentityError::CertificateOperation),
+        ),
+        (Relation::Boundary, identity(IdentityError::Boundary)),
+        (Relation::Coverage, identity(IdentityError::Coverage)),
+        (Relation::Budget, identity(IdentityError::CoverageBudget)),
+        (
+            Relation::Evaluation(
+                Component(1),
+                EvaluationSide::Right,
+                KernelVerdict::NotConvertible,
+            ),
+            identity(IdentityError::Evaluation {
+                component: Component(1),
+                side: EvaluationSide::Right,
+                verdict: KernelVerdict::NotConvertible,
+            }),
+        ),
+        (
+            Relation::QuantifiedStep(Component(1)),
+            identity(IdentityError::QuantifiedStep {
+                component: Component(1),
+            }),
+        ),
+        (
+            Relation::HigherOrderDomain(Component(1)),
+            identity(IdentityError::HigherOrderDomain {
+                component: Component(1),
+            }),
+        ),
+        (Relation::Arena, Kernel::ArenaFault),
+        (Relation::UnsupportedCode(value), Kernel::ArenaFault),
+        (Relation::NonFibrant, Kernel::ArenaFault),
+        (Relation::Classifier, Kernel::ArenaFault),
+    ];
+    for (row, (relation, expected)) in relations.into_iter().enumerate() {
+        assert_eq!(
+            super::relation_refusal(&arena, relation),
+            expected,
+            "relation row {row}"
+        );
+    }
+    let highers = [
+        (
+            HigherError::Relation(Relation::Evidence),
+            identity(IdentityError::EmptyFibre),
+        ),
+        (
+            HigherError::Path(Box::new(PathError::Budget)),
+            Kernel::Path(PathError::Budget),
+        ),
+        (HigherError::Boundary, identity(IdentityError::Boundary)),
+        (
+            HigherError::NonProductive(HigherId(2)),
+            identity(IdentityError::NonProductive(LayerPosition(2))),
+        ),
+        (
+            HigherError::UnknownLayer(HigherId(3)),
+            identity(IdentityError::UnknownLayer(LayerPosition(3))),
+        ),
+        (HigherError::DepthBound, identity(IdentityError::DepthBound)),
+        (HigherError::ZeroDepth, identity(IdentityError::ZeroDepth)),
+        (HigherError::ExpectedEquivalence, Kernel::ArenaFault),
+        (
+            HigherError::Replay(KernelVerdict::NotConvertible),
+            Kernel::ArenaFault,
+        ),
+        (HigherError::NeutralTransport, Kernel::ArenaFault),
+    ];
+    for (row, (higher, expected)) in highers.into_iter().enumerate() {
+        assert_eq!(
+            super::higher_refusal(&arena, higher),
+            expected,
+            "higher row {row}"
+        );
+    }
+}

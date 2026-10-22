@@ -245,8 +245,12 @@ struct Linker<'walk>
 /// # Adequacy
 /// - hypothesis: L3 — the tree of `or`'s three rules is admitted, the same tree
 ///   with one leaf returning the other constructor is refused naming its rule,
-///   and a body that is no fixpoint is refused for its shape.
+///   and a body that is no fixpoint is refused for its shape; `add`'s tree over
+///   the naturals, its call bound below `succ` or standing as the leaf, is
+///   admitted, and a branch or input that is no lambda is refused for its
+///   shape.
 /// - witness: `ruled::tests::a_body_is_admitted_only_as_its_rules_decision_tree`
+/// - witness: `ruled::tests::a_recursive_body_links_its_fields_and_calls`
 #[spec(
     captures: before = arena.watermark(),
     ensures: arena.watermark() == before,

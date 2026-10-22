@@ -1063,6 +1063,7 @@ impl core::error::Error for KernelError
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::string::ToString;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -1075,16 +1076,38 @@ mod tests
     use gandr_kernel_strata::LevelVar;
     use gandr_kernel_strata::LevelVarIndex;
     use gandr_kernel_strata::PosetError;
+    use gandr_kernel_term::AnyNode;
+    use gandr_kernel_term::Apartness;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CellFault;
+    use gandr_kernel_term::CellIndex;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LayerPosition;
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::OccurrenceSite;
+    use gandr_kernel_term::OperationRuleFault;
+    use gandr_kernel_term::OperationRuleRefusal;
+    use gandr_kernel_term::ParameterPosition;
+    use gandr_kernel_term::RuleFault;
+    use gandr_kernel_term::RuleIndex;
+    use gandr_kernel_term::RuleRefusal;
+    use gandr_kernel_term::Stage;
+    use gandr_kernel_term::StageBinder;
+    use gandr_kernel_term::StageId;
+    use gandr_kernel_term::Standing;
     use gandr_kernel_term::TableEntryCount;
     use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::TheoryRuleFault;
+    use gandr_kernel_term::TheoryRuleRefusal;
     use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::session::PayloadSlot;
+    use gandr_kernel_term::session::State;
+    use gandr_kernel_term::session::StatePair;
 
     use super::CompTypeMismatch;
     use super::ExpectedComputationShape;
@@ -1097,10 +1120,19 @@ mod tests
     use crate::element_identity::IdentityError;
     use crate::env::Environment;
     use crate::env::OutstandingCount;
+    use crate::flow_universe::Boundary;
+    use crate::flow_universe::Family;
+    use crate::flow_universe::FlowError;
+    use crate::flow_universe::PatternPosition as FlowPattern;
     use crate::identity_recursion::Component;
     use crate::identity_recursion::EvaluationSide;
     use crate::levels::LevelContext;
+    use crate::path_universe::Direction;
+    use crate::path_universe::PathError;
+    use crate::path_universe::PatternPosition as PathPattern;
     use crate::replay::KernelVerdict;
+    use crate::ruled::OperationBodyFault;
+    use crate::session::SessionError;
     use crate::witness::comp_type_witness;
     use crate::witness::value_type_witness;
 
@@ -1158,6 +1190,17 @@ mod tests
         let inconsistent = LevelContext::admit(LevelParamCount::from(1_u32), vec![constraint])
             .expect_err("a self-successor constraint has no model");
         let index = ConstantIndex::from(usize::MAX);
+        let type_id = arena.value_type_unit();
+        let value_id = arena.value_unit();
+        let site = OccurrenceSite::Parameter(ParameterPosition::from(0_usize));
+        let tag = ConstructorTag::from(0_usize);
+        let rule = RuleIndex::from(0_usize);
+        let cell = CellIndex::from(0_usize);
+        let stage = Stage::At(StageId::from(0_usize));
+        let pair = StatePair {
+            source: State(0),
+            target: State(1),
+        };
         let cases = [
             KernelError::UnboundVariable {
                 index: DeBruijnIndex::from(u32::MAX),
@@ -1240,6 +1283,131 @@ mod tests
                 actual: unit,
             }),
             KernelError::Identity(IdentityError::BridgeAtSealedType(unit)),
+            KernelError::Identity(IdentityError::AtomTransport(unit)),
+            KernelError::Identity(IdentityError::QuantifiedStep {
+                component: Component(0),
+            }),
+            KernelError::Identity(IdentityError::HigherOrderDomain {
+                component: Component(0),
+            }),
+            KernelError::NotADataType { index },
+            KernelError::DataKindNotUniverse,
+            KernelError::DataArgumentArity,
+            KernelError::NotACodataType { index },
+            KernelError::CodataKindNotUniverse,
+            KernelError::CodataWithoutObservations,
+            KernelError::CodataOccurrence,
+            KernelError::UnknownConstructor { tag },
+            KernelError::ConstructorArity,
+            KernelError::ConstructorIndex { tag },
+            KernelError::IndexedCase,
+            KernelError::IndexedSignature,
+            KernelError::NonExhaustiveDataCase,
+            KernelError::NegativeOccurrence(site),
+            KernelError::NestedOccurrence(site),
+            KernelError::IndexOccurrence(site),
+            KernelError::NonUniformOccurrence(site),
+            KernelError::CrossBlockReference { site, index },
+            KernelError::RuleNotPresentable(RuleRefusal {
+                rule,
+                fault: RuleFault::Arity,
+            }),
+            KernelError::OperationRulesRefused(OperationRuleRefusal {
+                rule,
+                fault: OperationRuleFault::UnknownOperation,
+            }),
+            KernelError::PresentationRulesRefused(TheoryRuleRefusal {
+                rule,
+                fault: TheoryRuleFault::Malformed,
+            }),
+            KernelError::OperationBodyUnlinked(OperationBodyFault::Shape),
+            KernelError::WordsRefused(CellFault::Empty),
+            KernelError::RuleNotRespected(rule),
+            KernelError::NotApart(Apartness::Open),
+            KernelError::LoopNotRespected(cell),
+            KernelError::LoopUndecided(cell),
+            KernelError::StageNotBelow {
+                found: Standing::Top,
+                bound: stage,
+            },
+            KernelError::StagesDisagree {
+                binder: StageBinder::from(0_usize),
+                first: stage,
+                second: stage,
+            },
+            KernelError::StagePresented,
+            KernelError::StageUnplaced,
+            KernelError::AbsentRecordField {
+                label: FieldLabel::from(String::from("a")),
+            },
+            KernelError::AbsentTupleComponent {
+                component: gandr_kernel_term::Component::from(0_usize),
+            },
+            KernelError::Session(SessionError::Arena),
+            KernelError::Session(SessionError::ExpectedSession(type_id)),
+            KernelError::Session(SessionError::MissingState(State(0))),
+            KernelError::Session(SessionError::RepeatedState(State(0))),
+            KernelError::Session(SessionError::UnboundVariable(State(0))),
+            KernelError::Session(SessionError::NonContractive(State(0))),
+            KernelError::Session(SessionError::UnreachableState(State(0))),
+            KernelError::Session(SessionError::PayloadTelescope),
+            KernelError::Session(SessionError::MissingPayload(PayloadSlot(0))),
+            KernelError::Session(SessionError::MissingPair(pair)),
+            KernelError::Session(SessionError::AdministrativePair(pair)),
+            KernelError::Session(SessionError::WrongAction(pair)),
+            KernelError::Session(SessionError::WrongLabels(pair)),
+            KernelError::Session(SessionError::PayloadMismatch(pair)),
+            KernelError::Session(SessionError::DuplicatePayloadPath(
+                PayloadSlot(0),
+                PayloadSlot(1),
+            )),
+            KernelError::Path(PathError::Arena),
+            KernelError::Path(PathError::UnsupportedCode(value_id)),
+            KernelError::Path(PathError::UnsupportedType(type_id)),
+            KernelError::Path(PathError::ExpectedPath(type_id)),
+            KernelError::Path(PathError::ExpectedEquivalence(type_id)),
+            KernelError::Path(PathError::Coverage(Direction::Source)),
+            KernelError::Path(PathError::Coverage(Direction::Target)),
+            KernelError::Path(PathError::RoundTrip {
+                direction: Direction::Source,
+                pattern: PathPattern(0),
+                verdict: KernelVerdict::Convertible,
+            }),
+            KernelError::Path(PathError::RoundTrip {
+                direction: Direction::Target,
+                pattern: PathPattern(0),
+                verdict: KernelVerdict::NotConvertible,
+            }),
+            KernelError::Path(PathError::Budget),
+            KernelError::Flow(FlowError::RecordedRunRequired),
+            KernelError::Flow(FlowError::ExpectedFlow(type_id)),
+            KernelError::Flow(FlowError::Arena),
+            KernelError::Flow(FlowError::UnsupportedCode(value_id)),
+            KernelError::Flow(FlowError::UnsupportedType(type_id)),
+            KernelError::Flow(FlowError::Coverage),
+            KernelError::Flow(FlowError::NonNatural(value_id)),
+            KernelError::Flow(FlowError::ForwardReplay {
+                pattern: FlowPattern(0),
+                verdict: KernelVerdict::NotConvertible,
+            }),
+            KernelError::Flow(FlowError::EndpointMismatch),
+            KernelError::Flow(FlowError::Cycle {
+                first: value_id,
+                second: value_id,
+            }),
+            KernelError::Flow(FlowError::Budget),
+            KernelError::Flow(FlowError::FamilyMismatch {
+                expected: Family::Flow,
+                actual: Family::Path,
+            }),
+            KernelError::Flow(FlowError::FamilyMismatch {
+                expected: Family::Path,
+                actual: Family::Flow,
+            }),
+            KernelError::Flow(FlowError::NonCovariantMotive(AnyNode::Value(value_id))),
+            KernelError::Flow(FlowError::Boundary(Boundary::Domain)),
+            KernelError::Flow(FlowError::Boundary(Boundary::Codomain)),
+            KernelError::Flow(FlowError::Path(PathError::Budget)),
         ];
         let descriptions = cases.each_ref().map(ToString::to_string);
         for (position, description) in descriptions.iter().enumerate() {
