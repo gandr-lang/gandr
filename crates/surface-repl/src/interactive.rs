@@ -137,10 +137,13 @@ impl LineSource for Terminal
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the face it feeds is asserted over a scripted source;
-    ///   the editor's own reads, an interrupt and the end of input were
-    ///   exercised by hand on a pseudo-terminal.
+    /// - hypothesis: L3 — the face it feeds is asserted over a scripted source,
+    ///   and the editor's reads over piped lines in a child process; an
+    ///   interrupt and the end of input on a terminal were exercised by hand on
+    ///   a pseudo-terminal.
     /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    /// - witness: `tests::terminal::the_terminal_face_reads_its_input_through_the_editor`
+    /// - witness: `tests::terminal::the_terminal_face_ends_at_the_end_of_input_and_faults_on_unreadable_input`
     #[spec(ensures: |ret| !matches!(ret,
         Read::Failed(Fault::Grammar(_) | Fault::Input(_) | Fault::Session(_))))]
     fn read(
@@ -302,10 +305,12 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the face is asserted over a scripted source through
-///   [`drive`], and the watch by its own witness; the editor and the printed
-///   notice on a terminal, which the test runner lacks, were exercised by hand
-///   on a pseudo-terminal.
+///   [`drive`], over piped lines through the editor in a child process, where
+///   the watch is reported as off, and the watch by its own witness; the editor
+///   and the printed notice on a terminal, which the test runner lacks, were
+///   exercised by hand on a pseudo-terminal.
 /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::terminal::the_terminal_face_reads_its_input_through_the_editor`
 /// - witness: `watch::tests::a_loaded_file_rewritten_is_noticed_once_per_line`
 #[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Input(_)))))]
 #[inline]

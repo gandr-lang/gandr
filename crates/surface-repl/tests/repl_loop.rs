@@ -42,6 +42,7 @@ use gandr_surface_repl::Read;
 use gandr_surface_repl::SessionLoop;
 use gandr_surface_repl::SpanOrder;
 use gandr_surface_repl::completeness;
+use gandr_surface_repl::disk_notice;
 use gandr_surface_repl::drive;
 use gandr_surface_repl::finished;
 use gandr_surface_repl::rows;
@@ -730,6 +731,63 @@ fn a_reloaded_file_replaces_its_chunk()
         "the refused rewrite left the earlier chunk in place"
     );
     drop(std::fs::remove_file(&path));
+}
+
+/// Of two loaded files, the first rewritten longer is resubmitted and the
+/// second's chunk moves with it: rewriting the second afterwards is
+/// resubmitted over its own text alone. A loaded file deleted from disk is
+/// reported as unreadable, and the rest of the reload goes on.
+#[test]
+fn a_longer_reload_moves_the_later_files_and_a_missing_one_is_named()
+{
+    let integer = base(BaseType::Integer);
+    let scratch = |name: &str| {
+        std::env::temp_dir().join(format!("gandr-reload-{name}-{}.gandr", std::process::id()))
+    };
+    let (first, second) = (scratch("first"), scratch("second"));
+    let (first_named, second_named) = (first.display().to_string(), second.display().to_string());
+    std::fs::write(&first, "def a = 1 ;\n").expect("the file writes");
+    std::fs::write(&second, "def b = a ;\n").expect("the file writes");
+    let mut repl = repl();
+    drop(lines(&mut repl, format!(":load {first_named}").as_str()));
+    drop(lines(&mut repl, format!(":load {second_named}").as_str()));
+    std::fs::write(&first, "def a = 1 ;\ndef c = 3 ;\n").expect("the file writes");
+    assert_eq!(lines(&mut repl, ":reload"), [
+        (OutKind::Info, format!("`{first_named}` resubmitted")),
+        (OutKind::Type, format!("a : {integer}")),
+        (OutKind::Value, "1".to_owned()),
+        (OutKind::Type, format!("c : {integer}")),
+        (OutKind::Value, "3".to_owned()),
+        (OutKind::Type, format!("b : {integer}")),
+        (OutKind::Value, "1".to_owned()),
+    ]);
+    std::fs::write(&second, "def b = c ;\n").expect("the file writes");
+    assert_eq!(lines(&mut repl, ":reload"), [
+        (OutKind::Info, format!("`{second_named}` resubmitted")),
+        (OutKind::Type, format!("b : {integer}")),
+        (OutKind::Value, "3".to_owned()),
+    ]);
+    std::fs::remove_file(&first).expect("the file is removed");
+    let missing = lines(&mut repl, ":reload");
+    assert!(
+        matches!(missing.as_slice(), [(OutKind::Diag, text), ..]
+            if text.starts_with(&format!("cannot read `{first_named}`"))),
+        "{missing:?}"
+    );
+    drop(std::fs::remove_file(&second));
+}
+
+/// The notice for a loaded file changed on disk is one information line
+/// naming the file and the command that resubmits it.
+#[test]
+fn a_disk_notice_names_the_file_and_the_reload()
+{
+    let notice = disk_notice(Path::new("/tmp/changed.gandr"));
+    assert!(notice.source.is_empty() && notice.source_hl.is_empty());
+    assert_eq!(notice.lines, [(
+        OutKind::Info,
+        "`/tmp/changed.gandr` changed on disk; :reload to resubmit".to_owned()
+    )]);
 }
 
 /// A function whose later parameter's type reads an earlier type

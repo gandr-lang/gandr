@@ -5,3 +5,5 @@
 mod live_match;
 #[cfg(test)]
 mod repl_loop;
+#[cfg(test)]
+mod terminal;
