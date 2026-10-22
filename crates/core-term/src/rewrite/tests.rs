@@ -3749,6 +3749,91 @@ pub fn formers() -> Vec<Witnessed>
             let with = a.alloc_comp_type(CompType::With([second, first, second].into()));
             a.value_quote_computation(with)
         }),
+        ("tuple", |a, c| {
+            let unit = a.value_unit();
+            a.value_tuple(&[unit, c])
+        }),
+        ("injection", |a, c| a.value_injection(
+            gandr_kernel_term::Summand::from(1_usize),
+            c
+        )),
+        ("lift", |a, c| a.value_lift(Level::zero(), c)),
+        ("record", |a, c| {
+            a.value_record(BTreeMap::from([(
+                gandr_kernel_term::FieldLabel::from(String::from("a")),
+                c,
+            )]))
+        }),
+        ("static application", |a, c| {
+            let unit = a.value_unit();
+            let head = a.value_static_lambda(unit);
+            a.value_static_application(head, c)
+        }),
+        ("static lambda", |a, c| {
+            let under = super::shift_value(a, c, Binders::ONE).settle(a);
+            a.value_static_lambda(under)
+        }),
+        ("reified stack", |a, c| {
+            let body = done(a);
+            a.value_reify(Arc::from([
+                crate::control::StackFrame::Apply(c),
+                crate::control::StackFrame::Bind(body),
+            ]))
+        }),
+        ("lambda", |a, c| {
+            let under = super::shift_value(a, c, Binders::ONE).settle(a);
+            let returned = a.computation_return(under);
+            let body = a.computation_lambda(returned);
+            a.value_thunk(body)
+        }),
+        ("application", |a, c| {
+            let head = done(a);
+            let body = a.computation_application(head, c);
+            a.value_thunk(body)
+        }),
+        ("bind", |a, c| {
+            let (bound, rest) = (a.computation_return(c), done(a));
+            let body = a.computation_bind(bound, rest);
+            a.value_thunk(body)
+        }),
+        ("ascription", |a, c| {
+            let returned = a.computation_return(c);
+            let unit_type = a.value_type_unit();
+            let ty = a.comp_type_returner(unit_type);
+            let body = a.computation_ascribe(returned, ty);
+            a.value_thunk(body)
+        }),
+        ("binary case", |a, c| {
+            let branches = [done(a), done(a)];
+            let body = a.computation_case(c, &branches);
+            a.value_thunk(body)
+        }),
+        ("split", |a, c| {
+            let rest = done(a);
+            let body = a.computation_split(c, crate::syntax::ComponentCount::from(2_usize), rest);
+            a.value_thunk(body)
+        }),
+        ("list case", |a, c| {
+            let (nil, cons) = (done(a), done(a));
+            let body = a.computation_list_case(c, nil, cons);
+            a.value_thunk(body)
+        }),
+        ("resume", |a, c| {
+            let rest = done(a);
+            let body = a.computation_resume(c, rest);
+            a.value_thunk(body)
+        }),
+        ("lazy product", |a, c| {
+            let (returned, other) = (a.computation_return(c), done(a));
+            let with = a.computation_with(&[other, returned]);
+            let body = a.computation_project(crate::Component::from(1_usize), with);
+            a.value_thunk(body)
+        }),
+        ("reset", |a, c| {
+            let returned = a.computation_return(c);
+            let body = a.computation_reset(returned);
+            a.value_thunk(body)
+        }),
     ];
     rows.into_iter()
         .map(|(what, former)| Witnessed { what, former })
@@ -3789,6 +3874,42 @@ fn every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does()
             crate::equal_certificate_syntax(&arena, second, expected),
             "{what}: the change is carried into the fresh node"
         );
+    }
+}
+
+/// With nothing decided, elaboration keeps every former that holds no run,
+/// reporting nothing rebuilt. The run former standing alone is in no
+/// computation's values and is refused by name; returned from a computation,
+/// it runs as one bind.
+#[test]
+fn an_undecided_elaboration_keeps_every_former_but_the_run()
+{
+    let mut arena = CoreArena::new();
+    let child = arena.value_constant(ConstantIndex::from(7_usize));
+    let undecided = BTreeMap::new();
+    for Witnessed { what, former } in formers() {
+        let subject = former(&mut arena, child);
+        let (mut carried, mut binds) = (Vec::new(), Vec::new());
+        let elaborated =
+            elaborate_nested_traced(&mut arena, subject, &undecided, &mut carried, &mut binds);
+        if what == "run" {
+            assert_eq!(elaborated, Err(Unenclosed { run: subject }), "{what}");
+            let returned = arena.computation_return(subject);
+            let held = arena.value_thunk(returned);
+            let ran =
+                elaborate_nested_traced(&mut arena, held, &undecided, &mut carried, &mut binds);
+            assert!(
+                matches!(ran, Ok(rebuilt) if rebuilt != held) && binds.len() == 1,
+                "{what}: a returned run is bound once"
+            );
+        }
+        else {
+            assert_eq!(elaborated, Ok(subject), "{what}: nothing to elaborate");
+            assert!(
+                carried.is_empty() && binds.is_empty(),
+                "{what}: nothing is rebuilt"
+            );
+        }
     }
 }
 
