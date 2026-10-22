@@ -516,6 +516,110 @@ fn a_transport_standing_as_a_computation_keeps_its_spelling()
     assert_eq!(formatted.into_text(), source);
 }
 
+/// A composite or an inverse standing as the operand of a transport a body
+/// runs keeps its transport too, nested to any depth: the printer writes a
+/// derived operation there as the transport it derives, nothing there
+/// stating its type.
+#[test]
+fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
+{
+    let grammar = grammar();
+    for body in [
+        "transport(\\a. Path(Circle, Base, a), transport(\\a. Path(Circle, Base, a), p, p), p)",
+        "transport(\\a. Path(Circle, Base, a), p, transport(\\a. Path(Circle, a, Base), \
+         transport(\\a. Path(Circle, Base, a), p, p), here(Base)))",
+    ] {
+        let source = format!(
+            "{CIRCLE}def twice(p: Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) \
+             {{\n  {body}\n}}\n"
+        );
+        let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+        let laid_out = format(&grammar, &parsed, FormatOptions::default())
+            .expect("the source lays out")
+            .into_text();
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(formatted.withdrawn(), &[], "{body}");
+        assert_eq!(
+            formatted.into_text(),
+            laid_out,
+            "{body}: only the layout moves"
+        );
+    }
+}
+
+/// A parenthesised list after a rule's `<=>` is the rule's outputs, not a
+/// tuple: the explicit form keeps it, while a tuple read as a value beside it
+/// is written `#{…}`.
+#[test]
+fn a_rule_s_outputs_are_not_a_tuple()
+{
+    let grammar = grammar();
+    let rules = "data NatDiv : Type {\n  Zero : NatDiv;\n  Succ : (n : NatDiv) --> NatDiv;\n  \
+                 oper divmod(m : NatDiv, n : NatDiv) -> (quot : NatDiv, rem : NatDiv);\n  rule \
+                 divmod(m, Zero) <=> (Zero, m);\n}\n\n";
+    assert_eq!(
+        spelled(
+            &grammar,
+            format!("{rules}def pair = (1, 2) ;\n").as_str(),
+            Form::Explicit,
+            Selection::Every
+        ),
+        format!("{rules}def pair = #{{1, 2}} ;\n")
+    );
+}
+
+/// A composite of two flows is no path composite: it has no transport to
+/// write, so the explicit form keeps its `then`.
+#[test]
+fn a_composite_of_flows_keeps_its_then()
+{
+    let grammar = grammar();
+    let source = "module Evolution {\n  type Old = +{ report : !String. end };\n  type New = +{ \
+                  report : !String. end, pause : end };\n  def sub : Flow(Type, Old, New);\n  \
+                  def sub = sim(Old, New);\n  def kept : Flow(Type, Old, Old);\n  def kept = \
+                  stay(Old);\n  def widened() -> -F Flow(Type, Old, New) {\n    become kept then \
+                  sub\n  }\n}\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid_out = format(&grammar, &parsed, FormatOptions::default())
+        .expect("the source lays out")
+        .into_text();
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    assert_eq!(formatted.into_text(), laid_out);
+}
+
+/// A transport whose motive is no path type, or no abstraction at all, or a
+/// path type whose endpoints, or a call whose arguments, fit none of the
+/// derived operations, derives no path operation: the sugared form keeps it
+/// as written.
+#[test]
+fn a_transport_along_no_path_motive_keeps_its_spelling()
+{
+    let grammar = grammar();
+    for value in [
+        "transport(\\a. Integer, loop, 5)",
+        "transport(+U (Circle -> -F Integer), loop, 5)",
+        "transport(\\a. Path(Circle, a, a), loop, here(Base))",
+        "transport(\\a. Path(Circle, Base, Base), loop, here(Base))",
+        "transport(\\a. Path(Circle, a, Base), loop, loop)",
+        "transport(\\a. Path(Circle, Base, a), loop)",
+    ] {
+        let source = format!("{CIRCLE}def moved : Integer ;\ndef moved = {value} ;\n");
+        assert_eq!(
+            spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
+            source
+        );
+    }
+}
+
 /// #803: a composite's motive names the binders around it, here the
 /// parameter `x`, so the explicit form spells the motive under the names the
 /// source writes for them and writes the composite as its transport, in a
@@ -1043,6 +1147,263 @@ fn a_linear_run_follows_the_checker_s_elaborations()
         (String::from(source), Vec::new()),
         "refused as written, no run is written away and nothing is withdrawn"
     );
+}
+
+/// The runs ending a block are written away together, last first, each at
+/// its read, a comment between two of them kept; a run whose binder is read
+/// twice stops them, and the runs before it stay.
+#[test]
+fn the_runs_ending_a_block_are_written_away_together()
+{
+    let grammar = grammar();
+    let head = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                \n\
+                def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                \n\
+                def both(m : Nat, k : Nat) -> -F Nat { Succ(m) }\n\
+                \n\
+                def field(n : Nat) -> -F Nat {\n";
+    for (body, written) in [
+        (
+            "  run m <- twice(n) ;\n  run k <- twice(n) ;\n  both(m, k)\n",
+            "  both(twice(n), twice(n))\n",
+        ),
+        (
+            "  run m <- twice(n) ;\n  // between\n  run k <- twice(n) ;\n  both(m, k)\n",
+            "  // between\n  both(twice(n), twice(n))\n",
+        ),
+        (
+            "  run m <- twice(n) ;\n  run k <- twice(m) ;\n  both(k, m)\n",
+            "  run m <- twice(n) ;\n  both(twice(m), m)\n",
+        ),
+    ] {
+        let source = format!("{head}{body}}}\n");
+        let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+        let oracle = Oracle {
+            answer: Answer::Alike,
+            asked: Cell::new(0),
+        };
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
+            .expect("the source formats");
+        assert_eq!(
+            formatted.into_text(),
+            format!("{head}{written}}}\n"),
+            "{body}"
+        );
+    }
+}
+
+/// Every refusal, every reason a declaration keeps its spelling and every
+/// rewrite's name renders apart from the others of its kind, carrying what
+/// it names.
+#[test]
+fn every_refusal_withdrawal_and_rewrite_renders_apart()
+{
+    use gandr_surface_format::Change;
+    use gandr_surface_format::FormatError;
+    use gandr_surface_format::REWRITES;
+    use gandr_surface_layout::RenderError;
+    use gandr_surface_layout::error::BuildError;
+    use gandr_surface_parser::MeldError;
+    use gandr_surface_syntax::SyntaxError;
+
+    /// Each text distinct from every other.
+    ///
+    /// # Specification
+    /// trivial.
+    fn apart(texts: &[String])
+    {
+        for (index, text) in texts.iter().enumerate() {
+            assert!(
+                texts
+                    .get(index.saturating_add(1) ..)
+                    .unwrap_or_default()
+                    .iter()
+                    .all(|other| other != text),
+                "`{text}` renders like a later one"
+            );
+        }
+    }
+    let refusals = [
+        FormatError::Unbalanced,
+        FormatError::from(BuildError::ArenaKeyExhausted),
+        FormatError::from(RenderError::UnknownDoc),
+        FormatError::Reparse(MeldError::Build(SyntaxError::BuilderIdExhausted)),
+        FormatError::Changed(Change::Meaning),
+        FormatError::Changed(Change::Material),
+        FormatError::Changed(Change::Attachment),
+    ]
+    .map(|refusal| refusal.to_string());
+    apart(&refusals);
+    let withdrawals = [
+        Withdrawn::Refused(String::from("the refusal")),
+        Withdrawn::Lowered,
+        Withdrawn::Unchecked(String::from("the refusal")),
+        Withdrawn::Unspelled,
+        Withdrawn::Read(String::from("reader")),
+    ]
+    .map(|reason| reason.to_string());
+    apart(&withdrawals);
+    for (index, carried) in [(0, "the refusal"), (2, "the refusal"), (4, "`reader`")] {
+        assert!(
+            withdrawals[index].contains(carried),
+            "`{}` names {carried}",
+            withdrawals[index]
+        );
+    }
+    let mut names: Vec<String> = REWRITES
+        .iter()
+        .map(|rewrite| rewrite.name.to_string())
+        .collect();
+    names.dedup();
+    assert_eq!(
+        names,
+        [
+            "product",
+            "sum",
+            "lazy-product",
+            "tuple",
+            "value-function",
+            "default-grade",
+            "path-composite",
+            "path-inverse",
+            "path-action",
+            "tail-return",
+            "short-alias",
+            "linear-run",
+            "inserted-thunk",
+        ],
+        "each rewrite is named as a caller selects it, in the table's order"
+    );
+}
+
+/// A rewrite in one declaration is checked against every other kind of
+/// declaration beside it — codata, a world, a sealed module's components and
+/// a declaration the lowering refuses — and each agrees with its
+/// rewritten self, so the rewrite stands and nothing is withdrawn.
+#[test]
+fn a_rewrite_is_checked_beside_every_kind_of_declaration()
+{
+    let grammar = grammar();
+    let source = "codata Stream(a : Type) : Type[-] {\n  head : a;\n  tail : Stream(a);\n}\n\
+                  \n\
+                  world seat;\n\
+                  \n\
+                  module Pair :> #{ type Kept, one : Kept } {\n  type Kept = Integer;\n  def \
+                  one = 1;\n}\n\
+                  \n\
+                  def lost() -> -F Integer { migrate [nowhere] { pure 1 } }\n\
+                  \n\
+                  def pair : #{Integer, String} ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    assert_eq!(
+        formatted.into_text(),
+        source.replace("#{Integer, String}", "Integer * String")
+    );
+}
+
+/// A `thunk { e }` passed where a thunk is expected follows the checker: it
+/// is written `e` where the checker elaborates both spellings to one body,
+/// and kept, with nothing reported, where it elaborates them otherwise:
+/// there the checker inserts none. Without a checker it is kept.
+#[test]
+fn an_inserted_thunk_follows_the_checker_s_elaborations()
+{
+    let grammar = grammar();
+    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                  \n\
+                  def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                  \n\
+                  def call(f : +U (-F Nat)) -> -F Nat { force f }\n\
+                  \n\
+                  def field(n : Nat) -> -F Nat { call(thunk { twice(n) }) }\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let format = |answer: Option<Answer>| {
+        let oracle = answer.map(|answer| Oracle {
+            answer,
+            asked: Cell::new(0),
+        });
+        let checker: Option<&dyn Elaborate> = oracle.as_ref().map(|oracle| {
+            let checker: &dyn Elaborate = oracle;
+            checker
+        });
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, checker))
+            .expect("the source formats");
+        let withdrawn: Vec<(String, Withdrawn)> = formatted
+            .withdrawn()
+            .iter()
+            .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
+            .collect();
+        (formatted.into_text(), withdrawn)
+    };
+    let aliased = source.replace("+U (-F Nat)", "() => Nat");
+    assert_eq!(
+        format(Some(Answer::Alike)),
+        (
+            aliased.replace("call(thunk { twice(n) })", "call(twice(n))"),
+            Vec::new()
+        ),
+        "elaborated alike, the thunk is left for the checker to insert"
+    );
+    assert_eq!(
+        format(Some(Answer::Apart)),
+        (aliased.clone(), Vec::new()),
+        "elaborated otherwise, the thunk is kept and nothing is reported"
+    );
+    assert_eq!(
+        format(None),
+        (aliased.clone(), Vec::new()),
+        "with no checker to insert it, the thunk is kept"
+    );
+    // No sugar spells a `become`, a statement or a comment the thunk itself
+    // owns, so each keeps its thunk; a comment its body owns goes with the
+    // body.
+    for (body, written) in [
+        (
+            "thunk { become twice(n) }",
+            "call(thunk { become twice(n) })",
+        ),
+        (
+            "thunk // owned\n  { twice(n) }",
+            "call(\n  thunk // owned\n  { twice(n) }\n)",
+        ),
+        (
+            "thunk { run m <- twice(n) ; return m }",
+            "call(thunk { run m <- twice(n) ; m })",
+        ),
+        (
+            "thunk {\n    // kept\n    twice(n)\n  }",
+            "call(\n  // kept\n  twice(n)\n)",
+        ),
+    ] {
+        let source = source.replace("thunk { twice(n) }", body);
+        let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+        let oracle = Oracle {
+            answer: Answer::Alike,
+            asked: Cell::new(0),
+        };
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
+            .expect("the source formats");
+        assert_eq!(
+            formatted.into_text(),
+            aliased.replace("call(thunk { twice(n) })", written),
+            "{body}"
+        );
+    }
 }
 
 /// The rewrites' sweep: every corpus source formats into either form, the
