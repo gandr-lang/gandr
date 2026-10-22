@@ -474,7 +474,8 @@ echo 'markdown check OK: every tracked markdown file is on the README allowlist'
   "git ls-files -z -- '*.md' ':(exclude,glob)ledger/syntax.md' | xargs -0 sizelint check",
 ]
 
-# The syntax ledger is generated from the grammar and the attribute registry
+# The syntax ledger is generated from the grammar, the attribute registry and
+# the committed rules' exemplars, which each rule's admission is read off
 # (`gandr-surface-dispatcher`'s `ledger` module): regenerated into a temporary
 # directory and compared with the committed `ledger/syntax.md` and
 # `ledger/syntax.json` byte for byte. A difference is printed and fails the
@@ -486,7 +487,7 @@ run = '''
 set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
-.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" > /dev/null
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" --exemplars ledger/exemplars > /dev/null
 stale=0
 for file in syntax.md syntax.json; do
   diff -u "ledger/$file" "$fresh/$file" || stale=1
