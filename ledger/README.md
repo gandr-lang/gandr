@@ -41,10 +41,10 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | ------- | ---- |
 | `cargo run --package gandr-lang -- ledger syntax --write ledger` | regenerates `syntax.md` and `syntax.json` |
 | `cargo run --package gandr-lang -- ledger exemplars ledger/exemplars` | verifies every exemplar, printing `<file>: <fault>` for each that does not hold |
-| `cargo run --package gandr-lang -- test ledger/exemplars/features` | settles every features exemplar |
+| `cargo run --package gandr-lang -- test ledger/exemplars` | settles every exemplar |
 | `mise run check:syntax-ledger` | regenerates both ledger files into a temporary directory and fails, printing the difference, while either differs from the committed file |
 | `mise run check:syntax-exemplars` | fails while a committed rule or an attribute has no exemplar, a file names neither, an exemplar does not show what it names, or a features exemplar states `owes` or `refuses` |
-| `mise run check:exemplars` | fails while a features exemplar leaves a declaration unsettled |
+| `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |
 | `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |
 
