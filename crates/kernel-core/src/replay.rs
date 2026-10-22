@@ -4513,10 +4513,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   defined constants separate equality, rigid separation, and undecided
     ///   comparison under both engine claims; a call over a returned endpoint
     ///   closes with the call over what the endpoint returns, and not with the
-    ///   call over another value (#695). Only root identity and polarity are
-    ///   executable here; the recursive relation is not rerun.
+    ///   call over another value (#695); two reflexivities whose points one
+    ///   presented rule relates close, and not over a free type (#1723). Only
+    ///   root identity and polarity are executable here; the recursive relation
+    ///   is not rerun.
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
     #[spec(ensures: |ret| match (goal.left, goal.right) {
         (Term::Value(left), Term::Value(right)) if left == right =>
             ret == Ok(if self.arena.value(left).is_some() { Compared::Equal } else { Compared::Open }),
@@ -4565,13 +4568,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     }
 
     /// Whether every pair `pending` holds is alike once each returned endpoint
-    /// in it is read by the reduction the goal takes.
+    /// in it is read by the reduction the goal takes, and each constructor of a
+    /// presented type by the type's rules.
     ///
     /// A side reads to the value its computation returns, through every
-    /// `return` it reaches by `reduction`; no definition unfolds, as no
-    /// decision names one. A pair that read to something is walked again, its
-    /// own set-aside pairs read in turn; a pair neither side of which reads to
-    /// anything compares by [`equal_weakened`].
+    /// `return` it reaches by `reduction`, and then to its normal form under
+    /// the presentations ([`Self::present`]), as a goal's root reads before
+    /// its shape; no definition unfolds, as no decision names one. A pair that
+    /// read to something is walked again, its own set-aside pairs read in
+    /// turn; a pair neither side of which reads to anything compares by
+    /// [`equal_weakened`].
     ///
     /// # Specification
     /// - requires: every pair's values live in the arena.
@@ -4589,15 +4595,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - reason: the `while let` over the worklist and the inner `while let`
     ///   over one side's chain of returned values, not recursion.
     /// - measure: the budget left: a side reads one step of its chain per
-    ///   charge, and a pair returns to the worklist only after one of its sides
-    ///   read to something.
+    ///   charge, its rewriting charges every node it compares or copies, and a
+    ///   pair returns to the worklist only after one of its sides read to
+    ///   something — a normal form reads to itself.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call over an endpoint returning the other side's
     ///   argument is alike, and over one returning another variable is not;
     ///   leaving the endpoints unread changes the first, and answering every
-    ///   read pair alike the second.
+    ///   read pair alike the second. Two points one presented rule relates are
+    ///   alike, and two no rule relates are not (#1723); leaving the rules
+    ///   unread changes the first.
     /// - witness: `replay::tests::a_compared_pair_reads_a_returned_endpoint_the_engine_read_through_695`
+    /// - witness: `replay::tests::a_compared_pair_reads_presented_points_by_their_rules_1723`
     #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before
         && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget))]
     fn endpoints_alike(
@@ -4626,6 +4636,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     };
                     *side = returned;
                 }
+                // A constructor of a presented type is set aside for its
+                // normal form: read it by the type's rules.
+                let Term::Value(normal) = self.present(Term::Value(*side))?
+                else {
+                    return Err(unreadable());
+                };
+                *side = normal;
             }
             let [one, other] = read;
             let walked = if (one, other) == (left, right) {

@@ -1,6 +1,10 @@
 // Reflexivity is a congruence for conversion (the HoTT book's § 1.12, `refl`,
 // under judgmental equality): two reflexivities are one path when their
-// points convert, at every level, and a parameter is no reflexivity.
+// points convert, by unfolding or by a presented type's rule, at every level,
+// and a parameter is no reflexivity.
+
+// The integers, presented by their two cancellations.
+import "./circle-base.gandr" ;
 
 /// A declared reflexivity.
 @[ checks ]
@@ -25,6 +29,26 @@ def here_two_up : Path(
   here(here(2))
 ) ;
 def here_two_up = here(here(refl_two)) ;
+
+/// The reflexivity at the cancelled side of a peak: `S(P(S(x)))` and `S(x)`
+/// are one integer by the rule `S(P(x)) <=> x`.
+@[ checks ]
+def refl_peak(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+  here(S(x))
+}
+
+/// The reflexivity at the peak itself, at the same path type.
+@[ checks ]
+def refl_peak_at(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+  here(S(P(S(x))))
+}
+
+/// Points a rule relates, one level up: the two reflexivities are one path
+/// (#1723).
+@[ checks ]
+def peak_is_here(x : Int) -> -F Path(Path(Int, S(P(S(x))), S(x)), refl_peak(x), refl_peak_at(x)) {
+  here(refl_peak(x))
+}
 
 /// A parameter does not unfold to `here(2)`.
 @[ refuses("EndpointMismatch") ]
