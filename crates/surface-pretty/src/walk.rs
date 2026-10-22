@@ -7170,8 +7170,9 @@ impl Walk<'_, '_>
     /// - ensures: the function is read down through every application it is, at
     ///   most [`DEPTH_LIMIT`] arguments in all, each argument scheduled as a
     ///   value at `depth` but a hole the call nominated for an implicit it
-    ///   omits, which the source wrote nothing for; a force at the head of the
-    ///   spine is scheduled as the value it forces, the bridge the lowering
+    ///   omits, which the source wrote nothing for, or as its body where the
+    ///   walk leaves its thunk out ([`Self::inserted`]); a force at the head of
+    ///   the spine is scheduled as the value it forces, the bridge the lowering
     ///   writes before a value it calls, and any other head as a computation
     ///   where the body goes on; the join over the head and the arguments, left
     ///   to right, is pushed below their visits, the head visited first. Where
@@ -7225,7 +7226,7 @@ impl Walk<'_, '_>
                     matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
                         && u32::try_from(passed).is_ok_and(|count| count <= DEPTH_LIMIT.0)
                         && arguments.iter().all(|task| matches!(*task, Task::Context(_))
-                            || matches!(*task, Task::Visit { admits: Admits::Value, depth: at, .. } if at == depth))
+                            || matches!(*task, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Unstated), depth: at, .. } if at == depth))
                 })
         }),
     )]
@@ -7297,11 +7298,18 @@ impl Walk<'_, '_>
             arguments.len().saturating_add(uniform),
         ))));
         for node in arguments {
-            tasks.push(Task::Visit {
-                node,
-                admits: Admits::Value,
-                depth,
-            });
+            tasks.push(self.inserted(source, node).map_or(
+                Task::Visit {
+                    node,
+                    admits: Admits::Value,
+                    depth,
+                },
+                |body| Task::Visit {
+                    node: body,
+                    admits: Admits::Computation(Tail::Unstated),
+                    depth,
+                },
+            ));
         }
         for position in (0_usize .. uniform).rev() {
             tasks.push(Task::Context(ContextPosition(position)));
@@ -7320,6 +7328,55 @@ impl Walk<'_, '_>
                 depth,
             }
         });
+    }
+
+    /// The body of the thunk at `node` where the walk leaves the thunk for the
+    /// checker to insert, `f(g(x))` for `f(thunk { g(x) })`: the checker
+    /// inserts one where it checks a computation against a thunk type, a
+    /// definition's body against its signature and an argument against its
+    /// parameter, and a value of a thunk type standing there is the thunk it
+    /// inserts. Either form leaves it out, as either leaves out the exit the
+    /// lowering infers: the formatter writes neither back.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the body when the walk writes an expression, thunks spelled,
+    ///   and `node` reads as a thunk whose body is one expression the checker
+    ///   wraps — a call, a forced value, a function or a lazy record; `None`
+    ///   otherwise, a thunk of a returned value, of a bind's statements or of
+    ///   anything else among them.
+    /// - provides: the thunks the walk leaves out, as the formatter's
+    ///   `inserted-thunk` rewrite leaves them out.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call's thunk argument over a call and over a
+    ///   returned value, and a definition's thunk over a function and over a
+    ///   statement block, distinguish a thunk left out from one kept.
+    /// - witness: `tests::goldens::a_thunk_the_checker_inserts_is_left_out_1457`
+    #[spec(ensures: |ref ret| ret.is_none()
+        || (self.bodies == Bodies::Spelled && self.surface == Surface::Expression))]
+    fn inserted<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<S::Node>
+    where
+        S: Source + ?Sized,
+    {
+        if self.bodies != Bodies::Spelled || self.surface != Surface::Expression {
+            return None;
+        }
+        let Former::Thunk(body) = source.read(node)
+        else {
+            return None;
+        };
+        matches!(
+            source.read(body),
+            Former::Application(..) | Former::Force(_) | Former::Lambda(_) | Former::Lazy(_)
+        )
+        .then_some(body)
     }
 
     /// Schedules a computation whose runs bind calls as its last step with
@@ -9256,11 +9313,29 @@ where
             },
         },
     };
-    let mut tasks = Vec::from([Task::Visit {
-        node: root,
-        admits,
-        depth: ValueDepth::ROOT,
-    }]);
+    // A definition's body checked against its signature's thunk type is the
+    // thunk the checker inserts, left out.
+    let inserted = match admits {
+        Admits::Stated => walk.inserted(source, root),
+        Admits::Type
+        | Admits::ValueType
+        | Admits::CompType
+        | Admits::Value
+        | Admits::Operand
+        | Admits::Computation(_) => None,
+    };
+    let mut tasks = Vec::from([inserted.map_or(
+        Task::Visit {
+            node: root,
+            admits,
+            depth: ValueDepth::ROOT,
+        },
+        |body| Task::Visit {
+            node: body,
+            admits: Admits::Computation(Tail::Ends),
+            depth: ValueDepth::ROOT,
+        },
+    )]);
     while let Some(task) = tasks.pop() {
         match task {
             Task::Visit {

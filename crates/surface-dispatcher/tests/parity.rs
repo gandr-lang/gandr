@@ -14,7 +14,6 @@ use std::path::Path;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
-use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
@@ -52,7 +51,6 @@ use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::Unspelled;
-use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_definition;
 use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_whole;
@@ -551,10 +549,6 @@ enum Held
     /// or only as the printer spells it: a tail `become` it writes bare
     /// makes the last statement such a run (#1460).
     Linear,
-    /// A declaration the sugared form writes without a thunk the checker
-    /// inserts, which the printer prints (#1457): the formatter's tokens are
-    /// the printer's with some `thunk { … }` left out.
-    Inserted,
 }
 
 impl fmt::Display for Held
@@ -572,7 +566,6 @@ impl fmt::Display for Held
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
             Self::Linear => "#1416, a linear run the printer prints as its bind",
-            Self::Inserted => "#1457, a thunk the checker inserts, which the printer prints",
         })
     }
 }
@@ -679,7 +672,6 @@ enum Spelt
 /// trivial.
 fn spelt(
     source: &CoreSource<'_>,
-    arena: &CoreArena,
     name: Name<'_>,
     (ty, body): (ValueTypeId, ValueId),
     form: Form,
@@ -700,14 +692,8 @@ fn spelt(
         return unfaithful(whole.unspelled(), SourceFragment::from(whole.as_ref()));
     }
     let typed = present_type(source, CoreNode::ValueType(ty), page, style);
-    let bodied = match arena.value(body) {
-        Some(&Value::Thunk(computation)) => {
-            present_computation(source, CoreNode::Computation(computation), page, style)
-                .map(|printed| (format!("thunk {{ {} }}", printed.as_ref()), printed))
-        },
-        _ => present_definition(source, CoreNode::Value(body), page, style)
-            .map(|printed| (String::from(printed.as_ref()), printed)),
-    };
+    let bodied = present_definition(source, CoreNode::Value(body), page, style)
+        .map(|printed| (String::from(printed.as_ref()), printed));
     let (Ok(typed), Ok((text, bodied))) = (typed, bodied)
     else {
         return Spelt::Unfaithful(String::from("the printer refused it"));
@@ -907,20 +893,8 @@ fn read(
         }
         let node = (declared_type, body);
         match (
-            spelt(
-                &source,
-                &arena,
-                Name::from(name.as_str()),
-                node,
-                Form::Sugared,
-            ),
-            spelt(
-                &source,
-                &arena,
-                Name::from(name.as_str()),
-                node,
-                Form::Explicit,
-            ),
+            spelt(&source, Name::from(name.as_str()), node, Form::Sugared),
+            spelt(&source, Name::from(name.as_str()), node, Form::Explicit),
         ) {
             (Spelt::Whole(sugared_type, sugared), Spelt::Whole(explicit_type, explicit)) => {
                 read.printed.push(Printed {
@@ -1362,24 +1336,14 @@ fn bodies(
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
             };
-            let (compared, inserted) = match declaration.shape {
+            let compared = match declaration.shape {
                 Shape::Halves { ref ty, ref body } => {
                     let (want_type, want_body) = (want(ty), want(body));
                     let (got_type, got_body) = (
                         signatures.get(&declaration.name).cloned(),
                         definitions.get(&declaration.name).cloned(),
                     );
-                    let inserted = match (&got_type, &want_type, &got_body, &want_body) {
-                        (
-                            &Some(ref got_type),
-                            &Some(ref want_type),
-                            &Some(ref got),
-                            &Some(ref want),
-                        ) if got_type == want_type => thunks_left_out(got, want),
-                        _ => LeftOut::Otherwise,
-                    };
-                    let compared = ((got_type.clone(), got_body.clone())
-                        != (want_type.clone(), want_body.clone()))
+                    ((got_type.clone(), got_body.clone()) != (want_type.clone(), want_body.clone()))
                         .then(|| {
                             format!(
                                 "formatter: {} = {}\n  printer:   {} = {}",
@@ -1388,33 +1352,19 @@ fn bodies(
                                 shown(want_type),
                                 shown(want_body),
                             )
-                        });
-                    (compared, inserted)
+                        })
                 },
                 Shape::Whole(ref whole) => {
                     let (wanted, got) = (want(whole), recursions.get(&declaration.name).cloned());
-                    let inserted = match (&got, &wanted) {
-                        (&Some(ref got), &Some(ref wanted)) => thunks_left_out(got, wanted),
-                        _ => LeftOut::Otherwise,
-                    };
-                    let compared = (got != wanted).then(|| {
+                    (got != wanted).then(|| {
                         format!("formatter: {}\n  printer:   {}", shown(got), shown(wanted))
-                    });
-                    (compared, inserted)
+                    })
                 },
             };
             let Some(compared) = compared
             else {
                 continue;
             };
-            if inserted == LeftOut::Thunks {
-                let held = found.held.entry(Held::Inserted).or_default();
-                let line = format!("{name} `{}`", declaration.name);
-                if !held.contains(&line) {
-                    held.push(line);
-                }
-                continue;
-            }
             let mut miss = format!("{name}: `{}` from {from:?} into {into}", declaration.name);
             if let Some(reason) = withdrawn.get(declaration.name.as_str()) {
                 core::fmt::Write::write_fmt(&mut miss, format_args!(", withdrawn: {reason}"))
@@ -1425,72 +1375,8 @@ fn bodies(
             found.misses.push(miss);
         }
     }
-    found.compared = held
-        .len()
-        .saturating_sub(found.held.get(&Held::Inserted).map_or(0, Vec::len));
+    found.compared = held.len();
     found
-}
-
-/// Whether a formatter's tokens are a printer's with some `thunk { … }` left
-/// out, the checker inserting each.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LeftOut
-{
-    /// They are, at least one thunk left out.
-    Thunks,
-    /// They are not.
-    Otherwise,
-}
-
-/// Whether `got` is `want` with some `thunk { … }` written as what its braces
-/// hold: walked together, a `thunk {` of `want` where `got` writes no `thunk`
-/// is left out with its matching `}`, and every other token is the same.
-///
-/// # Specification
-/// trivial.
-fn thunks_left_out(
-    got: &[String],
-    want: &[String],
-) -> LeftOut
-{
-    // The depth of every open brace in `want`, and whether its thunk is left
-    // out.
-    let mut braces: Vec<LeftOut> = Vec::new();
-    let mut left = LeftOut::Otherwise;
-    let mut got = got.iter().peekable();
-    let mut want = want.iter().peekable();
-    while let Some(token) = want.next() {
-        let next = got.peek().map(|token| token.as_str());
-        match token.as_str() {
-            "thunk"
-                if want.peek().map(|token| token.as_str()) == Some("{")
-                    && next != Some("thunk") =>
-            {
-                let _open = want.next();
-                braces.push(LeftOut::Thunks);
-                left = LeftOut::Thunks;
-            },
-            "{" if next == Some("{") => {
-                let _same = got.next();
-                braces.push(LeftOut::Otherwise);
-            },
-            "}" if braces.last() == Some(&LeftOut::Thunks) => {
-                let _closed = braces.pop();
-            },
-            "}" if next == Some("}") => {
-                let _same = got.next();
-                let _closed = braces.pop();
-            },
-            own if next == Some(own) => {
-                let _same = got.next();
-            },
-            _ => return LeftOut::Otherwise,
-        }
-    }
-    if got.next().is_some() {
-        return LeftOut::Otherwise;
-    }
-    left
 }
 
 /// The parity sweeps: a sample on every pull request, every source under the

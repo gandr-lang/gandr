@@ -3912,7 +3912,7 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
 /// themselves before its own arguments, `down[<](a, g, p)`, as the surface
 /// requires; a call of a uniform parameter, `g(…)`, passes nothing more. A
 /// fixpoint under every abstraction its type runs through is no `def rec`
-/// (#941).
+/// (#941) but the body's loop (#1457).
 #[test]
 fn a_uniform_parameter_is_passed_by_each_call_941()
 {
@@ -3930,7 +3930,7 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     let (one_case, one) = one_uniform(&mut core);
     let (two_case, two) = two_uniform(&mut core);
     // Every abstraction outside the fixpoint: no parameter is left for the
-    // fixpoint to bind.
+    // fixpoint to bind, and it is the body's loop.
     let unit = core.value_unit();
     let returned = core.computation_return(unit);
     let bare = core.computation_fixpoint(returned, gandr_kernel_term::FixpointEvidence::Partial);
@@ -3963,8 +3963,8 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     );
     assert_eq!(
         declared_whole(&source, (ty_one, exhausted), wide),
-        Maybe::Absent(whole::Absent::NotAbstracted),
-        "a fixpoint binding no parameter is no definition written whole"
+        written("def down(a : Nat, b : Nat) -> -F Nat {\n  loop { break(unit) }\n}"),
+        "a fixpoint binding no parameter is the body's loop"
     );
 }
 
@@ -4040,6 +4040,58 @@ fn a_suspended_returner_spells_whole_1449()
             Fidelity::Faithful
         )),
         "a suspended returner is written with no parameter"
+    );
+}
+
+/// A thunk the checker inserts is left out: a call's argument over a call
+/// and a definition's value over a function are written as what they hold,
+/// while a thunk over a returned value or over statements keeps its braces
+/// (#1457).
+#[test]
+fn a_thunk_the_checker_inserts_is_left_out_1457()
+{
+    let names = [Name::from("kept"), Name::from("twice")];
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let kept = core.computation_force(kept);
+    let twice = core.value_constant(ConstantIndex::from(1_usize));
+    let twice = core.computation_force(twice);
+    let doubled = core.computation_application(twice, one);
+    let suspended = core.value_thunk(doubled);
+    let called = core.computation_application(kept, suspended);
+    let pure_one = core.computation_return(one);
+    let returned = core.value_thunk(pure_one);
+    let returning = core.computation_application(kept, returned);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let applied = core.computation_application(kept, bound);
+    let function = core.computation_lambda(applied);
+    let defined = core.value_thunk(function);
+    let returning_bound = core.computation_return(bound);
+    let statements = core.computation_bind(pure_one, returning_bound);
+    let block = core.value_thunk(statements);
+    let source = CoreSource::new(&core, &names);
+    let computation = |id| Root::Computation(CoreNode::Computation(id));
+    let definition = |id| Root::Definition(CoreNode::Value(id));
+    assert_eq!(
+        spelled(&source, computation(called)),
+        faithful(Written("kept(twice(1))")),
+        "an argument's thunk over a call is left out"
+    );
+    assert_eq!(
+        spelled(&source, computation(returning)),
+        faithful(Written("kept(thunk { 1 })")),
+        "an argument's thunk over a returned value is kept"
+    );
+    assert_eq!(
+        spelled(&source, definition(defined)),
+        faithful(Written("fn (a) { kept(a) }")),
+        "a definition's thunk over a function is left out"
+    );
+    assert_eq!(
+        spelled(&source, definition(block)),
+        faithful(Written("thunk { run a <- pure 1 ; a }")),
+        "a definition's thunk over statements is kept"
     );
 }
 

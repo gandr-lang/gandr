@@ -1006,8 +1006,7 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// Its type is no suspended function.
             NotAFunction,
-            /// Its body is no suspended abstraction of a parameter, or its
-            /// fixpoint abstracts none.
+            /// Its body is no suspended abstraction of a parameter.
             NotAbstracted,
             /// No names for its parameters avoid every name the definition
             /// mentions.
@@ -1068,9 +1067,10 @@ quenchant_shape::reason_enum! {
 ///   under the wrong context; a body mentioning the first candidate name
 ///   distinguishes a captured parameter; a function of one parameter and of two
 ///   with no fixpoint distinguishes a `def rec` written for it and a body under
-///   the wrong context; a suspended returner is written with no parameter; and
-///   a body that abstracts nothing at an arrow, a fixpoint that abstracts
-///   nothing and a type that is no function are absent.
+///   the wrong context; a suspended returner is written with no parameter; a
+///   fixpoint that abstracts nothing of its own is written as the body's loop;
+///   and a body that abstracts nothing at an arrow and a type that is no
+///   function are absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
@@ -1104,28 +1104,28 @@ pub fn present_whole(
     // Each parameter: its arrow, its domain, and whether the arrow binds it
     // in what follows; then the codomain and the body under them all. The
     // fixpoint stands after the uniform parameters, and its own abstractions
-    // follow it. A fixpoint under a suspended returner abstracts nothing: it
-    // is the body's loop.
+    // follow it. A fixpoint under a suspended returner, or one with no
+    // abstraction of its own, abstracts nothing: it is the body's loop.
     let returner = matches!(
         source.read(function),
         Former::Returner(_) | Former::EffectfulReturner { .. }
     );
     let mut arrows: Vec<(CoreNode, CoreNode, bool)> = Vec::new();
-    let mut fixpoint: Option<Recursive> = None;
+    let mut fixpoint: Option<(Recursive, CoreNode)> = None;
     let (mut codomain, mut inner) = (function, suspended);
     loop {
         if fixpoint.is_none()
             && !returner
             && let Former::Fixpoint(abstraction) = source.read(inner)
+            && let Some(claim) = source.recursion(inner)
         {
-            let Some(claim) = source.recursion(inner)
-            else {
-                return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
-            };
-            fixpoint = Some(Recursive {
-                claim,
-                uniform: Arity::from(arrows.len()),
-            });
+            fixpoint = Some((
+                Recursive {
+                    claim,
+                    uniform: Arity::from(arrows.len()),
+                },
+                inner,
+            ));
             inner = abstraction;
             continue;
         }
@@ -1161,10 +1161,14 @@ pub fn present_whole(
             },
         ));
     }
-    // A fixpoint abstracts at least one parameter of its own.
-    if fixpoint.is_some_and(|own| usize::from(own.uniform) >= arrows.len()) {
-        return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+    // A fixpoint abstracting no parameter of its own is the body's loop.
+    if let Some((own, node)) = fixpoint
+        && usize::from(own.uniform) >= arrows.len()
+    {
+        fixpoint = None;
+        inner = node;
     }
+    let fixpoint = fixpoint.map(|(own, _)| own);
     let mut roots: Vec<(CoreNode, Admits)> = arrows
         .iter()
         .map(|&(_, domain, _)| (domain, Admits::Type))
