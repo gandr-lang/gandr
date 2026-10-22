@@ -1,20 +1,23 @@
 //! The path table: every source under the workspace's roots, each named once
-//! by a stable id, with the files it imports, so the sources that import a
-//! file are a lookup.
+//! by a stable id, with the files it imports and the names it declares, so the
+//! sources that import a file, and the names no open document's closure
+//! reaches, are lookups.
 //!
 //! A root is a folder a client opened, resolved once, when it is added, and
 //! held while any connection holds it open; a folder inside another root is
 //! walked from the outer. The sources under the roots are reached when an
-//! answer needs them ([`Files::importers`]), not at the connection's start, so
-//! a session that never asks pays nothing; a source is reached as `gandr check`
-//! reaches one, by the dispatcher's [`Traversal`]: a directory depth-first in
-//! byte order, its `.gandr` entries, no link in a listing followed. Each source
-//! keeps the files its imports name ([`imports_named`]), read from its import
-//! forms without judging it, and the length and modification time its file had
-//! when they were read: an answer reads again only a source whose file differs
-//! from its stamp, so the table is current whether or not anything watches the
-//! roots. A source the last walk did not reach keeps its id and imports
-//! nothing.
+//! answer needs them ([`Files::importers`], [`Files::declared`]), not at the
+//! connection's start, so a session that never asks pays nothing; a source is
+//! reached as `gandr check` reaches one, by the dispatcher's [`Traversal`]: a
+//! directory depth-first in byte order, its `.gandr` entries, no link in a
+//! listing followed. Each source keeps the files its imports name
+//! ([`imports_named`]), read from its import forms without judging it, and,
+//! once an answer has asked for names, the names its outline declares
+//! ([`declared`]), read from one parse and no lowering; with them the length
+//! and modification time its file had when they were read: an answer reads
+//! again only a source whose file differs from its stamp, so the table is
+//! current whether or not anything watches the roots. A source the last walk
+//! did not reach keeps its id and imports and declares nothing.
 //!
 //! The table reads the disk. An importer an editor holds imports what its
 //! editor's copy writes, which the server passes where it asks, so an unsaved
@@ -38,6 +41,8 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::relocate::Moves;
+use crate::search::Declared;
+use crate::search::declared;
 use crate::server::Peer;
 
 /// A source's place in the table, stable while the table lives.
@@ -67,6 +72,10 @@ struct Named
     stamp: Option<Stamp>,
     /// The files its imports name, as last read.
     imports: Vec<FileId>,
+    /// The names its file declared when its imports were read; none until an
+    /// answer has asked for names, and for a path the last walk did not
+    /// reach.
+    declared: Option<Vec<Declared>>,
 }
 
 /// Every source under the workspace's roots, with the files each imports.
@@ -94,6 +103,9 @@ pub struct Files
     named: Vec<Named>,
     /// The id of each path the table names.
     ids: BTreeMap<PathBuf, FileId>,
+    /// Whether an answer has asked for the names the sources declare, after
+    /// which every source read is read for its names too.
+    naming: bool,
 }
 
 impl Files
@@ -232,35 +244,43 @@ impl Files
             path: path.to_path_buf(),
             stamp: None,
             imports: Vec::new(),
+            declared: None,
         });
         let _named = self.ids.insert(path.to_path_buf(), id);
         id
     }
 
-    /// Reach every source under the roots, reading again the imports of each
-    /// whose file differs from its stamp.
+    /// Reach every source under the roots, reading again the imports, and
+    /// once an answer has asked for them the names, of each whose file differs
+    /// from its stamp.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each `.gandr` source the dispatcher's traversal reaches under
     ///   a root holds what its file imports and that file's stamp, read again
-    ///   only when the stamp differs; one that cannot be read imports nothing;
-    ///   a source reached before and not now has no stamp and imports nothing.
+    ///   only when the stamp differs; once the table is naming, what its file
+    ///   declares too, read when the stamp differs or its names were not yet
+    ///   read; one that cannot be read imports and declares nothing; a source
+    ///   reached before and not now has no stamp and imports and declares
+    ///   nothing.
     /// - fails: never; a source that cannot be read imports nothing.
     /// - panics: none.
     /// - intension: one listing per directory and one metadata read per source;
-    ///   a source's text is read only when its stamp moved.
+    ///   a source's text is read only when its stamp moved or its names are
+    ///   owed.
     /// - executable: none — the clause would walk the roots again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source rewritten, one added in a new folder and one
     ///   removed between answers each answer as their file now reads.
     /// - witness: `files::tests::a_file_s_importers_are_every_source_reaching_it`
+    /// - witness: `files::tests::the_names_a_source_declares_follow_its_file`
     fn refreshed(
         &mut self,
         grammar: &Pbg,
     )
     {
+        let naming = self.naming;
         let mut reached = BTreeSet::new();
         let mut traversal = Traversal::new(self.outermost());
         let mut text = String::new();
@@ -278,7 +298,7 @@ impl Files
             if self
                 .named
                 .get(id.0)
-                .is_some_and(|named| named.stamp == stamp)
+                .is_some_and(|named| named.stamp == stamp && (!naming || named.declared.is_some()))
             {
                 continue;
             }
@@ -297,17 +317,63 @@ impl Files
             for imported in &named {
                 imports.push(self.id(imported));
             }
+            let names = naming.then(|| {
+                if read {
+                    declared(SourceText::from(text.as_str()))
+                }
+                else {
+                    Vec::new()
+                }
+            });
             if let Some(held) = self.named.get_mut(id.0) {
                 held.stamp = stamp.filter(|_| read);
                 held.imports = imports;
+                held.declared = names;
             }
         }
         for (index, named) in self.named.iter_mut().enumerate() {
             if named.stamp.is_some() && !reached.contains(&FileId(index)) {
                 named.stamp = None;
                 named.imports.clear();
+                named.declared = None;
             }
         }
+    }
+
+    /// Every source under the roots with the names its file declares, the
+    /// roots reached first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each source the walk reaches under a root, once, with the
+    ///   names [`declared`] reads off its file as it now reads; a source that
+    ///   cannot be read declares nothing. The table names from now on: every
+    ///   later walk reads a changed source's names with its imports.
+    /// - provides: the names a workspace-symbol request finds beyond the open
+    ///   documents' closures.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the roots; a source's text is read only when
+    ///   its stamp moved since its names were read, or never was.
+    /// - executable: none — the clause would walk the roots again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source's names, its names after it is rewritten,
+    ///   and a removed source's absence each answer as the disk now reads.
+    /// - witness: `files::tests::the_names_a_source_declares_follow_its_file`
+    pub fn declared(
+        &mut self,
+        grammar: &Pbg,
+    ) -> impl Iterator<Item = (&Path, &[Declared])>
+    {
+        self.naming = true;
+        self.refreshed(grammar);
+        self.named.iter().filter_map(|named| {
+            named
+                .stamp
+                .and(named.declared.as_deref())
+                .map(|names| (named.path.as_path(), names))
+        })
     }
 
     /// Every source whose imports reach the file at `path`, directly or
@@ -421,6 +487,7 @@ impl Files
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::vec::Vec;
     use std::path::PathBuf;
 
@@ -498,6 +565,82 @@ mod tests
             files.importers(&grammar, &at("base.gandr"), &[]),
             Vec::<PathBuf>::new(),
             "a source removed imports nothing"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn the_names_a_source_declares_follow_its_file()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let directory = std::env::temp_dir().join(format!("gandr-declared-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
+        let directory =
+            std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
+        let at = |file: &str| directory.join(file);
+        for (file, text) in [
+            (
+                "base.gandr",
+                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+            ),
+            (
+                "deeper/mid.gandr",
+                "import \"../base.gandr\" ;\ndef two : Nat ;\ndef two = Succ(Succ(Zero)) ;\n",
+            ),
+            ("lone.gandr", "def four : Integer ;\ndef four = 4 ;\n"),
+        ] {
+            std::fs::write(at(file), text).expect("the source is written");
+        }
+        let mut files = Files::default();
+        files.root(Peer::from(1_u64), &directory);
+        let _importers = files.importers(&grammar, &at("base.gandr"), &[]);
+        let names = |files: &mut Files| -> Vec<(PathBuf, Vec<String>)> {
+            let mut names: Vec<(PathBuf, Vec<String>)> = files
+                .declared(&grammar)
+                .map(|(path, declared)| {
+                    (
+                        path.to_path_buf(),
+                        declared.iter().map(|name| name.name.clone()).collect(),
+                    )
+                })
+                .collect();
+            names.sort_unstable();
+            names
+        };
+        let named = |file: &str, declared: &[&str]| {
+            (
+                at(file),
+                declared
+                    .iter()
+                    .copied()
+                    .map(String::from)
+                    .collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(
+            names(&mut files),
+            [
+                named("base.gandr", &["Nat", "Zero", "Succ"]),
+                named("deeper/mid.gandr", &["two"]),
+                named("lone.gandr", &["four"])
+            ],
+            "each source's names, a family's constructors among them, read though its imports \
+             were read before any names were asked for"
+        );
+        std::fs::write(
+            at("lone.gandr"),
+            "def five : Integer ;\ndef five = 5 ;\ndef six : Integer ;\ndef six = 6 ;\n",
+        )
+        .expect("the source is rewritten");
+        std::fs::remove_file(at("deeper/mid.gandr")).expect("the source is removed");
+        assert_eq!(
+            names(&mut files),
+            [
+                named("base.gandr", &["Nat", "Zero", "Succ"]),
+                named("lone.gandr", &["five", "six"])
+            ],
+            "a rewritten source declares what its file now does, a removed one nothing"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

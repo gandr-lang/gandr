@@ -2333,7 +2333,8 @@ pub struct ServerCapabilities
     /// lens may name.
     pub execute_command_provider: CommandOptions,
     /// Workspace symbols are answered: the names the open documents' import
-    /// closures declare, each with its location, and resolved as it came.
+    /// closures and the sources under the opened folders declare, each with
+    /// its location, and resolved as it came.
     pub workspace_symbol_provider: ResolveOptions,
     /// Document highlights are answered: the declaring name and the uses of
     /// the name at a position, within the document.
