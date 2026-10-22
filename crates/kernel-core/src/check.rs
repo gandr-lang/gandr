@@ -3236,10 +3236,11 @@ where
                         });
                     },
                 },
-                // A univalence checked at an identity at the value universe
-                // checks its record at the bi-invertible record the two codes
-                // name, so a record literal checks; anywhere else it is
-                // synthesised and converted.
+                // A univalence checked at an identity at the value universe,
+                // `Path(Type, a, b)` or the native `Path_U(a, b)`, checks its
+                // record at the bi-invertible record the two codes name, so a
+                // record literal checks; anywhere else it is synthesised and
+                // converted.
                 Goal::CheckValue(id, expected)
                     if matches!(arena.value(id), Some(&Value::Univalence(_)))
                         && crate::path_universe::identity_codes(arena, expected).is_ok() =>

@@ -155,6 +155,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_nbe::CoreTerm;
+use gandr_core_nbe::FreeFault;
+use gandr_core_nbe::FreeIndices;
 use gandr_core_session::Label;
 use gandr_core_session::Move;
 use gandr_core_session::Payload;
@@ -769,8 +772,9 @@ pub fn payload_paths(
 /// - requires: the statement at `at` was decided and recorded, and its payload
 ///   paths checked against [`payload_paths`] of what it owes.
 /// - ensures: when the statement owes a path, the paths' node records a tuple
-///   of one native certificate per owed pair, in order; nothing is recorded
-///   when it owes none.
+///   of one native certificate per owed pair, in order, as
+///   [`payload_certificate`] reads each path; nothing is recorded when it owes
+///   none.
 /// - fails: [`CheckRefusal::ShapeMismatch`] at a path that names no closed
 ///   certificate, wanting a universe path, as [`crate::product`] reads one; at
 ///   several paths that read as no tuple through constants' definitions,
@@ -813,7 +817,7 @@ pub fn elaborate(
     let paths = owed_paths(context.arena_mut(), &owed);
     let natives = match *paths.as_slice() {
         [] => return Ok(()),
-        [one] => alloc::vec![crate::product::certificate(context, payloads, one)?],
+        [one] => alloc::vec![payload_certificate(context, payloads, one)?],
         ref several => {
             let mut read = payloads;
             while let Some(&Value::Constant(constant)) = context.arena().value(read)
@@ -834,13 +838,81 @@ pub fn elaborate(
             components
                 .into_iter()
                 .zip(several)
-                .map(|(component, &path)| crate::product::certificate(context, component, path))
+                .map(|(component, &path)| payload_certificate(context, component, path))
                 .collect::<Result<Vec<_>, _>>()?
         },
     };
     let tuple = context.arena_mut().value_tuple(&natives);
     context.record_native(payloads, tuple);
     Ok(())
+}
+
+/// The native certificate one payload path stands for: a closed univalence,
+/// read through constants' definitions, stands for itself, the kernel checking
+/// its record at the native identity the pair owes; any other path as
+/// [`crate::product::certificate`] reads it.
+///
+/// # Specification
+/// - requires: `at` was judged at `classifier`, an owed pair's universe path.
+/// - ensures: the univalence `at` reads to through constants' definitions when
+///   it reads no variable, for the kernel checks payload paths in the empty
+///   context; otherwise [`crate::product::certificate`] of `at`, which refuses
+///   a univalence.
+/// - fails: as [`crate::product::certificate`]; [`CheckRefusal::DanglingNode`]
+///   at a univalence whose free-variable walk reaches no node.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Termination
+/// - reason: one `while` that only continues through a constant's definition.
+/// - measure: the admission position of the constant read; a definition only
+///   names constants admitted before its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a univalence through its constant pays a pair whose
+///   payloads are differing types, one over a record a parameter binds is
+///   refused, and a parameter-bound path is refused as before.
+/// - witness: `flow::tests::a_univalence_pays_a_payload_pair_when_closed`
+#[spec(ensures: |ret| match ret {
+    | Ok(native) => matches!(context.arena().value(native), Some(Value::Univalence(..) | Value::PathRefl(_) | Value::PathEquiv { .. } | Value::PathProduct(..))),
+    | Err(_) => true,
+})]
+fn payload_certificate(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    classifier: ValueTypeId,
+) -> Result<ValueId, CheckRefusal>
+{
+    let mut read = at;
+    while let Some(&Value::Constant(constant)) = context.arena().value(read)
+        && let Maybe::Present(body) = context.definitions().body(constant)
+    {
+        read = body;
+    }
+    if matches!(context.arena().value(read), Some(&Value::Univalence(..))) {
+        let refused = |fault| match fault {
+            FreeFault::Dangling => CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(read)),
+            },
+            FreeFault::MachineInvariant => CheckRefusal::MachineInvariant,
+        };
+        let mut free = FreeIndices::default();
+        let term = CoreTerm::Value(read);
+        let closed = free
+            .intuitionistic(context.arena(), term)
+            .map_err(refused)?
+            .is_empty()
+            && free
+                .linear(context.arena(), term)
+                .map_err(refused)?
+                .is_empty();
+        if closed {
+            return Ok(read);
+        }
+    }
+    crate::product::certificate(context, at, classifier)
 }
 
 /// Decide and record the simulation a stay or a composite over session codes

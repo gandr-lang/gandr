@@ -1714,6 +1714,25 @@ fn univalence_is_admitted_on_its_record()
         "a record written out checks against the identity at Type: {checked:?}"
     );
 
+    // The same record checks at the native reading of that identity, `Path_U`
+    // between the same codes: the obligation a bisimilarity's payload pair
+    // states.
+    let native = offer(&mut environment, |arena| {
+        let boolean = boolean(arena);
+        let list = arena.value_type_list(boolean.ty);
+        let code = arena.value_quote(list);
+        let map = identity_map(arena);
+        let equivalence = record(arena, [map, map, map]);
+        (
+            arena.value_type_path_universe(code, code),
+            arena.value_univalence(equivalence),
+        )
+    });
+    assert!(
+        native.is_ok(),
+        "a record written out checks against the native identity: {native:?}"
+    );
+
     // The same record admitted at its type, then `ua` of it synthesised under
     // a transport in the decoded binder: the record's type names the codes
     // the transport moves between.

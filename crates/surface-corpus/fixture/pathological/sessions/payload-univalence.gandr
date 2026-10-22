@@ -1,0 +1,14 @@
+// A bisimilarity paid with a univalence over a record a parameter binds: the
+// kernel checks a session's payload paths in the empty context, so a payload
+// path reads no variable, and an open univalence names no certificate.
+
+// The bits and the answers, and the protocols `Ask.Coded` and `Ask.Decoded`
+// that hear them.
+import "../../model/sessions/run-transport.gandr" ;
+
+/// #1739: the two protocols paid with a univalence over any record the caller
+/// passes. The path checks against the pair it is owed, but it is open.
+@[ refuses("ShapeMismatch") ]
+def anyProtocol(e : Bit ≃ Answer) -> -F Path(Type, Ask.Coded, Ask.Decoded) {
+  bisim(Ask.Coded, Ask.Decoded, ua(e))
+}
