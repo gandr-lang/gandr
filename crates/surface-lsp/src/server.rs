@@ -2988,9 +2988,9 @@ impl Server
     ///   each import read as the editors hold it, and its judgement is started
     ///   on the pool at this connection's verbosity and spelling, retiring the
     ///   copy's judgement still running, polling its own retirement before it
-    ///   takes the session, once it holds it, and before each item; the copy's
-    ///   judgement runs, delivered by [`Server::admitted`], and no copy is left
-    ///   due.
+    ///   takes the session, once it holds it, and before each declaration and
+    ///   item; the copy's judgement runs, delivered by [`Server::admitted`],
+    ///   and no copy is left due.
     /// - provides: the first half of every synchronisation; the connection
     ///   reads its next frame while the copy is judged.
     /// - fails: never.
@@ -7320,7 +7320,7 @@ impl Judging
     }
 
     /// Judge the text in the session, polling `retirement` before taking the
-    /// session, once it holds it, and before each item.
+    /// session, once it holds it, and before each declaration and item.
     ///
     /// # Specification
     /// - requires: nothing.

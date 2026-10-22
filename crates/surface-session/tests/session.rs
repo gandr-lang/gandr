@@ -1344,6 +1344,40 @@ fn a_retired_judgement_leaves_the_next_its_resume_1547()
     );
 }
 
+/// #1663: a judgement polls its retirement before each declaration of the
+/// revision it checks and once before their settle, then before each item the
+/// incremental pass adopts or judges, so a change made while the revision's
+/// declarations are checked retires the judgement there.
+#[test]
+fn a_judgement_polls_before_each_declaration_it_checks_1663()
+{
+    use gandr_core_checker::Polled;
+    let first = "def kept = 40 ;\ndef edited = 1 ;\ndef after = kept ;";
+    let second = "def kept = 40 ;\ndef edited = 2 ;\ndef after = kept ;";
+    let mut session = session(SourceRoot::Strict);
+    let _first = submit(&mut session, first);
+    let poll = After(core::cell::Cell::new(usize::MAX));
+    let Ok(Polled::Whole(judged)) = session.judge_reading_retiring(
+        gandr_surface_syntax::SourceText::from(second),
+        |_| (),
+        &poll,
+    )
+    else {
+        panic!("a judgement never polled retired is judged whole");
+    };
+    let polled = usize::MAX.saturating_sub(poll.0.get());
+    let items = census(&judged);
+    let declarations = 3_usize;
+    assert_eq!(
+        polled,
+        declarations
+            .saturating_add(1_usize)
+            .saturating_add(usize::from(items.adopted))
+            .saturating_add(usize::from(items.judged)),
+        "one poll before each declaration, one before the settle, one before each item: {items:?}"
+    );
+}
+
 /// #776: each revision of a document laid out after its import closure shares
 /// the closure's items' images with the revision before it, and its edits are
 /// the document's own.
