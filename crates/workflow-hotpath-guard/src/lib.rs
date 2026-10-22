@@ -38,6 +38,11 @@
 //! and adds no comment ([`check::Failure::shift`]). The summary lists only
 //! the functions over threshold, so the wall time stands for the rest.
 //!
+//! **An accepted growth is the pull request's.** A red check owes a verdict
+//! before the queue; a landing whose body carries a settled `accepted` one
+//! writes its rows `accepted`, with no comment and no new issue
+//! ([`report::PullBody::accepted`]).
+//!
 //! **The pull request the commit heads.** A stack's lower head is carried by
 //! every pull request above it, so the guard names the one whose head is the
 //! commit, and the first listed only when none is.

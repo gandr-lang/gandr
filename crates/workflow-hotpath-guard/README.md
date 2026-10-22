@@ -20,7 +20,7 @@ A commit's hotpath checks, filed on one issue per regressed function.
 - A failed check records a row for each function it names. A rerun of the same pull request and benchmark rewrites that row without a new comment, unless the set of regressed functions changed.
 - A passing check marks the pull request's open row in that benchmark `fixed`.
 - A timing failure in which the wall time and every regressed function moved up together (within 8 points, call counts unchanged, no allocation check failed) is marked `runner shift`. It gets no comment, and its row proposes the policy's false-positive step to the owner.
-- `accepted` is read but never written by the guard; the verdict obligation records it.
+- A failed check whose pull request's body carries a settled `hotpath: accepted — <benchmark> …` verdict for its benchmark writes the row `accepted`. It gets no comment, and a function with no issue gets none opened. For a failed check without that verdict, the report names the missing verdict.
 
 The issue closes when no row is open and reopens on the next open row. The guard rewrites only the table's rows, so prose and hand-folded rows in the same columns stay as written. The [crate docs](src/lib.rs) record the decisions, the alternatives and the reversal.
 

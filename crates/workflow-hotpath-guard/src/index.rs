@@ -13,10 +13,10 @@
 //! the set its comment named) or the row had settled.
 //!
 //! A row is `open`; `fixed` when a later run of its pull request passes its
-//! benchmark; `runner shift`; or `accepted`, a status the guard reads and
-//! never writes, since a settled acceptance is the verdict obligation's to
-//! record. The issue closes when no row is open and reopens on the next open
-//! row.
+//! benchmark; `runner shift`; or `accepted`, written when the pull request's
+//! body carries a settled `hotpath: accepted` verdict for the benchmark (the
+//! verdict a red hotpath check owes before it queues). The issue closes when
+//! no row is open and reopens on the next open row.
 
 extern crate alloc;
 
@@ -424,11 +424,11 @@ impl Index
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Comment::Unowed`] for a runner shift; otherwise
-    ///   [`Comment::Owed`] when the subject has no row in the series, its row
-    ///   is not open, or its row's comment named other functions than
-    ///   `regressed`; [`Comment::Unowed`] for a later run of an open row with
-    ///   the same functions.
+    /// - ensures: [`Comment::Unowed`] for a runner shift or a regression its
+    ///   pull request's body accepts; otherwise [`Comment::Owed`] when the
+    ///   subject has no row in the series, its row is not open, or its row's
+    ///   comment named other functions than `regressed`; [`Comment::Unowed`]
+    ///   for a later run of an open row with the same functions.
     /// - provides: one comment per regression event, none per rerun.
     /// - fails: never.
     /// - panics: none.
@@ -436,10 +436,12 @@ impl Index
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a first regression, a rerun naming the same
-    ///   functions, a rerun naming one more, and a shift; a comment per rerun,
-    ///   none for the changed set, or one for the shift changes the comments.
+    ///   functions, a rerun naming one more, a shift, and an accepted
+    ///   regression; a comment per rerun, none for the changed set, or one for
+    ///   the shift or the acceptance changes the comments.
     /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     /// - witness: `index::tests::a_changed_set_of_functions_owes_a_comment`
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[must_use]
     #[inline]
     pub fn owes(
@@ -449,7 +451,9 @@ impl Index
         regressed: &BTreeSet<SiteName>,
     ) -> Comment
     {
-        if matches!(regression.shift, Maybe::Present(_)) {
+        if matches!(regression.shift, Maybe::Present(_))
+            || matches!(regression.accepted, Maybe::Present(_))
+        {
             return Comment::Unowed;
         }
         let key = Key::new(subject, &regression.series);
@@ -474,22 +478,24 @@ impl Index
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the subject's row in the series, appended when it had none,
-    ///   states the commit, the series, the metric, the delta, `open` or the
-    ///   `runner shift` with its proposal, and the run; its comment is
-    ///   `comment` with `regressed` recorded when one was posted, otherwise the
-    ///   row's earlier comment as written.
+    ///   states the commit, the series, the metric, the delta, `accepted` with
+    ///   the body's verdict when the pull request accepts the growth, else the
+    ///   `runner shift` with its proposal, else `open`, and the run; its
+    ///   comment is `comment` with `regressed` recorded when one was posted,
+    ///   otherwise the row's earlier comment as written.
     /// - provides: the index after a failed run.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the rendered row is the clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a first regression, a rerun and a shift; a second row
-    ///   for the rerun, a lost comment link or an `open` shift changes the
-    ///   index.
+    /// - hypothesis: L3 — a first regression, a rerun, a shift and an accepted
+    ///   regression; a second row for the rerun, a lost comment link, an `open`
+    ///   shift or an `open` acceptance changes the index.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
     /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[inline]
     pub fn record(
         &mut self,
@@ -498,14 +504,15 @@ impl Index
         comment: &Maybe<CommentUrl, Unposted>,
     )
     {
-        let status = match regression.shift {
-            Maybe::Present(shift) => format!(
+        let status = match (&regression.accepted, regression.shift) {
+            (&Maybe::Present(ref acceptance), _) => format!("accepted — {acceptance}"),
+            (&Maybe::Absent(_), Maybe::Present(shift)) => format!(
                 "runner shift — the wall time and every regressed function moved {} to {} % \
                  together, calls unchanged, allocations clean; proposed to the owner: raise the \
                  policy's `min_percent_change` by 2.5",
                 shift.low, shift.high
             ),
-            Maybe::Absent(_) => "open".to_owned(),
+            (&Maybe::Absent(_), Maybe::Absent(_)) => "open".to_owned(),
         };
         let key = Key::new(at.subject, &regression.series);
         let found = self.rows.iter().position(|row| row.key() == key.borrowed());
@@ -864,6 +871,7 @@ Owed once for the function.
             metric: "allocations".parse().unwrap(),
             delta: "avg `1444 → 2558` **+77%**".parse().unwrap(),
             shift: Maybe::Absent(crate::check::Unshifted),
+            accepted: Maybe::Absent(crate::report::Unaccepted),
         };
         let mut index = Index::new(&decide, &Maybe::Absent(crate::check::Unstated));
         assert_eq!(index.owes(&subject, &regression, &one), Comment::Owed);
