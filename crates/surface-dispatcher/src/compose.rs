@@ -670,6 +670,12 @@ impl Admission
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source's declarations, normalised over its
+    ///   admission's arena with the definitions its verdicts record, read as
+    ///   their runs do.
+    /// - witness: `tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
     #[inline]
     #[must_use]
     pub const fn arena(&self) -> &CoreArena
@@ -681,6 +687,10 @@ impl Admission
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arena`].
+    /// - witness: `tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
     #[inline]
     #[must_use]
     pub const fn verdicts(&self) -> &ModuleReport

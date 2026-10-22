@@ -248,6 +248,11 @@ impl Engine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source of values, functions, thunks, a text and
+    ///   applications runs on each engine as the policy runs it.
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
     const fn tier(self) -> Tier
     {
         match self {
@@ -1283,6 +1288,11 @@ impl<'source> Program<'source>
     ///
     /// # Errors
     /// The tier's [`Declined`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values, a text, functions, thunks and applications
+    ///   each run to their pinned spelling.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     fn tiered(
         &self,
         constant: ConstantIndex,
@@ -1310,6 +1320,12 @@ impl<'source> Program<'source>
     ///
     /// # Errors
     /// The tier's [`Declined`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::tiered`], and a terminal read back as a
+    ///   core term is the normaliser's answer.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
     fn terminal(
         &self,
         (returned, forced): (CommandId, CommandId),

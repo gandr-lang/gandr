@@ -2297,8 +2297,9 @@ impl Machine<'_, '_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a case whose arms consume a held value one each
-    ///   checks, and a read after it of a value one arm consumed is refused.
+    /// - hypothesis: L3 — a case on a list or a sum whose arms consume a held
+    ///   value one each checks, and a read after it of a value the first arm or
+    ///   the second consumed is refused.
     /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     #[spec(
         captures: kept = self.sessions.zones.len(),

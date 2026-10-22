@@ -856,6 +856,11 @@ impl CodeDefinitions
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant recorded with a body reads back through
+    ///   the normaliser as that body, and a constant with no body stays rigid.
+    /// - witness: `code::tests::the_normaliser_unfolds_each_recorded_definition`
     #[inline]
     #[must_use]
     pub fn normaliser(&self) -> Definitions<'_>

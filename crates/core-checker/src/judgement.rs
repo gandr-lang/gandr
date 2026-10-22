@@ -7381,7 +7381,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — every frame resumed by a term of its former through
     ///   the public faces, each to its exact answer or refusal, beside a result
     ///   of the wrong kind; an arity refusal names more arguments than the head
-    ///   opened.
+    ///   opened; the arms of a case on a sum, under a hold, each consume it.
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::a_result_of_the_wrong_kind_is_a_machine_fault`
@@ -7390,6 +7390,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
     /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
     /// - witness: `product::tests::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+    /// - witness: `judgement::access::tests::a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::FamilyArity { expected, actual, .. }) => {
             u32::from(expected) < u32::from(actual)
@@ -8369,7 +8370,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         owner,
                     });
                     if let session::Joining::Joined(zones) = joining
-                        && index > 0
+                        && index != 0
                     {
                         self.frames.push(Waiting {
                             frame: Frame::ArmEnded(zones),
