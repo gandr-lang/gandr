@@ -1,4 +1,4 @@
-@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
+@[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
 def comp(
   a : Type,
   b : Type,

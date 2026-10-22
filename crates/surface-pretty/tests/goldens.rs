@@ -4148,6 +4148,97 @@ fn a_thunk_the_checker_inserts_is_left_out_1457()
     );
 }
 
+/// The sugared form writes a block's `run` statements that only sequence
+/// calls at their binders' reads, as the formatter does: each read once, in
+/// the statements' order, as an argument or a field, with no call reading a
+/// binder before it. A binder read twice, read as the tail's whole value or
+/// read by a later call keeps its statement, so does every statement in a
+/// match's branch, and the explicit form keeps every statement (#1416).
+#[test]
+fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
+{
+    let names = [Name::from("f"), Name::from("g")];
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let two = integer(&mut core, Sign::NonNegative, Written("2"));
+    let f = core.value_constant(ConstantIndex::from(0_usize));
+    let g = core.value_constant(ConstantIndex::from(1_usize));
+    let variable = |core: &mut CoreArena, index: u32| {
+        core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let call = |core: &mut CoreArena, head: ValueId, arguments: &[ValueId]| {
+        let mut called = core.computation_force(head);
+        for &argument in arguments {
+            called = core.computation_application(called, argument);
+        }
+        called
+    };
+    let first = call(&mut core, f, &[one]);
+    let second = call(&mut core, f, &[two]);
+    // Two runs, read once each in order: `g(f(1), f(2))`.
+    let (outer, inner) = (variable(&mut core, 1), variable(&mut core, 0));
+    let in_order = call(&mut core, g, &[outer, inner]);
+    let in_order = core.computation_bind(second, in_order);
+    let in_order = core.computation_bind(first, in_order);
+    // The same runs read out of order: only the inner one is written away.
+    let swapped = call(&mut core, g, &[inner, outer]);
+    let swapped = core.computation_bind(second, swapped);
+    let swapped = core.computation_bind(first, swapped);
+    // One run read twice keeps its statement.
+    let bound = variable(&mut core, 0);
+    let twice = call(&mut core, g, &[bound, bound]);
+    let twice = core.computation_bind(first, twice);
+    // One run read as the tail's whole value keeps its statement.
+    let whole = core.computation_return(bound);
+    let whole = core.computation_bind(first, whole);
+    // A call reading the run before it: only the later run is written away.
+    let reading = call(&mut core, f, &[bound]);
+    let read_once = call(&mut core, g, &[bound]);
+    let chained = core.computation_bind(reading, read_once);
+    let chained = core.computation_bind(first, chained);
+    // In a match's branch every statement stays, as the formatter keeps it.
+    let branched = core.computation_case(one, &[in_order]);
+    let source = CoreSource::new(&core, &names);
+    for (root, sugared, explicit) in [
+        (
+            in_order,
+            "g(f(1), f(2))",
+            "run a <- f(1) ; run b <- f(2) ; g(a, b)",
+        ),
+        (
+            swapped,
+            "run a <- f(1) ; g(f(2), a)",
+            "run a <- f(1) ; run b <- f(2) ; g(b, a)",
+        ),
+        (twice, "run a <- f(1) ; g(a, a)", "run a <- f(1) ; g(a, a)"),
+        (whole, "run a <- f(1) ; a", "run a <- f(1) ; a"),
+        (
+            chained,
+            "run a <- f(1) ; g(f(a))",
+            "run a <- f(1) ; run b <- f(a) ; g(b)",
+        ),
+        (
+            branched,
+            "case 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
+            "case 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
+        ),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = presented_in(
+                &source,
+                Root::Computation(CoreNode::Computation(root)),
+                wide(),
+                form,
+            );
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{form:?}"
+            );
+        }
+    }
+}
+
 /// A definition over region binders spells whole with its telescope,
 /// `@[r : Region]`, before its parameters, and each type kept at a binder
 /// names it; a binder below the greatest one kept at is written though

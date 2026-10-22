@@ -2387,6 +2387,283 @@ where
     matches!(source.read(head), Former::Force(_)).then_some((bound, rest))
 }
 
+/// The calls a block's `run` statements bind from `node` on, in order, and
+/// the tail after them, when the statements only sequence the calls: the
+/// sugared form writes each call where its binder is read, `g(f(a))` for
+/// `x ← f(a); g(x)`, as the lowering lists such statements for the
+/// formatter to write away.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bound calls of the binds [`bound_call`] peels from `node`, at
+///   least one, and the computation after them, exactly when no call reads the
+///   binder of a statement before it and the tail reads every binder as
+///   [`linear_tail`] finds; absent otherwise.
+/// - provides: the runs [`Walk::visit`] writes at their reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn peels one bind off the block, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two runs read once each in order, a run read twice, a run
+///   read out of order, a run read as the tail's whole value and a run whose
+///   call reads the binder before it distinguish a run written away from one
+///   kept.
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|&(ref bounds, _)| !bounds.is_empty()))]
+fn linear_runs<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(Vec<S::Node>, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let mut bounds = Vec::new();
+    let mut rest = node;
+    while let Some((bound, next)) = bound_call(source, rest) {
+        if reads_binders(
+            source,
+            bound,
+            Admits::Computation(Tail::Continues),
+            Arity(bounds.len()),
+        ) == Reading::Reads
+        {
+            return None;
+        }
+        bounds.push(bound);
+        rest = next;
+    }
+    let depth = DeBruijnIndex::from(u32::try_from(bounds.len().checked_sub(1_usize)?).ok()?);
+    (linear_tail(source, rest, depth) == Linear::Read).then_some((bounds, rest))
+}
+
+/// Whether a node reads one of the binders a search names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// It reads one, or the search ran past the visit budget.
+    Reads,
+    /// It reads none.
+    Unread,
+}
+
+/// Whether `root`, in a position admitting `admits`, reads one of the
+/// innermost `binders` intuitionistic binders standing over it.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Reading::Reads`] when a variable under `root`, counted out past
+///   the intuitionistic binders between it and `root`, names one of the
+///   innermost `binders`, or the search takes more than the visit budget;
+///   [`Reading::Unread`] otherwise.
+/// - provides: the reads [`linear_runs`] and [`linear_tail`] refuse.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn takes one visit from the budget.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ret| binders.0 != 0_usize || ret == Reading::Unread)]
+fn reads_binders<S>(
+    source: &S,
+    root: S::Node,
+    admits: Admits,
+    binders: Arity,
+) -> Reading
+where
+    S: Source + ?Sized,
+{
+    if binders.0 == 0_usize {
+        return Reading::Unread;
+    }
+    let mut pending = Vec::from([(root, admits, 0_usize)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, opened)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Reading::Reads;
+        }
+        let former = source.read(node);
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index))
+                .ok()
+                .and_then(|index| index.checked_sub(opened))
+                .is_some_and(|outside| outside < binders.0)
+        {
+            return Reading::Reads;
+        }
+        pending.extend(
+            children(source, node, &former, admits, Bodies::Spelled)
+                .into_iter()
+                .filter_map(|slot| {
+                    let inside = if slot.binds.zone == Zone::Intuitionistic {
+                        opened.saturating_add(slot.binds.count)
+                    }
+                    else {
+                        opened
+                    };
+                    slot.node.map(|child| (child, slot.admits, inside))
+                }),
+        );
+    }
+    Reading::Unread
+}
+
+/// Whether a block's tail reads its statements' binders as their calls would
+/// stand nested.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Linear
+{
+    /// It reads each once, in the statements' order, before anything else.
+    Read,
+    /// It reads one otherwise, or reads none.
+    Refused,
+}
+
+/// Where a value the tail's walk meets stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// As the whole of a force or a return: a call written there would not be
+    /// a run of it.
+    Whole,
+    /// As an argument or a field.
+    Field,
+}
+
+/// Whether the tail `tail` of a block reads the binders of the statements
+/// before it, the outermost at `depth`, once each, outermost first, where the
+/// checker runs a nested call before anything under a binder: an argument of
+/// a call or a field of a tuple, an injection, a list cell or a constructor,
+/// reached through applications, forces and returns alone, with no nested
+/// run before the last read.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Linear::Read`] exactly when the walk in the checker's order
+///   meets each binder from `depth` down to 0 once, in that order, as an
+///   argument or a field, and nothing else in the tail reads one; a read as a
+///   force's or a return's whole value, a nested run before the last read, and
+///   any other computation refuse, as the lowering's own listing does.
+/// - provides: the tails whose runs [`linear_runs`] writes at their reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn takes one node of the tail, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ret| ret == Linear::Refused
+    || matches!(source.read(tail), Former::Application(..) | Former::Force(_) | Former::Return(_)))]
+fn linear_tail<S>(
+    source: &S,
+    tail: S::Node,
+    depth: DeBruijnIndex,
+) -> Linear
+where
+    S: Source + ?Sized,
+{
+    let binders =
+        usize::try_from(u32::from(depth)).map_or(usize::MAX, |depth| depth.saturating_add(1_usize));
+    let mut expected = Some(depth);
+    // Each node still to visit, a computation or a value standing as given.
+    let mut pending = Vec::from([(tail, None)]);
+    while let Some((node, standing)) = pending.pop() {
+        let former = source.read(node);
+        match (standing, former) {
+            (None, Former::Application(function, argument)) => {
+                pending.push((argument, Some(Standing::Field)));
+                pending.push((function, None));
+            },
+            (None, Former::Force(value) | Former::Return(value)) => {
+                pending.push((value, Some(Standing::Whole)));
+            },
+            (None, _) => return Linear::Refused,
+            (
+                Some(standing),
+                Former::Variable {
+                    zone: Zone::Intuitionistic,
+                    index,
+                },
+            ) if u32::from(index) <= u32::from(depth) => {
+                if expected != Some(index) || standing == Standing::Whole {
+                    return Linear::Refused;
+                }
+                expected = u32::from(index).checked_sub(1_u32).map(DeBruijnIndex::from);
+            },
+            (Some(_), Former::Nested(run) | Former::Run(run) | Former::Returned(run)) => {
+                if expected.is_some()
+                    || reads_binders(
+                        source,
+                        run,
+                        Admits::Computation(Tail::Continues),
+                        Arity(binders),
+                    ) == Reading::Reads
+                {
+                    return Linear::Refused;
+                }
+            },
+            (Some(_), Former::Tuple(arity)) => {
+                for index in (0_usize .. usize::from(arity)).rev() {
+                    let Some(component) = source.component(node, Component::from(index))
+                    else {
+                        return Linear::Refused;
+                    };
+                    pending.push((component, Some(Standing::Field)));
+                }
+            },
+            (Some(_), Former::Injection(_, injected)) => {
+                pending.push((injected, Some(Standing::Field)));
+            },
+            (Some(_), Former::ListCons(head, rest)) => {
+                pending.push((rest, Some(Standing::Field)));
+                pending.push((head, Some(Standing::Field)));
+            },
+            (
+                Some(_),
+                Former::Constructor {
+                    arity, classifier, ..
+                },
+            ) => {
+                if classifier.is_some_and(|classifier| {
+                    reads_binders(source, classifier, Admits::ValueType, Arity(binders))
+                        == Reading::Reads
+                }) {
+                    return Linear::Refused;
+                }
+                for index in (0_usize .. usize::from(arity)).rev() {
+                    let Some(field) = source.component(node, Component::from(index))
+                    else {
+                        return Linear::Refused;
+                    };
+                    pending.push((field, Some(Standing::Field)));
+                }
+            },
+            (Some(_), _) => {
+                if reads_binders(source, node, Admits::Value, Arity(binders)) == Reading::Reads {
+                    return Linear::Refused;
+                }
+            },
+        }
+    }
+    if expected.is_none() {
+        Linear::Read
+    }
+    else {
+        Linear::Refused
+    }
+}
+
 /// The reply a resumption `resume(k, c)` passes, when it is the call of a
 /// clause's continuation the surface writes, `k(v)`: the lowering reads such
 /// a call as the resumption of `pure v`.
@@ -3486,6 +3763,10 @@ enum Task<Node>
     /// Enter (`true`) or leave (`false`) the body a reset delimits, where a
     /// `return` a handler's subject writes is a shift.
     Unwound(bool),
+    /// Enter (`true`) or leave (`false`) a match's branch, where the sugared
+    /// form keeps a block's `run` statements: the formatter writes none away
+    /// there.
+    Branched(bool),
     /// Close the innermost binder.
     Unbind,
     /// Set the occurrences named so far aside, so the argument visited next
@@ -4176,6 +4457,8 @@ struct Walk<'walk, 'names>
     subjects: usize,
     /// How many bodies a reset delimits the walk is inside.
     unwinds: usize,
+    /// How many match branches the walk is inside.
+    branches: usize,
     /// The occurrences set aside by each [`Task::Hold`] whose argument has not
     /// yet been bound, the outermost first.
     held: Vec<BTreeSet<OpenBinders>>,
@@ -6774,6 +7057,21 @@ impl Walk<'_, '_>
                 Production("force_expression"),
                 Join::Prefix(Prefix::Force),
             )),
+            // A block's `run` statements that only sequence calls, read once
+            // each in order, are written at their reads in the sugared form,
+            // as the formatter writes them (#1416); in a match's branch it
+            // keeps them, its lowering minting the branch more than once
+            // (#1935).
+            Former::Bind(..)
+                if self.form == Form::Sugared
+                    && self.surface == Surface::Expression
+                    && self.bodies == Bodies::Spelled
+                    && self.branches == 0_usize
+                    && let Some((bounds, rest)) = linear_runs(source, node) =>
+            {
+                Self::read_at_binders(&bounds, rest, admits, below(depth, kind), tasks);
+                return writes(Production("call_expression"), Ok(()));
+            },
             Former::Bind(bound, rest) => match self.typed_bind(source, bound) {
                 Some((ascribed, result)) => {
                     shaped = Some(Vec::from([
@@ -6892,6 +7190,13 @@ impl Walk<'_, '_>
             tasks.push(Task::Join(join));
         }
         let below = below(depth, kind);
+        // A match's branches, each a computation slot of a match no other
+        // spelling shapes.
+        let branched = shaped.is_none()
+            && matches!(
+                former,
+                Former::Case { .. } | Former::Split { .. } | Former::DataCase { .. }
+            );
         let slots = match shaped {
             Some(slots) => slots,
             None => children(source, node, &former, admits, self.bodies),
@@ -6951,8 +7256,12 @@ impl Walk<'_, '_>
             // the handler.
             let subject =
                 index == 0_usize && matches!(former, Former::Handle { .. } | Former::Scope { .. });
+            let branch = branched && matches!(slot.admits, Admits::Computation(_));
             if subject {
                 tasks.push(Task::Handled(false));
+            }
+            if branch {
+                tasks.push(Task::Branched(false));
             }
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
@@ -7027,6 +7336,9 @@ impl Walk<'_, '_>
             }
             if subject {
                 tasks.push(Task::Handled(true));
+            }
+            if branch {
+                tasks.push(Task::Branched(true));
             }
             if let Some(label) = slot.label {
                 tasks.push(Task::Label(label));
@@ -7485,12 +7797,52 @@ impl Walk<'_, '_>
             bounds.push(bound);
             rest = next;
         }
-        for _ in &bounds {
-            tasks.push(Task::Unbind);
-        }
+        Self::read_at_binders(
+            &bounds,
+            rest,
+            Admits::Computation(Tail::Continues),
+            depth,
+            tasks,
+        );
+    }
+
+    /// Schedules `rest`, in a position admitting `admits`, under one binder
+    /// per call of `bounds`, outermost first, each standing for its call.
+    ///
+    /// # Specification
+    /// - requires: `rest` stands under one binder per entry of `bounds`, the
+    ///   last innermost, and `tasks` is the walk's stack.
+    /// - ensures: each bound call is scheduled as a computation where the body
+    ///   goes on, in order, each followed by one binder standing for it; the
+    ///   rest is scheduled under them all at `admits`, and every binder is
+    ///   closed after it.
+    /// - provides: the calls [`Self::inlined`] and a block's linear runs write
+    ///   where their binders are read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::inlined`] and [`linear_runs`].
+    /// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+    /// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.len().checked_sub(entry) == bounds.len().checked_mul(4_usize).and_then(|all| all.checked_add(1_usize))
+            && tasks.get(entry..).is_some_and(|scheduled| scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == bounds.len()),
+    )]
+    fn read_at_binders<Node>(
+        bounds: &[Node],
+        rest: Node,
+        admits: Admits,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<Node>>,
+    ) where
+        Node: Copy,
+    {
+        tasks.extend(bounds.iter().map(|_| Task::Unbind));
         tasks.push(Task::Visit {
             node: rest,
-            admits: Admits::Computation(Tail::Continues),
+            admits,
             depth,
         });
         for &bound in bounds.iter().rev() {
@@ -9358,6 +9710,7 @@ where
         loops: Vec::new(),
         subjects: 0_usize,
         unwinds: 0_usize,
+        branches: 0_usize,
         held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
@@ -9464,6 +9817,14 @@ where
                 }
                 else {
                     walk.unwinds.saturating_sub(1_usize)
+                };
+            },
+            Task::Branched(entered) => {
+                walk.branches = if entered {
+                    walk.branches.saturating_add(1_usize)
+                }
+                else {
+                    walk.branches.saturating_sub(1_usize)
                 };
             },
             Task::Rebind(zone) => walk.rebind(zone),
@@ -9753,6 +10114,7 @@ mod tests
             loops: super::Vec::new(),
             subjects: 0_usize,
             unwinds: 0_usize,
+            branches: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
@@ -9845,6 +10207,7 @@ mod tests
             loops: super::Vec::new(),
             subjects: 0_usize,
             unwinds: 0_usize,
+            branches: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
