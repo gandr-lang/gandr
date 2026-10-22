@@ -1,2 +1,4 @@
 /// `binary_expression.and`: a conjunction.
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.boolean") ]
 def both = true && false ;

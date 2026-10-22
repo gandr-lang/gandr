@@ -1,2 +1,4 @@
 /// `string.expression`: a string with an interpolated expression.
+/// The checker does not reach this form yet; #1505 tracks it.
+@[ refuses("OutOfFragment.string_interpolation") ]
 def greeting = "hello, ${name}" ;

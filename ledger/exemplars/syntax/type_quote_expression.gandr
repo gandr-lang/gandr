@@ -1,2 +1,3 @@
 /// `type_quote_expression`: a type quoted where an expression stands.
+@[ checks ]
 def code = stay(type(+{Unit})) ;

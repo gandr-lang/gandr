@@ -1,2 +1,4 @@
 /// `environment_assignment`: a shell environment assignment.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def built = #!{ CC=clang make; } ;

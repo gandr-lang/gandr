@@ -1,4 +1,5 @@
 /// `unit.pattern`: the unit value in pattern position.
+@[ checks ]
 def answer(u : Unit) -> -F Integer {
   case u {
     unit => return 42

@@ -1,4 +1,5 @@
 /// `extern_block`: an extern block: foreign declarations from a library.
+/// parse-only: the lowering refuses an extern block as a whole, out of its fragment; #1105 tracks it.
 extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }

@@ -1,2 +1,4 @@
 /// `pipeline.pipe`: a shell pipeline.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def sorted = #!{ cat data | sort; } ;

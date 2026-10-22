@@ -1,4 +1,5 @@
 /// `telescope_pattern`: a telescope pattern.
+@[ checks ]
 def nothing(t : #{}) -> -F Integer {
   case t {
     #{} => return 0

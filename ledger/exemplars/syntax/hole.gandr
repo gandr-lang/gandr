@@ -1,2 +1,3 @@
 /// `hole`: a hole: a term left to fill.
+@[ checks ]
 def anon = ? ;

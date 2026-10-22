@@ -1,4 +1,6 @@
 /// `drop_expression`: a drop of a shared endpoint.
+/// The checker does not reach this form yet; #1054 tracks it.
+@[ refuses("OutOfFragment.drop_expression") ]
 def dropped() -> -F Unit {
   fork (seat : end) { close(seat) } as desk;
   drop(desk)

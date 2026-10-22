@@ -1,4 +1,6 @@
 /// `instantiation.named_measure`: a recursive call decreasing a named measure.
+/// The checker does not reach this form yet; #1497 tracks it.
+@[ refuses("OutOfFragment.instantiation_expression.computation") ]
 def rec measured(n : Integer) -> -F Integer {
   return measured[n <](n)
 }

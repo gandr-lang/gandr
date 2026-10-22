@@ -1,2 +1,4 @@
 /// `list_operator`: a shell list operator.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def background = #!{ sleep 1 & } ;

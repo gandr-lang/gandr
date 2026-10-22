@@ -1,3 +1,6 @@
 /// `binary_expression.cons`: path cons: a step before the rest of a path, written with its glyph and in ASCII.
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.binary_expression") ]
 def flipped = here(back(loop) ∷ here(Base)) ;
+@[ refuses("OutOfFragment.binary_expression") ]
 def flippedAscii = here(back(loop) :: here(Base)) ;

@@ -1,4 +1,6 @@
 /// `as_pattern`: an as-pattern: a pattern whose match is also bound.
+/// The checker does not reach this form yet; #1051 tracks it.
+@[ refuses("OutOfFragment.as_pattern") ]
 def same(n : Integer) -> -F Integer {
   case n {
     0 as zero => return zero,

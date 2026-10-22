@@ -1,2 +1,4 @@
 /// `file_descriptor`: a shell file descriptor in a redirection.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def merged = #!{ make 2>&1; } ;

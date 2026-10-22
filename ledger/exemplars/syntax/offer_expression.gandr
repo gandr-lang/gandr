@@ -1,4 +1,5 @@
 /// `offer_expression`: an offer: a branch per label a peer can select.
+@[ checks ]
 def serve() -> -F Unit {
   fork (seat : &{ next : end }) { offer(seat) { next => close(seat) } } as desk;
   select(desk, next);

@@ -1,2 +1,3 @@
 /// `list_expression`: a list, at the element type its annotation states.
+@[ checks ]
 def three = ([1, 2, 3] : List(Integer)) ;

@@ -1,2 +1,4 @@
 /// `single_quoted_string`: a single-quoted shell string.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def greeting = #!{ echo 'hello'; } ;

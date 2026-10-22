@@ -1,2 +1,4 @@
 /// `co_expression`: a copattern bundle of explicit instantiations.
+/// The checker does not reach this form yet; #1053 tracks it.
+@[ refuses("OutOfFragment.co_expression") ]
 def sized = co { size = 1 } ;

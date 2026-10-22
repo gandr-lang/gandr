@@ -1,2 +1,4 @@
 /// `variable_expansion`: a shell variable expansion.
+/// The checker does not reach this form yet; #1057 tracks it.
+@[ refuses("OutOfFragment.shell_block") ]
 def home = #!{ echo $HOME; } ;

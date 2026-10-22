@@ -1,2 +1,4 @@
 /// `binary_expression.add.concat`: list concatenation.
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.binary_expression") ]
 def joined = [1] ++ [2] ;

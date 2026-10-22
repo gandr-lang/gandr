@@ -1,3 +1,6 @@
 /// `thunk_expression`: a thunk: a suspended computation at the unrestricted grade, written with its glyph and in ASCII.
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.grade.value") ]
 def later = thunk[ω] { return 42 } ;
+@[ refuses("OutOfFragment.grade.value") ]
 def laterAscii = thunk[inf] { return 42 } ;
