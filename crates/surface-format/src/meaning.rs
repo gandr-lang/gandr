@@ -116,6 +116,7 @@ pub fn lowered<'source>(
         arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .ok()
 }

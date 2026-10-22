@@ -274,6 +274,7 @@ use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
+use crate::coincide::Decisions;
 use crate::description::DescriptionFault;
 use crate::doc::Documentation;
 use crate::error::AscriptionForm;
@@ -2381,7 +2382,7 @@ pub fn collect<'source>(
     fuel: &mut Fuel,
 ) -> Result<Collected<'source>, LoweringRefusal<'source>>
 {
-    let mut collected = begin_collection(pbg, tree, unit)?;
+    let mut collected = begin_collection(pbg, tree, unit, &mut Decisions::none())?;
     let pieces = root_pieces(pbg, tree)?;
     for own in source_pieces(unit, pieces) {
         collect_source((pbg, tree), &mut collected, fuel, own)?;
@@ -2391,7 +2392,8 @@ pub fn collect<'source>(
 }
 
 /// A unit's collection before any of its sources is collected: its
-/// descriptions elaborated, nothing else admitted.
+/// descriptions elaborated, each rule block decided through `decisions`,
+/// nothing else admitted.
 ///
 /// # Specification
 /// - requires: `tree` was molded under `pbg`.
@@ -2419,10 +2421,11 @@ pub fn begin_collection<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     unit: &Unit,
+    decisions: &mut Decisions,
 ) -> Result<Collected<'source>, LoweringRefusal<'source>>
 {
     let described = crate::description::elaborate_descriptions(pbg, tree, unit)?;
-    let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
+    let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations, decisions);
     let mut owner = Vec::new();
     owner.resize(
         usize::from(tree.node_count()),
@@ -2476,7 +2479,8 @@ impl Collected<'_>
 {
     /// Widen the collection to a tree of `count` nodes laid out by `unit`,
     /// whose added roots `described` reads: their descriptions, diagnostics,
-    /// native families and cell stores appended, every added node unowned.
+    /// native families and cell stores appended, each rule block decided
+    /// through `decisions`, every added node unowned.
     ///
     /// # Specification
     /// - requires: `count` is no fewer nodes than the collection owns, and
@@ -2497,9 +2501,10 @@ impl Collected<'_>
         count: NodeCount,
         unit: &Unit,
         described: crate::description::DescriptionReport,
+        decisions: &mut Decisions,
     )
     {
-        let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
+        let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations, decisions);
         self.descriptions.extend(
             described
                 .declarations

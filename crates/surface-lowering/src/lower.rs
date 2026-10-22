@@ -557,6 +557,7 @@ use crate::attribute::payload;
 use crate::attribute::payload_form;
 use crate::attribute::payload_verdict;
 use crate::classify::FailureClass;
+use crate::coincide::Decisions;
 use crate::doc::DocLink;
 use crate::doc::Documentation;
 use crate::doc::INNER_DOC_LINE;
@@ -3501,11 +3502,19 @@ pub fn lower_module<'source>(
     outermost: Recognition,
 ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
 {
-    lower_unit(pbg, tree, &Unit::single(), arena, budget, outermost)
+    lower_unit(
+        pbg,
+        tree,
+        &Unit::single(),
+        arena,
+        budget,
+        outermost,
+        &mut Decisions::none(),
+    )
 }
 
 /// Lower the sources `unit` lays end to end in `tree` into `arena`, declaring
-/// their names over `outermost`.
+/// their names over `outermost`, each rule block decided through `decisions`.
 ///
 /// # Specification
 /// - requires: `tree` was molded under `pbg` over the unit's text, its sources
@@ -3679,6 +3688,7 @@ pub fn lower_unit<'source>(
     arena: &mut CoreArena,
     budget: LoweringBudget,
     outermost: Recognition,
+    decisions: &mut Decisions,
 ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
 {
     if tree.grammar() != pbg.fingerprint() {
@@ -3690,7 +3700,7 @@ pub fn lower_unit<'source>(
     if rooted(pbg, tree, tree.roots())? == Rooted(false) {
         return Ok(empty_module(outermost));
     }
-    let collected = begin_collection(pbg, tree, unit)?;
+    let collected = begin_collection(pbg, tree, unit, decisions)?;
     let pieces = root_pieces(pbg, tree)?;
     let mut lowerer = Lowerer::new(pbg, tree, collected, Fuel::new(budget), outermost);
     let mut origins = OriginTable::new();
@@ -4223,7 +4233,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
     /// it read, under `unit`, which lays more sources after the ones it
     /// lowered, `described` the description reading of the roots `tree`
-    /// adds.
+    /// adds, its rule blocks decided through `decisions`.
     ///
     /// # Specification
     /// - requires: `tree`'s first nodes are the nodes the lowering read, at the
@@ -4248,6 +4258,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         tree: &'run SyntaxTree<'source>,
         unit: &Unit,
         described: crate::description::DescriptionReport,
+        decisions: &mut Decisions,
     )
     {
         let read = NodeIndex::from(self.readings.len());
@@ -4263,7 +4274,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.scopes
             .resize(count, Maybe::Absent(scoped::Absent::Unscoped));
         self.leaves.resize(count, exits::Leaves::Never);
-        self.collected.widen(tree.node_count(), unit, described);
+        self.collected
+            .widen(tree.node_count(), unit, described, decisions);
         self.source_of = sources_of(tree, unit);
         if !self.holes.is_empty() {
             self.read_holes(read);
@@ -22740,6 +22752,7 @@ mod tests
             &mut arena,
             LoweringBudget::DEFAULT,
             Recognition::default(),
+            &mut crate::coincide::Decisions::none(),
         )
         .unwrap();
         let own = |source: usize| match module

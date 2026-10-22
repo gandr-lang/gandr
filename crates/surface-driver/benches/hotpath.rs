@@ -1,5 +1,5 @@
-//! The `gandr` series of the benchmark report: four fixed workloads run once
-//! each under the hotpath profiler.
+//! The `gandr` series of the benchmark report: fixed workloads run once each
+//! under the hotpath profiler.
 //!
 //! | Workload | What it runs | Measured functions |
 //! | -------- | ------------ | ------------------ |
@@ -8,6 +8,7 @@
 //! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
 //! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
+//! | `lsp comment edit` | a language-server session that opens the group laws and adds a comment line before their first, outside the rule block | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
 //!
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
@@ -39,6 +40,7 @@
 )]
 
 use core::ops::ControlFlow;
+use std::path::Path;
 use std::path::PathBuf;
 
 use gandr_surface_dispatcher::Goals;
@@ -164,19 +166,20 @@ fn framed(message: &serde_json::Value) -> Vec<u8>
     frame
 }
 
-/// Serve a language-server session that opens [`SOURCE`], changes it to each
-/// of `edits` in order, each a whole text at the next version, then shuts the
-/// session down. Every message is in the input before the server reads it, so
-/// the changes are read together.
+/// Serve a language-server session that opens `path`, whose text is `text`,
+/// changes it to each of `edits` in order, each a whole text at the next
+/// version, then shuts the session down. Every message is in the input before
+/// the server reads it, so the changes are read together.
 ///
 /// # Specification
 /// trivial.
 fn lsp_session(
+    path: &Path,
     text: &str,
     edits: &[String],
 )
 {
-    let uri = format!("file://{}", source().display());
+    let uri = format!("file://{}", path.display());
     let mut session = Vec::from([
         serde_json::json!({"jsonrpc": "2.0", "id": 1_u8, "method": "initialize", "params": {}}),
         serde_json::json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
@@ -226,7 +229,7 @@ fn lsp_keystroke()
         .filter(|&(at, _)| at != erased_at)
         .map(|(_, line)| *line)
         .collect();
-    lsp_session(&text, &[kept.join("\n")]);
+    lsp_session(&source(), &text, &[kept.join("\n")]);
 }
 
 /// Open [`SOURCE`] in a language-server session, erase the last [`BURST`]
@@ -258,7 +261,19 @@ fn lsp_burst()
                 .join("\n")
         })
         .collect();
-    lsp_session(&text, &edits);
+    lsp_session(&source(), &text, &edits);
+}
+
+/// Open the group laws in a language-server session, add a comment line
+/// before their first, outside the rule block, then shut the session down.
+///
+/// # Specification
+/// trivial.
+fn lsp_comment_edit()
+{
+    let laws = corpus(COMPLETION[0]);
+    let text = std::fs::read_to_string(&laws).expect("the group laws read");
+    lsp_session(&laws, &text, &[format!("// Edited.\n{text}")]);
 }
 
 /// Run each workload once under its own measured block.
@@ -273,4 +288,5 @@ fn main()
     hotpath::measure_block!("rule completion", rule_completion());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());
     hotpath::measure_block!("lsp burst", lsp_burst());
+    hotpath::measure_block!("lsp comment edit", lsp_comment_edit());
 }

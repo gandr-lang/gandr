@@ -35,6 +35,7 @@ use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::circuit::SignatureFault;
+use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::description::DescriptionFault;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::lower_unit;
@@ -1732,7 +1733,7 @@ fn an_include_reads_the_theories_its_source_imports_1224()
     .into_tree();
     let mut arena = CoreArena::new();
     let resumed = closure
-        .resume(&joined, &unit, &mut arena)
+        .resume(&joined, &unit, &mut arena, &mut Decisions::none())
         .expect("the unit lowers resumed");
     assert_eq!(
         include_faults(&resumed),
@@ -1747,6 +1748,7 @@ fn an_include_reads_the_theories_its_source_imports_1224()
         &mut whole_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the unit lowers");
     assert_eq!(resumed, whole, "the module the whole unit lowers to");
@@ -1785,6 +1787,7 @@ fn a_source_lowers_alike_whatever_follows_it_776()
         &mut alone_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the base alone lowers");
     let mut whole_arena = CoreArena::new();
@@ -1795,6 +1798,7 @@ fn a_source_lowers_alike_whatever_follows_it_776()
         &mut whole_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the base and its importer lower");
     let own = alone.declarations().len();
@@ -2020,6 +2024,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         &mut whole_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the unit lowers");
     assert!(
@@ -2032,7 +2037,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     for _ in 0_usize .. 2_usize {
         let mut arena = CoreArena::new();
         let resumed = closure
-            .resume(&joined, &unit, &mut arena)
+            .resume(&joined, &unit, &mut arena, &mut Decisions::none())
             .expect("the unit lowers resumed");
         assert_eq!(resumed, whole, "the module the whole unit lowers to");
         assert_eq!(arena, whole_arena, "the arena the whole unit mints");
@@ -2046,6 +2051,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         &mut text_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the whole text lowers");
     assert_eq!(
@@ -2056,7 +2062,7 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     assert_eq!(text_arena, whole_arena, "the whole text's arena");
     let mut fallback_arena = CoreArena::new();
     assert_eq!(
-        closure.resume(&tree, &unit, &mut fallback_arena),
+        closure.resume(&tree, &unit, &mut fallback_arena, &mut Decisions::none()),
         Ok(from_text),
         "a tree that does not extend the closure's is lowered whole"
     );
@@ -2081,13 +2087,19 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
         &mut CoreArena::new(),
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     );
     assert!(
         expected.is_err(),
         "two imports of one alias refuse the unit"
     );
     assert_eq!(
-        closure.resume(&refused, &refused_unit, &mut CoreArena::new()),
+        closure.resume(
+            &refused,
+            &refused_unit,
+            &mut CoreArena::new(),
+            &mut Decisions::none()
+        ),
         expected
     );
 }
@@ -2162,6 +2174,7 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
         &mut whole_arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
     .expect("the unit lowers");
     let (alone, alone_arena) = closure.alone().expect("the closure lowers to its end");
@@ -2173,7 +2186,13 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     );
     let mut onto = alone_arena.clone();
     let uncarried = closure.carrying(&[], &[]);
-    let Ok(Onto::Resumed(resumed)) = closure.resume_onto(&joined, &unit, &mut onto, &uncarried)
+    let Ok(Onto::Resumed(resumed)) = closure.resume_onto(
+        &joined,
+        &unit,
+        &mut onto,
+        &uncarried,
+        &mut Decisions::none(),
+    )
     else {
         panic!("the document resumes onto its closure's arena");
     };
@@ -2208,6 +2227,7 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
         &unit,
         &mut checked,
         &closure.carrying(&[Carried::Value(source, elaborated)], &[]),
+        &mut Decisions::none(),
     )
     else {
         panic!("the document resumes onto the checked arena");
@@ -2270,7 +2290,13 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     let mut untouched = alone_arena.clone();
     assert!(
         matches!(
-            closure.resume_onto(&tree, &unit, &mut untouched, &uncarried),
+            closure.resume_onto(
+                &tree,
+                &unit,
+                &mut untouched,
+                &uncarried,
+                &mut Decisions::none()
+            ),
             Ok(Onto::Whole)
         ),
         "a tree that does not extend the closure's is left to the whole lowering"
@@ -2575,6 +2601,7 @@ fn lowered_unit<'source>(
         &mut arena,
         LoweringBudget::DEFAULT,
         Recognition::default(),
+        &mut Decisions::none(),
     )
 }
 

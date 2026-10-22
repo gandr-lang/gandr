@@ -1517,6 +1517,7 @@ fn an_importer_lowers_its_closure_once_1033()
             parsed,
             &laid.unit,
             &mut LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
         )
         .expect("the document lowers");
         let Lowered::Module { module, arena } = lowering.into_lowered()

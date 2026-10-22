@@ -209,6 +209,12 @@ use crate::desc_cells::located;
 use crate::description::written::RuleDirection;
 use crate::description::written::RuleOrientation;
 
+mod kept;
+
+pub(crate) use kept::Block;
+pub use kept::Decisions;
+pub(crate) use kept::Members;
+
 /// The most steps one reduct of a critical pair may take before the pair is
 /// left undecided.
 pub const JOIN_STEPS: usize = 4_096;

@@ -42,6 +42,7 @@ use super::SinkTables;
 use super::empty_module;
 use super::lower_unit;
 use super::rooted;
+use crate::coincide::Decisions;
 use crate::description::DescriptionReport;
 use crate::description::Sight;
 use crate::description::elaborate_roots;
@@ -382,7 +383,8 @@ impl ClosureLowering
 
     /// Lower `tree`, the closure's tree with a document's laid after it, as
     /// `unit` lays it out, into `arena`: the closure's lowering resumed on a
-    /// copy, only the sources after the closure's lowered.
+    /// copy, only the sources after the closure's lowered, their rule blocks
+    /// decided through `decisions`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -414,6 +416,7 @@ impl ClosureLowering
         tree: &SyntaxTree<'held>,
         unit: &Unit,
         arena: &mut CoreArena,
+        decisions: &mut Decisions,
     ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
     {
         let held = self.0.borrow_owner().borrow_owner();
@@ -430,6 +433,7 @@ impl ClosureLowering
                 arena,
                 held.budget,
                 held.outermost.clone(),
+                decisions,
             );
         };
         match self.route(tree, unit, base)? {
@@ -440,6 +444,7 @@ impl ClosureLowering
                 arena,
                 held.budget,
                 held.outermost.clone(),
+                decisions,
             ),
             Route::Empty => Ok(empty_module(held.outermost.clone())),
             Route::Continue {
@@ -454,6 +459,7 @@ impl ClosureLowering
                     (described, pieces),
                     arena,
                     &state.origins,
+                    decisions,
                 )
             },
         }
@@ -537,7 +543,8 @@ impl ClosureLowering
     /// `unit` lays it out, after the nodes of `arena`, which holds the
     /// closure's arena with more nodes minted after it: the closure's
     /// lowering resumed on a copy of `origins`, which locates those nodes
-    /// ([`Self::carrying`]), only the sources after the closure's lowered.
+    /// ([`Self::carrying`]), only the sources after the closure's lowered,
+    /// their rule blocks decided through `decisions`.
     ///
     /// # Specification
     /// - requires: `arena` is [`Self::alone`]'s arena with any nodes minted
@@ -573,6 +580,7 @@ impl ClosureLowering
         unit: &Unit,
         arena: &mut CoreArena,
         origins: &CarriedOrigins,
+        decisions: &mut Decisions,
     ) -> Result<Onto<'held>, LoweringRefusal<'held>>
     {
         match self.route(tree, unit, Base::Closure)? {
@@ -587,6 +595,7 @@ impl ClosureLowering
                 (described, pieces),
                 arena,
                 &origins.0,
+                decisions,
             )
             .map(Onto::Resumed),
         }
@@ -699,7 +708,7 @@ impl ClosureLowering
 /// Continue `state`, the suspended lowering of the closure whose sources
 /// `closure` lays out, over `tree` laid out as `unit`, the added roots read as
 /// `described` and `pieces`, minting after `arena`'s nodes on a copy of
-/// `origins`.
+/// `origins`, the added roots' rule blocks decided through `decisions`.
 ///
 /// # Specification
 /// - requires: `arena` holds `state`'s arena with any nodes minted after its
@@ -729,6 +738,7 @@ fn continue_from<'held>(
     (described, pieces): (DescriptionReport, Vec<Piece>),
     arena: &mut CoreArena,
     origins: &OriginTable,
+    decisions: &mut Decisions,
 ) -> Result<LoweredModule<'held>, LoweringRefusal<'held>>
 {
     let lowered = closure.sources().len();
@@ -738,7 +748,7 @@ fn continue_from<'held>(
         .as_ref()
         .map(|finished| lowerer.resumed(finished, origins));
     let mut origins = origins.clone();
-    lowerer.widen(tree, unit, described);
+    lowerer.widen(tree, unit, described, decisions);
     let mut sink = Sink::new(arena, &mut origins, state.tables.clone());
     for (source, own) in source_pieces(unit, pieces)
         .into_iter()
@@ -806,7 +816,7 @@ fn suspend<'closure>(
         stage,
         refusal,
     };
-    let collected = match begin_collection(pbg, tree, &held.unit) {
+    let collected = match begin_collection(pbg, tree, &held.unit, &mut Decisions::none()) {
         Ok(collected) => collected,
         Err(refusal) => return halted(Stage::Collection, refusal),
     };
