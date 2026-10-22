@@ -49,10 +49,8 @@ fragment/exits.gandr:early:76a5333fff149e5c
 fragment/exits.gandr:early_elided:b771dadd61aa7a4b
 fragment/exits.gandr:handed:59ac690457ce3f1d
 fragment/exits.gandr:handed_elided:54d2d73733e10a30
-fragment/exits.gandr:identity:ce77da004028aa82
-fragment/exits.gandr:identity:e502ccac5271192a
-fragment/exits.gandr:identity_elided:22772d2fe476cd9d
-fragment/exits.gandr:identity_elided:72e2d4f45fd5bca5
+fragment/exits.gandr:identity:b3202a5538bd0f66
+fragment/exits.gandr:identity_elided:517575424d2414e9
 fragment/exits.gandr:joined:646bc23483986fd6
 fragment/exits.gandr:joined_elided:34af73e57a5bcc9e
 fragment/exits.gandr:local:09a566d822ccbc6d
@@ -94,8 +92,7 @@ fragment/missing-exit.gandr:Nat:7c8cfc5b76d8efd9
 fragment/missing-exit.gandr:bound:08d4bd6c15667ecc
 fragment/missing-exit.gandr:called:556d5f7f3d1e45b3
 fragment/missing-exit.gandr:down:16f8f08a12ab4bb3
-fragment/missing-exit.gandr:lambda:360a5ec40972a97d
-fragment/missing-exit.gandr:lambda:66afbb1efeb3d384
+fragment/missing-exit.gandr:lambda:788f463370b4fec3
 fragment/missing-exit.gandr:nested:36eb9067f77d8c0e
 fragment/missing-exit.gandr:one_arm:0155373d51bd678a
 fragment/missing-exit.gandr:produced:49c79f5a877f595a

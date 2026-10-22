@@ -39,8 +39,7 @@ rec {
 
 /// The family that picks the natural code at every natural.
 @[ checks ]
-def toNat : +U (Nat -> -F UPi) ;
-def toNat = thunk { fn (x) { return NatC } } ;
+def toNat(x : Nat) -> -F UPi { return NatC }
 
 /// The identity at the decode of the function code from naturals to
 /// naturals, which runs to the dependent arrow between them.

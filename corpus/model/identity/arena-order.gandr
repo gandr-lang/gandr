@@ -26,58 +26,38 @@ def relabelling = equiv(swapFirstTwo, swapFirstTwo) ;
 /// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
 /// each id links to the next one allocated.
 @[ checks ]
-def nextABC : Unit + (Unit + Unit) => Unit + (Unit + Unit) ;
-def nextABC = thunk {
-  fn (i) {
-    case i {
-      +{.0 = u} => +{.1 = +{.0 = u}},
-      +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
-      +{.1 = +{.1 = u}} => +{.0 = u},
-    }
-  }
-} ;
+def nextABC(i : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) { case i {
+  +{.0 = u} => +{.1 = +{.0 = u}},
+  +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
+  +{.1 = +{.1 = u}} => +{.0 = u},
+} }
 
 /// The labels of `a`, `b` and `c`, at the ids allocated first, second and
 /// third.
 @[ checks ]
-def labelABC : Unit + (Unit + Unit) => Integer ;
-def labelABC = thunk {
-  fn (i) {
-    case i {
-      +{.0 = u} => 1,
-      +{.1 = +{.0 = u}} => 2,
-      +{.1 = +{.1 = u}} => 3,
-    }
-  }
-} ;
+def labelABC(i : Unit + (Unit + Unit)) -> -F Integer { case i {
+  +{.0 = u} => 1,
+  +{.1 = +{.0 = u}} => 2,
+  +{.1 = +{.1 = u}} => 3,
+} }
 
 /// The same ring with `b` allocated first, then `a`, then `c`: `b` links to
 /// the third id, `a` to the first, `c` to the second.
 @[ checks ]
-def nextBAC : Unit + (Unit + Unit) => Unit + (Unit + Unit) ;
-def nextBAC = thunk {
-  fn (i) {
-    case i {
-      +{.0 = u} => +{.1 = +{.1 = u}},
-      +{.1 = +{.0 = u}} => +{.0 = u},
-      +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}},
-    }
-  }
-} ;
+def nextBAC(i : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) { case i {
+  +{.0 = u} => +{.1 = +{.1 = u}},
+  +{.1 = +{.0 = u}} => +{.0 = u},
+  +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}},
+} }
 
 /// The labels of `b`, `a` and `c`, at the ids allocated first, second and
 /// third.
 @[ checks ]
-def labelBAC : Unit + (Unit + Unit) => Integer ;
-def labelBAC = thunk {
-  fn (i) {
-    case i {
-      +{.0 = u} => 2,
-      +{.1 = +{.0 = u}} => 1,
-      +{.1 = +{.1 = u}} => 3,
-    }
-  }
-} ;
+def labelBAC(i : Unit + (Unit + Unit)) -> -F Integer { case i {
+  +{.0 = u} => 2,
+  +{.1 = +{.0 = u}} => 1,
+  +{.1 = +{.1 = u}} => 3,
+} }
 
 /// The ring allocated `a`, `b`, `c`, walked from `a`.
 @[ checks ]

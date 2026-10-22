@@ -63,12 +63,10 @@ def mismatched_elided(n : Nat) -> -F Nat {
 }
 
 @[ checks ]
-def identity : +U (Nat -> -F Nat) ;
-def identity = thunk { fn (n) { return n } } ;
+def identity(n : Nat) -> -F Nat { return n }
 
 @[ checks ]
-def identity_elided : +U (Nat -> -F Nat) ;
-def identity_elided = thunk { fn (n) { n } } ;
+def identity_elided(n : Nat) -> -F Nat { n }
 
 @[ checks ]
 def ret : Nat ;
