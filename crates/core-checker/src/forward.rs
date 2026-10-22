@@ -65,6 +65,7 @@
 //! Nothing reverses a flow: a migration that must also run backward is two
 //! flows, or an `equiv`.
 
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -81,6 +82,7 @@ use quenchant_shape::shape::Maybe;
 use crate::code::loose_reach;
 use crate::context::CheckingContext;
 use crate::conversion::Agreement;
+use crate::equiv::Vocabulary;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
@@ -259,8 +261,8 @@ pub fn decide(
     if usize::from(reach) != 0 {
         return Err(unsupported);
     }
-    first_order(context, at, target)?;
-    let Maybe::Present(patterns) = crate::equiv::coverage(context, source)?
+    first_order(context, at, target, Vocabulary::Data)?;
+    let Maybe::Present(patterns) = crate::equiv::coverage(context, source, Vocabulary::Data)?
     else {
         return Err(unsupported);
     };
@@ -431,26 +433,34 @@ fn flow_between(
 }
 
 /// Check that every type `code` reaches is the unit type, a base atom, a sum
-/// of at least one summand, a product or a list.
+/// of at least one summand, a product, a list, or — in the
+/// [`Vocabulary::Data`] vocabulary — a data type
+/// [`crate::equiv::data_signature`] reads that does not recur inside its
+/// fields.
 ///
 /// # Specification
 /// - requires: `code` is formed under the judgement's binders.
 /// - ensures: success exactly when the walk meets only those formers.
 /// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` for any other former,
-///   a numeric atom among them; a weak-head or view refusal.
+///   a numeric atom among them, or a data type reached again inside its own
+///   fields; a weak-head, view or signature refusal.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`CheckRefusal`] — as above.
 ///
 /// # Termination
-/// - reason: a `while let` worklist over the finite type tree.
+/// - reason: a `while let` worklist over the finite type tree; a data type is
+///   opened at most once on any path, its declaration held open until its
+///   fields are walked.
 /// - measure: the types left, each replaced by its strictly smaller parts.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an empty sum refuses by name; a pair and a list of
-///   integers pass.
+///   integers pass; a shape of circles and rectangles passes, and a data type
+///   holding itself refuses.
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
+/// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -459,18 +469,50 @@ fn first_order(
     context: &mut CheckingContext<'_>,
     at: ValueId,
     code: ValueTypeId,
+    vocabulary: Vocabulary,
 ) -> Result<(), CheckRefusal>
 {
-    let mut pending = Vec::from([code]);
-    while let Some(ty) = pending.pop() {
+    let unsupported = CheckRefusal::ForwardUnsupported { at };
+    let mut pending = Vec::from([Walk::Visit(code)]);
+    // The data declarations whose fields are being walked.
+    let mut open = BTreeSet::new();
+    while let Some(next) = pending.pop() {
+        let ty = match next {
+            Walk::Visit(ty) => ty,
+            Walk::Close(declaration) => {
+                if !open.remove(&declaration) {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                continue;
+            },
+        };
         let head = context.whnf_value_type(ty)?;
         match value_type_view(context.arena(), head)? {
             ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
             ValueTypeView::Sum(parts) if !parts.is_empty() => {
-                pending.extend(parts.iter().copied());
+                pending.extend(parts.iter().copied().map(Walk::Visit));
             },
-            ValueTypeView::Product(parts) => pending.extend(parts.iter().copied()),
-            ValueTypeView::List(element) => pending.push(element),
+            ValueTypeView::Product(parts) => pending.extend(parts.iter().copied().map(Walk::Visit)),
+            ValueTypeView::List(element) => pending.push(Walk::Visit(element)),
+            ValueTypeView::Data { declaration, .. } if vocabulary == Vocabulary::Data => {
+                if open.contains(&declaration) {
+                    return Err(unsupported);
+                }
+                let Maybe::Present(signature) = crate::equiv::data_signature(context, head)?
+                else {
+                    return Err(unsupported);
+                };
+                open.insert(declaration);
+                pending.push(Walk::Close(declaration));
+                pending.extend(
+                    signature
+                        .constructors()
+                        .iter()
+                        .flatten()
+                        .copied()
+                        .map(Walk::Visit),
+                );
+            },
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
@@ -493,10 +535,19 @@ fn first_order(
             | ValueTypeView::Buffer
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
-            | ValueTypeView::Unknown => return Err(CheckRefusal::ForwardUnsupported { at }),
+            | ValueTypeView::Unknown => return Err(unsupported),
         }
     }
     Ok(())
+}
+
+/// First-order validation work.
+enum Walk
+{
+    /// Visit one code.
+    Visit(ValueTypeId),
+    /// Close this data declaration: its fields have all been visited.
+    Close(gandr_kernel_term::ConstantIndex),
 }
 
 /// The leaf type of each variable `pattern` binds, by de Bruijn index.
@@ -504,7 +555,8 @@ fn first_order(
 /// # Specification
 /// - requires: `pattern` is a pattern of `source`'s coverage.
 /// - ensures: one entry per index the pattern binds: the atom the source names
-///   at a base position, the list type at a cell's tail.
+///   at a base position, the list type at a cell's tail; a constructor's fields
+///   read at the types its tag gives them.
 /// - fails: [`CheckRefusal::MachineInvariant`] for a pattern whose shape does
 ///   not follow its type; a weak-head or view refusal.
 /// - panics: none.
@@ -521,10 +573,12 @@ fn first_order(
 /// # Adequacy
 /// - hypothesis: L3 — a record of a string and an integer reads its two leaves
 ///   apart, so a field moved to a position of the other atom is refused; a list
-///   cell reads its head's leaves and its tail apart.
+///   cell reads its head's leaves and its tail apart; a constructor reads its
+///   fields at the types its tag gives them.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 /// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
+/// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
 fn leaves(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -569,8 +623,28 @@ fn leaves(
                 pending.push((payload, part));
                 continue;
             },
-            ValueTypeView::Data { .. }
-            | ValueTypeView::Record(_)
+            ValueTypeView::Data { .. } => {
+                let Some(&Value::Constructor { tag, .. }) = context.arena().value(value)
+                else {
+                    return Err(invariant);
+                };
+                let Maybe::Present(signature) = crate::equiv::data_signature(context, head)?
+                else {
+                    return Err(invariant);
+                };
+                let types = signature
+                    .constructors()
+                    .get(usize::from(tag))
+                    .ok_or(invariant)?;
+                match context.arena().value(value) {
+                    Some(&Value::Constructor { ref fields, .. }) if fields.len() == types.len() => {
+                        pending.extend(fields.iter().copied().zip(types.iter().copied()));
+                    },
+                    _ => return Err(invariant),
+                }
+                continue;
+            },
+            ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -619,10 +693,11 @@ fn leaves(
 ///   pattern's leaf table.
 /// - ensures: success exactly when every position of `target` is met by its own
 ///   former's canonical value — a tuple of the product's arity, an injection
-///   into an existing summand, the unit value, the empty list or a cell — and
-///   every base position by a variable whose leaf is that base atom, and every
-///   other list position by a variable whose leaf is a tail, or a tail's image,
-///   of a list type equivalent to it.
+///   into an existing summand, the unit value, the empty list or a cell, a
+///   constructor of the data type with its own fields — and every base position
+///   by a variable whose leaf is that base atom, and every other list position
+///   by a variable whose leaf is a tail, or a tail's image, of a list type
+///   equivalent to it.
 /// - fails: [`CheckRefusal::ForwardUnsupported`] at `at` otherwise: a literal,
 ///   a fresh or mistyped variable, an application still stuck; a weak-head,
 ///   view or conversion refusal.
@@ -639,10 +714,12 @@ fn leaves(
 /// - hypothesis: L3 — a field copied naturally passes, and a constant string at
 ///   a string field refuses by name, as the kernel refuses it as `NonNatural`;
 ///   a tail passes at its own list type and refuses at another, and a literal
-///   inside a list cell refuses by name.
+///   inside a list cell refuses by name; a constructor passes over leaves of
+///   its own fields' atoms and refuses short of its fields or past its table.
 /// - witness: `forward::tests::what_the_rule_cannot_image_it_refuses_by_name`
 /// - witness: `forward::tests::the_rule_reads_canonical_shapes_at_their_own_arity`
 /// - witness: `forward::tests::a_list_migration_moves_its_tail_unread`
+/// - witness: `forward::tests::data_shapes_are_read_constructor_by_constructor`
 #[spec(ensures: |ret| match ret {
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
@@ -713,8 +790,28 @@ fn natural(
                 },
                 _ => return Err(unsupported),
             },
-            ValueTypeView::Data { .. }
-            | ValueTypeView::Record(_)
+            ValueTypeView::Data { .. } => {
+                let Some(&Value::Constructor { tag, .. }) = context.arena().value(value)
+                else {
+                    return Err(unsupported);
+                };
+                let Maybe::Present(signature) = crate::equiv::data_signature(context, head)?
+                else {
+                    return Err(unsupported);
+                };
+                let types = signature
+                    .constructors()
+                    .get(usize::from(tag))
+                    .ok_or(unsupported)?;
+                match context.arena().value(value) {
+                    Some(&Value::Constructor { ref fields, .. }) if fields.len() == types.len() => {
+                        pending.extend(fields.iter().copied().zip(types.iter().copied()));
+                        continue;
+                    },
+                    _ => return Err(unsupported),
+                }
+            },
+            ValueTypeView::Record(_)
             | ValueTypeView::Stack { .. }
             | ValueTypeView::PathUniverse(..)
             | ValueTypeView::Path { .. }
@@ -783,7 +880,7 @@ fn decoded(
     else {
         return Err(CheckRefusal::ForwardUnsupported { at });
     };
-    first_order(context, at, quoted)?;
+    first_order(context, at, quoted, Vocabulary::Containers)?;
     Ok(quoted)
 }
 

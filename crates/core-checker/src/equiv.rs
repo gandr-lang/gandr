@@ -55,18 +55,22 @@
 //!   checking rule against `Path(Type, A, B)` reads the codes from the expected
 //!   type instead, and admits a λ as the forward translator.
 
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::PathEvidence;
 use quenchant_shape::shape::Maybe;
@@ -77,6 +81,7 @@ use crate::context::CheckingContext;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 use crate::view::CompTypeView;
 use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
@@ -226,9 +231,74 @@ enum Task
     Sum(usize),
     /// Cross the coverages of this many components, the last on top.
     Product(usize),
+    /// Cross the coverages of this many fields, the last on top, under this
+    /// constructor of this data type.
+    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// Join the coverages of this many constructors, the last on top, and
+    /// close this data declaration, which opened them.
+    Data(ConstantIndex, usize),
     /// Cons each pattern of the element coverage on top onto a fresh tail at
     /// this list code, after the empty list.
     List(ValueTypeId),
+}
+
+/// The codes a coverage reaches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Vocabulary
+{
+    /// The unit type, the base atoms, sums of at least one summand, products
+    /// and lists of a code in it: the vocabulary of the kernel's universe
+    /// paths.
+    Containers,
+    /// Those and data types [`data_signature`] reads, not recurring inside
+    /// their own fields, each field a code in it: the vocabulary of the
+    /// kernel's forward flows.
+    Data,
+}
+
+/// The signature of the data type `head`, when it is free, unindexed, has a
+/// constructor and every field's declared type is closed: it names no
+/// parameter and no field before it, so it reads the same at any arguments.
+///
+/// # Specification
+/// - requires: `head` is a data type at its weak head.
+/// - ensures: the signature [`crate::former::signature`] resolves, whose
+///   constructor table lists each field's type as declared;
+///   [`uncovered::Absent::Former`] for an indexed or presented signature, one
+///   of no constructor, or a field naming a parameter or an earlier field.
+/// - fails: a signature refusal as [`crate::former::signature`] raises it, a
+///   reach refusal as [`loose_reach`] raises it.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shape of a circle and a rectangle reads two
+///   constructors, of one and two integers; a box whose field names its
+///   parameter and the empty data type have no coverage.
+/// - witness: `equiv::tests::a_data_type_covers_as_its_constructors_fields`
+#[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(ref signature)) if signature.constructors().is_empty()))]
+pub fn data_signature(
+    context: &mut CheckingContext<'_>,
+    head: ValueTypeId,
+) -> Result<Maybe<Arc<DataSignature>, uncovered::Absent>, CheckRefusal>
+{
+    let signature = crate::former::signature(context, head)?;
+    if signature.constructors().is_empty()
+        || !signature.indices().is_empty()
+        || !signature.presentation().rules().is_empty()
+        || signature.presentation().cells().is_some()
+    {
+        return Ok(Maybe::Absent(uncovered::Absent::Former));
+    }
+    for &field in signature.constructors().iter().flatten() {
+        let reach = loose_reach(context.arena(), CoreNode::Type(TypeNode::Value(field)))?;
+        if usize::from(reach) != 0 {
+            return Ok(Maybe::Absent(uncovered::Absent::Former));
+        }
+    }
+    Ok(Maybe::Present(signature))
 }
 
 /// The two codes the classifier of an equivalence's forward translator names:
@@ -410,7 +480,7 @@ fn round_trips(
     (first, second): (ValueId, ValueId),
 ) -> Result<Vec<Vec<ConversionDecision<()>>>, CheckRefusal>
 {
-    let Maybe::Present(patterns) = coverage(context, code)?
+    let Maybe::Present(patterns) = coverage(context, code, Vocabulary::Containers)?
     else {
         return Err(CheckRefusal::EquivUnsupported {
             at,
@@ -445,33 +515,39 @@ fn round_trips(
 /// the unit value; one fresh variable at a base atom; each summand's patterns
 /// injected, the first summand first; each tuple crossing the components'
 /// patterns lexicographically, an earlier component read past a later one's
-/// binders; and at a list the empty list, then each element pattern consed
-/// onto a fresh variable at the list, the element read past it.
+/// binders; at a list the empty list, then each element pattern consed onto
+/// a fresh variable at the list, the element read past it; and, in the
+/// [`Vocabulary::Data`] vocabulary, at a data type each constructor in tag
+/// order applied to its fields' crossed patterns, as a tuple crosses them.
 ///
 /// # Specification
 /// - requires: `code` is formed under the judgement's binders.
 /// - ensures: the patterns in the kernel's order, or nothing when a type in the
-///   tree is outside the unit type, the base atoms, sums of at least one
-///   summand, products and lists, or when the work passes the kernel's
-///   allowance. A pattern with a fresh tail names the first such list.
-/// - fails: a weak-head or view refusal as those raise it.
+///   tree is outside `vocabulary`, a data type recurs inside its own fields, or
+///   the work passes the kernel's allowance. A pattern with a fresh tail names
+///   the first such list.
+/// - fails: a weak-head, view or signature refusal as those raise it.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`CheckRefusal`] — as above.
 ///
 /// # Termination
-/// - reason: a `while let` worklist over the finite type tree, not recursion.
+/// - reason: a `while let` worklist over the finite type tree, not recursion; a
+///   data type is opened at most once on any path, its declaration held open
+///   until its constructors are joined.
 /// - measure: the tasks left, each cover task replaced by strictly smaller
 ///   ones, every turn charged against the allowance.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a sum of two units covers as its two injections in order,
 ///   a list of them as the empty list and one cell per injection over a fresh
-///   tail, and a thunk type covers as nothing.
+///   tail, a thunk type covers as nothing, and a data type covers as its
+///   constructors only in the data vocabulary and never when it recurs.
 /// - witness: `equiv::tests::an_involution_is_its_own_inverse_by_computation`
 /// - witness: `equiv::tests::a_list_round_trip_holds_with_its_tail_rigid`
 /// - witness: `equiv::tests::the_empty_sum_has_no_coverage`
+/// - witness: `equiv::tests::a_data_type_covers_as_its_constructors_fields`
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(ref patterns)) => !patterns.is_empty()
         && patterns.iter().all(|pattern| context.arena().value(pattern.value).is_some()),
@@ -480,11 +556,15 @@ fn round_trips(
 pub fn coverage(
     context: &mut CheckingContext<'_>,
     code: ValueTypeId,
+    vocabulary: Vocabulary,
 ) -> Result<Maybe<Vec<Pattern>, uncovered::Absent>, CheckRefusal>
 {
     let mut allowance = u64::from(ReplayBudget::DEFAULT);
     let mut tasks = Vec::from([Task::Cover(code)]);
     let mut built: Vec<Vec<Pattern>> = Vec::new();
+    // The data declarations whose constructors are being covered: a field
+    // reaching one of them recurs.
+    let mut open = BTreeSet::new();
     while let Some(task) = tasks.pop() {
         let Some(left) = allowance.checked_sub(1)
         else {
@@ -524,6 +604,25 @@ pub fn coverage(
                     ValueTypeView::List(element) => {
                         tasks.push(Task::List(head));
                         tasks.push(Task::Cover(element));
+                    },
+                    ValueTypeView::Data { declaration, .. } if vocabulary == Vocabulary::Data => {
+                        if open.contains(&declaration) {
+                            return Ok(Maybe::Absent(uncovered::Absent::Former));
+                        }
+                        let signature = match data_signature(context, head)? {
+                            Maybe::Present(signature) => signature,
+                            Maybe::Absent(reason) => return Ok(Maybe::Absent(reason)),
+                        };
+                        open.insert(declaration);
+                        tasks.push(Task::Data(declaration, signature.constructors().len()));
+                        for (tag, fields) in signature.constructors().iter().enumerate().rev() {
+                            tasks.push(Task::Constructor(
+                                head,
+                                ConstructorTag::from(tag),
+                                fields.len(),
+                            ));
+                            tasks.extend(fields.iter().rev().copied().map(Task::Cover));
+                        }
                     },
                     ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
@@ -575,8 +674,9 @@ pub fn coverage(
             },
             // Each step crosses the tuples so far with the next component's
             // patterns; the earlier components' variables shift past the new
-            // component's, so every variable stays distinct.
-            Task::Product(arity) => {
+            // component's, so every variable stays distinct. A constructor
+            // crosses its fields the same way and applies itself to them.
+            Task::Product(arity) | Task::Constructor(_, _, arity) => {
                 let start = built
                     .len()
                     .checked_sub(arity)
@@ -617,11 +717,32 @@ pub fn coverage(
                     .into_iter()
                     .map(|(values, binders, tail)| Pattern {
                         binders,
-                        value: arena.value_tuple(&values),
+                        value: match task {
+                            Task::Constructor(datatype, tag, _) => {
+                                arena.value_constructor(datatype, tag, values)
+                            },
+                            Task::Cover(_)
+                            | Task::Sum(_)
+                            | Task::Product(_)
+                            | Task::Data(..)
+                            | Task::List(_) => arena.value_tuple(&values),
+                        },
                         tail,
                     })
                     .collect();
                 built.push(joined);
+            },
+            // The constructors' coverages in tag order, the data type closed.
+            Task::Data(declaration, count) => {
+                let start = built
+                    .len()
+                    .checked_sub(count)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let joined = built.drain(start ..).flatten().collect();
+                built.push(joined);
+                if !open.remove(&declaration) {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
             },
             // The empty list, then one cell per element pattern: the element
             // shifts past the tail's binder, the tail is the innermost
@@ -673,8 +794,8 @@ quenchant_shape::reason_enum! {
         /// The reason the coverage stopped.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// A type in the tree is outside the unit type, the base atoms,
-            /// sums of at least one summand and products.
+            /// A type in the tree is outside the coverage's vocabulary, or a
+            /// data type recurs inside its own fields.
             Former,
             /// The coverage outgrew the kernel's allowance.
             Allowance,

@@ -1505,7 +1505,7 @@ fn formation_boundaries_refuse()
     let terminal = terminal(&mut arena, &fixture);
     let classifier = arena.value_type_flow_universe(fixture.boolean, fixture.unit_code);
     assert_eq!(
-        endpoints(&arena, classifier, ReplayBudget::from(0_u64)),
+        endpoints(&arena, &[], classifier, ReplayBudget::from(0_u64)),
         Err(FlowError::Budget)
     );
     // A `Flow_U` endpoint outside the vocabulary refuses at formation.

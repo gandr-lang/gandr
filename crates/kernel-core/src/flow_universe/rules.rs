@@ -148,8 +148,8 @@ pub fn form_certificate(
             Ok(CertificateType::Path(classifier))
         },
         Family::Flow => {
-            let classifier =
-                super::universe_reading(arena, classifier, budget).map_err(KernelError::Flow)?;
+            let classifier = super::universe_reading(arena, &[], classifier, budget)
+                .map_err(KernelError::Flow)?;
             Ok(CertificateType::Flow(classifier))
         },
     }
@@ -271,7 +271,7 @@ pub fn oriented(
     budget: ReplayBudget,
 ) -> Result<(), FlowError>
 {
-    let flow = super::universe_reading(arena, classifier, budget)?;
+    let flow = super::universe_reading(arena, &[], classifier, budget)?;
     boundary(arena, position, flow, arrows)
 }
 

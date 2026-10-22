@@ -8,7 +8,10 @@ use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Dialogue;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -24,6 +27,7 @@ use super::PatternPosition;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
 use crate::encoding::ContentTable;
+use crate::env::AdmittedDeclaration;
 use crate::path_universe::anchor;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -32,13 +36,17 @@ use crate::replay::ReplaySides;
 use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
+use crate::support::LooseDepth;
+use crate::support::Reach as _;
+use crate::support::Reaches;
 
 /// Validate a quoted code's complete first-order graph.
 ///
 /// # Specification
 /// - ensures: the returned type contains only Base, Product (the unit among
-///   them), Sum of at least one summand and List; the empty sum is refused, as
-///   the retired empty type was.
+///   them), Sum of at least one summand, List and the data types
+///   [`data_signature`] reads from `entries`, none inside its own fields; the
+///   empty sum is refused, as the retired empty type was.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `Arena` or `Budget`.
 /// - panics: none.
 ///
@@ -62,6 +70,7 @@ use crate::rewrite::shift_value;
 pub(super) fn code(
     arena: &TermArena,
     code: ValueId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, FlowError>
 {
@@ -69,26 +78,102 @@ pub(super) fn code(
     else {
         return Err(FlowError::UnsupportedCode(code));
     };
-    first_order(arena, root, allowance)?;
+    first_order(arena, root, entries, allowance)?;
     Ok(root)
 }
 
-/// Validate a type's complete first-order graph.
+/// The data type `id`'s declaration and constructor table, when an admitted
+/// declaration of `entries` names it, free, unindexed and of at least one
+/// constructor, and every field's declared type is closed: it names no
+/// parameter and no field before it, so it reads the same at any arguments.
 ///
 /// # Specification
-/// - ensures: every node reachable from `root` is Base, Product, List or a Sum
-///   of at least one summand; each visit charges `allowance` once.
-/// - fails: `UnsupportedType` naming the first other node, `Arena` or `Budget`.
+/// - ensures: the declaration's position and its constructors' field types as
+///   declared, in tag order.
+/// - fails: `UnsupportedType` naming `id` for any other data type, an
+///   unadmitted position among them; `Arena` for a node that is no data type.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
+/// - hypothesis: L3 — a shape of a circle and a rectangle reads two
+///   constructors; a box whose field names its parameter, an indexed family and
+///   a type outside `entries` refuse.
+/// - witness: `flow_universe::coverage::tests::a_data_code_covers_as_its_constructors`
+#[spec(ensures: |ret| match ret {
+    Ok((declaration, constructors)) => !constructors.is_empty()
+        && matches!(arena.value_type(id), Some(&ValueType::Data { declaration: held, .. }) if held == declaration),
+    Err(FlowError::UnsupportedType(ty)) => ty == id,
+    Err(FlowError::Arena) => true,
+    Err(_) => false,
+})]
+fn data_signature<'entries>(
+    arena: &TermArena,
+    entries: &'entries [AdmittedDeclaration],
+    id: ValueTypeId,
+) -> Result<(ConstantIndex, &'entries [Vec<ValueTypeId>]), FlowError>
+{
+    let Some(&ValueType::Data { declaration, .. }) = arena.value_type(id)
+    else {
+        return Err(FlowError::Arena);
+    };
+    let entry = entries
+        .get(usize::from(declaration))
+        .ok_or(FlowError::UnsupportedType(id))?;
+    let presentation = entry.declaration().presentation();
+    let &DeclarationContent::Data {
+        ref indices,
+        ref constructors,
+        ..
+    } = entry.content()
+    else {
+        return Err(FlowError::UnsupportedType(id));
+    };
+    if constructors.is_empty()
+        || !indices.is_empty()
+        || !presentation.rules().is_empty()
+        || presentation.cells().is_some()
+    {
+        return Err(FlowError::UnsupportedType(id));
+    }
+    let mut reaches = Reaches::<LooseDepth>::new();
+    if constructors
+        .iter()
+        .flatten()
+        .any(|&field| reaches.value_type_reach(arena, field) != LooseDepth::closed())
+    {
+        return Err(FlowError::UnsupportedType(id));
+    }
+    Ok((declaration, constructors))
+}
+
+/// Validate a type's complete first-order graph.
+///
+/// # Specification
+/// - ensures: every node reachable from `root` is Base, Product, List, a Sum of
+///   at least one summand or a data type [`data_signature`] reads from
+///   `entries` and reached again nowhere inside its own fields; each visit
+///   charges `allowance` once.
+/// - fails: `UnsupportedType` naming the first other node, `Arena` or `Budget`.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Termination
+/// - reason: a worklist over the finite type graph, each node expanded once; a
+///   data type's declaration is held open until its fields are walked.
+/// - measure: the nodes not yet expanded.
+///
+/// # Adequacy
 /// - hypothesis: L3 — a function code refuses at a forward endpoint and beneath
-///   a function code's argument; Bool, Unit and a list of Bool pass.
+///   a function code's argument; Bool, Unit and a list of Bool pass; a data
+///   type holding itself refuses.
 /// - witness: `flow_universe::tests::function::constant_map_refusal_holds_at_a_thunk_code`
 /// - witness: `flow_universe::tests::stay_and_forward_admit_and_ride`
+/// - witness: `flow_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
@@ -102,27 +187,60 @@ pub(super) fn code(
 fn first_order(
     arena: &TermArena,
     root: ValueTypeId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<(), FlowError>
 {
-    let mut pending = Vec::from([root]);
+    let mut pending = Vec::from([Walk::Visit(root)]);
+    // The data declarations whose fields are being walked.
+    let mut open = BTreeSet::new();
     let mut seen = BTreeSet::new();
-    while let Some(id) = pending.pop() {
+    while let Some(next) = pending.pop() {
         allowance.charge()?;
+        let id = match next {
+            Walk::Visit(id) => id,
+            Walk::Close(declaration) => {
+                if !open.remove(&declaration) {
+                    return Err(FlowError::Arena);
+                }
+                continue;
+            },
+        };
+        let node = arena.value_type(id).ok_or(FlowError::Arena)?;
+        // A first visit walks the whole of any cycle through the node, so a
+        // recursive type meets its own open declaration before a repeat is
+        // skipped.
+        if let &ValueType::Data { declaration, .. } = node
+            && open.contains(&declaration)
+        {
+            return Err(FlowError::UnsupportedType(id));
+        }
         if !seen.insert(id) {
             continue;
         }
-        match arena.value_type(id).ok_or(FlowError::Arena)? {
+        match node {
             &ValueType::Base(_) => {},
             &ValueType::Sum(ref parts) if parts.is_empty() => {
                 return Err(FlowError::UnsupportedType(id));
             },
             &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
-                pending.extend(parts.iter().rev().copied());
+                pending.extend(parts.iter().rev().copied().map(Walk::Visit));
             },
-            &ValueType::List(element) => pending.push(element),
-            &ValueType::Data { .. }
-            | &ValueType::Record(_)
+            &ValueType::List(element) => pending.push(Walk::Visit(element)),
+            &ValueType::Data { .. } => {
+                let (declaration, constructors) = data_signature(arena, entries, id)?;
+                open.insert(declaration);
+                pending.push(Walk::Close(declaration));
+                pending.extend(
+                    constructors
+                        .iter()
+                        .flatten()
+                        .rev()
+                        .copied()
+                        .map(Walk::Visit),
+                );
+            },
+            &ValueType::Record(_)
             | &ValueType::Session { .. }
             | &ValueType::PathUniverse(..)
             | &ValueType::FlowUniverse(..)
@@ -140,6 +258,15 @@ fn first_order(
         }
     }
     Ok(())
+}
+
+/// First-order validation work.
+enum Walk
+{
+    /// Visit one type.
+    Visit(ValueTypeId),
+    /// Close this data declaration: its fields have all been visited.
+    Close(ConstantIndex),
 }
 
 /// A validated function code `U (A → F B)` over closed first-order codes.
@@ -205,8 +332,8 @@ pub fn function(
     else {
         return Err(FlowError::UnsupportedType(root));
     };
-    first_order(arena, domain, allowance)?;
-    first_order(arena, codomain, allowance)?;
+    first_order(arena, domain, &[], allowance)?;
+    first_order(arena, codomain, &[], allowance)?;
     Ok(Arrow {
         code: root,
         domain,
@@ -214,11 +341,12 @@ pub fn function(
     })
 }
 
-/// Validate a Stay endpoint: a first-order code or a function code over them.
+/// Validate a Stay endpoint: a first-order code over `entries`, the admitted
+/// prefix, or a function code over first-order codes.
 ///
 /// # Specification
 /// - ensures: a quoted thunk validates as a function code; every other quoted
-///   type validates as a first-order code.
+///   type validates as a first-order code over `entries`.
 /// - fails: as `function` for a thunk, otherwise as `code`.
 /// - panics: none.
 ///
@@ -237,6 +365,7 @@ pub fn function(
 pub fn endpoint(
     arena: &TermArena,
     code: ValueId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, FlowError>
 {
@@ -246,7 +375,7 @@ pub fn endpoint(
         let arrow = function(arena, code, allowance)?;
         return Ok(arrow.code);
     }
-    self::code(arena, code, allowance)
+    self::code(arena, code, entries, allowance)
 }
 
 /// Validate a native `Flow_U` endpoint: a session code or a Stay endpoint.
@@ -271,6 +400,7 @@ pub fn endpoint(
 pub(super) fn vocabulary(
     arena: &TermArena,
     code: ValueId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
     budget: ReplayBudget,
 ) -> Result<ValueTypeId, FlowError>
@@ -281,7 +411,7 @@ pub(super) fn vocabulary(
         allowance.charge()?;
         return crate::path_universe::code(arena, code, budget).map_err(FlowError::Path);
     }
-    endpoint(arena, code, allowance)
+    endpoint(arena, code, entries, allowance)
 }
 
 /// The type a pattern binds at one leaf.
@@ -316,6 +446,12 @@ enum Cover
     /// Take the product of this many components' shapes, renaming leaves
     /// apart.
     Product(usize),
+    /// Take the product of this many fields' shapes under this constructor of
+    /// this data type, renaming leaves apart.
+    Constructor(ValueTypeId, ConstructorTag, usize),
+    /// Join the shapes of this many constructors and close this data
+    /// declaration, which opened them.
+    Data(ConstantIndex, usize),
     /// Unfold one cell of this list type over the element's shapes.
     List(ValueTypeId),
 }
@@ -324,11 +460,13 @@ enum Cover
 /// list tails.
 ///
 /// # Specification
-/// - requires: `root` is a validated closed first-order type.
+/// - requires: `root` is a validated closed first-order type over `entries`.
 /// - ensures: first-summand-first sum order and lexicographic product order; a
 ///   list unfolds one cell: the empty list, then each element pattern consed
-///   onto a fresh rigid tail, the element read past the tail's binder; leaves
-///   are never sampled and equal-typed positions remain distinct.
+///   onto a fresh rigid tail, the element read past the tail's binder; a data
+///   type covers as its constructors in tag order, each applied to its fields'
+///   shapes crossed as a product's; leaves are never sampled and equal-typed
+///   positions remain distinct.
 /// - fails: `Arena`, `UnsupportedType` or `Budget`.
 /// - panics: none.
 ///
@@ -338,10 +476,12 @@ enum Cover
 /// # Adequacy
 /// - hypothesis: L3 — repeated Base positions and both sum branches matter; a
 ///   product of three keeps its leaf order with distinct variables; a list of
-///   Bool covers the empty list and one cell per boolean over a tail leaf.
+///   Bool covers the empty list and one cell per boolean over a tail leaf; a
+///   shape covers as a circle over one leaf and a rectangle over two.
 /// - witness: `flow_universe::tests::one_way_classes_preserve_leaves`
 /// - witness: `flow_universe::coverage::tests::n_ary_products_cover_with_ordered_leaves`
 /// - witness: `flow_universe::coverage::tests::a_list_code_covers_one_cell_over_a_tail_leaf`
+/// - witness: `flow_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 #[spec(
     captures: before = allowance.0,
@@ -352,18 +492,22 @@ Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patter
         Some(&ValueType::Sum(..)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Injection(..)))),
         Some(&ValueType::List(_)) => patterns.len() >= 2 && patterns.first().is_some_and(|pattern| pattern.leaves.is_empty() && matches!(arena.value(pattern.value), Some(&Value::ListNil)))
             && patterns.iter().skip(1).all(|pattern| pattern.leaves.last() == Some(&Leaf::Tail(root)) && matches!(arena.value(pattern.value), Some(&Value::ListCons(..)))),
+        Some(&ValueType::Data { .. }) => !patterns.is_empty() && patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Constructor { datatype, .. }) if datatype == root)),
         _ => false,
     }),
 )]
 fn patterns(
     arena: &mut TermArena,
     root: ValueTypeId,
+    entries: &[AdmittedDeclaration],
     allowance: &mut Allowance,
 ) -> Result<Vec<Pattern>, FlowError>
 {
     let mut pending = Vec::from([Cover::Visit(root)]);
     let mut results = Vec::<Vec<Pattern>>::new();
     let mut table = ContentTable::new();
+    // The data declarations whose constructors are being covered.
+    let mut open = BTreeSet::new();
     while let Some(task) = pending.pop() {
         allowance.charge()?;
         match task {
@@ -387,8 +531,23 @@ fn patterns(
                     pending.push(Cover::List(id));
                     pending.push(Cover::Visit(element));
                 },
-                &ValueType::Data { .. }
-                | &ValueType::Record(_)
+                &ValueType::Data { declaration, .. } => {
+                    if open.contains(&declaration) {
+                        return Err(FlowError::UnsupportedType(id));
+                    }
+                    let (declaration, constructors) = data_signature(arena, entries, id)?;
+                    open.insert(declaration);
+                    pending.push(Cover::Data(declaration, constructors.len()));
+                    for (tag, fields) in constructors.iter().enumerate().rev() {
+                        pending.push(Cover::Constructor(
+                            id,
+                            ConstructorTag::from(tag),
+                            fields.len(),
+                        ));
+                        pending.extend(fields.iter().rev().copied().map(Cover::Visit));
+                    }
+                },
+                &ValueType::Record(_)
                 | &ValueType::Session { .. }
                 | &ValueType::PathUniverse(..)
                 | &ValueType::FlowUniverse(..)
@@ -420,8 +579,9 @@ fn patterns(
             },
             // Each step crosses the tuples so far with the next component's
             // shapes; the earlier components' leaves shift past the new
-            // component's, so every leaf stays distinct.
-            Cover::Product(arity) => {
+            // component's, so every leaf stays distinct. A constructor crosses
+            // its fields the same way and applies itself to them.
+            Cover::Product(arity) | Cover::Constructor(_, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<Leaf>::new())]);
                 for component in results.drain(start ..) {
@@ -457,11 +617,29 @@ fn patterns(
                 let joined = tuples
                     .into_iter()
                     .map(|(values, leaves)| Pattern {
-                        value: arena.value_tuple(&values),
+                        value: match task {
+                            Cover::Constructor(datatype, tag, _) => {
+                                arena.value_constructor(datatype, tag, values)
+                            },
+                            Cover::Visit(_)
+                            | Cover::Sum(_)
+                            | Cover::Product(_)
+                            | Cover::Data(..)
+                            | Cover::List(_) => arena.value_tuple(&values),
+                        },
                         leaves,
                     })
                     .collect();
                 results.push(joined);
+            },
+            // The constructors' shapes in tag order, the data type closed.
+            Cover::Data(declaration, count) => {
+                let start = results.len().checked_sub(count).ok_or(FlowError::Arena)?;
+                let joined = results.drain(start ..).flatten().collect();
+                results.push(joined);
+                if !open.remove(&declaration) {
+                    return Err(FlowError::Arena);
+                }
             },
             // The element shifts past the tail's binder; the tail is the
             // innermost variable, the pattern's last leaf.
@@ -521,7 +699,8 @@ fn source_leaf(
 /// - ensures: every target Base position selects a same-typed source position
 ///   and every list position is a list constructor or selects a source tail of
 ///   a convertible list type; all other nodes are the canonical constructor of
-///   the target code.
+///   the target code, at a data type one of its constructors with its own
+///   fields.
 /// - fails: `NonNatural` for literals, wrong shapes, fresh or mistyped leaves;
 ///   `Arena` or `Budget` for unresolved types or exhausted traversal.
 /// - panics: none.
@@ -530,13 +709,14 @@ fn source_leaf(
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — literals cannot hide beneath sums, products or list
-///   cells, typed leaf selection rejects fresh variables and differently typed
-///   leaves, a tail stands only at its own list type, and a constant literal at
-///   a String leaf, a type of infinitely many values, is refused naming that
-///   literal.
+/// - hypothesis: L3 — literals cannot hide beneath sums, products, list cells
+///   or constructor fields, typed leaf selection rejects fresh variables and
+///   differently typed leaves, a tail stands only at its own list type, and a
+///   constant literal at a String leaf, a type of infinitely many values, is
+///   refused naming that literal.
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::a_list_flow_moves_its_tail_unread`
+/// - witness: `flow_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&()| allowance.0 < before && match (arena.value(output), arena.value_type(target)) {
@@ -544,7 +724,8 @@ fn source_leaf(
         (Some(&Value::Injection(summand, _)), Some(classifier)) => classifier.summands().is_some_and(|summands| usize::from(summand) < summands.len()),
         (Some(&Value::Variable(index)), Some(&ValueType::Base(base))) => source_leaf(leaves, index) == Some(Leaf::Base(base)),
         (Some(&Value::Variable(index)), Some(&ValueType::List(_))) => matches!(source_leaf(leaves, index), Some(Leaf::Tail(_) | Leaf::Image(_))),
-        (Some(&Value::ListNil | &Value::ListCons(..)), Some(&ValueType::List(_))) => true,
+        (Some(&Value::ListNil | &Value::ListCons(..)), Some(&ValueType::List(_)))
+        | (Some(&Value::Constructor { .. }), Some(&ValueType::Data { .. })) => true,
         _ => false,
     }),
 )]
@@ -552,6 +733,7 @@ fn natural(
     arena: &TermArena,
     output: ValueId,
     target: ValueTypeId,
+    entries: &[AdmittedDeclaration],
     leaves: &[Leaf],
     allowance: &mut Allowance,
 ) -> Result<(), FlowError>
@@ -591,6 +773,19 @@ fn natural(
                     .copied()
                     .ok_or(FlowError::NonNatural(value))?;
                 pending.push((value, summand));
+            },
+            (
+                Some(&Value::Constructor {
+                    tag, ref fields, ..
+                }),
+                &ValueType::Data { .. },
+            ) => {
+                let (_, constructors) = data_signature(arena, entries, at)?;
+                let types = constructors
+                    .get(usize::from(tag))
+                    .filter(|types| types.len() == fields.len())
+                    .ok_or(FlowError::NonNatural(value))?;
+                pending.extend(fields.iter().copied().zip(types.iter().copied()).rev());
             },
             _ => return Err(FlowError::NonNatural(value)),
         }
@@ -676,8 +871,9 @@ fn peel(
 /// Replay the translator against exhaustive, validated symbolic images.
 ///
 /// # Specification
-/// - requires: the endpoints are first-order codes and the translator checked
-///   at `U (source → F target)` in the empty context.
+/// - requires: the endpoints are first-order codes over `entries`, the admitted
+///   prefix, and the translator checked at `U (source → F target)` in the empty
+///   context.
 /// - ensures: one image and one dialogue per source shape; each image opens to
 ///   a leaf-natural target shape, and the translator applied to the shape
 ///   converts with its return by ordinary kernel replay of the dialogue,
@@ -709,6 +905,7 @@ fn peel(
 pub fn forward(
     arena: &mut TermArena,
     unfoldings: &Unfoldings,
+    entries: &[AdmittedDeclaration],
     flow: FlowType,
     translator: ValueId,
     (images, dialogues): (&[ValueId], &[Dialogue]),
@@ -716,7 +913,7 @@ pub fn forward(
 ) -> Result<(), FlowError>
 {
     let mut allowance = Allowance(u64::from(budget));
-    let patterns = patterns(arena, flow.source, &mut allowance)?;
+    let patterns = patterns(arena, flow.source, entries, &mut allowance)?;
     if images.len() != patterns.len() || dialogues.len() != patterns.len() {
         return Err(FlowError::Coverage);
     }
@@ -732,7 +929,7 @@ pub fn forward(
                 output
             },
         };
-        natural(arena, output, flow.target, &leaves, &mut allowance)?;
+        natural(arena, output, flow.target, entries, &leaves, &mut allowance)?;
         let force = arena.computation_force(translator);
         let application = arena.computation_application(force, pattern.value);
         let returned = arena.computation_return(output);
@@ -768,8 +965,13 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::Value;
 
@@ -790,7 +992,7 @@ mod tests
         let text = arena.value_type_base(BaseType::String);
         let triple = arena.value_type_product(&[integer, text, integer]);
         let covered =
-            patterns(&mut arena, triple, &mut Allowance(u64::MAX)).expect("a product covers");
+            patterns(&mut arena, triple, &[], &mut Allowance(u64::MAX)).expect("a product covers");
         let [ref only] = *covered.as_slice()
         else {
             panic!("one pattern for a product of base types");
@@ -817,7 +1019,7 @@ mod tests
 
         let empty = arena.value_type_empty();
         assert!(matches!(
-            patterns(&mut arena, empty, &mut Allowance(u64::MAX)),
+            patterns(&mut arena, empty, &[], &mut Allowance(u64::MAX)),
             Err(FlowError::UnsupportedType(found)) if found == empty
         ));
     }
@@ -836,7 +1038,7 @@ mod tests
         let boolean = arena.value_type_sum(&[unit, unit]);
         let booleans = arena.value_type_list(boolean);
         let covered =
-            patterns(&mut arena, booleans, &mut Allowance(u64::MAX)).expect("a list covers");
+            patterns(&mut arena, booleans, &[], &mut Allowance(u64::MAX)).expect("a list covers");
         let [ref empty, ref truth, ref falsity] = *covered.as_slice()
         else {
             panic!("the empty list and one cell per boolean");
@@ -860,7 +1062,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let integers = arena.value_type_list(integer);
         let covered =
-            patterns(&mut arena, integers, &mut Allowance(u64::MAX)).expect("a list covers");
+            patterns(&mut arena, integers, &[], &mut Allowance(u64::MAX)).expect("a list covers");
         let [_, ref cell] = *covered.as_slice()
         else {
             panic!("the empty list and one cell");
@@ -890,6 +1092,7 @@ mod tests
                     &arena,
                     natural_output,
                     again,
+                    &[],
                     &leaves,
                     &mut Allowance(u64::MAX)
                 ),
@@ -903,6 +1106,7 @@ mod tests
                 &arena,
                 misplaced,
                 integers,
+                &[],
                 &leaves,
                 &mut Allowance(u64::MAX)
             ),
@@ -912,7 +1116,7 @@ mod tests
         let text = arena.value_type_base(BaseType::String);
         let texts = arena.value_type_list(text);
         assert_eq!(
-            natural(&arena, tail, texts, &leaves, &mut Allowance(u64::MAX)),
+            natural(&arena, tail, texts, &[], &leaves, &mut Allowance(u64::MAX)),
             Err(FlowError::NonNatural(tail)),
             "the tail at another list type"
         );
@@ -932,7 +1136,7 @@ mod tests
         for root in [empty, holding] {
             let quoted = arena.value_quote(root);
             assert_eq!(
-                super::code(&arena, quoted, &mut Allowance(u64::MAX)),
+                super::code(&arena, quoted, &[], &mut Allowance(u64::MAX)),
                 Err(FlowError::UnsupportedType(empty))
             );
         }
@@ -945,6 +1149,7 @@ mod tests
                 &arena,
                 short,
                 pair,
+                &[],
                 &[Leaf::Base(BaseType::Integer)],
                 &mut Allowance(u64::MAX)
             ),
@@ -960,6 +1165,7 @@ mod tests
             super::forward(
                 &mut arena,
                 &crate::replay::Unfoldings::default(),
+                &[],
                 super::FlowType {
                     source: unit,
                     target: unit,
@@ -971,5 +1177,125 @@ mod tests
             Err(FlowError::Coverage),
             "one image and no dialogue for Unit's one pattern"
         );
+    }
+
+    /// A data code covers as its constructors in tag order, each over its own
+    /// fields' leaves, first field outermost; an output that is a constructor
+    /// of the target over its own fields is natural, one short of its fields
+    /// or past the table is not; a data type holding itself, and one the
+    /// admitted prefix does not hold, is no code.
+    #[test]
+    fn a_data_code_covers_as_its_constructors()
+    {
+        let mut environment = crate::env::Environment::new();
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = staging.arena().value_type_base(BaseType::Integer);
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![vec![integer], vec![integer, integer]],
+            kind,
+        );
+        let _shape = environment.add_decl(staged).expect("the shape admits");
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let own = staging
+            .arena()
+            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![Vec::new(), vec![own]],
+            kind,
+        );
+        let _naturals = environment.add_decl(staged).expect("the naturals admit");
+        let entries = environment.entries();
+        let mut arena = environment.arena().clone();
+
+        let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let covered =
+            patterns(&mut arena, shape, entries, &mut Allowance(u64::MAX)).expect("a shape covers");
+        let [ref circle, ref rectangle] = *covered.as_slice()
+        else {
+            panic!("one pattern per constructor");
+        };
+        let integer = Leaf::Base(BaseType::Integer);
+        assert_eq!(vec![integer], circle.leaves);
+        assert_eq!(vec![integer, integer], rectangle.leaves);
+        for (pattern, tag, variables) in
+            [(circle, 0_usize, vec![0_u32]), (rectangle, 1, vec![1, 0])]
+        {
+            let Some(&Value::Constructor {
+                datatype,
+                tag: found,
+                ref fields,
+            }) = arena.value(pattern.value)
+            else {
+                panic!("a constructor pattern");
+            };
+            assert_eq!((shape, ConstructorTag::from(tag)), (datatype, found));
+            let indices = fields
+                .iter()
+                .map(|&field| match arena.value(field) {
+                    Some(&Value::Variable(index)) => u32::from(index),
+                    _ => panic!("a field of base type is a variable"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(variables, indices, "the first field outermost");
+        }
+
+        let leaves = rectangle.leaves.clone();
+        let width = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let height = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let swapped =
+            arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![height, width]);
+        let circle = arena.value_constructor(shape, ConstructorTag::from(0_usize), vec![width]);
+        for output in [swapped, circle] {
+            assert_eq!(
+                natural(
+                    &arena,
+                    output,
+                    shape,
+                    entries,
+                    &leaves,
+                    &mut Allowance(u64::MAX)
+                ),
+                Ok(()),
+                "a constructor of the target over its own fields"
+            );
+        }
+        let short = arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![width]);
+        let past = arena.value_constructor(shape, ConstructorTag::from(2_usize), Vec::new());
+        for output in [short, past] {
+            assert_eq!(
+                natural(
+                    &arena,
+                    output,
+                    shape,
+                    entries,
+                    &leaves,
+                    &mut Allowance(u64::MAX)
+                ),
+                Err(FlowError::NonNatural(output)),
+                "short of its fields, or past the table"
+            );
+        }
+
+        let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        for (root, prefix) in [(naturals, entries), (shape, &[][..])] {
+            let quoted = arena.value_quote(root);
+            assert!(
+                matches!(
+                    super::code(&arena, quoted, prefix, &mut Allowance(u64::MAX)),
+                    Err(FlowError::UnsupportedType(_))
+                ),
+                "a type holding itself, or one outside the prefix"
+            );
+        }
     }
 }
