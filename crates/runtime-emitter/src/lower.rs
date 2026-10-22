@@ -3728,7 +3728,9 @@ pub fn lower_unfused(
 struct Survey
 {
     /// Whether a cut delivering a variable or a constant tests it for a
-    /// suspended capture first: whether the command creates one.
+    /// suspended capture first: whether the command creates one, which only a
+    /// `μ` cut negatively against a binder does ([`Lowering::command`]); a `μ`
+    /// cut any other way runs where it stands and suspends nothing.
     checked: bool,
     /// The roots its ownership is read from: the command, then each
     /// transparent constant's definition in the order the visit meets it.
@@ -3751,9 +3753,12 @@ struct Survey
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every named program lowers counted: a survey that reads
-///   no root leaves every node unplaced, and the lowering refuses.
+///   no root leaves every node unplaced, and the lowering refuses. L3 — a bind
+///   whose continuation is named by a positive `μ` leaves the lowering
+///   unchecked.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
 /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+/// - witness: `lower::tests::a_named_continuation_that_runs_tests_no_capture_1856`
 fn survey(
     arena: &CommandArena,
     definitions: &Definitions,
@@ -3779,7 +3784,6 @@ fn survey(
         for &node in reached.get(from ..).unwrap_or_default() {
             match node {
                 NodeAddress::Producer(id) => match *arena.producer(id).ok_or(Form::Dangling)? {
-                    ProducerNode::Mu { .. } => captured = true,
                     ProducerNode::Constant(constant) => {
                         if let Some(Definition::Transparent(definition)) = definitions.get(constant)
                             && unfolded.insert(definition)
@@ -3787,7 +3791,8 @@ fn survey(
                             roots.push(NodeAddress::Producer(definition));
                         }
                     },
-                    ProducerNode::Primitive { .. }
+                    ProducerNode::Mu { .. }
+                    | ProducerNode::Primitive { .. }
                     | ProducerNode::Variable { .. }
                     | ProducerNode::Literal(_)
                     | ProducerNode::Code(_)
@@ -3797,7 +3802,21 @@ fn survey(
                     | ProducerNode::Cocase { .. }
                     | ProducerNode::Reify(_) => {},
                 },
-                NodeAddress::Command(_) | NodeAddress::Consumer(_) => {},
+                NodeAddress::Command(id) => {
+                    if let CommandNode::Cut {
+                        polarity: Polarity::Negative,
+                        producer,
+                        consumer,
+                    } = *arena.command(id).ok_or(Form::Dangling)?
+                        && let ProducerNode::Mu { .. } =
+                            *arena.producer(producer).ok_or(Form::Dangling)?
+                        && let ConsumerNode::MuTilde { .. } =
+                            *arena.consumer(consumer).ok_or(Form::Dangling)?
+                    {
+                        captured = true;
+                    }
+                },
+                NodeAddress::Consumer(_) => {},
             }
         }
     }
@@ -4052,6 +4071,51 @@ mod tests
         assert!(
             stencils.contains(&StencilId::Leave),
             "the second body leaves its window as it returns: {stencils:?}"
+        );
+    }
+
+    /// A bind whose bound computation is itself a bind names its continuation
+    /// with a `μ` that runs where it stands: it suspends nothing, so no cut
+    /// tests what it delivers for a capture, and what follows the bind is
+    /// lowered once (#1856).
+    #[test]
+    fn a_named_continuation_that_runs_tests_no_capture_1856()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let made = core.computation_return(unit);
+        let inner = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let returned = core.computation_return(inner);
+        let bound = core.computation_bind(made, returned);
+        let outer = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let rest = core.computation_return(outer);
+        let root = core.computation_bind(bound, rest);
+        let mut commands = CommandArena::new();
+        let root = focus_computation(&core, root, &mut commands, &mut Provenance::new())
+            .expect("the program focuses");
+        let named = (0_u32 ..).take(usize::from(commands.command_count())).any(|index| {
+            matches!(
+                commands.command(CommandId::from(index)),
+                Some(&CommandNode::Cut { polarity: Polarity::Positive, producer, consumer })
+                    if matches!(commands.producer(producer), Some(&ProducerNode::Mu { .. }))
+                        && matches!(commands.consumer(consumer), Some(&ConsumerNode::MuTilde { .. }))
+            )
+        });
+        assert!(
+            named,
+            "the inner bind's continuation is named by a positive μ"
+        );
+        let lowered =
+            lower_unfused(&commands, &Definitions::new(), root).expect("the program lowers");
+        let stencils: Vec<StencilId> = lowered
+            .function
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.stencil)
+            .collect();
+        assert!(
+            !stencils.contains(&StencilId::Captured),
+            "no delivery tests for a capture: {stencils:?}"
         );
     }
 
