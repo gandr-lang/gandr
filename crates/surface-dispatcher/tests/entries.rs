@@ -13,6 +13,10 @@
 //! heading a call, or the value a `run _ <-` discards — and `Placed` names
 //! them.
 //!
+//! Every pull-request profile walks a stated sample, where an owed count is
+//! held only to at most its pin; the `sweeps` and nightly profiles walk the
+//! corpus whole and hold the census exactly.
+//!
 //! The gate, in a `cfg(test)` module so the crate's lint wall reads it as
 //! test code rather than as shipping code.
 
@@ -683,187 +687,232 @@ fn gated(
     gated
 }
 
-#[test]
-fn every_judged_node_answers_at_its_own_span()
+/// The entry sweep: the gate over the corpus's sources.
+mod sweeps
 {
-    let grammar = built_in().expect("the built-in grammar builds");
-    let page = PageWidth::from(80_u32);
-    let standings: BTreeMap<&str, Standing> = KINDS.iter().copied().collect();
-    let mut missing: BTreeMap<String, (usize, String)> = BTreeMap::new();
-    let mut met = BTreeSet::new();
-    let mut astray = Vec::new();
-    let mut nodes = 0_usize;
-    let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
-    let ControlFlow::Continue(_report) = walk.visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            let Step::Source {
-                path,
-                root,
-                text,
-                base,
-                composed,
-                ..
-            } = step
-            else {
-                return ControlFlow::Continue(());
-            };
-            if path.components().any(|part| part.as_os_str() == "pending") {
-                return ControlFlow::Continue(());
-            }
-            // An importer is typed over its closure, as the hover types it:
-            // the table and the tree are its own text's, the lowering the
-            // closure's. The walk judged it in its component, so a judged
-            // declaration is matched to the closure's by where it starts in
-            // the source's own text.
-            let Some(own) = <&str>::from(text).get(usize::from(base) ..)
-            else {
-                return ControlFlow::Continue(());
-            };
-            let laid = lay_out(&grammar, path, root, SourceText::from(own));
-            let (table, lowering, laid_base) = match laid {
-                Maybe::Present(ref laid) => {
-                    let unit = SourceText::from(laid.text.as_str());
-                    (
-                        TypeTable::of_unit(&grammar, unit, &laid.unit, laid.base),
-                        lower_unit_source(
-                            &grammar,
-                            unit,
-                            &laid.unit,
-                            &mut LoweringCount::default(),
-                        ),
-                        usize::from(laid.base),
-                    )
-                },
-                Maybe::Absent(_) => {
-                    let alone = SourceText::from(own);
-                    (
-                        TypeTable::of(&grammar, alone),
-                        lower_source(&grammar, alone, &mut LoweringCount::default()),
-                        0_usize,
-                    )
-                },
-            };
-            let text = SourceText::from(own);
-            let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
-            else {
-                return ControlFlow::Continue(());
-            };
-            let tree = parsed.into_tree();
-            let mut refused: BTreeSet<_> = table
-                .declarations(page, Form::Sugared.into())
-                .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
-                .map(|(key, _)| key)
-                .collect();
-            let judged_refused: BTreeSet<usize> = match composed {
-                Composed::Settled { ref report, .. } => report
-                    .declarations()
-                    .iter()
-                    .filter(|declaration| {
-                        matches!(declaration.produced().refusal(), Maybe::Present(_))
-                    })
-                    .filter_map(|declaration| {
-                        usize::from(declaration.span().start()).checked_sub(usize::from(base))
-                    })
-                    .collect(),
-                Composed::Refused(_) => BTreeSet::new(),
-            };
-            if let Ok(lowering) = lowering
-                && let Lowered::Module { ref module, .. } = lowering.into_lowered()
-            {
-                for declaration in module.declarations() {
-                    let written = usize::from(declaration.span().start()).checked_sub(laid_base);
-                    if written.is_some_and(|at| judged_refused.contains(&at)) {
-                        for half in [declaration.signature(), declaration.definition()] {
-                            if let Maybe::Present(key) = half {
-                                let _new = refused.insert(key.form());
+    use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+
+    use super::*;
+
+    /// The sample: thirty-two sources, ranked by their BLAKE3 digest under
+    /// this name, at least one of each corpus class — `strict` and each
+    /// directory below `fixture` — and every source the change adds or
+    /// modifies (`gandr-workflow-sweep`), each walked as its own path. A
+    /// sampled run holds each node and each byte to the gate, and each owed
+    /// kind to at most its pin. The `sweeps` and nightly profiles walk the two
+    /// roots whole and hold the census exactly: every pin met, every by-design
+    /// kind seen without its entry, every listed kind written.
+    const SAMPLE: Sample = Sample {
+        name: SampleName("every_judged_node_answers_at_its_own_span"),
+        size: SampleSize(32),
+    };
+
+    #[test]
+    fn every_judged_node_answers_at_its_own_span()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let page = PageWidth::from(80_u32);
+        let standings: BTreeMap<&str, Standing> = KINDS.iter().copied().collect();
+        let mut missing: BTreeMap<String, (usize, String)> = BTreeMap::new();
+        let mut met = BTreeSet::new();
+        let mut astray = Vec::new();
+        let mut nodes = 0_usize;
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let whole = sweep.coverage() == Coverage::Full;
+        let paths: Vec<PathBuf> = if whole {
+            vec![root(Path::new("strict")), root(Path::new("fixture"))]
+        }
+        else {
+            let visited = sweep.visit(
+                SAMPLE,
+                &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+            );
+            assert!(
+                visited.len() >= SAMPLE.size.0,
+                "the sample is drawn: {}",
+                visited.len()
+            );
+            visited.into_iter().map(|source| source.path).collect()
+        };
+        let walk = Walk::new(paths);
+        let ControlFlow::Continue(_report) = walk.visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    composed,
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                if path.components().any(|part| part.as_os_str() == "pending") {
+                    return ControlFlow::Continue(());
+                }
+                // An importer is typed over its closure, as the hover types it:
+                // the table and the tree are its own text's, the lowering the
+                // closure's. The walk judged it in its component, so a judged
+                // declaration is matched to the closure's by where it starts in
+                // the source's own text.
+                let Some(own) = <&str>::from(text).get(usize::from(base) ..)
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let laid = lay_out(&grammar, path, root, SourceText::from(own));
+                let (table, lowering, laid_base) = match laid {
+                    Maybe::Present(ref laid) => {
+                        let unit = SourceText::from(laid.text.as_str());
+                        (
+                            TypeTable::of_unit(&grammar, unit, &laid.unit, laid.base),
+                            lower_unit_source(
+                                &grammar,
+                                unit,
+                                &laid.unit,
+                                &mut LoweringCount::default(),
+                            ),
+                            usize::from(laid.base),
+                        )
+                    },
+                    Maybe::Absent(_) => {
+                        let alone = SourceText::from(own);
+                        (
+                            TypeTable::of(&grammar, alone),
+                            lower_source(&grammar, alone, &mut LoweringCount::default()),
+                            0_usize,
+                        )
+                    },
+                };
+                let text = SourceText::from(own);
+                let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let tree = parsed.into_tree();
+                let mut refused: BTreeSet<_> = table
+                    .declarations(page, Form::Sugared.into())
+                    .filter(|entry| matches!(entry.1, Maybe::Present(Declared::Refused(_))))
+                    .map(|(key, _)| key)
+                    .collect();
+                let judged_refused: BTreeSet<usize> = match composed {
+                    Composed::Settled { ref report, .. } => report
+                        .declarations()
+                        .iter()
+                        .filter(|declaration| {
+                            matches!(declaration.produced().refusal(), Maybe::Present(_))
+                        })
+                        .filter_map(|declaration| {
+                            usize::from(declaration.span().start()).checked_sub(usize::from(base))
+                        })
+                        .collect(),
+                    Composed::Refused(_) => BTreeSet::new(),
+                };
+                if let Ok(lowering) = lowering
+                    && let Lowered::Module { ref module, .. } = lowering.into_lowered()
+                {
+                    for declaration in module.declarations() {
+                        let written =
+                            usize::from(declaration.span().start()).checked_sub(laid_base);
+                        if written.is_some_and(|at| judged_refused.contains(&at)) {
+                            for half in [declaration.signature(), declaration.definition()] {
+                                if let Maybe::Present(key) = half {
+                                    let _new = refused.insert(key.form());
+                                }
                             }
                         }
                     }
                 }
-            }
-            let spans: BTreeSet<ByteSpan> = table.spans().collect();
-            let mut innermost: Vec<Option<ByteSpan>> = vec![None; <&str>::from(text).len()];
-            let mut held = Vec::new();
-            for (key, span, placed) in gated(&grammar, &tree, &refused) {
-                if placed.is_some() {
-                    continue;
+                let spans: BTreeSet<ByteSpan> = table.spans().collect();
+                let mut innermost: Vec<Option<ByteSpan>> = vec![None; <&str>::from(text).len()];
+                let mut held = Vec::new();
+                for (key, span, placed) in gated(&grammar, &tree, &refused) {
+                    if placed.is_some() {
+                        continue;
+                    }
+                    nodes = nodes.saturating_add(1);
+                    let _first = met.insert(key.clone());
+                    if spans.contains(&span) {
+                        held.push(span);
+                        continue;
+                    }
+                    let at = format!("{}@{}", path.display(), usize::from(span.start()));
+                    let tally = missing.entry(key).or_insert((0, at));
+                    tally.0 = tally.0.saturating_add(1);
                 }
-                nodes = nodes.saturating_add(1);
-                let _first = met.insert(key.clone());
-                if spans.contains(&span) {
-                    held.push(span);
-                    continue;
-                }
-                let at = format!("{}@{}", path.display(), usize::from(span.start()));
-                let tally = missing.entry(key).or_insert((0, at));
-                tally.0 = tally.0.saturating_add(1);
-            }
-            held.sort_by_key(|span| {
-                core::cmp::Reverse(
-                    usize::from(span.end()).saturating_sub(usize::from(span.start())),
-                )
-            });
-            for span in held {
-                for byte in usize::from(span.start()) .. usize::from(span.end()) {
-                    if let Some(slot) = innermost.get_mut(byte) {
-                        *slot = Some(span);
+                held.sort_by_key(|span| {
+                    core::cmp::Reverse(
+                        usize::from(span.end()).saturating_sub(usize::from(span.start())),
+                    )
+                });
+                for span in held {
+                    for byte in usize::from(span.start()) .. usize::from(span.end()) {
+                        if let Some(slot) = innermost.get_mut(byte) {
+                            *slot = Some(span);
+                        }
                     }
                 }
-            }
-            for (byte, inner) in innermost.into_iter().enumerate() {
-                let Some(inner) = inner
-                else {
-                    continue;
-                };
-                let answered = table.answering(ByteOffset::from(byte));
-                if !answered
-                    .is_some_and(|span| span.start() >= inner.start() && span.end() <= inner.end())
-                {
-                    astray.push(format!(
-                        "{}@{byte}: answers {answered:?} inside {inner:?}",
-                        path.display()
-                    ));
+                for (byte, inner) in innermost.into_iter().enumerate() {
+                    let Some(inner) = inner
+                    else {
+                        continue;
+                    };
+                    let answered = table.answering(ByteOffset::from(byte));
+                    if !answered.is_some_and(|span| {
+                        span.start() >= inner.start() && span.end() <= inner.end()
+                    }) {
+                        astray.push(format!(
+                            "{}@{byte}: answers {answered:?} inside {inner:?}",
+                            path.display()
+                        ));
+                    }
                 }
-            }
-            ControlFlow::Continue(())
-        },
-    );
-    let mut failures = Vec::new();
-    for key in &met {
-        match standings.get(key.as_str()) {
-            None => failures.push(format!("unclassified kind `{key}`")),
-            Some(&Standing::Design(reason)) => {
-                if !missing.contains_key(key) {
-                    failures.push(format!(
+                ControlFlow::Continue(())
+            },
+        );
+        let mut failures = Vec::new();
+        for key in &met {
+            match standings.get(key.as_str()) {
+                None => failures.push(format!("unclassified kind `{key}`")),
+                Some(&Standing::Design(reason)) => {
+                    if whole && !missing.contains_key(key) {
+                        failures.push(format!(
                             "`{key}` stands by design ({reason}), yet every node has its entry: pin it owed at 0"
                         ));
-                }
-            },
-            Some(&Standing::Owed(pinned)) => {
-                let (count, ref at) = missing.get(key).cloned().unwrap_or((0, String::new()));
-                if count != pinned {
-                    failures.push(format!(
+                    }
+                },
+                Some(&Standing::Owed(pinned)) => {
+                    let (count, ref at) = missing.get(key).cloned().unwrap_or((0, String::new()));
+                    if count > pinned || (whole && count != pinned) {
+                        failures.push(format!(
                         "`{key}`: {count} nodes without an entry, pinned at {pinned}; first at {at}"
                     ));
+                    }
+                },
+            }
+        }
+        if whole {
+            for &(key, _) in KINDS {
+                if !met.contains(key) {
+                    failures.push(format!("`{key}` names no kind the corpus writes"));
                 }
-            },
+            }
         }
+        assert!(nodes > 0, "the corpus holds gated nodes");
+        assert_eq!(
+            failures,
+            Vec::<String>::new(),
+            "every kind stands where it is classified"
+        );
+        assert_eq!(
+            astray,
+            Vec::<String>::new(),
+            "the hover answers the innermost node"
+        );
     }
-    for &(key, _) in KINDS {
-        if !met.contains(key) {
-            failures.push(format!("`{key}` names no kind the corpus writes"));
-        }
-    }
-    assert!(nodes > 0, "the corpus holds gated nodes");
-    assert_eq!(
-        failures,
-        Vec::<String>::new(),
-        "every kind stands where it is classified"
-    );
-    assert_eq!(
-        astray,
-        Vec::<String>::new(),
-        "the hover answers the innermost node"
-    );
 }

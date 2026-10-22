@@ -150,7 +150,7 @@ struct Source
 /// - hypothesis: L2 — a path containing a space and non-ASCII character has a
 ///   pinned URI; corpus sessions link each published URI to its source.
 /// - witness: `tests::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(requires: path.is_absolute() && path.to_str().is_some(),
         ensures: |ret| ret.strip_prefix("file://").is_some_and(|encoded|
             percent_encoding::percent_decode_str(encoded).eq(path.as_os_str().as_encoded_bytes().iter().copied())))]
@@ -324,7 +324,7 @@ fn open(source: &Source) -> Value
 /// # Adequacy
 /// - hypothesis: L2 — every located corpus report agrees with the server; L3 —
 ///   the pinned refusal location distinguishes byte/UTF-16 coordinate shifts.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `tests::session::a_refusal_is_published_where_the_model_locates_it`
 #[spec(
         requires: index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok(),
@@ -366,7 +366,7 @@ fn position(
 /// - hypothesis: L2 — every corpus diagnostic, including absent locations and
 ///   causal contexts, is compared against the actual wire publication; exact
 ///   ranges, codes and labels distinguish lost or misprojected fields.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(ensures: |ret|
         ret.get("code").is_some_and(|code| code.is_null() == matches!(diagnostic.identifier, Maybe::Absent(_)))
             && ret.get("message").is_some_and(Value::is_string)
@@ -461,7 +461,7 @@ fn rendered(
 /// - hypothesis: L2 — every corpus publication is compared with independent
 ///   renderer-stage observations, distinguishing dropped or reordered
 ///   diagnostics and missing codes, titles or causal labels.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 #[spec(requires: publication.pointer("/params/diagnostics").is_some_and(Value::is_array),
         ensures: |ret| publication.pointer("/params/diagnostics").and_then(Value::as_array).is_some_and(|diagnostics|
             ret.len() == diagnostics.len() && ret.iter().zip(diagnostics).all(|(projected, original)|
@@ -512,7 +512,7 @@ fn published(publication: &Value) -> Vec<Value>
 /// # Adequacy
 /// - hypothesis: L2 — full corpus report/token comparisons read both strict and
 ///   fixture roots, distinguishing a wrong or unavailable corpus root.
-/// - witness: `tests::session::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
 #[spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
 fn corpus() -> PathBuf
@@ -875,90 +875,6 @@ fn a_refusal_is_published_where_the_model_locates_it()
         diagnostics[0]["range"]["end"],
         json!({"line": line - 1, "character": column - 1 + 7}),
         "and ends after the refused name"
-    );
-}
-
-#[test]
-fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
-{
-    let root = corpus();
-    let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
-    let mut expected = BTreeMap::new();
-    let mut sources = Vec::new();
-    let ControlFlow::Continue(_report) = walk.visit(
-        &Pool::new(Width::SERIAL),
-        |step| -> ControlFlow<Infallible> {
-            let Step::Source {
-                path, text, base, ..
-            } = step
-            else {
-                panic!("every corpus path is carried through the pipeline");
-            };
-            // An importer's text is its component's; the editor holds its own.
-            let own = <&str>::from(text)
-                .get(usize::from(base) ..)
-                .expect("a source's own text starts inside its unit's");
-            let index = LineIndex::new(own.into());
-            // A pending source carrying the refusal its set expects, which
-            // `check` prints nothing for, is reported as the fixture root
-            // reports it (#1248).
-            let step = match step {
-                Step::Source {
-                    path,
-                    text,
-                    base,
-                    composed,
-                    standing: Standing::Pending,
-                    ..
-                } => Step::Source {
-                    path,
-                    root: SourceRoot::Fixture,
-                    text,
-                    base,
-                    standing: Standing::of(SourceRoot::Fixture, &composed),
-                    composed,
-                },
-                other @ (Step::Source { .. } | Step::Fault { .. }) => other,
-            };
-            let reports = entries(&step, Verb::Check(Goals::Reported))
-                .map(|diagnostic| rendered(&diagnostic, &index))
-                .collect::<Vec<_>>();
-            let source = Source {
-                uri: uri(path),
-                text: own.to_owned(),
-            };
-            let _prior = expected.insert(source.uri.clone(), reports);
-            sources.push(source);
-            ControlFlow::Continue(())
-        },
-    );
-    assert!(
-        sources.len() > 100_usize,
-        "the corpus is walked whole: {} sources",
-        sources.len()
-    );
-    let mut messages = opening();
-    messages.extend(sources.iter().map(open));
-    messages.extend(closing());
-    let (served, written) = session(&messages);
-    assert_eq!(served, Served::Clean, "the session ends cleanly");
-    // An unused binder's and an unused import's hints are the editor's own,
-    // read off the composition; the walk reports the model's diagnostics alone.
-    let mut publications = BTreeMap::new();
-    for message in &written {
-        if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
-            let modelled = published(message)
-                .into_iter()
-                .filter(|diagnostic| {
-                    diagnostic["code"] != "UnusedBinder" && diagnostic["code"] != "UnusedImport"
-                })
-                .collect::<Vec<_>>();
-            let _prior = publications.insert(uri.to_owned(), modelled);
-        }
-    }
-    assert_eq!(
-        publications, expected,
-        "each source publishes the walk's reports, at the walk's spans and codes"
     );
 }
 
@@ -1450,10 +1366,11 @@ fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
     assert_eq!(written(&stream), messages);
 }
 
-/// The token sweep: each corpus source's semantic tokens against its
-/// highlighted bytes.
+/// The corpus sweeps: each corpus source's published diagnostics against the
+/// walk's reports, and its semantic tokens against its highlighted bytes.
 mod sweeps
 {
+    use gandr_workflow_sweep::Coverage;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -1461,8 +1378,118 @@ mod sweeps
 
     use super::*;
 
-    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
-    /// this name, at least one of each corpus class — `strict` and each
+    /// The diagnostics sample: thirty-two sources, ranked by their BLAKE3
+    /// digest under this name, at least one of each corpus class — `strict`
+    /// and each directory below `fixture` — and every source the change adds
+    /// or modifies (`gandr-workflow-sweep`), each walked as its own path. The
+    /// `sweeps` and nightly profiles walk the two roots whole.
+    const DIAGNOSTICS: Sample = Sample {
+        name: SampleName("every_corpus_diagnostic_is_published_as_the_model_builds_it"),
+        size: SampleSize(32),
+    };
+
+    #[test]
+    fn every_corpus_diagnostic_is_published_as_the_model_builds_it()
+    {
+        let root = corpus();
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let paths: Vec<PathBuf> = match sweep.coverage() {
+            Coverage::Full => vec![root.join("strict"), root.join("fixture")],
+            Coverage::Sampled => sweep
+                .visit(
+                    DIAGNOSTICS,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                )
+                .into_iter()
+                .map(|source| source.path)
+                .collect(),
+        };
+        let walk = Walk::new(paths);
+        let mut expected = BTreeMap::new();
+        let mut sources = Vec::new();
+        let ControlFlow::Continue(_report) = walk.visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path, text, base, ..
+                } = step
+                else {
+                    panic!("every corpus path is carried through the pipeline");
+                };
+                // An importer's text is its component's; the editor holds its own.
+                let own = <&str>::from(text)
+                    .get(usize::from(base) ..)
+                    .expect("a source's own text starts inside its unit's");
+                let index = LineIndex::new(own.into());
+                // A pending source carrying the refusal its set expects, which
+                // `check` prints nothing for, is reported as the fixture root
+                // reports it (#1248).
+                let step = match step {
+                    Step::Source {
+                        path,
+                        text,
+                        base,
+                        composed,
+                        standing: Standing::Pending,
+                        ..
+                    } => Step::Source {
+                        path,
+                        root: SourceRoot::Fixture,
+                        text,
+                        base,
+                        standing: Standing::of(SourceRoot::Fixture, &composed),
+                        composed,
+                    },
+                    other @ (Step::Source { .. } | Step::Fault { .. }) => other,
+                };
+                let reports = entries(&step, Verb::Check(Goals::Reported))
+                    .map(|diagnostic| rendered(&diagnostic, &index))
+                    .collect::<Vec<_>>();
+                let source = Source {
+                    uri: uri(path),
+                    text: own.to_owned(),
+                };
+                let _prior = expected.insert(source.uri.clone(), reports);
+                sources.push(source);
+                ControlFlow::Continue(())
+            },
+        );
+        let drawn = match sweep.coverage() {
+            Coverage::Full => 100_usize,
+            Coverage::Sampled => DIAGNOSTICS.size.0,
+        };
+        assert!(
+            sources.len() >= drawn,
+            "the corpus is walked whole, or its sample drawn: {} sources",
+            sources.len()
+        );
+        let mut messages = opening();
+        messages.extend(sources.iter().map(open));
+        messages.extend(closing());
+        let (served, written) = session(&messages);
+        assert_eq!(served, Served::Clean, "the session ends cleanly");
+        // An unused binder's and an unused import's hints are the editor's own,
+        // read off the composition; the walk reports the model's diagnostics alone.
+        let mut publications = BTreeMap::new();
+        for message in &written {
+            if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
+                let modelled = published(message)
+                    .into_iter()
+                    .filter(|diagnostic| {
+                        diagnostic["code"] != "UnusedBinder" && diagnostic["code"] != "UnusedImport"
+                    })
+                    .collect::<Vec<_>>();
+                let _prior = publications.insert(uri.to_owned(), modelled);
+            }
+        }
+        assert_eq!(
+            publications, expected,
+            "each source publishes the walk's reports, at the walk's spans and codes"
+        );
+    }
+
+    /// The tokens sample: sixty-four sources, ranked by their BLAKE3 digest
+    /// under this name, at least one of each corpus class — `strict` and each
     /// directory below `fixture` — and every source the change adds or
     /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
     /// source. Every run holds the whole corpus's membership to the
