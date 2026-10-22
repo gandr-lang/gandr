@@ -522,7 +522,6 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::DataArgumentArity(_)
         | CheckRefusal::UnknownConstructor { .. }
         | CheckRefusal::ConstructorArity(_)
-        | CheckRefusal::IndexedCase(_)
         | CheckRefusal::NonExhaustiveDataCase(_)
         | CheckRefusal::UndecidedCoverage(_)
         | CheckRefusal::AbsentRecordField(_)

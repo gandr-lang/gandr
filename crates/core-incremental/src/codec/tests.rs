@@ -2569,7 +2569,6 @@ fn every_refusal() -> Vec<Refusal>
             tag: ConstructorTag::from(2_usize),
         },
         Refusal::ConstructorArity(at),
-        Refusal::IndexedCase(at),
         Refusal::NonExhaustiveDataCase(at),
         Refusal::AbsentRecordField(at),
         Refusal::AbsentTupleComponent(at),

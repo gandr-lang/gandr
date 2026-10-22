@@ -600,7 +600,6 @@ impl Machine<'_, '_>
     ///   rules the case is read as that fixpoint when it is the marked case,
     ///   and as itself otherwise.
     /// - fails: non-data scrutinee, wrong coverage or absent declaration;
-    ///   [`CheckRefusal::IndexedCase`] for a scrutinee of an indexed family;
     ///   [`CheckRefusal::MachineInvariant`] for arities other than the
     ///   declaration's constructors' field counts, which no source writes.
     /// - panics: none.
@@ -612,7 +611,8 @@ impl Machine<'_, '_>
     /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
     ///   coverage; a dependent motive distinguishes its binder's scope; over
     ///   the circle a fixpoint's root case and a bare case are read apart; a
-    ///   vector scrutinee is refused by name; a misstated arity is refused.
+    ///   case on a vector checks each constructor's branch at its own fields; a
+    ///   misstated arity is refused.
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
     /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
@@ -719,9 +719,6 @@ impl Machine<'_, '_>
             | &Computation::Memory(_)
             | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
-        if !signature.indices().is_empty() {
-            return Err(CheckRefusal::IndexedCase(term));
-        }
         let constructors = signature.constructors().len();
         // A case carries one branch per constructor, and then either no loop
         // arm or one per loop of its sort.

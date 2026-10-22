@@ -2519,10 +2519,15 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         "`More(Z, None)` stands at no two: {:?}",
         report.judged()[3].verdict()
     );
-    assert_eq!(
-        report.judged()[4].verdict(),
-        Verdict::Refused(CheckRefusal::IndexedCase(case)),
-        "a case on an indexed family is refused by name (#391)"
+    assert!(
+        matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+        "a case on a count checks each constructor's branch at its own fields: {:?}",
+        report.judged()[4].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[4].outcome(), Outcome::Defined { .. }),
+        "and the kernel admits the case: {:?}",
+        crossed.readmitted()[4].outcome()
     );
     assert!(
         matches!(crossed.readmitted()[1].outcome(), Outcome::Data { .. }),

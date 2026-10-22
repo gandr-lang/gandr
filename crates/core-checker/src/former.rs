@@ -19,7 +19,9 @@
 //! and the constructor's fields. An application carries the parameters then
 //! the indices; fields read the parameters alone; a constructor's annotation
 //! converts with the application [`stated_at`] reads off its fields. A case
-//! on an indexed family is refused as [`CheckRefusal::IndexedCase`].
+//! on an indexed family supplies a branch per constructor, each over that
+//! constructor's fields at the motive applied to it, as a case on a family
+//! with no indices does.
 //!
 //! **Choice.** Nominal identity stays separate from structural records; neither
 //! is an abstract atom or a product encoding. Type parameters are quoted codes

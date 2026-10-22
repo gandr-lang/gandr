@@ -1237,7 +1237,6 @@ impl Machine<'_, '_>
             | CheckRefusal::DataArgumentArity(_)
             | CheckRefusal::UnknownConstructor { .. }
             | CheckRefusal::ConstructorArity(_)
-            | CheckRefusal::IndexedCase(_)
             | CheckRefusal::NonExhaustiveDataCase(_)
             | CheckRefusal::UndecidedCoverage(_)
             | CheckRefusal::AbsentRecordField(_)

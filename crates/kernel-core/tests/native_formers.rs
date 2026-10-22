@@ -415,17 +415,26 @@ fn an_indexed_constructor_stands_at_its_stated_index()
     let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
     let empty = arena.value_type_data(family, vec![code, zero]);
     let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+    // `case Nil { Nil => return (); Cons(n, x, xs) => return x }`: each
+    // branch binds its own constructor's fields, `Cons`'s at an index `Nil`
+    // does not stand at, and `x` stands at the element the vector's parameter
+    // names, not at its index.
     let motive = arena.comp_type_returner(unit);
     let answer = arena.value_unit();
-    let body = arena.computation_return(answer);
-    let nil_branch = arena.computation_lambda(body);
-    let case = arena.computation_data_case(nil, motive, vec![nil_branch, nil_branch]);
+    let nil_branch = arena.computation_return(answer);
+    let element = arena.value_variable(DeBruijnIndex::from(1));
+    let cons_body = arena.computation_return(element);
+    let cons_branch = arena.computation_lambda(cons_body);
+    let cons_branch = arena.computation_lambda(cons_branch);
+    let cons_branch = arena.computation_lambda(cons_branch);
+    let case = arena.computation_data_case(nil, motive, vec![nil_branch, cons_branch]);
     let body = arena.value_thunk(case);
     let declared = arena.value_type_thunk(motive);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
     assert_eq!(
         environment.add_decl(declaration).map(|_admitted| ()),
-        Err(KernelError::IndexedCase)
+        Ok(()),
+        "a case on a vector checks each constructor's branch at its own fields"
     );
 }
 

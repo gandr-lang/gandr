@@ -6259,10 +6259,6 @@ where
             writer.tag(Tag(24));
             write_site(writer, at)?;
         },
-        Refusal::IndexedCase(at) => {
-            writer.tag(Tag(81));
-            write_site(writer, at)?;
-        },
         Refusal::NonExhaustiveDataCase(at) => {
             writer.tag(Tag(25));
             write_site(writer, at)?;
@@ -6837,7 +6833,6 @@ where
                     Refusal::DataArgumentArity(_) => 22,
                     Refusal::UnknownConstructor {..} => 23,
                     Refusal::ConstructorArity(_) => 24,
-                    Refusal::IndexedCase(_) => 81,
                     Refusal::NonExhaustiveDataCase(_) => 25,
                     Refusal::UndecidedCoverage(_) => 80,
                     Refusal::AbsentRecordField(_) => 26,
@@ -6966,7 +6961,6 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
         },
         24 => Refusal::ConstructorArity(read_site(reader)?),
-        81 => Refusal::IndexedCase(read_site(reader)?),
         25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
         80 => Refusal::UndecidedCoverage(read_site(reader)?),
         26 => Refusal::AbsentRecordField(read_site(reader)?),
@@ -7896,7 +7890,6 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::DataArgumentArity(_)
             | Refusal::UnknownConstructor { .. }
             | Refusal::ConstructorArity(_)
-            | Refusal::IndexedCase(_)
             | Refusal::NonExhaustiveDataCase(_)
             | Refusal::UndecidedCoverage(_)
             | Refusal::AbsentRecordField(_)
