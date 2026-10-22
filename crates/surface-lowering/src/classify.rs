@@ -457,6 +457,7 @@ impl FragmentFeature
     /// # Adequacy
     /// - hypothesis: L2 — as [`FragmentFeature`].
     /// - witness: `classify::tests::one_feature_names_one_class`
+    /// - witness: `classify::tests::only_an_instantiation_and_a_grade_name_their_sort`
     #[spec(ensures: |ret| match boundary {
         | FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => matches!(ret,
             Self::Form(named) | Self::FormAt(named, _) if named == form),
@@ -1256,6 +1257,32 @@ mod tests
                 class,
                 "`{form}` read as {sort} with the {boundary:?} boundary"
             );
+        }
+    }
+
+    /// Only an instantiation and a grade carry the sort their position
+    /// demands into the feature: any other form out of the fragment is named
+    /// by the form alone, whatever sort it is read as.
+    #[test]
+    fn only_an_instantiation_and_a_grade_name_their_sort()
+    {
+        use super::FragmentFeature;
+
+        for boundary in [FragmentBoundary::Reserved, FragmentBoundary::Unadmitted] {
+            for sort in [FragmentSort::Value, FragmentSort::ValueType] {
+                for form in [FormName::INSTANTIATION, FormName::GRADE] {
+                    assert_eq!(
+                        FragmentFeature::of(form, sort, boundary),
+                        FragmentFeature::FormAt(form, sort),
+                        "{form:?} read as {sort} names its sort"
+                    );
+                }
+                assert_eq!(
+                    FragmentFeature::of(FormName::HOLD_STATEMENT, sort, boundary),
+                    FragmentFeature::Form(FormName::HOLD_STATEMENT),
+                    "another form read as {sort} is named by the form alone"
+                );
+            }
         }
     }
 
