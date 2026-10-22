@@ -420,6 +420,88 @@ pub fn advance(
 {
     let (source, target) = protocols;
     replay(source, moves).map_err(TransportError::Replay)?;
+    let output = along(protocols, evidence, moves)?;
+    replay(target, &output).map_err(TransportError::Replay)?;
+    Ok(output)
+}
+
+/// Move a recorded skeleton forward along a finite simulation, whether the
+/// play it records is complete or still open: the moves so far of a prefix.
+///
+/// # Specification
+/// - requires: as [`advance`].
+/// - ensures: each monitor accepts its skeleton complete or open, the image
+///   open exactly where the source is; each move follows a supplied related
+///   pair; labels and payload digests are unchanged, while payload identities
+///   are the target protocol's. No payload body is read.
+/// - fails: `Replay` when either monitor refuses a move; `Move` naming the
+///   first move the relation or the target protocol does not admit, including a
+///   source-only offered label.
+/// - panics: none.
+///
+/// # Errors
+/// `Replay`, `Type` or `Move`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an open play through a widened selection moves forward
+///   and stays open; a complete one moves as [`advance`] moves it; an open play
+///   through an offer the target drops refuses at that move as `WrongLabel`.
+/// - witness: `tests::certified::a_prefix_advances_open_and_refuses_by_move`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |output| opened(replay(protocols.0, moves)).is_ok()
+    && opened(replay(protocols.1, output)).is_ok()
+    && output.len() == moves.len()))]
+#[inline]
+pub fn advance_prefix(
+    protocols: (&Session, &Session),
+    evidence: &gandr_kernel_term::session::Evidence,
+    moves: &[Move],
+) -> Result<Vec<Move>, TransportError>
+{
+    let (source, target) = protocols;
+    opened(replay(source, moves))?;
+    let output = along(protocols, evidence, moves)?;
+    opened(replay(target, &output))?;
+    Ok(output)
+}
+
+/// A monitor's answer, read as the acceptance of a prefix: a complete run and
+/// an open one both pass.
+///
+/// # Specification
+/// trivial.
+fn opened(answer: Result<crate::Completion, ReplayError>) -> Result<(), TransportError>
+{
+    match answer {
+        Ok(crate::Completion) | Err(ReplayError::IncompleteRun { .. }) => Ok(()),
+        Err(error) => Err(TransportError::Replay(error)),
+    }
+}
+
+/// Map each recorded move through the related state pairs, from both roots.
+///
+/// # Specification
+/// - requires: `evidence` relates `protocols.0` to `protocols.1`.
+/// - ensures: one move per move recorded, its label and digest kept and its
+///   payload identity the target's; the monitors are not consulted.
+/// - fails: `Move` naming the first move the relation or the target protocol
+///   does not admit; `Type` for a broken session invariant.
+/// - panics: none.
+///
+/// # Errors
+/// `Type` or `Move`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`advance`] and [`advance_prefix`], which share it.
+/// - witness: `tests::certified::recorded_runs_transport_only_forward`
+/// - witness: `tests::certified::a_prefix_advances_open_and_refuses_by_move`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |output| output.len() == moves.len()))]
+fn along(
+    protocols: (&Session, &Session),
+    evidence: &gandr_kernel_term::session::Evidence,
+    moves: &[Move],
+) -> Result<Vec<Move>, TransportError>
+{
+    let (source, target) = protocols;
     let mut source_state = source.root();
     let mut target_state = target.root();
     let mut output = Vec::with_capacity(moves.len());
@@ -494,6 +576,5 @@ pub fn advance(
         };
         output.push(mapped);
     }
-    replay(target, &output).map_err(TransportError::Replay)?;
     Ok(output)
 }

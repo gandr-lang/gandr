@@ -77,15 +77,17 @@
 //! ride as the identity, as does any ride along a flow whose carrier is no
 //! universe: such a flow is a stay or a composite of stays, and a stay
 //! returns what it rides. Between two distinct session codes the motive must
-//! be `Run(X)` ([`CheckRefusal::RideUnsupported`] otherwise): the run moves by
-//! `gandr-core-session`'s recorded-run consumer along the engine's simulation,
-//! never by the kernel's lowering of a flow, which refuses a session flow as
-//! `RecordedRunRequired`. A literal run is advanced move by move at check
-//! time, and a run the target does not admit — one that takes an offer the
-//! target has dropped — is [`CheckRefusal::RunNotAdmitted`] at the move. An
-//! open run is admitted when the simulation narrows no offer, so every run of
-//! the source is a run of the target. An admitted ride returns the run
-//! unchanged: its skeleton is the target's, labels and payloads kept.
+//! be `Run(X)` or `Prefix(X)` ([`CheckRefusal::RideUnsupported`] otherwise):
+//! the record moves by `gandr-core-session`'s recorded-run consumer along the
+//! engine's simulation, never by the kernel's lowering of a flow, which
+//! refuses a session flow as `RecordedRunRequired`. A literal record is
+//! advanced move by move at check time — a run complete, a prefix complete or
+//! still open — and one the target does not admit — one that takes an offer
+//! the target has dropped — is [`CheckRefusal::RunNotAdmitted`] at the move.
+//! An open value is admitted when the simulation narrows no offer, so every
+//! record of the source is a record of the target. An admitted ride returns
+//! the record unchanged: its skeleton is the target's, labels and payloads
+//! kept.
 //!
 //! Between codes that are not both sessions — the forward and function flows
 //! of [`crate::forward`] and their products in [`crate::product`] — the
@@ -295,8 +297,8 @@ impl Statement
     }
 }
 
-/// Whether a ride moves a run between distinct sessions, or rides as the
-/// identity.
+/// Whether a ride moves a recorded run or prefix between distinct sessions,
+/// or rides as the identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Moving
 {
@@ -304,6 +306,9 @@ pub enum Moving
     Fixed,
     /// A run moves between two distinct session codes.
     Run,
+    /// A prefix, complete or still open, moves between two distinct session
+    /// codes.
+    Prefix,
 }
 
 /// What a ride's classification hands the judgement: the fibre the value
@@ -1237,28 +1242,29 @@ pub fn levelled(
 ///   its target, and whether a run moves: fixed for a motive that ignores its
 ///   code, a flow whose endpoints convert, a flow at an element carrier, or a
 ///   motive the directed computation table moves ([`computed`]) along a flow
-///   between codes that are not both session codes; moving for a run motive
-///   between two session codes the engine relates by subtyping.
+///   between codes that are not both session codes; moving for a run or prefix
+///   motive between two session codes the engine relates by subtyping.
 /// - fails: [`CheckRefusal::NonCovariantMotive`] and
 ///   [`CheckRefusal::RideUnsupported`] as [`covariant`] raises them;
 ///   [`CheckRefusal::RideUnsupported`] at `at` for a motive other than `Run(X)`
-///   between distinct session codes, and for a motive the computation table
-///   does not move between distinct codes;
-///   [`CheckRefusal::SessionCodeExpected`] at an endpoint of a run motive that
-///   is no session code; [`CheckRefusal::SessionNotSubtype`] at the flow for
-///   sessions the engine does not relate; a shape mismatch for a classifier
-///   that is no flow type.
+///   or `Prefix(X)` between distinct session codes, and for a motive the
+///   computation table does not move between distinct codes;
+///   [`CheckRefusal::SessionCodeExpected`] at an endpoint of a run or prefix
+///   motive that is no session code; [`CheckRefusal::SessionNotSubtype`] at the
+///   flow for sessions the engine does not relate; a shape mismatch for a
+///   classifier that is no flow type.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`CheckRefusal`] — as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a run motive moves between a session and its widening, a
-///   list motive between them is unsupported, a stay rides fixed, a decode of
-///   the code rides a migration fixed while a record of it is unsupported, and
-///   the symmetry motive along a migration is refused.
+/// - hypothesis: L3 — a run or prefix motive moves between a session and its
+///   widening, a list motive between them is unsupported, a stay rides fixed, a
+///   decode of the code rides a migration fixed while a record of it is
+///   unsupported, and the symmetry motive along a migration is refused.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `flow::tests::a_prefix_rides_forward_and_refuses_by_move`
 /// - witness: `flow::tests::motives_ride_only_covariantly`
 /// - witness: `forward::tests::a_migration_is_decided_at_every_covering_input`
 /// - witness: `forward::tests::the_symmetry_ride_along_a_migration_is_refused`
@@ -1301,14 +1307,22 @@ pub fn ride(
     if constant || convertible(context, source, target)? == Agreement::Convertible {
         return Ok(fixed);
     }
-    let run_motive = matches!(
-        context.arena().value_type(motive),
-        Some(&ValueType::Run(code)) if matches!(
+    // A complete or open play over the motive's own binder: the code a ride
+    // moves.
+    let played = match context.arena().value_type(motive) {
+        Some(&ValueType::Run(code)) => Some((Moving::Run, code)),
+        Some(&ValueType::Prefix(code)) => Some((Moving::Prefix, code)),
+        _ => None,
+    }
+    .filter(|&(_, code)| {
+        matches!(
             context.arena().value(code),
             Some(&Value::Variable { zone: Zone::Intuitionistic, index }) if u32::from(index) == 0
         )
-    );
-    if !run_motive {
+    })
+    .map(|(moving, _)| moving);
+    let Some(moving) = played
+    else {
         let carrier = context.whnf_value_type(carrier)?;
         if !matches!(
             value_type_view(context.arena(), carrier)?,
@@ -1332,15 +1346,12 @@ pub fn ride(
         };
         computed(arena, at, motive, level)?;
         return Ok(fixed);
-    }
+    };
     let (left, right) = sessions(context, (source, target))?;
     if let Maybe::Absent(_) = converting_evidence(context, (&left, &right), Relation::Subtype)? {
         return Err(CheckRefusal::SessionNotSubtype { at: along });
     }
-    Ok(Ride {
-        moving: Moving::Run,
-        ..fixed
-    })
+    Ok(Ride { moving, ..fixed })
 }
 
 /// Check that the directed computation table moves `motive`: each position
@@ -1454,10 +1465,10 @@ fn computed(
 ///   `value` checked at the motive's source fibre.
 /// - ensures: success for a fixed ride; for a moving one, success exactly when
 ///   the recorded-run consumer advances the literal `value` reduces to along
-///   the engine's simulation, or, for an open run, when the simulation narrows
-///   no offer.
+///   the engine's simulation — complete for a run, complete or open for a
+///   prefix — or, for an open value, when the simulation narrows no offer.
 /// - fails: [`CheckRefusal::RunNotAdmitted`] at `value` with the first move the
-///   target refuses, or [`RunFault::OfferNarrowed`] for an open run; the
+///   target refuses, or [`RunFault::OfferNarrowed`] for an open value; the
 ///   engine's and the unfolding's refusals.
 /// - panics: none.
 ///
@@ -1467,10 +1478,12 @@ fn computed(
 /// # Adequacy
 /// - hypothesis: L3 — a run through a report moves to the widened protocol, a
 ///   run taking a dropped offer is refused at that move, and an open run along
-///   an offer-narrowing flow is refused as such.
+///   an offer-narrowing flow is refused as such; an open prefix moves and stays
+///   open, and one that took a dropped offer is refused at that move.
 /// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `flow::tests::a_prefix_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| match ret {
-    | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == value && moving == Moving::Run,
+    | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == value && moving != Moving::Fixed,
     | Ok(()) | Err(_) => true,
 })]
 pub fn admit(
@@ -1496,13 +1509,16 @@ pub fn admit(
         && let Value::Recorded(ref moves) = *found
     {
         let moves = skeleton(moves);
-        return gandr_core_session::certified::advance(
-            (&engine(&left)?, &engine(&right)?),
-            &evidence,
-            &moves,
-        )
-        .map(|_moved| ())
-        .map_err(|error| transport_refusal(value, &error));
+        let protocols = (&engine(&left)?, &engine(&right)?);
+        let advanced = if moving == Moving::Prefix {
+            gandr_core_session::certified::advance_prefix(protocols, &evidence, &moves)
+        }
+        else {
+            gandr_core_session::certified::advance(protocols, &evidence, &moves)
+        };
+        return advanced
+            .map(|_moved| ())
+            .map_err(|error| transport_refusal(value, &error));
     }
     for pair in &evidence.pairs {
         let offers = |session: &SessionType, position: usize| match session

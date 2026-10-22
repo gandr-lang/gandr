@@ -36,7 +36,7 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 - Equivalence, subtyping, and duality over opaque payload-type identities.
 - Search-free replay with distinct direction, label, payload, incomplete-run, and resume-after-end refusals.
 - Candidate finite relations exported by `relate`, checked independently as native `Path_U` or native `Flow_U` evidence.
-- Recorded-run transport through a freshly replayed session Flow and independently checked target monitor; `certified::advance` is the monitor-level step a checker uses once it holds an engine simulation.
+- Recorded-run transport through a freshly replayed session Flow and independently checked target monitor; `certified::advance` is the monitor-level step a checker uses once it holds an engine simulation, and `certified::advance_prefix` the same step for a play still open.
 - Dialogue admission (`admit`): both endpoints' moves in one recorded order, each endpoint's projection replayed, every send matched to its receipt in FIFO order, and the order admitted as one linearization of the session's causal web (each endpoint's own order, every send before its receipt); `DialogueWeb::relation` reads happens-before on any two events, and a receipt recorded before its send is refused by that edge.
 
 ## Expected features
@@ -125,7 +125,7 @@ The independent elimination oracle exhausts 177 protocols: all send/receive word
 
 ## Integration boundary
 
-Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator: the checker's `ride` of a recorded run along a session flow is `certified::advance`, while a kernel `ride` along a session flow has no endpoint-value action and the kernel's ride replay refuses it as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. A dialogue correlates the two peers of one binary session by FIFO delivery; the monitor does not validate bodies, correlate more than two peers, or establish global deadlock freedom.
+Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator: the checker's `ride` of a recorded run along a session flow is `certified::advance`, and of a prefix `certified::advance_prefix`, while a kernel `ride` along a session flow has no endpoint-value action and the kernel's ride replay refuses it as `RecordedRunRequired`. Native declaration persistence includes session codes, Path evidence and session Flow evidence. A dialogue correlates the two peers of one binary session by FIFO delivery; the monitor does not validate bodies, correlate more than two peers, or establish global deadlock freedom.
 
 ## License
 

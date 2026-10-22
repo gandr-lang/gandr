@@ -331,11 +331,29 @@ fn ridden(
     target: ValueId,
 ) -> (Declaration, ValueId)
 {
+    ridden_at(
+        arena,
+        CoreArena::value_type_run,
+        (position, flow, value, target),
+    )
+}
+
+/// The thunk of a ride of `value` along the constant at `flow`, at motive
+/// `former(X)`, declared at `U (F former(target))`.
+///
+/// # Specification
+/// trivial.
+fn ridden_at(
+    arena: &mut CoreArena,
+    former: fn(&mut CoreArena, ValueId) -> ValueTypeId,
+    (position, flow, value, target): (At, ValueId, ValueId, ValueId),
+) -> (Declaration, ValueId)
+{
     let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let motive = arena.value_type_run(code);
+    let motive = former(arena, code);
     let ride = arena.computation_ride(motive, flow, value);
     let body = arena.value_thunk(ride);
-    let result = arena.value_type_run(target);
+    let result = former(arena, target);
     let returner = arena.comp_type_returner(result);
     let declared = arena.value_type_thunk(returner);
     (declaration(position, declared, body), value)
@@ -706,6 +724,72 @@ fn a_prefix_admits_an_open_run_and_refuses_by_move()
             }))
         ),
         "a prefix stays on the checker's side: {readmission:?}"
+    );
+}
+
+#[test]
+fn a_prefix_rides_forward_and_refuses_by_move()
+{
+    let mut arena = CoreArena::new();
+    let end = seat(&mut arena, Seat::End);
+    let wide = seat(&mut arena, Seat::Wide);
+    let kept = seat(&mut arena, Seat::Kept);
+    let prefix = CoreArena::value_type_prefix;
+    let (sub, _) = statement(&mut arena, At(0), SessionRelation::Subtyping, (end, wide));
+    let sub_constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let (keep, _) = statement(&mut arena, At(1), SessionRelation::Subtyping, (end, kept));
+    let keep_constant = arena.value_constant(ConstantIndex::from(1_usize));
+    // A seat that reported, its offer still owed: it moves forward open, and
+    // along the flow that drops `retire` too, the offer not yet taken.
+    let reporting = |arena: &mut CoreArena| {
+        run(arena, &[
+            RecordedMove::Received(Word::Task),
+            RecordedMove::Selected(Branch::Report.label()),
+            RecordedMove::Sent(Word::Progress),
+        ])
+    };
+    let open = reporting(&mut arena);
+    let (forward, _) = ridden_at(&mut arena, prefix, (At(2), sub_constant, open, wide));
+    let open = reporting(&mut arena);
+    let (kept_open, _) = ridden_at(&mut arena, prefix, (At(3), keep_constant, open, kept));
+    // The same seat after it took `retire`: the narrowed protocol refuses it
+    // at that move.
+    let retired = run(&mut arena, &[
+        RecordedMove::Received(Word::Task),
+        RecordedMove::Selected(Branch::Report.label()),
+        RecordedMove::Sent(Word::Progress),
+        RecordedMove::Offered(Branch::Retire.label()),
+    ]);
+    let (dropped, dropped_at) =
+        ridden_at(&mut arena, prefix, (At(4), keep_constant, retired, kept));
+    // A run motive does not move the open record.
+    let open = reporting(&mut arena);
+    let (unfinished, unfinished_at) = ridden(&mut arena, At(5), sub_constant, open, wide);
+    let report = judged(&mut arena, &[
+        sub, keep, forward, kept_open, dropped, unfinished,
+    ]);
+    for position in [0, 1, 2, 3] {
+        assert!(
+            matches!(
+                verdict(&report, At(position)),
+                Some(Verdict::Checked { .. })
+            ),
+            "declaration {position} checks: {report:?}"
+        );
+    }
+    assert_eq!(
+        [4, 5].map(|position| verdict(&report, At(position))),
+        [
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: dropped_at,
+                fault: RunFault::WrongLabel(RunStep::from(3_u32)),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: unfinished_at,
+                fault: RunFault::Incomplete(RunStep::from(3_u32)),
+            })),
+        ],
+        "a prefix that took a dropped offer is refused at it, and an open record is no run: {report:?}"
     );
 }
 

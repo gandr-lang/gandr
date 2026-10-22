@@ -1883,7 +1883,8 @@ enum Frame
         flow: ValueTypeId,
         /// The returner of the motive's target fibre.
         result: CompTypeId,
-        /// Whether the value is a run moving between distinct sessions.
+        /// Whether the value is a run or a prefix moving between distinct
+        /// sessions.
         moving: crate::flow::Moving,
     },
     /// Await the type a `forward`'s translator synthesised: the two codes the
