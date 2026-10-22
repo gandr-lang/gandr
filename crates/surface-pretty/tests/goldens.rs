@@ -4677,6 +4677,56 @@ fn an_approximate_printing_names_its_reason_820()
     }
 }
 
+/// A positional projection off a name is written as the surface reads it,
+/// `p.0`. One off another projection, `(p.1).0`, whose target the checker
+/// synthesises no type for where the surface reads it, and a decode of one,
+/// `p.0` read as a type, which the type grammar writes only as a path of
+/// names, are the printer's notation: the presentation is approximate and
+/// says why.
+#[test]
+fn a_positional_projection_the_surface_does_not_read_is_notation()
+{
+    let names = [Name::from("p")];
+    let mut core = CoreArena::new();
+    let p = core.value_constant(ConstantIndex::from(0_usize));
+    let component = gandr_kernel_term::Component::from;
+    let first = core.computation_tuple_projection(p, component(0_usize));
+    let second = core.computation_tuple_projection(p, component(1_usize));
+    let second = core.value_returned(second);
+    let chained = core.computation_tuple_projection(second, component(0_usize));
+    let carrier = core.value_returned(first);
+    let decoded = core.value_type_element(carrier, Level::zero());
+    let opened = core.value_type_element(p, Level::zero());
+    let source = CoreSource::new(&core, &names);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled_as(&source, body(first), Spelling::Unicode),
+        (("p.0".to_owned(), Fidelity::Faithful), Vec::new()),
+        "a projection off a name reads"
+    );
+    for (root, expected) in [
+        (body(chained), "(p.1).0"),
+        (Root::Type(CoreNode::ValueType(decoded)), "p.0"),
+    ] {
+        assert_eq!(
+            spelled_as(&source, root, Spelling::Unicode),
+            ((expected.to_owned(), Fidelity::Approximate), vec![
+                Unspelled::Notation(Notation::Positional)
+            ]),
+            "{expected}"
+        );
+    }
+    assert_eq!(
+        spelled_as(
+            &source,
+            Root::Type(CoreNode::ValueType(opened)),
+            Spelling::Unicode
+        ),
+        (("p".to_owned(), Fidelity::Faithful), Vec::new()),
+        "a decode of a name reads as a type"
+    );
+}
+
 /// A capability living in a scope's region names that scope, `at c`,
 /// counted from the outermost scope the source names; one in a region
 /// past the named scopes spells without it, approximately, and a held

@@ -1047,6 +1047,11 @@ pub enum Notation
     /// it observes no parameter a definition's header states; one that does
     /// is the observation `a.i`.
     Projection,
+    /// A positional projection the surface does not read where it stands:
+    /// one off a value that is no name, written `(v.1).0`, whose target's
+    /// type the checker does not synthesise there, or one read as a type,
+    /// `m.0`, which the type grammar writes only as a path of names.
+    Positional,
     /// A transport along a type equality, written `transport(e, v)`.
     Transport,
     /// A handler's resumption, written `resume(k, v)`.

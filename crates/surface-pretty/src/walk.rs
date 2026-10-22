@@ -1877,6 +1877,56 @@ where
     two_units.then_some(Glyphs("Bool"))
 }
 
+/// The notation a decode of `node` is written in where a type is read: a
+/// positional projection, past the return a computation stands in where a
+/// value is read, which the type grammar has no spelling for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Notation::Positional`] exactly when `node` reads as a tuple
+///   projection, or as a return whose body does; none otherwise.
+/// - provides: the decode the type grammar writes no spelling of, `m.0` read as
+///   a type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode of a projection is the printer's notation, a
+///   decode of a name is not.
+/// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
+#[spec(ensures: |ret| ret.is_some() == matches!(past_return(source, node), Former::TupleProjection(..))
+    && ret.is_none_or(|notation| notation == Notation::Positional))]
+fn positional<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Notation>
+where
+    S: Source + ?Sized,
+{
+    matches!(past_return(source, node), Former::TupleProjection(..)).then_some(Notation::Positional)
+}
+
+/// The former `node` reads as, past the return a computation stands in where
+/// a value is read.
+///
+/// # Specification
+/// trivial.
+fn past_return<S>(
+    source: &S,
+    node: S::Node,
+) -> Former<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let read = source.read(node);
+    if let Former::Returned(body) = read {
+        source.read(body)
+    }
+    else {
+        read
+    }
+}
+
 /// Whether an expression reads a type written bare where it stands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Bare
@@ -5813,7 +5863,9 @@ impl Walk<'_, '_>
     ///   computation the end of a pass cannot write is noted as the fixpoint's
     ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
     ///   projection out of a forced variable naming a context binder is the
-    ///   observation `a.i`, the binder's name its one piece.
+    ///   observation `a.i`, the binder's name its one piece; a decode of a
+    ///   positional projection, which the type grammar writes no spelling of,
+    ///   is noted as the printer's notation.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -5840,6 +5892,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
     /// - witness: `tests::goldens::an_observation_of_a_parameter_prints_by_position_941`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -6728,6 +6781,21 @@ impl Walk<'_, '_>
             {
                 shaped = Some(Vec::from([Slot::of(body, Admits::CompType, Binds::NONE)]));
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
+            // A decode of a positional projection stands where a type is read,
+            // which the type grammar writes only as a path of names: `m.0`
+            // there is the printer's notation.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a decode of a positional projection has no type syntax: written in \
+                              the printer's notation"
+                )
+            )]
+            Former::Element(code) if let Some(notation) = positional(source, code) => {
+                self.note(Unspelled::Notation(notation));
+                None
             },
             // A computation where a value is read stands bare, its run left
             // to the checker, and so does the computation a returned value
@@ -7705,7 +7773,8 @@ impl Walk<'_, '_>
     ///   the visit shaped. The forms the grammar does not write — native
     ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
     ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
-    ///   …}` and its observation `c.0` — make the presentation approximate.
+    ///   …}` and its observation `c.0`, and a positional projection off
+    ///   anything but a name, `(v.1).0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -8171,9 +8240,16 @@ impl Walk<'_, '_>
                 writes(Production("projection_expression"), Binding::Atom)
             },
             Former::TupleProjection(target, index) => {
+                let read = past_return(source, target);
                 // A positional projection off another is parenthesized,
                 // `(p.1).0`: unparenthesized, `1.0` would read as a number.
-                let loosest = if matches!(source.read(target), Former::TupleProjection(..)) {
+                // One off anything but a name is the printer's notation: the
+                // checker synthesises no type for its target where the
+                // surface reads it.
+                if !matches!(read, Former::Variable { .. } | Former::Constant(_)) {
+                    self.note(Unspelled::Notation(Notation::Positional));
+                }
+                let loosest = if matches!(read, Former::TupleProjection(..)) {
                     Binding::Qualified
                 }
                 else {
