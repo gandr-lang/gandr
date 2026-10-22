@@ -3,8 +3,8 @@
 //! formatting it, molding every token drop — and runs in two budgets: a
 //! stated sample on every pull request and every merge-queue entry, with
 //! specifications enforced, within the 30 s every test is held to; and whole
-//! under the `nightly` nextest profile, where the costliest sweeps visit a
-//! rotating slice of the corpus each night and the rest visit all of it. The
+//! under the `nightly` nextest profile, where the costliest sweeps each visit
+//! the night's slice of the corpus and the rest visit all of it. The
 //! `sweeps` profile visits the whole corpus in every sweep at once.
 //!
 //! - [`coverage`] reads which budget a run is in from the nextest profile.
@@ -83,23 +83,25 @@
 //! pass past the 30 s bound in every sample at once (#492).
 //!
 //! **A rotating cover nightly.** The whole nightly run is held to fifteen
-//! minutes summed over its jobs. Four sweeps cost more than that alone:
-//! typing, erasing, the token drops and the table verdicts check the whole
-//! text at every keystroke or token, so each costs its source's length
-//! squared. The erasure, the token drops and the table verdicts each visit one
-//! of [`NIGHTS`] slices of the corpus a night, the slice a hash of the
-//! sweep's name and the source's corpus path ([`Rotation::holds`]). The typing
-//! cannot: its costliest source alone types for longer than the budget, so it
-//! types every source each night, opened whole up to the night's part and
-//! typed through it, each source cut into as many parts as its sweep names so
-//! each costs about that fraction ([`Rotation::part`]). Either way the night
-//! is the UTC day, every token is visited within [`NIGHTS`] consecutive
-//! nights and every keystroke within the typing's part count, the run prints
-//! the night it visited, and `GANDR_SWEEP_NIGHT` replays it. Every
-//! other sweep visits the whole corpus every night. The alternatives were a
-//! stride over the keystrokes, which never visits the text between its steps;
-//! shards across jobs, which each pay the build again inside one summed
-//! budget; and retiring a sweep, which no pull-request lane covers whole.
+//! minutes summed over its jobs, twenty at the most. A sweep that cannot
+//! visit the whole corpus inside its share of that visits one slice of it a
+//! night and covers the whole over the [`Nights`] it states beside its
+//! sample: its whole cost on the nightly runner over its share. The slice is
+//! a hash of the sweep's name and the source's corpus path
+//! ([`Rotation::holds`]). The typing cannot rotate by source: its costliest
+//! source alone types for longer than its share, so it types every source
+//! each night, opened whole up to the night's part and typed through it,
+//! each source cut into as many parts as its nights so each costs about that
+//! fraction ([`Rotation::part`]). Either way the night is the UTC day, every
+//! input is visited within the sweep's nights, the run prints the night it
+//! visited, and `GANDR_SWEEP_NIGHT` replays it. A sweep cheap enough visits
+//! the whole corpus every night. The alternatives were one night count for
+//! every rotating sweep, which leaves the costliest past the budget or spreads
+//! the cheaper ones thinner than they need; a stride over the keystrokes,
+//! which never visits the text between its steps; shards across jobs, which
+//! each pay the build again inside one summed budget; a raised timeout, which
+//! spends the budget; and retiring a sweep, which no pull-request lane covers
+//! whole.
 //!
 //! **Reversal**: a runner that takes the whole sweeps between nightlies, or
 //! nextest's own test partitioning by input, makes the sample and the
@@ -139,11 +141,10 @@ pub use crate::corpus::Source;
 pub use crate::coverage::Coverage;
 pub use crate::error::SweepError;
 pub use crate::rotation::Held;
-pub use crate::rotation::NIGHTS;
 pub use crate::rotation::Night;
+pub use crate::rotation::Nights;
 pub use crate::rotation::Offset;
 pub use crate::rotation::Part;
-pub use crate::rotation::Parts;
 pub use crate::rotation::Rotation;
 pub use crate::rotation::Slice;
 pub use crate::rotation::Text;
@@ -286,36 +287,41 @@ impl Sweep
         }
     }
 
-    /// The candidates a rotating sweep visits: those the night's slice holds
-    /// under [`Coverage::Full`], `sample`'s selection otherwise.
+    /// The candidates a rotating sweep visits: those the night's slice of
+    /// `nights` holds under [`Coverage::Full`], `sample`'s selection
+    /// otherwise.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: under [`Coverage::Full`], exactly the candidates
-    ///   [`Rotation::holds`] for `sample`'s name, every one under
+    ///   [`Rotation::holds`] for `sample`'s name over `nights`, every one under
     ///   [`Rotation::Whole`]; [`Sample::select`] over the change otherwise.
     /// - provides: the sources a sweep too costly to visit whole every night
     ///   visits, in the candidates' order.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a nightly sweep over the corpus on [`NIGHTS`]
+    /// - hypothesis: L3 — a nightly sweep over the corpus on `nights`
     ///   consecutive nights, a whole one and a sampled one; a rotation applied
-    ///   to a sampled run or ignored by a full one changes a count.
+    ///   to a sampled run or ignored by a full one, or a night count ignored,
+    ///   changes a count.
     /// - witness: `tests::a_rotating_sweep_covers_the_corpus_over_its_nights`
-    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == candidates.iter().filter(|candidate| self.rotation.holds(sample.name, candidate) == Held::Tonight).count())]
+    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == candidates.iter().filter(|candidate| self.rotation.holds(sample.name, nights, candidate) == Held::Tonight).count())]
     #[inline]
     #[must_use]
     pub fn visit_rotating(
         &self,
         sample: Sample,
+        nights: Nights,
         candidates: &[Source],
     ) -> Vec<Source>
     {
         match self.coverage {
             Coverage::Full => candidates
                 .iter()
-                .filter(|candidate| self.rotation.holds(sample.name, candidate) == Held::Tonight)
+                .filter(|candidate| {
+                    self.rotation.holds(sample.name, nights, candidate) == Held::Tonight
+                })
                 .cloned()
                 .collect(),
             Coverage::Sampled => sample.select(candidates, &self.changed),
@@ -328,8 +334,8 @@ mod tests
 {
     use super::Changed;
     use super::Coverage;
-    use super::NIGHTS;
     use super::Night;
+    use super::Nights;
     use super::Rotation;
     use super::Sample;
     use super::SampleName;
@@ -371,15 +377,16 @@ mod tests
             name: SampleName("a sweep"),
             size: SampleSize(3),
         };
+        let nights = Nights(6);
         let mut visits = 0_usize;
         let mut covered = alloc::collections::BTreeSet::new();
-        for night in 0 .. NIGHTS {
+        for night in 0 .. nights.0 {
             let sweep = Sweep::new(
                 Coverage::Full,
                 Changed::default(),
                 Rotation::Night(Night(night)),
             );
-            let visited = sweep.visit_rotating(sample, &corpus);
+            let visited = sweep.visit_rotating(sample, nights, &corpus);
             assert!(
                 visited.len() < corpus.len(),
                 "night {night} visits a slice: {} of {}",
@@ -393,7 +400,7 @@ mod tests
         assert_eq!(covered.len(), corpus.len(), "every source is visited");
         assert_eq!(
             Sweep::new(Coverage::Full, Changed::default(), Rotation::Whole)
-                .visit_rotating(sample, &corpus),
+                .visit_rotating(sample, nights, &corpus),
             corpus,
             "the whole rotation visits every source"
         );
@@ -402,7 +409,7 @@ mod tests
             Changed::default(),
             Rotation::Night(Night(0)),
         )
-        .visit_rotating(sample, &corpus);
+        .visit_rotating(sample, nights, &corpus);
         assert_eq!(
             sampled,
             sample.select(&corpus, &Changed::default()),

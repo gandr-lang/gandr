@@ -2418,6 +2418,7 @@ mod sweeps
 {
     use alloc::collections::BTreeSet;
 
+    use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -2428,11 +2429,17 @@ mod sweeps
     /// The sample: twenty sources under `fixture/pathological`, ranked by
     /// their BLAKE3 digest under this name, and every one the change adds
     /// or modifies (`gandr-workflow-sweep`). The `sweeps` profile
-    /// cuts every pathological source.
+    /// cuts every pathological source, and the nightly profile the night's
+    /// slice of [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("a_malformed_form_reports_its_parse_error_alone"),
         size: SampleSize(20),
     };
+
+    /// The nights the nightly profile takes to cut every pathological
+    /// source: half a night. All of them cut for 44 s to 50 s on the nightly
+    /// runner.
+    const NIGHTS: Nights = Nights(2);
 
     #[test]
     fn a_malformed_form_reports_its_parse_error_alone()
@@ -2444,8 +2451,9 @@ mod sweeps
             .filter(|source| source.name.as_ref().starts_with("fixture/pathological/"))
             .collect();
         let sweep = Sweep::asked().expect("the run's sweep resolves");
+        eprintln!("{}", sweep.rotation());
         let visited: BTreeSet<_> = sweep
-            .visit(SAMPLE, &candidates)
+            .visit_rotating(SAMPLE, NIGHTS, &candidates)
             .into_iter()
             .map(|source| source.path)
             .collect();

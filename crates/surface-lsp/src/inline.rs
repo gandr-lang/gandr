@@ -2720,6 +2720,7 @@ mod tests
         use gandr_surface_render_remote::ByteOffset;
         use gandr_surface_syntax::SourceText;
         use gandr_workflow_sweep::Coverage;
+        use gandr_workflow_sweep::Nights;
         use gandr_workflow_sweep::Sample;
         use gandr_workflow_sweep::SampleName;
         use gandr_workflow_sweep::SampleSize;
@@ -2734,11 +2735,16 @@ mod tests
         /// this name, at least one of each corpus class — `strict` and each
         /// directory below `fixture` — and every source the change adds or
         /// modifies (`gandr-workflow-sweep`). The `sweeps` profile reads every
-        /// source.
+        /// source, and the nightly profile the night's slice of [`NIGHTS`].
         const SAMPLE: Sample = Sample {
             name: SampleName("every_corpus_cursor_has_a_ghost_text"),
             size: SampleSize(24),
         };
+
+        /// The nights the nightly profile takes to read every source: a
+        /// quarter a night. The whole corpus read for 154 s to 211 s on the
+        /// nightly runner, past its share of the nightly budget.
+        const NIGHTS: Nights = Nights(4);
 
         /// Every source's cursors are read without specification enforcement;
         /// the enforcing build checks every contract on every call and reads
@@ -2826,7 +2832,12 @@ mod tests
         {
             let tools = tools();
             let sweep = Sweep::asked().expect("the run's sweep resolves");
-            let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+            eprintln!("{}", sweep.rotation());
+            let sources = sweep.visit_rotating(
+                SAMPLE,
+                NIGHTS,
+                &corpus::sources().expect("the corpus reads"),
+            );
             assert!(
                 sources.len() >= SAMPLE.size.0,
                 "the sample is drawn: {}",

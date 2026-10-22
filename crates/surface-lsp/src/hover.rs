@@ -2865,6 +2865,7 @@ mod tests
         use gandr_surface_render_remote::ByteOffset as RenderOffset;
         use gandr_surface_render_remote::LineIndex;
         use gandr_surface_syntax::SourceText;
+        use gandr_workflow_sweep::Nights;
         use gandr_workflow_sweep::Sample;
         use gandr_workflow_sweep::SampleName;
         use gandr_workflow_sweep::SampleSize;
@@ -2891,6 +2892,11 @@ mod tests
             size: SampleSize(48),
         };
 
+        /// The nights the nightly profile takes to hover every source's tiles:
+        /// half a night. The whole corpus hovered for 44 s to 60 s on the
+        /// nightly runner.
+        const NIGHTS: Nights = Nights(2);
+
         /// No tile of the corpus hovers nothing: each answers what the engine
         /// holds or a stub ending with its gap's tracking issue, and none of
         /// an accepted declaration is one the engine typed nothing at.
@@ -2898,7 +2904,12 @@ mod tests
         fn every_corpus_tile_hovers_or_names_its_issue_1206()
         {
             let sweep = Sweep::asked().expect("the run's sweep resolves");
-            let sources = sweep.visit(SAMPLE, &corpus::sources().expect("the corpus reads"));
+            eprintln!("{}", sweep.rotation());
+            let sources = sweep.visit_rotating(
+                SAMPLE,
+                NIGHTS,
+                &corpus::sources().expect("the corpus reads"),
+            );
             assert!(
                 sources.len() >= SAMPLE.size.0,
                 "the sample is drawn: {}",

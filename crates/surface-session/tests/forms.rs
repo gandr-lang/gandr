@@ -361,6 +361,7 @@ fn form_starts(text: Text<'_>) -> Vec<Byte>
 mod sweeps
 {
     use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
     use gandr_workflow_sweep::Sample;
     use gandr_workflow_sweep::SampleName;
     use gandr_workflow_sweep::SampleSize;
@@ -371,13 +372,17 @@ mod sweeps
     /// The sample: twenty-four corpus sources ranked by their BLAKE3 digest
     /// under this name, the first of every class, and every one the change
     /// adds or modifies (`gandr-workflow-sweep`). The `sweeps` profile
-    /// scripts every source; the nightly profile scripts the night's slice,
-    /// every source within `NIGHTS` nights, because the whole corpus scripted
-    /// with specifications enforced takes five minutes of the nightly budget.
+    /// scripts every source; the nightly profile scripts the night's slice of
+    /// [`NIGHTS`].
     const SAMPLE: Sample = Sample {
         name: SampleName("every_corpus_edit_script_submits_as_the_walk_composes_it"),
         size: SampleSize(24),
     };
+
+    /// The nights the nightly profile takes to script every source: an eighth
+    /// a night, because the whole corpus scripted with specifications enforced
+    /// takes five minutes of the nightly budget. A quarter took 50 to 55 s.
+    const NIGHTS: Nights = Nights(8);
 
     /// The longest source text, its import closure laid out before it, a
     /// sampled run scripts. A script submits the text ten times, and where
@@ -394,6 +399,7 @@ mod sweeps
         let visited: Vec<_> = sweep
             .visit_rotating(
                 SAMPLE,
+                NIGHTS,
                 &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
             )
             .into_iter()
