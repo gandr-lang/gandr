@@ -2,8 +2,9 @@
 // kernel checks a session's payload paths in the empty context, so a payload
 // path reads no variable, and an open univalence names no certificate.
 
-// The protocols and the payload records they carry.
-import "../../model/sessions/payload-univalence.gandr" ;
+// The bits and the answers, and the protocols `Ask.Coded` and `Ask.Decoded`
+// that hear them.
+import "../../model/sessions/run-transport.gandr" ;
 
 /// #1739: the two protocols paid with a univalence over any record the caller
 /// passes. The path checks against the pair it is owed, but it is open.
