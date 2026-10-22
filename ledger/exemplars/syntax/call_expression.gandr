@@ -1,2 +1,9 @@
 /// `call_expression`: a call.
-def larger = max(1, 2) ;
+@[ checks ]
+def max(a : Integer, b : Integer) -> -F Integer {
+  return b
+}
+@[ checks ]
+def larger() -> -F Integer {
+  max(1, 2)
+}

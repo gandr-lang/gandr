@@ -1,7 +1,10 @@
 /// `data_declaration`: a datatype: its family head and one generator per constructor, a field at the unrestricted grade written with its glyph and in ASCII.
+/// The checker does not reach this form yet; #1295 tracks it.
+@[ refuses("OutOfFragment.grade.declaration") ]
 data Box : Type {
-  Wrap : (ω n : Integer);
+  Wrap : (ω n : Integer) --> Box;
 }
+@[ refuses("OutOfFragment.grade.declaration") ]
 data BoxAscii : Type {
-  Wrap : (inf n : Integer);
+  Wrap : (inf n : Integer) --> BoxAscii;
 }

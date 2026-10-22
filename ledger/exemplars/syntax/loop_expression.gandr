@@ -1,4 +1,9 @@
 /// `loop_expression`: a loop.
-def spin(n : Integer) -> -F Integer {
+@[ checks ]
+def tick(n : Integer) -> -F Unit {
+  unit
+}
+@[ checks ]
+def spin(n : Integer) -> -F [Div] Integer {
   loop { tick(n); }
 }

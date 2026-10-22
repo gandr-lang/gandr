@@ -1,4 +1,7 @@
 /// `hole.pattern`: a named hole in pattern position.
+/// A hole leaves which arm runs open, so the case is refused until it is
+/// filled.
+@[ refuses("UndecidedCoverage") ]
 def classify(n : Integer) -> -F Integer {
   case n {
     ?branch => return 1

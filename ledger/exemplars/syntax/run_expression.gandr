@@ -1,4 +1,17 @@
 /// `run_expression`: running a computation where a value is read.
-def twice(n : Integer) -> -F Integer {
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+@[ checks ]
+def rec down(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become down[<](p)
+  }
+}
+@[ checks ]
+def twice(n : Nat) -> -F Nat {
   down(run down(n))
 }

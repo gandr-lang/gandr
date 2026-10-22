@@ -1,2 +1,5 @@
 /// `binary_expression.cmp.gt`: a greater-than comparison.
-def larger = 2 > 1 ;
+@[ checks ]
+def larger() -> -F Bool {
+  return 2 > 1
+}

@@ -1,2 +1,9 @@
 /// `binary_expression.then`: path composition: one path, then another.
+@[ checks ]
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+@[ checks ]
+def twice : Path(Circle, Base, Base) ;
 def twice = loop then loop ;

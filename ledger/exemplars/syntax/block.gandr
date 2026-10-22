@@ -1,2 +1,6 @@
 /// `block`: a block: statements, then the computation it ends in.
-def answer = { return 42 } ;
+@[ checks ]
+def answer() -> -F Integer {
+  run n <- { pure 41 };
+  return n + 1
+}

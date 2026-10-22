@@ -1,2 +1,4 @@
 /// `lazy_record_type`: a lazy record type.
-def menu : &{Integer, String} ;
+@[ checks ]
+def menu : +U &{-F Integer, -F String} ;
+def menu = &{.0 => 1, .1 => "s"} ;

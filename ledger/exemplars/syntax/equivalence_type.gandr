@@ -1,3 +1,9 @@
 /// `equivalence_type`: an equivalence type, written with its glyph and in ASCII.
-def same : Integer ≃ Integer ;
-def sameAscii : Integer <~> Integer ;
+@[ checks ]
+def same(e : Integer ≃ Integer) -> -F Unit {
+  pure unit
+}
+@[ checks ]
+def sameAscii(e : Integer <~> Integer) -> -F Unit {
+  pure unit
+}

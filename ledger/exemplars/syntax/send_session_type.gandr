@@ -1,2 +1,5 @@
 /// `send_session_type`: a session that sends.
-def outward : !Integer. end ;
+@[ checks ]
+def outward(c : !Integer. end) -> -F Unit {
+  pure unit
+}

@@ -1,5 +1,22 @@
 /// `rec_block`: a recursive group: definitions that may name each other.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
 rec {
-  def even(n : Integer) -> -F Boolean { become odd[<](n) }
-  def odd(n : Integer) -> -F Boolean { become even[<](n) }
+  @[ checks ]
+  def rec even(n : Nat) -> -F Integer {
+    case n {
+      Zero => return 1,
+      Succ(p) => become odd[<](p)
+    }
+  }
+  @[ checks ]
+  def rec odd(n : Nat) -> -F Integer {
+    case n {
+      Zero => return 0,
+      Succ(p) => become even[<](p)
+    }
+  }
 }

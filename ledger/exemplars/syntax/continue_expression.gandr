@@ -1,4 +1,5 @@
 /// `continue_expression`: a continue to the next iteration.
-def skip(n : Integer) -> -F Integer {
+@[ checks ]
+def skip(n : Integer) -> -F [Div] Integer {
   loop { continue }
 }

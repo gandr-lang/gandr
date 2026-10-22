@@ -1,2 +1,5 @@
 /// `end_session_type`: the ended session.
-def done : end ;
+@[ checks ]
+def finish(c : end) -> -F Unit {
+  pure unit
+}

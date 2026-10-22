@@ -1,2 +1,5 @@
 /// `f_type`: a computation type returning a value type.
-def answer : -F Integer ;
+@[ checks ]
+def answer() -> -F Integer {
+  return 42
+}

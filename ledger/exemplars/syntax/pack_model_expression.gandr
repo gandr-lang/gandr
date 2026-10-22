@@ -1,2 +1,14 @@
 /// `pack_model_expression`: a module packed at its theory's models.
-def zero = pack Zero at Model(Pointed);
+@[ checks ]
+theory Pointed {
+  sort P : Type;
+  oper point : P;
+}
+module Zero : Model(Pointed) {
+  type P = Integer;
+  @[ checks ]
+  def point = 0;
+}
+@[ checks ]
+def zero : Model(Pointed) ;
+def zero = pack Zero at Model(Pointed) ;

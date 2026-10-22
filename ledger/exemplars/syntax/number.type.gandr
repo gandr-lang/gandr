@@ -1,2 +1,9 @@
 /// `number.type`: a number in type position.
-def two : Fin(2) ;
+@[ checks ]
+data Ix(n : Integer) : Type {
+  MkIx : Ix(n);
+}
+@[ checks ]
+def atOne(w : Ix(1)) -> -F Ix(1) {
+  w
+}

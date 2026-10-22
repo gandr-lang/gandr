@@ -1,2 +1,5 @@
 /// `force_expression`: forcing a thunk.
-def forced = thunk { become force later } ;
+@[ checks ]
+def forced(k : () => Integer) -> -F Integer {
+  force k
+}

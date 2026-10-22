@@ -1,2 +1,4 @@
 /// `product_type`: a product type.
+@[ checks ]
 def pair : Integer * String ;
+def pair = (1, "s") ;

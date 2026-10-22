@@ -1,2 +1,5 @@
 /// `unary_expression`: negation.
-def negated = -answer ;
+@[ checks ]
+def negated(n : Integer) -> -F Integer {
+  return -n
+}

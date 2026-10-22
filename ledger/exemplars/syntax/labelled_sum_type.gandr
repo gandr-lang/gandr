@@ -1,2 +1,4 @@
 /// `labelled_sum_type`: a labelled sum type.
+@[ checks ]
 def tagged : +{Integer, String} ;
+def tagged = +{.0 = 1} ;

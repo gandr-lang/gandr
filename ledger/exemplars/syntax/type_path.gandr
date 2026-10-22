@@ -1,2 +1,7 @@
 /// `type_path`: a type named through a module.
+module Counter {
+  type T = Integer;
+}
+@[ checks ]
 def counter : Counter.T ;
+def counter = 0 ;

@@ -1,2 +1,4 @@
 /// `type_application`: a type family applied.
+@[ checks ]
 def numbers : List(Integer) ;
+def numbers = cons(1, nil) ;

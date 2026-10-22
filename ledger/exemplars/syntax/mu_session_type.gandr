@@ -1,2 +1,5 @@
 /// `mu_session_type`: a recursive session type.
-def forever : mu t. !Integer. t ;
+@[ checks ]
+def serve(c : mu t. !Integer. t) -> -F Unit {
+  pure unit
+}

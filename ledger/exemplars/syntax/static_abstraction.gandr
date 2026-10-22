@@ -1,2 +1,4 @@
 /// `static_abstraction`: a static abstraction over a type.
+@[ checks ]
+def apply : (Type -> Type) -> Type -> Type ;
 def apply = \F. \X. F(X) ;

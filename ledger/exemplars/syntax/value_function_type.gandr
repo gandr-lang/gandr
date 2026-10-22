@@ -1,2 +1,4 @@
 /// `value_function_type`: a value function type.
+@[ checks ]
 def bump : Integer => Integer ;
+def bump = fn (x : Integer) { return x + 1 } ;

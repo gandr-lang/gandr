@@ -1,2 +1,5 @@
 /// `binary_expression.mul.times`: multiplication.
-def product = 2 * 3 ;
+@[ checks ]
+def product() -> -F Integer {
+  return 2 * 3
+}

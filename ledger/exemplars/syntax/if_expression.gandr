@@ -1,4 +1,6 @@
 /// `if_expression`: a conditional.
-def pick(b : Boolean) -> -F Integer {
+/// The checker does not reach this form yet; #1207 tracks it.
+@[ refuses("OutOfFragment.if_expression") ]
+def pick(b : Bool) -> -F Integer {
   if b { return 1 } else { return 2 }
 }

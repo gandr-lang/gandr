@@ -1,2 +1,4 @@
 /// `telescope_type`: a telescope type.
+@[ checks ]
 def point : #{x : Integer, y : Integer} ;
+def point = #{x = 1, y = 2} ;
