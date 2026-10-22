@@ -71,6 +71,7 @@ use gandr_theory_cell_complexes::Generalization;
 use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
@@ -512,6 +513,19 @@ where
     ) -> SubstitutionDecision
     {
         ToyAlphabet::unify_cmd(lhs, rhs, subst)
+    }
+
+    /// The toy alphabet's root check.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn root_agreement(
+        lhs: &Self::Cmd,
+        rhs: &Self::Cmd,
+    ) -> RootAgreement
+    {
+        ToyAlphabet::root_agreement(lhs, rhs)
     }
 
     /// The toy alphabet's anti-unification.

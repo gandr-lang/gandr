@@ -52,6 +52,7 @@ use gandr_theory_cell_complexes::GeneralizationPoint;
 use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
@@ -913,6 +914,36 @@ impl CellAlphabet for ToyAlphabet
         SubstitutionDecision::from(true)
     }
 
+    /// Two terms whose roots carry different heads never unify; a
+    /// metavariable root, or one head on both, is left to unification.
+    ///
+    /// # Specification
+    /// - ensures: [`RootAgreement::Clash`] exactly when neither root is a
+    ///   metavariable and the two root heads differ.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a successor beside zero clashes, a metavariable
+    ///   beside either may meet, two additions may meet. Reporting a clash
+    ///   beside a metavariable drops a pair.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[inline]
+    #[spec(ensures: |output| (output == RootAgreement::Clash) == match (lhs.0.first(), rhs.0.first()) {
+        (Some(left), Some(right)) => !matches!(*left, ToyHead::Var(_)) && !matches!(*right, ToyHead::Var(_)) && left != right,
+        (None, _) | (_, None) => false,
+    })]
+    fn root_agreement(
+        lhs: &Self::Cmd,
+        rhs: &Self::Cmd,
+    ) -> RootAgreement
+    {
+        match (lhs.0.first(), rhs.0.first()) {
+            (Some(&ToyHead::Var(_)), _) | (_, Some(&ToyHead::Var(_))) => RootAgreement::May,
+            (Some(left), Some(right)) if left != right => RootAgreement::Clash,
+            (Some(_), Some(_)) | (None, _) | (_, None) => RootAgreement::May,
+        }
+    }
+
     /// The least general generalization of a family of toy-term tuples.
     ///
     /// # Specification
@@ -1518,6 +1549,18 @@ mod tests
         assert_eq!(Toy::add(Toy::zero(), Toy::zero()), subst.apply_fully(&term));
         assert_eq!(Toy::zero(), subst.walk(Toy::var("x")));
         assert_eq!(term, subst.walk(term.clone()));
+        assert_eq!(
+            RootAgreement::Clash,
+            ToyAlphabet::root_agreement(&Toy::succ(Toy::zero()), &Toy::zero())
+        );
+        assert_eq!(
+            RootAgreement::May,
+            ToyAlphabet::root_agreement(&Toy::var("x"), &Toy::zero())
+        );
+        assert_eq!(
+            RootAgreement::May,
+            ToyAlphabet::root_agreement(&term, &Toy::add(Toy::zero(), Toy::zero()))
+        );
         assert_eq!(Toy::var("free"), subst.walk(Toy::var("free")));
         assert_eq!(Toy::var("free"), subst.apply_fully(&Toy::var("free")));
         assert_eq!(term, ToySubst::default().apply_fully(&term));

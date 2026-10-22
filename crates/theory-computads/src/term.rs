@@ -63,6 +63,7 @@ use gandr_theory_cell_complexes::GeneralizationPoint;
 use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
 use gandr_theory_cell_complexes::anti_unification;
@@ -1181,6 +1182,37 @@ impl CellAlphabet for TermAlphabet
             .collect();
         *subst = TermSubst(resolved);
         SubstitutionDecision::from(true)
+    }
+
+    /// Two terms whose roots carry different heads never unify; a
+    /// metavariable root, or one head on both, is left to unification.
+    ///
+    /// # Specification
+    /// - ensures: [`RootAgreement::Clash`] exactly when neither root is a
+    ///   metavariable and the two root heads differ, the clash
+    ///   [`Self::unify_cmd`] refuses at the root.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two operations clash, an operation beside a
+    ///   metavariable may meet, one operation on both may meet. Reporting a
+    ///   clash beside a metavariable drops a pair.
+    /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
+    #[inline]
+    #[spec(ensures: |output| (output == RootAgreement::Clash) == match (lhs.0.first(), rhs.0.first()) {
+        (Some(left), Some(right)) => !matches!(*left, Head::Var(_)) && !matches!(*right, Head::Var(_)) && left != right,
+        (None, _) | (_, None) => false,
+    })]
+    fn root_agreement(
+        lhs: &Self::Cmd,
+        rhs: &Self::Cmd,
+    ) -> RootAgreement
+    {
+        match (lhs.0.first(), rhs.0.first()) {
+            (Some(&Head::Var(_)), _) | (_, Some(&Head::Var(_))) => RootAgreement::May,
+            (Some(left), Some(right)) if left != right => RootAgreement::Clash,
+            (Some(_), Some(_)) | (None, _) | (_, None) => RootAgreement::May,
+        }
     }
 
     /// The least general generalization of a family of term tuples.

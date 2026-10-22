@@ -103,6 +103,7 @@ pub use crate::alphabet::Generalization;
 pub use crate::alphabet::GeneralizationArm;
 pub use crate::alphabet::GeneralizationPoint;
 pub use crate::alphabet::PositionOrder;
+pub use crate::alphabet::RootAgreement;
 pub use crate::alphabet::SeamRole;
 pub use crate::alphabet::anti_unification;
 pub use crate::alphabet::command_subterm;

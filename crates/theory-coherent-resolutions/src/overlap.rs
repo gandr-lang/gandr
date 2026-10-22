@@ -99,6 +99,7 @@ use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CommandSpliceRefusal;
+use gandr_theory_cell_complexes::RootAgreement;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_spec_combinators::Mark;
 use gandr_theory_spec_combinators::appended;
@@ -937,6 +938,9 @@ where
 /// - ensures: the confluence entries of `overlaps_between(left, right)`, at
 ///   most one, in its order.
 /// - panics: none.
+/// - intension: a pair of one cell, or of two whose left-hand sides' roots
+///   clash ([`CellAlphabet::root_agreement`]), is answered before the right
+///   cell is renamed apart.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the joinability sweep reads the root pairs through this
@@ -955,6 +959,9 @@ pub fn root_overlaps_between<A>(
 where
     A: CellAlphabet,
 {
+    if left.0 == right.0 || A::root_agreement(left.1.lhs(), right.1.lhs()) == RootAgreement::Clash {
+        return Vec::new();
+    }
     root_overlap(left, right, &renamed_apart(left.1, right.1))
 }
 
@@ -1020,9 +1027,10 @@ where
 ///   itself like any other.
 /// - panics: none.
 /// - intension: the positions are read before the right cell is renamed apart,
-///   so a pair whose left-hand side has no interior position pays for no
-///   renaming; over an alphabet whose only command position is the root the
-///   family is always empty.
+///   and a seam whose root clashes with the right left-hand side's
+///   ([`CellAlphabet::root_agreement`]) is dropped then, so a pair with no
+///   agreeing interior position pays for no renaming; over an alphabet whose
+///   only command position is the root the family is always empty.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — over the toy alphabet a rule overlapping a successor
@@ -1055,7 +1063,9 @@ where
         .filter(|seam| *seam != root)
         .filter_map(|seam| match A::subterm_cmd_at(left_cell.lhs(), &seam) {
             Maybe::Present(sub)
-                if A::metavariables(&sub).len() != 1 || A::command_positions(&sub).len() != 1 =>
+                if A::root_agreement(&sub, right_cell.lhs()) == RootAgreement::May
+                    && (A::metavariables(&sub).len() != 1
+                        || A::command_positions(&sub).len() != 1) =>
             {
                 Some((seam, sub))
             },

@@ -142,6 +142,21 @@ pub enum PositionOrder
     Incomparable,
 }
 
+/// Whether two terms' roots can meet under a substitution.
+///
+/// Renaming changes metavariables only, so the verdict on a term is the
+/// verdict on its renaming apart: the overlap queries read it before they
+/// rename, and a clash costs neither the renaming nor the unification.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RootAgreement
+{
+    /// A root is a metavariable, or both roots carry one head: a unifier may
+    /// exist, and only unification decides.
+    May,
+    /// The roots carry two different heads: no substitution unifies the terms.
+    Clash,
+}
+
 /// The warrant an alphabet's store carries for skipping a per-pair convexity
 /// re-check: whether every match image is still convex in the other
 /// application's reduct.
@@ -424,6 +439,30 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
         rhs: &Self::Cmd,
         subst: &mut Self::Subst,
     ) -> SubstitutionDecision;
+
+    /// Whether the roots of `lhs` and `rhs` can meet under a substitution.
+    ///
+    /// # Specification
+    /// - ensures: [`RootAgreement::Clash`] only when no substitution unifies
+    ///   `lhs` and `rhs`, so a caller may skip [`CellAlphabet::unify_cmd`] on
+    ///   it; [`RootAgreement::May`] otherwise.
+    /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: constant: the two roots alone are read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over the sequent alphabet a polarity clash refuses
+    ///   and a shared polarity is left to unification; over the term alphabets
+    ///   two heads clash, one head and a metavariable root may meet. A clash
+    ///   reported where a unifier exists drops a critical pair.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
+    fn root_agreement(
+        lhs: &Self::Cmd,
+        rhs: &Self::Cmd,
+    ) -> RootAgreement;
 
     /// Anti-unification: the least general generalization of `family`, a
     /// family of equal-length term tuples, taken component by component over
@@ -959,6 +998,14 @@ mod tests
         assert!(bool::from(A::unify_cmd(&left, &right, &mut unifier)));
         assert_eq!(left, A::apply_subst(&unifier, &left));
         assert_eq!(left, A::apply_subst(&unifier, &right));
+        assert_eq!(RootAgreement::May, A::root_agreement(&left, &right));
+        let negative = CmdPat::cut(Polarity::Negative, ProdPat::meta("right"), ConsPat::top());
+        assert_eq!(RootAgreement::Clash, A::root_agreement(&left, &negative));
+        assert!(!bool::from(A::unify_cmd(
+            &left,
+            &negative,
+            &mut Subst::new()
+        )));
         let zero = cut(ProdPat::ctor("Zero", []), ConsPat::top());
         let one = cut(ProdPat::ctor("One", []), ConsPat::top());
         assert!(!bool::from(A::match_cmd(&zero, &one, &mut Subst::new())));

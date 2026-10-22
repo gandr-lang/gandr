@@ -195,6 +195,21 @@ fn substitution_walks_are_transactional_and_bounded()
     );
     assert_eq!(var("free"), subst.walk(var("free")), "a free leaf stays");
     assert_eq!(
+        RootAgreement::Clash,
+        TermAlphabet::root_agreement(&term, &zero()),
+        "two operations' roots never meet"
+    );
+    assert_eq!(
+        RootAgreement::May,
+        TermAlphabet::root_agreement(&var("x"), &zero()),
+        "a metavariable root meets any root"
+    );
+    assert_eq!(
+        RootAgreement::May,
+        TermAlphabet::root_agreement(&term, &pair(ctor("Zero", []), FreeTerm::var("z"))),
+        "one operation on both roots is left to unification"
+    );
+    assert_eq!(
         term,
         TermSubst::default().apply_fully(&term),
         "no binding, no change"
