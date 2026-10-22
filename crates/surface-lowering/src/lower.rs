@@ -20668,6 +20668,48 @@ mod tests
         );
     }
 
+    /// A name nothing declares, written inside any former, refuses the
+    /// declaration with the refusal of the name itself, located where it is
+    /// written: no former around it answers in its place.
+    #[test]
+    fn a_name_nothing_declares_refuses_through_every_former_around_it()
+    {
+        let rows = [
+            "def a : #{x : Zz} ;",
+            "def a : #{x : Integer, y : Zz} ;",
+            "def a : Integer * Zz ;",
+            "def a : List(Zz) ;",
+            "def a : +U (Zz -> -F Integer) ;",
+            "def a : +U (Integer -> -F Zz) ;",
+            "def a : (x : Zz) => Integer ;",
+            "def a : (x : Integer) => Zz ;",
+            "def a : Zz => Integer ;",
+            "def a : Path(Zz, 1, 1) ;",
+            "def a = (1, zz) ;",
+            "def a = [1, zz] ;",
+            "def a = thunk { return zz } ;",
+            "def a = thunk { run x <- pure zz ; return x } ;",
+            "def a = thunk { fn (x) { return zz } } ;",
+            "def a = thunk { case 1 { 1 => return zz, _ => return 0 } } ;",
+        ];
+        for source in rows {
+            let refused = refusal(SourceText::from(source));
+            let (LoweringRefusal::UnresolvedName { span, name }
+            | LoweringRefusal::UnresolvedTypeHead { span, name, .. }) = refused
+            else {
+                panic!("`{source}` is refused at its name, not {refused:?}");
+            };
+            let spelled = (
+                source.get(usize::from(span.start()) .. usize::from(span.end())),
+                name,
+            );
+            assert!(
+                matches!(spelled, (Some(written), name) if written.eq_ignore_ascii_case("zz") && name.as_ref() == written),
+                "`{source}` names the unresolved name where it is written: {spelled:?}"
+            );
+        }
+    }
+
     #[test]
     fn an_undefined_type_head_is_refused()
     {

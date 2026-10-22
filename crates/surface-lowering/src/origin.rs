@@ -2491,6 +2491,66 @@ mod tests
     }
 
     #[test]
+    fn a_rebuilt_action_carries_its_endpoint_and_arm_labels_and_no_other()
+    {
+        use gandr_kernel_term::ConstantIndex;
+        use gandr_kernel_term::FieldLabel;
+
+        use super::Label;
+        use super::Labelled;
+
+        let mut arena = CoreArena::new();
+        let mut table = OriginTable::new();
+        let unit = arena.value_unit();
+        let [action, other, rebuilt] = [(); 3].map(|()| arena.computation_return(unit));
+        let written = |labelled| Label {
+            span: at(NodeIndex::from(1_usize)).span(),
+            labelled,
+        };
+        let arm = FieldLabel::from(alloc::string::String::from("left"));
+        table.record_label(written(Labelled::Endpoint(action)));
+        table.record_label(written(Labelled::Branch {
+            action,
+            label: arm.clone(),
+        }));
+        table.record_label(written(Labelled::Endpoint(other)));
+        table.record_label(written(Labelled::Value(unit)));
+        table.relabel_action(action, rebuilt);
+        let labelled: alloc::vec::Vec<Labelled> = table
+            .labels()
+            .iter()
+            .map(|label| label.labelled.clone())
+            .collect();
+        assert_eq!(
+            labelled,
+            [
+                Labelled::Endpoint(rebuilt),
+                Labelled::Branch {
+                    action: rebuilt,
+                    label: arm,
+                },
+                Labelled::Endpoint(other),
+                Labelled::Value(unit),
+            ],
+            "the endpoint and the arm move to the rebuilt action; the rest stay"
+        );
+
+        table.record_elimination(rebuilt, ConstantIndex::from(3_usize));
+        table.record_elimination(action, ConstantIndex::from(4_usize));
+        let mut eliminated: alloc::vec::Vec<_> = table.eliminations().collect();
+        eliminated.sort_unstable();
+        let mut expected = [
+            (rebuilt, ConstantIndex::from(3_usize)),
+            (action, ConstantIndex::from(4_usize)),
+        ];
+        expected.sort_unstable();
+        assert_eq!(
+            eliminated, expected,
+            "each case names the family it eliminates"
+        );
+    }
+
+    #[test]
     fn a_declaration_token_resolves_to_its_own_origin()
     {
         let mut table = OriginTable::new();

@@ -2104,6 +2104,59 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
     );
 }
 
+/// A closure whose own sources refuse the unit halts where the refusal
+/// stands: it holds no module of its own, and a document resumed after it
+/// answers the refusal the whole unit answers.
+#[test]
+fn a_closure_whose_unit_refuses_halts_and_answers_the_refusal()
+{
+    let pbg = grammar();
+    let base = SourceText::from("def one = 1 ;");
+    let refusing = SourceText::from(
+        "import \"./base.gandr\" as B ;\nimport \"./base.gandr\" as B ;\ndef c = ? ;",
+    );
+    let twice = [
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+        ImportTarget::Source(SourceIndex::from(0_usize)),
+    ];
+    let (text, unit) = laid(&[(base, &[]), (refusing, &twice)]);
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        text.clone(),
+        unit.clone(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    assert!(
+        format!("{closure:?}").starts_with("ClosureLowering"),
+        "the closure debugs as itself"
+    );
+    assert!(
+        closure.alone().is_none(),
+        "a halted closure holds no module of its own"
+    );
+    let tree = parsed(&pbg, SourceText::from(text.as_str()));
+    let expected = lower_unit(
+        &pbg,
+        &tree,
+        &unit,
+        &mut CoreArena::new(),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut Decisions::none(),
+    );
+    assert!(
+        expected.is_err(),
+        "two imports of one alias refuse the unit"
+    );
+    assert_eq!(
+        closure.resume(&tree, &unit, &mut CoreArena::new(), &mut Decisions::none()),
+        expected
+    );
+}
+
 /// #776: a closure's own module is the leading declarations its importer
 /// lowers to, ids included. Onto the closure's own arena the document lowers
 /// exactly as the whole unit does; onto that arena with more nodes minted after
