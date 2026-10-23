@@ -14,9 +14,16 @@
 # to act for runner-image selection without changing the committed workflow.
 # Each invocation gives a disposable workflow copy a unique name, isolating
 # containers across repositories and worktrees. The checkout stays unchanged.
-# --rm covers completed jobs, including failures; the exit/signal trap removes
-# this run's containers, networks and volumes. Startup reaps abandoned runs
-# by workflow-process liveness, never age, and leaves act-toolcache untouched.
+# act runs with --reuse, so it never removes a job's container itself: act
+# allows that removal a fixed minute (pkg/runner/job_executor.go), and under
+# a dozen compiling jobs a removal past it fails the job's cleanup and stops
+# every later stage of the run, the joins and the gate jobs among them.
+# reap_jobs passes act's output through and removes each job's container,
+# its anonymous volumes and act's two named volumes as the job reports its
+# end, at no deadline, so disk frees as each job ends. The exit/signal trap
+# removes what is left: step containers, and anything a reap could not.
+# Startup reaps abandoned runs by workflow-process liveness, never age, and
+# leaves act-toolcache untouched.
 # Offline action mode reuses cached actions without fetching; cache misses
 # still download the pinned action.
 # act resets Git indexes even offline, so each invocation snapshots the shared
@@ -40,10 +47,44 @@ remove_run() {
     esac || { status=1; continue; }
     while IFS= read -r resource; do
       [[ -n "$resource" ]] || continue
-      docker "$kind" rm -f "$resource" || status=1
+      if [[ "$kind" == container ]]; then
+        docker container rm -f -v "$resource" || status=1
+      else
+        docker "$kind" rm -f "$resource" || status=1
+      fi
     done <<< "$ids"
   done
   return "$status"
+}
+
+# A job's container name is act's own (createContainerName in
+# pkg/runner/run_context.go): `act-` and the job's run-qualified name, the
+# prefix of its end line, with every other character than a letter or digit
+# a dash and `--` folded once, cut to 63 characters less trailing dashes,
+# then a dash and the SHA-256 of the whole folded name. The reader also
+# marks act's action-cache race (below) in the file its argument names.
+reap_jobs() {
+  local line job name hash
+  while IFS= read -r line; do
+    printf '%s\n' "$line"
+    if [[ "$line" == *"] remove $scratch/actions/"*"/.gitignore: no such file or directory" ]]; then
+      printf '%s\n' "$line" >> "$1"
+    fi
+    [[ "$line" =~ ^\[(.+)\]\ 🏁\ \ Job\ (succeeded|failed)$ ]] || continue
+    job=${BASH_REMATCH[1]}
+    job=${job%"${job##*[! ]}"}
+    name=$(LC_ALL=C.UTF-8 sed -e 's/[^a-zA-Z0-9]/-/g' -e 's/--/-/g' <<< "act-$job")
+    hash=$(printf '%s' "$name" | sha256sum)
+    name=${name:0:63}
+    while [[ "$name" == *- ]]; do name=${name%-}; done
+    name+="-${hash%% *}"
+    {
+      docker container rm -f -v "$name" > /dev/null &&
+        docker volume rm -f "$name" "$name-env" > /dev/null ||
+        printf 'ci:act: %s stays for the final cleanup\n' "$name" >&2
+    } &
+  done
+  wait
 }
 
 # Snapshot names before probing processes; a new run cannot lose resources
@@ -75,6 +116,7 @@ lockdir="${action_cache}.publish-lock"
 publish=
 locked=false
 act_pid=
+reaper_pid=
 slots="${XDG_CACHE_HOME:-$HOME/.cache}/act.slots"
 slot=
 cleanup() {
@@ -83,6 +125,10 @@ cleanup() {
   if [[ -n "$act_pid" ]]; then
     kill -TERM "$act_pid" 2>/dev/null || true
     wait "$act_pid" || true
+  fi
+  if [[ -n "$reaper_pid" ]]; then
+    exec 3>&-
+    wait "$reaper_pid" || true
   fi
   remove_run "$run_id" || { if [[ "$status" == 0 ]]; then status=1; fi; }
   if [[ "$locked" == true ]]; then rmdir "$lockdir" || status=1; fi
@@ -146,10 +192,32 @@ git clone --quiet --local --no-hardlinks -- "{{config_root}}" "$scratch/checkout
 git -C "$scratch/checkout" remote set-url origin "$(git -C "{{config_root}}" remote get-url origin)"
 cd "$scratch/checkout"
 ACT_RUN_ID=${scratch##*/} yq '.name += "-" + strenv(ACT_RUN_ID)' .github/workflows/ci.yml > "$scratch/ci.yml"
-act workflow_dispatch --workflows "$scratch/ci.yml" --action-cache-path "$scratch/actions" --action-offline-mode --rm "$@" &
-act_pid=$!
-wait "$act_pid"
-act_pid=
+# act's shared action cache races (nektos/act#6180, open): two jobs that
+# prepare one action in the same instant both see its `.gitignore`, and the
+# second removal fails its job with `remove …/.gitignore: no such file or
+# directory`. A run that fails with that line runs once more, from a clean
+# slate, and the second verdict stands: a real failure fails it again, and a
+# run that fails without the line is never retried.
+attempt=1
+while :; do
+  rm -f "$scratch/act-race"
+  exec 3> >(reap_jobs "$scratch/act-race")
+  reaper_pid=$!
+  status=0
+  act workflow_dispatch --workflows "$scratch/ci.yml" --action-cache-path "$scratch/actions" --action-offline-mode --rm --reuse "$@" >&3 2>&3 &
+  act_pid=$!
+  wait "$act_pid" || status=$?
+  act_pid=
+  exec 3>&-
+  wait "$reaper_pid"
+  reaper_pid=
+  if [[ "$status" == 0 ]]; then break; fi
+  if [[ "$attempt" != 1 || ! -s "$scratch/act-race" ]]; then exit "$status"; fi
+  printf 'ci:act: act exited %s after its action-cache race (nektos/act#6180); running once more:\n' "$status" >&2
+  cat "$scratch/act-race" >&2
+  remove_run "$run_id"
+  attempt=2
+done
 publish=$(mktemp -d "${action_cache}.publish.XXXXXXXX")
 for entry in "$scratch/actions/"*; do
   [[ -d "$entry" && ! -e "$action_cache/${entry##*/}" ]] || continue
