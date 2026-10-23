@@ -505,6 +505,11 @@ struct Engine<'arena>
     results: Vec<Node>,
     /// The nodes a wrap marks, each with its mark.
     sites: BTreeMap<Node, MarkIndex>,
+    /// The values a crossing applies a reduct to, each with the reduct.
+    crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// Each run a crossing minted beside the value it applies the reduct to,
+    /// in minting order.
+    crossed: Vec<(ValueId, ValueId)>,
     /// The entries an environment substitution replaces free indices by,
     /// innermost first.
     environment: Vec<ValueId>,
@@ -547,6 +552,8 @@ impl<'arena> Engine<'arena>
             tasks: Vec::new(),
             results: Vec::new(),
             sites: BTreeMap::new(),
+            crossings: BTreeMap::new(),
+            crossed: Vec::new(),
             environment: Vec::new(),
             nesting: BTreeMap::new(),
             regions: BTreeMap::new(),
@@ -1095,12 +1102,13 @@ impl<'arena> Engine<'arena>
     ///
     /// # Specification
     /// - requires: `rewritten` is `node`'s rewritten form, in its family.
-    /// - ensures: under a wrap, a fresh mark over `rewritten` when the sites
-    ///   name `node` and it is a term; under an elaboration, a fresh thunk over
-    ///   the computation of `rewritten` when `node` is a nested computation the
-    ///   checker decided to suspend, and a fresh returned value over it when
-    ///   the checker decided it stands as what it returns; `rewritten` itself
-    ///   otherwise.
+    /// - ensures: under a wrap, a fresh run of the reduct applied to
+    ///   `rewritten` when the crossings name `node`, and otherwise a fresh mark
+    ///   over `rewritten` when the sites name `node` and it is a term; under an
+    ///   elaboration, a fresh thunk over the computation of `rewritten` when
+    ///   `node` is a nested computation the checker decided to suspend, and a
+    ///   fresh returned value over it when the checker decided it stands as
+    ///   what it returns; `rewritten` itself otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1134,6 +1142,16 @@ impl<'arena> Engine<'arena>
         }
         if rewrite != Rewrite::Wrap {
             return rewritten;
+        }
+        if let (Node::Value(held), Node::Value(id)) = (node, rewritten)
+            && let Some(&reduct) = self.crossings.get(&held)
+        {
+            let constant = self.arena.value_constant(reduct);
+            let forced = self.arena.computation_force(constant);
+            let applied = self.arena.computation_application(forced, id);
+            let run = self.arena.value_run(applied);
+            self.crossed.push((id, run));
+            return Node::Value(run);
         }
         let Some(&mark) = self.sites.get(&node)
         else {
@@ -5347,6 +5365,66 @@ pub fn wrap_marks(
         .collect();
     let wrapped = engine.run(term_node(subject), Binders::NONE, Rewrite::Wrap);
     node_term(wrapped, subject)
+}
+
+/// Apply, within `subject`, the reduct `crossings` gives each value it names
+/// to that value, as a run, reporting every node it rewrote and every run it
+/// minted.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: `subject` rebuilt with every named value `v`, its own children
+///   rebuilt first, standing as the run `run(r(v))` of its reduct `r`;
+///   `subject` itself when `crossings` names nothing it reaches; `carried`
+///   gains one pair per node the rebuild carried over — a named value beside
+///   the value it stands as inside its run, when that is another — and `runs`
+///   each run minted, in minting order.
+/// - provides: the body whose runs the nested elaboration binds before their
+///   regions, as a run the source wrote.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a crossed argument of a call and an uncrossed sibling
+///   separate the run minted at the one from the identity on the other.
+/// - witness: `rewrite::tests::a_crossing_runs_its_reduct_at_exactly_the_named_values`
+#[spec(captures: [held = carried.len(), minted = runs.len()],
+    ensures: |ret| carried.len() >= held && runs.len() >= minted
+        && (runs.len() > minted || ret == subject))]
+#[inline]
+pub fn cross_reducts(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    crossings: &BTreeMap<ValueId, ConstantIndex>,
+    carried: &mut Vec<Carried>,
+    runs: &mut Vec<ValueId>,
+) -> ValueId
+{
+    let mut engine = Engine::new(arena);
+    engine.crossings = crossings.clone();
+    let crossed = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Wrap);
+    // A crossed value is carried to what stands for it inside its run, so a
+    // decision or an origin read through `carried` stays at the value.
+    let inside: BTreeMap<ValueId, ValueId> = engine
+        .crossed
+        .iter()
+        .map(|&(within, run)| (run, within))
+        .collect();
+    let mut reported = Vec::new();
+    report(&engine.memo, &mut reported);
+    carried.extend(reported.into_iter().filter_map(|pair| match pair {
+        Carried::Value(held, written) => match inside.get(&written) {
+            Some(&within) if within == held => None,
+            Some(&within) => Some(Carried::Value(held, within)),
+            None => Some(pair),
+        },
+        Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => Some(pair),
+    }));
+    runs.extend(engine.crossed.iter().map(|&(_, run)| run));
+    match crossed {
+        Node::Value(id) => id,
+        Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
 }
 
 /// How the checker decided a computation written where a value is read.

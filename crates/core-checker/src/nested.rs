@@ -49,6 +49,12 @@
 //! written node that elaborated — the nested call's own span at its bind —
 //! and no diagnostic names the minted variable.
 //!
+//! **A reduct the bridge crossed by runs where it crossed.** A model the value
+//! bridge carried to a model of a theory its own includes stands, before the
+//! elaboration, as a run of the reduct applied to it ([`cross`]); the run is
+//! decided pure and binds before its region as any other, so the second run
+//! and the kernel read the application.
+//!
 //! **What a type reads stays readable.** A pure run whose value a type after
 //! it reads — a dependent pair's first component under its second's type, a
 //! dependent function's argument under the types after it — stands as the
@@ -94,6 +100,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Unenclosed;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::Purity;
+use gandr_kernel_term::ConstantIndex;
 
 /// How the judgement decided a computation written where a value is read.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -120,6 +127,8 @@ pub struct NestedElaboration
     carried: Vec<Carried>,
     /// Each run beside the bind minted for it, in minting order.
     binds: Vec<(ValueId, ComputationId)>,
+    /// Each value the value bridge carried by a reduct, with the reduct.
+    crossings: BTreeMap<ValueId, ConstantIndex>,
 }
 
 impl NestedElaboration
@@ -162,6 +171,46 @@ impl NestedElaboration
     pub fn binds(&self) -> &[(ValueId, ComputationId)]
     {
         &self.binds
+    }
+
+    /// Each value the value bridge carried by a reduct, by node, with the
+    /// reduct the elaboration applied to it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossings(&self) -> &BTreeMap<ValueId, ConstantIndex>
+    {
+        &self.crossings
+    }
+
+    /// This elaboration, read after a crossing: `crossings` its crossings and
+    /// `carried` the crossing's rebuild, standing before its own.
+    ///
+    /// # Specification
+    /// - requires: `carried` is what [`cross`] carried to build the body this
+    ///   elaboration rebuilt.
+    /// - ensures: the crossings are `crossings`, and the carried pairs the
+    ///   crossing's, then this elaboration's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`cross`].
+    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    #[spec(captures: [ahead = carried.len(), own = self.carried.len(), count = crossings.len()],
+        ensures: |ret| ret.carried.len() == ahead.saturating_add(own) && ret.crossings.len() == count)]
+    #[must_use]
+    pub(crate) fn after_crossing(
+        mut self,
+        crossings: BTreeMap<ValueId, ConstantIndex>,
+        mut carried: Vec<Carried>,
+    ) -> Self
+    {
+        carried.append(&mut self.carried);
+        self.carried = carried;
+        self.crossings = crossings;
+        self
     }
 }
 
@@ -218,5 +267,54 @@ pub fn elaborate(
         decisions: decisions.clone(),
         carried,
         binds,
+        crossings: BTreeMap::new(),
     }))
+}
+
+/// Rebuild `body` with the reduct `crossings` gives each value it names
+/// applied to that value as a run, and read `decisions` over the rebuilt body.
+///
+/// # Specification
+/// - requires: `body` is live in `arena`; `crossings` and `decisions` are what
+///   the judgement recorded over it.
+/// - ensures: the rebuilt body, every node the rebuild carried over beside the
+///   node it was built from, and `decisions` keyed by what each node stands as
+///   in the rebuilt body, with each run the rebuild minted decided a pure run;
+///   `body`, nothing carried and `decisions` unchanged when `crossings` names
+///   nothing it reaches.
+/// - provides: the body and decisions [`elaborate`] reads where the value
+///   bridge crossed by a reduct.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked,
+///   beside a nested call, elaborates the reduct into a bind and keeps the
+///   call's decision.
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+#[spec(ensures: |ret| ret.2.len() >= decisions.len())]
+pub fn cross(
+    arena: &mut CoreArena,
+    body: ValueId,
+    crossings: &BTreeMap<ValueId, ConstantIndex>,
+    decisions: &BTreeMap<ValueId, Nesting>,
+) -> (ValueId, Vec<Carried>, BTreeMap<ValueId, Nesting>)
+{
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let crossed = gandr_core_term::cross_reducts(arena, body, crossings, &mut carried, &mut runs);
+    let rebuilt: BTreeMap<ValueId, ValueId> = carried
+        .iter()
+        .filter_map(|&pair| match pair {
+            Carried::Value(held, written) => Some((held, written)),
+            Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => None,
+        })
+        .collect();
+    let mut read: BTreeMap<ValueId, Nesting> = decisions
+        .iter()
+        .map(|(&at, &decided)| (rebuilt.get(&at).copied().unwrap_or(at), decided))
+        .collect();
+    read.extend(
+        runs.into_iter()
+            .map(|run| (run, Nesting::Ran(Purity::Pure))),
+    );
+    (crossed, carried, read)
 }

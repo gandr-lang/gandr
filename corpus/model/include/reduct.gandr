@@ -1,0 +1,50 @@
+// A model of an extension where a model of the theory it includes is asked
+// (#1092): each theory a block includes, directly or through another, takes a
+// reduct, `Monoid.Semigroup` from `Model(Monoid)` to `Model(Semigroup)`, which
+// keeps the members the inclusion places and forgets the rest; a sort is kept,
+// never sealed. The checker applies it where the one model stands at the
+// other, and the run and the kernel read the application.
+
+// The semigroup, the monoid, both extensions at once, and the endomorphism
+// monoid.
+import "./monoid.gandr" ;
+
+/// The endomorphism monoid, packed at its own theory.
+@[ checks ]
+def endoMonoid : Model(Monoid) ;
+def endoMonoid = pack Endo at Model(Monoid) ;
+
+/// The endomorphism monoid, packed at the semigroup it includes.
+@[ checks ]
+def endoSemigroup : Model(Semigroup) ;
+def endoSemigroup = pack Endo at Model(Semigroup) ;
+
+/// The reduct, named: the monoid's record restricted to the semigroup's is the
+/// semigroup's record of the same module, by computation.
+@[ checks ]
+def restricted : Path(
+  Model(Semigroup),
+  endoSemigroup,
+  Monoid.Semigroup(endoMonoid)
+) ;
+def restricted = here(endoSemigroup) ;
+
+/// Whether a semigroup's multiplication is there to read: every semigroup's
+/// is, so this answers zero.
+@[ checks ]
+def multiplies(s : Model(Semigroup)) -> -F Integer {
+  case s {
+    #{.mul = m} => 0
+  }
+}
+
+/// The monoid where a semigroup is asked: the checker applies the reduct.
+@[ runs("0") ]
+def asSemigroup() -> -F Integer { become multiplies(endoMonoid) }
+
+/// Both extensions' model where a semigroup is asked: the two ways round the
+/// diamond, through the monoid and through the left zero, are one reduct.
+@[ checks ]
+def throughTheDiamond(m : Model(UnitAndZero)) -> -F Integer {
+  become multiplies(m)
+}

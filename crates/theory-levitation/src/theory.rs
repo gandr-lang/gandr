@@ -898,6 +898,47 @@ pub struct TheoryInclusion
     pub rules: Vec<MemberPosition>,
 }
 
+impl TheoryInclusion
+{
+    /// This inclusion followed by `outer`: where each member this inclusion
+    /// places stands once the presentation it places them in is itself
+    /// included along `outer`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success one position per member this inclusion places,
+    ///   each the position `outer` gives the member's position here, so a
+    ///   presentation restricted along the composite is the one restricted
+    ///   along `outer` and then along this inclusion; `None` when a position
+    ///   here is past the list `outer` places.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two ways round a diamond of extensions compose to
+    ///   one inclusion, which restricts as the two steps do.
+    /// - witness: `theory::tests::the_ways_round_a_diamond_compose_to_one_inclusion`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|composite| composite.sorts.len() == self.sorts.len() && composite.operations.len() == self.operations.len() && composite.rules.len() == self.rules.len()))]
+    pub fn then(
+        &self,
+        outer: &Self,
+    ) -> Option<Self>
+    {
+        let along = |inner: &[MemberPosition], outer: &[MemberPosition]| {
+            inner
+                .iter()
+                .map(|&position| outer.get(position.0).copied())
+                .collect::<Option<Vec<MemberPosition>>>()
+        };
+        Some(Self {
+            sorts: along(&self.sorts, &outer.sorts)?,
+            operations: along(&self.operations, &outer.operations)?,
+            rules: along(&self.rules, &outer.rules)?,
+        })
+    }
+}
+
 /// Why one presentation does not extend another.
 ///
 /// # Specification

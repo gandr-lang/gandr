@@ -4055,6 +4055,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
         self.mint_derived_rules(sink);
+        self.mint_reducts(sink);
         self.mint_instances(sink);
         self.refused_declarations();
 
@@ -4215,7 +4216,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let declarations = self.assemble(&mut origins);
         let structures = self.structures();
         let in_scope = self.in_scope(resumed);
-        // A derived rule's statement is read under its theory's name, `T.r`.
+        // A derived rule's statement is read under its theory's name, `T.r`,
+        // and so is a reduct, `T.S`.
         let qualified: BTreeMap<ConstantIndex, SurfaceName<'source>> = self
             .collected
             .derived
@@ -4225,6 +4227,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 (self.collected.owner_of(entry.introduced_by.node) == Maybe::Present(slot))
                     .then(|| (entry.constant, self.name_at(derived.theory)))
             })
+            .chain(self.collected.reducts.iter().filter_map(|(&slot, reduct)| {
+                let entry = self.collected.slots.get(usize::from(slot))?;
+                let theory = self.collected.slots.get(usize::from(reduct.source))?;
+                Some((entry.constant, theory.name))
+            }))
+            .collect();
+        // The reducts the checker may insert where a model of a theory stands
+        // at a model of one it includes.
+        let reducts: Vec<ConstantIndex> = self
+            .collected
+            .reducts
+            .keys()
+            .filter_map(|&slot| self.collected.slots.get(usize::from(slot)))
+            .filter(|entry| matches!(entry.refusal, Maybe::Absent(_)))
+            .map(|entry| entry.constant)
             .collect();
         let Self {
             collected,
@@ -4328,7 +4345,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
         .with_supplies(supplies)
-        .with_qualified(qualified))
+        .with_qualified(qualified)
+        .with_reducts(reducts))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -4800,8 +4818,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the collection pass has run.
     /// - ensures: each top-level declaration is declared as a definition — a
     ///   `theory` block's governing the path `T.r` of each rule a `derive`
-    ///   declaration of its source derives in it, as a component, and a theory
-    ///   an earlier source declares gaining `T.r` from the deriving source on —
+    ///   declaration of its source derives in it, and the path `T.S` of the
+    ///   reduct to each theory `S` it includes, as a component, and a theory an
+    ///   earlier source declares gaining `T.r` from the deriving source on —
     ///   and each top-level module as a namespace governing exactly the
     ///   components it exports — a value component as a component, a type
     ///   component as a type, a nested module as a namespace of its own, walked
@@ -4877,6 +4896,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             if self.collected.owner_of(entry.introduced_by.node) == Maybe::Present(slot) {
                 derived.entry(rule.presented).or_default().push((
+                    entry.name,
+                    slot,
+                    entry.named.span,
+                ));
+            }
+        }
+        // A theory's reduct to a theory it includes joins its namespace as a
+        // derived rule does: `T.S` reads the reduct to `S`.
+        for (&slot, reduct) in self.collected.reducts.range(SlotIndex::from(first_slot) ..) {
+            if let Some(entry) = self.collected.slots.get(usize::from(slot)) {
+                derived.entry(reduct.source).or_default().push((
                     entry.name,
                     slot,
                     entry.named.span,

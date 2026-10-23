@@ -356,6 +356,10 @@ pub struct CheckingContext<'arena>
     /// How the judgement decided each computation written where a value is
     /// read, by node, since the declaration under way began.
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// The reduct each value the value bridge carried from a model of a
+    /// theory to a model of one it includes crossed by, by node, since the
+    /// declaration under way began.
+    crossings: BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>,
     /// The path endpoint pairs the judgement's type conversions related since
     /// the declaration under way began, by pair, with each derivation.
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
@@ -446,6 +450,10 @@ pub struct CheckingContext<'arena>
     /// The holes the module's matches were written with in place of a
     /// pattern: a tree leaf that is one of them leaves an arm undecided.
     pattern_holes: BTreeSet<HoleId>,
+    /// The reducts the module mints, each restricting the models of a theory
+    /// to the models of one it includes: the value bridge crosses by one where
+    /// a model of the first stands at a model of the second.
+    reducts: Vec<gandr_kernel_term::ConstantIndex>,
 }
 
 /// Whether a typed run is recording the judgements it holds as they finish.
@@ -551,6 +559,8 @@ pub struct Checkpoint
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// [`CheckingContext::crossings`].
+    crossings: BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>,
     /// [`CheckingContext::relating`].
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
     /// [`CheckingContext::relations`].
@@ -617,6 +627,8 @@ pub struct Checkpoint
     worlds: crate::worlds::Worlds,
     /// [`CheckingContext::pattern_holes`].
     pattern_holes: BTreeSet<HoleId>,
+    /// [`CheckingContext::reducts`].
+    reducts: Vec<gandr_kernel_term::ConstantIndex>,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -689,6 +701,7 @@ impl<'arena> CheckingContext<'arena>
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
+            crossings: BTreeMap::new(),
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
             laws: BTreeMap::new(),
@@ -719,6 +732,7 @@ impl<'arena> CheckingContext<'arena>
             following: BTreeMap::new(),
             worlds: crate::worlds::Worlds::default(),
             pattern_holes: BTreeSet::new(),
+            reducts: Vec::new(),
         }
     }
 
@@ -760,6 +774,7 @@ impl<'arena> CheckingContext<'arena>
             ref payloads,
             ref reflexivities,
             ref nesting,
+            ref crossings,
             ref relating,
             ref relations,
             ref laws,
@@ -788,6 +803,7 @@ impl<'arena> CheckingContext<'arena>
             ref following,
             ref worlds,
             ref pattern_holes,
+            ref reducts,
         } = *self;
         Checkpoint {
             binders: binders.clone(),
@@ -807,6 +823,7 @@ impl<'arena> CheckingContext<'arena>
             payloads: payloads.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
+            crossings: crossings.clone(),
             relating: relating.clone(),
             relations: relations.clone(),
             laws: laws.clone(),
@@ -835,6 +852,7 @@ impl<'arena> CheckingContext<'arena>
             following: following.clone(),
             worlds: worlds.clone(),
             pattern_holes: pattern_holes.clone(),
+            reducts: reducts.clone(),
         }
     }
 
@@ -878,6 +896,7 @@ impl<'arena> CheckingContext<'arena>
             payloads,
             reflexivities,
             nesting,
+            crossings,
             relating,
             relations,
             laws,
@@ -906,6 +925,7 @@ impl<'arena> CheckingContext<'arena>
             following,
             worlds,
             pattern_holes,
+            reducts,
         } = checkpoint;
         Self {
             arena,
@@ -926,6 +946,7 @@ impl<'arena> CheckingContext<'arena>
             payloads,
             reflexivities,
             nesting,
+            crossings,
             relating,
             relations,
             laws,
@@ -958,6 +979,7 @@ impl<'arena> CheckingContext<'arena>
             following,
             worlds,
             pattern_holes,
+            reducts,
         }
     }
 
@@ -1273,6 +1295,46 @@ impl<'arena> CheckingContext<'arena>
     )
     {
         self.pattern_holes.extend(holes.iter().copied());
+    }
+
+    /// Read `reducts` as the reducts the module mints, so the value bridge
+    /// crosses by one where a model of a theory stands at a model of a theory
+    /// it includes.
+    ///
+    /// # Specification
+    /// - ensures: every later value bridge between two types apart crosses by
+    ///   the first of the kept reducts, in position order, whose signature
+    ///   carries the one to the other, and records it at the value it crossed;
+    ///   each reduct is kept once, however often it is read.
+    /// - panics: none.
+    /// - executable: none — the kept reducts are the receiver's own, which a
+    ///   predicate would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a monoid's model passed where a semigroup's is asked
+    ///   checks once the reduct is kept and is refused while it is not.
+    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    #[inline]
+    pub fn keep_reducts(
+        &mut self,
+        reducts: &[gandr_kernel_term::ConstantIndex],
+    )
+    {
+        self.reducts.extend(reducts.iter().copied());
+        self.reducts.sort_unstable();
+        self.reducts.dedup();
+    }
+
+    /// The reducts the module mints, in position order, as
+    /// [`CheckingContext::keep_reducts`] kept them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn reducts(&self) -> &[gandr_kernel_term::ConstantIndex]
+    {
+        &self.reducts
     }
 
     /// `hole` when it was written in place of a pattern.
@@ -2925,6 +2987,44 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn take_nesting(&mut self) -> BTreeMap<ValueId, crate::nested::Nesting>
     {
         core::mem::take(&mut self.nesting)
+    }
+
+    /// Record that the value bridge carried the value `at` by `reduct`.
+    ///
+    /// # Specification
+    /// - requires: `reduct` is a kept reduct whose signature carries the type
+    ///   `at` synthesised to the type it was checked against.
+    /// - ensures: `at` crosses by `reduct`, replacing an earlier record.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
+    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    #[spec(ensures: self.crossings.get(&at) == Some(&reduct))]
+    pub(crate) fn record_crossing(
+        &mut self,
+        at: ValueId,
+        reduct: gandr_kernel_term::ConstantIndex,
+    )
+    {
+        self.crossings.insert(at, reduct);
+    }
+
+    /// Take every crossing recorded since the last take, leaving none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the crossings recorded since the last take, by node; none
+    ///   remain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
+    /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+    #[spec(ensures: self.crossings.is_empty())]
+    pub(crate) fn take_crossings(&mut self) -> BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>
+    {
+        core::mem::take(&mut self.crossings)
     }
 
     /// Record the derivation the judgement related the path endpoints `left`
