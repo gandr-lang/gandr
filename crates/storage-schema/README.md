@@ -30,7 +30,7 @@ The record plane under the C-set discipline: a schema of objects, total arrows, 
 - `Presentation` and `Schema`: validated, order-independent schemas with a canonical image, `Schema::decode` of exactly that image, and lookups that refuse an unknown name or ordinal by kind.
 - `Store`: reads of liveness, arrow targets, attribute values and indexed preimages; `Edit` transactions and one-step `add_part`, `set_arrow`, `set_value` and `delete_part`, each refusing by name with a `Refusal`.
 - `Store::commit` and `Store::open`: one record tree per table in any `BlockStore`, one `StoreManifest` binding the schema identity, the record plane's parameters and every table's counter and root; reopening refuses records that are not canonical, a dangling arrow and a broken equation.
-- `Store::prove` and `Proof::verify`: a `Question` answered against a `StoreRoot` alone.
+- `Store::prove` and `Proof::verify`: a `Question` answered against a `StoreRoot` alone. `Proof::encode` and `Proof::decode` carry a proof to a reader on another endpoint; the reader supplies the question, and the image carries only what the reader can't derive.
 - `SchemaMap` and `Store::pull_back`: the Δ migration, keys and counters kept.
 - `keyed`: a factory's dialogue, project and provenance indexes as one schema, with the equation that holds a naming's task to its move's.
 
@@ -86,7 +86,7 @@ assert_eq!(answer, Answer::Preimage(Box::from([joined])));
 
 - [`src/lib.rs`](src/lib.rs): the discipline adopted, the key model chosen with its alternatives and reversal, the equation check and the limits.
 - [`src/schema.rs`](src/schema.rs): the schema image. [`src/manifest.rs`](src/manifest.rs): the store manifest and root. [`src/store/layout.rs`](src/store/layout.rs): how a table lies on the record plane, and reopening.
-- [`src/store/edit.rs`](src/store/edit.rs): edits and their refusals. [`src/store/prove.rs`](src/store/prove.rs): proofs. [`src/migrate.rs`](src/migrate.rs): schema maps and what the pull-back preserves. [`src/keyed.rs`](src/keyed.rs): the keyed-index schema.
+- [`src/store/edit.rs`](src/store/edit.rs): edits and their refusals. [`src/store/prove.rs`](src/store/prove.rs): proofs, and [`src/store/prove/image.rs`](src/store/prove/image.rs) their image. [`src/migrate.rs`](src/migrate.rs): schema maps and what the pull-back preserves. [`src/keyed.rs`](src/keyed.rs): the keyed-index schema.
 
 ## License
 

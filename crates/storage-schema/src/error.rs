@@ -262,6 +262,48 @@ impl fmt::Display for ManifestFault
     }
 }
 
+/// Where a proof image stopped making sense.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProofFault
+{
+    /// The image ends inside a part.
+    Truncated,
+    /// An evidence or neighbour tag is unknown.
+    Tag,
+    /// Bytes follow the last node.
+    Trailing,
+}
+
+impl fmt::Display for ProofFault
+{
+    /// Writes the fault's phrase.
+    ///
+    /// # Specification
+    /// - ensures: writes one phrase per fault, distinct for each.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each malformed proof image's refusal renders apart.
+    /// - witness: `tests::proofs::a_malformed_proof_image_is_refused_by_part`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Truncated => "the proof image ends inside a part",
+            Self::Tag => "the proof image carries an unknown tag",
+            Self::Trailing => "bytes follow the last node",
+        })
+    }
+}
+
 /// Every way a commit, a reopening, a manifest or a proof is refused.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StoreError
@@ -287,6 +329,12 @@ pub enum StoreError
     {
         /// Where it failed.
         fault: ManifestFault,
+    },
+    /// A proof image is malformed.
+    Proof
+    {
+        /// Where it failed.
+        fault: ProofFault,
     },
     /// A proof's manifest does not hash to the root it is checked against.
     RootMismatch
@@ -342,6 +390,7 @@ impl fmt::Display for StoreError
             Self::ProfileMismatch => f.write_str("the manifest commits other boundary parameters"),
             Self::TableCount => f.write_str("the manifest's table count is not the schema's"),
             Self::Manifest { fault } => write!(f, "malformed store manifest: {fault}"),
+            Self::Proof { fault } => write!(f, "malformed proof image: {fault}"),
             Self::RootMismatch { expected, found } => {
                 write!(f, "the proof's manifest hashes to {found}, not {expected}")
             },
