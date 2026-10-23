@@ -163,6 +163,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
@@ -185,14 +186,17 @@ use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
+use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 mod entry;
+mod hole;
 
 pub use entry::Entered;
 pub use entry::Entry;
 pub use entry::ExitStatus;
 pub use entry::program_entry;
+pub use hole::hole_site;
 
 quenchant_shape::reason_enum! {
     /// Why a program has no run target.
@@ -310,6 +314,8 @@ pub struct Program<'source>
     /// The `main` the source run declares at its top level, when it declares
     /// one at an entry's type.
     entry: Maybe<Entry, program_entry::Absent>,
+    /// Where the program's sources write each hole an entry run can reach.
+    holes: BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
 }
 
 /// The part of a program a module's leading declarations make: each of them
@@ -494,6 +500,15 @@ pub enum Evaluation<'source>
     Sealed(SealedRun),
     /// The run reached the named declaration, owed its body.
     Blamed(SurfaceName<'source>),
+    /// The run reached a hole its source writes, and stopped there.
+    Holed
+    {
+        /// The hole reached.
+        hole: HoleId,
+        /// Where the source writes it, when one hole of the program bears
+        /// its name.
+        at: Maybe<ByteSpan, hole_site::Absent>,
+    },
     /// The run stopped short of a value.
     Stuck(Stuck),
     /// The run could not be finished.
@@ -560,8 +575,8 @@ impl Evaluation<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a value, a sealed one among them, is [`RunStatus::Value`]; a
-    ///   blamed, stuck or unfinished run [`RunStatus::Failed`]; an unrunnable
-    ///   declaration [`RunStatus::Unreached`].
+    ///   blamed, holed, stuck or unfinished run [`RunStatus::Failed`]; an
+    ///   unrunnable declaration [`RunStatus::Unreached`].
     /// - provides: the one classification the driver's exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -572,7 +587,7 @@ impl Evaluation<'_>
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     #[spec(ensures: |ret| match *self {
         Self::Value(_) | Self::Sealed(_) => matches!(ret, RunStatus::Value),
-        Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => matches!(ret, RunStatus::Failed),
+        Self::Blamed(_) | Self::Holed { .. } | Self::Stuck(_) | Self::Unfinished(_) => matches!(ret, RunStatus::Failed),
         Self::Unrunnable(_) => matches!(ret, RunStatus::Unreached),
     })]
     #[inline]
@@ -581,7 +596,9 @@ impl Evaluation<'_>
     {
         match *self {
             Self::Value(_) | Self::Sealed(_) => RunStatus::Value,
-            Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => RunStatus::Failed,
+            Self::Blamed(_) | Self::Holed { .. } | Self::Stuck(_) | Self::Unfinished(_) => {
+                RunStatus::Failed
+            },
             Self::Unrunnable(_) => RunStatus::Unreached,
         }
     }
@@ -622,6 +639,7 @@ impl fmt::Display for Evaluation<'_>
             Self::Value(ref value) => fmt::Display::fmt(value, f),
             Self::Sealed(ref sealed) => fmt::Display::fmt(sealed, f),
             Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
+            Self::Holed { .. } => f.write_str("reached a hole"),
             Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
             Self::Unfinished(Unfinished::Declined(declined)) => write!(f, "unfinished: {declined}"),
             Self::Unfinished(Unfinished::Readback(refusal)) => {
@@ -893,6 +911,7 @@ impl<'source> Program<'source>
             families,
             spelling: Spelling::Unicode,
             entry: entry::entry_of(core, module, verdicts),
+            holes: hole::hole_sites(core, module),
         }
     }
 
@@ -1119,6 +1138,8 @@ impl<'source> Program<'source>
                     .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
                 Evaluation::Sealed(ref sealed) => self.hidden.values().any(|module| *module == sealed.module)
                     && self.sealed.get(&(constant, self.spelling)).is_some_and(|declared| *declared == sealed.declared),
+                Evaluation::Holed { hole, at } => self.holes.get(&hole).is_some_and(|site| *site == at)
+                    || (matches!(at, Maybe::Absent(hole_site::Absent::Unwritten)) && !self.holes.contains_key(&hole)),
                 Evaluation::Value(_) | Evaluation::Stuck(_)
                     | Evaluation::Unfinished(Unfinished::Declined(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
             }
@@ -1594,11 +1615,13 @@ impl<'source> Program<'source>
     /// - requires: `outcome` was moved into `store` by a run; a halted id
     ///   resolves there.
     /// - ensures: success returns the identical halted id, never an immediately
-    ///   opaque value. A stuck result retains its precise stuck reason; opacity
-    ///   reached outside suspension is instead classified by declaration
-    ///   standing.
+    ///   opaque value. A run stuck at the perform focusing leaves for a hole is
+    ///   [`Evaluation::Holed`] with that hole and its site; any other stuck
+    ///   result retains its precise stuck reason; opacity reached outside
+    ///   suspension is instead classified by declaration standing.
     /// - fails: returns blame, unrunnability or inconsistency for an opaque
-    ///   declaration, or the unchanged stuck outcome; it never spells a value.
+    ///   declaration, the reached hole, or the unchanged stuck outcome; it
+    ///   never spells a value.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1608,14 +1631,17 @@ impl<'source> Program<'source>
     ///   not separately generated by these source and core fixtures.
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     #[spec(
         requires: match outcome { Outcome::Halted(value) => store.value(value).is_some(), Outcome::Stuck(_) => true },
         captures: [halted = match outcome { Outcome::Halted(value) => Some(value), Outcome::Stuck(_) => None },
-            stuck = match outcome { Outcome::Stuck(ref reason) => Some(core::mem::discriminant(reason)), Outcome::Halted(_) => None }],
+            stuck = match outcome { Outcome::Stuck(ref reason) => Some(core::mem::discriminant(reason)), Outcome::Halted(_) => None },
+            unhandled = matches!(outcome, Outcome::Stuck(Stuck::PerformNoHandler(_)))],
         ensures: |ref ret| match *ret {
             Ok(value) => halted == Some(value)
                 && !matches!(store.value(value), Some(&HeapValue::Opaque(_))),
             Err(Evaluation::Stuck(ref actual)) => stuck == Some(core::mem::discriminant(actual)),
+            Err(Evaluation::Holed { .. }) => unhandled,
             Err(Evaluation::Value(_) | Evaluation::Sealed(_)) => false,
             Err(Evaluation::Blamed(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_)) => true,
         }
@@ -1633,6 +1659,18 @@ impl<'source> Program<'source>
             Outcome::Halted(value) => match Self::opaque_within(store, value) {
                 Maybe::Present(constant) => Err(self.met(constant)),
                 Maybe::Absent(carried::Absent::Carried) => Ok(value),
+            },
+            Outcome::Stuck(Stuck::PerformNoHandler(at))
+                if let Maybe::Present(hole) = hole::reached(&self.arena, at) =>
+            {
+                Err(Evaluation::Holed {
+                    hole,
+                    at: self
+                        .holes
+                        .get(&hole)
+                        .copied()
+                        .unwrap_or(Maybe::Absent(hole_site::Absent::Unwritten)),
+                })
             },
             Outcome::Stuck(stuck) => {
                 let observed = match stuck {
@@ -2324,7 +2362,7 @@ mod tests
         requires: program.declarations.values().any(|declared| declared.name == name),
         captures: [declarations = program.declarations.len()],
         ensures: |ref ret| program.declarations.len() == declarations
-            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), Evaluation::Value(_) | Evaluation::Sealed(_) | Evaluation::Blamed(_) | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations.contains_key(&index), Evaluation::Value(_) | Evaluation::Sealed(_) | Evaluation::Blamed(_) | Evaluation::Holed { .. } | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
     )]
     fn run<'source>(
         program: &mut Program<'source>,

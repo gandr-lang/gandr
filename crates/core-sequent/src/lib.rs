@@ -149,6 +149,8 @@ pub use crate::il::NodeFamily;
 pub use crate::il::PatternArm;
 pub use crate::il::ProducerId;
 pub use crate::il::ProducerNode;
+pub use crate::il::REACHED;
+pub use crate::il::REACHED_HOLE;
 pub use crate::il::Route;
 pub use crate::il::Selector;
 pub use crate::il::SequentWatermark;

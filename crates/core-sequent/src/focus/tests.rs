@@ -149,8 +149,11 @@ fn a_static_code_is_refused_by_name()
     }
 }
 
+/// A value hole and a mark are refused by name; a computation hole is reached
+/// as the perform of the reached-hole interface, its payload the hole's name
+/// (#1881).
 #[test]
-fn a_hole_or_a_mark_is_refused_by_name()
+fn a_hole_is_reached_and_a_mark_refused_by_name_1881()
 {
     let mut core = CoreArena::new();
     let unit = core.value_unit();
@@ -169,19 +172,46 @@ fn a_hole_or_a_mark_is_refused_by_name()
         assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
     }
     let returned = core.computation_return(unit);
-    let computation_hole = core.computation_hole(gandr_core_term::hole::HoleId::from(1_u32));
     let computation_mark =
         core.computation_mark(gandr_core_term::hole::MarkIndex::from(1_u32), returned);
-    for incomplete in [computation_hole, computation_mark] {
-        let term = core.computation_bind(incomplete, returned);
-        let mut arena = CommandArena::new();
-        let mut provenance = Provenance::new();
-        assert_eq!(
-            focus_computation(&core, term, &mut arena, &mut provenance),
-            Err(FocusRefusal::IncompleteComputation(incomplete)),
-            "the computation is refused by name"
+    let term = core.computation_bind(computation_mark, returned);
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    assert_eq!(
+        focus_computation(&core, term, &mut arena, &mut provenance),
+        Err(FocusRefusal::IncompleteComputation(computation_mark)),
+        "the mark is refused by name"
+    );
+    let computation_hole = core.computation_hole(gandr_core_term::hole::HoleId::from(7_u32));
+    let mut arena = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let reached = focus_computation(&core, computation_hole, &mut arena, &mut provenance)
+        .expect("a computation hole focuses");
+    let Some(&crate::il::CommandNode::Perform {
+        ref signature,
+        ref operation,
+        route: crate::il::Route::Nearest,
+        payload,
+        ..
+    }) = arena.command(reached)
+    else {
+        panic!(
+            "a hole is reached as a perform: {:?}",
+            arena.command(reached)
         );
-    }
+    };
+    assert_eq!(
+        (signature.name().as_ref(), operation.as_ref()),
+        (crate::il::REACHED_HOLE, crate::il::REACHED)
+    );
+    assert!(
+        matches!(
+            arena.producer(payload),
+            Some(&crate::il::ProducerNode::Literal(gandr_kernel_term::Literal::Integer(ref place)))
+                if place.magnitude().as_ref() == "7"
+        ),
+        "the payload names the hole"
+    );
 }
 
 #[test]

@@ -90,9 +90,9 @@ fn an_entry_runs_to_its_exit_status_1881()
     assert!(
         matches!(
             goal.enter(entry, &[]),
-            Entered::Ended(Evaluation::Unrunnable(_) | Evaluation::Blamed { .. })
+            Entered::Ended(Evaluation::Holed { .. })
         ),
-        "a goal ends the run short of a status"
+        "a goal reached ends the run short of a status, at the goal"
     );
 }
 
@@ -146,5 +146,38 @@ fn an_exit_status_keeps_the_low_byte_1881()
             ExitStatus(wanted),
             "{sign:?}{digits}"
         );
+    }
+}
+
+/// A hole the entry reaches stops the run there, after what ran before it,
+/// named by the place its source writes it; a hole on a branch the run never
+/// takes is passed (#1881).
+#[test]
+fn a_hole_reached_stops_the_entry_by_name_1881()
+{
+    let source = "def helper(n : Integer) -> -F Integer { return n + 1 }\ndef main(args : List(String)) -> -F Integer {\n  case args {\n    [] => 2,\n    [x, ..rest] => { run y <- helper(41); ?todo }\n  }\n}\n";
+    let mut ran = program(source);
+    let Maybe::Present(entry) = ran.entry()
+    else {
+        panic!("an entry: {source}");
+    };
+    assert_eq!(
+        ran.enter(entry, &[]),
+        Entered::Exited(ExitStatus(2)),
+        "the branch holding the hole is not taken"
+    );
+    let written = source.find("?todo").expect("the hole is written");
+    match ran.enter(entry, &[String::from("a")]) {
+        Entered::Ended(Evaluation::Holed {
+            at: Maybe::Present(span),
+            ..
+        }) => assert_eq!(
+            (usize::from(span.start()), usize::from(span.end())),
+            (written, written + "?todo".len()),
+            "the hole is named where it is written"
+        ),
+        other @ (Entered::Exited(_) | Entered::Ended(_)) => {
+            panic!("the run stops at the hole: {other:?}")
+        },
     }
 }

@@ -377,9 +377,9 @@ fn card_line(card: &DiagCard) -> String
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a value, a sealed one among them, is a value line, a run blamed
-///   on a goal a blame line, and a run that stopped short of a value or never
-///   reached the machine a note line; the text is the evaluation's one
-///   spelling, the one `gandr run` prints.
+///   on a goal or stopped at a hole a blame line, and a run that stopped short
+///   of a value otherwise or never reached the machine a note line; the text is
+///   the evaluation's one spelling, the one `gandr run` prints.
 /// - provides: the value line's kind and text, so every face marks a run's
 ///   class the same way.
 /// - fails: never.
@@ -392,14 +392,14 @@ fn card_line(card: &DiagCard) -> String
 /// - witness: `render::tests::eval_renders_each_outcome_class`
 #[spec(ensures: |ret| ret.0 == match *evaluation {
     Evaluation::Value(_) | Evaluation::Sealed(_) => OutKind::Value,
-    Evaluation::Blamed(_) => OutKind::Blame,
+    Evaluation::Blamed(_) | Evaluation::Holed { .. } => OutKind::Blame,
     Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => OutKind::Stuck,
 } && !ret.1.is_empty())]
 fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 {
     let kind = match *evaluation {
         Evaluation::Value(_) | Evaluation::Sealed(_) => OutKind::Value,
-        Evaluation::Blamed(_) => OutKind::Blame,
+        Evaluation::Blamed(_) | Evaluation::Holed { .. } => OutKind::Blame,
         Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => {
             OutKind::Stuck
         },

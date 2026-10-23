@@ -137,8 +137,8 @@ pub enum Entered<'source>
 {
     /// The entry returned an integer, or exited with one.
     Exited(ExitStatus),
-    /// The run ended short of an exit status: unrunnable, blamed, stuck or
-    /// unfinished, or it returned no integer.
+    /// The run ended short of an exit status: unrunnable, blamed, stuck at a
+    /// hole or elsewhere, or unfinished, or it returned no integer.
     Ended(Evaluation<'source>),
 }
 
@@ -195,7 +195,8 @@ impl<'source> Program<'source>
     ///   reads them, applied to [`argument_list`] of `arguments`; a run that
     ///   performs `Proc.exit` with an integer, or returns an integer, is
     ///   [`Entered::Exited`] with that integer's low byte, and any other end is
-    ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it.
+    ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
+    ///   [`Evaluation::Holed`] for a hole reached.
     /// - fails: never; every failure is an outcome.
     /// - panics: none.
     /// - executable: none — the run's outcome is the machine's; the witnesses
@@ -203,9 +204,11 @@ impl<'source> Program<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an entry returning a code, one counting its
-    ///   arguments, one exiting early through `Proc.exit` and one reaching a
-    ///   goal.
+    ///   arguments, one exiting early through `Proc.exit`, one reaching a goal,
+    ///   one reaching a hole after a call and one passing a hole a branch never
+    ///   reaches.
     /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
+    /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     #[inline]
     pub fn enter(
         &mut self,

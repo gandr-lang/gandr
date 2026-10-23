@@ -237,6 +237,7 @@ pub use crate::evaluate::Unfinished;
 pub use crate::evaluate::Unrunnable;
 pub use crate::evaluate::ValueSpelling;
 pub use crate::evaluate::declaration_name;
+pub use crate::evaluate::hole_site;
 pub use crate::evaluate::program_entry;
 pub use crate::evaluate::run_target;
 pub use crate::exercised::Exercised;

@@ -131,6 +131,7 @@ fragment/unmarked-self-reference.gandr:bare:c78175776d973f53
 fragment/unmarked-self-reference.gandr:idle:a8d7eb0e054a41fb
 fragment/unmarked-self-reference.gandr:marked:a4fc14d0109ccf78
 model/data/data-nested-type.gandr:import_declaration:e6bf8b86a1b96c18
+model/programs/draft.gandr:import_declaration:b091045ddce865e4
 pathological/attributes/effectful-payload.gandr:<file>
 pathological/attributes/effectful-payload.gandr:f:6c7a03ac8be78ae4
 pathological/attributes/ill-typed-payload.gandr:<file>
