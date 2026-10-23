@@ -6906,6 +6906,36 @@ mod tests
         }
     }
 
+    /// #2182: a model parameter a later parameter's type names answers at
+    /// its written type there, and a path through it to a sort its type fixes
+    /// is a written type, at its universe.
+    #[test]
+    fn a_model_parameter_in_a_later_parameter_type_answers_2182()
+    {
+        let source = SourceText::from(concat!(
+            "theory Counter {\n  sort C : Type;\n  oper zero : C;\n}\n",
+            "def shared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> \
+             -F Integer { return 0 }\n",
+            "def fixed(x : Type, f : Model(Counter) with sort C = x, c : f.C) -> -F x { c }\n",
+            "def closed(g : Model(Counter) with sort C = Integer, c : g.C) -> -F Integer { c }\n",
+        ));
+        let table = table(source);
+        for (needle, subject, ty) in [
+            ("a.C, c", Subject::Binder, "#{a : Type, b : a}"),
+            ("a.C) ->", Subject::Binder, "#{a : Type, b : a}"),
+            ("f.C)", Subject::Binder, "#{zero : x}"),
+            (".C) -> -F x", Subject::Type, "Type"),
+            ("g.C)", Subject::Binder, "#{zero : Integer}"),
+            (".C) -> -F Integer { c", Subject::Type, "Type"),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(subject, SourceText::from(ty)),
+                "`{needle}` answers at its type"
+            );
+        }
+    }
+
     #[test]
     fn an_unused_part_of_a_static_application_answers_1080()
     {

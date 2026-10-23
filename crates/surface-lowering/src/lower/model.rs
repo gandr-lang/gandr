@@ -61,6 +61,7 @@ use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
+use super::LabelRead;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -1775,12 +1776,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: planned when `head` names a binder in scope whose written
     ///   type is `Model(T)`, through parentheses and manifest sorts, and
     ///   `member` names a sort of it. A sort the type fixes is the type it is
-    ///   fixed to, read at its own node, and the binder stays unmentioned; any
-    ///   other is an unindexed sort of `T` the binder's bundle holds, projected
-    ///   at its field — at its label when no field of the bundle names another,
-    ///   along the nesting otherwise — with the binder mentioned in the type,
-    ///   which so depends on it. Nothing is planned for a head no such binder
-    ///   answers.
+    ///   fixed to, read at its own node and standing in at the path, and the
+    ///   binder stays unmentioned; any other is an unindexed sort of `T` the
+    ///   binder's bundle holds, projected at its field — at its label when no
+    ///   field of the bundle names another, along the nesting otherwise — with
+    ///   the binder mentioned in the type, which so depends on it. Either way
+    ///   the head is labelled at the binder's written type. Nothing is planned
+    ///   for a head no such binder answers.
     /// - fails: [`LoweringRefusal::UnknownMember`], naming the binder and the
     ///   member, for a name that is no component of `T`; the wrong-sort refusal
     ///   for a component that is no unindexed sort, and where no value type is
@@ -1804,6 +1806,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   one it fixes; an operation and a name the theory lacks, refused.
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     /// - witness: `tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
+    /// - witness: `tests::modules::models::a_carrier_path_s_head_and_a_fixed_path_answer_2182`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Carrier(Code::Bound { .. }, ..) | Plan::FixedCarrier(Code::Bound { .. }, _)))))]
     pub(super) fn carrier(
         &mut self,
@@ -1830,6 +1833,14 @@ impl<'source> Lowerer<'_, 'source>
             binder: bound.binder,
             telescope,
         };
+        // The head names the binder, so it answers at the binder's written
+        // type wherever the path plans.
+        let head_label = if let Reading::ValueType(read) = self.reading(declared) {
+            Some(LabelRead::ValueType(read))
+        }
+        else {
+            None
+        };
         let mut node = declared;
         let bundled = loop {
             if let Some(&(_, written)) = self
@@ -1840,6 +1851,9 @@ impl<'source> Lowerer<'_, 'source>
                 let _frame = self.require(site, Produced::ValueType)?;
                 self.fixed_carriers.push(written);
                 self.plan(site, Plan::FixedCarrier(code, written.node));
+                if let Some(read) = head_label {
+                    self.labelled(head.span, declared, read);
+                }
                 return Ok(arity::Planned(true));
             }
             match self.plans.get(node) {
@@ -1880,6 +1894,9 @@ impl<'source> Lowerer<'_, 'source>
         let _frame = self.require(site, Produced::ValueType)?;
         let _telescope = self.name_in_type(site.at.node, bound.binder);
         self.plan(site, Plan::Carrier(code, selected, record));
+        if let Some(read) = head_label {
+            self.labelled(head.span, declared, read);
+        }
 
         Ok(arity::Planned(true))
     }
@@ -1892,7 +1909,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `code` names the binder and `written` the type its model
     ///   type fixes the sort to, as [`Self::carrier`] planned them.
     /// - ensures: the type minted at `written`, raised past the binding binders
-    ///   between the binder and the reading, and past the binder when it binds.
+    ///   between the binder and the reading, and past the binder when it binds,
+    ///   recorded as standing in at the path's `origin`, which mints no node of
+    ///   its own.
     /// - provides: the type a model binder's fixed carrier denotes.
     /// - fails: absent while the written type is unminted, and for a code that
     ///   names no binder.
@@ -1901,12 +1920,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::carrier`].
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    /// - witness: `tests::modules::models::a_carrier_path_s_head_and_a_fixed_path_answer_2182`
     #[spec(ensures: |ret| !matches!(ret, Maybe::Present(ref lowered) if !matches!(*lowered, Lowered::ValueType(_))))]
     pub(super) fn mint_fixed_carrier(
         &self,
         code: Code,
         written: NodeIndex,
         sink: &mut Sink<'_>,
+        origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let Code::Bound {
@@ -1926,6 +1947,7 @@ impl<'source> Lowerer<'_, 'source>
             between.saturating_add(u32::from(bool::from(self.scope.binds(binder, telescope))));
         let raised = gandr_core_term::shift_value_type(sink.arena, stated, Binders::from(past))
             .settle(sink.arena);
+        sink.origins.record_stand_in(raised, origin);
 
         Maybe::Present(Lowered::ValueType(raised))
     }
