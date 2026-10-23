@@ -735,20 +735,21 @@ fn an_interface_is_checked_where_its_atom_is_admitted()
 }
 
 /// An atom over `representation` at the value universe, admitted with the
-/// total relation, its reflexivity and the law `law` mints.
+/// relation and reflexivity `relate` mints and the law `law` mints.
 ///
 /// # Specification
 /// trivial.
 fn lawful_atom(
     environment: &mut Environment,
     representation: fn(&mut TermArena) -> ValueTypeId,
+    relate: fn(&mut TermArena) -> (ValueId, ValueId),
     law: fn(&mut TermArena) -> ValueId,
 ) -> Result<ConstantIndex, KernelError>
 {
     let mut staging = environment.stage();
     let kind = universe(staging.arena(), LevelConstant::from(0_u64));
     let representation = representation(staging.arena());
-    let (relation, reflexivity) = total(staging.arena());
+    let (relation, reflexivity) = relate(staging.arena());
     let law = law(staging.arena());
     let declaration = staging
         .abstract_type(
@@ -802,6 +803,7 @@ fn a_lawful_atom_reads_its_relation_as_its_identity()
     let atom = lawful_atom(
         &mut environment,
         TermArena::value_type_unit,
+        total,
         unit_contraction,
     )
     .expect("a lawful atom");
@@ -901,6 +903,7 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
     let atom = lawful_atom(
         &mut environment,
         TermArena::value_type_unit,
+        total,
         unit_contraction,
     )
     .expect("a lawful atom");
@@ -945,7 +948,7 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
         over,
         value: start,
     };
-    let Ok(Reduction::Reduced(reduct)) = super::atom_fibre_beta(arena, &identified, step)
+    let Ok(Reduction::Reduced(reduct)) = super::unit_fibre_beta(arena, &identified, step)
     else {
         panic!("a transport into a lawful atom's unit fibre reduces");
     };
@@ -955,7 +958,7 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
     };
     assert_eq!(arena.value(returned), Some(&Value::Tuple(Box::default())));
     assert_eq!(
-        super::atom_fibre_beta(arena, &crate::replay::Unfoldings::default(), step),
+        super::unit_fibre_beta(arena, &crate::replay::Unfoldings::default(), step),
         Ok(Reduction::Stuck),
         "unfoldings identifying no atom leave the transport stuck"
     );
@@ -964,7 +967,7 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
         ..step
     };
     assert_eq!(
-        super::atom_fibre_beta(arena, &identified, along_here),
+        super::unit_fibre_beta(arena, &identified, along_here),
         Ok(Reduction::Stuck),
         "along reflexivity the row leaves the transport to the reflexive rows"
     );
@@ -992,7 +995,7 @@ fn a_law_is_checked_where_its_atom_is_admitted()
     let mut environment = Environment::new();
     let integer: fn(&mut TermArena) -> ValueTypeId =
         |arena| arena.value_type_base(BaseType::Integer);
-    let uncontracted = lawful_atom(&mut environment, integer, unit_contraction);
+    let uncontracted = lawful_atom(&mut environment, integer, total, unit_contraction);
     assert!(
         matches!(
             uncontracted,
@@ -1001,14 +1004,126 @@ fn a_law_is_checked_where_its_atom_is_admitted()
         "a law over a relation that is no identity: {uncontracted:?}"
     );
     // A law that is no function of the singleton's elements.
-    let unfunctional = lawful_atom(&mut environment, TermArena::value_type_unit, |arena| {
-        arena.value_unit()
-    });
+    let unfunctional = lawful_atom(
+        &mut environment,
+        TermArena::value_type_unit,
+        total,
+        TermArena::value_unit,
+    );
     assert!(
         matches!(unfunctional, Err(KernelError::ValueShapeMismatch { .. })),
         "a law that is no function: {unfunctional:?}"
     );
     assert!(environment.entries().is_empty());
+}
+
+/// The relation relating two points of the unit type by the paths between
+/// them, `thunk (λa. λb. return ⌜Path(Unit, a, b)⌝)`, and its reflexivity,
+/// `thunk (λa. return here(a))`.
+///
+/// # Specification
+/// trivial.
+fn by_paths(arena: &mut TermArena) -> (ValueId, ValueId)
+{
+    let unit_type = arena.value_type_unit();
+    let (a, b) = (
+        arena.value_variable(DeBruijnIndex::from(1_u32)),
+        arena.value_variable(DeBruijnIndex::from(0_u32)),
+    );
+    let paths = arena.value_type_path(unit_type, a, b);
+    let code = arena.value_quote(paths);
+    let point = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let here = arena.value_here(point);
+    let reflexivity = arena.computation_return(here);
+    let reflexivity = arena.computation_lambda(reflexivity);
+    (relating_by(arena, code), arena.value_thunk(reflexivity))
+}
+
+#[test]
+fn j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960()
+{
+    // An atom over `Unit` relating its elements by the paths between them, a
+    // relation whose fibres are identities of the unit type rather than the
+    // unit type itself; two sealed points `a` and `b` of it, and the
+    // relation's evidence between them.
+    let mut environment = Environment::new();
+    let atom = lawful_atom(
+        &mut environment,
+        TermArena::value_type_unit,
+        by_paths,
+        unit_contraction,
+    )
+    .expect("an atom related by the paths of the unit type");
+    let first = sealed_point(&mut environment, atom);
+    let second = sealed_point(&mut environment, atom);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let identity = arena.value_type_path(sealed, a, b);
+    let unit = arena.value_unit();
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, unit);
+    let evidence = environment
+        .add_decl(declaration)
+        .expect("the relation's evidence is an identity")
+        .position();
+    let identified = crate::replay::Unfoldings::default().identifying(environment.entries());
+
+    // In the family of paths back to `a`, each fibre is the relation's, an
+    // identity of the unit type, and in the family of the identities of the
+    // singleton's own paths each fibre is an identity of that: along the
+    // evidence each transport returns the unit.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let path = arena.value_constant(evidence);
+    let end = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(sealed, a, end);
+    let endpoint = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let back = arena.value_type_path(sealed, endpoint, a);
+    let at_end = arena.value_type_path(sealed, a, endpoint);
+    let element = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let loops = arena.value_type_path(at_end, element, element);
+    let start = arena.value_here(a);
+    let over = arena.value_here(path);
+    let mut transports = Vec::new();
+    for (fibre, value) in [(back, start), (loops, arena.value_here(start))] {
+        let returns = arena.comp_type_returner(fibre);
+        let entry = arena.comp_type_pi(singleton, returns);
+        let motive = arena.comp_type_pi(sealed, entry);
+        let step = super::TelescopeStep {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        };
+        let Ok(Reduction::Reduced(reduct)) = super::unit_fibre_beta(arena, &identified, step)
+        else {
+            panic!("a transport into an identity of the unit type reduces");
+        };
+        let Some(&Computation::Return(returned)) = arena.computation(reduct)
+        else {
+            panic!("the reduct returns a value");
+        };
+        assert_eq!(arena.value(returned), Some(&Value::Tuple(Box::default())));
+        transports.push(arena.computation_telescope_transport(motive, path, start, over, value));
+    }
+
+    // The kernel admits the unit's reflexivity as an identity from the first
+    // transport to the unit, in the fibre at `b`.
+    let moved = arena.value_returned(transports[0]);
+    let fibre = arena.value_type_path(sealed, b, a);
+    let unit = arena.value_unit();
+    let declared = arena.value_type_path(fibre, moved, unit);
+    let reflexive = arena.value_here(unit);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, reflexive);
+    environment
+        .add_decl(declaration)
+        .expect("the transport along the evidence is the unit");
 }
 
 /// A bridge's domain and its endpoint, minted from the atom, its point and

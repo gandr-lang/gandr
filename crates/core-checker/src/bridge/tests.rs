@@ -1845,15 +1845,20 @@ enum Stated
     /// `related`, `reflexive` and `law`, the law's body `()`, which is no
     /// path between pairs.
     LawRefused,
+    /// `related`, `reflexive` and `law`, `related` returning the paths of the
+    /// unit type between its points and `reflexive` their reflexivity.
+    ByPaths,
 }
 
 /// An atom over `Unit` whose module declares the relation `Unit`, its
 /// reflexivity `()` and the law contracting every singleton onto its centre
-/// by `((), ())`, the atom's interface naming them as `stated`; two points
-/// made inside the seal; past it the relation's evidence `()` between them
-/// as an identity at the atom, and two transports in the singleton family
-/// `y. Path(atom, first, y)`: along `here(first)` returning its operand, and
-/// along that evidence moving `here(first)` to the evidence.
+/// by `((), ())`, the atom's interface naming them as `stated`; under
+/// [`Stated::ByPaths`] the relation `Path(Unit, a, b)` and the reflexivity
+/// `here(a)` instead. Two points made inside the seal; past it the
+/// relation's evidence `()` between them as an identity at the atom, and two
+/// transports in the singleton family `y. Path(atom, first, y)`: along
+/// `here(first)` returning its operand, and along that evidence moving
+/// `here(first)` to the evidence.
 ///
 /// # Specification
 /// trivial.
@@ -1879,19 +1884,36 @@ fn interfaced_atom_module(
         }
         arena.value_thunk(body)
     };
-    let unit_code = arena.value_quote(unit);
-    let related = thunk(arena, unit_code, 2);
+    let related_code = if matches!(stated, Stated::ByPaths) {
+        let (a, b) = (
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)),
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+        );
+        let paths = arena.value_type_path(unit, a, b);
+        arena.value_quote(paths)
+    }
+    else {
+        arena.value_quote(unit)
+    };
+    let related = thunk(arena, related_code, 2);
     let codes = arena.comp_type_returner(small);
     let inner = arena.comp_type_arrow(unit, codes);
     let outer = arena.comp_type_arrow(unit, inner);
     let relations = arena.value_type_thunk(outer);
     let relation = arena.value_constant(ConstantIndex::from(0_usize));
     let element = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let diagonal = crate::former::related_by(arena, relation, (element, element), &Level::zero());
+    let diagonal = crate::former::related_by(arena, relation, (element, element), Level::zero());
     let witnessed = arena.comp_type_returner(diagonal);
     let reflexive = arena.comp_type_pi(unit, witnessed);
     let reflexive = arena.value_type_thunk(reflexive);
-    let reflexivity = thunk(arena, one, 1);
+    let reflexivity = if matches!(stated, Stated::ByPaths) {
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let here = arena.value_here(point);
+        thunk(arena, here, 1)
+    }
+    else {
+        thunk(arena, one, 1)
+    };
     let reflexivity_constant = arena.value_constant(ConstantIndex::from(1_usize));
     let lawful_type = crate::former::law_type(
         arena,
@@ -1931,7 +1953,7 @@ fn interfaced_atom_module(
     let at_evidence = arena.value_type_path(identity, along_evidence, evidence);
     let reflexive_evidence = arena.value_here(evidence);
     let interface = match stated {
-        Stated::Lawful | Stated::LawRefused => {
+        Stated::Lawful | Stated::LawRefused | Stated::ByPaths => {
             AtomInterface::new(relation, reflexivity_constant).lawful(law_constant)
         },
         Stated::Lawless => AtomInterface::new(relation, reflexivity_constant),
@@ -2010,16 +2032,15 @@ fn a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers()
     );
 }
 
-#[test]
-fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
+/// `transport` in the family of paths back to the atom's first point, `(y :
+/// atom, z : Path(atom, first, y)) => Path(atom, y, first)`, along the
+/// relation's evidence from `here(first)`, declared equal to `()` by the
+/// unit's reflexivity, at the declaration after [`interfaced_atom_module`]'s.
+///
+/// # Specification
+/// trivial.
+fn back_along_evidence(arena: &mut CoreArena) -> Declaration
 {
-    // In the family of paths back to the atom's first point, `(y : atom, z :
-    // Path(atom, first, y)) => Path(atom, y, first)`, every fibre is the
-    // relation's, the unit type: along the relation's evidence the transport
-    // is the unit, so the unit's reflexivity is an identity from it to the
-    // unit, in both checkers.
-    let mut arena = CoreArena::new();
-    let mut module = interfaced_atom_module(&mut arena, Stated::Lawful);
     let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
     let first = arena.value_constant(ConstantIndex::from(4_usize));
     let second = arena.value_constant(ConstantIndex::from(5_usize));
@@ -2039,11 +2060,19 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
     let one = arena.value_unit();
     let declared = arena.value_type_path(fibre, moved, one);
     let reflexive = arena.value_here(one);
-    module.push(declaration(
-        At(9),
-        Maybe::Present(declared),
-        Maybe::Present(reflexive),
-    ));
+    declaration(At(9), Maybe::Present(declared), Maybe::Present(reflexive))
+}
+
+#[test]
+fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
+{
+    // In the family of paths back to the atom's first point every fibre is
+    // the relation's, the unit type: along the relation's evidence the
+    // transport is the unit, so the unit's reflexivity is an identity from it
+    // to the unit, in both checkers.
+    let mut arena = CoreArena::new();
+    let mut module = interfaced_atom_module(&mut arena, Stated::Lawful);
+    module.push(back_along_evidence(&mut arena));
     let (report, readmission) = judge_and_readmit(&mut arena, &module);
     let verdict = report.judged().last().map(Judged::verdict);
     assert!(
@@ -2054,6 +2083,38 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
     assert!(
         matches!(outcome, Some(Outcome::Defined { .. })),
         "the kernel admits it: {outcome:?}"
+    );
+}
+
+#[test]
+fn j_along_an_atom_relating_by_the_paths_of_the_unit_type_checks_and_replays_1960()
+{
+    // The atom relates its points by the paths of the unit type, so each fibre
+    // of the relation is an identity of the unit type rather than the unit
+    // type itself. Its law checks, the relation's evidence `()` is an identity
+    // between its points, and in the family of paths back to the first point
+    // the transport along that evidence is the unit, in both checkers.
+    let mut arena = CoreArena::new();
+    let mut module = interfaced_atom_module(&mut arena, Stated::ByPaths);
+    module.push(back_along_evidence(&mut arena));
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        verdicts
+            .iter()
+            .all(|verdict| matches!(verdict, Verdict::Data | Verdict::Checked { .. })),
+        "the law, the evidence and the transport check: {verdicts:?}"
+    );
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(Readmitted::outcome)
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Outcome::Data { .. } | Outcome::Defined { .. })),
+        "the kernel admits each: {outcomes:?}"
     );
 }
 

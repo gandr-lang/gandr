@@ -391,8 +391,7 @@ fn telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_va
     );
     let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
     let over_end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
-    let unit = core.value_type_unit();
-    let singleton = core.value_type_path(unit, centre, end);
+    let singleton = core.value_type_path(carrier, centre, end);
     let reading = core.value_type_path(singleton, over_end, over_end);
     let motive = unit_telescope(&mut core, reading);
     let reflexive = core.value_here(centre);
@@ -405,7 +404,8 @@ fn telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_va
     assert_eq!(
         eval_computation(&core, &mut domain, definitions, ample(), transported).err(),
         Some(crate::eval::EvalFault::TransportedNonPath),
-        "a motive reading the path's endpoint at a carrier other than the unit has no row along it"
+        "a motive reading the path's endpoint at a carrier whose identities are not the unit \
+         type has no row along it"
     );
 }
 
@@ -519,6 +519,117 @@ fn telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937()
         equal_certificate_syntax(&core, unidentified, held),
         CertificateEquality::Equal,
         "an atom the chain does not identify leaves the transport stuck on its path"
+    );
+}
+
+#[test]
+fn telescope_transport_into_an_identity_of_the_unit_type_returns_the_unit_1960()
+{
+    // At the atom `A` (position 0), along rigid evidence (position 2), the
+    // family of paths back to `origin` (position 1), `(y : A, z : Path(A,
+    // origin, y)) => Path(A, y, origin)`, and the family of the identities of
+    // the singleton's own paths, `(y : A, z : Path(A, origin, y)) =>
+    // Path(Path(A, origin, y), z, z)`.
+    let mut core = CoreArena::new();
+    let atom = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let origin = core.value_constant(ConstantIndex::from(1_usize));
+    let evidence = stuck(&mut core, ConstantIndex::from(2_usize));
+    let element = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let singleton = core.value_type_path(atom, origin, element);
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let back = core.value_type_path(atom, end, origin);
+    let at_end = core.value_type_path(atom, origin, end);
+    let loops = core.value_type_path(at_end, element, element);
+    let start = core.value_here(origin);
+    let over = core.value_here(evidence);
+    let transport = |core: &mut CoreArena, fibre: ValueTypeId, value: ValueId| {
+        let returned = core.comp_type_returner(fibre);
+        let entry = core.comp_type_pi(singleton, returned);
+        let motive = core.comp_type_pi(atom, entry);
+        core.computation_telescope_transport(motive, evidence, start, over, value)
+    };
+    let backward = transport(&mut core, back, start);
+    let reflexive = core.value_here(start);
+    let looped = transport(&mut core, loops, reflexive);
+    // A relation returning the code of the identity at `carrier` between its
+    // two points.
+    let relating = |core: &mut CoreArena, carrier: ValueTypeId| {
+        let left = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+        let right = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+        let related = core.value_type_path(carrier, left, right);
+        let code = core.value_quote(related);
+        let body = core.computation_return(code);
+        let inner = core.computation_lambda(body);
+        let outer = core.computation_lambda(inner);
+        core.value_thunk(outer)
+    };
+    let unit = core.value_type_unit();
+    let by_unit_paths = relating(&mut core, unit);
+    let text = text_type(&mut core);
+    let by_text_paths = relating(&mut core, text);
+    let unit_code = core.value_quote(unit);
+    let to_unit = core.computation_return(unit_code);
+    let to_unit = core.computation_lambda(to_unit);
+    let to_unit = core.computation_lambda(to_unit);
+    let to_unit = core.value_thunk(to_unit);
+    let environment = DefinitionalEnvironment::new();
+    let normal = |core: &mut CoreArena, relation: ValueId, transported: ComputationId| {
+        let mut chain = LoweredChain::new();
+        chain.identify(ConstantIndex::from(0_usize), relation);
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(core, &mut domain, definitions, ample(), transported)
+            .expect("the transport evaluates");
+        let read = readback_computation(
+            core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the transport reads back");
+        core.value_thunk(read)
+    };
+    let centre = core.value_unit();
+    let centre = core.computation_return(centre);
+    let centre = core.value_thunk(centre);
+    let by_unit = normal(&mut core, by_unit_paths, backward);
+    assert_eq!(
+        equal_certificate_syntax(&core, by_unit, centre),
+        CertificateEquality::Equal,
+        "an atom relating by the identities of the unit type returns the unit"
+    );
+    let by_text = normal(&mut core, by_text_paths, backward);
+    let held = core.value_thunk(backward);
+    assert_eq!(
+        equal_certificate_syntax(&core, by_text, held),
+        CertificateEquality::Equal,
+        "an atom relating by the identities of another type leaves the transport stuck"
+    );
+    let nested = normal(&mut core, to_unit, looped);
+    assert_eq!(
+        equal_certificate_syntax(&core, nested, centre),
+        CertificateEquality::Equal,
+        "an identity of the identities at an atom relating by the unit type is the unit"
+    );
+    // At the unit type itself, the family of the identities of the
+    // singleton's paths, along native evidence, returns the unit too.
+    let point = core.value_unit();
+    let unit_singleton = core.value_type_path(unit, point, end);
+    let unit_loops = core.value_type_path(unit_singleton, element, element);
+    let motive = unit_telescope(&mut core, unit_loops);
+    let native = core.value_unit();
+    let based = core.value_here(point);
+    let over_native = core.value_here(native);
+    let reflexive = core.value_here(based);
+    let transported =
+        core.computation_telescope_transport(motive, native, based, over_native, reflexive);
+    let returned = core.computation_return(point);
+    assert_eq!(
+        normalises_to(&mut core, transported, returned),
+        CertificateEquality::Equal,
+        "an identity of the identities of the unit type is the unit"
     );
 }
 

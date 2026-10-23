@@ -6052,7 +6052,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     progress = Progress::Reduced;
                                 },
                                 crate::path_universe::Reduction::Stuck => {
-                                    match crate::element_identity::atom_fibre_beta(
+                                    match crate::element_identity::unit_fibre_beta(
                                         self.arena,
                                         self.unfoldings,
                                         term,

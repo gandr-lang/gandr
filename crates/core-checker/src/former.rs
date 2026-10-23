@@ -641,7 +641,12 @@ pub fn form_interface(
     let _checked = crate::judgement::check_value(context, interface.relation(), formed)?;
     let arena = context.arena_mut();
     let element = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let diagonal = related_by(arena, interface.relation(), (element, element), level);
+    let diagonal = related_by(
+        arena,
+        interface.relation(),
+        (element, element),
+        level.clone(),
+    );
     let witnessed = arena.comp_type_returner(diagonal);
     let reflexive = arena.comp_type_pi(representation, witnessed);
     let reflexive = arena.value_type_thunk(reflexive);
@@ -678,14 +683,14 @@ pub fn related_by(
     arena: &mut gandr_core_term::CoreArena,
     relation: ValueId,
     (left, right): (ValueId, ValueId),
-    level: &Level,
+    level: Level,
 ) -> ValueTypeId
 {
     let forced = arena.computation_force(relation);
     let applied = arena.computation_application(forced, left);
     let applied = arena.computation_application(applied, right);
     let code = arena.value_returned(applied);
-    arena.value_type_element(code, level.clone())
+    arena.value_type_element(code, level)
 }
 
 /// The type an atom's identity-system law checks at over its representation
@@ -712,7 +717,7 @@ pub fn law_type(
     };
     // Under `a`, `b` and `r`, and under the pair's binder `y` beneath them.
     let (a, y) = (var(arena, 3), var(arena, 0));
-    let singleton = related_by(arena, relation, (a, y), level);
+    let singleton = related_by(arena, relation, (a, y), level.clone());
     let pairs = arena.value_type_sigma(representation, singleton);
     let (a, b, r) = (var(arena, 2), var(arena, 1), var(arena, 0));
     let source = arena.value_tuple(&[b, r]);
@@ -724,7 +729,7 @@ pub fn law_type(
     let returns = arena.comp_type_returner(contracted);
     // Under `a` and `b`: the relation between them.
     let (a, b) = (var(arena, 1), var(arena, 0));
-    let related = related_by(arena, relation, (a, b), level);
+    let related = related_by(arena, relation, (a, b), level.clone());
     let over_r = arena.comp_type_pi(related, returns);
     let over_b = arena.comp_type_pi(representation, over_r);
     let over_a = arena.comp_type_pi(representation, over_b);
