@@ -4105,6 +4105,7 @@ impl TypeTable
             Some(
                 Evaluation::Sealed(_)
                 | Evaluation::Blamed(_)
+                | Evaluation::Holed { .. }
                 | Evaluation::Stuck(_)
                 | Evaluation::Unfinished(_)
                 | Evaluation::Unrunnable(_),

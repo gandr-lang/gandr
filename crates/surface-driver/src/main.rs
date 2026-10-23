@@ -2250,8 +2250,9 @@ fn script(
                     Severity::Ledger => writeln!(stderr, "{rendered}")?,
                 }
             }
-            let path = match step {
-                Step::Source { path, .. } | Step::Fault { path, .. } => path.display(),
+            let (path, text) = match step {
+                Step::Source { path, ref text, .. } => (path.display(), text.as_ref()),
+                Step::Fault { path, .. } => (path.display(), ""),
             };
             match ran {
                 Ran::Evaluated {
@@ -2266,6 +2267,38 @@ fn script(
                     entered: Entered::Exited(code),
                     ..
                 } => exited = Some(u8::from(code)),
+                Ran::Evaluated {
+                    target,
+                    evaluation: Evaluation::Holed { at, .. },
+                }
+                | Ran::Entered {
+                    target,
+                    entered: Entered::Ended(Evaluation::Holed { at, .. }),
+                } => {
+                    // The hole as the source writes it, and its line and
+                    // column, counted from one.
+                    let written = match at {
+                        Maybe::Present(span) => text
+                            .get(usize::from(span.start()) .. usize::from(span.end()))
+                            .zip(text.get(.. usize::from(span.start()))),
+                        Maybe::Absent(_) => None,
+                    };
+                    match written {
+                        Some((hole, before)) => {
+                            let line = before.matches('\n').count().saturating_add(1);
+                            let column = before
+                                .rsplit('\n')
+                                .next()
+                                .map_or(0, |last| last.chars().count())
+                                .saturating_add(1);
+                            writeln!(
+                                stderr,
+                                "gandr: {path}:{line}:{column}: `{target}` reached the hole `{hole}`"
+                            )?;
+                        },
+                        None => writeln!(stderr, "gandr: {path}: `{target}` reached a hole")?,
+                    }
+                },
                 Ran::Evaluated { target, evaluation }
                 | Ran::Entered {
                     target,

@@ -1537,6 +1537,34 @@ impl<'run> Focusing<'run>
                     FocusOrigin::Perform,
                 )
             },
+            Computation::Hole(hole) => {
+                let signature = gandr_core_term::effect::EffectSig::new(
+                    gandr_core_term::effect::EffectName::from(crate::il::REACHED_HOLE),
+                    core::iter::empty(),
+                )
+                .map_err(|_conflict| FocusRefusal::TranslationInvariant)?;
+                let place = gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!(
+                    "{}",
+                    u32::from(hole)
+                ))
+                .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payload = self.arena.mint_producer(ProducerNode::Literal(
+                    gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+                        gandr_kernel_term::Sign::NonNegative,
+                        place,
+                    )),
+                ))?;
+                (
+                    crate::il::CommandNode::Perform {
+                        signature,
+                        operation: gandr_core_term::effect::OperationName::from(crate::il::REACHED),
+                        route: Route::Nearest,
+                        payload,
+                        continuation,
+                    },
+                    FocusOrigin::Perform,
+                )
+            },
             Computation::Exercise {
                 ref signature,
                 ref operation,
@@ -1710,7 +1738,6 @@ impl<'run> Focusing<'run>
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..)
-            | Computation::Hole(_)
             | Computation::Mark { .. }
             | Computation::ListFold { .. }
             | Computation::ListCase { .. }
@@ -1756,7 +1783,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_quote_focuses_to_the_code_it_names`
     /// - witness: `focus::tests::a_static_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
-    /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
+    /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
     /// - witness: `tests::run::native_paths_run_as_their_maps`
     /// - witness: `tests::run::transports_run_by_the_motives_action`
     #[spec(
@@ -2013,11 +2040,14 @@ impl<'run> Focusing<'run>
     /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
     ///   continuation that is not a tail is placed under no binder; a ride or a
     ///   transport applies its motive's action, as [`crate::identity`]
-    ///   tabulates.
+    ///   tabulates; a hole other than the placeholder of a run match a
+    ///   combinator's build left is scheduled as the perform of
+    ///   [`REACHED`](crate::il::REACHED) of
+    ///   [`REACHED_HOLE`](crate::il::REACHED_HOLE), its payload the hole's
+    ///   name.
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
-    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark other
-    ///   than the placeholder of a run match a combinator's build left,
+    ///   [`FocusRefusal::IncompleteComputation`] for a mark,
     ///   [`FocusRefusal::Session`] for a session action,
     ///   [`FocusRefusal::ElementTransport`] for a transport whose motive has a
     ///   part no row reads, named by that part's head, and for a telescope
@@ -2037,15 +2067,14 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
-    /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
+    /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
     /// - witness: `focus::tests::a_session_action_is_refused_by_name`
     /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
     #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
-            | Some(&Computation::Hole(_)) if self.run_cases.contains_key(&id) => ret.is_err() || self.tasks.len() > work,
-            | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(&Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::Session(_)) => ret == Err(FocusRefusal::Session(id)),
             | Some(&Computation::World(_)) => ret == Err(FocusRefusal::World(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
@@ -2379,7 +2408,14 @@ impl<'run> Focusing<'run>
             Computation::Hole(_) => {
                 let Some(case) = self.run_cases.get(&id)
                 else {
-                    return Err(FocusRefusal::IncompleteComputation(id));
+                    // A hole no run case fills is reached as an operation of
+                    // the reached-hole interface, which no handler a source
+                    // writes can claim.
+                    self.tasks.push(Task::Control {
+                        source: id,
+                        continuation,
+                    });
+                    return Ok(());
                 };
                 let (scrutinee, runs) = (case.scrutinee, alloc::sync::Arc::clone(&case.arms));
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;

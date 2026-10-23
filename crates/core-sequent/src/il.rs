@@ -695,6 +695,16 @@ pub enum Route
     Capability(ProducerId),
 }
 
+/// The interface a reached hole performs, named so no source can claim it.
+///
+/// Its one operation, [`REACHED`], carries the hole's name as an integer;
+/// no handler a source writes claims it, so the request is offered to the
+/// host.
+pub const REACHED_HOLE: &str = "?hole";
+
+/// The one operation of [`REACHED_HOLE`].
+pub const REACHED: &str = "reached";
+
 /// A command node.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CommandNode

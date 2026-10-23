@@ -1,0 +1,10 @@
+// A draft: a run that reaches a hole stops there, after what ran before it,
+// and names the hole where the source writes it, so a program runs while its
+// holes are still open; `gandr run` reports the hole at its line and column
+// and exits 1.
+
+import "./entry.gandr" ;
+
+/// It counts no arguments, then reaches the hole left for the rest.
+@[ runs("reached a hole") ]
+def draft() -> -F Integer { run n <- count([]) ; ?rest }
