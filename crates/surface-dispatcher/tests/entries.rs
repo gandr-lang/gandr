@@ -136,8 +136,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
-    // #2183: the `2` of a member of a module refused at its header.
-    ("Expression number", Standing::Owed(1)),
+    ("Expression number", Standing::Owed(0)),
     ("Expression offer", Standing::Owed(0)),
     ("Expression pack", Standing::Owed(0)),
     ("Expression pure", Standing::Design(EXIT)),
@@ -188,15 +187,13 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type +U", Standing::Owed(0)),
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
-    // #2182: a path through a model parameter in a later parameter's type.
-    ("Type .", Standing::Owed(2)),
+    ("Type .", Standing::Owed(0)),
     ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
     ("Type Char", Standing::Owed(0)),
-    // #2183: the types a module refused at its header writes.
-    ("Type Integer", Standing::Owed(2)),
+    ("Type Integer", Standing::Owed(0)),
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
     ("Type Type", Standing::Owed(0)),
@@ -219,10 +216,8 @@ const KINDS: &[(&str, Standing)] = &[
         "Type sort",
         Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
     ),
-    // #2183: a functor parameter's signature type.
-    ("Type type_identifier", Standing::Owed(1)),
-    // #2182: a model parameter named in a later parameter's type.
-    ("Type type_variable", Standing::Owed(7)),
+    ("Type type_identifier", Standing::Owed(0)),
+    ("Type type_variable", Standing::Owed(0)),
     ("Type u32", Standing::Owed(0)),
     ("Type u64", Standing::Owed(0)),
     (
@@ -420,10 +415,11 @@ enum Placed
     /// the model type answers.
     Theory,
     /// The module a pack packs and the model type it states, `M` and
-    /// `Model(T)` in `pack M at Model(T)`: the module is a namespace and the
-    /// model type names the theory whose record the pack builds of the
-    /// module's members, neither a core node of its own, so the pack, the
-    /// record they give, answers.
+    /// `Model(T)` in `pack M at Model(T)`, or the model type a written
+    /// forgetting map states, `Model(T)` in `forget[sort C = A](m) at
+    /// Model(T)` (#2218): the module is a namespace and the model type names
+    /// the theory whose record the pack builds or whose map the call applies,
+    /// neither a core node of its own, so the pack or the call answers.
     Packed,
     /// A binding operation applied in a theory's rule, `let` in `rule zeta :
     /// let(u, t) <=> t(u)`, or a variable a binding port binds, `t` there
@@ -607,6 +603,18 @@ fn gated(
             && def.label == "pack"
             && def.sort == Sort::Expression
             && spelled(children.get(2).copied()) == "at";
+        // The model type a written forgetting map states: the last child of a
+        // `forget[…](m) at Model(T)`, the `at` tile before it.
+        let stating = melded
+            && def.label == "forget"
+            && def.sort == Sort::Expression
+            && spelled(
+                children
+                    .len()
+                    .checked_sub(2_usize)
+                    .and_then(|before| children.get(before))
+                    .copied(),
+            ) == "at";
         stack.extend(
             children
                 .iter()
@@ -621,7 +629,7 @@ fn gated(
                         if modelled && opener != Some(child) {
                             placed.or(Some(Placed::Theory))
                         }
-                        else if packing {
+                        else if packing || (stating && Some(child) == last) {
                             placed.or(Some(Placed::Packed))
                         }
                         else {
