@@ -1352,6 +1352,41 @@ fn a_trace_spells_a_kept_region_by_its_name_1494()
     }
 }
 
+/// A type kept at a definition's own region binder, `@[r : Region]`, is spelled
+/// by the binder's name, so a mismatch between two binders names both, never
+/// `?` (#2138).
+#[test]
+fn a_mismatch_between_two_region_binders_names_both_2138()
+{
+    let text = SourceText::from(
+        "def read @[r : Region] (k : (() => Integer) at r) -> -F Integer { force k }\n\ndef crossed \
+         @[r : Region, s : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F \
+         Integer {\n  run m : (() => Integer) at s <- pure k ;\n  read(m)\n}\n",
+    );
+    let diagnostic = only(Path::new("crossed.gandr"), text);
+    assert_eq!(
+        match diagnostic.primary() {
+            Maybe::Present(primary) => primary.label.clone(),
+            Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+        },
+        "its type does not convert: expected `(() => Integer) at s`, found `(() => Integer) at r`"
+    );
+    let labels: Vec<String> = contexts(text, &diagnostic)
+        .into_iter()
+        .map(|(_, label)| label)
+        .collect();
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.contains("binds k : (() => Integer) at r")),
+        "a parameter kept at a binder names it: {labels:?}"
+    );
+    assert!(
+        labels.iter().all(|label| !label.contains("at ?")),
+        "no region spells `?`: {labels:?}"
+    );
+}
+
 #[test]
 fn an_unlocated_rule_becomes_a_note()
 {

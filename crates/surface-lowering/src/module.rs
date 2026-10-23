@@ -9165,6 +9165,9 @@ pub struct LoweredModule<'source>
     /// The bound of each stage binder of each function quantified over
     /// stages, in written order, by the function's declaration key.
     stage_bounds: BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>,
+    /// The name of each region binder of each definition over regions, by
+    /// ordinal, by the definition's position.
+    region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
@@ -9219,6 +9222,7 @@ impl<'source> LoweredModule<'source>
             recognition,
             operation_rules: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
+            region_names: BTreeMap::new(),
             supplies: BTreeMap::new(),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
@@ -9338,6 +9342,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.stage_bounds = stage_bounds;
+        self
+    }
+
+    /// This module, carrying `region_names`, each definition's region binder
+    /// names by ordinal, by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_region_names(
+        mut self,
+        region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    ) -> Self
+    {
+        self.region_names = region_names;
         self
     }
 
@@ -10275,6 +10295,37 @@ impl<'source> LoweredModule<'source>
                 Maybe::Present(key) => self.stage_bounds.get(&key).map(Vec::as_slice),
                 Maybe::Absent(_) => None,
             })
+            .unwrap_or_default()
+    }
+
+    /// The names of the region binders the definition at `constant`
+    /// abstracts, `@[r : Region]`, by ordinal: what a type kept at
+    /// [`gandr_core_term::effect::capability::Region::Bound`] is spelled by.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per region binder the definition's telescope
+    ///   writes, its name at its ordinal; the empty slice for a position whose
+    ///   definition abstracts no region.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition over two regions and one over none
+    ///   separate the two answers, and the two binders' order is their
+    ///   ordinals'.
+    /// - witness: `lower::staged::tests::a_definition_s_region_binders_are_named_by_ordinal_2138`
+    #[spec(ensures: |ret| ret.is_empty() != self.region_names.contains_key(&constant))]
+    #[inline]
+    #[must_use]
+    pub fn region_names(
+        &self,
+        constant: ConstantIndex,
+    ) -> &[Option<SurfaceName<'source>>]
+    {
+        self.region_names
+            .get(&constant)
+            .map(Vec::as_slice)
             .unwrap_or_default()
     }
 
