@@ -977,6 +977,61 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     assert_eq!(refused.readmitted(), whole.readmitted());
 }
 
+/// #2102: an export resumed from a record that keeps its encoding, recording
+/// declarations past it, keeps the further record's own encoding — so the
+/// export after it resumes that record without encoding its declarations again
+/// — and writes the whole artifact, byte for byte.
+#[test]
+fn an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102()
+{
+    let (mut first, first_report) = numerals(Padding(0), AliasBody::Num, At(3));
+    let (first_readmission, recorded) = readmit_resuming(
+        &mut first,
+        &first_report,
+        LeadingCount::from(2_usize),
+        Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let mut recorded = recorded;
+    let _exported = first_readmission.export_resuming(
+        BTreeMap::new(),
+        Maybe::Absent(crossed::Absent::Unasked),
+        &mut recorded,
+    );
+    let Maybe::Present(recorded) = recorded
+    else {
+        panic!("the two leading declarations are recorded: {recorded:?}");
+    };
+    let (mut whole_arena, whole_report) = numerals(Padding(7), AliasBody::Num, At(4));
+    let whole = readmit(&mut whole_arena, &whole_report);
+    let (mut resumed_arena, resumed_report) = numerals(Padding(7), AliasBody::Num, At(4));
+    let (resumed, further) = readmit_resuming(
+        &mut resumed_arena,
+        &resumed_report,
+        LeadingCount::from(resumed_report.judged().len()),
+        Maybe::Present(&recorded),
+    );
+    assert_eq!(
+        resumed.resumed(),
+        LeadingCount::from(2_usize),
+        "the leading two are resumed"
+    );
+    let mut further = further;
+    assert_eq!(
+        resumed.export_resuming(BTreeMap::new(), Maybe::Present(&recorded), &mut further),
+        whole.export(BTreeMap::new()),
+        "the export is the whole one, byte for byte"
+    );
+    let Maybe::Present(further) = further
+    else {
+        panic!("every declaration is recorded: {further:?}");
+    };
+    assert_eq!(
+        further.encoded.as_ref().map(EncodedPrefix::end),
+        Some(further.kernel_end()),
+        "the further record keeps the encoding of every kernel declaration it holds"
+    );
+}
+
 /// #1547: a readmission polled to retirement stops before the declaration it
 /// polled at and answers the record of the ones it crossed before it; the next
 /// readmission, over another arena, resumes them from that record and answers

@@ -1244,12 +1244,12 @@ impl Readmission
     ///   [`readmit_resuming`] was given and `recorded` the one it answered, and
     ///   `names` names the leading declarations `crossed` holds as it named
     ///   them when their encoding was kept.
-    /// - ensures: [`export`](Self::export)'s artifact. When this readmission
-    ///   resumed every declaration of `crossed` and `crossed` keeps their
-    ///   encoding, only the declarations after them are encoded. Otherwise,
-    ///   when `recorded` is present and no seal among its declarations is open,
-    ///   it keeps their encoding, which ends where its declarations do in the
-    ///   kernel.
+    /// - ensures: [`export`](Self::export)'s artifact. When `recorded` is
+    ///   present and no seal among its declarations is open, it keeps their
+    ///   encoding, which ends where its declarations do in the kernel, so the
+    ///   record a later export resumes holds its own. Otherwise, when this
+    ///   readmission resumed every declaration of `crossed` and `crossed` keeps
+    ///   their encoding, only the declarations after them are encoded.
     /// - provides: an editor's export of a document laid out after its import
     ///   closure, which encodes the closure once.
     /// - fails: never.
@@ -1261,6 +1261,7 @@ impl Readmission
     ///   whole admission exports, and the record it answers keeps the encoding
     ///   of its declarations.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1289,23 +1290,35 @@ impl Readmission
     ) -> EncodedArtifact
     {
         let arena = self.environment.arena();
-        if let Maybe::Present(crossed) = crossed
-            && let Some(ref prefix) = crossed.encoded
-            && self.resumed == crossed.readmitted.len()
-        {
-            let after = self.marked(&mut names, prefix.end());
-            return encode_after(prefix, arena, &after);
-        }
+        let resumable = match crossed {
+            Maybe::Present(crossed) if self.resumed == crossed.readmitted.len() => {
+                crossed.encoded.as_ref()
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        let Maybe::Present(ref mut record) = *recorded
+        else {
+            return match resumable {
+                Some(prefix) => encode_after(prefix, arena, &self.marked(&mut names, prefix.end())),
+                None => encode(
+                    arena,
+                    &self.marked(&mut names, ConstantIndex::from(0_usize)),
+                ),
+            };
+        };
         let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
-        if let Maybe::Present(ref mut record) = *recorded
-            && let Some((leading, after)) = marked.split_at_checked(record.positions.exports.len())
+        if let Some((leading, after)) = marked.split_at_checked(record.positions.exports.len())
             && let Maybe::Present(prefix) = encode_prefix(arena, leading)
         {
             let artifact = encode_after(&prefix, arena, after);
             record.encoded = Some(prefix);
             return artifact;
         }
-        encode(arena, &marked)
+        match resumable.and_then(|prefix| Some((prefix, marked.get(usize::from(prefix.end()) ..)?)))
+        {
+            Some((prefix, after)) => encode_after(prefix, arena, after),
+            None => encode(arena, &marked),
+        }
     }
 
     /// The admitted declarations from kernel position `from` on, each marked

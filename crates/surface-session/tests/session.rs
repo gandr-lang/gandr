@@ -1082,12 +1082,41 @@ fn a_deprecation_is_kept_by_declaration_identity()
     );
 }
 
-/// #776: a document laid out after its import closure offers the kernel its
-/// own declarations alone once the closure was admitted, exporting and
-/// committing what a whole admission of the revision exports and commits, and
-/// offers the whole closure again once a source of it changed.
-#[test]
-fn an_edit_to_its_own_text_readmits_the_document_alone_776()
+/// How many declarations an admission offered the kernel, of how many were
+/// judged.
+#[derive(Debug, Eq, PartialEq)]
+struct Counted
+{
+    /// The declarations offered.
+    offered: usize,
+    /// The declarations judged.
+    judged: usize,
+}
+
+/// What admitting `own`, laid out after the sibling beside `document`,
+/// counted, its artifact and commit those a whole admission of the same text
+/// exports and commits.
+///
+/// # Specification
+/// - requires: `document` names a file beside the sibling `own` imports.
+/// - ensures: no more declarations offered than judged.
+/// - panics: when the revision is not laid out, judged, admitted or lowered,
+///   the kernel does not re-derive it whole, or the admission's artifact or
+///   commit is not the whole admission's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as each witness's revisions.
+/// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
+/// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
+#[spec(ensures: |ret| ret.offered <= ret.judged)]
+fn admitted_after<'text>(
+    session: &mut gandr_surface_session::Session<
+        gandr_core_incremental::MemoryCheckpointStore,
+        gandr_storage_records::InMemoryBlockStore,
+    >,
+    document: &std::path::Path,
+    own: impl Into<crate::common::Text<'text>>,
+) -> Counted
 {
     use gandr_core_checker::HostGrant;
     use gandr_storage_artifact::ArtifactRecordSet;
@@ -1103,6 +1132,68 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     use gandr_surface_session::KernelCheckpoint;
     use gandr_surface_syntax::SourceText;
 
+    let crate::common::Text(own) = own.into();
+    let grammar = &*crate::common::GRAMMAR;
+    let laid = lay_out(grammar, document, SourceRoot::Strict, own.into());
+    let Maybe::Present(laid) = laid
+    else {
+        panic!("the document is laid out after its sibling: {laid:?}");
+    };
+    let text = SourceText::from(laid.text.as_str());
+    let slot = gandr_surface_session::ClosureSlot::new();
+    let _judged = session
+        .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
+        .expect("the revision is judged");
+    let Ok(Maybe::Present(admitted)) = session.admit()
+    else {
+        panic!("the judgement left its admission");
+    };
+    let Lowered::Module { module, arena } =
+        lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
+            .expect("the revision lowers")
+            .into_lowered()
+    else {
+        panic!("the revision is not refused whole");
+    };
+    let whole = judge_member(
+        CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &HostGrant::UNBOUNDED,
+        laid.base,
+    )
+    .into_parts()
+    .1
+    .admit()
+    .expect("the kernel re-derives the revision");
+    let cut = ArtifactRecordSet::from_artifact(whole.as_image()).expect("the export cuts");
+    let committed = build(
+        &cut,
+        TreeParams::current(),
+        &mut InMemoryBlockStore::default(),
+    )
+    .expect("the records commit");
+    assert!(
+        *admitted.kernel() == whole,
+        "the admission exports what a whole one does: {own}"
+    );
+    assert!(
+        *admitted.checkpoint() == KernelCheckpoint::Stored(committed),
+        "the admission commits what a whole one does: {own}"
+    );
+    Counted {
+        offered: usize::from(admitted.crossed()),
+        judged: usize::from(admitted.judged()),
+    }
+}
+
+/// #776: a document laid out after its import closure offers the kernel its
+/// own declarations alone once the closure was admitted, exporting and
+/// committing what a whole admission of the revision exports and commits, and
+/// offers the whole closure again once a source of it changed.
+#[test]
+fn an_edit_to_its_own_text_readmits_the_document_alone_776()
+{
     let directory =
         std::env::temp_dir().join(format!("gandr-session-closure-776-{}", std::process::id()));
     let _cleared = std::fs::remove_dir_all(&directory);
@@ -1119,68 +1210,23 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     .expect("the sibling is written");
     // The editor's buffer is what is judged; the file only has to exist.
     std::fs::write(&document, "").expect("the document is written");
-    let grammar = &*crate::common::GRAMMAR;
     let mut session = session(SourceRoot::Strict);
-    // Each revision of the document, judged and admitted laid out after the
-    // sibling: what the admission counted, and whether its artifact and its
-    // commit are what a whole admission of the same text exports and commits.
-    let mut admit = |own: &str| {
-        let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
-        let Maybe::Present(laid) = laid
-        else {
-            panic!("the document is laid out after its sibling: {laid:?}");
-        };
-        let text = SourceText::from(laid.text.as_str());
-        let slot = gandr_surface_session::ClosureSlot::new();
-        let _judged = session
-            .judge_unit_reading(text, &laid.unit, laid.base, &slot, |_| ())
-            .expect("the revision is judged");
-        let Ok(Maybe::Present(admitted)) = session.admit()
-        else {
-            panic!("the judgement left its admission");
-        };
-        let Lowered::Module { module, arena } =
-            lower_unit_source(grammar, text, &laid.unit, &mut LoweringCount::default())
-                .expect("the revision lowers")
-                .into_lowered()
-        else {
-            panic!("the revision is not refused whole");
-        };
-        let whole = judge_member(
-            CorpusRoot::Strict,
-            (module, text),
-            arena,
-            &HostGrant::UNBOUNDED,
-            laid.base,
-        )
-        .into_parts()
-        .1
-        .admit()
-        .expect("the kernel re-derives the revision");
-        let cut = ArtifactRecordSet::from_artifact(whole.as_image()).expect("the export cuts");
-        let committed = build(
-            &cut,
-            TreeParams::current(),
-            &mut InMemoryBlockStore::default(),
-        )
-        .expect("the records commit");
-        (
-            usize::from(admitted.crossed()),
-            usize::from(admitted.judged()),
-            *admitted.kernel() == whole,
-            *admitted.checkpoint() == KernelCheckpoint::Stored(committed),
-        )
-    };
     let first = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
     let second = format!("{first}def four : Integer ;\ndef four = three ;\n");
     assert_eq!(
-        admit(first),
-        (3_usize, 3_usize, true, true),
+        admitted_after(&mut session, &document, first),
+        Counted {
+            offered: 3,
+            judged: 3
+        },
         "the closure's first admission offers the kernel every declaration"
     );
     assert_eq!(
-        admit(&second),
-        (2_usize, 4_usize, true, true),
+        admitted_after(&mut session, &document, &second),
+        Counted {
+            offered: 2,
+            judged: 4
+        },
         "an edit to the document's own text offers its own declarations alone"
     );
     std::fs::write(
@@ -1190,15 +1236,94 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     )
     .expect("the sibling is rewritten");
     assert_eq!(
-        admit(&second),
-        (4_usize, 4_usize, true, true),
+        admitted_after(&mut session, &document, &second),
+        Counted {
+            offered: 4,
+            judged: 4
+        },
         "a changed sibling offers the whole closure again"
     );
     assert_eq!(
-        admit(first),
-        (1_usize, 3_usize, true, true),
+        admitted_after(&mut session, &document, first),
+        Counted {
+            offered: 1,
+            judged: 3
+        },
         "and the changed closure is resumed thereafter"
     );
+    let _removed = std::fs::remove_dir_all(&directory);
+}
+
+/// #2102: an admission resumes the declarations its revision leads with
+/// unchanged since the admission before it. A comment after the last
+/// declaration offers the kernel the document's declarations once, then none;
+/// an edit to the last declaration offers the document's, then that one alone;
+/// and an edit to a declaration whose value a later one reads offers both
+/// again, the later one refused — each exporting and committing what a whole
+/// admission of the same text does.
+#[test]
+fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
+{
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-leading-2102-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    let document = directory.join("document.gandr");
+    std::fs::write(
+        directory.join("base.gandr"),
+        "/// #2102: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
+         two = one ;\n",
+    )
+    .expect("the sibling is written");
+    std::fs::write(&document, "").expect("the document is written");
+    let mut session = session(SourceRoot::Strict);
+    let revision = |three: &str, four: &str, after: &str| {
+        format!(
+            "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = {three} ;\ndef five : \
+             Path(Integer, three, 1) ;\ndef five = here(1) ;\ndef four : Integer ;\ndef four = \
+             {four} ;\n{after}"
+        )
+    };
+    for (own, offered, said) in [
+        (
+            revision("two", "three", ""),
+            5_usize,
+            "opening offers the kernel the closure and the document",
+        ),
+        (
+            revision("two", "three", "// noted\n"),
+            3_usize,
+            "a comment offers the document's declarations once",
+        ),
+        (
+            revision("two", "three", "// noted again\n"),
+            0_usize,
+            "and another offers none",
+        ),
+        (
+            revision("two", "two", "// noted again\n"),
+            3_usize,
+            "an edit to the last declaration offers the document's declarations",
+        ),
+        (
+            revision("two", "one", "// noted again\n"),
+            1_usize,
+            "and another to it offers it alone",
+        ),
+        (
+            revision("2", "one", "// noted again\n"),
+            3_usize,
+            "an edit to a declaration whose value a later one reads offers both again",
+        ),
+    ] {
+        assert_eq!(
+            admitted_after(&mut session, &document, &own),
+            Counted { offered, judged: 5 },
+            "{said}"
+        );
+    }
     let _removed = std::fs::remove_dir_all(&directory);
 }
 

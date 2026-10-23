@@ -24,16 +24,19 @@
 //! joined parse equals the whole parse of the revision. [`Submission::forms`]
 //! counts them.
 //!
-//! # An import closure is readmitted once per process
+//! # A readmission resumes the declarations a revision leads with
 //!
 //! A document that imports a sibling is judged laid out after its import
 //! closure, and the kernel readmits the closure's declarations with its own.
-//! [`Session::admit`] resumes that readmission from the one the process holds
-//! for the same closure — its text selects the candidate, its declarations'
-//! checkpoints compared pointwise with the latest resume's admit it — so an
-//! edit to the document's own text offers the kernel its own declarations,
-//! and [`Admitted::crossed`] counts them. The choice, its alternatives and its
-//! reversal are in the `closures` module.
+//! [`Session::admit`] resumes that readmission from the longest run of
+//! leading declarations the process holds for the same closure, or the
+//! session holds past it — its text selects the candidate, the run's
+//! checkpoints compared pointwise with the latest resume's admit it — and
+//! records its own run for the next admission as far as its revision leads
+//! with the one admitted before. An edit to the document's own text offers
+//! the kernel its own declarations from the first one it changed, a revision
+//! that changes none offers none, and [`Admitted::crossed`] counts them. The
+//! stores are the `closures` module's.
 //!
 //! # The report is the dispatcher's composition
 //!
