@@ -573,9 +573,11 @@ pub fn path_greater(
 ///   application at the root, and in one wrapping a subterm of it below the
 ///   root; a variable embeds in a term holding one and in no ground term; a
 ///   term embeds in no smaller term and in no term applying another symbol at
-///   the node it would couple with. Dropping the diving case, coupling two
-///   symbols, or comparing variables by name changes one of them.
+///   the node it would couple with; an abstraction embeds in one naming another
+///   atom. Dropping the diving case, coupling two symbols, leaving two
+///   abstractions uncoupled or comparing variables by name changes one of them.
 /// - witness: `termination::tests::a_term_embeds_in_every_term_wrapping_it`
+/// - witness: `termination::tests::an_abstraction_embeds_where_one_couples_1917`
 #[spec(ensures: |ret| small != big || bool::from(ret))]
 #[inline]
 #[must_use]
@@ -596,6 +598,7 @@ pub fn embeds(
                 | (Symbol::Atom(left), Symbol::Atom(right)) => left == right,
                 (Symbol::Var(_), Symbol::Var(_))
                 | (Symbol::Results, Symbol::Results)
+                | (Symbol::Abs, Symbol::Abs)
                 | (Symbol::Inst(_), Symbol::Inst(_)) => true,
                 _ => false,
             }
@@ -1200,6 +1203,28 @@ mod tests
         assert!(
             !bool::from(embeds(&var("x"), &succ(zero()))),
             "and in no ground term"
+        );
+    }
+
+    #[test]
+    fn an_abstraction_embeds_where_one_couples_1917()
+    {
+        let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+        let restricted = nu("a", var("p"));
+        assert!(
+            bool::from(embeds(&restricted, &restricted)),
+            "an abstraction embeds in itself"
+        );
+        assert!(
+            bool::from(embeds(&restricted, &nu("b", var("q")))),
+            "whatever atom each names"
+        );
+        assert!(
+            bool::from(embeds(
+                &restricted,
+                &nu("a", FreeTerm::op("par", [var("p"), var("q")]))
+            )),
+            "and in one whose body wraps its body"
         );
     }
 }
