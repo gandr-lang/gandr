@@ -2927,9 +2927,12 @@ pub fn collect_source<'source>(
     // else the source declares. One the parser repaired is malformed instead.
     let mut items_refused = false;
     // A closer written twice on one line tears the form it closes early into
-    // pieces of that line: the run is one stray, refused at the closer.
+    // pieces of that line, and a declaration whose body the parser cannot
+    // finish is torn into its tiles: each run is one stray, refused where
+    // the source went wrong.
     let placed: Vec<Placed> = pieces.iter().map(|piece| piece.placed()).collect();
     let mut torn = collector.torn_lines(&placed);
+    collector.torn_forms(&placed, &mut torn);
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
@@ -11035,6 +11038,43 @@ mod tests
                 }] if *span == second(attribute, "))")
             ),
             "the block is refused at its extra closer: {refused:?}"
+        );
+    }
+
+    /// A theory whose rule's `==>` is written `=>=` cannot be finished: the
+    /// parser leaves its tiles at the root one by one, and the first of them
+    /// is `theory`, written right. The theory is refused once, at the repair
+    /// after the arrow, as a theory declaration (#2110).
+    #[test]
+    fn a_torn_declaration_is_refused_where_it_broke_2110()
+    {
+        let pbg = grammar();
+        let text = "theory Restriction {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . nil()) =>= nil();\n}\n";
+        let tree = repaired(&pbg, SourceText::from(text));
+        // The theory is the source's one item, so its refusal is the source's.
+        let refused = match collect(&pbg, &tree, &Unit::single(), &mut tank()) {
+            Ok(collected) => collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            Err(refusal) => alloc::vec![refusal],
+        };
+        let arrow = text.find("=>=").unwrap().saturating_add(2);
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [LoweringRefusal::MalformedForm {
+                    span,
+                    form,
+                    fault: FormFault::Repaired(_),
+                }] if usize::from(span.start()) == arrow
+                    && *form == FormName::from(NamedKind("theory_declaration"))
+            ),
+            "the theory is refused once, after its arrow: {refused:?}"
         );
     }
 
