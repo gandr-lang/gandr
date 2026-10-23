@@ -4570,6 +4570,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 BaseType::String => produced(self.context.atom(Atom::String)),
                 BaseType::Character => produced(self.context.atom(Atom::Character)),
                 BaseType::Float64 => produced(self.context.atom(Atom::Float64)),
+                BaseType::Fixed(width) => produced(self.context.atom(Atom::Fixed(width))),
                 BaseType::Numeric => Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral)),
             },
             Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
@@ -6850,6 +6851,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::String
             | ValueTypeView::Character
             | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Buffer
             | ValueTypeView::Web
@@ -7251,6 +7253,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::String
                 | ValueTypeView::Character
                 | ValueTypeView::Float64
+                | ValueTypeView::Fixed(_)
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Lift { .. }
@@ -7327,6 +7330,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::String
                 | ValueTypeView::Character
                 | ValueTypeView::Float64
+                | ValueTypeView::Fixed(_)
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -8942,6 +8946,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::String
                     | ValueTypeView::Character
                     | ValueTypeView::Float64
+                    | ValueTypeView::Fixed(_)
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Universe { .. }
@@ -9657,6 +9662,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::String
             | ValueTypeView::Character
             | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }

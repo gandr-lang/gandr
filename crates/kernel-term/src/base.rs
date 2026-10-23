@@ -1,9 +1,10 @@
 //! The rigid base-type atoms and the literal stock, each held in a canonical
 //! form its smart constructor maintains.
 //!
-//! The base-type atoms are rigid and closed: the stock is exactly the four the
-//! literal forms name — an integer atom, a string atom, a numeric atom, a
-//! character atom and a 64-bit binary floating-point atom.
+//! The base-type atoms are rigid and closed: the stock is exactly the nine
+//! the literal forms name — an integer atom, a string atom, a numeric atom, a
+//! character atom, a 64-bit binary floating-point atom and the four integer
+//! width atoms `u32`, `u64`, `i32` and `i64`.
 //!
 //! Literal payloads are canonical and structurally comparable — leading and
 //! trailing zeros normalized, the zero sign pinned — so syntactic equality of
@@ -26,6 +27,24 @@
 //! scalar's UTF-8 text, so a payload of no scalar or of two is refused when
 //! read. Reversal: if characters are ever wanted as bounded integers or as
 //! strings of length one, the atom folds into that type and the tag retires.
+//!
+//! # The integer width atoms
+//!
+//! A number written with a width, `1u32`, is a literal of that width's own
+//! atom, one atom per width: [`BaseType::Fixed`] carries an [`IntegerWidth`],
+//! and each width has its own base tag in every encoding, so `u32` and `u64`
+//! are as distinct as `Integer` and `String`. The literal, [`FixedInteger`],
+//! holds a value of exactly its width, so a value outside the width's range
+//! cannot be built; the range check is the lowering's, at the literal, where a
+//! suffix whose digits do not fit is refused. Declined: a refinement of the
+//! unbounded integer atom, which would give the literal no type of its width
+//! to check against. The payload on the wire is the value's bit pattern in
+//! two's complement, zero-extended to 64 bits and written as an unsigned
+//! varint, so one width's literal is one canonical byte image, and a payload
+//! wider than its width is refused when read. The floating widths are not in
+//! this stock. Reversal: if a width is ever wanted as a range over the
+//! unbounded integers, its atom folds into that refinement and its tag
+//! retires.
 
 use alloc::string::String;
 use core::str::FromStr;
@@ -47,6 +66,44 @@ pub enum BaseType
     /// The 64-bit binary floating-point atom — the type of a
     /// [`Float64Literal`].
     Float64,
+    /// An integer width atom — the type of a [`FixedInteger`] of that width.
+    Fixed(IntegerWidth),
+}
+
+/// The width of an integer width atom: its bit count and signedness.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IntegerWidth
+{
+    /// Unsigned, 32 bits: `u32`.
+    U32,
+    /// Unsigned, 64 bits: `u64`.
+    U64,
+    /// Signed two's complement, 32 bits: `i32`.
+    I32,
+    /// Signed two's complement, 64 bits: `i64`.
+    I64,
+}
+
+impl AsRef<str> for IntegerWidth
+{
+    /// The width's name, which is also the suffix its literals carry: `u32`,
+    /// `u64`, `i32` or `i64`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        match *self {
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+        }
+    }
 }
 
 /// The sign of a numeric literal.
@@ -644,6 +701,172 @@ impl TryFrom<String> for CharacterLiteral
     }
 }
 
+/// An integer literal of a stated width, inhabiting [`BaseType::Fixed`] at
+/// that width.
+///
+/// Each variant holds a value of exactly its width, so a value outside the
+/// width's range is unrepresentable and two literals compare equal exactly
+/// when their widths and values do: `1u32` and `1u64` are distinct literals of
+/// distinct atoms.
+///
+/// # Specification
+/// - requires: nothing; every value of a variant's width is admissible.
+/// - ensures: retains the value at its width, without widening or narrowing.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its
+///   conversions carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the width, the decimal spelling and the bit
+///   pattern of zero, one and each width's extremes, and reads each pattern
+///   back at its width; a pattern one past a 32-bit width is refused. This
+///   separates width substitution, sign extension where zero extension is owed,
+///   and truncation of a wide pattern.
+/// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum FixedInteger
+{
+    /// A `u32` literal.
+    U32(u32),
+    /// A `u64` literal.
+    U64(u64),
+    /// An `i32` literal.
+    I32(i32),
+    /// An `i64` literal.
+    I64(i64),
+}
+
+/// Why a bit pattern is no literal of a width: it sets a bit above the width.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WiderThanWidth;
+
+impl FixedInteger
+{
+    /// The literal's width.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the width of the literal's variant.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a literal of each width reports that width.
+    /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+    #[spec(
+        ensures: |ret| matches!((self, ret), (&Self::U32(_), IntegerWidth::U32) | (&Self::U64(_), IntegerWidth::U64) | (&Self::I32(_), IntegerWidth::I32) | (&Self::I64(_), IntegerWidth::I64)),
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn width(&self) -> IntegerWidth
+    {
+        match *self {
+            Self::U32(_) => IntegerWidth::U32,
+            Self::U64(_) => IntegerWidth::U64,
+            Self::I32(_) => IntegerWidth::I32,
+            Self::I64(_) => IntegerWidth::I64,
+        }
+    }
+
+    /// The literal's value in decimal, with a leading `-` when negative and
+    /// no width suffix.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the value's shortest decimal spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and each width's extremes, the signed
+    ///   minimums included, spell as their decimal values.
+    /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+    #[spec(
+        ensures: |ret| *ret == match *self { Self::U32(value) => alloc::format!("{value}"), Self::U64(value) => alloc::format!("{value}"), Self::I32(value) => alloc::format!("{value}"), Self::I64(value) => alloc::format!("{value}") },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn to_decimal(&self) -> String
+    {
+        match *self {
+            Self::U32(value) => alloc::format!("{value}"),
+            Self::U64(value) => alloc::format!("{value}"),
+            Self::I32(value) => alloc::format!("{value}"),
+            Self::I64(value) => alloc::format!("{value}"),
+        }
+    }
+}
+
+impl From<FixedInteger> for u64
+{
+    /// The literal's bit pattern in two's complement, zero-extended to 64 bits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a 32-bit literal sets no bit above its 32nd; a signed
+    ///   literal's pattern is its two's complement at its own width.
+    /// - provides: the payload every encoding writes, one image per value.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `-1i32` is `0xffff_ffff`, not sign-extended; the
+    ///   extremes of each width read back through the pattern.
+    /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+    #[spec(
+        ensures: |ret| FixedInteger::try_from((literal.width(), ret)) == Ok(literal),
+    )]
+    #[inline]
+    fn from(literal: FixedInteger) -> Self
+    {
+        match literal {
+            FixedInteger::U32(value) => Self::from(value),
+            FixedInteger::U64(value) => value,
+            FixedInteger::I32(value) => Self::from(value.cast_unsigned()),
+            FixedInteger::I64(value) => value.cast_unsigned(),
+        }
+    }
+}
+
+impl TryFrom<(IntegerWidth, u64)> for FixedInteger
+{
+    type Error = WiderThanWidth;
+
+    /// Read a bit pattern as the literal of a width.
+    ///
+    /// # Specification
+    /// - requires: nothing; any pattern is admissible.
+    /// - ensures: on `Ok`, the literal has the width and the pattern, the
+    ///   pattern read without [`u64::from`], whose own clause reads this one.
+    /// - fails: [`WiderThanWidth`] when a 32-bit width's pattern sets a bit
+    ///   above its 32nd.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each width's extremes read back from their patterns;
+    ///   `u32::MAX + 1` is refused at both 32-bit widths and admitted at both
+    ///   64-bit ones.
+    /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+    #[spec(
+        ensures: |ret| match ret { Ok(literal) => match (literal, pattern.0) { (Self::U32(value), IntegerWidth::U32) => u64::from(value) == pattern.1, (Self::U64(value), IntegerWidth::U64) => value == pattern.1, (Self::I32(value), IntegerWidth::I32) => u64::from(value.cast_unsigned()) == pattern.1, (Self::I64(value), IntegerWidth::I64) => value.cast_unsigned() == pattern.1, _ => false }, Err(WiderThanWidth) => matches!(pattern.0, IntegerWidth::U32 | IntegerWidth::I32) && u32::try_from(pattern.1).is_err() },
+    )]
+    #[inline]
+    fn try_from(pattern: (IntegerWidth, u64)) -> Result<Self, Self::Error>
+    {
+        let (width, bits) = pattern;
+        match width {
+            IntegerWidth::U32 => u32::try_from(bits)
+                .map(Self::U32)
+                .map_err(|_wide| WiderThanWidth),
+            IntegerWidth::U64 => Ok(Self::U64(bits)),
+            IntegerWidth::I32 => u32::try_from(bits)
+                .map(|narrow| Self::I32(narrow.cast_signed()))
+                .map_err(|_wide| WiderThanWidth),
+            IntegerWidth::I64 => Ok(Self::I64(bits.cast_signed())),
+        }
+    }
+}
+
 /// A canonical numeric literal: a [`Sign`], an integral [`Magnitude`], and a
 /// [`FractionDigits`] fractional part, inhabiting [`BaseType::Numeric`].
 ///
@@ -917,7 +1140,8 @@ impl FromStr for Float64Literal
             .map_err(|_unparsed| MalformedDecimal)
     }
 }
-/// A literal value: one of the four rigid base-type atoms' canonical payloads.
+
+/// A literal value: one of the rigid base-type atoms' canonical payloads.
 ///
 /// # Specification
 /// - requires: the payload is obtained through its owning smart constructors.
@@ -950,6 +1174,9 @@ pub enum Literal
     Character(CharacterLiteral),
     /// A 64-bit floating-point literal, inhabiting [`BaseType::Float64`].
     Float64(Float64Literal),
+    /// An integer literal of a stated width, inhabiting [`BaseType::Fixed`] at
+    /// its width.
+    Fixed(FixedInteger),
 }
 
 impl Literal
@@ -961,7 +1188,8 @@ impl Literal
     /// - ensures: maps an integer literal to [`BaseType::Integer`], a text
     ///   literal to [`BaseType::String`], a numeric literal to
     ///   [`BaseType::Numeric`], a character literal to [`BaseType::Character`],
-    ///   and a floating-point literal to [`BaseType::Float64`].
+    ///   a floating-point literal to [`BaseType::Float64`], and a width literal
+    ///   to [`BaseType::Fixed`] at its width.
     /// - provides: the total variant-to-atom map the checker reads, so a
     ///   literal's base type is decided by its payload rather than by an
     ///   annotation.
@@ -979,7 +1207,7 @@ impl Literal
     /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
     /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[spec(
-        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character) | (&Self::Float64(_), BaseType::Float64)),
+        ensures: |ret| match (self, ret) { (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character) | (&Self::Float64(_), BaseType::Float64) => true, (&Self::Fixed(fixed), BaseType::Fixed(width)) => matches!((fixed.width(), width), (IntegerWidth::U32, IntegerWidth::U32) | (IntegerWidth::U64, IntegerWidth::U64) | (IntegerWidth::I32, IntegerWidth::I32) | (IntegerWidth::I64, IntegerWidth::I64)), _ => false },
     )]
     #[inline]
     #[must_use]
@@ -991,6 +1219,7 @@ impl Literal
             Self::Numeric(_) => BaseType::Numeric,
             Self::Character(_) => BaseType::Character,
             Self::Float64(_) => BaseType::Float64,
+            Self::Fixed(ref fixed) => BaseType::Fixed(fixed.width()),
         }
     }
 }
@@ -1002,9 +1231,11 @@ mod tests
 
     use super::BaseType;
     use super::CharacterLiteral;
+    use super::FixedInteger;
     use super::Float64Literal;
     use super::FractionDigits;
     use super::IntegerLiteral;
+    use super::IntegerWidth;
     use super::Literal;
     use super::Magnitude;
     use super::MalformedDecimal;
@@ -1012,6 +1243,7 @@ mod tests
     use super::NumericLiteral;
     use super::Sign;
     use super::StringLiteral;
+    use super::WiderThanWidth;
 
     #[test]
     fn magnitude_strips_leading_zeros()
@@ -1133,6 +1365,92 @@ mod tests
             BaseType::Float64,
             Literal::Float64(Float64Literal::from(0.5_f64)).base_type(),
             "the floating-point atom"
+        );
+        for (fixed, width) in [
+            (FixedInteger::U32(1), IntegerWidth::U32),
+            (FixedInteger::U64(1), IntegerWidth::U64),
+            (FixedInteger::I32(1), IntegerWidth::I32),
+            (FixedInteger::I64(1), IntegerWidth::I64),
+        ] {
+            assert_eq!(
+                BaseType::Fixed(width),
+                Literal::Fixed(fixed).base_type(),
+                "a width literal inhabits its width's atom"
+            );
+        }
+    }
+
+    #[test]
+    fn a_fixed_integer_keeps_its_width_and_bits()
+    {
+        let cases = [
+            (FixedInteger::U32(0), IntegerWidth::U32, "0", 0),
+            (
+                FixedInteger::U32(u32::MAX),
+                IntegerWidth::U32,
+                "4294967295",
+                0xffff_ffff,
+            ),
+            (
+                FixedInteger::U64(u64::MAX),
+                IntegerWidth::U64,
+                "18446744073709551615",
+                u64::MAX,
+            ),
+            (FixedInteger::I32(1), IntegerWidth::I32, "1", 1),
+            (FixedInteger::I32(-1), IntegerWidth::I32, "-1", 0xffff_ffff),
+            (
+                FixedInteger::I32(i32::MIN),
+                IntegerWidth::I32,
+                "-2147483648",
+                0x8000_0000,
+            ),
+            (
+                FixedInteger::I32(i32::MAX),
+                IntegerWidth::I32,
+                "2147483647",
+                0x7fff_ffff,
+            ),
+            (FixedInteger::I64(-1), IntegerWidth::I64, "-1", u64::MAX),
+            (
+                FixedInteger::I64(i64::MIN),
+                IntegerWidth::I64,
+                "-9223372036854775808",
+                0x8000_0000_0000_0000,
+            ),
+        ];
+        for (fixed, width, decimal, bits) in cases {
+            assert_eq!(width, fixed.width(), "{fixed:?} keeps its width");
+            assert_eq!(decimal, fixed.to_decimal(), "{fixed:?} spells in decimal");
+            assert_eq!(bits, u64::from(fixed), "{fixed:?} zero-extends its pattern");
+            assert_eq!(
+                Ok(fixed),
+                FixedInteger::try_from((width, bits)),
+                "{fixed:?} reads back from its pattern"
+            );
+        }
+        let past = 0x1_0000_0000_u64;
+        for width in [IntegerWidth::U32, IntegerWidth::I32] {
+            assert_eq!(
+                Err(WiderThanWidth),
+                FixedInteger::try_from((width, past)),
+                "a pattern past 32 bits is no {width:?}"
+            );
+        }
+        assert_eq!(
+            Ok(FixedInteger::U64(past)),
+            FixedInteger::try_from((IntegerWidth::U64, past)),
+            "the same pattern is a u64"
+        );
+        assert_eq!(
+            Ok(FixedInteger::I64(0x1_0000_0000)),
+            FixedInteger::try_from((IntegerWidth::I64, past)),
+            "and an i64"
+        );
+        assert_ne!(
+            Literal::Fixed(FixedInteger::U32(1)),
+            Literal::Fixed(FixedInteger::U64(1)),
+            "one value at two widths is two literals"
         );
     }
 

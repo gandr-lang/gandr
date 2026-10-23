@@ -102,7 +102,8 @@ pub enum Unbuilt
     Annotation,
     /// A record update, `#{ e | l = v, … }`.
     RecordUpdate,
-    /// A number literal written with a width suffix other than `f64`.
+    /// A number literal written with the `f32` suffix, which has no atom yet:
+    /// the integer widths and `f64` are built.
     TypedNumber,
     /// The shell block, `#!{ … }`.
     ShellBlock,

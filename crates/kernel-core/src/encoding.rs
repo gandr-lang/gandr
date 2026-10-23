@@ -97,6 +97,7 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::TermArena;
@@ -2648,6 +2649,25 @@ const fn base_tag(base: BaseType) -> WireTag
         BaseType::Numeric => gandr_kernel_term::BASE_NUMERIC,
         BaseType::Character => gandr_kernel_term::BASE_CHARACTER,
         BaseType::Float64 => gandr_kernel_term::BASE_FLOAT64,
+        BaseType::Fixed(IntegerWidth::U32) => gandr_kernel_term::BASE_U32,
+        BaseType::Fixed(IntegerWidth::U64) => gandr_kernel_term::BASE_U64,
+        BaseType::Fixed(IntegerWidth::I32) => gandr_kernel_term::BASE_I32,
+        BaseType::Fixed(IntegerWidth::I64) => gandr_kernel_term::BASE_I64,
+    }
+}
+
+/// The format's literal kind for a width literal.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn fixed_kind(width: IntegerWidth) -> WireTag
+{
+    match width {
+        IntegerWidth::U32 => gandr_kernel_term::LITERAL_U32,
+        IntegerWidth::U64 => gandr_kernel_term::LITERAL_U64,
+        IntegerWidth::I32 => gandr_kernel_term::LITERAL_I32,
+        IntegerWidth::I64 => gandr_kernel_term::LITERAL_I64,
     }
 }
 
@@ -2677,7 +2697,8 @@ const fn sign_tag(sign: Sign) -> WireTag
 /// - ensures: writes the literal's kind tag, then its sign where it has one,
 ///   then each text component length-prefixed, so two literals whose components
 ///   merely concatenate alike take different images; a floating-point literal
-///   writes its bit pattern as one word.
+///   writes its bit pattern as one word, and a width literal its width's kind
+///   and its bit pattern as a word.
 /// - provides: the literal payload of a value record, which is where two
 ///   spellings of one number would otherwise become two content ids.
 /// - fails: never.
@@ -2688,10 +2709,12 @@ const fn sign_tag(sign: Sign) -> WireTag
 ///   payload are executable; zero/one sign pairs and the numeric split pair
 ///   separate sign loss and ambiguous component framing, not every literal; a
 ///   character and the one-scalar string of the same scalar separate a kind tag
-///   lost between the two.
+///   lost between the two, and one value at two widths and as an unbounded
+///   integer separates a width lost from the key.
 /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
 /// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
 /// - witness: `encoding::tests::a_character_is_not_its_one_scalar_string`
+/// - witness: `encoding::tests::a_width_literal_keys_by_its_width`
 #[spec(
     captures: entry_len = record.0.len(),
     ensures: match *literal {
@@ -2706,6 +2729,7 @@ const fn sign_tag(sign: Sign) -> WireTag
         Literal::Character(ref character) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_CHARACTER))
             && record.0.ends_with(character.to_text().as_bytes()),
         Literal::Float64(_) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_FLOAT64)),
+        Literal::Fixed(fixed) => record.0.get(entry_len) == Some(&u8::from(fixed_kind(fixed.width()))),
     }
 )]
 fn put_literal(
@@ -2736,6 +2760,10 @@ fn put_literal(
         Literal::Float64(float) => {
             record.put_tag(gandr_kernel_term::LITERAL_FLOAT64);
             record.put_word(EncodedWord(u64::from(float)));
+        },
+        Literal::Fixed(fixed) => {
+            record.put_tag(fixed_kind(fixed.width()));
+            record.put_word(EncodedWord(u64::from(fixed)));
         },
     }
 }
@@ -3642,6 +3670,53 @@ mod tests
             "the character is not its one-scalar string"
         );
         assert_ne!(letter, key(other), "and the scalar is in the key");
+    }
+
+    /// Trap pair — **one value at two widths**. `1u32`, `1i32`, `1u64` and the
+    /// unbounded `1` share a value, so only the kind keys them apart; `-1i32`
+    /// and `4294967295u32` share a bit pattern, so the kind keys them apart
+    /// too.
+    #[test]
+    fn a_width_literal_keys_by_its_width()
+    {
+        use gandr_kernel_term::FixedInteger;
+        let mut arena = TermArena::new();
+        let fixed = |literal| Literal::Fixed(literal);
+        let one = gandr_kernel_term::Magnitude::from_decimal_text(String::from("1"))
+            .expect("one is decimal");
+        let values = [
+            arena.value_literal(fixed(FixedInteger::U32(1))),
+            arena.value_literal(fixed(FixedInteger::I32(1))),
+            arena.value_literal(fixed(FixedInteger::U64(1))),
+            arena.value_literal(fixed(FixedInteger::I64(1))),
+            arena.value_literal(Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+                Sign::NonNegative,
+                one,
+            ))),
+            arena.value_literal(fixed(FixedInteger::I32(-1))),
+            arena.value_literal(fixed(FixedInteger::U32(u32::MAX))),
+        ];
+        let again = arena.value_literal(fixed(FixedInteger::U32(1)));
+        let mut table = ContentTable::new();
+        let mut key = |value| {
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(value),
+                Telescope::Whole(&[]),
+            )
+        };
+        let keys: alloc::vec::Vec<_> = values.into_iter().map(&mut key).collect();
+        assert_eq!(
+            keys.first(),
+            Some(&key(again)),
+            "one width literal has one key"
+        );
+        for (index, left) in keys.iter().enumerate() {
+            for right in keys.iter().skip(index.saturating_add(1)) {
+                assert_ne!(left, right, "a width or a kind is lost from the key");
+            }
+        }
     }
 
     /// Trap pair — **the length-prefix ambiguity pair**. Two texts that

@@ -98,6 +98,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::IntegerWidth;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::CodeDefinitions;
@@ -268,6 +269,14 @@ struct Atoms
     character: FormedValueType,
     /// The 64-bit floating-point atom.
     float64: FormedValueType,
+    /// The `u32` width atom.
+    u32: FormedValueType,
+    /// The `u64` width atom.
+    u64: FormedValueType,
+    /// The `i32` width atom.
+    i32: FormedValueType,
+    /// The `i64` width atom.
+    i64: FormedValueType,
 }
 
 /// Which atom a leaf rule synthesises.
@@ -284,6 +293,8 @@ pub enum Atom
     Character,
     /// The 64-bit floating-point atom, for a floating-point literal.
     Float64,
+    /// An integer width atom, for a literal of that width.
+    Fixed(IntegerWidth),
 }
 
 /// An abstract type the context admitted, with the level of the universe it
@@ -652,11 +663,12 @@ impl<'arena> CheckingContext<'arena>
     ///   bounds no held capability by a grant.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
-    /// - intension: mints four value-type nodes into `arena` — the unit type,
-    ///   the integer atom, the string atom and the character atom — which every
-    ///   literal and unit rule then hands out; the judgement mints the types it
-    ///   rewrites — a codomain shifted under a binder, instantiated at an
-    ///   argument, or decoded from a quote — into the same arena.
+    /// - intension: mints eight value-type nodes into `arena` — the unit type,
+    ///   the integer atom, the string atom, the character atom and the four
+    ///   integer width atoms — which every literal and unit rule then hands
+    ///   out; the judgement mints the types it rewrites — a codomain shifted
+    ///   under a binder, instantiated at an argument, or decoded from a quote —
+    ///   into the same arena.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fresh context synthesises the three rigid atoms and
@@ -691,6 +703,18 @@ impl<'arena> CheckingContext<'arena>
             string: FormedValueType::derived(arena.value_type_base(BaseType::String)),
             character: FormedValueType::derived(arena.value_type_base(BaseType::Character)),
             float64: FormedValueType::derived(arena.value_type_base(BaseType::Float64)),
+            u32: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::U32)),
+            ),
+            u64: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::U64)),
+            ),
+            i32: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::I32)),
+            ),
+            i64: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::I64)),
+            ),
         };
         Self {
             arena,
@@ -3502,6 +3526,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::String
                 | ValueTypeView::Character
                 | ValueTypeView::Float64
+                | ValueTypeView::Fixed(_)
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -3819,6 +3844,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::String
                     | ValueTypeView::Character
                     | ValueTypeView::Float64
+                    | ValueTypeView::Fixed(_)
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Lift { .. }
@@ -4143,6 +4169,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             Atom::String => self.atoms.string,
             Atom::Character => self.atoms.character,
             Atom::Float64 => self.atoms.float64,
+            Atom::Fixed(IntegerWidth::U32) => self.atoms.u32,
+            Atom::Fixed(IntegerWidth::U64) => self.atoms.u64,
+            Atom::Fixed(IntegerWidth::I32) => self.atoms.i32,
+            Atom::Fixed(IntegerWidth::I64) => self.atoms.i64,
         }
     }
 

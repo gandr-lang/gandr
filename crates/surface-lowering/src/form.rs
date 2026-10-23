@@ -979,13 +979,14 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 71_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
         Self::Number,
         Self::Boolean,
         Self::Text,
+        Self::Character,
         Self::Parenthesized,
         Self::Unit,
         Self::Thunk,

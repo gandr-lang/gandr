@@ -448,7 +448,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
                 Some(&Literal::Text(ref text)) => Ok(Scalar::Text(text.clone())),
                 Some(&Literal::Float64(float)) => Ok(Scalar::Float64(float)),
-                Some(&(Literal::Numeric(_) | Literal::Character(_))) | None => {
+                Some(&(Literal::Numeric(_) | Literal::Character(_) | Literal::Fixed(_))) | None => {
                     Err(Refusal::Operands)
                 },
             },
@@ -1566,7 +1566,8 @@ impl Laying<'_>
                     Literal::Text(_)
                     | Literal::Numeric(_)
                     | Literal::Character(_)
-                    | Literal::Float64(_) => None,
+                    | Literal::Float64(_)
+                    | Literal::Fixed(_) => None,
                 };
                 if let Some(bits) = bits {
                     Vec::from([header(Kind::Integer, 0, 1, Family::UNNAMED)?, bits])

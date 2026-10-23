@@ -286,7 +286,7 @@ enum Endpoints<'pending>
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — root readability, readable reflexivity and head
 ///   separation are executable. The finite witnesses separate every value-type
-///   former, all four base atoms, canonical levels, nominal atoms and selected
+///   former, all eight base atoms, canonical levels, nominal atoms and selected
 ///   term forms; equal content at distinct ids still converts. They do not
 ///   enumerate all graphs or establish the relational laws by exhaustive
 ///   testing.

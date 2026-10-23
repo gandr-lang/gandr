@@ -27,6 +27,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
@@ -413,9 +414,9 @@ pub fn checked(program: &mut Program) -> Checkpoints
 /// # Specification
 /// - requires: the requested noise leaves arena-id headroom for the corpus.
 /// - ensures: the fixed data, function, dependent-type, universe, lift, quote,
-///   type-operator and character cases use contiguous admission positions and
-///   resolving signature and body roots. It is not a corpus of every possible
-///   refusal.
+///   type-operator, character and integer-width cases use contiguous admission
+///   positions and resolving signature and body roots. It is not a corpus of
+///   every possible refusal.
 /// - panics: if the fixed small literals, levels or ordering invariant fail.
 ///
 /// # Adequacy
@@ -737,6 +738,11 @@ pub fn every_former(noise: Noise) -> Program
         Maybe::Present(character_type),
         Maybe::Present(letter),
     );
+
+    // A signed width atom and its least literal: checked.
+    let width_type = arena.value_type_base(BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64));
+    let least = arena.value_literal(Literal::Fixed(FixedInteger::I64(i64::MIN)));
+    push("width", Maybe::Present(width_type), Maybe::Present(least));
 
     Program::new(arena, items).expect("positions ascend")
 }

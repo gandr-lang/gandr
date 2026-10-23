@@ -440,6 +440,7 @@ pub fn session_code(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -1026,6 +1027,7 @@ pub fn endpoints(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -1692,6 +1694,7 @@ pub fn run_premises(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -1810,6 +1813,7 @@ pub fn dialogue_premises(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

@@ -1129,7 +1129,8 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
 /// - ensures: an integer as its sign and digits, a numeric literal with its
 ///   fraction, a floating-point literal as its shortest round-tripping decimal
 ///   with the `f64` suffix that types it, a string quoted with its content
-///   escaped, a character in single quotes escaped alike.
+///   escaped, a character in single quotes escaped alike, a width literal as
+///   its decimal value and its width's suffix.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1137,7 +1138,8 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
 ///   fractions and an empty fraction have exact spellings. Quotes, backslashes,
 ///   controls and printable Unicode distinguish sign loss, a dropped decimal
 ///   point, truncation and incorrect escaping; a quote, a backslash and a
-///   non-ASCII scalar do the same for a character.
+///   non-ASCII scalar do the same for a character; `-1i32` and `u64::MAX` keep
+///   their sign, digits and suffix.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[spec(ensures: |ref ret| match *literal {
@@ -1155,6 +1157,7 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
     },
     | Literal::Character(character) => ret.strip_prefix('\'').and_then(|text| text.strip_suffix('\''))
         .is_some_and(|escaped| escaped.chars().eq(char::from(character).escape_debug())),
+    | Literal::Fixed(fixed) => ret.strip_prefix(fixed.to_decimal().as_str()) == Some(fixed.width().as_ref()),
 })]
 fn literal_text(literal: &Literal) -> String
 {
@@ -1185,6 +1188,11 @@ fn literal_text(literal: &Literal) -> String
             quoted.extend(char::from(character).escape_debug());
             quoted.push('\'');
             quoted
+        },
+        Literal::Fixed(fixed) => {
+            let width = fixed.width();
+            let suffix: &str = width.as_ref();
+            alloc::format!("{}{suffix}", fixed.to_decimal())
         },
     }
 }

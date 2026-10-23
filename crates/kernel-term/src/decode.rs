@@ -49,9 +49,11 @@ use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::base::BaseType;
 use crate::base::CharacterLiteral;
+use crate::base::FixedInteger;
 use crate::base::Float64Literal;
 use crate::base::FractionDigits;
 use crate::base::IntegerLiteral;
+use crate::base::IntegerWidth;
 use crate::base::Literal;
 use crate::base::Magnitude;
 use crate::base::NumericLiteral;
@@ -4446,7 +4448,7 @@ fn build_variable_atom(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
         reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(8) => ret.as_ref() == Ok(&BaseType::Float64), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(4) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U32)), Some(5) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U64)), Some(6) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I32)), Some(7) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I64)), Some(8) => ret.as_ref() == Ok(&BaseType::Float64), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
 )]
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
@@ -4458,6 +4460,10 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
         tags::BASE_NUMERIC => Ok(BaseType::Numeric),
         tags::BASE_CHARACTER => Ok(BaseType::Character),
         tags::BASE_FLOAT64 => Ok(BaseType::Float64),
+        tags::BASE_U32 => Ok(BaseType::Fixed(IntegerWidth::U32)),
+        tags::BASE_U64 => Ok(BaseType::Fixed(IntegerWidth::U64)),
+        tags::BASE_I32 => Ok(BaseType::Fixed(IntegerWidth::I32)),
+        tags::BASE_I64 => Ok(BaseType::Fixed(IntegerWidth::I64)),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
@@ -4558,8 +4564,9 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
 ///   the canonical-form comparison then refuses the original bytes.
 /// - fails: the payload reads' own failures, [`DecodeError::Malformed`] at the
 ///   literal-payload site for a character payload that is not exactly one
-///   scalar, and [`DecodeError::UnknownTag`] at the literal-kind site on any
-///   other kind byte.
+///   scalar or a 32-bit width's pattern that sets a bit above its 32nd, and
+///   [`DecodeError::UnknownTag`] at the literal-kind site on any other kind
+///   byte.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4594,7 +4601,7 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
         else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Character(ref value) => { let text = value.to_text();
         kind == Some(3)
             && reader.position.0 == start.0.saturating_add(2).saturating_add(text.len())
-            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8) } }),
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8), Literal::Fixed(fixed) => kind == Some(match fixed.width() { IntegerWidth::U32 => 4, IntegerWidth::U64 => 5, IntegerWidth::I32 => 6, IntegerWidth::I64 => 7 }) } }),
 )]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
@@ -4633,11 +4640,48 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
                 u64::from(bits),
             ))))
         },
+        tags::LITERAL_U32 => decode_fixed(reader, IntegerWidth::U32),
+        tags::LITERAL_U64 => decode_fixed(reader, IntegerWidth::U64),
+        tags::LITERAL_I32 => decode_fixed(reader, IntegerWidth::I32),
+        tags::LITERAL_I64 => decode_fixed(reader, IntegerWidth::I64),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
             tag: other,
         }),
     }
+}
+
+/// Decode a width literal's payload, its bit pattern as an unsigned varint.
+///
+/// # Specification
+/// - requires: the cursor is positioned past a width literal's kind byte.
+/// - ensures: on `Ok`, returns the literal of `width` with the read pattern.
+/// - fails: the varint read's own failures, and [`DecodeError::Malformed`] at
+///   the literal-payload site for a 32-bit width's pattern that sets a bit
+///   above its 32nd.
+/// - panics: none.
+///
+/// # Errors
+/// The payload's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `-1i32`'s pattern reads back as that literal, and the
+///   pattern one past 32 bits is refused at `u32` and `i32`.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+#[spec(
+    ensures: |ret| ret.as_ref().ok().is_none_or(|literal| literal.base_type() == BaseType::Fixed(width)),
+)]
+fn decode_fixed(
+    reader: &mut ByteReader<'_>,
+    width: IntegerWidth,
+) -> Result<Literal, DecodeError>
+{
+    let bits = u64::from(reader.read_uvarint()?);
+    FixedInteger::try_from((width, bits))
+        .map(Literal::Fixed)
+        .map_err(|_wider| DecodeError::Malformed {
+            site: MalformedSite::LiteralPayload,
+        })
 }
 
 /// Decode a literal sign.
@@ -4961,6 +5005,10 @@ mod tests
                 1 => Ok(super::BaseType::String),
                 2 => Ok(super::BaseType::Numeric),
                 3 => Ok(super::BaseType::Character),
+                4 => Ok(super::BaseType::Fixed(super::IntegerWidth::U32)),
+                5 => Ok(super::BaseType::Fixed(super::IntegerWidth::U64)),
+                6 => Ok(super::BaseType::Fixed(super::IntegerWidth::I32)),
+                7 => Ok(super::BaseType::Fixed(super::IntegerWidth::I64)),
                 8 => Ok(super::BaseType::Float64),
                 _ => Err(unknown(super::TagSite::BaseType)),
             };
@@ -5025,7 +5073,7 @@ mod tests
                 );
                 assert_eq!(reader.position.0, 2);
             }
-            if byte > 3 && byte != 8 {
+            if byte > 8 {
                 let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
                 assert_eq!(
                     super::decode_literal(&mut reader),
@@ -5698,6 +5746,41 @@ mod tests
                 "a character payload of no scalar or of two is refused"
             );
         }
+        let negative = [6_u8, 0xff, 0xff, 0xff, 0xff, 0x0f];
+        let mut reader = ByteReader::new(ArtifactImage::from(negative.as_slice()));
+        assert_eq!(
+            super::decode_literal(&mut reader),
+            Ok(super::Literal::Fixed(super::FixedInteger::I32(-1)))
+        );
+        assert_eq!(reader.position.0, negative.len());
+        let accepted = literal_artifact(6, &negative);
+        assert_eq!(
+            super::decode(ArtifactImage::from(accepted.as_slice()))
+                .expect("an i32 at the i32 atom")
+                .declarations()
+                .len(),
+            1
+        );
+        for kind in [4_u8, 6] {
+            let past = [kind, 0x80, 0x80, 0x80, 0x80, 0x10];
+            let mut reader = ByteReader::new(ArtifactImage::from(past.as_slice()));
+            assert_eq!(
+                super::decode_literal(&mut reader),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::LiteralPayload
+                }),
+                "a 32-bit width's pattern past 32 bits is refused"
+            );
+        }
+        let past = [5_u8, 0x80, 0x80, 0x80, 0x80, 0x10];
+        let mut reader = ByteReader::new(ArtifactImage::from(past.as_slice()));
+        assert_eq!(
+            super::decode_literal(&mut reader),
+            Ok(super::Literal::Fixed(super::FixedInteger::U64(
+                0x1_0000_0000
+            ))),
+            "the same pattern is a u64"
+        );
         for text in [
             &[0_u8][..],
             &[1_u8, b'+'][..],

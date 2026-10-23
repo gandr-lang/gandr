@@ -1814,7 +1814,7 @@ fn decoders_reject_unknown_tags_before_payloads()
         assert_eq!(reader.cursor, 1, "unknown tags stop before any payload");
     }
 
-    for (tag, invalid_field) in [(0x01, 2), (0x20, 4)] {
+    for (tag, invalid_field) in [(0x01, 2), (0x20, 9)] {
         let mut bytes = [0_u8; 10];
         *bytes.first_mut().expect("node tag") = tag;
         *bytes.get_mut(1).expect("field tag") = invalid_field;

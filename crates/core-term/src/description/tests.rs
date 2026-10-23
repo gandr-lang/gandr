@@ -202,6 +202,33 @@ fn decode_reads_char_as_the_character_atom()
 }
 
 #[test]
+fn decode_reads_each_integer_width_as_its_atom()
+{
+    use gandr_kernel_term::IntegerWidth;
+
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_unit();
+    for (primitive, width) in [
+        (PrimTy::U32, IntegerWidth::U32),
+        (PrimTy::U64, IntegerWidth::U64),
+        (PrimTy::I32, IntegerWidth::I32),
+        (PrimTy::I64, IntegerWidth::I64),
+    ] {
+        let result = decode(
+            &mut arena,
+            &field(primitive),
+            context(carrier, &BTreeMap::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            arena.value_type(result),
+            Some(&ValueType::Base(gandr_kernel_term::BaseType::Fixed(width))),
+            "a `{primitive:?}` field is its width atom"
+        );
+    }
+}
+
+#[test]
 fn decode_declines_the_deferred_leaves()
 {
     let mut arena = CoreArena::new();
@@ -223,15 +250,7 @@ fn decode_declines_the_deferred_leaves()
         decode(&mut arena, &applied, context),
         Err(DecodeError::AppliedType(Name::from("Vec")))
     );
-    for primitive in [
-        PrimTy::U32,
-        PrimTy::U64,
-        PrimTy::I32,
-        PrimTy::I64,
-        PrimTy::F32,
-        PrimTy::F64,
-        PrimTy::Unknown,
-    ] {
+    for primitive in [PrimTy::F32, PrimTy::F64, PrimTy::Unknown] {
         assert_eq!(
             decode(&mut arena, &field(primitive), context),
             Err(DecodeError::Primitive(primitive))
@@ -587,7 +606,7 @@ fn every_refusal_renders_apart_and_names_what_it_carries()
         DecodeError::MultiSorted,
         DecodeError::UnresolvedType(Name::from("Beta")),
         DecodeError::AppliedType(Name::from("Gamma")),
-        DecodeError::Primitive(PrimTy::U32),
+        DecodeError::Primitive(PrimTy::F32),
         DecodeError::MalformedCode,
         DecodeError::ParameterArity,
     ];
@@ -601,7 +620,7 @@ fn every_refusal_renders_apart_and_names_what_it_carries()
         "",
         "Beta",
         "Gamma",
-        PrimTy::U32.label().as_ref(),
+        PrimTy::F32.label().as_ref(),
         "",
         "",
     ]) {

@@ -681,6 +681,22 @@ fn literal_spelling_preserves_fraction_and_escaped_content()
         (Literal::Character(CharacterLiteral::from('\'')), r"'\''"),
         (Literal::Character(CharacterLiteral::from('\\')), r"'\\'"),
         (Literal::Character(CharacterLiteral::from('\n')), r"'\n'"),
+        (
+            Literal::Fixed(gandr_kernel_term::FixedInteger::I32(-1)),
+            "-1i32",
+        ),
+        (
+            Literal::Fixed(gandr_kernel_term::FixedInteger::U64(u64::MAX)),
+            "18446744073709551615u64",
+        ),
+        (
+            Literal::Fixed(gandr_kernel_term::FixedInteger::U32(0)),
+            "0u32",
+        ),
+        (
+            Literal::Fixed(gandr_kernel_term::FixedInteger::I64(i64::MIN)),
+            "-9223372036854775808i64",
+        ),
     ] {
         let mut arena = CommandArena::new();
         let producer = arena

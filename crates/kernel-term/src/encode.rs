@@ -55,6 +55,7 @@ use quenchant_shape::shape::Maybe;
 use crate::arena::AnyNode;
 use crate::arena::TermArena;
 use crate::base::BaseType;
+use crate::base::IntegerWidth;
 use crate::base::Literal;
 use crate::base::Sign;
 use crate::budget::GlobalIndex;
@@ -1920,7 +1921,8 @@ fn encode_level(
 /// - ensures: appends the kind tag, then the payload each kind owes — a sign
 ///   tag and digits for an integer, text for a string, a sign tag with integral
 ///   and fractional digits for a numeric, the scalar's UTF-8 text for a
-///   character, and the bit pattern as a varint for a floating-point literal.
+///   character, and the bit pattern as an unsigned varint for a floating-point
+///   or a width literal.
 /// - provides: the literal's byte image; since the payload is canonical, two
 ///   literals agree on bytes exactly when they denote the same value.
 /// - panics: none.
@@ -1953,7 +1955,9 @@ fn encode_level(
             && bytes.get(start.saturating_add(1)).copied().map(usize::from) == Some(text.len())
             && bytes.len() == start.saturating_add(2).saturating_add(text.len())
             && bytes.ends_with(text.as_bytes()) }, Literal::Float64(float) => bytes.get(start).copied() == Some(u8::from(tags::LITERAL_FLOAT64))
-            && bytes.len() == start.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub(u64::from(float).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) } },
+            && bytes.len() == start.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub(u64::from(float).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)), Literal::Fixed(fixed) => { let bits = u64::from(fixed);
+        bytes.get(start).copied() == Some(u8::from(fixed_literal_tag(fixed.width())))
+            && bytes.len() == start.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub(bits.leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) } } },
 )]
 fn encode_literal(
     out: &mut EncodedArtifact,
@@ -1988,6 +1992,10 @@ fn encode_literal(
         Literal::Float64(float) => {
             out.put_tag(tags::LITERAL_FLOAT64);
             out.put_uvarint(WireU64::from(u64::from(float)));
+        },
+        Literal::Fixed(fixed) => {
+            out.put_tag(fixed_literal_tag(fixed.width()));
+            out.put_uvarint(WireU64::from(u64::from(fixed)));
         },
     }
 }
@@ -2040,7 +2048,8 @@ fn encode_text(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: maps each of the four base-type atoms to its frozen tag.
+/// - ensures: maps each base-type atom to its frozen tag, a width atom to its
+///   width's.
 /// - provides: the total atom-to-tag map, so a base type's byte is decided in
 ///   one place rather than at each write site.
 /// - panics: none.
@@ -2064,7 +2073,7 @@ fn encode_text(
 /// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
 /// - witness: `encode::tests::levels_and_interfaces_match_literal_wire_fixtures`
 #[spec(
-    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER, BaseType::Float64 => tags::BASE_FLOAT64 },
+    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER, BaseType::Float64 => tags::BASE_FLOAT64, BaseType::Fixed(IntegerWidth::U32) => tags::BASE_U32, BaseType::Fixed(IntegerWidth::U64) => tags::BASE_U64, BaseType::Fixed(IntegerWidth::I32) => tags::BASE_I32, BaseType::Fixed(IntegerWidth::I64) => tags::BASE_I64 },
 )]
 #[inline]
 fn base_type_tag(base: BaseType) -> WireTag
@@ -2075,6 +2084,36 @@ fn base_type_tag(base: BaseType) -> WireTag
         BaseType::Numeric => tags::BASE_NUMERIC,
         BaseType::Character => tags::BASE_CHARACTER,
         BaseType::Float64 => tags::BASE_FLOAT64,
+        BaseType::Fixed(IntegerWidth::U32) => tags::BASE_U32,
+        BaseType::Fixed(IntegerWidth::U64) => tags::BASE_U64,
+        BaseType::Fixed(IntegerWidth::I32) => tags::BASE_I32,
+        BaseType::Fixed(IntegerWidth::I64) => tags::BASE_I64,
+    }
+}
+
+/// The literal-kind tag of a width literal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each width to its frozen literal kind.
+/// - provides: the one width-to-kind map the literal writer reads.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal of each width encodes to its fixture bytes, so
+///   a swapped kind changes a fixture.
+/// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
+#[spec(
+    ensures: |ret| ret == match width { IntegerWidth::U32 => tags::LITERAL_U32, IntegerWidth::U64 => tags::LITERAL_U64, IntegerWidth::I32 => tags::LITERAL_I32, IntegerWidth::I64 => tags::LITERAL_I64 },
+)]
+#[inline]
+fn fixed_literal_tag(width: IntegerWidth) -> WireTag
+{
+    match width {
+        IntegerWidth::U32 => tags::LITERAL_U32,
+        IntegerWidth::U64 => tags::LITERAL_U64,
+        IntegerWidth::I32 => tags::LITERAL_I32,
+        IntegerWidth::I64 => tags::LITERAL_I64,
     }
 }
 
@@ -2304,6 +2343,16 @@ mod tests
                 Literal::Character(crate::base::CharacterLiteral::from('𐐀')),
                 &[3, 4, 0xf0, 0x90, 0x90, 0x80],
             ),
+            (Literal::Fixed(crate::base::FixedInteger::U32(300)), &[
+                4, 0xac, 0x02,
+            ]),
+            (Literal::Fixed(crate::base::FixedInteger::U64(0)), &[5, 0]),
+            (Literal::Fixed(crate::base::FixedInteger::I32(-1)), &[
+                6, 0xff, 0xff, 0xff, 0xff, 0x0f,
+            ]),
+            (Literal::Fixed(crate::base::FixedInteger::I64(-1)), &[
+                7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+            ]),
         ];
         let mut expected: Vec<u8> = Vec::new();
         for &(ref literal, bytes) in cases {

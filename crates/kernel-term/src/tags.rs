@@ -454,8 +454,15 @@ pub const BASE_STRING: WireTag = WireTag(1);
 pub const BASE_NUMERIC: WireTag = WireTag(2);
 /// Base-type atom: the character atom.
 pub const BASE_CHARACTER: WireTag = WireTag(3);
-/// Base-type atom: the 64-bit binary floating-point atom. Tags 4 through 7
-/// are the integer widths' (#1109).
+/// Base-type atom: the `u32` width atom.
+pub const BASE_U32: WireTag = WireTag(4);
+/// Base-type atom: the `u64` width atom.
+pub const BASE_U64: WireTag = WireTag(5);
+/// Base-type atom: the `i32` width atom.
+pub const BASE_I32: WireTag = WireTag(6);
+/// Base-type atom: the `i64` width atom.
+pub const BASE_I64: WireTag = WireTag(7);
+/// Base-type atom: the 64-bit binary floating-point atom.
 pub const BASE_FLOAT64: WireTag = WireTag(8);
 
 /// Literal sign: non-negative, which the canonical zero always is.
@@ -480,8 +487,18 @@ pub const LITERAL_TEXT: WireTag = WireTag(1);
 pub const LITERAL_NUMERIC: WireTag = WireTag(2);
 /// Literal kind: a character literal, its scalar as length-prefixed UTF-8.
 pub const LITERAL_CHARACTER: WireTag = WireTag(3);
+/// Literal kind: a `u32` literal, its bit pattern as an unsigned varint.
+pub const LITERAL_U32: WireTag = WireTag(4);
+/// Literal kind: a `u64` literal, its bit pattern as an unsigned varint.
+pub const LITERAL_U64: WireTag = WireTag(5);
+/// Literal kind: an `i32` literal, its two's complement bit pattern,
+/// zero-extended, as an unsigned varint.
+pub const LITERAL_I32: WireTag = WireTag(6);
+/// Literal kind: an `i64` literal, its two's complement bit pattern as an
+/// unsigned varint.
+pub const LITERAL_I64: WireTag = WireTag(7);
 /// Literal kind: a 64-bit binary floating-point literal, its bit pattern
-/// following as a varint. Kinds 4 through 7 are the integer widths' (#1109).
+/// following as a varint.
 pub const LITERAL_FLOAT64: WireTag = WireTag(8);
 
 /// Landmark-constraint relation: `left ≤ right`.
@@ -1903,6 +1920,43 @@ mod tests
                 !assigned[usize::from(unassigned)],
                 "every byte above the list case is unassigned: {unassigned:#04x}"
             );
+        }
+    }
+
+    #[test]
+    fn base_and_literal_tags_are_unique_within_their_alphabets()
+    {
+        let base = [
+            super::BASE_INTEGER,
+            super::BASE_STRING,
+            super::BASE_NUMERIC,
+            super::BASE_CHARACTER,
+            super::BASE_U32,
+            super::BASE_U64,
+            super::BASE_I32,
+            super::BASE_I64,
+        ];
+        let literal = [
+            super::LITERAL_INTEGER,
+            super::LITERAL_TEXT,
+            super::LITERAL_NUMERIC,
+            super::LITERAL_CHARACTER,
+            super::LITERAL_U32,
+            super::LITERAL_U64,
+            super::LITERAL_I32,
+            super::LITERAL_I64,
+        ];
+        for (name, alphabet) in [("base-type", base), ("literal-kind", literal)] {
+            let mut assigned = [false; 256];
+            for tag in alphabet {
+                assert!(
+                    !core::mem::replace(&mut assigned[usize::from(u8::from(tag))], true),
+                    "one {name} byte cannot name two atoms: {tag}"
+                );
+            }
+        }
+        for (atom, kind) in base.into_iter().zip(literal) {
+            assert_eq!(atom, kind, "a literal kind shares its atom's byte");
         }
     }
 
