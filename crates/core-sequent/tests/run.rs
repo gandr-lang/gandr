@@ -3135,6 +3135,101 @@ fn a_returned_argument_runs_before_its_call_2129()
     );
 }
 
+/// #2140: a returned value `⟨c⟩` — a transport written where a value is read
+/// — runs first wherever a run reads it, to the value its bind spelling
+/// computes: as a tuple's component beside another, beneath an injection, as a
+/// list cell's head, inside a call's argument, as a projection's subject and
+/// as a case's scrutinee.
+#[test]
+fn a_returned_field_or_scrutinee_runs_first_2140()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let seven = integer(&mut core, Digits("7"));
+    let unit = core.value_unit();
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+    let moved = core.computation_path_transport(identity, path, five);
+    let held = core.value_returned(moved);
+    let carried = core.value_tuple(&[five, unit]);
+
+    // `return (⟨transport⟩, 7)`.
+    let pair = core.value_tuple(&[held, seven]);
+    let program = core.computation_return(pair);
+    let image = core.value_tuple(&[carried, seven]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "a component runs first and the other keeps its place"
+    );
+
+    // `return (inj₀ ⟨transport⟩, ⟨transport⟩)`.
+    let injected = core.value_injection(Side::Left.into(), held);
+    let pair = core.value_tuple(&[injected, held]);
+    let program = core.computation_return(pair);
+    let left = core.value_injection(Side::Left.into(), carried);
+    let image = core.value_tuple(&[left, carried]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "a field beneath an injection runs, and so does the next"
+    );
+
+    // `return [⟨transport⟩]`.
+    let nil = core.value_list_nil();
+    let list = core.value_list_cons(held, nil);
+    let program = core.computation_return(list);
+    let image = core.value_list_cons(carried, nil);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "a list cell's head runs first"
+    );
+
+    // `(λy. return y) (⟨transport⟩, 7)`: under λy, y = 0.
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let body = core.computation_return(bound);
+    let function = core.computation_lambda(body);
+    let pair = core.value_tuple(&[held, seven]);
+    let program = core.computation_application(function, pair);
+    let image = core.value_tuple(&[carried, seven]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "an argument holding one runs it before the call"
+    );
+
+    // `⟨transport⟩.0`.
+    let program =
+        core.computation_tuple_projection(held, gandr_kernel_term::Component::from(0_usize));
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, five),
+        "a projection selects from what the transport returns"
+    );
+
+    // `case ⟨transport along back⟩ { inl x ⇒ return x, inr _ ⇒ return 7 }`:
+    // under either arm its payload is 0.
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
+    let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let code = core.value_quote(integer_type);
+    let reversed = gandr_core_term::identity::back(&mut core, universe, code, path);
+    let reversed = core.value_returned(reversed);
+    let backward = core.computation_path_transport(identity, reversed, five);
+    let scrutinee = core.value_returned(backward);
+    let on_left = core.computation_return(bound);
+    let on_right = core.computation_return(seven);
+    let program = core.computation_case(scrutinee, &[on_left, on_right]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, five),
+        "a case runs the transport, then the arm its answer selects"
+    );
+}
+
 /// A transport whose motive has a part no row reads does not focus: the
 /// refusal names the transport and that part's head, and the arena returns
 /// to its mark. A dependent function, a path over an element carrier and a
