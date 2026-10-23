@@ -313,14 +313,30 @@ env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 run = ".config/mise/scope cargo nextest run {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
-# witnesses enter the inventory.
+# witnesses enter the inventory. With `CI_WITNESS_LISTINGS` naming a directory
+# of the shards' listings (`ci:witness-listing`), the gate reads those and
+# lists nothing itself.
 ["check:witnesses"]
 description = "Resolve adequacy witnesses in the consumer test inventory"
 depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "quenchant-gates witnesses --manifest-path Cargo.toml"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+listings=()
+if [[ -n ${CI_WITNESS_LISTINGS:-} ]]; then
+  for listing in "$CI_WITNESS_LISTINGS"/*.json; do
+    [[ -e $listing ]] && listings+=(--inventory "$listing")
+  done
+  if [[ -z ${listings[*]:-} ]]; then
+    echo "check:witnesses: no listing under $CI_WITNESS_LISTINGS" >&2
+    exit 1
+  fi
+fi
+quenchant-gates witnesses --manifest-path Cargo.toml "${listings[@]}"
+'''
 
 # Re-verification obligations (quenchant-gates obligations): a change owes a
 # re-check by every specification that names a changed item, through an
