@@ -744,6 +744,9 @@ where
 ///   those observations.
 /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
 /// - witness: `tests::completion::cell_budget_decline_preserves_pending_work`
+/// - witness: `completion::tests::a_pair_one_reduct_of_which_is_starved_is_neither_certified_nor_oriented`
+/// - witness: `completion::tests::a_derived_cell_reschedules_only_the_pairs_it_takes_part_in`
+/// - witness: `completion::tests::a_derived_cell_is_paired_with_the_cells_it_overlaps`
 #[spec(captures: before = (store.clone(), derived.clone(), certificates.clone()), ensures: |output| before.0.iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
     && output.derived().starts_with(&before.1) && output.certificates().starts_with(&before.2)
     && output.derived().len() <= before.1.len().saturating_add(usize::from(budget.max_steps))
@@ -1336,6 +1339,105 @@ mod tests
                 certificates: Vec::new()
             },
             supplied
+        );
+    }
+
+    #[test]
+    fn a_pair_one_reduct_of_which_is_starved_is_neither_certified_nor_oriented()
+    {
+        let mut store = CellStore::<ToyAlphabet>::new();
+        let _left_unit = store.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::var("y")),
+            Toy::var("y"),
+        ));
+        let _swap = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::zero()),
+            Toy::add(Toy::zero(), Toy::var("x")),
+        ));
+        let outcome = complete(
+            store.clone(),
+            CompletionBudget::new(
+                CompletionStepBudget::from(8_usize),
+                CompletionCellBudget::from(8_usize),
+                NormalizationBudget::from(0_usize),
+            ),
+        );
+        assert_eq!(
+            CompletionOutcome::Completed {
+                store,
+                derived: Vec::new(),
+                certificates: Vec::new()
+            },
+            outcome,
+            "`Zero` is normal, `add(Zero, Zero)` needs the step the budget withholds"
+        );
+    }
+
+    #[test]
+    fn a_derived_cell_reschedules_only_the_pairs_it_takes_part_in()
+    {
+        let mut store = CellStore::<ToyAlphabet>::new();
+        let _left_unit = store.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::var("y")),
+            Toy::var("y"),
+        ));
+        let _successor = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::zero()),
+            Toy::succ(Toy::var("x")),
+        ));
+        let outcome = complete(
+            store,
+            CompletionBudget::new(
+                CompletionStepBudget::from(16_usize),
+                CompletionCellBudget::from(8_usize),
+                NormalizationBudget::from(8_usize),
+            ),
+        );
+        assert!(bool::from(outcome.is_completed()), "{outcome:?}");
+        assert_eq!(1, outcome.derived().len(), "{outcome:?}");
+        assert_eq!(
+            1,
+            outcome.certificates().len(),
+            "the mirror pair joins through the derived cell, once: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_derived_cell_is_paired_with_the_cells_it_overlaps()
+    {
+        let mut store = CellStore::<ToyAlphabet>::new();
+        let _left_unit = store.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::var("y")),
+            Toy::var("y"),
+        ));
+        let _left_successor = store.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::var("y")),
+            Toy::succ(Toy::var("y")),
+        ));
+        let _one = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let outcome = complete(
+            store,
+            CompletionBudget::new(
+                CompletionStepBudget::from(16_usize),
+                CompletionCellBudget::from(8_usize),
+                NormalizationBudget::from(8_usize),
+            ),
+        );
+        assert!(bool::from(outcome.is_completed()), "{outcome:?}");
+        assert_eq!(1, outcome.derived().len(), "`succ(y)` is oriented to `y`");
+        let pairs: Vec<(CellId, CellId)> = outcome
+            .certificates()
+            .iter()
+            .map(|certificate| (certificate.overlap.left, certificate.overlap.right))
+            .collect();
+        assert_eq!(
+            alloc::vec![
+                (CellId::from(1_usize), CellId::from(0_usize)),
+                (CellId::from(2_usize), CellId::from(3_usize)),
+                (CellId::from(3_usize), CellId::from(2_usize)),
+            ],
+            pairs,
+            "the derived cell meets `succ(Zero)` at the root, both ways, and joins"
         );
     }
 
