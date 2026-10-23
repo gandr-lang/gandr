@@ -169,8 +169,6 @@ impl TrackingIssue
     pub const KERNEL_STATIC_LAMBDA: Self = Self(1630);
     /// A staged type in a term, which the kernel does not replay.
     pub const KERNEL_STAGE: Self = Self(1631);
-    /// The conditional `if c { … } else { … }`.
-    pub const IF_EXPRESSION: Self = Self(1995);
     /// An infix form the lowering does not read: list concatenation, or a
     /// path cons whose letter names no loop.
     pub const INFIX_FORM: Self = Self(1997);

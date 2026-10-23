@@ -172,8 +172,6 @@ pub enum Unbuilt
     ExternBlock,
     /// A host escape.
     HostEscape,
-    /// The conditional `if c { … } else { … }`.
-    If,
     /// An injection pattern where a term is read.
     LabelledSumPattern,
     /// A literal pattern other than a number or a boolean, or one where a term
@@ -285,7 +283,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 91_usize] = [
+    pub const ALL: [Self; 90_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -327,7 +325,6 @@ impl Unbuilt
         Self::Derive,
         Self::ExternBlock,
         Self::HostEscape,
-        Self::If,
         Self::LabelledSumPattern,
         Self::LiteralPattern,
         Self::ManifestSort,
@@ -442,7 +439,6 @@ impl Unbuilt
             Self::Derive => "derive_declaration",
             Self::ExternBlock => "extern_block",
             Self::HostEscape => "host_escape",
-            Self::If => "if_expression",
             Self::LabelledSumPattern => "labelled_sum_pattern",
             Self::LiteralPattern => "literal_pattern",
             Self::ManifestSort => "manifest_sort",
@@ -542,7 +538,6 @@ impl Unbuilt
             Self::StagedType => TrackingIssue::PLACED_STAGE,
             Self::UnknownType => TrackingIssue::UNKNOWN_TYPE,
             Self::CaseView => TrackingIssue::CASE_VIEW,
-            Self::If => TrackingIssue::IF_EXPRESSION,
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
