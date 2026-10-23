@@ -915,37 +915,41 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the top-level module or instance `head` names, then each
-    ///   nested module the next segment names among its exports.
+    /// - ensures: the top-level module or instance `head` names in its own
+    ///   source or, where that source declares nothing of the name, in one it
+    ///   imports unqualified, that import then reached; then each nested module
+    ///   the next segment names among its exports.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a head no module or
-    ///   instance takes, functors' included; [`LoweringRefusal::UnknownMember`]
-    ///   for a later segment its module does not export as a module.
+    ///   instance takes, functors' included; [`LoweringRefusal::ImportShadows`]
+    ///   for a head two imports declare; [`LoweringRefusal::UnknownMember`] for
+    ///   a later segment its module does not export as a module.
     /// - panics: none.
     ///
     /// # Errors
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an argument naming a sealed module and one naming no
-    ///   module.
+    /// - hypothesis: L3 — an argument naming a sealed module, one naming no
+    ///   module, and one naming a model an imported source declares.
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
     /// - witness: `tests::modules::functors::an_argument_is_matched_against_the_parameter`
     /// - witness: `tests::modules::functors::an_argument_naming_a_functor_is_unresolved`
     /// - witness: `tests::modules::functors::a_dotted_argument_reads_the_nested_module_it_names`
+    /// - witness: `tests::namespace::a_functor_argument_reads_an_imported_module_1993`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.0 < self.collected.structures.len()))]
     fn argument(
-        &self,
+        &mut self,
         head: Placed,
         rest: &[Placed],
     ) -> Result<StructureIndex, LoweringRefusal<'source>>
     {
         let head_name = self.name_of(head);
-        let mut current = match self
+        let local = self
             .collected
             .modules
             .get(&(self.collected.top(head.span.start()), head_name))
-            .copied()
-        {
+            .copied();
+        let mut current = match local {
             Some(found)
                 if self.collected.structures.get(found.0).is_some_and(|entry| {
                     matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
@@ -953,11 +957,34 @@ impl<'source> Collector<'_, 'source>
             {
                 found
             },
-            Some(_) | None => {
+            Some(_) => {
                 return Err(LoweringRefusal::UnresolvedName {
                     span: head.span,
                     name: head_name,
                 });
+            },
+            None => {
+                let source = self.collected.unit.source_at(head.span.start());
+                match self.collected.imported_module(source, head_name) {
+                    Ok(Maybe::Present((found, import))) => {
+                        self.collected.reach(import);
+                        found
+                    },
+                    Ok(Maybe::Absent(_)) => {
+                        return Err(LoweringRefusal::UnresolvedName {
+                            span: head.span,
+                            name: head_name,
+                        });
+                    },
+                    Err(ambiguity) => {
+                        return Err(LoweringRefusal::ImportShadows {
+                            span: head.span,
+                            name: head_name,
+                            import: ambiguity.import,
+                            other: ambiguity.other,
+                        });
+                    },
+                }
             },
         };
         let mut previous = head_name;
