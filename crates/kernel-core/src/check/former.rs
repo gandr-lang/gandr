@@ -639,10 +639,12 @@ fn result_index(
 ///
 /// # Specification
 /// - requires: field types are scoped under the declaration parameter telescope
-///   and their constructor's fields before them.
-/// - ensures: the result binds fields in declaration order and checks the
-///   motive at the corresponding constructor, not merely at the original
-///   scrutinee.
+///   and their constructor's fields before them; `parameters` counts that
+///   telescope, which for an indexed family is fewer than the classifier's
+///   arguments.
+/// - ensures: the result binds fields in declaration order, each at its type
+///   instantiated at the classifier's parameters alone, and checks the motive
+///   at the corresponding constructor, not merely at the original scrutinee.
 /// - fails: field count exceeds the representable binder space.
 /// - panics: none.
 /// The executable postcondition requires a live computation classifier.
@@ -651,23 +653,21 @@ fn result_index(
 /// Returns `ConstructorArity` when the telescope cannot be represented.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a dependent motive rejects a branch at a wrong index.
+/// - hypothesis: L3 — a dependent motive rejects a branch at a wrong index; a
+///   vector's element field stands at the element type, not at its index.
 /// - witness: `tests::native_formers::data_case_checks_coverage_and_motive`
+/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| arena.comp_type(*id).is_some()))]
 pub(super) fn branch_type(
     arena: &mut TermArena,
     session: &mut SupportContext,
     datatype: ValueTypeId,
     tag: ConstructorTag,
-    fields: &[ValueTypeId],
+    (fields, parameters): (&[ValueTypeId], ParameterPrefix),
     motive: CompTypeId,
 ) -> Result<CompTypeId, KernelError>
 {
     let count = u32::try_from(fields.len()).map_err(|_cause| KernelError::ConstructorArity)?;
-    let parameters = match arena.value_type(datatype) {
-        Some(&ValueType::Data { ref arguments, .. }) => arguments.len(),
-        _ => return Err(KernelError::ArenaFault),
-    };
     let (table, memo) = session.rewrite_parts();
     let shifted_datatype = rewrite::shift_value_type(
         arena,
@@ -695,13 +695,7 @@ pub(super) fn branch_type(
         let earlier = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
         );
-        let domain = field_type(
-            arena,
-            session,
-            (field, datatype),
-            ParameterPrefix(parameters),
-            earlier,
-        )?;
+        let domain = field_type(arena, session, (field, datatype), parameters, earlier)?;
         result = arena.comp_type_pi(domain, result);
     }
     Ok(result)
@@ -833,11 +827,6 @@ pub(super) fn case(
     if signature.arity() != FamilyArity(argument_count) {
         return Err(KernelError::DataArgumentArity);
     }
-    // A branch of an indexed family's case would check under the index its
-    // constructor stands at, which the motive does not yet abstract.
-    if !signature.indices.is_empty() {
-        return Err(KernelError::IndexedCase);
-    }
     let owed = super::loops::loops(arena, presentations, datatype);
     // A loop is owed at the written motive.
     let motive = if owed.is_empty() { read } else { written };
@@ -865,7 +854,14 @@ pub(super) fn case(
     };
     for (index, fields) in signature.constructors.iter().enumerate() {
         let tag = ConstructorTag::from(index);
-        let expected = branch_type(arena, session, datatype, tag, fields, motive)?;
+        let expected = branch_type(
+            arena,
+            session,
+            datatype,
+            tag,
+            (fields, ParameterPrefix(signature.parameters.len())),
+            motive,
+        )?;
         let expected = match opened {
             Maybe::Present(child) => super::recursion::stage_branch(
                 arena,

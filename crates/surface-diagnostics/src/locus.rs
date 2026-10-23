@@ -767,7 +767,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } |
-        CheckRefusal::IndexedCase(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -932,7 +932,6 @@ fn checked(
                 | CheckingForm::Scope(at),
         }
         | CheckRefusal::CapabilityOutsideAuthority { at, .. }
-        | CheckRefusal::IndexedCase(at)
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::UndecidedCoverage(at)
         | CheckRefusal::RuleNotRespected { at, .. }
@@ -1218,7 +1217,6 @@ impl fmt::Display for Checked
             CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
             CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
             CheckRefusal::ConstructorArity(_) => f.write_str("the constructor has the wrong field count"),
-            CheckRefusal::IndexedCase(_) => f.write_str("a case cannot yet scrutinise an indexed family"),
             CheckRefusal::NonExhaustiveDataCase(_) => f.write_str("the data case must cover every constructor exactly once"),
             CheckRefusal::UndecidedCoverage(_) => f.write_str("a pattern hole leaves the match's arm undecided"),
             CheckRefusal::AbsentRecordField(_) => f.write_str("the record type has no such field"),
@@ -2927,7 +2925,6 @@ mod tests
                 at: computation,
                 capability: value_type,
             },
-            CheckRefusal::IndexedCase(computation),
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::RuleNotRespected {
@@ -3331,7 +3328,6 @@ mod tests
                         | CheckRefusal::HandlerCoverage { .. }
                         | CheckRefusal::ShiftWithoutReset { .. }
                         | CheckRefusal::CapabilityOutsideAuthority { .. }
-                        | CheckRefusal::IndexedCase(_)
                         | CheckRefusal::NonExhaustiveDataCase(_)
                         | CheckRefusal::UndecidedCoverage(_)
                         | CheckRefusal::RuleNotRespected { .. }

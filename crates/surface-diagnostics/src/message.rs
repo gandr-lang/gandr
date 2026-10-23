@@ -688,9 +688,6 @@ fn checked(
         CheckRefusal::ConstructorArity(_) => {
             f.write_str("the constructor is given the wrong number of fields")
         },
-        CheckRefusal::IndexedCase(_) => {
-            f.write_str("a case cannot yet scrutinise a value of an indexed family")
-        },
         CheckRefusal::NonExhaustiveDataCase(_) => {
             f.write_str("the case must handle every constructor exactly once")
         },
@@ -1545,7 +1542,6 @@ mod tests
                 tag: ConstructorTag::from(0_usize),
             },
             CheckRefusal::ConstructorArity(value),
-            CheckRefusal::IndexedCase(computation),
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::AbsentRecordField(computation),

@@ -1,0 +1,49 @@
+// A case on a vector: a case that writes every constructor of an indexed
+// family checks each arm at its own constructor's fields, as a case on a
+// family with no indices does (Dybjer, _Inductive families_,
+// doi:10.1007/BF01211308). An arm whose constructor cannot stand at the
+// scrutinee's index is still written; leaving it out is in the pathological
+// twin.
+
+// The naturals the lengths count in.
+import "./data-base.gandr" ;
+
+// The vectors and the vector two long.
+import "./vectors.gandr" ;
+
+/// The length a vector holds, read off the index its `VCons` states.
+@[ checks ]
+def vlength(n : Nat, v : Vec(Integer, n)) -> -F Nat {
+  case v {
+    VNil => Zero,
+    VCons(m, h, t) => Succ(m)
+  }
+}
+
+/// The length of a vector one long: the `VNil` arm is written, though `VNil`
+/// stands at no length but zero.
+@[ checks ]
+def oneLength(v : Vec(Integer, Succ(Zero))) -> -F Nat {
+  case v {
+    VNil => Zero,
+    VCons(m, h, t) => Succ(m)
+  }
+}
+
+/// The length counted by structural recursion on the tail, which stands at
+/// the length its `VCons` states, one below the vector's.
+@[ checks ]
+def rec vcount(n : Nat, v : Vec(Integer, n)) -> -F Nat {
+  case v {
+    VNil => Zero,
+    VCons(m, h, t) => { run r <- vcount[<](m, t); Succ(r) }
+  }
+}
+
+/// The length of the vector two long, read off its index.
+@[ runs("Succ(Succ(Zero))") ]
+def pairRead() -> -F Nat { become vlength(Succ(Succ(Zero)), pair()) }
+
+/// The length of the vector two long, counted.
+@[ runs("Succ(Succ(Zero))") ]
+def pairCount() -> -F Nat { become vcount(Succ(Succ(Zero)), pair()) }
