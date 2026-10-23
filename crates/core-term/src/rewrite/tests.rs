@@ -2795,6 +2795,53 @@ fn an_update_builds_the_kept_fields_beside_the_overlay()
     );
 }
 
+/// #2159: an update standing in a path type's endpoint builds its record
+/// there, and the endpoint it does not reach stands as written.
+#[test]
+fn an_update_in_a_type_builds_its_record_2159()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| crate::FieldLabel::from(String::from(name));
+    let base = arena.value_constant(ConstantIndex::from(0_usize));
+    let unit = arena.value_unit();
+    let overlay = arena.value_record(BTreeMap::from([(label("b"), unit)]));
+    let named = arena.value_record_update(base, overlay);
+    let carrier = arena.value_type_unit();
+    let subject = arena.value_type_path(carrier, named, base);
+    let updates = BTreeMap::from([(named, Vec::from([label("a")]))]);
+    let mut carried = Vec::new();
+    let rebuilt = super::build_type_updates(&mut arena, subject, &updates, &mut carried);
+    let Some(&crate::ValueType::Path { left, right, .. }) = arena.value_type(rebuilt)
+    else {
+        panic!("the rebuilt type is still a path");
+    };
+    let expected = {
+        let kept = arena.computation_record_projection(base, label("a"));
+        let kept = arena.value_returned(kept);
+        arena.value_record(BTreeMap::from([(label("a"), kept), (label("b"), unit)]))
+    };
+    assert_eq!(
+        crate::equal_certificate_syntax(&arena, left, expected),
+        crate::CertificateEquality::Equal,
+        "the update in the left endpoint stands as the record of `⟨b.a⟩` beside the overlay's `b`"
+    );
+    assert_eq!(
+        right, base,
+        "the right endpoint, reaching no update, stands as written"
+    );
+    let plain = arena.value_type_path(carrier, base, base);
+    let mark = arena.watermark();
+    let mut none = Vec::new();
+    assert_eq!(
+        super::build_type_updates(&mut arena, plain, &updates, &mut none),
+        plain
+    );
+    assert!(
+        mark == arena.watermark() && none.is_empty(),
+        "a type reaching no named update mints nothing"
+    );
+}
+
 #[test]
 fn a_crossing_applies_its_carriers_before_the_value()
 {

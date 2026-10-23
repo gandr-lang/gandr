@@ -1,0 +1,21 @@
+// A record update written in a type stands for the record it builds, so a
+// path between two updates, or between an update and its base, relates the
+// records they are.
+
+/// A corner of two fields.
+@[ checks ]
+def corner = #{ x = 1, y = 2 };
+
+/// Updates at distinct labels commute: both orders are one record.
+@[ checks ]
+def commute : Path(
+  #{x : Integer, y : Integer},
+  #{ #{ corner | x = 9 } | y = 3 },
+  #{ #{ corner | y = 3 } | x = 9 }
+) ;
+def commute = here(#{ x = 9, y = 3 }) ;
+
+/// Updating a field with its own value is the record itself.
+@[ checks ]
+def unchanged : Path(#{x : Integer, y : Integer}, #{ corner | x = 1 }, corner) ;
+def unchanged = here(corner) ;

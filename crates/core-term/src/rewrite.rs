@@ -5572,6 +5572,43 @@ pub fn build_updates(
     }
 }
 
+/// Build, within the value type `subject`, each record update `updates` names
+/// as a record, as [`build_updates`] builds one in a value: a type a
+/// signature writes reads the record each update stands for.
+///
+/// # Specification
+/// - requires: as [`build_updates`], with `subject` a value type.
+/// - ensures: `subject` rebuilt with every named update standing as its record,
+///   as [`build_updates`]; `subject` itself when `updates` names nothing it
+///   reaches; `carried` gains one pair per node the rebuild carried over.
+/// - provides: the signature a declaration's body is checked against, with no
+///   update left (#2159).
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an update standing in a path type's endpoint, keeping one
+///   label and overlaying another, separates the build from the identity.
+/// - witness: `rewrite::tests::an_update_in_a_type_builds_its_record_2159`
+#[spec(captures: held = carried.len(), ensures: carried.len() >= held)]
+#[inline]
+pub fn build_type_updates(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+    updates: &BTreeMap<ValueId, Vec<FieldLabel>>,
+    carried: &mut Vec<Carried>,
+) -> ValueTypeId
+{
+    let mut engine = Engine::new(arena);
+    engine.updates = updates.clone();
+    let built = engine.run(Node::ValueType(subject), Binders::NONE, Rewrite::Wrap);
+    report(&engine.memo, carried);
+    match built {
+        Node::ValueType(id) => id,
+        Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// A crossing the value bridge recorded at a value: the map and its carriers.
 ///
 /// The map is a reduct or a forgetting map; its carriers are what it takes
