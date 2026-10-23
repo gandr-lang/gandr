@@ -38,7 +38,8 @@ jobs:
   # Definitions only: aliases run in each consuming job's context.
   template:
     if: false
-    runs-on: &linux ubuntu-latest
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: &linux ubuntu-24.04-arm
     permissions: {}
     steps:
       # The config comes from the checkout; the merge group also reads HEAD.
@@ -48,15 +49,14 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      # ci.yml's mise pin, scoped by MISE_ENABLE_TOOLS. No cache: this
+      # The shared mise pin, scoped by MISE_ENABLE_TOOLS. No cache: this
       # workflow never runs on main, and caches written by pull request and
       # queue refs are visible to no other ref.
       - &install-commitlint
         name: install commitlint
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
-          version: 2026.10.3
-          cache: false
+          cache: "false"
 
   title:
     name: lint the pull request title

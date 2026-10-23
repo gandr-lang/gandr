@@ -1,0 +1,55 @@
+name: "find the CI image"
+description: >
+  The pin-file tag of this checkout and whether the registry publishes it, as
+  every workflow that runs jobs in the CI image looks it up. Workflow anchors
+  cannot cross files, so the lookup lives here. Only the registry's `manifest
+  unknown` reads as missing; any other lookup error fails the step, so a
+  broken registry fails the image reference rather than silently selecting the
+  bare runner or rebuilding.
+inputs:
+  enabled:
+    description: "Whether the image is on (`vars.GANDR_CI_IMAGE` is set)"
+    required: true
+  token:
+    description: "A token that reads the registry's packages"
+    required: true
+outputs:
+  tag:
+    description: "The pin-file tag, empty when the image is off"
+    value: ${{ steps.pin-tag.outputs.tag }}
+  found:
+    description: "`true` when the tag is published, `false` when it is missing, empty when the image is off"
+    value: ${{ steps.lookup.outputs.found }}
+  ref:
+    description: "The published image reference, empty unless found"
+    value: ${{ steps.lookup.outputs.found == 'true' && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.pin-tag.outputs.tag) || '' }}
+runs:
+  using: composite
+  steps:
+    - id: pin-tag
+      name: "compute the pin-file image tag"
+      if: ${{ inputs.enabled == 'true' }}
+      shell: bash
+      run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
+    - name: "log in to GHCR"
+      if: ${{ steps.pin-tag.outputs.tag != '' }}
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+    - id: lookup
+      name: "look up the published image"
+      if: ${{ steps.pin-tag.outputs.tag != '' }}
+      shell: bash
+      env:
+        IMAGE_TAG: ${{ steps.pin-tag.outputs.tag }}
+      run: |
+        if error=$(docker manifest inspect "ghcr.io/gandr-lang/gandr-ci:${IMAGE_TAG}" 2>&1 > /dev/null); then
+          echo found=true >> "$GITHUB_OUTPUT"
+        elif [[ $error == *"manifest unknown"* ]]; then
+          echo found=false >> "$GITHUB_OUTPUT"
+        else
+          printf '%s\n' "$error" >&2
+          exit 1
+        fi

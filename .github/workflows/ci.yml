@@ -4,6 +4,29 @@
 # MUST parameterize differences; performance exceptions require measured evidence.
 # Share exceptional logic through actions; preserve parallelism, caches, and gates.
 # </critical>
+#
+# What this workflow guarantees the landing pipeline. A fix to any part keeps
+# every line below true; changing one is a decision for the owner, never a side
+# effect of a fix (#1999 records the audit these come from).
+# - One rolling stack: each new pull request targets the newest one on the
+#   board, and `pr:land`/`pr:watch` queue the largest green prefix at once
+#   (#2001); what falls off the tail rolls on as the next stack. Nothing
+#   restacks a stack before queueing it: a restack reruns every member's
+#   pull-request run and floods the runners.
+# - A pull-request run lints and reports; the merge group tests. The title,
+#   treefmt and Clippy are required checks, and obligations gates the landing.
+#   The report lanes (mutants, hotpath) always run, file their follow-up
+#   issues and never block a green.
+# - The queue is tuned for throughput, pull requests landed per hour, not for
+#   one pull request's latency. Entries batch (at least 3, or a 5-minute
+#   wait); every entry gets its own cumulative group run; the runner pool is
+#   the limit, so more groups at once than it serves add only wall time.
+# - A merge group starts from the newest build it can find: the latest
+#   successful queue run's when that is newer than main's state, else main's.
+# - No timing budget fails a run, since a failed budget would halt landing.
+#   The nightly `lane-budget` reports drift.
+# - Heavy jobs run in the CI image, which every job extracts whole before its
+#   first step; its payload stays what most jobs run (ci.Dockerfile).
 name: CI
 
 on:
@@ -89,8 +112,10 @@ jobs:
     needs: &rust-needs [changes, ci-image-ref]
     # arm64, measured on the enforcing lane (#702): the suite 27% and a
     # warm rebuild 9% faster than ubuntu-latest's x86-64, and Linux arm64
-    # runs native code through the emitter's arm64 patcher. The image is
-    # published for both; the coverage workflow keeps an x86-64 run.
+    # runs native code through the emitter's arm64 patcher. Every lane that
+    # can runs on arm64; macOS's runners are arm64 too. coverage.yml's x86-64
+    # Linux run is the one job that compiles and runs the emitter's x86-64
+    # patcher and memory placement, so the image is published for both.
     runs-on: &linux ubuntu-24.04-arm
     # Private-GHCR consumers need package reads on the job; the workflow floor
     # stays `contents: read` for every job that pulls no image.
@@ -129,26 +154,14 @@ jobs:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
           cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
-      # and macOS Dylint tools. Install the complete CI subset inside the cache.
-      # A hosted runner carries rustup and the setup step installs the pinned
-      # toolchain from its own cache, so mise leaves `rust` alone there: its
-      # cached `rust` entry is a link into rustup's toolchains, dangling until
-      # that restore, and mise would download the toolchain a second time.
-      # Under act mise's install is what provides rustup.
+      # and macOS Dylint tools. Install the complete CI subset inside the cache
+      # (`.github/actions/install-tools`, shared with every workflow).
       - &install-policy-tools
         name: install mise-managed policy tools
         if: &without-image ${{ needs.ci-image-ref.outputs.ref == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
-        env:
-          MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
-        # The pinned mise must read mise.lock's format version 2; an older one
-        # warns and resolves every tool unlocked. The CI image parses this
-        # step for the version it bakes, so the two cannot drift.
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
-          version: 2026.10.3
-          cache: true
-          cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
-          cache_save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Every policy cache is keyed on the quenchant revision the Dylint
       # metadata pins (`workflow:revision`), so a restored library is always
       # this revision's policy: Cargo can consider a library from another
@@ -262,11 +275,8 @@ jobs:
       - &restore-test-state
         name: restore complete test state
         id: test-state-restore
-        uses: *cache-restore
+        uses: ./.github/actions/restore-test-state # zizmor: ignore[self-repository]
         with:
-          path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
-          key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
-          restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
           # Promotion already downloads the verified queue artifact; a lane
           # that runs on main's push restores main's newest state itself.
           lookup-only: ${{ github.event_name == 'push' && env.CI_ON_MAIN != 'true' }}
@@ -416,48 +426,26 @@ jobs:
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
           jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/")) | tostring)' >> "$GITHUB_OUTPUT"
 
-  # Finds the pin-file tag of this checkout and whether it is published. A pull
+  # Finds the pin-file tag of this checkout and whether it is published
+  # (`.github/actions/find-image`, shared with every image workflow). A pull
   # request from a fork cannot publish with its read-only token, so a missing
-  # tag there selects the bare runner instead of a build. Only the registry's
-  # `manifest unknown` reads as missing; any other lookup error fails the job,
-  # which fails the image reference rather than rebuilding.
+  # tag there selects the bare runner instead of a build.
   ci-image-tag:
     name: find the CI image for this checkout
     if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     outputs:
-      ref: ${{ steps.pin_tag.outputs.tag != '' && (steps.lookup.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.pin_tag.outputs.tag) || '' }}
-      build: ${{ steps.pin_tag.outputs.tag != '' && steps.lookup.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
+      ref: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
+      build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
     steps:
       - *git-checkout
-      - id: pin_tag
-        name: compute the pin-file image tag
-        if: ${{ env.GANDR_CI_IMAGE != '' }}
-        shell: bash
-        run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
-      - name: log in to GHCR
-        if: &has-tag ${{ steps.pin_tag.outputs.tag != '' }}
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - id: image
+        name: find the published image
+        uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: lookup
-        name: look up the published image
-        if: *has-tag
-        shell: bash
-        env:
-          IMAGE_TAG: ${{ steps.pin_tag.outputs.tag }}
-        run: |
-          if error=$(docker manifest inspect "ghcr.io/gandr-lang/gandr-ci:${IMAGE_TAG}" 2>&1 > /dev/null); then
-            echo found=true >> "$GITHUB_OUTPUT"
-          elif [[ $error == *"manifest unknown"* ]]; then
-            echo found=false >> "$GITHUB_OUTPUT"
-          else
-            printf '%s\n' "$error" >&2
-            exit 1
-          fi
+          enabled: ${{ env.GANDR_CI_IMAGE != '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # Builds and publishes the missing tag with the image workflow itself.
   ci-image:

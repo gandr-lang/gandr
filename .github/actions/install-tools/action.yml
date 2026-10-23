@@ -1,0 +1,34 @@
+name: "install tools"
+description: >
+  The pinned mise and the tools it manages, as every workflow installs them on
+  a bare runner. Workflow anchors cannot cross files, so the one install step
+  every workflow shares lives here. Inside the CI image the tools are already
+  installed and the callers skip this action.
+inputs:
+  cache:
+    description: "Restore mise's tool cache"
+    default: "true"
+  cache-save:
+    description: "Save mise's tool cache in this job: the one writer per cache lane"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    # A hosted runner carries rustup and `setup rust` installs the pinned
+    # toolchain from its own cache, so mise leaves `rust` alone there: its
+    # cached `rust` entry is a link into rustup's toolchains, dangling until
+    # that restore, and mise would download the toolchain a second time.
+    # Under act mise's install is what provides rustup.
+    #
+    # The pinned mise must read mise.lock's format version 2; an older one
+    # warns and resolves every tool unlocked. The CI image reads this step's
+    # `version` for the mise it bakes, so the two cannot drift.
+    - name: "install mise-managed tools"
+      env:
+        MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
+      uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      with:
+        version: 2026.10.3
+        cache: ${{ inputs.cache }}
+        cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
+        cache_save: ${{ inputs.cache-save }}

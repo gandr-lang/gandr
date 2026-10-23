@@ -278,13 +278,15 @@ echo "night $night: ${packages[*]}"
 # object the real record replaces the zero one. `report -v` prints the export
 # command cargo-llvm-cov builds, so the profile, the objects and the ignored
 # paths are cargo-llvm-cov's own; its merged report is discarded.
-# llvm-tools already supplies llvm-cov.
+# llvm-tools supplies llvm-cov; the CI image leaves it out, so the task adds
+# it (a no-op where it is installed).
 ["ci:coverage"]
 description = "Enforcing line coverage, with the plain-only parser witness merged in, as coverage.lcov"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 root="{{ config_root }}"
+rustup component add llvm-tools
 export NEXTEST_PROFILE=coverage
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
