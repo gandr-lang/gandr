@@ -1,0 +1,20 @@
+// The refusal beside `../../model/modules/model-nested.gandr`: a nested model
+// answered by a nested module with no ascription is refused at the outer
+// module's header, the attribute before the module stating its expectation
+// (#1274).
+
+// The theories of the nested answer and of the facts around it.
+import "../../model/modules/model-nested.gandr" ;
+
+/// The facts with their nested module unascribed: `Faceted` states a model
+/// of `Answering` under `inner`, and a module ascribed no theory is not one.
+@[ refuses("OutOfFragment.WrongSort") ]
+module Unascribed : Model(Faceted) {
+  /// The nested module, ascribed no theory.
+  module inner {
+    /// The answer.
+    def answer = 41;
+  }
+  /// The total.
+  def total = 42;
+}

@@ -833,7 +833,8 @@ impl<'source> Collector<'_, 'source>
     ///   — the witness owning a written kind, which sees the components before
     ///   it, or a held slot for a derived one. A sealed module, a member that
     ///   is no family or of another count, and a component no member supplies
-    ///   each refuse a held slot under the component's name instead.
+    ///   each refuse a held slot under the component's name instead, introduced
+    ///   by the module's form, whose attributes state its expectation.
     /// - provides: the family half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -863,7 +864,8 @@ impl<'source> Collector<'_, 'source>
         else {
             return;
         };
-        let (module, sealed, model) = (entry.name, entry.sealed, entry.model);
+        let (module, sealed, model, declared_by) =
+            (entry.name, entry.sealed, entry.model, entry.declared_by);
         let member = entry
             .type_members
             .iter()
@@ -873,7 +875,7 @@ impl<'source> Collector<'_, 'source>
             let _held = collector.refuse_held(
                 container,
                 component.name,
-                component.named,
+                declared_by,
                 component.named,
                 refusal,
             );
@@ -1022,8 +1024,9 @@ impl<'source> Collector<'_, 'source>
     ///   the module yielded; a component the derivation cannot state, a value
     ///   component a nested module answers, a nested model anything else
     ///   answers, and a name nothing answers each refuse a held slot under the
-    ///   component's name, and nothing is yielded — save a name whose member
-    ///   was repaired, whose parse error already answers for it.
+    ///   component's name, introduced by the module's form, whose attributes
+    ///   state its expectation, and nothing is yielded — save a name whose
+    ///   member was repaired, whose parse error already answers for it.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -1124,7 +1127,7 @@ impl<'source> Collector<'_, 'source>
         let _held = self.refuse_held(
             container,
             component.name,
-            component.named,
+            declared_by,
             component.named,
             refusal,
         );
