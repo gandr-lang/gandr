@@ -1273,6 +1273,19 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
+    /// Two rules of a block whose left sides overlap, one of which states a
+    /// freshness condition or moves a variable across an abstraction where a
+    /// term can name an atom: such a rule fires only where its instance names
+    /// no atom it may not, which no critical pair decides yet, so the block's
+    /// rules are not known to be confluent.
+    RulesOverlapCondition
+    {
+        /// The bytes the rule refused covers.
+        span: ByteSpan,
+        /// The bytes the other rule covers.
+        first: ByteSpan,
+    },
+
     /// Two rules of a block that match one term and rewrite it to two normal
     /// forms headed by constructors: no rule joins two values, so the block's
     /// first-match reading and its equational reading part.
@@ -1789,6 +1802,11 @@ impl fmt::Display for LoweringRefusal<'_>
                  instantiates a variable: a rule that substitutes under a binder may overlap no \
                  rule, so the block's rules are refused",
             ),
+            Self::RulesOverlapCondition { .. } => f.write_str(
+                "this rule and another rewrite overlapping terms, and one of them fires only where \
+                 its instance names no atom it may not: no critical pair decides that yet, so the \
+                 block's rules are refused",
+            ),
             Self::RulesDiverge { .. } => f.write_str(
                 "this rule and an earlier one rewrite one term to two different constructor \
                  terms, so the rule written first decides what runs and the equations do not",
@@ -1931,6 +1949,7 @@ impl LoweringRefusal<'_>
             | Self::RulesNonLinear { span, .. }
             | Self::RulesDiverge { span, .. }
             | Self::RulesOverlapSecondOrder { span, .. }
+            | Self::RulesOverlapCondition { span, .. }
             | Self::RulesUncompleted { span, .. }
             | Self::RulesNeverComplete { span, .. }
             | Self::RulesUndecided { span, .. }
@@ -2001,7 +2020,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 62_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 63_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2281,6 +2300,10 @@ mod tests
             LoweringRefusal::CellNotALoop {
                 span: s(115_usize, 116_usize),
             },
+            LoweringRefusal::RulesOverlapCondition {
+                span: s(117_usize, 118_usize),
+                first: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -2354,6 +2377,7 @@ mod tests
             s(111_usize, 112_usize),
             s(113_usize, 114_usize),
             s(115_usize, 116_usize),
+            s(117_usize, 118_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

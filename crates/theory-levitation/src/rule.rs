@@ -10,6 +10,7 @@
 //! [`check_desc`]: crate::check_desc
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
@@ -20,6 +21,7 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::AbstractionDepth;
+use crate::boundary::ConditionStatus;
 use crate::boundary::InstantiationStatus;
 use crate::boundary::RuleVariableLinearity;
 use crate::code::Name;
@@ -916,6 +918,123 @@ impl RuleFace
             ..self
         }
     }
+
+    /// The first variable some occurrence of which stands under other
+    /// abstractions than its first occurrence on the left side does: on
+    /// either side for [`Crossing::Moved`], on the left side alone for
+    /// [`Crossing::Split`].
+    ///
+    /// # Specification
+    /// - ensures: the first variable, in pre-order over the left side and then,
+    ///   for [`Crossing::Moved`], the right, an instantiated one included,
+    ///   whose list of enclosing abstractions' atoms, outermost first, differs
+    ///   from the list at its first occurrence on the left side, compared by
+    ///   written name and order; [`None`] when every occurrence read agrees.
+    /// - panics: none.
+    /// - executable: none — the answer is the comparison of the sides' walks,
+    ///   which a predicate would walk again.
+    /// - intension: one worklist pass over each side read; the abstractions in
+    ///   scope form a tree of links, read out at a variable only.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a variable under the same abstraction on both sides
+    ///   crosses nothing; one moved under an abstraction and one under two
+    ///   abstractions swapped are moved and not split; one standing under an
+    ///   abstraction at one left-side occurrence and outside it at another is
+    ///   split.
+    /// - witness: `rule::tests::a_variable_moved_across_an_abstraction_and_one_split_by_it`
+    #[inline]
+    #[must_use]
+    pub fn crossing(
+        &self,
+        crossing: Crossing,
+    ) -> Option<&Name>
+    {
+        let mut first: BTreeMap<&Name, Vec<&Name>> = BTreeMap::new();
+        let sides: &[(&FreeTerm, bool)] = match crossing {
+            Crossing::Moved => &[(&self.lhs, true), (&self.rhs, false)],
+            Crossing::Split => &[(&self.lhs, true)],
+        };
+        let mut scopes: Vec<(&Name, Option<usize>)> = Vec::new();
+        let mut pending: Vec<(TermNode<'_>, Option<usize>)> = Vec::new();
+        for &(side, left) in sides {
+            scopes.clear();
+            pending.push((side.to_node(), None));
+            while let Some((node, scope)) = pending.pop() {
+                let (variable, args) = match node.view() {
+                    TermView::Var(name) => (Some(name), None),
+                    TermView::Inst { name, args } => (Some(name), Some(args)),
+                    TermView::Abs { atom, args } => {
+                        scopes.push((atom, scope));
+                        let inner = Some(scopes.len().saturating_sub(1));
+                        pending.extend(args.map(|body| (body, inner)));
+                        continue;
+                    },
+                    TermView::Op { args, .. }
+                    | TermView::Ctor { args, .. }
+                    | TermView::Results { args } => (None, Some(args)),
+                    TermView::Atom(_) => (None, None),
+                };
+                if let Some(variable) = variable {
+                    let mut enclosing = Vec::new();
+                    let mut link = scope;
+                    while let Some(&(atom, outer)) = link.and_then(|at| scopes.get(at)) {
+                        enclosing.push(atom);
+                        link = outer;
+                    }
+                    enclosing.reverse();
+                    match first.get(variable) {
+                        Some(known) if *known != enclosing => return Some(variable),
+                        None if left => {
+                            let _new = first.insert(variable, enclosing);
+                        },
+                        Some(_) | None => {},
+                    }
+                }
+                if let Some(args) = args {
+                    pending.extend(args.map(|arg| (arg, scope)));
+                }
+            }
+        }
+        None
+    }
+
+    /// Whether the rule states a freshness condition or moves a variable
+    /// across an abstraction: where a port takes an atom, it then fires only
+    /// where its instance names no atom it may not, and renumbers the atoms
+    /// a moved instance names.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when `fresh` is not empty or
+    ///   [`Self::crossing`] at [`Crossing::Moved`] names a variable.
+    /// - panics: none.
+    /// - executable: none — the body is the predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::crossing`]: scope extrusion is
+    ///   conditioned, a law under one abstraction on both sides is not.
+    /// - witness: `rule::tests::a_variable_moved_across_an_abstraction_and_one_split_by_it`
+    #[inline]
+    #[must_use]
+    pub fn conditioned(&self) -> ConditionStatus
+    {
+        ConditionStatus::from(!self.fresh.is_empty() || self.crossing(Crossing::Moved).is_some())
+    }
+}
+
+/// Which occurrences of a variable [`RuleFace::crossing`] compares with its
+/// first on the left side.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Crossing
+{
+    /// Every occurrence, on either side: a variable the rule moves.
+    Moved,
+    /// The left side's alone: a variable whose instances a match compares
+    /// under different abstractions.
+    Split,
 }
 
 #[cfg(test)]
@@ -924,6 +1043,54 @@ mod tests
     use alloc::vec;
 
     use super::*;
+
+    #[test]
+    fn a_variable_moved_across_an_abstraction_and_one_split_by_it()
+    {
+        let span = SurfaceSpan::new(0_usize.into(), 1_usize.into());
+        let restricted = |body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs("a", body)]);
+        let par = |p: FreeTerm, q: FreeTerm| FreeTerm::op("par", [p, q]);
+        // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where a # q`: `q`
+        // moves under `a`, `p` stays under it.
+        let scope = RuleFace::new(
+            par(restricted(FreeTerm::var("p")), FreeTerm::var("q")),
+            restricted(par(FreeTerm::var("p"), FreeTerm::var("q"))),
+            Vec::new(),
+            span,
+        )
+        .with_fresh(vec![Freshness::new("a", "q")]);
+        assert_eq!(scope.crossing(Crossing::Moved), Some(&Name::from("q")));
+        assert_eq!(scope.crossing(Crossing::Split), None);
+        assert!(bool::from(scope.conditioned()));
+        // `nu(bind a . f(p)) ==> nu(bind a . g(p))` keeps `p` where it was.
+        let kept = RuleFace::new(
+            restricted(FreeTerm::op("f", [FreeTerm::var("p")])),
+            restricted(FreeTerm::op("g", [FreeTerm::var("p")])),
+            Vec::new(),
+            span,
+        );
+        assert_eq!(kept.crossing(Crossing::Moved), None);
+        assert!(!bool::from(kept.conditioned()));
+        // `par(nu(bind a . p), p) ==> p` matches `p` under `a` and beside it.
+        let split = RuleFace::new(
+            par(restricted(FreeTerm::var("p")), FreeTerm::var("p")),
+            FreeTerm::var("p"),
+            Vec::new(),
+            span,
+        );
+        assert_eq!(split.crossing(Crossing::Split), Some(&Name::from("p")));
+        // `nu2(bind a . bind b . p) ==> nu2(bind b . bind a . p)` swaps the
+        // two abstractions over `p`.
+        let nu2 = |outer: &str, inner: &str| {
+            FreeTerm::op("nu2", [FreeTerm::abs(
+                outer,
+                FreeTerm::abs(inner, FreeTerm::var("p")),
+            )])
+        };
+        let swapped = RuleFace::new(nu2("a", "b"), nu2("b", "a"), Vec::new(), span);
+        assert_eq!(swapped.crossing(Crossing::Moved), Some(&Name::from("p")));
+        assert_eq!(swapped.crossing(Crossing::Split), None);
+    }
 
     #[test]
     fn free_variables_are_collected_in_order_with_repeats()

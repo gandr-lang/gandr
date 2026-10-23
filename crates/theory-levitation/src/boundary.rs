@@ -358,6 +358,13 @@ verdict_wrapper! {
 }
 
 verdict_wrapper! {
+    /// Whether a rule states a freshness condition or moves a variable across
+    /// an abstraction: where a term can name an atom, it then fires only
+    /// where its instance names no atom it may not.
+    pub struct ConditionStatus;
+}
+
+verdict_wrapper! {
     /// Whether one term embeds homeomorphically in another.
     pub struct EmbeddingStatus;
 }

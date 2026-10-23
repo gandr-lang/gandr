@@ -559,6 +559,11 @@ fn lowered(
              variable a binding port binds: such a rule may overlap no rule, so the block's \
              rules are refused",
         ),
+        LoweringRefusal::RulesOverlapCondition { .. } => f.write_str(
+            "this rule and another rewrite overlapping terms, and one of them fires only where its \
+             instance names no atom it may not: no critical pair decides that yet, so the block's \
+             rules are refused",
+        ),
         LoweringRefusal::RulesUncompleted { .. } => f.write_str(
             "this rule and an earlier one rewrite one term to two normal forms, and no rule the \
              order can orient joins them, so the block's rules are refused",
@@ -1467,6 +1472,7 @@ mod tests
                 fault: gandr_surface_lowering::derive::DeriveFault::Apart,
             },
             LoweringRefusal::RulesOverlapSecondOrder { span, first: span },
+            LoweringRefusal::RulesOverlapCondition { span, first: span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },

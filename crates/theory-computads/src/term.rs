@@ -80,6 +80,7 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::Reducibility;
 use crate::boundary::Renaming;
 use crate::boundary::RuleGrowth;
+use crate::boundary::ScopeAdmission;
 
 /// The term alphabet marker.
 ///
@@ -159,6 +160,10 @@ enum Head
     Occ(Count),
     /// An atom no abstraction above it binds, keyed by its name.
     Free(Name),
+    /// A metavariable leaf whose instance crosses abstractions: on a left
+    /// side it matches only an instance its scope admits, and on a right
+    /// side its image's atoms are counted to their abstractions' places here.
+    Scoped(Name, Box<Scope>),
 }
 
 impl Head
@@ -178,20 +183,144 @@ impl Head
     /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
     /// - witness: `term::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[spec(ensures: |ret| match *self {
-        | Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) => ret.0 == 0,
+        | Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) | Self::Scoped(..) => ret.0 == 0,
         | Self::Abs => ret.0 == 1,
         | Self::Ctor(_, count) | Self::Op(_, count) | Self::Results(count) | Self::Inst(_, count) => ret.0 == count.0,
     })]
     const fn arity(&self) -> Count
     {
         match *self {
-            Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) => Count(0),
+            Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) | Self::Scoped(..) => {
+                Count(0)
+            },
             Self::Abs => Count(1),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
             | Self::Inst(_, arity) => arity,
         }
+    }
+}
+
+/// How the instance of one occurrence of a metavariable meets the
+/// abstractions it stands under: which of those above the variable's first
+/// occurrence on the left side it may name, and where each stands here.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Scope
+{
+    /// For each abstraction above the variable's first occurrence on the left
+    /// side, innermost first, its place among those above this occurrence,
+    /// innermost first; [`None`] where the instance may not name it.
+    kept: Box<[Option<Count>]>,
+    /// The number of abstractions above this occurrence.
+    above: Count,
+}
+
+impl Scope
+{
+    /// The place here of the abstraction an instance's atom counts to
+    /// `free` abstractions past the instance's root.
+    ///
+    /// # Specification
+    /// - ensures: for one of the first occurrence's abstractions, its place
+    ///   here, [`None`] where it is withheld; for one above them all, the same
+    ///   abstraction past those above this occurrence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`conditioned_cell`].
+    /// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
+    #[spec(ensures: |ret| ret.is_none() == self.kept.get(free.0).is_some_and(Option::is_none))]
+    fn place(
+        &self,
+        free: Count,
+    ) -> Option<Count>
+    {
+        match self.kept.get(free.0) {
+            Some(&kept) => kept,
+            None => Some(Count(
+                free.0
+                    .saturating_sub(self.kept.len())
+                    .saturating_add(self.above.0),
+            )),
+        }
+    }
+
+    /// Whether `instance` names no abstraction the scope withholds, and holds
+    /// no metavariable, skolem constant or instantiation, any of which could.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when no node of `instance` is a
+    ///   metavariable, scoped or not, a skolem constant or an instantiation,
+    ///   and every atom counting past the instance's root counts to an
+    ///   abstraction [`Self::place`] gives a place.
+    /// - panics: none.
+    /// - executable: none — the body is the predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`conditioned_cell`].
+    /// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
+    fn admits(
+        &self,
+        instance: &Term,
+    ) -> ScopeAdmission
+    {
+        ScopeAdmission::from(instance.0.iter().zip(instance.depths()).all(
+            |(head, Count(depth))| {
+                match *head {
+                    Head::Var(_) | Head::Scoped(..) | Head::Konst(_) | Head::Inst(..) => false,
+                    Head::Occ(Count(between)) => between
+                        .checked_sub(depth)
+                        .is_none_or(|free| self.place(Count(free)).is_some()),
+                    Head::Ctor(..)
+                    | Head::Op(..)
+                    | Head::Results(_)
+                    | Head::Abs
+                    | Head::Free(_) => true,
+                }
+            },
+        ))
+    }
+
+    /// `instance` with every atom counting past its root counted to the
+    /// place [`Self::place`] gives its abstraction, and kept where none.
+    ///
+    /// # Specification
+    /// - ensures: one node per node of `instance`, each the same but an
+    ///   occurrence counting past the instance's root, which counts as many
+    ///   abstractions inside the instance and then to its abstraction's place.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`conditioned_cell`].
+    /// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
+    #[spec(ensures: |ret| ret.len() == instance.0.len())]
+    fn renumber(
+        &self,
+        instance: &Term,
+    ) -> Vec<Head>
+    {
+        instance
+            .0
+            .iter()
+            .zip(instance.depths())
+            .map(|(head, Count(depth))| {
+                let Head::Occ(Count(between)) = *head
+                else {
+                    return head.clone();
+                };
+                between
+                    .checked_sub(depth)
+                    .and_then(|free| self.place(Count(free)))
+                    .map_or_else(
+                        || head.clone(),
+                        |Count(place)| Head::Occ(Count(place.saturating_add(depth))),
+                    )
+            })
+            .collect()
     }
 }
 
@@ -348,7 +477,7 @@ impl Term
                 built.drain(split ..).rev().collect::<Vec<FreeTerm>>()
             };
             let node = match *head {
-                Head::Var(ref name) => FreeTerm::var(name),
+                Head::Var(ref name) | Head::Scoped(ref name, _) => FreeTerm::var(name),
                 Head::Konst(_) => return Maybe::Absent(term_reading::Absent::Skolem),
                 Head::Ctor(ref name, arity) => FreeTerm::ctor(name, take(&mut built, arity)),
                 Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
@@ -537,7 +666,7 @@ impl Term
     fn vars(&self) -> impl Iterator<Item = &Name>
     {
         self.0.iter().filter_map(|head| match *head {
-            Head::Var(ref var) => Some(var),
+            Head::Var(ref var) | Head::Scoped(ref var, _) => Some(var),
             Head::Konst(_)
             | Head::Ctor(..)
             | Head::Op(..)
@@ -577,6 +706,15 @@ impl Term
                 .iter()
                 .map(|head| match *head {
                     Head::Var(ref var) => relabel(var),
+                    Head::Scoped(ref var, ref scope) => {
+                        let relabelled = relabel(var);
+                        if let Head::Var(name) = relabelled {
+                            Head::Scoped(name, scope.clone())
+                        }
+                        else {
+                            relabelled
+                        }
+                    },
                     Head::Konst(_)
                     | Head::Ctor(..)
                     | Head::Op(..)
@@ -621,7 +759,8 @@ impl TermSubst
     ///
     /// # Specification
     /// - ensures: each bound variable is replaced by its image once, without
-    ///   visiting that image; unbound variables and other heads are kept.
+    ///   visiting that image, a scoped one's image renumbered by its scope;
+    ///   unbound variables and other heads are kept.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -630,7 +769,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => 1,
+        Head::Var(ref var) | Head::Scoped(ref var, _) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -639,13 +778,25 @@ impl TermSubst
     {
         let mut nodes = Vec::with_capacity(term.0.len());
         for head in &term.0 {
-            if let Head::Var(ref var) = *head
-                && let Some(image) = self.0.get(var)
-            {
-                nodes.extend(image.0.iter().cloned());
-                continue;
+            let bound = match *head {
+                Head::Var(ref var) => self.0.get(var).map(|image| (image, None)),
+                Head::Scoped(ref var, ref scope) => {
+                    self.0.get(var).map(|image| (image, Some(scope)))
+                },
+                Head::Konst(_)
+                | Head::Ctor(..)
+                | Head::Op(..)
+                | Head::Results(_)
+                | Head::Inst(..)
+                | Head::Abs
+                | Head::Occ(_)
+                | Head::Free(_) => None,
+            };
+            match bound {
+                Some((image, None)) => nodes.extend(image.0.iter().cloned()),
+                Some((image, Some(scope))) => nodes.extend(scope.renumber(image)),
+                None => nodes.push(head.clone()),
             }
-            nodes.push(head.clone());
         }
         Term(nodes)
     }
@@ -1200,9 +1351,10 @@ impl CellAlphabet for TermAlphabet
     ///
     /// # Specification
     /// - ensures: each pattern metavariable binds the target subterm at its
-    ///   place, a bound one only an equal subterm; every other node must equal
-    ///   the target's, so a pattern node never matches a skolem constant.
-    ///   `subst` is extended only on success.
+    ///   place, a bound one only an equal subterm and a scoped one only a
+    ///   subterm its scope admits; every other node must equal the target's, so
+    ///   a pattern node never matches a skolem constant. `subst` is extended
+    ///   only on success.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1233,10 +1385,24 @@ impl CellAlphabet for TermAlphabet
             else {
                 return SubstitutionDecision::from(false);
             };
-            if let Head::Var(ref var) = *head {
+            let variable = match *head {
+                Head::Var(ref var) => Some((var, None)),
+                Head::Scoped(ref var, ref scope) => Some((var, Some(scope))),
+                Head::Konst(_)
+                | Head::Ctor(..)
+                | Head::Op(..)
+                | Head::Results(_)
+                | Head::Inst(..)
+                | Head::Abs
+                | Head::Occ(_)
+                | Head::Free(_) => None,
+            };
+            if let Some((var, scope)) = variable {
                 let end = target.end_of(at);
                 let image = target.slice(at, end);
-                if found.0.get(var).is_some_and(|bound| *bound != image) {
+                if scope.is_some_and(|scope| !bool::from(scope.admits(&image)))
+                    || found.0.get(var).is_some_and(|bound| *bound != image)
+                {
                     return SubstitutionDecision::from(false);
                 }
                 found.0.insert(var.clone(), image);
@@ -1807,7 +1973,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) | Head::Scoped(ref var, _) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))
@@ -1955,6 +2121,198 @@ pub fn face_cell(face: &RuleFace) -> Cell<TermAlphabet>
         TermOrient::Written,
         TermProv::SurfaceRule,
     )
+}
+
+/// A conditioned face as a cell of the term alphabet, its moved
+/// metavariables scoped.
+///
+/// As [`face_cell`] builds it, but the cell fires only where its instance
+/// names no atom it may not, and counts a moved instance's atoms to their
+/// abstractions' places.
+///
+/// # Specification
+/// - ensures: the cell [`face_cell`] builds, but that each left occurrence of a
+///   metavariable is scoped to withhold the abstractions above it a condition
+///   states the atom of fresh for it or some right occurrence stands under none
+///   of, where there are any; and each right occurrence standing under other
+///   abstractions than the first left one is scoped to count its instance's
+///   atoms from there to here, an abstraction matched by its atom and its rank,
+///   innermost first, among the abstractions of that atom. Each side reads back
+///   as [`face_cell`]'s does.
+/// - panics: none.
+/// - intension: one walk of each side for the atoms above each variable
+///   occurrence, then one pass over each side's table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — garbage collection fires on a restriction its body does
+///   not name and not on one it does, and counts the body's other atoms one
+///   abstraction nearer; scope extrusion counts its moved process's atoms one
+///   abstraction further; swapping two abstractions swaps the atoms naming
+///   them; and a cell building no scope fires as [`face_cell`]'s.
+/// - witness: `term::tests::a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.lhs().read() == Maybe::Present(face.lhs.canonical_atoms())
+    && ret.rhs().read() == Maybe::Present(face.rhs.canonical_atoms())
+    && ret.orient() == TermOrient::Written && ret.provenance() == TermProv::SurfaceRule)]
+pub fn conditioned_cell(face: &RuleFace) -> Cell<TermAlphabet>
+{
+    let (left, right) = (scopes_of(&face.lhs), scopes_of(&face.rhs));
+    let mut first: BTreeMap<&Name, &[&Name]> = BTreeMap::new();
+    for &(var, ref atoms) in &left {
+        let _first = first.entry(var).or_insert(atoms.as_slice());
+    }
+    let places = |from: &[&Name], to: &[&Name]| -> Box<[Option<Count>]> {
+        from.iter()
+            .rev()
+            .enumerate()
+            .map(|(index, &atom)| {
+                let rank = from
+                    .iter()
+                    .rev()
+                    .take(index)
+                    .filter(|&&inner| inner == atom)
+                    .count();
+                to.iter()
+                    .rev()
+                    .enumerate()
+                    .filter(|&(_, &held)| held == atom)
+                    .nth(rank)
+                    .map(|(place, _)| Count(place))
+            })
+            .collect()
+    };
+    let mut withheld: BTreeMap<&Name, BTreeSet<usize>> = BTreeMap::new();
+    for (&var, &atoms) in &first {
+        let mut held = BTreeSet::new();
+        for (index, &atom) in atoms.iter().rev().enumerate() {
+            if face
+                .fresh
+                .iter()
+                .any(|condition| condition.term == *var && condition.atom == *atom)
+            {
+                let _new = held.insert(index);
+            }
+        }
+        for &(_, ref here) in right.iter().filter(|&&(occurring, _)| occurring == var) {
+            for (index, place) in places(atoms, here).iter().enumerate() {
+                if place.is_none() {
+                    let _new = held.insert(index);
+                }
+            }
+        }
+        let _first = withheld.insert(var, held);
+    }
+    let mut lefts = left.iter();
+    let lhs = Term::from(&face.lhs)
+        .0
+        .into_iter()
+        .map(|head| {
+            let Head::Var(name) = head
+            else {
+                return head;
+            };
+            let Some((atoms, held)) = lefts
+                .next()
+                .and_then(|&(var, _)| Some((*first.get(var)?, withheld.get(var)?)))
+                .filter(|&(_, held)| !held.is_empty())
+            else {
+                return Head::Var(name);
+            };
+            let kept = (0 .. atoms.len())
+                .map(|index| (!held.contains(&index)).then_some(Count(index)))
+                .collect();
+            Head::Scoped(
+                name,
+                Box::new(Scope {
+                    kept,
+                    above: Count(atoms.len()),
+                }),
+            )
+        })
+        .collect();
+    let mut rights = right.iter();
+    let rhs = Term::from(&face.rhs)
+        .0
+        .into_iter()
+        .map(|head| {
+            let Head::Var(name) = head
+            else {
+                return head;
+            };
+            let Some((atoms, here)) = rights
+                .next()
+                .and_then(|&(var, ref here)| Some((*first.get(var)?, here)))
+            else {
+                return Head::Var(name);
+            };
+            let kept = places(atoms, here);
+            let unmoved = here.len() == atoms.len()
+                && kept
+                    .iter()
+                    .enumerate()
+                    .all(|(index, &place)| place == Some(Count(index)));
+            if unmoved {
+                return Head::Var(name);
+            }
+            Head::Scoped(
+                name,
+                Box::new(Scope {
+                    kept,
+                    above: Count(here.len()),
+                }),
+            )
+        })
+        .collect();
+    Cell::new(
+        Term(lhs),
+        Term(rhs),
+        TermOrient::Written,
+        TermProv::SurfaceRule,
+    )
+}
+
+/// Each metavariable occurrence of `term`, in prefix order, with the atoms
+/// of the abstractions above it, outermost first.
+///
+/// # Specification
+/// trivial.
+fn scopes_of(term: &FreeTerm) -> Vec<(&Name, Vec<&Name>)>
+{
+    let mut found = Vec::new();
+    // Each abstraction read: its atom and the abstraction enclosing it.
+    let mut scopes: Vec<(&Name, Option<usize>)> = Vec::new();
+    let mut pending = alloc::vec![(term.to_node(), None)];
+    while let Some((node, scope)) = pending.pop() {
+        let (args, inner) = match node.view() {
+            TermView::Var(name) => {
+                let mut atoms = Vec::new();
+                let mut link = scope;
+                while let Some(&(atom, outer)) = link.and_then(|at| scopes.get(at)) {
+                    atoms.push(atom);
+                    link = outer;
+                }
+                atoms.reverse();
+                found.push((name, atoms));
+                continue;
+            },
+            TermView::Atom(_) => continue,
+            TermView::Abs { atom, args } => {
+                scopes.push((atom, scope));
+                (args, Some(scopes.len().saturating_sub(1)))
+            },
+            TermView::Op { args, .. }
+            | TermView::Ctor { args, .. }
+            | TermView::Results { args }
+            | TermView::Inst { args, .. } => (args, scope),
+        };
+        let mark = pending.len();
+        pending.extend(args.map(|arg| (arg, inner)));
+        if let Some(children) = pending.get_mut(mark ..) {
+            children.reverse();
+        }
+    }
+    found
 }
 
 #[cfg(test)]

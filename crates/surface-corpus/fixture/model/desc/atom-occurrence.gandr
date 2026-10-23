@@ -5,8 +5,12 @@
 // naming the channel its restriction abstracts is one rule whatever the atom
 // is called: matching, the critical pairs and the kernel's replay read an
 // occurrence by the number of abstractions between it and its binder. Where
-// a port takes an atom, a term can name one, and a freshness condition there
-// is not decided yet (#1900): `pathological/desc/atom-occurrence.gandr`.
+// a port takes an atom, a term can name one, and a rule stating a freshness
+// condition, or moving a variable across an abstraction, fires only where its
+// instance names no atom it may not, counting the atoms a moved instance names
+// to their abstractions' new places. Such a rule overlapping another, or
+// matching a variable both under an abstraction and beside it, is not decided
+// yet (#1934): `pathological/desc/atom-occurrence.gandr`.
 
 /// A send on a restricted channel, which no process outside the restriction
 /// can receive: the process never moves, so it is the inert one. The checker
@@ -46,4 +50,33 @@ theory Shadowed {
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
   rule unheard : nu(bind a . out(a, p)) ==> nil();
+}
+
+/// Scope extrusion where `out` takes a channel: `q` moves under the
+/// restriction stated fresh for it, so the rule counts each channel `q` names
+/// one abstraction further, and the outer channel stays the one sent on. The
+/// kernel replays the verdict with the rule conditioned, in no critical pair.
+@[ normalizes("nu(bind c . par(nu(bind b . out(b, nil)), out(c, nil))) ~> nu(bind a0 . nu(bind a1 . par(out(a1, nil), out(a0, nil))))") ]
+theory Extruding {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+}
+
+/// Garbage collection where `out` takes a channel: a restriction whose process
+/// names none of its channel is the process. The rule fires on the inner
+/// restriction, counting the outer channel one abstraction nearer, and not on
+/// the outer one, whose process sends on it.
+@[ normalizes("nu(bind c . nu(bind b . out(c, nil))) ~> nu(bind a0 . out(a0, nil))") ]
+theory Collected {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule gc : nu(bind a . p) <=> p where a # p;
 }

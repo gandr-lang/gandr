@@ -1,6 +1,6 @@
 // The twin of `model/desc/atom-occurrence.gandr`: an atom named where no port
-// of its sort stands, and a freshness condition where a term can name the atom
-// it is stated on.
+// of its sort stands, and freshness conditions where a term can name the atom
+// they are stated on that no step decides yet.
 
 // The law over the channel its restriction abstracts.
 import "../../model/desc/atom-occurrence.gandr" ;
@@ -18,15 +18,31 @@ theory Misplaced {
   rule stray : nu(bind a . par(a, nil())) ==> nil();
 }
 
-/// Scope extrusion where `out` takes a channel: an instance of `q` may name
-/// `a`, and no rewriting step decides `a # q` of it yet, so the condition is
-/// refused undecided (#1900).
-@[ refuses("IllFormedDescription") ]
-theory Extruded {
+/// Scope extrusion beside garbage collection where `out` takes a channel: each
+/// rule fires only where its instance names no atom it may not, collection
+/// overlaps extrusion below its root, and no critical pair decides a condition
+/// yet, so the rules are refused together (#1934).
+@[ refuses("RulesOverlapCondition") ]
+theory Collecting {
   sort Name : Atom;
   sort Proc : Type;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
   rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+  rule gc : nu(bind a . p) <=> p where a # p;
+}
+
+/// A variable matched under a restriction and beside it where `out` takes a
+/// channel: its two instances agree only up to the channels they name, which
+/// no matching step decides yet, so the description check refuses the rule
+/// undecided (#1934).
+@[ refuses("IllFormedDescription") ]
+theory Split {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper par : (p : Proc, q : Proc) --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule split : par(nu(bind a . p), p) ==> p where a # p;
 }

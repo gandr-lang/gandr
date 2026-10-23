@@ -223,6 +223,9 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
         LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
         LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
+        LoweringRefusal::RulesOverlapCondition { .. } => {
+            "overlaps a rule firing on a freshness condition"
+        },
         LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
         LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
         LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
@@ -605,6 +608,9 @@ mod tests
             LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
             LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
             LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
+            LoweringRefusal::RulesOverlapCondition { .. } => {
+                "overlaps a rule firing on a freshness condition"
+            },
             LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
             LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
             LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",

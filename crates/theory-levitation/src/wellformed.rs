@@ -61,6 +61,7 @@ use crate::desc::Representability;
 use crate::desc::SurfaceSpan;
 use crate::desc::TheoryDesc;
 use crate::desc::TheoryShape;
+use crate::rule::Crossing;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
 use crate::rule::RuleVarMeta;
@@ -146,11 +147,10 @@ pub enum WfKind
     /// A rule names an atom no abstraction above it binds, or names one
     /// where no port of its atom sort stands.
     MisplacedAtom,
-    /// A rule states a freshness condition, or names a variable under other
-    /// abstractions than it stands under elsewhere in the rule, in a signature
-    /// some port of which takes an atom: a term can then name one, and no
-    /// rewriting step decides the condition, stated or implied by the move, of
-    /// such an instance yet.
+    /// A rule's variable stands under other abstractions at two of its
+    /// occurrences on the left side, in a signature some port of which takes
+    /// an atom: a match then compares its two instances only up to the atoms
+    /// they name, which no matching step decides yet.
     UndecidedCondition,
 }
 
@@ -275,9 +275,8 @@ fn located(
 ///   declared atom sort; the atom result check one `AtomResult` per output
 ///   port, over every operation, at a declared atom sort. Where some
 ///   operation's input port is at a declared atom sort, the per-face checks of
-///   a rule end with one `UndecidedCondition` when it states a freshness
-///   condition, or else, when no `Capture` names it, when a variable stands
-///   under other abstractions at one occurrence than at another.
+///   a rule end with one `UndecidedCondition` when a variable stands under
+///   other abstractions at two of its occurrences on the left side.
 /// - panics: none; total on any description, a mis-built one included.
 ///
 /// # Adequacy
@@ -291,8 +290,9 @@ fn located(
 ///   attribute, a circuit rule whose wiring derives a boundary its sphere does
 ///   not fix, a cyclic wiring, and a redex applying a rewrite the rule's
 ///   telescope does not declare each surface exactly their diagnostic; an atom
-///   named outside its abstraction or at a port not of its sort, and a
-///   condition or a moved variable where a port takes an atom, likewise.
+///   named outside its abstraction or at a port not of its sort, and a variable
+///   split across an abstraction on the left side where a port takes an atom,
+///   likewise.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
@@ -315,7 +315,7 @@ fn located(
 /// - witness: `wellformed::tests::a_bound_variable_is_used_under_its_binders_or_instantiated`
 /// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
 /// - witness: `wellformed::tests::an_atom_is_named_at_a_port_of_its_sort`
-/// - witness: `wellformed::tests::a_condition_is_undecided_where_a_term_names_an_atom`
+/// - witness: `wellformed::tests::a_condition_is_decided_where_a_term_names_an_atom`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
@@ -453,67 +453,26 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
         .collect();
     // A signature in which some port takes an atom: a term of it can name
     // one.
-    let nameable = desc.opers.iter().find_map(|operation| {
-        operation
-            .arity
-            .inputs
-            .iter()
-            .find(|port| {
-                desc.sorts.iter().any(|sort| {
-                    sort.name == port.sort && sort.representability == Representability::Atom
-                })
-            })
-            .map(|port| (&operation.name, &port.name))
-    });
+    let nameable = atom_port(desc);
     for rule in &desc.rules {
         check_rule_face(rule, &signature, &mut diagnostics);
         check_rule_binders(rule, &operations, &mut diagnostics);
         check_abstractions(rule, &operations, &mut diagnostics);
         check_atoms(rule, &operations, &mut diagnostics);
-        let before = diagnostics.len();
         check_freshness(rule, &mut diagnostics);
-        let Some((operation, port)) = nameable
-        else {
-            continue;
-        };
-        let undecided = rule
-            .fresh
-            .first()
-            .map(|condition| {
-                (
-                    named(&[&condition.term, operation]),
-                    format!(
-                        "the condition `{} # {}` holds",
-                        condition.atom, condition.term
-                    ),
-                )
-            })
-            .or_else(|| {
-                moved_variable(rule)
-                    .filter(|_| {
-                        diagnostics.get(before ..).is_some_and(|added| {
-                            added
-                                .iter()
-                                .all(|diagnostic| diagnostic.kind != WfKind::Capture)
-                        })
-                    })
-                    .map(|variable| {
-                        (
-                            named(&[variable, operation]),
-                            format!(
-                                "`{variable}` stands under other abstractions on the rule's two sides, so it holds"
-                            ),
-                        )
-                    })
-            });
-        if let Some((subjects, condition)) = undecided {
+        // Two instances of one variable under different abstractions match
+        // only up to the atoms they name, where a term can name one.
+        if let Some((operation, port)) = nameable
+            && let Some(variable) = rule.crossing(Crossing::Split)
+        {
             diagnostics.push(located(
                 WfKind::UndecidedCondition,
-                subjects,
+                named(&[variable, operation]),
                 format!(
-                    "{condition} only of an instance that does not name the atom it crosses, and \
-                     `{operation}` takes one at `{port}`, so a term can: no rewriting step decides \
-                     the condition there yet"
+                    "`{variable}` stands under other abstractions at two of its occurrences on \
+                     the left side, so a match compares its two instances only up to the atoms \
+                     they name, and `{operation}` takes one at `{port}`, so a term can: no \
+                     matching step decides that comparison yet"
                 ),
                 rule.provenance,
             ));
@@ -1475,68 +1434,37 @@ fn check_freshness(
     }
 }
 
-/// The first variable of `cell` that stands under other abstractions at one
-/// of its occurrences than at its first on the left side.
+/// The first input port at an atom sort, with its operation: where one
+/// stands, a term of the signature can name an atom.
 ///
 /// # Specification
-/// - ensures: the first variable, in pre-order on the right side after the
-///   left, whose list of enclosing abstractions' atoms, outermost first,
-///   differs from the list at its first occurrence on the left side, compared
-///   by written name and order; `None` when every occurrence agrees.
+/// - ensures: the name of the first operation, in declaration order, with an
+///   input port at a sort `desc` declares an atom sort, and of its first such
+///   port; [`None`] when no input port takes an atom.
 /// - panics: none.
-/// - executable: none — the answer is the comparison of the two sides' walks,
-///   which a predicate would walk again.
-/// - intension: one worklist pass over each side; the abstractions in scope
-///   form a tree of links, read out at a variable only.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a variable under the same abstraction on both sides
-///   passes, and one moved out of it, one moved under a second abstraction and
-///   one under two abstractions swapped are each named.
-/// - witness: `wellformed::tests::a_condition_is_undecided_where_a_term_names_an_atom`
-fn moved_variable(cell: &RuleFace) -> Option<&Name>
+/// - hypothesis: L3 — a signature sending on a channel names the sending
+///   operation and its channel port, and one of processes alone names none.
+/// - witness: `wellformed::tests::a_condition_is_decided_where_a_term_names_an_atom`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.is_none_or(|(operation, port)| desc.opers.iter().any(|oper| oper.name == *operation
+    && oper.arity.inputs.iter().any(|input| input.name == *port))))]
+pub fn atom_port<G>(desc: &TheoryDesc<G>) -> Option<(&Name, &Name)>
 {
-    let mut first: BTreeMap<&Name, Vec<&Name>> = BTreeMap::new();
-    for (side, left) in [(&cell.lhs, true), (&cell.rhs, false)] {
-        let mut scopes: Vec<(&Name, Option<usize>)> = Vec::new();
-        let mut pending: Vec<(TermNode<'_>, Option<usize>)> = vec![(side.to_node(), None)];
-        while let Some((node, scope)) = pending.pop() {
-            let (variable, args) = match node.view() {
-                TermView::Var(name) => (Some(name), None),
-                TermView::Inst { name, args } => (Some(name), Some(args)),
-                TermView::Abs { atom, args } => {
-                    scopes.push((atom, scope));
-                    let inner = Some(scopes.len().saturating_sub(1));
-                    pending.extend(args.map(|body| (body, inner)));
-                    continue;
-                },
-                TermView::Op { args, .. }
-                | TermView::Ctor { args, .. }
-                | TermView::Results { args } => (None, Some(args)),
-                TermView::Atom(_) => (None, None),
-            };
-            if let Some(variable) = variable {
-                let mut enclosing = Vec::new();
-                let mut link = scope;
-                while let Some(&(atom, outer)) = link.and_then(|at| scopes.get(at)) {
-                    enclosing.push(atom);
-                    link = outer;
-                }
-                enclosing.reverse();
-                match first.get(variable) {
-                    Some(known) if *known != enclosing => return Some(variable),
-                    None if left => {
-                        let _new = first.insert(variable, enclosing);
-                    },
-                    Some(_) | None => {},
-                }
-            }
-            if let Some(args) = args {
-                pending.extend(args.map(|arg| (arg, scope)));
-            }
-        }
-    }
-    None
+    desc.opers.iter().find_map(|operation| {
+        operation
+            .arity
+            .inputs
+            .iter()
+            .find(|port| {
+                desc.sorts.iter().any(|sort| {
+                    sort.name == port.sort && sort.representability == Representability::Atom
+                })
+            })
+            .map(|port| (&operation.name, &port.name))
+    })
 }
 
 /// Append an `OutOfSignatureRule` diagnostic for each applied symbol of
@@ -2334,7 +2262,7 @@ mod tests
     }
 
     #[test]
-    fn a_condition_is_undecided_where_a_term_names_an_atom()
+    fn a_condition_is_decided_where_a_term_names_an_atom()
     {
         let var = FreeTerm::var;
         let nu = |body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs("a", body)]);
@@ -2365,53 +2293,41 @@ mod tests
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            found(Output::Absent, face(scope(), extruded(), &[("a", "q")])),
-            [],
-            "no port takes an atom: no term names one, and the condition always holds"
+            atom_port(&channels(Output::Named, Vec::new())),
+            Some((&Name::from("out"), &Name::from("c"))),
+            "`out` takes a channel"
         );
-        assert_eq!(
-            found(Output::Named, face(scope(), extruded(), &[("a", "q")])),
-            [WfKind::UndecidedCondition],
-            "`out` takes a channel: an instance of `q` may name `a`"
-        );
+        assert_eq!(atom_port(&channels(Output::Absent, Vec::new())), None);
+        for output in [Output::Absent, Output::Named] {
+            assert_eq!(
+                found(output, face(scope(), extruded(), &[("a", "q")])),
+                [],
+                "`q` moves under `a` stated fresh for it, whether or not a term can name `a`"
+            );
+            assert_eq!(
+                found(
+                    output,
+                    face(nu2("a", "b", var("p")), nu2("b", "a", var("p")), &[])
+                ),
+                [],
+                "the same two abstractions swapped move `p` with no capture"
+            );
+        }
         assert_eq!(
             found(Output::Named, face(scope(), extruded(), &[])),
             [WfKind::Capture],
             "a crossing left unstated is refused as a capture alone"
         );
-        let swapped = face(nu2("a", "b", var("p")), nu2("b", "a", var("p")), &[]);
+        let split = || face(par(nu(var("p")), var("p")), var("p"), &[("a", "p")]);
         assert_eq!(
-            found(Output::Named, swapped.clone()),
+            found(Output::Named, split()),
             [WfKind::UndecidedCondition],
-            "the same two abstractions swapped move `p` with no capture"
+            "`p` matched under `a` and beside it compares instances naming atoms"
         );
         assert_eq!(
-            found(Output::Absent, swapped),
+            found(Output::Absent, split()),
             [],
-            "and pass where no term names an atom"
-        );
-        let moved = |lhs: FreeTerm, rhs: FreeTerm| {
-            moved_variable(&face(lhs, rhs, &[])).map(Name::to_string)
-        };
-        assert_eq!(
-            moved(nu(var("p")), nu(var("p"))),
-            None,
-            "`p` stays under `bind a`"
-        );
-        assert_eq!(
-            moved(nu(var("p")), var("p")).as_deref(),
-            Some("p"),
-            "`p` moved out of `bind a`"
-        );
-        assert_eq!(
-            moved(nu(var("p")), nu2("a", "b", var("p"))).as_deref(),
-            Some("p"),
-            "`p` moved under a second abstraction"
-        );
-        assert_eq!(
-            moved(nu2("a", "b", var("p")), nu2("b", "a", var("p"))).as_deref(),
-            Some("p"),
-            "`p` under two abstractions swapped"
+            "and passes where no term names an atom"
         );
     }
 

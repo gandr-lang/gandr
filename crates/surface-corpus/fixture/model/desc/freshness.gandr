@@ -7,8 +7,8 @@
 // `Theory` keeps each condition as a `Fresh` link after its rule. No port of
 // these theories takes an atom, so no term names one: the support of every
 // instance is empty and every condition holds. Where a port takes an atom, a
-// condition is refused as undecided (#1900):
-// `pathological/desc/atom-occurrence.gandr`.
+// condition decides where its rule fires:
+// `model/desc/atom-occurrence.gandr`.
 
 /// The π-calculus's structural congruence: the inert process, parallel
 /// composition and restriction, scope extrusion moving `q` under the
