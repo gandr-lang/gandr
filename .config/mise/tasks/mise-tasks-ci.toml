@@ -506,19 +506,27 @@ run = [
   "target/debug/build-state prune --profile-dir target/debug target/debug/units-tests.jsonl target/debug/units-corpus.jsonl target/debug/units-comments.jsonl target/debug/units-tool.jsonl",
 ]
 
-# The documentation lane's builds, with the arguments `check:doc` and
-# `check:doctests` give them: the private-item rustdoc, the libraries the
-# documentation examples link and the pruning binary itself. Cargo refuses
-# `--no-run` for documentation examples, so `RUSTDOC=true` builds the
-# libraries they link and runs none of them.
+# The documentation lane's builds, with the arguments `check:doc` gives
+# them: the private-item rustdoc and the pruning binary itself.
 ["ci:prune-docs"]
 description = "Prune the documentation state to the units this run's builds used"
 env.RUSTDOCFLAGS = "-D warnings"
 run = [
   ".config/mise/scope cargo doc --workspace --all-features --locked --no-deps --document-private-items --message-format json > target/debug/units-doc.jsonl",
+  ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc.jsonl target/debug/units-tool.jsonl",
+]
+
+# The examples lane's builds, with the arguments `check:doctests` gives
+# them: the libraries the documentation examples link and the pruning
+# binary itself. Cargo refuses `--no-run` for documentation examples, so
+# `RUSTDOC=true` builds the libraries they link and runs none of them.
+["ci:prune-doctests"]
+description = "Prune the documentation examples' state to the units this run's builds used"
+run = [
   "RUSTDOC=true .config/mise/scope cargo test --doc --workspace --locked --message-format json > target/debug/units-doctests.jsonl",
   ".config/mise/scope cargo build --locked --profile test --package gandr-workflow-build-state --message-format json > target/debug/units-tool.jsonl",
-  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doc.jsonl target/debug/units-doctests.jsonl target/debug/units-tool.jsonl",
+  "target/debug/build-state prune --profile-dir target/debug target/debug/units-doctests.jsonl target/debug/units-tool.jsonl",
 ]
 
 # The Clippy lane's two passes, with the arguments ci.yml gives them, and the

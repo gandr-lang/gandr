@@ -157,7 +157,7 @@ jobs:
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.prepare.outputs.image == '' }}
-          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache
       # (`.github/actions/install-tools`, shared with every workflow).
@@ -318,7 +318,7 @@ jobs:
         if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true')) }}
         continue-on-error: true
         env:
-          CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || 'ci:prune-plain' }}
+          CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || env.CI_DOCTESTS == 'true' && 'ci:prune-doctests' || 'ci:prune-plain' }}
         run: mise run "$CI_PRUNE_TASK"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
       # Each flavor keeps only its own test-profile target directory.
@@ -609,14 +609,14 @@ jobs:
 
   # The enforcing run is the full test pass on each platform. The plain lane
   # compiles and runs only what enforcement removes, the corpus roots; the
-  # documentation lane runs the private-item rustdoc and the documentation
-  # examples beside it, units no other plain gate builds; plain Clippy lints
-  # the plain-only targets. On main's push the Linux test lanes run only when
-  # no queue run tested the commit, and then build on main's state and cache
-  # theirs as main's. A pull request, stacked or not, whose change reaches
-  # the recovery records (`parser`) runs the plain lane too, its full
-  # recovery sweep included, so a stale record is red on the pull request
-  # rather than first in the queue (#2101).
+  # documentation lane runs the private-item rustdoc and the examples lane
+  # the documentation examples, units no other plain gate builds; plain
+  # Clippy lints the plain-only targets. On main's push the Linux test lanes
+  # run only when no queue run tested the commit, and then build on main's
+  # state and cache theirs as main's. A pull request, stacked or not, whose
+  # change reaches the recovery records (`parser`) runs the plain lane too,
+  # its full recovery sweep included, so a stale record is red on the pull
+  # request rather than first in the queue (#2101).
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: *rust-needs
@@ -671,13 +671,17 @@ jobs:
       - name: build workspace targets
         id: build-workspace
         env:
-          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'build:tests' || env.CI_DOCS == 'true' && 'check:doc' || 'build:tests-plain-only' }}
+          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'build:tests' || env.CI_DOCS == 'true' && 'check:doc' || env.CI_DOCTESTS == 'true' && 'check:doctests' || 'build:tests-plain-only' }}
         run: mise run "$CI_BUILD_TASK"
       # The enforcing task sets the graph-wide cfg, including host-built
-      # macros. Runtime sentinels reject a silently non-enforcing build.
+      # macros. Runtime sentinels reject a silently non-enforcing build. The
+      # documentation lanes test nothing apart from their build: rustdoc's
+      # check is the documentation lane's, and Cargo builds and runs the
+      # examples in one command, which cannot build without running.
       - name: test workspace targets
+        if: ${{ env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
         env:
-          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'check:tests' || env.CI_DOCS == 'true' && 'check:doctests' || 'check:tests-plain-only' }}
+          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'check:tests' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
       # Each Linux enforcing shard lists its tests where they were built, and
@@ -697,8 +701,9 @@ jobs:
           path: target/witness-listing-${{ env.CI_SHARD }}.json
           retention-days: 1
       # A change that reaches the recovery records sweeps every one of them at
-      # every row, about a minute plain; the enforcing shards keep their
-      # sample, where every row would take half an hour (#1434).
+      # every row, the sources parsed on every core, under half a minute plain
+      # (#2148); the enforcing shards keep their sample, where every row would
+      # take half an hour (#1434).
       - name: sweep every recovery record the change reaches
         if: ${{ env.CI_RECOVERY == 'true' }}
         run: mise run ci:recovery
@@ -720,7 +725,7 @@ jobs:
         if: ${{ !cancelled() && (env.CI_WITNESSES == 'true' || env.CI_WITNESSES == 'act' && env.ACT == 'true') && steps.build-workspace.outcome == 'success' }}
         run: mise run check:witnesses
       - name: run the corpus roots
-        if: &plain-gate ${{ env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' }}
+        if: &plain-gate ${{ env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' }}
         run: mise run check:corpus
       # The corpus roots built the driver the formatter check runs, and the
       # plain state holds the comments suite: the format gate would build both
@@ -805,12 +810,10 @@ jobs:
           if-no-files-found: error
       - *lane-timing
 
-  # The documentation lane: the private-item rustdoc as its build and the
-  # documentation examples as its tests, over a state of its own. Neither
-  # shares a unit with the plain lane's gates: rustdoc checks, and the
-  # examples build their libraries apart from the corpus driver's, so beside
-  # the plain lane they leave its critical path and duplicate no build
-  # (#1177).
+  # The documentation lane: the private-item rustdoc as its build, over a
+  # state of its own. It shares no unit with the plain lane's gates, since
+  # rustdoc checks, so beside the plain lane it leaves its critical path and
+  # duplicates no build (#1177).
   cargo-test-docs:
     name: document the workspace (linux)
     needs: *rust-needs
@@ -823,6 +826,26 @@ jobs:
       CI_BUILD_STATE: cargo-test-docs
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_DOCS: "true"
+    steps: *workspace-test-steps
+
+  # The examples lane: the documentation examples, built and run in one
+  # command over a state of its own. Their libraries build apart from the
+  # corpus driver's and from rustdoc's check, and a change deep in the graph
+  # rebuilds every library above it. Run after the rustdoc on one runner,
+  # the two took a group changing `core-sequent` past the enforcing shards
+  # by 45 s; beside each other, each finishes under them (#2148).
+  cargo-test-doctests:
+    name: test the documentation examples (linux)
+    needs: *rust-needs
+    if: *test-lane
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-doctests
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      CI_DOCTESTS: "true"
     steps: *workspace-test-steps
 
   # The enforcing lane in shards (#702). The library chain from core-term to
@@ -1008,7 +1031,15 @@ jobs:
   # listings, so it waits on the shards and not on their join (#1994).
   cargo-test:
     name: test the workspace (linux)
-    needs: [prepare, ci-image, cargo-test-plain-only, cargo-test-docs, cargo-test-enforcing-shard]
+    needs:
+      [
+        prepare,
+        ci-image,
+        cargo-test-plain-only,
+        cargo-test-docs,
+        cargo-test-doctests,
+        cargo-test-enforcing-shard,
+      ]
     if: ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -1017,12 +1048,13 @@ jobs:
     env:
       PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
       DOCS_RESULT: ${{ needs.cargo-test-docs.result }}
+      DOCTESTS_RESULT: ${{ needs.cargo-test-doctests.result }}
       SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
       CI_WITNESSES: "true"
       CI_WITNESS_LISTINGS: target/witness-listings
     steps:
-      - name: require both test flavors and the documentation
-        run: test "$PLAIN_RESULT:$DOCS_RESULT:$SHARDS_RESULT" = success:success:success
+      - name: require both test flavors, the documentation and its examples
+        run: test "$PLAIN_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT" = success:success:success:success
       - *git-checkout
       - *trust-workspace
       - *install-policy-tools
@@ -1886,6 +1918,18 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-docs
       CI_DOCS: "true"
+    steps: *promote-steps
+
+  promote-cargo-test-doctests:
+    name: promote documentation examples build state (linux)
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-doctests--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-doctests
+      CI_DOCTESTS: "true"
     steps: *promote-steps
 
   promote-dylint-crate:
