@@ -336,7 +336,7 @@ fn reachable(
 }
 
 #[test]
-fn an_annotation_at_a_statement_is_unadmitted()
+fn an_annotation_at_a_statement_is_of_the_wrong_sort()
 {
     let source = alloc::format!(
         "{MAYBE}def f(n : Integer) -> -F Integer {{ (None : Maybe(Integer)); return 1 }}\n"
@@ -350,12 +350,12 @@ fn an_annotation_at_a_statement_is_unadmitted()
             outcome_of(&module, "f".into()),
             DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
                 span,
-                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Annotation),
+                boundary: FragmentBoundary::WrongSort,
                 ..
             }) if usize::from(span.start()) == start
                 && usize::from(span.end()) == start.saturating_add(written.len())
         ),
-        "an annotation is a value at a tail, never a statement before one: {:?}",
+        "an annotation is a value, never a statement, refused as any value there: {:?}",
         outcome_of(&module, "f".into())
     );
 }
@@ -1761,14 +1761,14 @@ fn a_parameterized_constructor_needs_its_classifier()
             ..
         }
     ));
-    assert!(matches!(
-        refusal_of(&module, SurfaceName::from("three")),
-        LoweringRefusal::OutOfFragment {
-            form: FormName::ANNOTATION,
-            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Annotation),
-            ..
-        }
-    ));
+    assert!(
+        matches!(
+            arena.value(body_named(&module, SurfaceName::from("three"))),
+            Some(Value::Constructor { fields, .. })
+                if matches!(fields.first().and_then(|&field| arena.value(field)), Some(&Value::Ascribe { .. }))
+        ),
+        "an annotated field is ascribed inside its constructor (#1543)"
+    );
     let Some(&Value::Constructor { datatype, .. }) =
         arena.value(body_named(&module, SurfaceName::from("some")))
     else {
@@ -1893,6 +1893,60 @@ fn an_annotated_return_is_ascribed_its_returner_1107()
         ),
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// An annotation no other form carries — a pair's component, the value beside
+/// a written signature — lowers to a value ascription at the annotation's
+/// type, which the checker judges against it (#1543).
+#[test]
+fn an_annotation_no_form_carries_is_a_value_ascription_1543()
+{
+    let mut arena = CoreArena::new();
+    let source = SourceText::from(
+        "def pair = ((3 : Integer), 1);\ndef signed : Integer;\ndef signed = (3 : Integer);\n",
+    );
+    let module = lowered(source, &mut arena);
+    let DeclarationOutcome::Bodied { body, .. } = outcome_of(&module, SurfaceName::from("pair"))
+    else {
+        panic!("a pair is no annotation, and its definition stays unsigned");
+    };
+    let Some(&Value::Tuple(ref components)) = arena.value(body)
+    else {
+        panic!("the pair lowers to a tuple");
+    };
+    assert!(
+        matches!(
+            components.first().and_then(|&first| arena.value(first)),
+            Some(&Value::Ascribe { value, ty })
+                if matches!(arena.value(value), Some(&Value::Literal(_)))
+                    && arena.value_type(ty) == Some(&ValueType::Base(BaseType::Integer))
+        ),
+        "the annotated component is the literal ascribed `Integer`"
+    );
+    let DeclarationOutcome::Completed { body, .. } =
+        outcome_of(&module, SurfaceName::from("signed"))
+    else {
+        panic!("the signature completes the definition");
+    };
+    assert!(
+        matches!(arena.value(body), Some(&Value::Ascribe { .. })),
+        "beside a signature the annotation is an ascription the checker compares with it"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from("def wrong : String;\ndef wrong = (3 : Integer);\n"),
+        &mut arena,
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "the checker refuses an annotation its signature disagrees with: {report:?}"
+    );
 }
 
 #[test]

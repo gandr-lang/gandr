@@ -369,6 +369,7 @@ fn rebuild(
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Thunk(_)
+                    | Value::Ascribe { .. }
                     | Value::Lift { .. }
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)
@@ -409,6 +410,7 @@ fn rebuild(
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Thunk(_)
+                    | Value::Ascribe { .. }
                     | Value::Lift { .. }
                     | Value::QuoteComputation(_)
                     | Value::StaticLambda(_)

@@ -527,6 +527,7 @@ impl CoreArena
                 | Value::ListNil
                 | Value::ListCons(..)
                 | Value::Thunk(_)
+                | Value::Ascribe { .. }
                 | Value::Lift { .. }
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
@@ -1431,6 +1432,30 @@ impl CoreArena
     ) -> ValueId
     {
         self.alloc_value(Value::Thunk(body))
+    }
+
+    /// Mint an ascription of the value `value` to the value type `ty`.
+    ///
+    /// # Specification
+    /// - requires: `value` names a value node and `ty` a value type already
+    ///   allocated in this arena.
+    /// - ensures: appends the ascription and returns a fresh value id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_ascribe`]: the minted node
+    ///   holds both children, unswapped.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Ascribe { value, ty }))]
+    #[inline]
+    pub fn value_ascribe(
+        &mut self,
+        value: ValueId,
+        ty: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Ascribe { value, ty })
     }
 
     /// Mint a value lift over an already-allocated value body.

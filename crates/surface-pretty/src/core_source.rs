@@ -920,6 +920,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
         | (Some(&Value::StaticApplication(operator, argument)), Former::StaticApplication(actual_operator, actual_argument)) =>
             actual_operator == CoreNode::Value(operator) && actual_argument == CoreNode::Value(argument),
+        | (Some(&Value::Ascribe { value, ty }), Former::Annotated { value: actual_value, ty: actual_ty }) =>
+            actual_value == CoreNode::Value(value) && actual_ty == CoreNode::ValueType(ty),
         | _ => false,
     })]
     fn value(
@@ -1007,6 +1009,10 @@ impl<'arena> CoreSource<'arena>
             )]
             Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
             Value::Returned(body) => Former::Returned(CoreNode::Computation(body)),
+            Value::Ascribe { value, ty } => Former::Annotated {
+                value: CoreNode::Value(value),
+                ty: CoreNode::ValueType(ty),
+            },
             Value::Recorded(ref moves) => Former::Recorded {
                 moves,
                 payloads: Arity::from(
@@ -2050,6 +2056,7 @@ impl Source for CoreSource<'_>
                 | Value::ListNil
                 | Value::ListCons(..)
                 | Value::Thunk(_)
+                | Value::Ascribe { .. }
                 | Value::Lift { .. }
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
@@ -2226,6 +2233,7 @@ impl Source for CoreSource<'_>
                 | Value::ListNil
                 | Value::ListCons(..)
                 | Value::Thunk(_)
+                | Value::Ascribe { .. }
                 | Value::Lift { .. }
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)

@@ -573,6 +573,7 @@ fn head(
         | Value::Nested(_)
         | Value::Run(_)
         | Value::Thunk(_)
+        | Value::Ascribe { .. }
         | Value::Lift { .. }
         | Value::Reify(_) => Head::Outside,
     }

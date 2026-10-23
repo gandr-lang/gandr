@@ -504,6 +504,20 @@ pub enum Value
     ListCons(ValueId, ValueId),
     /// A thunk, suspending a computation into the value type `U C`.
     Thunk(ComputationId),
+    /// An ascription `(v : A)`: the value `v` checked against the stated value
+    /// type `A`, which the ascription synthesises. It is the value twin of
+    /// [`Computation::Ascribe`], the bidirectional switch standing a checking
+    /// form — an injection, a thunk, a list — where a type is synthesised: a
+    /// component of a pair no signature types, a definition's value beside the
+    /// signature it must agree with. It evaluates as `v` does; the kernel
+    /// replays `v` where its declaration places it, rather than trusting `A`.
+    Ascribe
+    {
+        /// The value ascribed.
+        value: ValueId,
+        /// The type it is checked against, in the ambient context.
+        ty: ValueTypeId,
+    },
     /// An explicit universe lift: given `body : A` with `A`'s level strictly
     /// below `target`, this value inhabits `Lift A target`. There is no
     /// implicit cumulativity, so the lift is written rather than inferred.
@@ -592,7 +606,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -625,6 +639,7 @@ impl Value
             | Self::ListNil
             | Self::ListCons(..)
             | Self::Thunk(_)
+            | Self::Ascribe { .. }
             | Self::Lift { .. }
             | Self::Quote(_)
             | Self::QuoteComputation(_)
@@ -2684,6 +2699,11 @@ fn equal_syntax(
                     {
                         pending.push(C(a, b));
                     }
+                    else if let Value::Ascribe { value: a, ty: s } = *matched_left_value
+                        && let Value::Ascribe { value: b, ty: t } = *matched_right_value
+                    {
+                        pending.extend([V(a, b), VT(s, t)]);
+                    }
                     else if let Value::Primitive { primitive: a, .. } = *matched_left_value
                         && let Value::Primitive { primitive: b, .. } = *matched_right_value
                         && (a == b)
@@ -4630,6 +4650,17 @@ mod tests
         let [twin, same, other] =
             [0_u32, 0, 1].map(|mark| arena.value_mark(MarkIndex::from(mark), unit));
         cases.push((twin, same, alloc::vec![other], "a marked value"));
+        let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+        let pair = arena.value_tuple(&[unit, unit]);
+        let [twin, same] = [(); 2].map(|()| arena.value_ascribe(unit, unit_type));
+        let other_type = arena.value_ascribe(unit, pair_type);
+        let other_value = arena.value_ascribe(pair, unit_type);
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_type, other_value],
+            "an ascription (#1543)",
+        ));
 
         for (twin, same, others, what) in cases {
             assert_eq!(

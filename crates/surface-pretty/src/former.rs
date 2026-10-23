@@ -847,6 +847,15 @@ pub enum Former<'source, Node>
         /// The computation type it is checked against.
         ty: Node,
     },
+    /// A value checked against the value type it is ascribed, written as the
+    /// annotation `(v : T)`.
+    Annotated
+    {
+        /// The value ascribed.
+        value: Node,
+        /// The value type it is checked against.
+        ty: Node,
+    },
     /// An observation of one component of a lazy product, `c.0`, `c.1`, ….
     Project(Component, Node),
     /// A send on a linear endpoint, `send(e, v)`.

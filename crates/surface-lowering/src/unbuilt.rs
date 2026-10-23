@@ -98,7 +98,7 @@ pub enum Unbuilt
     PackageType,
     /// The statement `unpack … = e ;`.
     Unpack,
-    /// An annotation `(e : T)` read where no ascription carries it.
+    /// An annotation `(e : T)` read where a type, or nothing, is read.
     Annotation,
     /// A record update, `#{ e | l = v, … }`.
     RecordUpdate,
@@ -517,7 +517,6 @@ impl Unbuilt
             Self::Pack | Self::PackModel | Self::PackageType | Self::Unpack => {
                 TrackingIssue::PACKAGES
             },
-            Self::Annotation => TrackingIssue::ANNOTATION_VALUE,
             Self::RecordUpdate => TrackingIssue::RECORD_UPDATE,
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
@@ -541,7 +540,8 @@ impl Unbuilt
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
-            Self::Interpolation
+            Self::Annotation
+            | Self::Interpolation
             | Self::Bind
             | Self::Circuit
             | Self::Codata

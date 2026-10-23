@@ -367,9 +367,9 @@ fn a_type_mismatch_renders_as_a_located_report()
 fn an_unimplemented_refusal_closes_with_its_tracking_issue()
 {
     let diagnostic = only(
-        Path::new("annotated.gandr"),
+        Path::new("wide.gandr"),
         SourceRoot::Strict,
-        SourceText::from("def annotated = ((3 : Integer), 1) ;\n"),
+        SourceText::from("def wide = 1u32 ;\n"),
         Verb::Check(Goals::Gated),
     );
     assert_eq!(

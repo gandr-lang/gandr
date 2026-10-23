@@ -1,6 +1,6 @@
 //! Native nominal and structural formers at the kernel boundary: data, codata,
-//! records, and the n-ary tuples, cases, products, sums and lazy products,
-//! whose children cross in order before the former is assembled.
+//! records, the n-ary tuples, cases, products, sums and lazy products, and the
+//! ascriptions, whose children cross in order before the former is assembled.
 
 use anodized::spec;
 use gandr_core_term::ValueType;
@@ -78,6 +78,14 @@ impl Erasure<'_, '_>
                     Value::Tuple(ref components) => self
                         .frames
                         .extend(components.iter().rev().copied().map(value)),
+                    // The value crosses first, then the type it is ascribed.
+                    Value::Ascribe {
+                        value: ascribed,
+                        ty,
+                    } => {
+                        self.frames.push(value_type(ty));
+                        self.frames.push(value(ascribed));
+                    },
                     Value::Primitive { .. }
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
@@ -320,6 +328,15 @@ impl Erasure<'_, '_>
                         >>(
                         )?;
                         target.value_tuple(&components)
+                    },
+                    Value::Ascribe {
+                        value: ascribed,
+                        ty,
+                    } => {
+                        let returned = target.computation_return(value(ascribed)?);
+                        let returner = target.comp_type_returner(value_type(ty)?);
+                        let typed = ascription(target, returned, returner);
+                        target.value_returned(typed)
                     },
                     Value::Primitive { .. }
                     | Value::PathRefl(_)
@@ -586,7 +603,8 @@ impl Erasure<'_, '_>
 ///   result `A` whose nil branch is `body` and whose cons branch returns the
 ///   folded result; otherwise `x ← fold(nil; return thunk body) : F (U ty);
 ///   force x`.
-/// - provides: the bridge's image of [`Computation::Ascribe`].
+/// - provides: the bridge's image of [`Computation::Ascribe`], and under a
+///   returned value of [`Value::Ascribe`] at the returner of its type.
 /// - fails: never.
 /// - panics: none.
 ///

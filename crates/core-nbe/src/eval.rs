@@ -4543,6 +4543,11 @@ fn step_value(
             machine.tasks.push(Task::Value { term: body, env });
             Ok(())
         },
+        // An ascription's type is the checker's, and evaluation reads none.
+        Value::Ascribe { value, .. } => {
+            machine.tasks.push(Task::Value { term: value, env });
+            Ok(())
+        },
         Value::Thunk(body) | Value::Primitive { body, .. } => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);

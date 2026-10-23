@@ -3839,8 +3839,9 @@ proptest! {
                 | Value::StaticApplication(..)
                 | Value::Hole(_)
                 | Value::Mark { .. }
+                | Value::Ascribe { .. }
                 | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => {
-                    prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole or mark");
+                    prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole, mark or ascription");
                 },
             }
             prop_assert_eq!(

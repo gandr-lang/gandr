@@ -288,6 +288,7 @@ fn closing_substitution_distinguishes_binders_and_zones()
             | Value::ListNil
             | Value::ListCons(..)
             | Value::Thunk(_)
+            | Value::Ascribe { .. }
             | Value::Lift { .. }
             | Value::Quote(_)
             | Value::QuoteComputation(_)

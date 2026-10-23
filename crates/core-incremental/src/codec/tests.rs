@@ -189,6 +189,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::With(vec![a]),
         ContentNode::With(vec![a, b, c]),
         ContentNode::Ascribe { body: a, ty: b },
+        ContentNode::ValueAscribe { value: a, ty: b },
         ContentNode::Project(Component::from(0_usize), a),
         ContentNode::Project(Component::from(2_usize), a),
         ContentNode::PathUniverse(a, b),

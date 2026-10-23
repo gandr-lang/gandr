@@ -195,6 +195,10 @@ impl Image
                 ref mut body,
                 ref mut ty,
             }) => [Some(C(body)), Some(CT(ty)), None, None, None],
+            Self::Value(Value::Ascribe {
+                ref mut value,
+                ref mut ty,
+            }) => [Some(V(value)), Some(VT(ty)), None, None, None],
             Self::Computation(Computation::Split {
                 ref mut scrutinee,
                 motive: SplitMotive::Scrutinee(ref mut motive),
@@ -733,6 +737,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Value::ListNil
                                 | Value::ListCons(..)
                                 | Value::Thunk(_)
+                                | Value::Ascribe { .. }
                                 | Value::Lift { .. }
                                 | Value::Quote(_)
                                 | Value::QuoteComputation(_)

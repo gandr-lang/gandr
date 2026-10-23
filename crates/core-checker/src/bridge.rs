@@ -5356,8 +5356,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   frame and decodes at its own level; otherwise an intuitionistic
     ///   variable, a constant that crossed, the unit value and an integer or
     ///   string literal are minted, and a thunk, a returned endpoint, a quote
-    ///   and a pair open their frames. A static application at a reducible
-    ///   head, read normalizing, takes its certified step and opens the frame
+    ///   and a pair open their frames. A value ascription crosses as the value
+    ///   its ascribed return returns, so the kernel replays its stated type
+    ///   wherever it synthesises. A static application at a reducible head,
+    ///   read normalizing, takes its certified step and opens the frame
     ///   awaiting its reduct; any other opens the frames of a kernel static
     ///   application. Read verbatim, a constant naming a static definition and
     ///   a closed static lambda are minted as the static operators they are
@@ -5405,7 +5407,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match *value {
-            Value::Constructor { .. } | Value::Record(_) => {
+            Value::Constructor { .. } | Value::Record(_) | Value::Ascribe { .. } => {
                 return self.prepare_native(target, node);
             },
             Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
@@ -5951,7 +5953,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                             tasks.extend([Task::Inject(summand), Task::Visit(body)]);
                             continue;
                         },
-                        Value::Mark { body, .. } => {
+                        Value::Mark { body, .. } | Value::Ascribe { value: body, .. } => {
                             tasks.push(Task::Visit(body));
                             continue;
                         },
@@ -6734,7 +6736,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         hole,
                     });
                 },
-                (Value::Mark { body, .. }, _) => {
+                (Value::Mark { body, .. } | Value::Ascribe { value: body, .. }, _) => {
                     code = body;
                     continue;
                 },

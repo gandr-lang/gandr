@@ -1015,6 +1015,7 @@ impl CodeDefinitions
             | Value::Literal(_)
             | Value::Injection(..)
             | Value::Thunk(_)
+            | Value::Ascribe { .. }
             | Value::Lift { .. }
             | Value::Quote(_)
             | Value::QuoteComputation(_)
@@ -2230,6 +2231,10 @@ pub fn loose_reach(
                         work.push((CoreNode::Type(TypeNode::Value(path_type)), depth));
                         work.push((CoreNode::Term(TermNode::Value(forward)), depth));
                         work.push((CoreNode::Term(TermNode::Value(backward)), depth));
+                    },
+                    Value::Ascribe { value, ty } => {
+                        work.push((CoreNode::Term(TermNode::Value(value)), depth));
+                        work.push((CoreNode::Type(TypeNode::Value(ty)), depth));
                     },
                     Value::Variable {
                         zone: Zone::Intuitionistic,

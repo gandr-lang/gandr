@@ -1,5 +1,6 @@
-// What an annotation states is checked, not trusted, and an annotation no
-// ascription carries is refused by name.
+// What an annotation states is checked, not trusted: wherever it stands, the
+// value it ascribes is checked against it. An annotated value is still a
+// value, and stands only where a value does.
 
 /// A text its annotation calls an integer.
 @[ refuses("TypeMismatch") ]
@@ -16,7 +17,23 @@ def misreturned() -> -F Integer {
 def mistyped : Integer => Integer;
 def mistyped = thunk { fn (x : String) { 1 } };
 
-/// An annotation inside a pair, where no ascription carries it; the lowering
-/// admits none there yet (#1543).
-@[ refuses("OutOfFragment.annotation_expression") ]
-def inner = ((3 : Integer), 1);
+/// An annotation inside a pair that misstates its component (#1543).
+@[ refuses("TypeMismatch") ]
+def inner = (("three" : Integer), 1);
+
+/// An annotation its definition's signature disagrees with (#1543).
+@[ refuses("TypeMismatch") ]
+def disagreeing : String;
+def disagreeing = (3 : Integer);
+
+/// A pair a bind runs, its pattern annotated with a product the pair does not
+/// have (#1543).
+@[ refuses("TypeMismatch") ]
+def splitWrong() -> -F Integer {
+  run (y, z) : Integer * String <- pure (1, 2);
+  y
+}
+
+/// An annotated value written as a statement, where no value stands (#1543).
+@[ refuses("OutOfFragment.WrongSort") ]
+def stated() -> -F Integer { (3 : Integer); return 1 }
