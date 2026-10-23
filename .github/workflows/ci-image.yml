@@ -20,6 +20,7 @@ on:
       - .github/docker/ci.Dockerfile
       - .github/docker/image-tag.sh
       - .github/workflows/ci.yml
+      - .github/actions/install-tools/action.yml
       - .config/mise/tasks/mise-tasks-check.toml
       - .config/mise/tasks/mise-tasks-mutants.toml
       - .github/workflows/ci-image.yml
@@ -40,7 +41,9 @@ concurrency:
 jobs:
   template:
     if: false
-    runs-on: &linux ubuntu-latest
+    # Every CI job that runs the image runs on arm64 (ci.yml says why) except
+    # coverage.yml's x86-64 Linux run.
+    runs-on: &linux ubuntu-24.04-arm
     permissions: &image-permissions
       contents: read
       packages: write
@@ -62,6 +65,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
   # Native compilation on both architectures; never QEMU for Rust tool builds.
+  # The x86-64 image serves coverage.yml's x86-64 Linux run.
   build:
     name: build the CI image (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -72,14 +76,19 @@ jobs:
         include:
           - arch: amd64
             platform: linux/amd64
-            runner: *linux
+            runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: *linux
     steps:
       - *git-checkout
       - *registry-login
       - *setup-buildx
+      # The image names the pin's channel in `RUSTUP_TOOLCHAIN` (the Dockerfile
+      # says why); the Dockerfile refuses a channel other than the pin's.
+      - id: channel
+        name: read the pinned channel
+        run: printf 'channel=%s\n' "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
       - id: build
         name: build and push by digest
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -87,6 +96,8 @@ jobs:
           platforms: ${{ matrix.platform }}
           context: .
           file: .github/docker/ci.Dockerfile
+          build-args: |
+            RUST_CHANNEL=${{ steps.channel.outputs.channel }}
           # BuildKit mounts this only while mise verifies release attestations.
           secrets: |
             github_token=${{ secrets.GITHUB_TOKEN }}

@@ -40,7 +40,8 @@ jobs:
   file:
     name: file the concluded hotpath checks
     if: ${{ startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success') && !github.event.repository.fork }}
-    runs-on: ubuntu-latest
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:
       contents: read
@@ -74,15 +75,7 @@ jobs:
       # mise provides rustup under act, so it installs first, as in ci.yml.
       - name: install mise-managed policy tools
         if: ${{ steps.rows.outputs.skip != 'true' }}
-        # The setup step owns the toolchain on a hosted runner (ci.yml).
-        env:
-          MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
-        with:
-          version: 2026.10.3
-          cache: true
-          cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
-          cache_save: false
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
       - name: setup rust
         if: ${{ steps.rows.outputs.skip != 'true' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]

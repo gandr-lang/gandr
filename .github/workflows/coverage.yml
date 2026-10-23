@@ -35,7 +35,6 @@ env:
   # Empty selects the bare runner. A set value selects the pin-file tag,
   # and only a published tag is used: this workflow does not publish.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
-  CI_IMAGE_NAME: ghcr.io/gandr-lang/gandr-ci
   # The sweeps run their samples here; main measured at its own head has no
   # change to add to them.
   GANDR_SWEEP_BASE: HEAD
@@ -48,7 +47,8 @@ jobs:
   template:
     if: false
     needs: ci-image-ref
-    runs-on: &linux ubuntu-latest
+    # ci.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read
       packages: read
@@ -62,38 +62,13 @@ jobs:
       - &trust-workspace
         name: trust the workspace for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - &pin-tag
-        id: pin_tag
-        name: compute the pin-file image tag
-        if: ${{ env.GANDR_CI_IMAGE != '' }}
-        shell: bash
-        run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
-      - &registry-login
-        name: log in to GHCR
-        if: ${{ steps.pin_tag.outputs.tag != '' }}
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - &find-image
+        id: image
+        name: find the published image
+        uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # The ci.yml lookup, parameterized by CI_IMAGE_NAME. A missing tag
-      # selects the bare runner; this workflow does not build the image.
-      - &lookup-image
-        id: lookup
-        name: look up the published image
-        if: ${{ steps.pin_tag.outputs.tag != '' }}
-        shell: bash
-        env:
-          IMAGE_TAG: ${{ steps.pin_tag.outputs.tag }}
-        run: |
-          if error=$(docker manifest inspect "${CI_IMAGE_NAME}:${IMAGE_TAG}" 2>&1 > /dev/null); then
-            echo found=true >> "$GITHUB_OUTPUT"
-          elif [[ $error == *"manifest unknown"* ]]; then
-            echo found=false >> "$GITHUB_OUTPUT"
-          else
-            printf '%s\n' "$error" >&2
-            exit 1
-          fi
+          enabled: ${{ env.GANDR_CI_IMAGE != '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       - &setup-rust
         name: setup rust
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
@@ -103,15 +78,7 @@ jobs:
       - &install-policy-tools
         name: install mise-managed policy tools
         if: ${{ needs.ci-image-ref.outputs.ref == '' }}
-        # The setup step owns the toolchain on a hosted runner (ci.yml).
-        env:
-          MISE_DISABLE_TOOLS: ${{ env.ACT == 'true' && env.MISE_DISABLE_TOOLS || format('{0},rust', env.MISE_DISABLE_TOOLS) }}
-        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
-        with:
-          version: 2026.10.3
-          cache: true
-          cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
-          cache_save: false
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
       # The instrumented builds live in their own target directories and
       # nothing else writes them, so this job is their one cache writer. The
       # key is the dependency fingerprint: the dependencies' instrumented
@@ -156,17 +123,17 @@ jobs:
           fail_ci_if_error: true
           disable_search: true
 
+  # A missing tag selects the bare runner; this workflow does not build the
+  # image.
   ci-image-ref:
     name: resolve the CI image reference
     runs-on: *linux
     permissions: *image-read-permissions
     outputs:
-      ref: ${{ steps.lookup.outputs.found == 'true' && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.pin_tag.outputs.tag) || '' }}
+      ref: ${{ steps.image.outputs.ref }}
     steps:
       - *git-checkout
-      - *pin-tag
-      - *registry-login
-      - *lookup-image
+      - *find-image
 
   # The scheduled run measures only when main moved since the last successful
   # upload; a dispatch always measures. A run that skipped the measurement
@@ -199,7 +166,9 @@ jobs:
     name: measure and upload coverage
     needs: [ci-image-ref, freshness]
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') }}
-    runs-on: *linux
+    # The one CI job on x86-64 Linux: the emitter's x86-64 patcher and memory
+    # placement compile and run only there, and this run covers them.
+    runs-on: ubuntu-latest
     permissions: *image-read-permissions
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 45

@@ -189,7 +189,14 @@ unproduced = [
   { rule = "world_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
 ]
 '''
-run = ".config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
+# Building the policy library or its driver links rustc's own crates, which
+# rustc-dev and llvm-tools supply. The CI image leaves both out (its
+# Dockerfile says why), so the task adds them; where they are installed the
+# add is a no-op.
+run = '''
+rustup component add rustc-dev llvm-tools
+.config/mise/scope cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets
+'''
 
 # External workflow consumers use one full revision in Dylint metadata for
 # both the compiler plugin and this executable. Cargo's installation record
