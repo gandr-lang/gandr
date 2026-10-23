@@ -18,6 +18,7 @@ use anodized::spec;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::OperationRank;
 use gandr_kernel_term::PRESENTATION_FUEL;
+use gandr_kernel_term::PeakSearch;
 use gandr_kernel_term::RewriteFuel;
 use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::SymbolKind;
@@ -133,8 +134,13 @@ where
     let mentioned = symbols.operations();
     ranks.retain(|&(ref name, _)| mentioned.contains(name));
     let mut faces = Vec::with_capacity(derived.len());
+    let mut search = PeakSearch::default();
     for (((left, right), _), rule) in derived.into_iter().zip(derived_rules) {
-        let Ok(Some(peak)) = kernel.peak_of(&rule, &mut RewriteFuel::from(PRESENTATION_FUEL))
+        let Ok(Some(peak)) = kernel.peak_of(
+            &rule,
+            &mut search,
+            &mut RewriteFuel::from(PRESENTATION_FUEL),
+        )
         else {
             break;
         };
