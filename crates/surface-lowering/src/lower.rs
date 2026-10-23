@@ -11082,9 +11082,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the one table of type formers written as an application, in
     ///   a type and where a value is read.
     /// - fails: yields the unresolved-head refusal for a head no former takes
-    ///   at the arity it was written with, the wrong-sort refusal for a former
-    ///   whose sort does not suit the position, and a misplaced tile at the
-    ///   first manifest sort after any head but `Model`.
+    ///   at the arity it was written with, marking the whole application when
+    ///   the head spells a former and the head alone otherwise; the wrong-sort
+    ///   refusal for a former whose sort does not suit the position; and a
+    ///   misplaced tile at the first manifest sort after any head but `Model`.
     /// - panics: none.
     ///
     /// # Errors
@@ -11160,8 +11161,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.relation_of(site, Relation::Isomorphism, written);
         }
+        let former = type_former(name);
+        // A head that spells a former is applied at an arity it does not take:
+        // the fault is the application's, and the arguments are marked with
+        // it, where one left out was written.
+        let spelled = matches!(former, Maybe::Present(_))
+            || [
+                TileName::PATH.as_ref(),
+                identity::FLOW,
+                STACK,
+                identity::ISO,
+                MODEL,
+            ]
+            .contains(&name.as_ref());
+        let marked = if spelled { site.at.span } else { head.span };
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
-            span: head.span,
+            span: marked,
             name,
             arity,
         };
@@ -11169,7 +11184,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(unresolved(HeadArity::Polyadic(OperandCount::from(count))));
         };
-        let Maybe::Present(former) = type_former(name)
+        let Maybe::Present(former) = former
         else {
             return Err(unresolved(HeadArity::Unary));
         };

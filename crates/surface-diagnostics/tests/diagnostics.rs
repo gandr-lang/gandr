@@ -2749,3 +2749,36 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
         "the split's binding note names its binders as the pattern writes them: {split}"
     );
 }
+
+/// A declaration whose keyword is misspelt strays from the root, and the type
+/// it would have declared goes unresolved where it is used: the stray, written
+/// first, is reported first, and an applied former left without its argument
+/// marks the application, where the argument was left out (#2048, #2049).
+#[test]
+fn a_mistake_is_reported_before_what_it_causes_2048()
+{
+    let text = "dat Circle : Type {\n  Base : Circle;\n}\ndef twice : Path(Circle, Base, Base) ;\ndef \
+                twice = refl(Base) ;\ndef none(xs : List()) -> -F Unit { pure unit }\n";
+    let printed = printed(
+        Path::new("strayed.gandr"),
+        SourceRoot::Strict,
+        SourceText::from(text),
+        Verb::Check(Goals::Gated),
+    );
+    let first = printed.first().expect("the stray is reported");
+    assert_eq!(
+        first.span,
+        Maybe::Present(nth(SourceText::from(text), SourceText::from("dat"))[0]),
+        "the misspelt keyword is the first error, ahead of the use it leaves unresolved: \
+         {printed:?}"
+    );
+    let empty = printed.iter().find(|diagnostic| {
+        diagnostic.detail.class == Class::Refusal(FailureClass::MalformedSource)
+            && diagnostic.span
+                == Maybe::Present(nth(SourceText::from(text), SourceText::from("List()"))[0])
+    });
+    assert!(
+        empty.is_some(),
+        "a former applied to nothing marks its whole application: {printed:?}"
+    );
+}

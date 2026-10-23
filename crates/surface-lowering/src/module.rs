@@ -2831,7 +2831,9 @@ pub fn source_pieces(
 ///   source order with its address decoded and its alias bound in the import
 ///   scope; an import binding an alias an earlier import binds is a stray,
 ///   refused alone and decorated by the attribute blocks before it, so `@[
-///   refuses("DuplicateImportAlias") ] import … as … ;` states it.
+///   refuses("DuplicateImportAlias") ] import … as … ;` states it. A stray
+///   takes its slot where it is written, before the forms after it, so its
+///   refusal is reported ahead of what a later form refuses because of it.
 /// - provides: the admission order every later pass resolves names against,
 ///   which the lowering builds a source at a time, before its passes over that
 ///   source.
@@ -2909,6 +2911,13 @@ pub fn collect_source<'source>(
         collector.collected.structures.len(),
     );
     let mut strays: Vec<Stray<'source>> = Vec::new();
+    // A stray is filed before the child after it is collected, so its slot
+    // stands where it is written and its refusal is reported in source order,
+    // ahead of a later declaration's refusal it may cause. Those filed are
+    // counted apart, since a stray declares nothing, and the first is kept
+    // for a source that declares nothing else.
+    let mut filed = 0_usize;
+    let mut first_stray: Option<LoweringRefusal<'source>> = None;
     let mut decorations: Vec<Placed> = Vec::new();
     let mut after_stray = false;
     // A complete item of the grammar the lowering does not reach yet is a
@@ -2919,6 +2928,23 @@ pub fn collect_source<'source>(
         collector.fuel.spend()?;
         let child = piece.placed();
         let follows_stray = core::mem::replace(&mut after_stray, false);
+        // The `;` that ends a stray statement belongs to it.
+        let terminates = follows_stray
+            && collector
+                .tree
+                .fragment(child.node)
+                .is_some_and(|text| <&str>::from(text).trim() == ";");
+        if terminates && let Some(last) = strays.last_mut() {
+            last.terminator = Some(child);
+        }
+        for stray in core::mem::take(&mut strays) {
+            first_stray.get_or_insert(stray.refusal);
+            filed = filed.saturating_add(1);
+            collector.refuse_stray(stray);
+        }
+        if terminates {
+            continue;
+        }
         let former = collector.root_former(child)?;
         if former == Maybe::Present(Former::AttributeBlock) {
             decorations.push(child);
@@ -2995,17 +3021,6 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        // The `;` that ends a stray statement belongs to it.
-        if follows_stray
-            && collector
-                .tree
-                .fragment(child.node)
-                .is_some_and(|text| <&str>::from(text).trim() == ";")
-            && let Some(last) = strays.last_mut()
-        {
-            last.terminator = Some(child);
-            continue;
-        }
         // The blocks before a child that stands on its own decorate it; before
         // a module, an import or a member they decorate nothing.
         if let Some(refusal) = strayed(collector.module_child(child))? {
@@ -3037,17 +3052,18 @@ pub fn collect_source<'source>(
     {
         strays.push(Stray::of(block, refusal, Vec::new()));
     }
+    for stray in strays {
+        first_stray.get_or_insert(stray.refusal);
+        filed = filed.saturating_add(1);
+        collector.refuse_stray(stray);
+    }
     // A source that declares nothing, not even an item out of the fragment, is
     // no list of declarations: its first stray refuses it whole.
-    let declared = collector.collected.slots.len() > declared_before.0
+    let declared = collector.collected.slots.len().saturating_sub(filed) > declared_before.0
         || collector.collected.structures.len() > declared_before.1
         || items_refused;
-    let mut strays = strays.into_iter();
-    if !declared && let Some(first) = strays.next() {
-        return Err(first.refusal);
-    }
-    for stray in strays {
-        collector.refuse_stray(stray);
+    if !declared && let Some(refusal) = first_stray {
+        return Err(refusal);
     }
     collector.stray_expectations();
 
@@ -10829,11 +10845,6 @@ mod tests
                     Maybe::Absent(slot_refusal::Absent::Unrefused)
                 ),
                 (
-                    SurfaceName::from("b"),
-                    Role::Declared,
-                    Maybe::Absent(slot_refusal::Absent::Unrefused)
-                ),
-                (
                     SurfaceName::from("\u{a7}"),
                     Role::Held,
                     Maybe::Present(FailureClass::MalformedSource)
@@ -10844,12 +10855,17 @@ mod tests
                     Maybe::Present(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
                 ),
                 (
+                    SurfaceName::from("b"),
+                    Role::Declared,
+                    Maybe::Absent(slot_refusal::Absent::Unrefused)
+                ),
+                (
                     SurfaceName::from("1"),
                     Role::Held,
                     Maybe::Present(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
                 ),
             ],
-            "both declarations are kept, and each stray refused on its own"
+            "both declarations are kept, and each stray refused on its own where it is written"
         );
         assert_eq!(collected.by_name.len(), 2, "a stray enters no name table");
     }
