@@ -838,6 +838,7 @@ fn operand_of(
         | Former::Hole
         | Former::Number
         | Former::Text
+        | Former::Character
         | Former::TypeQuote
         | Former::Parenthesized
         | Former::Unit

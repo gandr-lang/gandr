@@ -2646,6 +2646,7 @@ const fn base_tag(base: BaseType) -> WireTag
         BaseType::Integer => gandr_kernel_term::BASE_INTEGER,
         BaseType::String => gandr_kernel_term::BASE_STRING,
         BaseType::Numeric => gandr_kernel_term::BASE_NUMERIC,
+        BaseType::Character => gandr_kernel_term::BASE_CHARACTER,
     }
 }
 
@@ -2683,9 +2684,12 @@ const fn sign_tag(sign: Sign) -> WireTag
 /// # Adequacy
 /// - hypothesis: L1/L3 — canonical literals enter. Kind, sign and final text
 ///   payload are executable; zero/one sign pairs and the numeric split pair
-///   separate sign loss and ambiguous component framing, not every literal.
+///   separate sign loss and ambiguous component framing, not every literal; a
+///   character and the one-scalar string of the same scalar separate a kind tag
+///   lost between the two.
 /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
 /// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
+/// - witness: `encoding::tests::a_character_is_not_its_one_scalar_string`
 #[spec(
     captures: entry_len = record.0.len(),
     ensures: match *literal {
@@ -2697,6 +2701,8 @@ const fn sign_tag(sign: Sign) -> WireTag
         Literal::Numeric(ref numeric) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_NUMERIC))
             && record.0.get(entry_len.saturating_add(1)) == Some(&u8::from(sign_tag(numeric.sign())))
             && record.0.ends_with(numeric.fraction().as_ref().as_bytes()),
+        Literal::Character(ref character) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_CHARACTER))
+            && record.0.ends_with(character.to_text().as_bytes()),
     }
 )]
 fn put_literal(
@@ -2719,6 +2725,10 @@ fn put_literal(
             record.put_tag(sign_tag(numeric.sign()));
             record.put_text(EncodedText(numeric.integer_part().as_ref()));
             record.put_text(EncodedText(numeric.fraction().as_ref()));
+        },
+        Literal::Character(ref character) => {
+            record.put_tag(gandr_kernel_term::LITERAL_CHARACTER);
+            record.put_text(EncodedText(character.to_text().as_str()));
         },
     }
 }
@@ -3593,6 +3603,38 @@ mod tests
             ),
             "and the sign is genuinely in the key where it changes the value"
         );
+    }
+
+    /// Trap pair — **a character beside its one-scalar string**. The two
+    /// payloads are the same UTF-8 bytes, so only the kind tag keys them
+    /// apart; one character spelled twice keys alike.
+    #[test]
+    fn a_character_is_not_its_one_scalar_string()
+    {
+        let mut arena = TermArena::new();
+        let character =
+            |scalar| Literal::Character(gandr_kernel_term::CharacterLiteral::from(scalar));
+        let letter = arena.value_literal(character('é'));
+        let again = arena.value_literal(character('é'));
+        let string = arena.value_literal(text(String::from("é")));
+        let other = arena.value_literal(character('e'));
+        let mut table = ContentTable::new();
+        let mut key = |value| {
+            support_key(
+                &mut table,
+                &arena,
+                SupportGoal::SynthValue(value),
+                Telescope::Whole(&[]),
+            )
+        };
+        let letter = key(letter);
+        assert_eq!(letter, key(again), "one character has one key");
+        assert_ne!(
+            letter,
+            key(string),
+            "the character is not its one-scalar string"
+        );
+        assert_ne!(letter, key(other), "and the scalar is in the key");
     }
 
     /// Trap pair — **the length-prefix ambiguity pair**. Two texts that

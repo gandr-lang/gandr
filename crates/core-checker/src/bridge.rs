@@ -5472,7 +5472,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             Value::Literal(ref literal) => match literal.base_type() {
-                BaseType::Integer | BaseType::String => {
+                BaseType::Integer | BaseType::String | BaseType::Character => {
                     return Ok(self.erased_value(at, target.value_literal(literal.clone())));
                 },
                 BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
@@ -5982,7 +5982,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         Value::Literal(ref literal)
                             if matches!(
                                 literal.base_type(),
-                                BaseType::Integer | BaseType::String
+                                BaseType::Integer | BaseType::String | BaseType::Character
                             ) =>
                         {
                             target.value_literal(literal.clone())
@@ -6325,14 +6325,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::descend`]: the integer and string atoms, the unit
-    ///   type and a universe are minted; a sealed atom is minted at the kernel
-    ///   position its abstract type was admitted at; a thunk type, a lift, an
-    ///   eager product and a static Pi open their frames; a decode opens its
-    ///   frame and decodes its code; a flow whose carrier is the level-zero
-    ///   value universe opens the frames of the kernel's universe flow over its
-    ///   two codes, and a flow at any other carrier, a universe above level
-    ///   zero included, those of the kernel's flow at that carrier.
+    /// - ensures: as [`Self::descend`]: the integer, string and character
+    ///   atoms, the unit type and a universe are minted; a sealed atom is
+    ///   minted at the kernel position its abstract type was admitted at; a
+    ///   thunk type, a lift, an eager product and a static Pi open their
+    ///   frames; a decode opens its frame and decodes its code; a flow whose
+    ///   carrier is the level-zero value universe opens the frames of the
+    ///   kernel's universe flow over its two codes, and a flow at any other
+    ///   carrier, a universe above level zero included, those of the kernel's
+    ///   flow at that carrier.
     /// - fails: [`Refusal::Cyclic`] for an open value type;
     ///   [`Refusal::WithheldData`] naming a sealed atom whose abstract type was
     ///   withheld, refused by the judgement or naming a declaration that did
@@ -6472,6 +6473,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             ValueTypeView::String => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::String)));
+            },
+            ValueTypeView::Character => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Character)));
             },
             ValueTypeView::Unit => {
                 return Ok(self.erased_value_type(at, target.value_type_unit()));

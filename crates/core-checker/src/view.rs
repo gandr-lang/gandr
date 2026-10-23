@@ -33,11 +33,11 @@
 //!
 //! # The fragment
 //!
-//! The judgement admits integer and string atoms, unit, products, dependent
-//! pairs, sums, native Lists, nominal data, sealed abstract types, structural
-//! records, thunks, effect-qualified returners, arrows, dependent arrows,
-//! static operators, universes, raising type lifts and decodes, and effects
-//! and control. Injection checks against its sum; case checks both
+//! The judgement admits integer, string and character atoms, unit, products,
+//! dependent pairs, sums, native Lists, nominal data, sealed abstract types,
+//! structural records, thunks, effect-qualified returners, arrows, dependent
+//! arrows, static operators, universes, raising type lifts and decodes, and
+//! effects and control. Injection checks against its sum; case checks both
 //! payload-bound branches against one expected computation type. Numeric atoms
 //! and literals, value lifts, non-raising lifts, sort-parameter universes and
 //! top-level universes are named `OutOfFragment` refusals.
@@ -175,6 +175,8 @@ pub enum ValueTypeView<'arena>
     Integer,
     /// The string atom.
     String,
+    /// The character atom.
+    Character,
     /// The unit type, the product of no components.
     Unit,
     /// The thunk type `U C` of the computation type held.
@@ -328,13 +330,13 @@ pub enum CompTypeView<'arena>
 /// - requires: nothing — a dangling id and a former outside the fragment are
 ///   both admissible input and both refused.
 /// - ensures: the node's view when its former is the integer atom, the string
-///   atom, the empty product (the unit type), a thunk type, a universe of a
-///   ground sort, a lift, a decode, a product of one or more components, a
-///   dependent pair, a sum of any number of summands, a static Pi, a path type,
-///   a flow type, a run type, a sealed atom, a session type, a capability, a
-///   staged type or a world type; the children are the node's own. The unknown
-///   type, and a decode whose code is a hole or a mark, view as
-///   [`ValueTypeView::Unknown`].
+///   atom, the character atom, the empty product (the unit type), a thunk type,
+///   a universe of a ground sort, a lift, a decode, a product of one or more
+///   components, a dependent pair, a sum of any number of summands, a static
+///   Pi, a path type, a flow type, a run type, a sealed atom, a session type, a
+///   capability, a staged type or a world type; the children are the node's
+///   own. The unknown type, and a decode whose code is a hole or a mark, view
+///   as [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -364,6 +366,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Stack { input, output }) => matches!(arena.value_type(value_type), Some(ValueType::Stack { input: found_input, output: found_output }) if *found_input == input && *found_output == output),
     | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
+    | Ok(ValueTypeView::Character) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Character))),
     | Ok(ValueTypeView::Unit) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
@@ -442,6 +445,7 @@ pub fn value_type_view(
         ValueType::Prefix(session) => Ok(ValueTypeView::Prefix(session)),
         ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
+        ValueType::Base(BaseType::Character) => Ok(ValueTypeView::Character),
         ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         ValueType::Product(ref parts) if parts.is_empty() => Ok(ValueTypeView::Unit),

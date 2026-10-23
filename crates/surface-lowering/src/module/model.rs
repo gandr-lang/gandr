@@ -1206,6 +1206,7 @@ pub fn spine_domains<'source>(
             | Former::Hole
             | Former::Number
             | Former::Text
+            | Former::Character
             | Former::TypeQuote
             | Former::Parenthesized
             | Former::Unit

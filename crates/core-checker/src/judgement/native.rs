@@ -1311,6 +1311,7 @@ impl Machine<'_, '_>
             | ValueTypeView::List(_)
             | ValueTypeView::Integer
             | ValueTypeView::String
+            | ValueTypeView::Character
             | ValueTypeView::Unit
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }

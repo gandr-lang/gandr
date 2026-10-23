@@ -56,8 +56,6 @@ impl TrackingIssue
     pub const UNIVALENCE: Self = Self(312);
     /// A universe equivalence over a list whose round trip reads the tail.
     pub const LIST_TAIL: Self = Self(524);
-    /// A character literal.
-    pub const CHARACTER: Self = Self(1052);
     /// A `co` bundle.
     pub const CO_BUNDLE: Self = Self(1053);
     /// A `drop` of a session endpoint.

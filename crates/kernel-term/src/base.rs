@@ -1,8 +1,9 @@
 //! The rigid base-type atoms and the literal stock, each held in a canonical
 //! form its smart constructor maintains.
 //!
-//! The base-type atoms are rigid and closed: the stock is exactly the three the
-//! literal forms name — an integer atom, a string atom, and a numeric atom.
+//! The base-type atoms are rigid and closed: the stock is exactly the four the
+//! literal forms name — an integer atom, a string atom, a numeric atom and a
+//! character atom.
 //!
 //! Literal payloads are canonical and structurally comparable — leading and
 //! trailing zeros normalized, the zero sign pinned — so syntactic equality of
@@ -10,6 +11,21 @@
 //! lets the format's content-keyed deduplication collapse two spellings of one
 //! literal, and what makes a non-canonical literal unrepresentable in memory
 //! rather than merely rejected on the wire.
+//!
+//! # The character atom
+//!
+//! A character literal is its own literal over its own atom, the type the
+//! surface writes `Char`, rather than an elaboration into one of the other
+//! three. Two elaborations were open: a one-scalar string, which would make
+//! `Char` and `String` one type, so `'a'` and `"a"` would compare equal and
+//! a string of any length would check where a character is declared; and the
+//! scalar's code point as an integer, which would let arithmetic reach a
+//! character and lose the type a description's `Char` field already names.
+//! The atom keeps both apart at the cost of one literal kind and one base
+//! tag in each encoding. Its payload is the scalar, framed on the wire as the
+//! scalar's UTF-8 text, so a payload of no scalar or of two is refused when
+//! read. Reversal: if characters are ever wanted as bounded integers or as
+//! strings of length one, the atom folds into that type and the tag retires.
 
 use alloc::string::String;
 
@@ -25,6 +41,8 @@ pub enum BaseType
     String,
     /// The numeric atom — the type of a [`NumericLiteral`].
     Numeric,
+    /// The character atom — the type of a [`CharacterLiteral`].
+    Character,
 }
 
 /// The sign of a numeric literal.
@@ -499,6 +517,129 @@ impl AsRef<str> for StringLiteral
     }
 }
 
+/// A character literal, one Unicode scalar value, inhabiting
+/// [`BaseType::Character`].
+///
+/// A character is its own atom rather than a one-scalar string: `Char` and
+/// `String` are distinct types, so `'a'` and `"a"` neither convert nor compare
+/// equal. The payload is the scalar itself; a scalar is already canonical, so
+/// two character literals compare equal exactly when their scalars do.
+///
+/// # Specification
+/// - requires: the payload is obtained through `From<char>` or
+///   `TryFrom<String>`.
+/// - ensures: retains exactly one Unicode scalar value, without normalization.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its
+///   constructors carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the scalar of ASCII, NUL, a two-byte, a three-byte
+///   and a four-byte scalar through both constructors and the text reading, and
+///   refuses the empty text, two scalars and a base letter with a combining
+///   mark. This separates truncation to the first scalar, byte for scalar
+///   counting and atom substitution.
+/// - witness: `base::tests::a_character_literal_holds_exactly_one_scalar`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CharacterLiteral(char);
+
+/// Why a text is no character literal: it holds no scalar, or more than one.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NotOneCharacter
+{
+    /// The text is empty.
+    Empty,
+    /// The text holds a second scalar after its first.
+    Several,
+}
+
+impl CharacterLiteral
+{
+    /// The character's UTF-8 encoding, as owned text.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns text holding exactly the literal's scalar.
+    /// - provides: the payload's byte image for an encoding that frames text.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the text of ASCII, NUL and two-, three- and four-byte
+    ///   scalars is exactly that scalar.
+    /// - witness: `base::tests::a_character_literal_holds_exactly_one_scalar`
+    #[spec(ensures: |ret| ret.chars().eq(core::iter::once(self.0)))]
+    #[inline]
+    #[must_use]
+    pub fn to_text(&self) -> String
+    {
+        String::from(self.0)
+    }
+}
+
+impl From<char> for CharacterLiteral
+{
+    /// Wrap a scalar as a literal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(scalar: char) -> Self
+    {
+        Self(scalar)
+    }
+}
+
+impl From<CharacterLiteral> for char
+{
+    /// The literal's scalar.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(literal: CharacterLiteral) -> Self
+    {
+        literal.0
+    }
+}
+
+impl TryFrom<String> for CharacterLiteral
+{
+    type Error = NotOneCharacter;
+
+    /// Read a text holding exactly one scalar as its character.
+    ///
+    /// # Specification
+    /// - requires: nothing; any text is admissible.
+    /// - ensures: on `Ok`, the literal holds the text's one scalar.
+    /// - fails: [`NotOneCharacter::Empty`] for the empty text,
+    ///   [`NotOneCharacter::Several`] for a text of two or more scalars.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one scalar of each UTF-8 width reads back as its
+    ///   character; the empty text, two letters and a letter with a combining
+    ///   mark are refused with their exact reason.
+    /// - witness: `base::tests::a_character_literal_holds_exactly_one_scalar`
+    #[spec(
+        captures: entry = (text.chars().next(), text.chars().count()),
+        ensures: |ret| match entry.1 { 0 => ret == Err(NotOneCharacter::Empty), 1 => ret.ok().map(|literal| literal.0) == entry.0, _ => ret == Err(NotOneCharacter::Several) },
+    )]
+    #[inline]
+    fn try_from(text: String) -> Result<Self, Self::Error>
+    {
+        let mut scalars = text.chars();
+        let first = scalars.next().ok_or(NotOneCharacter::Empty)?;
+        match scalars.next() {
+            None => Ok(Self(first)),
+            Some(_) => Err(NotOneCharacter::Several),
+        }
+    }
+}
+
 /// A canonical numeric literal: a [`Sign`], an integral [`Magnitude`], and a
 /// [`FractionDigits`] fractional part, inhabiting [`BaseType::Numeric`].
 ///
@@ -615,7 +756,7 @@ impl NumericLiteral
     }
 }
 
-/// A literal value: one of the three rigid base-type atoms' canonical payloads.
+/// A literal value: one of the four rigid base-type atoms' canonical payloads.
 ///
 /// # Specification
 /// - requires: the payload is obtained through its owning smart constructors.
@@ -644,6 +785,8 @@ pub enum Literal
     Text(StringLiteral),
     /// A numeric literal, inhabiting [`BaseType::Numeric`].
     Numeric(NumericLiteral),
+    /// A character literal, inhabiting [`BaseType::Character`].
+    Character(CharacterLiteral),
 }
 
 impl Literal
@@ -653,8 +796,9 @@ impl Literal
     /// # Specification
     /// - requires: nothing.
     /// - ensures: maps an integer literal to [`BaseType::Integer`], a text
-    ///   literal to [`BaseType::String`], and a numeric literal to
-    ///   [`BaseType::Numeric`].
+    ///   literal to [`BaseType::String`], a numeric literal to
+    ///   [`BaseType::Numeric`], and a character literal to
+    ///   [`BaseType::Character`].
     /// - provides: the total variant-to-atom map the checker reads, so a
     ///   literal's base type is decided by its payload rather than by an
     ///   annotation.
@@ -672,7 +816,7 @@ impl Literal
     /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
     /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[spec(
-        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric)),
+        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character)),
     )]
     #[inline]
     #[must_use]
@@ -682,6 +826,7 @@ impl Literal
             Self::Integer(_) => BaseType::Integer,
             Self::Text(_) => BaseType::String,
             Self::Numeric(_) => BaseType::Numeric,
+            Self::Character(_) => BaseType::Character,
         }
     }
 }
@@ -692,10 +837,12 @@ mod tests
     use alloc::string::String;
 
     use super::BaseType;
+    use super::CharacterLiteral;
     use super::FractionDigits;
     use super::IntegerLiteral;
     use super::Literal;
     use super::Magnitude;
+    use super::NotOneCharacter;
     use super::NumericLiteral;
     use super::Sign;
     use super::StringLiteral;
@@ -810,6 +957,43 @@ mod tests
         assert_eq!(BaseType::Integer, integer.base_type(), "the integer atom");
         assert_eq!(BaseType::String, text.base_type(), "the string atom");
         assert_eq!(BaseType::Numeric, numeric.base_type(), "the numeric atom");
+        let character = Literal::Character(CharacterLiteral::from('a'));
+        assert_eq!(
+            BaseType::Character,
+            character.base_type(),
+            "the character atom"
+        );
+    }
+
+    #[test]
+    fn a_character_literal_holds_exactly_one_scalar()
+    {
+        for scalar in ['a', '\0', 'é', '€', '𐐀'] {
+            let wrapped = CharacterLiteral::from(scalar);
+            assert_eq!(scalar, char::from(wrapped), "the scalar is held verbatim");
+            assert_eq!(
+                String::from(scalar),
+                wrapped.to_text(),
+                "the text is the scalar"
+            );
+            assert_eq!(
+                Ok(wrapped),
+                CharacterLiteral::try_from(String::from(scalar)),
+                "one scalar's text reads back as its character"
+            );
+        }
+        assert_eq!(
+            Err(NotOneCharacter::Empty),
+            CharacterLiteral::try_from(String::new()),
+            "the empty text holds no character"
+        );
+        for several in ["ab", "e\u{301}", "𐐀a"] {
+            assert_eq!(
+                Err(NotOneCharacter::Several),
+                CharacterLiteral::try_from(String::from(several)),
+                "{several:?} holds more than one scalar"
+            );
+        }
     }
 
     #[test]

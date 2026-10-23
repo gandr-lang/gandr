@@ -184,6 +184,24 @@ fn decode_boolean_retrofits_to_one_plus_one()
 }
 
 #[test]
+fn decode_reads_char_as_the_character_atom()
+{
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_unit();
+    let result = decode(
+        &mut arena,
+        &field(PrimTy::Char),
+        context(carrier, &BTreeMap::new()),
+    )
+    .unwrap();
+    assert_eq!(
+        arena.value_type(result),
+        Some(&ValueType::Base(gandr_kernel_term::BaseType::Character)),
+        "a `Char` field is the character atom, not a one-scalar string"
+    );
+}
+
+#[test]
 fn decode_declines_the_deferred_leaves()
 {
     let mut arena = CoreArena::new();
@@ -206,7 +224,6 @@ fn decode_declines_the_deferred_leaves()
         Err(DecodeError::AppliedType(Name::from("Vec")))
     );
     for primitive in [
-        PrimTy::Char,
         PrimTy::U32,
         PrimTy::U64,
         PrimTy::I32,
@@ -570,7 +587,7 @@ fn every_refusal_renders_apart_and_names_what_it_carries()
         DecodeError::MultiSorted,
         DecodeError::UnresolvedType(Name::from("Beta")),
         DecodeError::AppliedType(Name::from("Gamma")),
-        DecodeError::Primitive(PrimTy::Char),
+        DecodeError::Primitive(PrimTy::U32),
         DecodeError::MalformedCode,
         DecodeError::ParameterArity,
     ];
@@ -584,7 +601,7 @@ fn every_refusal_renders_apart_and_names_what_it_carries()
         "",
         "Beta",
         "Gamma",
-        PrimTy::Char.label().as_ref(),
+        PrimTy::U32.label().as_ref(),
         "",
         "",
     ]) {

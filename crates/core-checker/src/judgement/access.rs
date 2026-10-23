@@ -559,6 +559,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Web
             | ValueTypeView::Integer
             | ValueTypeView::String
+            | ValueTypeView::Character
             | ValueTypeView::Unit
             | ValueTypeView::Product(_)
             | ValueTypeView::Sigma { .. }

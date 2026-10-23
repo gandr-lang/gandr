@@ -587,7 +587,7 @@ pub fn coverage(
                             tail: Tail::Closed,
                         }]));
                     },
-                    ValueTypeView::Integer | ValueTypeView::String => {
+                    ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Character => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));

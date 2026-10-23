@@ -1,4 +1,3 @@
-/// `character`: a character.
-/// The checker does not reach this form yet; #1052 tracks it.
-@[ refuses("OutOfFragment.character") ]
-def letter = 'a' ;
+/// `character`: a character, one scalar between single quotes, at `Char`.
+@[ runs("'a'") ]
+def letter() -> -F Char { return 'a' }

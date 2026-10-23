@@ -522,6 +522,7 @@ use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
@@ -1292,7 +1293,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1314,6 +1315,7 @@ fn ending(former: Former) -> Ending
         | Former::Number
         | Former::Boolean
         | Former::Text
+        | Former::Character
         | Former::TypeQuote
         | Former::Unit
         | Former::Thunk
@@ -1390,7 +1392,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1441,6 +1443,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Number
                     | Former::Boolean
                     | Former::Text
+                    | Former::Character
                     | Former::Parenthesized
                     | Former::TypeQuote
                     | Former::Unit
@@ -1526,6 +1529,7 @@ const fn family_of(former: Former) -> Family
         | Former::Number
         | Former::Boolean
         | Former::Text
+        | Former::Character
         | Former::Parenthesized
         | Former::TypeQuote
         | Former::Unit
@@ -6176,6 +6180,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Ok(())
             },
             Former::Text => self.text(site, pieces),
+            Former::Character => self.character(site),
             Former::Parenthesized => self.parenthesized(site, cursor),
             Former::TypeQuote => self.type_quote(site, cursor),
             Former::Unit => {
@@ -7542,6 +7547,53 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
         self.plan(site, Plan::Literal(literal));
 
+        Ok(())
+    }
+
+    /// Classify a character literal.
+    ///
+    /// # Specification
+    /// - requires: `site` is a character.
+    /// - ensures: a character standing as a value is planned as the one scalar
+    ///   between its quotes, its escape decoded as a string's is.
+    /// - provides: the character half of the literal reading.
+    /// - fails: yields the wrong-sort refusal outside value position; a
+    ///   character whose quotes hold no scalar, or more than one, once decoded,
+    ///   is a malformed literal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The character's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain, an escaped and a multibyte character lower
+    ///   to their scalars, and an escaped line break, which decodes to nothing,
+    ///   is refused as malformed.
+    /// - witness: `lower::tests::a_character_literal_is_the_scalar_between_its_quotes`
+    /// - witness: `lower::tests::a_lexeme_of_the_wrong_shape_parses_to_nothing`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(site.at.node),
+                    Some(&Plan::Literal(Literal::Character(_)))
+                )
+        },
+    )]
+    fn character(
+        &mut self,
+        site: Site,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.require(site, Produced::Value)?;
+        let Maybe::Present(literal) = parse_literal(Former::Character, self.text_at(site.at))
+        else {
+            return Err(LoweringRefusal::MalformedLiteral {
+                span: site.at.span,
+                form: site.name,
+            });
+        };
+        self.plan(site, Plan::Literal(literal));
         Ok(())
     }
 
@@ -18276,8 +18328,8 @@ impl Sink<'_>
     /// # Specification
     /// - requires: newly minted type ids follow those already recorded in the
     ///   origin table.
-    /// - ensures: the selected unit, integer or text value type is minted and
-    ///   receives the supplied origin.
+    /// - ensures: the selected unit, integer, text or character value type is
+    ///   minted and receives the supplied origin.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -18293,6 +18345,7 @@ impl Sink<'_>
                 TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::unit()),
                 TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
+                TypeAtom::Character => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Character)),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
                 TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
@@ -18315,6 +18368,7 @@ impl Sink<'_>
             TypeAtom::Unit
             | TypeAtom::Integer
             | TypeAtom::Text
+            | TypeAtom::Character
             | TypeAtom::Void
             | TypeAtom::Buffer
             | TypeAtom::Web => atom_type(self.arena, atom),
@@ -18330,8 +18384,8 @@ impl Sink<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
-///   integers, the strings, the empty sum and the buffer for `Unit`, `Integer`,
-///   `Text`, `Void` and `Buffer`.
+///   integers, the strings, the characters, the empty sum and the buffer for
+///   `Unit`, `Integer`, `Text`, `Character`, `Void` and `Buffer`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -18354,6 +18408,7 @@ pub fn atom_type(
         TypeAtom::Unit => arena.value_type_unit(),
         TypeAtom::Integer => arena.value_type_base(BaseType::Integer),
         TypeAtom::Text => arena.value_type_base(BaseType::String),
+        TypeAtom::Character => arena.value_type_base(BaseType::Character),
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
         TypeAtom::Web => arena.value_type_web(),
@@ -18937,6 +18992,7 @@ fn halves<'source>(
                     | Former::Number
                     | Former::Boolean
                     | Former::Text
+                    | Former::Character
                     | Former::Parenthesized
                     | Former::Unit
                     | Former::Thunk
@@ -18956,6 +19012,7 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Number
             | Former::Boolean
             | Former::Text
+            | Former::Character
             | Former::Parenthesized
             | Former::Unit
             | Former::Thunk
@@ -18975,10 +19032,12 @@ const fn is_value_form(former: Former) -> ValueForm
 ///   the text between its delimiting quotes with its escapes decoded — `\n`,
 ///   `\t`, `\r`, `\0`, `\\`, `\"` and `\'` to the character each names, a
 ///   backslash before a line break elided with the break, any other escaped
-///   character to itself, and a trailing lone backslash dropped.
+///   character to itself, and a trailing lone backslash dropped; a character is
+///   the one scalar its quotes hold once that same decoding runs.
 /// - provides: the only place a lexeme becomes a core literal.
 /// - fails: never; the malformed absence for a number holding a non-digit or
-///   nothing at all and a string missing either delimiter, and the
+///   nothing at all, a string missing either delimiter, and a character whose
+///   quotes are missing or decode to no scalar or to several, and the
 ///   not-a-literal absence for every other former.
 /// - panics: none.
 ///
@@ -19050,6 +19109,16 @@ const fn is_value_form(former: Former) -> ValueForm
                 },
                 | None => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
             },
+            | Former::Character => match spelled
+                .strip_prefix('\'')
+                .and_then(|opened| opened.strip_suffix('\''))
+                .map(|content| decode_escapes(SourceFragment::from(content)))
+            {
+                | Some(decoded) if decoded.chars().count() == 1 => {
+                    matches!(ret, Maybe::Present(Literal::Character(character)) if decoded.chars().eq(core::iter::once(char::from(character))))
+                },
+                | _ => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
+            },
             | _ => matches!(ret, Maybe::Absent(literal::Absent::NotALiteral)),
         }
     },
@@ -19071,6 +19140,13 @@ pub fn parse_literal(
                     content,
                 ))))
             }),
+        Former::Character => spelled
+            .strip_prefix('\'')
+            .and_then(|opened| opened.strip_suffix('\''))
+            .and_then(|content| {
+                CharacterLiteral::try_from(decode_escapes(SourceFragment::from(content))).ok()
+            })
+            .map(Literal::Character),
         Former::Name
         | Former::Hole
         | Former::Binary
@@ -19419,6 +19495,7 @@ mod tests
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CharacterLiteral;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GroundSort;
@@ -24995,6 +25072,31 @@ mod tests
     }
 
     #[test]
+    fn a_character_literal_is_the_scalar_between_its_quotes()
+    {
+        let rows = [
+            ("'a'", 'a'),
+            ("'\"'", '"'),
+            ("'é'", 'é'),
+            ("'𐐀'", '𐐀'),
+            ("'\\n'", '\n'),
+            ("'\\t'", '\t'),
+            ("'\\r'", '\r'),
+            ("'\\0'", '\0'),
+            ("'\\\\'", '\\'),
+            ("'\\''", '\''),
+            ("'\\q'", 'q'),
+        ];
+        for (spelled, scalar) in rows {
+            assert_eq!(
+                parse_literal(Former::Character, SourceFragment::from(spelled)),
+                Maybe::Present(Literal::Character(CharacterLiteral::from(scalar))),
+                "`{spelled}` decodes to {scalar:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_lexeme_of_the_wrong_shape_parses_to_nothing()
     {
         let rows = [
@@ -25003,6 +25105,11 @@ mod tests
             (Former::Text, "\"abc", literal::Absent::Malformed),
             (Former::Text, "\"", literal::Absent::Malformed),
             (Former::Text, "abc", literal::Absent::Malformed),
+            (Former::Character, "'ab'", literal::Absent::Malformed),
+            (Former::Character, "''", literal::Absent::Malformed),
+            (Former::Character, "'\\\n'", literal::Absent::Malformed),
+            (Former::Character, "'a", literal::Absent::Malformed),
+            (Former::Character, "\"a\"", literal::Absent::Malformed),
             (Former::Name, "abc", literal::Absent::NotALiteral),
         ];
         for (former, spelled, reason) in rows {

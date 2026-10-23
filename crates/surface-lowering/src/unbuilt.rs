@@ -114,8 +114,6 @@ pub enum Unbuilt
     ListPattern,
     /// The rest pattern `..p`.
     RestPattern,
-    /// A character literal.
-    Character,
     /// The bundle `co { id = e, … }`.
     CoBundle,
     /// The endpoint drop `drop(e)`.
@@ -285,7 +283,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 90_usize] = [
+    pub const ALL: [Self; 89_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -300,7 +298,6 @@ impl Unbuilt
         Self::AsPattern,
         Self::ListPattern,
         Self::RestPattern,
-        Self::Character,
         Self::CoBundle,
         Self::Drop,
         Self::Forall,
@@ -414,7 +411,6 @@ impl Unbuilt
             Self::AsPattern => "as_pattern",
             Self::ListPattern => "list_pattern",
             Self::RestPattern => "rest_pattern",
-            Self::Character => "character",
             Self::CoBundle => "co_expression",
             Self::Drop => "drop_expression",
             Self::Forall => "forall_type",
@@ -524,7 +520,6 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
-            Self::Character => TrackingIssue::CHARACTER,
             Self::CoBundle => TrackingIssue::CO_BUNDLE,
             Self::Drop => TrackingIssue::DROP,
             Self::Forall => TrackingIssue::FORALL,

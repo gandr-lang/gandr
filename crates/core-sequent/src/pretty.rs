@@ -1127,14 +1127,16 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
 ///
 /// # Specification
 /// - ensures: an integer as its sign and digits, a numeric literal with its
-///   fraction, a string quoted with its content escaped.
+///   fraction, a string quoted with its content escaped, a character in single
+///   quotes escaped alike.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer zero and a negative integer, signed numeric
 ///   fractions and an empty fraction have exact spellings. Quotes, backslashes,
 ///   controls and printable Unicode distinguish sign loss, a dropped decimal
-///   point, truncation and incorrect escaping.
+///   point, truncation and incorrect escaping; a quote, a backslash and a
+///   non-ASCII scalar do the same for a character.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[spec(ensures: |ref ret| match *literal {
@@ -1148,6 +1150,8 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
         ret.strip_prefix('"').and_then(|text| text.strip_suffix('"'))
             .is_some_and(|escaped| escaped.chars().eq(raw.chars().flat_map(char::escape_debug)))
     },
+    | Literal::Character(character) => ret.strip_prefix('\'').and_then(|text| text.strip_suffix('\''))
+        .is_some_and(|escaped| escaped.chars().eq(char::from(character).escape_debug())),
 })]
 fn literal_text(literal: &Literal) -> String
 {
@@ -1170,6 +1174,12 @@ fn literal_text(literal: &Literal) -> String
             let raw: &str = content.as_ref();
             quoted.extend(raw.chars().flat_map(char::escape_debug));
             quoted.push('"');
+            quoted
+        },
+        Literal::Character(character) => {
+            let mut quoted = String::from("'");
+            quoted.extend(char::from(character).escape_debug());
+            quoted.push('\'');
             quoted
         },
     }

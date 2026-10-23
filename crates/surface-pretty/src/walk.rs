@@ -4435,7 +4435,10 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
 /// - requires: nothing.
 /// - ensures: an integer as its sign and digits; a string between double quotes
 ///   with its content as [`interior`] writes it; a numeric literal as its sign,
-///   its digits, and its fraction after a point when it has one.
+///   its digits, and its fraction after a point when it has one; a character
+///   between single quotes, a backslash, a single quote, a line feed, a tab, a
+///   carriage return and a nul as the escape the lowering decodes and every
+///   other scalar as itself.
 /// - provides: the one spelling of every literal, which holds no line break, so
 ///   a literal never splits across lines.
 /// - fails: never.
@@ -4444,9 +4447,12 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
 /// # Adequacy
 /// - hypothesis: L3 — the finite escaped-control string, signed integer and
 ///   numeric fixtures observe delimiters, sign, digits and fractional parts.
-///   Arbitrary Unicode strings and all magnitudes are not enumerated.
+///   Arbitrary Unicode strings and all magnitudes are not enumerated. The
+///   character fixtures cover each escape, a double quote and a multibyte
+///   scalar.
 /// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
 /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::a_character_spells_as_the_literal_it_lowers_from`
 #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
     | Literal::Integer(ref integer) => {
         let digits = match integer.sign() {
@@ -4465,6 +4471,7 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
         else { digits.and_then(|text| text.split_once('.')) == Some((numeric.integer_part().as_ref(), fraction)) }
     },
     | Literal::Text(_) => ret.0.len() >= 2_usize && ret.0.starts_with('"') && ret.0.ends_with('"'),
+    | Literal::Character(_) => ret.0.len() >= 3_usize && ret.0.starts_with('\'') && ret.0.ends_with('\''),
 })]
 fn literal(literal: &Literal) -> Spelled
 {
@@ -4495,6 +4502,18 @@ fn literal(literal: &Literal) -> Spelled
             else {
                 format!("{whole}.{fraction}")
             }
+        },
+        Literal::Character(character) => {
+            let escape = match char::from(character) {
+                '\\' => "\\\\",
+                '\'' => "\\'",
+                '\n' => "\\n",
+                '\t' => "\\t",
+                '\r' => "\\r",
+                '\0' => "\\0",
+                other => return Spelled(format!("'{other}'")),
+            };
+            format!("'{escape}'")
         },
     })
 }
@@ -6540,6 +6559,9 @@ impl Walk<'_, '_>
             Former::BaseType(BaseType::String) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("String")));
             },
+            Former::BaseType(BaseType::Character) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Char")));
+            },
             Former::BufferType => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
             },
@@ -6596,6 +6618,7 @@ impl Walk<'_, '_>
                 let production = match *value {
                     Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
                     Literal::Text(_) => Production("string.expression"),
+                    Literal::Character(_) => Production("character"),
                 };
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },

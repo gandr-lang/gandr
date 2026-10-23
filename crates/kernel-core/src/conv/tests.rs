@@ -235,6 +235,7 @@ fn conversion_separates_every_former()
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);
     let numeric = arena.value_type_base(BaseType::Numeric);
+    let character = arena.value_type_base(BaseType::Character);
     let product = arena.value_type_product(&[unit, integer]);
     let sum = arena.value_type_sum(&[unit, integer]);
     let returner = arena.comp_type_returner(unit);
@@ -246,8 +247,8 @@ fn conversion_separates_every_former()
     let lift = arena.value_type_lift(unit, level(LevelConstant::from(1)));
     let static_pi = arena.value_type_static_pi(universe, universe);
     let formers = [
-        unit, integer, string, numeric, product, sum, thunk, universe, atom, element, lift,
-        static_pi,
+        unit, integer, string, numeric, character, product, sum, thunk, universe, atom, element,
+        lift, static_pi,
     ];
     for (one, left) in formers.iter().copied().enumerate() {
         for (other, right) in formers.iter().copied().enumerate() {

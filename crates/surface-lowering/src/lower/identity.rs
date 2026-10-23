@@ -3201,6 +3201,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Hole
                 | Former::Number
                 | Former::Text
+                | Former::Character
                 | Former::TypeQuote
                 | Former::Parenthesized
                 | Former::Unit

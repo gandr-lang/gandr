@@ -452,6 +452,8 @@ pub const BASE_INTEGER: WireTag = WireTag(0);
 pub const BASE_STRING: WireTag = WireTag(1);
 /// Base-type atom: the numeric atom.
 pub const BASE_NUMERIC: WireTag = WireTag(2);
+/// Base-type atom: the character atom.
+pub const BASE_CHARACTER: WireTag = WireTag(3);
 
 /// Literal sign: non-negative, which the canonical zero always is.
 pub const SIGN_NON_NEGATIVE: WireTag = WireTag(0);
@@ -473,6 +475,8 @@ pub const LITERAL_INTEGER: WireTag = WireTag(0);
 pub const LITERAL_TEXT: WireTag = WireTag(1);
 /// Literal kind: a numeric literal.
 pub const LITERAL_NUMERIC: WireTag = WireTag(2);
+/// Literal kind: a character literal, its scalar as length-prefixed UTF-8.
+pub const LITERAL_CHARACTER: WireTag = WireTag(3);
 
 /// Landmark-constraint relation: `left ≤ right`.
 pub const RELATION_LEQ: WireTag = WireTag(0);

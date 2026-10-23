@@ -854,7 +854,7 @@ where
                             _ => false,
                         }
                     }
-                    Literal::Integer(_) | Literal::Text(_) | Literal::Numeric(_) => ret == Err(unreadable),
+                    Literal::Integer(_) | Literal::Text(_) | Literal::Numeric(_) | Literal::Character(_) => ret == Err(unreadable),
                 },
             )
     }
