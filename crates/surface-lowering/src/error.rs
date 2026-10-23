@@ -276,12 +276,14 @@ pub enum FragmentBoundary
     Indexed,
     /// The form needs a type the source does not state: a match over nominal
     /// data with no answer type written or known from its function, a
-    /// constructor of a parameterized family with no classifier, `back`,
-    /// `then` or `cong` standing where no written path type is answered and
-    /// its path's type is not read off a word or an operation over one, `cong`
-    /// so standing at a map that is no function definition with a closed
-    /// written result that lowers, `then` where no written flow type is either,
-    /// or a transport or ride whose motive is no static abstraction.
+    /// constructor of a parameterized family with no classifier or answering
+    /// the decode of a binder or of a constant no top-level definition writes,
+    /// `back`, `then` or `cong` standing where no written path type is
+    /// answered and its path's type is not read off a word or an operation
+    /// over one, `cong` so standing at a map that is no function definition
+    /// with a closed written result that lowers, `then` where no written flow
+    /// type is either, or a transport or ride whose motive is no static
+    /// abstraction.
     Unannotated,
     /// The form is a recursive call passing, where one of the definition's
     /// unchanging parameters stands, something other than that parameter: the

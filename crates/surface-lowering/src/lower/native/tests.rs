@@ -2090,6 +2090,52 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
     assert_accepted(&report);
 }
 
+/// #2112: a constructor returned against a result written as a type-level
+/// definition's application, `-> opt(Integer)` with `opt = \A. -F Maybe(A)`,
+/// dropped the declaration as `Unminted`: the answer is the decode of the
+/// application, no returner, so the constructor had no classifier. It reads
+/// through the definition's body, at a closed argument, at a type parameter,
+/// and through a definition that unfolds to `opt`; one answering a constant
+/// with no written body is refused as unannotated, never dropped.
+#[test]
+fn a_constructor_answers_a_definition_s_application_2112()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def opt : Type -> Type[-] ;\ndef opt = \\A. -F Maybe(A) ;\n\
+         def again : Type -> Type[-] ;\ndef again = \\A. opt(A) ;\n\
+         def some1() -> opt(Integer) {{ return Some(1) }}\n\
+         def none(A : Type) -> opt(A) {{ return None }}\n\
+         def twice() -> again(Integer) {{ return Some(2) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["some1", "none", "twice"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def opaque : Type -> Type[-] ;\n\
+         def some1() -> opaque(Integer) {{ return Some(1) }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(matches!(
+        refusal_of(&module, SurfaceName::from("some1")),
+        LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated,
+            ..
+        }
+    ));
+}
+
 /// #1833: a constructor written as a call's argument took no classifier from
 /// the parameter it is passed to, so `count(Some(3))` was refused as
 /// unannotated where `count((Some(3) : Maybe(Integer)))` checked. The
