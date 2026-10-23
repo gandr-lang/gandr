@@ -56,8 +56,6 @@ impl TrackingIssue
     pub const UNIVALENCE: Self = Self(312);
     /// A universe equivalence over a list whose round trip reads the tail.
     pub const LIST_TAIL: Self = Self(524);
-    /// A `drop` of a session endpoint.
-    pub const DROP: Self = Self(1054);
     /// A `forall` type.
     pub const FORALL: Self = Self(1055);
     /// A union or an intersection type.

@@ -18,3 +18,11 @@ def seat_arms_one_label_of_two() -> -F Unit {
   select(desk, next);
   close(desk)
 }
+
+/// A drop is the end action, so an endpoint whose protocol still selects is
+/// not dropped: the desk drops where it offers.
+@[ refuses("SessionMismatch") ]
+def desk_drops_a_live_endpoint() -> -F Unit {
+  fork (seat : +{ done : end }) { select(seat, done); drop(seat) } as desk;
+  drop(desk)
+}

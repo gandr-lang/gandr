@@ -907,16 +907,18 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Classify a session action: `send(c, v)`, `select(c, l)`, `close(c)` or
-    /// `offer(c) { l => t, … }`.
+    /// Classify a session action: `send(c, v)`, `select(c, l)`, `close(c)`,
+    /// `drop(c)` or `offer(c) { l => t, … }`.
     ///
     /// # Specification
     /// - requires: `site` is a session action expression.
     /// - ensures: the action on the endpoint its subject names, planned as one
     ///   core action: a send's payload read as a value, a selection's label its
-    ///   identifier, an offer's arms each read as a computation under the
-    ///   form's frame, keyed by the label its pattern names, with the answer
-    ///   and the paths through the offer passed to each.
+    ///   identifier, a drop the end action `close` plans, so it is admitted
+    ///   exactly where the endpoint's session is `end`, an offer's arms each
+    ///   read as a computation under the form's frame, keyed by the label its
+    ///   pattern names, with the answer and the paths through the offer passed
+    ///   to each.
     /// - fails: the wrong-sort refusal where no computation is read; the
     ///   endpoint's refusal; a pattern other than a label, refused as an
     ///   unadmitted pattern; a label armed twice, as a duplicate definition;
@@ -933,6 +935,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
     /// - witness: `lower::session::tests::an_action_on_no_endpoint_is_refused`
     /// - witness: `lower::session::tests::an_offer_arm_is_one_label`
+    /// - witness: `lower::session::tests::a_drop_is_the_end_action_1054`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Action(..))))]
     pub(super) fn session_action(
         &mut self,
@@ -973,7 +976,7 @@ impl<'source> Lowerer<'_, 'source>
                 label: FieldLabel::from(String::from(self.name_at(chosen).as_ref())),
             }
         }
-        else if keyword == TileName::CLOSE {
+        else if keyword == TileName::CLOSE || keyword == TileName::DROP {
             closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
             exhausted(site, &cursor)?;
             SessionAction::Close {
