@@ -1945,7 +1945,13 @@ impl TypeTable
         // A label answers at what it names: a field's or a binder's type,
         // read under the binders its entry is, or a record field's term at
         // its type. A binder some use already answers is not answered twice.
+        // A type the lowering reads at its kind waits for the universes.
+        let mut kinded: Vec<(ByteSpan, ValueTypeId)> = Vec::new();
         for label in origins.labels() {
+            if let Labelled::Kind(kind) = label.labelled {
+                kinded.push((label.span, kind));
+                continue;
+            }
             if binders.contains(&label.span) {
                 continue;
             }
@@ -2030,6 +2036,7 @@ impl TypeTable
                     };
                     (TypeNode::Value(result), Standing::Judged(within))
                 },
+                Labelled::Kind(_) => continue,
             };
             let _first = binders.insert(label.span);
             entries.push(Entry {
@@ -2041,6 +2048,11 @@ impl TypeTable
                 standing,
             });
         }
+        // A written type no judgement formed — a functor parameter's
+        // abstract type, formed only where an application checks the functor
+        // — answers at the kind the lowering read it at.
+        let formed: BTreeSet<ByteSpan> =
+            universes.iter().map(|&(origin, _)| origin.span()).collect();
         for (origin, universe) in universes {
             entries.push(Entry {
                 span: origin.span(),
@@ -2048,6 +2060,19 @@ impl TypeTable
                 provenance: origin.provenance(),
                 ty: universe,
                 last: universe,
+                standing: Standing::Closed,
+            });
+        }
+        for (span, kind) in kinded {
+            if formed.contains(&span) {
+                continue;
+            }
+            entries.push(Entry {
+                span,
+                subject: Subject::Type,
+                provenance: Provenance::Written,
+                ty: TypeNode::Value(kind),
+                last: TypeNode::Value(kind),
                 standing: Standing::Closed,
             });
         }
@@ -7037,6 +7062,64 @@ mod tests
             keyed,
             ["Integer", "Integer", "Integer"],
             "the signature, the definition and the synthesised declaration are each keyed"
+        );
+    }
+
+    /// #2183: a functor's parameter's abstract type answers at its kind in
+    /// the parameter's signature and the body, whether or not the functor is
+    /// applied; an applied one's still answers at the universe the
+    /// application's check forms.
+    #[test]
+    fn a_functor_parameter_s_abstract_type_answers_at_its_kind_2183()
+    {
+        let source = SourceText::from(concat!(
+            "module Point :> #{ type T, z : T } {\n  type T = Integer;\n  def z = 0;\n}\n",
+            "module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {\n",
+            "  type U = S.T * S.T;\n  def w = (S.z, S.z);\n}\n",
+            "module Squared = Square(Point) ;\n",
+            "module Pointed(R : #{ type V, y : V }) {\n  type At = Path(R.V, R.y, R.y);\n}\n",
+        ));
+        let table = table(source);
+        for needle in ["T }) :>", "V }) {"] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Type, SourceText::from("Type")),
+                "`{needle}` answers at its kind"
+            );
+        }
+    }
+
+    /// #2183: a module refused at its header is held refused at its form,
+    /// so every node inside it stands under the refusal.
+    #[test]
+    fn a_module_refused_at_its_header_is_held_refused_2183()
+    {
+        let source = SourceText::from(concat!(
+            "theory Scaled {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
+            "module Misnamed : Model(Scaled) with sort Rate = Integer {\n",
+            "  type Ratio = Integer;\n  def scale = 2;\n}\n",
+        ));
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(&grammar, source)
+            .expect("the source parses")
+            .into_tree();
+        let table = table(source);
+        let text: &str = source.into();
+        let module = tree
+            .positions()
+            .find(|&position| {
+                tree.node(position).is_some_and(|node| {
+                    usize::from(node.span().start()) == text.find("module").unwrap_or_default()
+                })
+            })
+            .and_then(|position| tree.key(position))
+            .expect("the module's form is keyed");
+        assert!(
+            matches!(
+                table.declared(module, PageWidth::from(80_u32), Form::Explicit.into()),
+                Maybe::Present(Declared::Refused(ref refusal)) if refusal.contains("Rate")
+            ),
+            "the module's form holds its refusal"
         );
     }
 

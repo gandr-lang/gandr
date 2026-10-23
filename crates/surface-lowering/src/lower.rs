@@ -13651,7 +13651,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   plan takes. A variable is minted in its binder's zone: the linear zone
     ///   for a fork's end, the intuitionistic zone for every other binder; a
     ///   decode's code carries the written origin and its type the inserted
-    ///   one.
+    ///   one; a functor parameter's abstract type is labelled at the kind its
+    ///   component reads ([`Self::parameter_kind`]).
     /// - provides: the per-node half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -13666,6 +13667,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
     #[spec(
         captures: promised = (
             match *plan {
@@ -13889,6 +13891,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Sealed(atom) => {
                 let id = sink.arena.value_type_abstract(atom);
                 sink.origins.record_value_type(id, origin);
+                // A functor parameter's abstract type is formed only where an
+                // application checks the functor: it answers at its kind.
+                if let Some(kind) = self.parameter_kind(atom, sink) {
+                    sink.origins.record_label(Label {
+                        span: origin.span(),
+                        labelled: Labelled::Kind(kind),
+                    });
+                }
                 Maybe::Present(Lowered::ValueType(id))
             },
             Plan::Universe(universe) => {
@@ -17270,18 +17280,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the key at the refusing node when the slot's refusal is a
     ///   duplicate signature or definition, or was raised at a `def` form no
     ///   half of the slot is written at — a form refused before it wrote one;
-    ///   absent otherwise.
+    ///   the key of a module form whose own held slot writes no half, when the
+    ///   refusal was raised inside it — a module refused at its header, not a
+    ///   member or a signature component; absent otherwise.
     /// - provides: the key the attributes of a form refused at collection are
-    ///   filed under, which the corpus reads its expectation off (#1798).
+    ///   filed under, which the corpus reads its expectation off (#1798), and
+    ///   the key a table holds a module refused at its header by (#2183).
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module defining one member twice keys its second
     ///   definition, which no half reaches, and a name written once keys none;
+    ///   a module whose header names a sort its theory lacks keys its own form;
     ///   the corpus's settlement of a form refused at collection exercises the
-    ///   other arm.
+    ///   remaining arm.
     /// - witness: `lower::tests::a_duplicate_definition_is_keyed_at_its_form`
+    /// - witness: `lower::tests::a_module_refused_at_its_header_is_keyed_at_its_form_2183`
     #[spec(ensures: |ret| ret == match slot.refusal {
         Maybe::Present((at, LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. })) => Maybe::Present(self.key_at(at)),
         Maybe::Present((at, _)) => self.form_refused_at(slot, at),
@@ -17303,11 +17318,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// The key of `at` when it is a `def` form of `slot` that no half of it
-    /// is written at: a form refused while it was collected.
+    /// The key of the form refused at `at`: a `def` form of `slot` that no
+    /// half of it is written at, refused while it was collected, or a module
+    /// form whose own held slot writes no half at all — a module refused at
+    /// its header — when `at` stands inside it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `at` is the node `slot`'s refusal was raised at.
+    /// - ensures: as [`Self::refused_form_key`] for a refusal other than a
+    ///   duplicate.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the halves and the introducing form are read
+    ///   through the tree, which a predicate would walk again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::refused_form_key`].
+    /// - witness: `lower::tests::a_module_refused_at_its_header_is_keyed_at_its_form_2183`
     fn form_refused_at(
         &self,
         slot: &DeclarationSlot<'source>,
@@ -17327,7 +17354,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
             )
         });
         if form && !halved {
-            Maybe::Present(self.key_at(at))
+            return Maybe::Present(self.key_at(at));
+        }
+        let module = self.tree.node(slot.introduced_by.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Module,
+                    ..
+                })
+            )
+        });
+        // A component standing for itself is introduced by its own name tile:
+        // only a module's own held slot is introduced by a form wider than its
+        // name.
+        let unhalved = module
+            && slot.role == Role::Held
+            && slot.introduced_by.node != slot.named.node
+            && matches!(
+                (slot.signature, slot.definition),
+                (Maybe::Absent(_), Maybe::Absent(_))
+            );
+        let introducing = slot.introduced_by.span;
+        let inside = self.tree.node(at).is_some_and(|node| {
+            introducing.start() <= node.span().start() && node.span().end() <= introducing.end()
+        });
+        if unhalved && inside {
+            Maybe::Present(self.key_at(slot.introduced_by.node))
         }
         else {
             Maybe::Absent(declaration_half::Absent::Unwritten)
@@ -25541,6 +25594,53 @@ mod tests
         assert!(
             matches!(once.refused_form(), Maybe::Absent(_)),
             "a name written once keys no repetition"
+        );
+    }
+
+    /// #2183: a module refused at its header writes no half, so its refusal
+    /// is keyed at the module's own form; the member a sound module defines
+    /// keys none.
+    #[test]
+    fn a_module_refused_at_its_header_is_keyed_at_its_form_2183()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(concat!(
+                "theory Scaled {\n  sort Ratio : Type;\n  oper scale : Ratio;\n}\n",
+                "module Misnamed : Model(Scaled) with sort Rate = Integer {\n",
+                "  type Ratio = Integer;\n  def scale = 2;\n}\n",
+            )),
+            &mut arena,
+        );
+        let refused: Vec<_> = module
+            .declarations()
+            .iter()
+            .filter(|declaration| {
+                matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(LoweringRefusal::UnknownMember { .. })
+                )
+            })
+            .collect();
+        let [misnamed] = *refused
+        else {
+            panic!("the module alone is refused: {refused:?}");
+        };
+        assert_eq!(
+            misnamed.refused_form(),
+            Maybe::Present(misnamed.introduced()),
+            "the refusal is keyed at the module's form"
+        );
+        assert!(
+            module
+                .declarations()
+                .iter()
+                .filter(|declaration| !matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Refused(_)
+                ))
+                .all(|declaration| matches!(declaration.refused_form(), Maybe::Absent(_))),
+            "no sound declaration keys a refused form"
         );
     }
 
