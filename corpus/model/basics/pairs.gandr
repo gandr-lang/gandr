@@ -1,8 +1,22 @@
-// A pair of values, named, and returned as a program's result.
+// A pair of values, named, and returned as a program's result; a triple
+// written as a product chain, its places selected by position.
 
 /// Two integers, paired.
 @[ checks ]
 def point = (1, 2);
+
+/// Three values, the type written as a product chain.
+@[ checks ]
+def triple : Integer * String * Integer ;
+def triple = (3, "three", 4) ;
+
+/// The middle of the three, selected by its place.
+@[ runs("\"three\"") ]
+def middle() -> -F String { return triple.1 }
+
+/// The last of the three, selected by its place.
+@[ runs("4") ]
+def last() -> -F Integer { return triple.2 }
 
 /// The run target returns the pair.
 @[ runs("(1, 2)") ]

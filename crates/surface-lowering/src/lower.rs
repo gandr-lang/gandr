@@ -2389,10 +2389,11 @@ enum Plan
     /// forced, when thunked, or a call run, then projected at the entry's
     /// position.
     Observe(NodeIndex, arity::Observed, arity::Thunked),
-    /// One entry of the record or the dependent record the name at the node
-    /// holds, with the type over labels it is stated with and the label
-    /// selected when it was selected by label: projected at the label off a
-    /// record, along the nesting otherwise.
+    /// One entry of the record, the dependent record or the product the name
+    /// at the node holds, with the type over labels it is stated with and the
+    /// entry's label when the entry has one: projected at the label off a
+    /// record, along the nesting off a dependent record, and at the
+    /// component off a product.
     Select(NodeIndex, arity::Observed, Option<(NodeIndex, FieldLabel)>),
     /// The field the label names of the record the value at the node is, its
     /// type stated nowhere: projected at the label, for the checker to read
@@ -10071,28 +10072,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: a selection by position projects the pair its operand is, as
-    ///   [`Self::positional`] reads it; a selection read as a computation off a
-    ///   name whose written type is a thunked lazy record over labels observes
-    ///   the entry its label names; a selection off a name whose written type
-    ///   is a type over labels projects the entry its label names, as
-    ///   [`Self::selection`] reads it; a selection off a name whose written
-    ///   type is a data family without indices reads the field its label names
-    ///   off every constructor, as [`Self::data_field`] reads it; a selection
-    ///   off a value no written type states, a chain of selections ending at a
-    ///   binder's or a declaration's name not capitalised, projects the field
-    ///   its label names of the record the value is, as [`Self::field`] reads
-    ///   it. A chain of selections whose head is a capitalised name is a path:
-    ///   inside a functor whose parameter the head names, a one-link path is
-    ///   that parameter's value component, as [`Self::parameter_value`] reads
-    ///   it; otherwise it is resolved through the outermost scope at the depth
-    ///   that binds it: a path ending at an exported value component stands as
-    ///   that member's constant when the member is declared strictly before the
-    ///   declaration the path is written in, its last segment kept as a written
-    ///   name resolved to that declaration, and a path ending at a type
-    ///   component stands as its stated type, as [`Self::module_type`] reads
-    ///   it. The chain is walked by an explicit loop, and its links are left
-    ///   unread.
+    /// - ensures: a selection by position projects the entry at that place of
+    ///   the type written for its operand, or of the pair the operand is when
+    ///   no type is written, as [`Self::positional`] reads it; a selection read
+    ///   as a computation off a name whose written type is a thunked lazy
+    ///   record over labels observes the entry its label names; a selection off
+    ///   a name whose written type is a type over labels projects the entry its
+    ///   label names, as [`Self::selection`] reads it; a selection off a name
+    ///   whose written type is a data family without indices reads the field
+    ///   its label names off every constructor, as [`Self::data_field`] reads
+    ///   it; a selection off a value no written type states, a chain of
+    ///   selections ending at a binder's or a declaration's name not
+    ///   capitalised, projects the field its label names of the record the
+    ///   value is, as [`Self::field`] reads it. A chain of selections whose
+    ///   head is a capitalised name is a path: inside a functor whose parameter
+    ///   the head names, a one-link path is that parameter's value component,
+    ///   as [`Self::parameter_value`] reads it; otherwise it is resolved
+    ///   through the outermost scope at the depth that binds it: a path ending
+    ///   at an exported value component stands as that member's constant when
+    ///   the member is declared strictly before the declaration the path is
+    ///   written in, its last segment kept as a written name resolved to that
+    ///   declaration, and a path ending at a type component stands as its
+    ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
+    ///   an explicit loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
