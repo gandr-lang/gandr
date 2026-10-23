@@ -134,7 +134,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`unit.expression`](../corpus/ledger/syntax/unit.expression.gandr) | `unit` | `expression.atom` | `unit` | admitted | Keyword |
 | [`number.expression`](../corpus/ledger/syntax/number.expression.gandr) | `‹number›` | `expression.atom` | `number` | admitted | Number |
 | [`typed_number.expression`](../corpus/ledger/syntax/typed_number.expression.gandr) | `‹typed_number›` | `expression.atom` | `typed_number` | unadmitted | Number |
-| [`character`](../corpus/ledger/syntax/character.gandr) | `‹character›` | `expression.atom` | `character` | unadmitted | Character |
+| [`character`](../corpus/ledger/syntax/character.gandr) | `‹character›` | `expression.atom` | `character` | admitted | Character |
 | [`string.expression`](../corpus/ledger/syntax/string.expression.gandr) | `" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ‖ ${ EXPRESSION } ⦆* "` | `expression.atom` | `string` | admitted | StringLit, Escape, Other |
 | [`list_operator`](../corpus/ledger/syntax/list_operator.gandr) | `; ‖ & ‖ newline` | `expression.atom` | `list_operator` | admitted | Operator |
 | [`pipeline.pipe`](../corpus/ledger/syntax/pipeline.pipe.gandr) | `EXPRESSION \| EXPRESSION` | `expression.postfix` | `pipeline` | admitted | Operator |
