@@ -226,6 +226,14 @@ required_contexts() {
     --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique'
 }
 
+# The most members one landing queues of a stack (#2046): the smaller of the
+# trunk's merge-queue `max_entries_to_merge` and `max_entries_to_build`, a
+# zero read as no bound; 0 when neither bounds it.
+queue_unit_cap() {
+  gh api "repos/$repo/rules/branches/$trunk" \
+    --jq '[.[] | select(.type == "merge_queue") | .parameters | .max_entries_to_merge, .max_entries_to_build | select(. > 0)] | min // 0'
+}
+
 # Wait, every 30 seconds, until each of the trunk's required contexts on pull
 # request `$1`'s head has concluded (`required.jq`, #1601); fail at the first
 # reading with a required context red, naming it. The contexts are read from
@@ -376,33 +384,39 @@ required_state() {
 }
 
 # Queue the largest ready prefix of pull request `$1`'s stack (`prefix.jq`,
-# #1988). The members already queued are skipped; above them the members are
-# read bottom up, and every one green on the trunk's required contexts is
-# queued, up to the first red or pending one, which is named and where the
-# reading stops. The tail above it is the next stack, landed the moment its
-# own bottom goes green. `pr:land` runs this from any member, and `pr:watch`
-# the moment its pull request goes green. Prints one line on stderr, and
-# leaves its reading in `prefix_decision` (`prefix.jq`'s line),
+# #1988), at most `queue_unit_cap` members (#2046). While a member of the
+# stack is queued nothing more is queued; otherwise the members are read
+# bottom up, and every one green on the trunk's required contexts is queued,
+# up to the first red or pending one, which is named and where the reading
+# stops, or up to the cap. The tail above it is the next stack, landed the
+# moment its own bottom goes green. `pr:land` runs this from any member, and
+# `pr:watch` the moment its pull request goes green. Prints one line on
+# stderr, and leaves its reading in `prefix_decision` (`prefix.jq`'s line),
 # `prefix_server` (the stack) and `prefix_queued` (its queued members).
-# Returns 0 when it queued a prefix or nothing was ready; 3 while a pull
-# request queued on its own carries the stack's commits (`carried_queued`),
-# or the open members take no link above the queued ones; `queue_stack`'s
-# failure otherwise.
+# Returns 0 when it queued the rest of the ready prefix or nothing was ready;
+# 3 while a pull request queued on its own carries the stack's commits
+# (`carried_queued`), while a queued member holds the stack, after queueing
+# a unit the cap cut short, or when the open members take no link above the
+# queued ones; `queue_stack`'s failure otherwise.
 land_prefix() {
-  local server queued carried required number state states=() decision verdict upto stop status=0
+  local server queued carried required cap number state states=() decision verdict upto stop status=0
   server=$(server_stack "$1")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
   queued=$(queued_of "$server")
   carried=$(carried_queued "$server")
   required=$(required_contexts)
+  cap=$(queue_unit_cap)
+  # A queued member holds the stack, and a unit reads one member past the cap.
+  [[ "$queued" == '[]' ]] || cap=-1
   for number in $(jq -r --argjson queued "$queued" '.[].number | select(IN($queued[]) | not)' <<< "$server"); do
+    (( cap < 0 || cap > 0 && ${#states[@]} / 2 > cap )) && break
     state=$(required_state "$number" "$required")
     states+=("$number" "$state")
     [[ "$state" == green ]] || break
   done
-  decision=$(jq -rn --argjson server "$server" --argjson queued "$queued" --argjson carried "$carried" \
+  decision=$(jq -rn --argjson server "$server" --argjson queued "$queued" --argjson carried "$carried" --argjson cap "$cap" \
     --argjson states "$(jq -cn '$ARGS.positional as $p | [range(0; $p | length; 2) | {key: $p[.], value: $p[. + 1]}] | from_entries' --args "${states[@]}")" \
-    '{server: $server, queued: $queued, carried: $carried, states: $states}' | jq -r -f "$pr_stack_dir/prefix.jq")
+    '{server: $server, queued: $queued, carried: $carried, states: $states, cap: $cap}' | jq -r -f "$pr_stack_dir/prefix.jq")
   prefix_decision=$decision prefix_server=$server prefix_queued=$queued
   verdict= upto= stop= state=
   IFS=$'\t' read -r verdict upto stop state <<< "$decision"
@@ -412,6 +426,10 @@ land_prefix() {
       return 3
       ;;
     queued) echo "the stack is queued up to its top, #$(jq -r '.[-1].number' <<< "$server")" >&2 ;;
+    busy)
+      echo "#$upto is queued; the stack's next unit lands once it merges" >&2
+      return 3
+      ;;
     hold) echo "nothing lands: #$upto is $stop, and the stack lands from it once it is green" >&2 ;;
     land)
       hold_landing "$(jq -c --argjson queued "$queued" --argjson upto "$upto" \
@@ -419,6 +437,10 @@ land_prefix() {
       queue_stack "$server" "$queued" "$upto" || status=$?
       release_landing
       (( status == 0 )) || return "$status"
+      if [[ "$state" == capped ]]; then
+        echo "queued the stack up to #$upto, a full unit; #$stop above it lands once the unit merges" >&2
+        return 3
+      fi
       echo "queued the stack up to #$upto${stop:+; #$stop above it is $state, and the stack lands from it once it is green}" >&2
       ;;
     *) echo "unexpected landing decision: $decision" >&2; return 2 ;;

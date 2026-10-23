@@ -327,7 +327,7 @@
     "output": "land\t1262\t1258\tpending"
   },
   {
-    "name": "a queued prefix below a green top is skipped, and the remainder lands behind it (#1988)",
+    "name": "a stack with a member queued queues nothing more until it merges (#2046)",
     "program": "prefix.jq",
     "input": {
       "server": [
@@ -337,23 +337,64 @@
         { "number": 1971, "head": "surface-1416-linear-run" }
       ],
       "queued": [1939, 1969],
-      "states": { "1970": "green", "1971": "green" }
+      "states": { "1970": "green", "1971": "green" },
+      "cap": 3
     },
-    "output": "land\t1971"
+    "output": "busy\t1969"
   },
   {
-    "name": "a queued prefix below a pending member lands nothing more and names it (#1988)",
+    "name": "a green stack longer than the cap queues its bottom cap members and names the next (#2046)",
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1349, "head": "surface-1327-tail" },
-        { "number": 1351, "head": "core-1334-host" },
-        { "number": 1352, "head": "triage-fmt-pool" }
+        { "number": 2015, "head": "core-1959-atom-identity" },
+        { "number": 2016, "head": "triage-512-cc" },
+        { "number": 2017, "head": "triage-512-coherent" },
+        { "number": 2018, "head": "triage-512-computads" },
+        { "number": 2020, "head": "triage-512-dynamic" }
       ],
-      "queued": [1349],
-      "states": { "1351": "pending", "1352": "green" }
+      "queued": [],
+      "states": {
+        "2015": "green",
+        "2016": "green",
+        "2017": "green",
+        "2018": "green",
+        "2020": "green"
+      },
+      "cap": 3
     },
-    "output": "hold\t1351\tpending"
+    "output": "land\t2017\t2018\tcapped"
+  },
+  {
+    "name": "a green stack as long as the cap lands whole (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1262, "head": "theory-solve" },
+        { "number": 1258, "head": "pending-diag-1248" },
+        { "number": 1264, "head": "triage-1264-stack-tasks" }
+      ],
+      "queued": [],
+      "states": { "1262": "green", "1258": "green", "1264": "green" },
+      "cap": 3
+    },
+    "output": "land\t1264"
+  },
+  {
+    "name": "a red member just above a full unit is named as red, not capped (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1939, "head": "surface-1834-imported-synonym" },
+        { "number": 1940, "head": "surface-1815-notebook" },
+        { "number": 1942, "head": "surface-1824-workspace-diagnostic" },
+        { "number": 1943, "head": "theory-1580-atom-occurrence" }
+      ],
+      "queued": [],
+      "states": { "1939": "green", "1940": "green", "1942": "green", "1943": "red" },
+      "cap": 3
+    },
+    "output": "land\t1942\t1943\tred"
   },
   {
     "name": "a stack queued throughout has nothing left to land (#1988)",
