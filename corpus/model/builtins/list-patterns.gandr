@@ -1,0 +1,93 @@
+// A native list taken apart by its patterns: `[]`, the elements a list
+// pattern writes, a rest `..r` binding the list past them, and `p as x`
+// binding the whole value a pattern matches. Each list pattern compiles to the
+// list case on the empty list and a cell, so a recursion on the rest descends
+// structurally, as a list's tail stands one stage below it.
+
+/// A rubric's grade.
+@[ checks ]
+data Grade : Type {
+  Met : Grade;
+  Unmet : Grade;
+}
+
+/// The grades composed: unmet as soon as one is, met when none is.
+@[ checks ]
+def rec compose(grades : List(Grade)) -> -F Grade {
+  case grades {
+    [] => Met,
+    [grade, ..rest] => case grade {
+      Unmet => Unmet,
+      Met => compose[<](rest)
+    }
+  }
+}
+
+/// One unmet grade among met ones fails the composition.
+@[ runs("Unmet") ]
+def failing() -> -F Grade {
+  compose([Met, Unmet, Met])
+}
+
+/// Met grades alone pass it.
+@[ runs("Met") ]
+def passing() -> -F Grade {
+  compose([Met, Met])
+}
+
+/// A list's length up to three, read off its shape.
+@[ checks ]
+def shortLength(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [] => 0,
+    [a] => 1,
+    [a, b] => 2,
+    _ => 3
+  }
+}
+
+/// Two elements match the pattern of two.
+@[ runs("2") ]
+def two() -> -F Integer {
+  shortLength([7, 8])
+}
+
+/// Four fall past every written length to the catch-all.
+@[ runs("3") ]
+def many() -> -F Integer {
+  shortLength([7, 8, 9, 10])
+}
+
+/// The second element, past the first, whatever the rest holds.
+@[ checks ]
+def secondOf(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [_, b, ..rest] => b,
+    _ => 0
+  }
+}
+
+/// The second of three.
+@[ runs("8") ]
+def eight() -> -F Integer {
+  secondOf([7, 8, 9])
+}
+
+/// A list's head added to its length up to three: the as-pattern binds the
+/// whole list the cell pattern matched.
+@[ checks ]
+def headed(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [a, .._] as all => {
+      run counted <- shortLength(all);
+      return a + counted
+    },
+    [] => 0
+  }
+}
+
+/// Five and the two elements it heads.
+@[ runs("7") ]
+def seven() -> -F Integer {
+  headed([5, 6])
+}

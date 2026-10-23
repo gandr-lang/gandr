@@ -1,6 +1,5 @@
 /// `list_pattern`: a list pattern.
-/// The checker does not reach this form yet; #1051 tracks it.
-@[ refuses("OutOfFragment.list_pattern") ]
+@[ checks ]
 def head(xs : List(Integer)) -> -F Integer {
   case xs {
     [x, ..rest] => return x,

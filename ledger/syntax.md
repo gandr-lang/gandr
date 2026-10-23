@@ -52,13 +52,13 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`tuple_pattern`](../corpus/ledger/syntax/tuple_pattern.gandr) | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other |
 | [`telescope_pattern`](../corpus/ledger/syntax/telescope_pattern.gandr) | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | admitted | Other, Member, Number |
 | [`labelled_sum_pattern`](../corpus/ledger/syntax/labelled_sum_pattern.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | admitted | Operator, Other, Member, Number |
-| [`list_pattern`](../corpus/ledger/syntax/list_pattern.gandr) | `[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | unadmitted | Other, Operator |
+| [`list_pattern`](../corpus/ledger/syntax/list_pattern.gandr) | `[ ⦅ PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦅ ⟨rest_pattern⟩ ⦆? ⦆? ‖ ⟨rest_pattern⟩ ⦆? ]` | `pattern.atom` | `list_pattern` | admitted | Other, Operator |
 | [`rest_pattern`](../corpus/ledger/syntax/rest_pattern.gandr) | `.. PATTERN` | `pattern.atom` | `rest_pattern` | admitted | Operator |
 | [`literal_pattern`](../corpus/ledger/syntax/literal_pattern.gandr) | `‹number› ‖ ‹typed_number› ‖ " ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* " ‖ true ‖ false` | `pattern.atom` | `literal_pattern` | admitted | Number, StringLit, Escape, Boolean |
 | [`hole.pattern`](../corpus/ledger/syntax/hole.pattern.gandr) | `? ⦅ ‹hole_name› ⦆?` | `pattern.atom` | `hole` | admitted | Hole, Label |
 | [`cons_pattern`](../corpus/ledger/syntax/cons_pattern.gandr) | `‹identifier› ⦅ ( ‹identifier› ) ⦆? ∷ PATTERN` or `‹identifier› ⦅ ( ‹identifier› ) ⦆? :: PATTERN` | `pattern.cons` | `cons_pattern` * | admitted | Variable, Other, Operator |
 | [`or_pattern`](../corpus/ledger/syntax/or_pattern.gandr) | `PATTERN \| PATTERN` | `pattern.or` | `or_pattern` | admitted | Operator |
-| [`as_pattern`](../corpus/ledger/syntax/as_pattern.gandr) | `PATTERN as ‹identifier›` | `pattern.as` | `as_pattern` | unadmitted | Keyword, VariableDef |
+| [`as_pattern`](../corpus/ledger/syntax/as_pattern.gandr) | `PATTERN as ‹identifier›` | `pattern.as` | `as_pattern` | admitted | Keyword, VariableDef |
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 

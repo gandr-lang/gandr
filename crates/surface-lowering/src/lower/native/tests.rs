@@ -328,6 +328,9 @@ fn reachable(
             Some(&Computation::DataCase { ref branches, .. }) => {
                 pending.extend(branches.iter().rev().copied());
             },
+            Some(&Computation::ListCase {
+                on_nil, on_cons, ..
+            }) => pending.extend([on_cons, on_nil]),
             _ => {},
         }
     }
@@ -2649,6 +2652,58 @@ fn a_non_exhaustive_match_is_refused()
             "`{name}` misses a case"
         );
     }
+}
+
+#[test]
+fn list_patterns_case_on_the_native_list()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def empty(xs : List(Integer)) -> -F Integer { case xs { [] => return 0, _ => return 1 } }\ndef pair(xs : List(Integer)) -> -F Integer { case xs { [a, b] => return b, _ => return 0 } }\ndef rest(xs : List(Integer)) -> -F List(Integer) { case xs { [a, ..tail] => return tail, [] => return [] } }\ndef whole(xs : List(Integer)) -> -F List(Integer) { case xs { [a, .._] as all => return all, [] => return [] } }\n",
+        ),
+        &mut arena,
+    );
+    let cases = |name: &str| -> Vec<ComputationId> {
+        reachable(
+            &arena,
+            tail_of(&arena, body_named(&module, SurfaceName::from(name))),
+        )
+        .into_iter()
+        .filter(|&at| matches!(arena.computation(at), Some(&Computation::ListCase { .. })))
+        .collect()
+    };
+    assert_eq!(cases("empty").len(), 1_usize, "one case on the list");
+    assert_eq!(
+        cases("pair").len(),
+        3_usize,
+        "a case on the list, on its tail and on the tail's tail"
+    );
+    let returned = |name: &str| {
+        let [case] = *cases(name).as_slice()
+        else {
+            return None;
+        };
+        let Some(&Computation::ListCase { on_cons, .. }) = arena.computation(case)
+        else {
+            return None;
+        };
+        match arena.computation(on_cons) {
+            Some(&Computation::Return(value)) => arena.value(value).cloned(),
+            _ => None,
+        }
+    };
+    assert_eq!(
+        returned("rest"),
+        Some(variable(DeBruijnIndex::from(0_u32))),
+        "the rest is the cell's tail, its innermost binder"
+    );
+    assert_eq!(
+        returned("whole"),
+        Some(variable(DeBruijnIndex::from(2_u32))),
+        "the alias is the whole list, the parameter past the head and the tail"
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]
