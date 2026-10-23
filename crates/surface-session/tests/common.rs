@@ -181,21 +181,17 @@ pub fn submit<'text>(
         .ends_with(
             match root {
                 CorpusRoot::Strict => Path::new("surface-corpus/strict"),
-                CorpusRoot::Fixture => Path::new("surface-corpus/fixture"),
+                CorpusRoot::Fixture => Path::new("corpus"),
             },
         )
 },
 )]
 pub fn corpus(root: CorpusRoot) -> PathBuf
 {
-    let name = match root {
-        CorpusRoot::Strict => "strict",
-        CorpusRoot::Fixture => "fixture",
-    };
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("surface-corpus")
-        .join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(match root {
+        CorpusRoot::Strict => "../surface-corpus/strict",
+        CorpusRoot::Fixture => "../../corpus",
+    })
 }
 
 /// The typings the session's latest resume holds, in item order.

@@ -289,7 +289,8 @@ mod tests
         // as its line and character, one-based, and its label.
         let hinted = |file: &str, lines: core::ops::Range<usize>| -> Vec<String> {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus")
+                .join("../..")
+                .join("corpus")
                 .join(file);
             let written = std::fs::read_to_string(&path).expect("the corpus source is read");
             let text = SourceText::from(written.as_str());
@@ -346,7 +347,7 @@ mod tests
             .collect()
         };
         assert_eq!(
-            hinted("fixture/surface/control-flow.gandr", 1 .. 1_000),
+            hinted("surface/control-flow.gandr", 1 .. 1_000),
             [
                 "27:8 : Nat",
                 "38:8 : Nat",
@@ -367,17 +368,17 @@ mod tests
              no parameter, use or constructor"
         );
         assert_eq!(
-            hinted("fixture/surface/typed-bind.gandr", 1 .. 1_000),
+            hinted("surface/typed-bind.gandr", 1 .. 1_000),
             ["25:35 : Nat"],
             "the lambda's binder, and no annotated `run`"
         );
         assert_eq!(
-            hinted("fixture/surface/control-flow.gandr", 167 .. 168),
+            hinted("surface/control-flow.gandr", 167 .. 168),
             ["167:8 : Nat"],
             "a window holds the hints inside it alone"
         );
         assert_eq!(
-            hinted("fixture/surface/typed-bind.gandr", 27 .. 1_000),
+            hinted("surface/typed-bind.gandr", 27 .. 1_000),
             [""; 0],
             "a window past every unannotated binder holds none"
         );

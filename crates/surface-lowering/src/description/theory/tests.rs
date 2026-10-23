@@ -1700,7 +1700,7 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
     // The corpus's own blocks, read as every `theory` block is: the naturals and
     // the λ-calculus are simply sorted, so both views serve their descriptions.
     let report = described(include_str!(
-        "../../../../surface-corpus/fixture/model/desc/second-order-signatures.gandr"
+        "../../../../../corpus/model/desc/second-order-signatures.gandr"
     ));
     assert_eq!(report.diagnostics, [], "the corpus's blocks lower whole");
     let theory = |name: &str| {

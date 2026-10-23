@@ -700,10 +700,10 @@ mod sweeps
 
     /// The sample: thirty-two sources, ranked by their BLAKE3 digest under
     /// this name, at least one of each corpus class — `strict` and each
-    /// directory below `fixture` — and every source the change adds or
-    /// modifies (`gandr-workflow-sweep`), each walked as its own path. A
+    /// family under the top-level `corpus` — and every source the change adds
+    /// or modifies (`gandr-workflow-sweep`), each walked as its own path. A
     /// sampled run holds each node and each byte to the gate, and each owed
-    /// kind to at most its pin. The `sweeps` and nightly profiles walk the two
+    /// kind to at most its pin. The `sweeps` and nightly profiles walk the
     /// roots whole and hold the census exactly: every pin met, every by-design
     /// kind seen without its entry, every listed kind written.
     const SAMPLE: Sample = Sample {
@@ -724,7 +724,18 @@ mod sweeps
         let sweep = Sweep::asked().expect("the run's sweep resolves");
         let whole = sweep.coverage() == Coverage::Full;
         let paths: Vec<PathBuf> = if whole {
-            vec![root(Path::new("strict")), root(Path::new("fixture"))]
+            let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("corpus");
+            vec![
+                root(Path::new("strict")),
+                corpus.join("classifier"),
+                corpus.join("fragment"),
+                corpus.join("model"),
+                corpus.join("pathological"),
+                corpus.join("pending"),
+                corpus.join("surface"),
+            ]
         }
         else {
             let visited = sweep.visit(

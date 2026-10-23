@@ -1063,7 +1063,7 @@ mod tests
         assert!(
             ledger_row
                 .to_string()
-                .contains("--- corpus\nledger/exemplars/features\n")
+                .contains("--- corpus\ncorpus/ledger/features\n")
         );
     }
 }

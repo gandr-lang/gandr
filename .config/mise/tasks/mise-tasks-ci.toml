@@ -815,7 +815,7 @@ while IFS= read -r line; do
   fi
   grep -F -e "$first" "$report" | grep -F -e "$how" | head -n 5 > "$scratch/findings" || true
   {
-    printf 'The recovery sweep (`gandr ledger recovery ledger/exemplars`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. %s mutants whose tile was %s are first refused `%s` at other bytes than the mutation.\n\n' "$count" "$wrong" "$name"
+    printf 'The recovery sweep (`gandr ledger recovery corpus/ledger`, #1782) writes each literal tile of each syntax exemplar wrong and reads the first error. %s mutants whose tile was %s are first refused `%s` at other bytes than the mutation.\n\n' "$count" "$wrong" "$name"
     printf '## Findings\n\nThe first of them; the nightly run lists every one%s.\n\n```text\n' "${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)}"
     cat "$scratch/findings"
     printf '```\n\n## Families\n\nA box is ticked once the sweep marks the family'"'"'s mutants where they were made.\n\n'

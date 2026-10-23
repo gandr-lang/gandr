@@ -1050,7 +1050,7 @@ fn an_importer_erased_cold_and_warm_answers_alike_776()
         .find(|source| {
             source
                 .uri
-                .ends_with("fixture/model/identity/loop-winding.gandr")
+                .ends_with("corpus/model/identity/loop-winding.gandr")
         })
         .expect("the corpus holds the winding number");
     let erased = || {

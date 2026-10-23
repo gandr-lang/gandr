@@ -78,8 +78,11 @@ use quenchant_shape::shape::Maybe;
         path.extension().is_some_and(|extension| extension == "gandr")))]
 fn sources() -> BTreeSet<PathBuf>
 {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-    let mut directories = vec![corpus.join("strict"), corpus.join("fixture")];
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+    let mut directories = vec![
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict"),
+        corpus,
+    ];
     let mut found = BTreeSet::new();
     while let Some(directory) = directories.pop() {
         for entry in std::fs::read_dir(&directory).expect("the directory lists") {

@@ -4830,7 +4830,7 @@ mod tests
     fn an_ext_member_names_its_face_and_boundary_1129()
     {
         let source = SourceText::from(include_str!(
-            "../../surface-corpus/fixture/model/extension/generated.gandr"
+            "../../../corpus/model/extension/generated.gandr"
         ));
         let table = table(source);
         let keyword = found(source, SourceText::from("ext Cell = Val on left is zero;"));
@@ -4881,9 +4881,7 @@ mod tests
     #[test]
     fn theory_names_refer_to_their_own_declarations_1128()
     {
-        let source = SourceText::from(include_str!(
-            "../../surface-corpus/fixture/model/include/monoid.gandr"
-        ));
+        let source = SourceText::from(include_str!("../../../corpus/model/include/monoid.gandr"));
         let table = table(source);
         let at = |needle: &'static str| refers(&table, source, SourceText::from(needle));
         let named = |needle: &'static str, name: &'static str| {
@@ -6005,7 +6003,7 @@ mod tests
     #[test]
     fn a_recursive_call_s_name_runs_as_its_force_1487()
     {
-        let written = include_str!("../../surface-corpus/fixture/model/data/data-base.gandr");
+        let written = include_str!("../../../corpus/model/data/data-base.gandr");
         let table = table(SourceText::from(written));
         let start = written
             .find("plus[<]")
@@ -7371,7 +7369,7 @@ mod tests
         let grammar = Arc::new(built_in().expect("the built-in grammar builds"));
         let path = std::fs::canonicalize(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus/fixture/model/data/rose.gandr"),
+                .join("../../corpus/model/data/rose.gandr"),
         )
         .expect("the rose trees are in the corpus");
         let own = std::fs::read_to_string(&path).expect("the rose trees read");
@@ -7494,7 +7492,7 @@ mod tests
         use super::ReadSite;
 
         let source = SourceText::from(include_str!(
-            "../../surface-corpus/fixture/pathological/universe/inductive-recursive.gandr"
+            "../../../corpus/pathological/universe/inductive-recursive.gandr"
         ));
         let grammar = built_in().expect("the built-in grammar builds");
         let table = table(source);
@@ -7524,7 +7522,7 @@ mod tests
     fn a_written_code_answers_as_the_type_it_decodes()
     {
         let source = SourceText::from(include_str!(
-            "../../surface-corpus/fixture/pathological/universe/closed.gandr"
+            "../../../corpus/pathological/universe/closed.gandr"
         ));
         let table = table(source);
         assert!(

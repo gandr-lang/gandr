@@ -126,7 +126,7 @@ mod tests
     #[test]
     fn every_refusal_names_its_input()
     {
-        let path = Path::new("crates/surface-corpus/fixture/uncommented.ledger");
+        let path = Path::new("corpus/uncommented.ledger");
         let rendered = [
             CommentError::Grammar("missing".to_owned()).to_string(),
             CommentError::File {

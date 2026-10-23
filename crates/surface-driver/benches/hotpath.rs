@@ -55,7 +55,7 @@ use gandr_surface_lsp::Spelling;
 
 /// The source the closure check and the keystroke run on: the largest model
 /// source's closure.
-const SOURCE: &str = "../surface-corpus/fixture/model/desc/lc/model-record.gandr";
+const SOURCE: &str = "../../corpus/model/desc/lc/model-record.gandr";
 
 /// The staged programs whose certificates the kernel readmits.
 const PROGRAMS: [&str; 2] = ["pow:0..8", "double:0..8"];
@@ -66,9 +66,9 @@ const BURST: usize = 8;
 /// The sources whose rule blocks complete: the group laws, a block whose pairs
 /// part at a non-value, and a block refused because its completion never ends.
 const COMPLETION: [&str; 3] = [
-    "../surface-corpus/fixture/model/identity/group-laws.gandr",
-    "../surface-corpus/fixture/model/desc/rules-completed.gandr",
-    "../surface-corpus/fixture/pathological/desc/rules-never-complete.gandr",
+    "../../corpus/model/identity/group-laws.gandr",
+    "../../corpus/model/desc/rules-completed.gandr",
+    "../../corpus/pathological/desc/rules-never-complete.gandr",
 ];
 
 /// The path of a corpus source from the driver's manifest directory.

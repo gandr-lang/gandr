@@ -1286,7 +1286,10 @@ mod tests
         let root = corpus_root();
         let paths = gandr_files(&root);
         assert!(paths.contains(&root.join("strict/values.gandr")));
-        assert!(paths.contains(&root.join("fixture/surface/typed-holes.gandr")));
+        let top = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("corpus");
+        assert!(top.join("surface/typed-holes.gandr").is_file());
         assert!(
             paths
                 .iter()

@@ -5792,7 +5792,7 @@ def h = 1 ;"#,
         let corpus = |file: &str| {
             std::fs::read_to_string(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../surface-corpus/fixture")
+                    .join("../../corpus")
                     .join(file),
             )
             .expect("the corpus source reads")

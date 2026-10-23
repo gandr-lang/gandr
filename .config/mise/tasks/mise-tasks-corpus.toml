@@ -1,0 +1,31 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# The corpus manifest: a sha256 line per file, `hash  path-under-the-root`,
+# sorted by path, over the roots named. Two manifests of one tree taken under
+# different roots diff to zero when every file kept its hash and its path
+# under its root: the same hashes, the same relative paths, the same count.
+# The roots are space-separated; the output file is written whole.
+#
+# A `ledger` directory is pruned from every root: the ledger exemplars are a
+# manifest root of their own (`corpus/ledger`), so they must not be counted
+# again under the corpus root that now contains them. No fixture subtree is
+# named `ledger`, so the prune matches only the exemplar root.
+["corpus:manifest"]
+description = "A sha256 manifest of the corpus roots, one line per file, sorted by path"
+usage = '''
+arg "[roots]" help="the corpus roots, space-separated, walked recursively"
+arg "[out]" help="the file the manifest is written to"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+out={{ usage.out }}
+mkdir -p "$(dirname "$out")"
+for root in {{ usage.roots }}; do
+  (cd "$root" && find . -name ledger -prune -o -type f -print | LC_ALL=C sort | sed 's|^\./||' | while IFS= read -r rel; do
+    printf '%s  %s\n' "$(sha256sum "$rel" | cut -d' ' -f1)" "$rel"
+  done)
+done | LC_ALL=C sort -k2 > "$out"
+echo "corpus manifest: $(wc -l < "$out") files to $out"
+'''

@@ -31,6 +31,7 @@ use gandr_surface_syntax::SyntaxTree;
 use crate::common::built;
 use crate::common::children;
 use crate::common::corpus_root;
+use crate::common::corpus_sources;
 use crate::common::gandr_files;
 use crate::common::label_of;
 use crate::common::root_digest;
@@ -204,28 +205,32 @@ fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
             Err(fmt::Error)
         }
     }
-    let root = corpus_root();
-    let paths = gandr_files(&root);
-    assert!(paths.contains(&root.join("strict/values.gandr")));
-    assert!(paths.contains(&root.join("fixture/surface/typed-holes.gandr")));
+    let sources = corpus_sources();
     assert!(
-        paths
+        sources
             .iter()
-            .all(|path| path.starts_with(&root)
-                && path.extension().is_some_and(|ext| ext == "gandr"))
+            .any(|&(_, ref name)| name.as_str() == "strict/values.gandr"),
+        "the strict root is inventoried"
     );
     assert!(
-        paths
-            .windows(2)
-            .all(|pair| matches!(pair, [left, right] if left <= right))
+        sources
+            .iter()
+            .any(|&(_, ref name)| name.as_str() == "fixture/surface/typed-holes.gandr"),
+        "the fixture families are inventoried"
     );
-    assert!(gandr_files(&root.join("strict/values.gandr/child")).is_empty());
+    assert!(
+        sources
+            .windows(2)
+            .all(|pair| matches!(pair, [left, right] if left.1 <= right.1))
+    );
+    assert!(gandr_files(Path::new("strict/values.gandr/child")).is_empty());
+    let strict = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict");
     assert_eq!(
-        read_source(&root.join("strict/values.gandr"))?,
+        read_source(&strict.join("values.gandr"))?,
         include_str!("../../surface-corpus/strict/values.gandr")
     );
-    let error = read_source(&root).expect_err("directories are not UTF-8 source files");
-    assert_eq!(error.path, root);
+    let error = read_source(&strict).expect_err("directories are not UTF-8 source files");
+    assert_eq!(error.path, strict);
     assert!(
         error
             .source()
@@ -233,7 +238,7 @@ fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
             .is_some_and(|cause| core::ptr::eq(&raw const error.source, &raw const *cause))
     );
     let rendered = error.to_string();
-    assert!(rendered.contains(&root.display().to_string()));
+    assert!(rendered.contains(&strict.display().to_string()));
     assert!(rendered.contains(&error.source.to_string()));
 
     assert_eq!(
@@ -1057,19 +1062,13 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
 fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let corpus = corpus_root();
-    let files = gandr_files(&corpus);
-    assert!(!files.is_empty(), "the corpus sources are present");
+    let sources = corpus_sources();
+    assert!(!sources.is_empty(), "the corpus sources are present");
     let mut dirty: Vec<(String, Vec<String>)> = Vec::new();
     let mut pinned = 0_usize;
-    for path in &files {
+    for &(ref path, ref relative) in &sources {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;
-        let relative = path
-            .strip_prefix(&corpus)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .into_owned();
         let owed = || {
             result.obligations().iter().map(|obligation| {
                 (
@@ -1088,7 +1087,7 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
         pinned = pinned.saturating_add(usize::from(!expected.is_empty()));
         if !owed().eq(expected.iter().copied()) {
             dirty.push((
-                relative,
+                relative.clone(),
                 owed()
                     .map(|(class, written)| format!("{class:?} @ {written:?}"))
                     .collect(),
@@ -1570,7 +1569,7 @@ fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
     // zero-obligation gate is `corpus_molds_to_zero_obligations`; this test
     // is the weaker totality floor.
     let pbg = built();
-    let files = gandr_files(&corpus_root());
+    let files: Vec<PathBuf> = corpus_sources().into_iter().map(|(path, _)| path).collect();
     assert!(!files.is_empty(), "the corpus sources are present");
     for path in &files {
         let src = read_source(path)?;
@@ -1597,7 +1596,7 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
     let mut read_back = String::new();
     let mut blanked = String::new();
     let mut leaves: Vec<(usize, String)> = Vec::new();
-    for path in &gandr_files(&corpus_root()) {
+    for &(ref path, _) in &corpus_sources() {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;
         let tree = result.tree();
@@ -1696,7 +1695,7 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
     const P99_BUDGET_NANOS: u128 = 100_000_000;
 
     let pbg = built();
-    let files = gandr_files(&corpus_root());
+    let files: Vec<PathBuf> = corpus_sources().into_iter().map(|(path, _)| path).collect();
     assert!(!files.is_empty(), "the corpus sources are present");
 
     let mut per_file_nanos: Vec<(u128, PathBuf)> = Vec::with_capacity(files.len());
@@ -1770,7 +1769,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
         "if c { pure 1 } else { pure 2 }".to_owned(),
         "pure 1 +".to_owned(),
         "pure ( 1 +".to_owned(),
-        read_source(&corpus_root().join("fixture/surface/string-interpolation.gandr"))?,
+        read_source(&corpus_root().join("surface/string-interpolation.gandr"))?,
     ];
     let mut excess_seen = 0_usize;
     let mut excess: Vec<Oblig> = Vec::new();
@@ -1834,7 +1833,7 @@ fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
     // finds it — the minimization never introduces an obligation (least of all
     // an AmbiguousPrec) when a clean reading exists.
     let pbg = built();
-    let files = gandr_files(&corpus_root());
+    let files: Vec<PathBuf> = corpus_sources().into_iter().map(|(path, _)| path).collect();
     assert!(!files.is_empty(), "the corpus sources are present");
     for path in &files {
         let src = read_source(path)?;

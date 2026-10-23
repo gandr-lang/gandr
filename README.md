@@ -6,14 +6,14 @@ A programming language built on a small certified kernel. A call-by-push-value c
 
 ## Status
 
-`0.0.0`, pre-release. Every tier exists: the kernel (universe levels, the term arena and sharing format, the checking machine, conversion and its replay, native universe paths, sessions and the stage universe), the core language (normalization by evaluation, the bidirectional checker, incremental checking and the sequent machine), the storage tier's value and record planes, the runtime's native emitter, which runs a program as copy-and-patched machine code, and the surface from grammar and parser through lowering to the driver, the language server, the MCP server and the terminal faces. `crates/surface-corpus` holds the language's corpus: its strict root checks owing nothing, and its fixture root states each source's expected verdict.
+`0.0.0`, pre-release. Every tier exists: the kernel (universe levels, the term arena and sharing format, the checking machine, conversion and its replay, native universe paths, sessions and the stage universe), the core language (normalization by evaluation, the bidirectional checker, incremental checking and the sequent machine), the storage tier's value and record planes, the runtime's native emitter, which runs a program as copy-and-patched machine code, and the surface from grammar and parser through lowering to the driver, the language server, the MCP server and the terminal faces. The corpus lives at the repository's top: its strict root, under `crates/surface-corpus/strict/`, checks owing nothing, and its fixture root, under `corpus/`, states each source's expected verdict.
 
 ## Usage
 
 ```sh
 gandr check crates/surface-corpus/strict      # every declaration checks, owing nothing
 gandr check --goals my-sources/               # owed signatures printed as goals
-gandr test crates/surface-corpus/fixture      # every fixture and pending source printed
+gandr test corpus                          # every fixture and pending source printed
 gandr run my-program.gandr                    # check, then run the last declaration and print its value
 gandr fmt --check my-sources/                 # list the sources out of layout
 ```
