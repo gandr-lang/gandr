@@ -777,6 +777,8 @@ pub fn decode_bridge(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -1189,13 +1191,14 @@ fn convert(
                         pending.push(values(a, b));
                         true
                     },
-                    // A run or prefix type is invariant in its protocol: a
-                    // subtype's run may take an offer its supertype lacks, so
-                    // moving a run along a subtyping is the checked `ride`,
-                    // never a silent subsumption. A run is no prefix: the two
-                    // formers do not convert.
+                    // A run, prefix or dialogue type is invariant in its
+                    // protocol: a subtype's run may take an offer its
+                    // supertype lacks, so moving a run along a subtyping is
+                    // the checked `ride`, never a silent subsumption. A run is
+                    // no prefix: the formers do not convert.
                     (ValueTypeView::Run(left), ValueTypeView::Run(right))
-                    | (ValueTypeView::Prefix(left), ValueTypeView::Prefix(right)) => {
+                    | (ValueTypeView::Prefix(left), ValueTypeView::Prefix(right))
+                    | (ValueTypeView::Dialogue(left), ValueTypeView::Dialogue(right)) => {
                         pending.push(Pairing::Codes(left, right));
                         true
                     },
@@ -1208,7 +1211,8 @@ fn convert(
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit)
-                    | (ValueTypeView::Buffer, ValueTypeView::Buffer) => true,
+                    | (ValueTypeView::Buffer, ValueTypeView::Buffer)
+                    | (ValueTypeView::Web, ValueTypeView::Web) => true,
                     // Where a found type meets a wanted one a stage is
                     // subsumed by the order; invariantly it equals only
                     // itself.
@@ -1430,6 +1434,8 @@ fn convert(
                         | ValueTypeView::Flow { .. }
                         | ValueTypeView::Run(_)
                         | ValueTypeView::Prefix(_)
+                        | ValueTypeView::Dialogue(_)
+                        | ValueTypeView::Web
                         | ValueTypeView::Data { .. }
                         | ValueTypeView::Record(_)
                         | ValueTypeView::Sum(..)
@@ -1820,6 +1826,27 @@ fn convert(
                                 }
                                 same
                             }
+                            // A dialogue is its endpoints' moves: two logs that
+                            // interleave the same moves differently convert.
+                            else if let Value::Dialogue(ref left_moves) = *matched_left_value
+                                && let Value::Dialogue(ref right_moves) = *matched_right_value
+                            {
+                                let mut pairs = Vec::new();
+                                let same = gandr_core_term::session::pair_dialogues(
+                                    left_moves,
+                                    right_moves,
+                                    |left, right| pairs.push(Pairing::Codes(left, right)),
+                                ) == CertificateEquality::Equal;
+                                if same {
+                                    pending.extend(pairs.into_iter().rev());
+                                }
+                                same
+                            }
+                            else if let Value::Web(ref left_pieces) = *matched_left_value
+                                && let Value::Web(ref right_pieces) = *matched_right_value
+                            {
+                                left_pieces == right_pieces
+                            }
                             else {
                                 {
                                     match *matched_left_value {
@@ -1832,6 +1859,8 @@ fn convert(
                                         | Value::FunctionFlow(..)
                                         | Value::SessionRelated { .. }
                                         | Value::Recorded(_)
+                                        | Value::Dialogue(_)
+                                        | Value::Web(_)
                                         | Value::Funext(..)
                                         | Value::Equiv(..)
                                         | Value::Univalence(..)
@@ -1919,6 +1948,8 @@ fn value_head(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -2170,6 +2201,8 @@ fn relocated_values(
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer

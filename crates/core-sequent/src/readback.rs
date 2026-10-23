@@ -490,6 +490,14 @@ impl<'run> Reading<'run>
                                 | gandr_core_term::session::RecordedMove::Received(payload) => Some(Some(payload)),
                                 | _ => None,
                             }))),
+                    | (&ConstructorTag::Dialogue(ref shape), fields) => matches!(*node, gandr_core_term::Value::Dialogue(ref read)
+                        if read.iter().map(|turn| (turn.endpoint, turn.movement.carrying(()))).eq(shape.iter().map(|turn| (turn.endpoint, turn.movement.clone())))
+                            && fields.iter().map(|field| self.read.get(field).copied()).eq(read.iter().filter_map(|turn| match turn.movement {
+                                | gandr_core_term::session::RecordedMove::Sent(payload)
+                                | gandr_core_term::session::RecordedMove::Received(payload) => Some(Some(payload)),
+                                | _ => None,
+                            }))),
+                    | (&ConstructorTag::Web(ref shape), &[]) => matches!(*node, gandr_core_term::Value::Web(ref read) if read == shape),
                     | _ => false,
                 },
                 | HeapValue::Thunk { .. } => matches!(*node, gandr_core_term::Value::Thunk(_)),
@@ -621,6 +629,27 @@ impl<'run> Reading<'run>
                         });
                     }
                     Ok(self.core.value_recorded(alloc::sync::Arc::from(read)))
+                },
+                (&ConstructorTag::Dialogue(ref shape), fields)
+                    if fields.len() == usize::from(tag.producer_arity()) =>
+                {
+                    let mut payloads = fields.iter();
+                    let mut read = Vec::with_capacity(shape.len());
+                    for turn in shape.iter() {
+                        let movement = turn.movement.try_map(|()| {
+                            let &payload =
+                                payloads.next().ok_or(ReadbackRefusal::Unreadable(id))?;
+                            self.lookup(payload)
+                        })?;
+                        read.push(gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement,
+                        });
+                    }
+                    Ok(self.core.value_dialogue(alloc::sync::Arc::from(read)))
+                },
+                (&ConstructorTag::Web(ref pieces), &[]) => {
+                    Ok(self.core.value_web(alloc::sync::Arc::clone(pieces)))
                 },
                 _ => Err(ReadbackRefusal::Unreadable(id)),
             },

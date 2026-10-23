@@ -1,0 +1,50 @@
+// The twin of `../../model/sessions/dialogue-web.gandr`: a dialogue is
+// admitted when each endpoint's moves replay against its side of the
+// protocol, every send meets an agreeing receipt and the log records each
+// send before its receipt; each failure is refused at its move (#1214).
+
+// The seat's dialogues that report and that hand off.
+import "../../model/sessions/dialogue-web.gandr" ;
+
+/// A protocol that sends one string and ends.
+module Ask {
+  type Asking = !String. end;
+}
+
+/// Reporting and handing off are different plays: no path joins them
+/// (#1214).
+@[ refuses("EndpointMismatch") ]
+def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) ;
+def apart = here(retiring) ;
+
+/// A receipt that hears other than was sent has no send to match it
+/// (#1214).
+@[ refuses("DialogueUnmatched") ]
+def misheard : Dialogue(Ask.Asking) ;
+def misheard = dialogue(
+  left(sent("yes")),
+  right(received("no")),
+  left(closed),
+  right(closed)
+) ;
+
+/// A receipt logged before its send is no order a recorder saw (#1214).
+@[ refuses("DialogueInverted") ]
+def foretold : Dialogue(Ask.Asking) ;
+def foretold = dialogue(
+  right(received("yes")),
+  left(sent("yes")),
+  left(closed),
+  right(closed)
+) ;
+
+/// The left endpoint receiving where its protocol sends is off the protocol
+/// (#1214).
+@[ refuses("RunNotAdmitted") ]
+def answered : Dialogue(Ask.Asking) ;
+def answered = dialogue(
+  left(received("yes")),
+  right(sent("yes")),
+  left(closed),
+  right(closed)
+) ;

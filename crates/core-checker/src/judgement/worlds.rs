@@ -280,6 +280,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer
@@ -765,6 +767,7 @@ impl Machine<'_, '_>
             | Computation::Bind(..)
             | Computation::Ascribe { .. }
             | Computation::Force(_)
+            | Computation::Decompose(_)
             | Computation::Case { .. }
             | Computation::DataCase { .. }
             | Computation::Split { .. }

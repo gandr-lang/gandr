@@ -2480,6 +2480,11 @@ enum Plan
     /// A recorded run, its moves in order, each payload the node it was
     /// written as.
     Recorded(Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// A dialogue, its moves in log order, each beside its endpoint, each
+    /// payload the node it was written as.
+    Dialogue(Arc<[gandr_core_term::session::DialogueMove<NodeIndex>]>),
+    /// The causal web of the dialogue written at the node.
+    Decompose(NodeIndex),
     /// A ride along a flow, over the static abstraction its motive is written
     /// as, the flow, and the value moved.
     Ride(NodeIndex, NodeIndex, NodeIndex),
@@ -9502,7 +9507,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -11680,7 +11685,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     exhausted(site, &cursor)?;
                     return self.effectful(site, row, argument.node);
                 },
-                TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix => {
+                TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => {
                     return Err(site.folded(
                         FormName::GRADE,
                         FragmentBoundary::Unadmitted(Unbuilt::TypeGrade),
@@ -11792,7 +11797,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         == match former {
                             | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
                             | TypeFormer::Returner | TypeFormer::List => Reading::ValueType(site.reading.frame()),
-                            | TypeFormer::Run | TypeFormer::Prefix => Reading::Value(site.reading.frame()),
+                            | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => Reading::Value(site.reading.frame()),
                         })
         },
     )]
@@ -11804,16 +11809,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let produced = match former {
-            TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix => {
-                Produced::ValueType
-            },
+            TypeFormer::Thunk
+            | TypeFormer::List
+            | TypeFormer::Run
+            | TypeFormer::Prefix
+            | TypeFormer::Dialogue => Produced::ValueType,
             TypeFormer::Returner => Produced::CompType,
         };
         let frame = self.require(site, produced)?;
         let inner = match former {
             TypeFormer::Thunk => Reading::CompType(frame),
             TypeFormer::Returner | TypeFormer::List => Reading::ValueType(frame),
-            TypeFormer::Run | TypeFormer::Prefix => Reading::Value(frame),
+            TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => Reading::Value(frame),
         };
         self.read(argument, inner);
 
@@ -13353,10 +13360,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FunctionFlow(..)
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
+                | Plan::Dialogue(_)
                 | Plan::Constructor(_)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -13370,7 +13378,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::RecordType(..)
                 | Plan::Sum(_)
                 | Plan::Former(
-                    TypeFormer::Thunk | TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix,
+                    TypeFormer::Thunk
+                    | TypeFormer::List
+                    | TypeFormer::Run
+                    | TypeFormer::Prefix
+                    | TypeFormer::Dialogue,
                     _,
                 )
                 | Plan::Path(..)
@@ -13661,6 +13673,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Lowered::ValueType(id)
             }),
             Plan::Recorded(ref moves) => self.mint_recorded(moves, sink, origin),
+            Plan::Dialogue(ref moves) => self.mint_dialogue(moves, sink, origin),
+            Plan::Decompose(dialogue) => self.mint_decompose(dialogue, sink, origin),
             Plan::Ride(motive, flow, value) => self.mint_ride((motive, flow, value), sink, origin),
             Plan::FlowThen(first, second) => self.mint_flow_then(first, second, sink, origin),
             Plan::Relation(relation, left, right) => {
@@ -14425,7 +14439,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
                 },
             },
-            | TypeFormer::Run | TypeFormer::Prefix => match self.value_at(argument) {
+            | TypeFormer::Run | TypeFormer::Prefix | TypeFormer::Dialogue => match self.value_at(argument) {
                 | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
                 | Maybe::Present(_) => {
                     matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
@@ -14464,6 +14478,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             TypeFormer::Prefix => self.value_at(argument).map(|session| {
                 let id = sink.arena.value_type_prefix(session);
+                sink.origins.record_value_type(id, origin);
+                Lowered::ValueType(id)
+            }),
+            TypeFormer::Dialogue => self.value_at(argument).map(|session| {
+                let id = sink.arena.value_type_dialogue(session);
                 sink.origins.record_value_type(id, origin);
                 Lowered::ValueType(id)
             }),
@@ -14780,6 +14799,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Resume(..)
             | Plan::Abandon(_)
             | Plan::Recorded(_)
+            | Plan::Dialogue(_)
+            | Plan::Decompose(_)
             | Plan::Ride(..)
             | Plan::FlowThen(..)
             | Plan::Relation(..)
@@ -18152,6 +18173,7 @@ impl Sink<'_>
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
+                TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
             },
             | _ => false,
         },
@@ -18172,7 +18194,8 @@ impl Sink<'_>
             | TypeAtom::Integer
             | TypeAtom::Text
             | TypeAtom::Void
-            | TypeAtom::Buffer => atom_type(self.arena, atom),
+            | TypeAtom::Buffer
+            | TypeAtom::Web => atom_type(self.arena, atom),
         };
         self.origins.record_value_type(id, origin);
 
@@ -18211,6 +18234,7 @@ pub fn atom_type(
         TypeAtom::Text => arena.value_type_base(BaseType::String),
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
+        TypeAtom::Web => arena.value_type_web(),
     }
 }
 

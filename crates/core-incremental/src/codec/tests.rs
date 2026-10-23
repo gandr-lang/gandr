@@ -232,6 +232,42 @@ fn every_node_former_round_trips_under_its_own_frame()
             RecordedMove::Offered(label("stop")),
             RecordedMove::Closed,
         ])),
+        ContentNode::Dialogue(alloc::sync::Arc::from([
+            gandr_core_term::session::DialogueMove {
+                endpoint: gandr_core_term::session::Endpoint::Left,
+                movement: RecordedMove::Sent(a),
+            },
+            gandr_core_term::session::DialogueMove {
+                endpoint: gandr_core_term::session::Endpoint::Right,
+                movement: RecordedMove::Received(b),
+            },
+            gandr_core_term::session::DialogueMove {
+                endpoint: gandr_core_term::session::Endpoint::Right,
+                movement: RecordedMove::Selected(label("go")),
+            },
+            gandr_core_term::session::DialogueMove {
+                endpoint: gandr_core_term::session::Endpoint::Left,
+                movement: RecordedMove::Offered(label("go")),
+            },
+        ])),
+        ContentNode::Web(alloc::sync::Arc::from([
+            gandr_core_term::session::WebPiece::Series(2),
+            gandr_core_term::session::WebPiece::Parallel(2),
+            gandr_core_term::session::WebPiece::Event {
+                endpoint: gandr_core_term::session::Endpoint::Left,
+                index: 0,
+            },
+            gandr_core_term::session::WebPiece::Event {
+                endpoint: gandr_core_term::session::Endpoint::Right,
+                index: 0,
+            },
+            gandr_core_term::session::WebPiece::Prime(1),
+            gandr_core_term::session::WebPiece::Event {
+                endpoint: gandr_core_term::session::Endpoint::Left,
+                index: 1,
+            },
+        ])),
+        ContentNode::Decompose(a),
         ContentNode::Ride {
             motive: a,
             flow: b,
@@ -244,6 +280,8 @@ fn every_node_former_round_trips_under_its_own_frame()
         },
         ContentNode::RunType(a),
         ContentNode::PrefixType(a),
+        ContentNode::DialogueType(a),
+        ContentNode::WebType,
         ContentNode::Variable {
             zone: Zone::Intuitionistic,
             index: slot,
@@ -2792,6 +2830,14 @@ fn every_refusal() -> Vec<Refusal>
         ]
         .map(|fault| Refusal::RunNotAdmitted { at, fault }),
     );
+    refusals.extend([
+        Refusal::DialogueUnmatched { at, step },
+        Refusal::DialogueInverted {
+            at,
+            earlier: RunStep::from(1_u32),
+            later: step,
+        },
+    ]);
     for site in [
         OccurrenceSite::Parameter(ParameterPosition::from(1_usize)),
         OccurrenceSite::Field {

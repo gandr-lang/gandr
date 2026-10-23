@@ -282,6 +282,8 @@ fn children(
             | Value::Forward(_)
             | Value::FunctionFlow(..)
             | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_)
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
@@ -306,7 +308,7 @@ fn children(
                 push(TermNode::Value(argument));
                 push(TermNode::Computation(head));
             },
-            Computation::Return(body) | Computation::Force(body) => {
+            Computation::Return(body) | Computation::Force(body) | Computation::Decompose(body) => {
                 push(TermNode::Value(body));
             },
             Computation::Bind(bound, body) => {
@@ -566,6 +568,8 @@ fn rebuild(
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
@@ -601,6 +605,10 @@ fn rebuild(
                 Computation::Force(original) => {
                     let body = value(emitted)?;
                     (body != original).then(|| arena.computation_force(body))
+                },
+                Computation::Decompose(original) => {
+                    let body = value(emitted)?;
+                    (body != original).then(|| arena.computation_decompose(body))
                 },
                 Computation::Application(head, argument) => {
                     let new_argument = value(emitted)?;

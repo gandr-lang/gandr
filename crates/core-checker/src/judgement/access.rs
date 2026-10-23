@@ -555,6 +555,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Unit
@@ -742,6 +744,8 @@ impl Machine<'_, '_>
                 | Value::Forward { .. }
                 | Value::FunctionFlow { .. }
                 | Value::Recorded { .. }
+                | Value::Dialogue { .. }
+                | Value::Web { .. }
                 | Value::Returned { .. }
                 | Value::Nested { .. }
                 | Value::Run { .. }

@@ -3,7 +3,9 @@
 //! order is one linearization of the session's causal web.
 
 use gandr_core_session::DialogueRefusal;
+use gandr_core_session::DialogueWeb;
 use gandr_core_session::Event;
+use gandr_core_session::Facing;
 use gandr_core_session::Move;
 use gandr_core_session::MoveIndex;
 use gandr_core_session::Node;
@@ -12,9 +14,11 @@ use gandr_core_session::Payload;
 use gandr_core_session::PayloadDigest;
 use gandr_core_session::Refusal;
 use gandr_core_session::ReplayError;
-use gandr_core_session::Side;
 use gandr_core_session::Turn;
 use gandr_core_session::admit;
+use gandr_core_term::session::Endpoint;
+use gandr_core_term::session::WebPiece;
+use gandr_theory_deep_inference::DecompositionRefusal;
 use gandr_theory_deep_inference::WebRelation;
 
 use crate::common::DISPATCH;
@@ -31,7 +35,7 @@ use crate::common::session;
 fn operator_moves(movement: Move) -> Turn
 {
     Turn {
-        side: Side::Left,
+        side: Endpoint::Left,
         movement,
     }
 }
@@ -43,7 +47,7 @@ fn operator_moves(movement: Move) -> Turn
 fn seat_moves(movement: Move) -> Turn
 {
     Turn {
-        side: Side::Right,
+        side: Endpoint::Right,
         movement,
     }
 }
@@ -53,7 +57,7 @@ fn seat_moves(movement: Move) -> Turn
 /// # Specification
 /// trivial.
 fn event(
-    side: Side,
+    side: Endpoint,
     at: MoveIndex,
 ) -> Event
 {
@@ -87,15 +91,15 @@ fn the_seat_and_operator_dialogue_is_one_linearization_of_its_web()
 {
     let web = admit((&operator(), &seat()), &retired()).expect("the dialogue is a run");
     let (sent, received) = (
-        event(Side::Left, MoveIndex(0)),
-        event(Side::Right, MoveIndex(0)),
+        event(Endpoint::Left, MoveIndex(0)),
+        event(Endpoint::Right, MoveIndex(0)),
     );
     assert_eq!(WebRelation::Precedes, web.relation(sent, received));
     assert_eq!(WebRelation::Follows, web.relation(received, sent));
     let (operator_closed, seat_offered, seat_closed) = (
-        event(Side::Left, MoveIndex(4)),
-        event(Side::Right, MoveIndex(3)),
-        event(Side::Right, MoveIndex(4)),
+        event(Endpoint::Left, MoveIndex(4)),
+        event(Endpoint::Right, MoveIndex(3)),
+        event(Endpoint::Right, MoveIndex(4)),
     );
     assert_eq!(
         WebRelation::Independent,
@@ -109,7 +113,7 @@ fn the_seat_and_operator_dialogue_is_one_linearization_of_its_web()
     assert_eq!(WebRelation::Precedes, web.relation(sent, seat_closed));
     assert_eq!(
         WebRelation::Missing,
-        web.relation(sent, event(Side::Right, MoveIndex(5)))
+        web.relation(sent, event(Endpoint::Right, MoveIndex(5)))
     );
     assert_eq!(WebRelation::Missing, web.relation(sent, sent));
 
@@ -132,8 +136,8 @@ fn a_receipt_recorded_before_its_send_is_refused_by_the_edge()
     early.swap(0, 1);
     assert_eq!(
         Err(DialogueRefusal::Inverted {
-            earlier: event(Side::Left, MoveIndex(0)),
-            later: event(Side::Right, MoveIndex(0)),
+            earlier: event(Endpoint::Left, MoveIndex(0)),
+            later: event(Endpoint::Right, MoveIndex(0)),
         }),
         admit((&operator(), &seat()), &early)
     );
@@ -142,8 +146,8 @@ fn a_receipt_recorded_before_its_send_is_refused_by_the_edge()
     unasked.swap(6, 7);
     assert_eq!(
         Err(DialogueRefusal::Inverted {
-            earlier: event(Side::Left, MoveIndex(3)),
-            later: event(Side::Right, MoveIndex(3)),
+            earlier: event(Endpoint::Left, MoveIndex(3)),
+            later: event(Endpoint::Right, MoveIndex(3)),
         }),
         admit((&operator(), &seat()), &unasked)
     );
@@ -160,7 +164,7 @@ fn a_receipt_that_disagrees_with_its_send_is_unmatched()
     });
     assert_eq!(
         Err(DialogueRefusal::Unmatched {
-            event: event(Side::Left, MoveIndex(0)),
+            event: event(Endpoint::Left, MoveIndex(0)),
         }),
         admit((&operator(), &seat()), &forged)
     );
@@ -173,7 +177,7 @@ fn a_move_off_its_protocol_is_refused_by_its_replay()
     let choice = wrong.get_mut(2).expect("the seat chooses to report");
     choice.movement = Move::Select("resign".into());
     let Err(DialogueRefusal::Replay {
-        side: Side::Right,
+        side: Endpoint::Right,
         error: ReplayError::Refused { at, reason, .. },
     }) = admit((&operator(), &seat()), &wrong)
     else {
@@ -191,7 +195,7 @@ fn the_left_endpoint_replays_first()
     let choice = wrong.get_mut(2).expect("the seat chooses to report");
     choice.movement = Move::Select("resign".into());
     let Err(DialogueRefusal::Replay {
-        side: Side::Left,
+        side: Endpoint::Left,
         error: ReplayError::Refused { at, reason, .. },
     }) = admit((&operator(), &seat()), &wrong)
     else {
@@ -218,7 +222,7 @@ fn a_message_without_its_counterpart_is_unmatched()
         (
             (&sends, &closes),
             [sent.as_slice(), &[seat_moves(Move::End)]].concat(),
-            event(Side::Left, MoveIndex(0)),
+            event(Endpoint::Left, MoveIndex(0)),
             "a send nobody receives",
         ),
         (
@@ -228,7 +232,7 @@ fn a_message_without_its_counterpart_is_unmatched()
                 seat_moves(Move::Receive(payload(REPORT))),
                 seat_moves(Move::End),
             ],
-            event(Side::Right, MoveIndex(0)),
+            event(Endpoint::Right, MoveIndex(0)),
             "a receipt nobody sent",
         ),
         (
@@ -238,7 +242,7 @@ fn a_message_without_its_counterpart_is_unmatched()
                 seat_moves(Move::End),
             ]]
             .concat(),
-            event(Side::Left, MoveIndex(0)),
+            event(Endpoint::Left, MoveIndex(0)),
             "a send observed as an offer",
         ),
     ] {
@@ -248,4 +252,131 @@ fn a_message_without_its_counterpart_is_unmatched()
             "{what} is unmatched"
         );
     }
+}
+
+#[test]
+fn one_message_decomposes_as_its_send_before_both_tails()
+{
+    // `!A. end` against its dual: the send, then the left's close beside the
+    // right's receipt and close, logged in the one order a recorder can.
+    let sends = session(vec![Node::Send(REPORT, NodeId(1)), Node::End]);
+    let receives = session(vec![Node::Receive(REPORT, NodeId(1)), Node::End]);
+    let dialogue = [
+        operator_moves(Move::Send(payload(REPORT))),
+        seat_moves(Move::Receive(payload(REPORT))),
+        operator_moves(Move::End),
+        seat_moves(Move::End),
+    ];
+    let web = admit((&sends, &receives), &dialogue).expect("one message is a run");
+    assert_eq!(
+        Ok(alloc_pieces(&[
+            WebPiece::Series(2),
+            WebPiece::Event {
+                endpoint: Endpoint::Left,
+                index: 0
+            },
+            WebPiece::Parallel(2),
+            WebPiece::Event {
+                endpoint: Endpoint::Left,
+                index: 1
+            },
+            WebPiece::Series(2),
+            WebPiece::Event {
+                endpoint: Endpoint::Right,
+                index: 0
+            },
+            WebPiece::Event {
+                endpoint: Endpoint::Right,
+                index: 1
+            },
+        ])),
+        web.decompose(),
+        "the send precedes everything; the left's close is beside the right's tail"
+    );
+    assert_eq!(
+        web,
+        DialogueWeb::of([
+            (Endpoint::Left, Facing::Out),
+            (Endpoint::Right, Facing::In),
+            (Endpoint::Left, Facing::Neither),
+            (Endpoint::Right, Facing::Neither),
+        ]),
+        "the web is read off the moves' facing alone"
+    );
+}
+
+#[test]
+fn queued_sends_leave_a_prime_node()
+{
+    // `!A. !A. end`: both sends logged before the first receipt. The second
+    // send precedes the second receipt and the left's close, the first
+    // receipt precedes the second, and the left's close is beside the
+    // right's tail: an N past the first send.
+    let web = DialogueWeb::of([
+        (Endpoint::Left, Facing::Out),
+        (Endpoint::Left, Facing::Out),
+        (Endpoint::Right, Facing::In),
+        (Endpoint::Right, Facing::In),
+        (Endpoint::Left, Facing::Neither),
+        (Endpoint::Right, Facing::Neither),
+    ]);
+    assert_eq!(
+        Ok(alloc_pieces(&[
+            WebPiece::Series(2),
+            WebPiece::Event {
+                endpoint: Endpoint::Left,
+                index: 0
+            },
+            WebPiece::Prime(4),
+            WebPiece::Event {
+                endpoint: Endpoint::Left,
+                index: 1
+            },
+            WebPiece::Event {
+                endpoint: Endpoint::Left,
+                index: 2
+            },
+            WebPiece::Event {
+                endpoint: Endpoint::Right,
+                index: 0
+            },
+            WebPiece::Series(2),
+            WebPiece::Event {
+                endpoint: Endpoint::Right,
+                index: 1
+            },
+            WebPiece::Event {
+                endpoint: Endpoint::Right,
+                index: 2
+            },
+        ])),
+        web.decompose(),
+        "the queued send, the left's close and the first receipt are a prime node's factors"
+    );
+}
+
+#[test]
+fn a_deadlocked_shape_has_no_decomposition()
+{
+    // Each endpoint receives before it sends: each receipt waits on the
+    // other's send, a cycle no admitted dialogue has.
+    let web = DialogueWeb::of([
+        (Endpoint::Left, Facing::In),
+        (Endpoint::Left, Facing::Out),
+        (Endpoint::Right, Facing::In),
+        (Endpoint::Right, Facing::Out),
+    ]);
+    assert!(
+        matches!(web.decompose(), Err(DecompositionRefusal::Cyclic { .. })),
+        "a deadlock is refused by its cycle"
+    );
+}
+
+/// `pieces` as the shared slice a decomposition answers.
+///
+/// # Specification
+/// trivial.
+fn alloc_pieces(pieces: &[WebPiece]) -> alloc::sync::Arc<[WebPiece]>
+{
+    alloc::sync::Arc::from(pieces)
 }

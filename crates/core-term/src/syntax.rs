@@ -459,6 +459,16 @@ pub enum Value
     /// moves through the session monitor and of its payloads at the types
     /// the protocol assigns them.
     Recorded(alloc::sync::Arc<[crate::session::RecordedMove]>),
+    /// A dialogue `dialogue(left(m₀), right(m₁), …)`: both endpoints' moves
+    /// of one channel in the order a recorder logged them, each payload a
+    /// value. It checks against `Dialogue(s)` when each endpoint's moves
+    /// replay against its protocol, every send is received as sent and the
+    /// log is one linearization of the dialogue's causal web; two dialogues
+    /// are one when each endpoint's moves are, whatever their interleaving.
+    Dialogue(alloc::sync::Arc<[crate::session::DialogueMove]>),
+    /// The modular decomposition of a dialogue's causal web, its nodes in
+    /// preorder: what `decompose` returns.
+    Web(alloc::sync::Arc<[crate::session::WebPiece]>),
     /// The value a pure computation returns, standing where a value is read:
     /// a compound path endpoint such as `n + 1` or `f(x)`. It types as the
     /// computation's result when the computation is a returner with no
@@ -606,7 +616,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -629,6 +639,8 @@ impl Value
             | Self::Forward(_)
             | Self::FunctionFlow(..)
             | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
             | Self::Returned(_)
             | Self::Nested(_)
             | Self::Run(_)
@@ -746,6 +758,9 @@ pub enum Computation
         /// The value moved, an inhabitant of the motive at the flow's source.
         value: ValueId,
     },
+    /// `decompose(d)`: returns the modular decomposition of the dialogue
+    /// `d`'s causal web, a [`Value::Web`].
+    Decompose(ValueId),
     /// Transport over a two-entry telescope: given `p : Path(A, a, b)`, `z₀ :
     /// B[a]`, `q : Path(B[b], ⟨tr(B, p, z₀)⟩, z₁)` and `x : C[a, z₀]`, it
     /// returns `C[b, z₁]`. The motive is the dependent arrow `Π (y : A). Π (z
@@ -1023,6 +1038,12 @@ pub enum ValueType
     /// finite trace the protocol's monitor accepts as far as it goes, closed
     /// or still open.
     Prefix(ValueId),
+    /// `Dialogue(s)`: the complete dialogues of one channel whose left
+    /// endpoint follows the session code `s` and whose right endpoint
+    /// follows its dual.
+    Dialogue(ValueId),
+    /// `Web`: the modular decompositions of dialogues' causal webs.
+    Web,
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit
@@ -2382,6 +2403,67 @@ fn session_children(
     CertificateEquality::Equal
 }
 
+/// What two recorded moves leave to compare.
+///
+/// # Specification
+/// trivial.
+pub enum MovePair
+{
+    /// A send against a send, or a receipt against a receipt: their payloads.
+    Payloads(ValueId, ValueId),
+    /// Two choices of one label, or two closes: nothing further.
+    Agreed,
+    /// Two moves of different actions or labels.
+    Different,
+}
+
+/// Pair the moves `left` and `right` for the structural comparison.
+///
+/// # Specification
+/// - ensures: the two payloads of two sends or two receipts, agreement for two
+///   choices of one label and for two closes, and a difference for any other
+///   pair.
+/// - panics: none.
+/// - executable: none — the clause is the body's table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run and a dialogue that differ in one move's action or
+///   label differ, and two that agree move for move compare their payloads.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+pub fn move_pair(
+    left: &crate::session::RecordedMove,
+    right: &crate::session::RecordedMove,
+) -> MovePair
+{
+    use crate::session::RecordedMove;
+    match (left, right) {
+        (&RecordedMove::Sent(a), &RecordedMove::Sent(b))
+        | (&RecordedMove::Received(a), &RecordedMove::Received(b)) => MovePair::Payloads(a, b),
+        (&RecordedMove::Selected(ref a), &RecordedMove::Selected(ref b))
+        | (&RecordedMove::Offered(ref a), &RecordedMove::Offered(ref b)) => {
+            if a == b {
+                MovePair::Agreed
+            }
+            else {
+                MovePair::Different
+            }
+        },
+        (&RecordedMove::Closed, &RecordedMove::Closed) => MovePair::Agreed,
+        (
+            &(RecordedMove::Sent(_)
+            | RecordedMove::Received(_)
+            | RecordedMove::Selected(_)
+            | RecordedMove::Offered(_)
+            | RecordedMove::Closed),
+            &(RecordedMove::Sent(_)
+            | RecordedMove::Received(_)
+            | RecordedMove::Selected(_)
+            | RecordedMove::Offered(_)
+            | RecordedMove::Closed),
+        ) => MovePair::Different,
+    }
+}
+
 /// Run the shared, evidence-erasing structural comparison.
 ///
 /// # Specification
@@ -2398,8 +2480,9 @@ fn session_children(
 ///   dependent arrow read as the plain arrow where its codomain reads as the
 ///   arrow's codomain weakened past its binder, and a dependent pair as the
 ///   product of two where its second factor reads as the product's second
-///   component weakened past its binder (#771); under [`Reading::Syntax`] no
-///   reduction is performed.
+///   component weakened past its binder (#771), and two dialogues whose
+///   endpoints made the same moves, however the logs interleave them; under
+///   [`Reading::Syntax`] no reduction is performed.
 /// - executable: none — the contract is the inductive graph comparison, not a
 ///   second traversal pretending to be an independent postcondition.
 ///
@@ -2609,29 +2692,29 @@ fn equal_syntax(
                         && left.len() == right.len()
                     {
                         for (left, right) in left.iter().zip(right.iter()) {
-                            match (left, right) {
-                                (
-                                    &crate::session::RecordedMove::Sent(a),
-                                    &crate::session::RecordedMove::Sent(b),
-                                )
-                                | (
-                                    &crate::session::RecordedMove::Received(a),
-                                    &crate::session::RecordedMove::Received(b),
-                                ) => pending.push(V(a, b)),
-                                (
-                                    &crate::session::RecordedMove::Selected(ref a),
-                                    &crate::session::RecordedMove::Selected(ref b),
-                                )
-                                | (
-                                    &crate::session::RecordedMove::Offered(ref a),
-                                    &crate::session::RecordedMove::Offered(ref b),
-                                ) if a == b => {},
-                                (
-                                    &crate::session::RecordedMove::Closed,
-                                    &crate::session::RecordedMove::Closed,
-                                ) => {},
-                                _ => return CertificateEquality::Different,
+                            match move_pair(left, right) {
+                                MovePair::Payloads(a, b) => pending.push(V(a, b)),
+                                MovePair::Agreed => {},
+                                MovePair::Different => return CertificateEquality::Different,
                             }
+                        }
+                    }
+                    // A dialogue is its endpoints' moves: two logs that
+                    // interleave the same moves differently are one dialogue.
+                    else if let Value::Dialogue(ref left) = *matched_left_value
+                        && let Value::Dialogue(ref right) = *matched_right_value
+                    {
+                        if crate::session::pair_dialogues(left, right, |a, b| pending.push(V(a, b)))
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                    }
+                    else if let Value::Web(ref left) = *matched_left_value
+                        && let Value::Web(ref right) = *matched_right_value
+                    {
+                        if left != right {
+                            return CertificateEquality::Different;
                         }
                     }
                     else if let Value::Tuple(ref a) = *matched_left_value
@@ -2896,7 +2979,8 @@ fn equal_syntax(
                     (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
                         pending.extend([V(a, c), C(b, d)]);
                     },
-                    (&Computation::Abandon(a), &Computation::Abandon(b)) => {
+                    (&Computation::Abandon(a), &Computation::Abandon(b))
+                    | (&Computation::Decompose(a), &Computation::Decompose(b)) => {
                         pending.push(V(a, b));
                     },
                     (
@@ -3211,7 +3295,8 @@ fn equal_syntax(
                         pending.push(VT(a, b));
                     }
                     else if let (&ValueType::Run(a), &ValueType::Run(b))
-                    | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =
+                    | (&ValueType::Prefix(a), &ValueType::Prefix(b))
+                    | (&ValueType::Dialogue(a), &ValueType::Dialogue(b)) =
                         (matched_left_value, matched_right_value)
                     {
                         pending.push(V(a, b));
@@ -3389,6 +3474,11 @@ fn equal_syntax(
                         && first.shape() == second.shape()
                     {
                         pending.extend(first.types().zip(second.types()).map(|(a, b)| VT(a, b)));
+                    }
+                    else if matches!(
+                        (matched_left_value, matched_right_value),
+                        (&ValueType::Web, &ValueType::Web)
+                    ) {
                     }
                     else if (matches!(
                         *matched_left_value,

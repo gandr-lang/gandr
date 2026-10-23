@@ -478,6 +478,10 @@ enum Task
         gandr_core_term::primitive::Primitive,
         gandr_core_term::primitive::Arguments<ProducerId>,
     ),
+    /// Mint the decomposition of the decoded dialogue.
+    Decompose,
+    /// Pop one value per payload move and build the dialogue of these moves.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
     /// Decode a producer as a value; leaves one value.
     Value(ProducerId, Depth),
     /// Decode a command as a computation; leaves one computation.
@@ -649,7 +653,7 @@ impl Unfocusing<'_>
             | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {
                 ProducerNode::Reify(ref frames) => self.values.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.computations.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                ProducerNode::Primitive { .. } | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
+                ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => true,
             }),
             | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
                 CommandNode::Perform { route: Route::Nearest, .. } | CommandNode::Abandon { .. } => !self.values.is_empty(),
@@ -665,8 +669,9 @@ impl Unfocusing<'_>
             | &Task::Bind => self.computations.len() >= 2,
             | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
+            | &Task::Dialogue(ref turns) => self.values.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
             | &Task::ListCons => self.values.len() >= 2,
-            | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force | &Task::Select(_) => !self.values.is_empty(),
+            | &Task::Decompose | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force | &Task::Select(_) => !self.values.is_empty(),
             | &Task::Application | &Task::Split(_) => !self.values.is_empty() && !self.computations.is_empty(),
             | &Task::ListCase | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
@@ -730,6 +735,12 @@ impl Unfocusing<'_>
                 self.computations.push(computation);
                 Ok(())
             },
+            Task::Decompose => {
+                let dialogue = self.pop_value()?;
+                let computation = self.core.computation_decompose(dialogue);
+                self.computations.push(computation);
+                Ok(())
+            },
             Task::Value(producer, depth) => self.value(producer, depth),
             Task::Command(command, depth) => self.command(command, depth),
             Task::Spine(consumer, depth) => self.spine(consumer, depth),
@@ -782,6 +793,30 @@ impl Unfocusing<'_>
                 drop(payloads);
                 let run = self.core.value_recorded(alloc::sync::Arc::from(moves));
                 self.values.push(run);
+                Ok(())
+            },
+            Task::Dialogue(shape) => {
+                let arity =
+                    ConstructorTag::Dialogue(alloc::sync::Arc::clone(&shape)).producer_arity();
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let mut payloads = self.values.drain(start ..);
+                let mut turns = Vec::with_capacity(shape.len());
+                for turn in shape.iter() {
+                    let movement = turn
+                        .movement
+                        .try_map(|()| payloads.next().ok_or(UnfocusRefusal::DecodeInvariant))?;
+                    turns.push(gandr_core_term::session::DialogueMove {
+                        endpoint: turn.endpoint,
+                        movement,
+                    });
+                }
+                drop(payloads);
+                let dialogue = self.core.value_dialogue(alloc::sync::Arc::from(turns));
+                self.values.push(dialogue);
                 Ok(())
             },
             Task::Select(selector) => {
@@ -1400,6 +1435,17 @@ impl Unfocusing<'_>
                         }
                         return Ok(());
                     },
+                    (&ConstructorTag::Dialogue(ref shape), payloads) => {
+                        self.tasks
+                            .push(Task::Dialogue(alloc::sync::Arc::clone(shape)));
+                        for &payload in payloads.iter().rev() {
+                            self.tasks.push(Task::Value(payload, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Web(ref pieces), &[]) => {
+                        self.core.value_web(alloc::sync::Arc::clone(pieces))
+                    },
                     _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
                 }
             },
@@ -1410,6 +1456,7 @@ impl Unfocusing<'_>
                 return Ok(());
             },
             ProducerNode::Primitive { .. }
+            | ProducerNode::Decompose(_)
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Cocase { .. }
             | ProducerNode::Mu { .. } => {
@@ -1545,6 +1592,12 @@ impl Unfocusing<'_>
                 for argument in arguments.iter().rev() {
                     self.tasks.push(Task::Value(*argument, depth));
                 }
+                return Ok(());
+            },
+            ProducerNode::Decompose(dialogue) => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks.push(Task::Decompose);
+                self.tasks.push(Task::Value(dialogue, depth));
                 return Ok(());
             },
             ProducerNode::Mu { body } => {

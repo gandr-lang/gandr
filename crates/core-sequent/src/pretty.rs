@@ -528,6 +528,7 @@ fn command(
     | Some(node) => match *node {
         | ProducerNode::Reify(_) => matches!(ret.first(), Some(Piece::Text(Token("reify [")))) && matches!(ret.last(), Some(Piece::Text(Token("]")))),
         | ProducerNode::Primitive { primitive, .. } => matches!(ret.first(), Some(Piece::Text(Token(name))) if *name == primitive.name().as_ref()),
+        | ProducerNode::Decompose(_) => matches!(ret.first(), Some(Piece::Text(Token("decompose")))),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ProducerNode::Code(_) => matches!(ret.as_slice(), &[Piece::Text(Token("code"))]),
         | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
@@ -582,6 +583,7 @@ fn producer(
             primitive,
             arguments,
         } => applied(Token(primitive.name().into()), &arguments, &[], depth),
+        ProducerNode::Decompose(dialogue) => applied(Token("decompose"), &[dialogue], &[], depth),
         ProducerNode::Variable { zone, index } => {
             let prefix = match zone {
                 Zone::Intuitionistic => 'x',
@@ -849,11 +851,12 @@ fn applied(
 /// - requires: nothing.
 /// - ensures: unit for the empty tuple, pair for a tuple of two, tuple for any
 ///   other; record for a record; inl and inr for the first two summands, inj
-///   past them; nil, cons, lift, ctor or recorded for the corresponding
-///   constructor.
+///   past them; nil, cons, lift, ctor, recorded, dialogue or web for the
+///   corresponding constructor.
 /// - provides: the fixed head spelling, independent of a lift's level; a
-///   datatype constructor's ordinal, a record's labels, a recorded run's moves
-///   and a summand past the second are written after it by the caller.
+///   datatype constructor's ordinal, a record's labels, a recorded run's or a
+///   dialogue's moves, a web's pieces and a summand past the second are written
+///   after it by the caller.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -881,6 +884,8 @@ fn applied(
     | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift"),
     | ConstructorTag::Data { .. } => matches!(ret.0.as_bytes(), b"ctor"),
     | ConstructorTag::Recorded(_) => matches!(ret.0.as_bytes(), b"recorded"),
+    | ConstructorTag::Dialogue(_) => matches!(ret.0.as_bytes(), b"dialogue"),
+    | ConstructorTag::Web(_) => matches!(ret.0.as_bytes(), b"web"),
 })]
 fn constructor_name(tag: &ConstructorTag) -> Token
 {
@@ -899,12 +904,14 @@ fn constructor_name(tag: &ConstructorTag) -> Token
         ConstructorTag::Lift(_) => Token("lift"),
         ConstructorTag::Data { .. } => Token("ctor"),
         ConstructorTag::Recorded(_) => Token("recorded"),
+        ConstructorTag::Dialogue(_) => Token("dialogue"),
+        ConstructorTag::Web(_) => Token("web"),
     }
 }
 
 /// The position a head's name is qualified by: a datatype constructor's
-/// ordinal, a record's labels, a recorded run's moves and a summand past the
-/// second.
+/// ordinal, a record's labels, a recorded run's or a dialogue's moves, a
+/// web's pieces and a summand past the second.
 ///
 /// # Specification
 /// trivial.
@@ -919,6 +926,8 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
         },
         ConstructorTag::Record(ref labels) => Some(Piece::Owned(labels_spelled(labels))),
         ConstructorTag::Recorded(ref moves) => Some(Piece::Owned(moves_spelled(moves))),
+        ConstructorTag::Dialogue(ref turns) => Some(Piece::Owned(turns_spelled(turns))),
+        ConstructorTag::Web(ref pieces) => Some(Piece::Owned(pieces_spelled(pieces))),
         ConstructorTag::Tuple(_)
         | ConstructorTag::ListNil
         | ConstructorTag::ListCons
@@ -967,6 +976,10 @@ fn qualifier(tag: &ConstructorTag) -> Option<Piece<'static>>
             && text.matches('x').count() == usize::from(arity),
     | (&ConstructorTag::Recorded(ref moves), &Piece::Owned(ref text)) =>
         *text == alloc::format!("recorded{}({}) ⇒ ", moves_spelled(moves), alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ")),
+    | (&ConstructorTag::Dialogue(ref turns), &Piece::Owned(ref text)) =>
+        *text == alloc::format!("dialogue{}({}) ⇒ ", turns_spelled(turns), alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ")),
+    | (&ConstructorTag::Web(ref pieces), &Piece::Owned(ref text)) =>
+        *text == alloc::format!("web{} ⇒ ", pieces_spelled(pieces)),
     | _ => false,
 })]
 fn pattern(tag: &ConstructorTag) -> Piece<'static>
@@ -1011,6 +1024,33 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
                 moves_spelled(moves)
             ))
         },
+        ConstructorTag::Dialogue(ref turns) => {
+            let binders = alloc::vec!["x"; usize::from(tag.producer_arity())].join(", ");
+            Piece::Owned(alloc::format!(
+                "dialogue{}({binders}) ⇒ ",
+                turns_spelled(turns)
+            ))
+        },
+        ConstructorTag::Web(ref pieces) => {
+            Piece::Owned(alloc::format!("web{} ⇒ ", pieces_spelled(pieces)))
+        },
+    }
+}
+
+/// One recorded move: `sent`, `received`, `selected(l)`, `offered(l)` or
+/// `closed`.
+///
+/// # Specification
+/// trivial.
+fn move_spelled(movement: &gandr_core_term::session::RecordedMove<()>) -> String
+{
+    use gandr_core_term::session::RecordedMove;
+    match *movement {
+        RecordedMove::Sent(()) => String::from("sent"),
+        RecordedMove::Received(()) => String::from("received"),
+        RecordedMove::Selected(ref label) => alloc::format!("selected({})", label.as_ref()),
+        RecordedMove::Offered(ref label) => alloc::format!("offered({})", label.as_ref()),
+        RecordedMove::Closed => String::from("closed"),
     }
 }
 
@@ -1021,15 +1061,53 @@ fn pattern(tag: &ConstructorTag) -> Piece<'static>
 /// trivial.
 fn moves_spelled(moves: &[gandr_core_term::session::RecordedMove<()>]) -> String
 {
-    use gandr_core_term::session::RecordedMove;
-    let spelled: Vec<String> = moves
+    let spelled: Vec<String> = moves.iter().map(move_spelled).collect();
+    alloc::format!("[{}]", spelled.join(", "))
+}
+
+/// A dialogue head's moves, in log order, each under its endpoint, between
+/// brackets: `[left(sent), right(received)]`.
+///
+/// # Specification
+/// trivial.
+fn turns_spelled(turns: &[gandr_core_term::session::DialogueMove<()>]) -> String
+{
+    use gandr_core_term::session::Endpoint;
+    let spelled: Vec<String> = turns
         .iter()
-        .map(|movement| match *movement {
-            RecordedMove::Sent(()) => String::from("sent"),
-            RecordedMove::Received(()) => String::from("received"),
-            RecordedMove::Selected(ref label) => alloc::format!("selected({})", label.as_ref()),
-            RecordedMove::Offered(ref label) => alloc::format!("offered({})", label.as_ref()),
-            RecordedMove::Closed => String::from("closed"),
+        .map(|turn| {
+            let endpoint = match turn.endpoint {
+                Endpoint::Left => "left",
+                Endpoint::Right => "right",
+            };
+            alloc::format!("{endpoint}({})", move_spelled(&turn.movement))
+        })
+        .collect();
+    alloc::format!("[{}]", spelled.join(", "))
+}
+
+/// A web head's pieces, in preorder, between brackets: `[series(2),
+/// event(left, 0), event(right, 0)]`.
+///
+/// # Specification
+/// trivial.
+fn pieces_spelled(pieces: &[gandr_core_term::session::WebPiece]) -> String
+{
+    use gandr_core_term::session::Endpoint;
+    use gandr_core_term::session::WebPiece;
+    let spelled: Vec<String> = pieces
+        .iter()
+        .map(|piece| match *piece {
+            WebPiece::Event { endpoint, index } => {
+                let endpoint = match endpoint {
+                    Endpoint::Left => "left",
+                    Endpoint::Right => "right",
+                };
+                alloc::format!("event({endpoint}, {index})")
+            },
+            WebPiece::Series(factors) => alloc::format!("series({factors})"),
+            WebPiece::Parallel(factors) => alloc::format!("parallel({factors})"),
+            WebPiece::Prime(factors) => alloc::format!("prime({factors})"),
         })
         .collect();
     alloc::format!("[{}]", spelled.join(", "))

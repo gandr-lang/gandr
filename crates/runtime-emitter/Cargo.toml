@@ -21,12 +21,13 @@ path = "tests/lib.rs"
 # The lowering reads the command IL and its vocabulary: the zones from the
 # core syntax, literals, indices and fixpoint evidence from the kernel's term
 # crate, and the cut polarity from the cell substrate. A run's outcome is
-# moved into the sequent crate's store, where its readback reads it. The
-# stencils are a normal dependency for their layout and the executor, and a
-# build dependency for the stencil list the build script checks the object
-# against.
+# moved into the sequent crate's store, where its readback reads it. A
+# decomposition's web comes from the session crate. The stencils are a normal
+# dependency for their layout and the executor, and a build dependency for
+# the stencil list the build script checks the object against.
 [dependencies]
 gandr-core-sequent.workspace = true
+gandr-core-session.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-stencils.workspace = true

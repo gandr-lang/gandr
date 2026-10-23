@@ -126,8 +126,9 @@
 //!
 //! Conversion refuses all eight runtime-control formers with
 //! `EvalFault::RuntimeControl(ControlFormer)`, every session action with
-//! `EvalFault::SessionAction`, every memory form with `EvalFault::MemoryForm`
-//! and every world form with `EvalFault::WorldForm`; it never invokes a host.
+//! `EvalFault::SessionAction`, every memory form with `EvalFault::MemoryForm`,
+//! every world form with `EvalFault::WorldForm` and a dialogue's
+//! decomposition with `EvalFault::Decomposition`; it never invokes a host.
 //! Stack/With type codes still compare and read back structurally with
 //! captured scope and effect-operation types intact.
 //!
@@ -371,6 +372,9 @@ pub enum EvalFault
     /// A world form holds, opens or migrates between worlds; it runs where
     /// the host binds its worlds, never in the certificate normalizer.
     WorldForm,
+    /// A decomposition reads a dialogue's causal web; the host computes it,
+    /// never the certificate normalizer.
+    Decomposition,
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
@@ -4437,15 +4441,15 @@ fn step_value(
                 .push(domain.value_path_certificate(term, TermFace::Source(term)));
             Ok(())
         },
-        // A recorded run evaluates its payloads where it stands, so transport
+        // A recording evaluates its payloads where it stands, so transport
         // moves each along its own payload type.
-        Value::Recorded(ref moves) => {
+        Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) => {
             machine.tasks.push(Task::Recorded(term));
             machine.tasks.extend(
-                moves
-                    .iter()
+                recording(node)
+                    .into_iter()
+                    .flatten()
                     .rev()
-                    .filter_map(carried)
                     .map(|payload| Task::Value { term: payload, env }),
             );
             Ok(())
@@ -4751,6 +4755,7 @@ fn step_comp(
         Computation::Session(_) => Err(EvalFault::SessionAction),
         Computation::Memory(_) => Err(EvalFault::MemoryForm),
         Computation::World(_) => Err(EvalFault::WorldForm),
+        Computation::Decompose(_) => Err(EvalFault::Decomposition),
         Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Exercise,
         )),
@@ -7342,6 +7347,83 @@ pub const fn carried(movement: &gandr_core_term::session::RecordedMove) -> Optio
     }
 }
 
+/// The payloads a recording carries, in its log's order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub enum Recording<'core>
+{
+    /// A recorded run's moves.
+    Run(core::slice::Iter<'core, gandr_core_term::session::RecordedMove>),
+    /// A dialogue's moves, both endpoints' in the log's order.
+    Dialogue(core::slice::Iter<'core, gandr_core_term::session::DialogueMove>),
+    /// A web, which carries none.
+    Web,
+}
+
+impl Iterator for Recording<'_>
+{
+    type Item = ValueId;
+
+    /// The next carried payload.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<ValueId>
+    {
+        match *self {
+            Self::Run(ref mut moves) => moves.find_map(carried),
+            Self::Dialogue(ref mut moves) => moves.find_map(|turn| carried(&turn.movement)),
+            Self::Web => None,
+        }
+    }
+}
+
+impl DoubleEndedIterator for Recording<'_>
+{
+    /// The last carried payload not yet taken.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_back(&mut self) -> Option<ValueId>
+    {
+        match *self {
+            Self::Run(ref mut moves) => moves.by_ref().rev().find_map(carried),
+            Self::Dialogue(ref mut moves) => moves
+                .by_ref()
+                .rev()
+                .find_map(|turn| carried(&turn.movement)),
+            Self::Web => None,
+        }
+    }
+}
+
+/// The recording `value` is, if it is one: a recorded run, a dialogue or a
+/// web, each kept in the source arena and evaluated as its payloads.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a recording exactly for a recorded run, a dialogue and a web.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run, a dialogue and a web each evaluate and read back
+///   as written.
+/// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
+/// - witness: `identity::tests::a_dialogue_and_its_web_read_back_as_written`
+#[spec(ensures: |ret| ret.is_some() == matches!(*value, Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_)))]
+pub fn recording(value: &Value) -> Option<Recording<'_>>
+{
+    if let Value::Recorded(ref moves) = *value {
+        return Some(Recording::Run(moves.iter()));
+    }
+    if let Value::Dialogue(ref moves) = *value {
+        return Some(Recording::Dialogue(moves.iter()));
+    }
+    matches!(*value, Value::Web(_)).then_some(Recording::Web)
+}
+
 /// The session type a run motive's code quotes, read as written.
 ///
 /// # Specification
@@ -8692,7 +8774,8 @@ fn step_record(
     Ok(())
 }
 
-/// Assemble a recorded run without copying its moves out of the source arena.
+/// Assemble a recording — a recorded run, a dialogue or a web — without
+/// copying its moves out of the source arena.
 ///
 /// # Specification
 /// - requires: evaluated payloads occupy the stack suffix in the source run's
@@ -8716,11 +8799,10 @@ fn step_recorded(
     term: ValueId,
 ) -> Result<(), EvalFault>
 {
-    let Some(&Value::Recorded(ref moves)) = core.value(term)
+    let Some(payloads) = core.value(term).and_then(recording)
     else {
         return Err(EvalFault::DanglingTerm);
     };
-    let payloads = moves.iter().filter_map(carried);
     let start = machine
         .values
         .len()

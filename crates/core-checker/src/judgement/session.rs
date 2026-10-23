@@ -784,6 +784,8 @@ impl Machine<'_, '_>
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -837,6 +839,7 @@ impl Machine<'_, '_>
                     | Computation::Bind(..)
                     | Computation::Ascribe { .. }
                     | Computation::Force(_)
+                    | Computation::Decompose(_)
                     | Computation::Split { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..)
@@ -1301,6 +1304,8 @@ impl Machine<'_, '_>
             | CheckRefusal::NonCovariantMotive { .. }
             | CheckRefusal::RideUnsupported { .. }
             | CheckRefusal::RunNotAdmitted { .. }
+            | CheckRefusal::DialogueUnmatched { .. }
+            | CheckRefusal::DialogueInverted { .. }
             | CheckRefusal::ForwardUnsupported { .. }
             | CheckRefusal::Boundary { .. }
             | CheckRefusal::Access { .. }

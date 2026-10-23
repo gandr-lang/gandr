@@ -12,14 +12,28 @@
 //! the set of its linear extensions. Every recorder's interleaving of one run
 //! is admitted alike, and the answer's [`DialogueWeb::relation`] reads
 //! `a ≺ b` on any two of its events.
+//!
+//! The web depends on which way each move faces the channel and on nothing
+//! else, so [`DialogueWeb::of`] builds it from the moves' [`Facing`] alone, as
+//! a run reads it from a dialogue already admitted, and
+//! [`DialogueWeb::decompose`] reads its modular decomposition back as the
+//! nodes a gandr program sees: series, parallel and prime, over events named
+//! by their endpoint and their position among its moves.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use gandr_core_term::session::Endpoint;
+use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::WebPiece;
+use gandr_theory_deep_inference::DecompositionRefusal;
 use gandr_theory_deep_inference::DependenceBits;
 use gandr_theory_deep_inference::LinearizationRefusal;
+use gandr_theory_deep_inference::ModularNode;
 use gandr_theory_deep_inference::WebRelation;
 use gandr_theory_deep_inference::WebVertex;
 use gandr_theory_deep_inference::WebVertexCount;
+use quenchant_shape::shape::Maybe;
 
 use crate::replay::Move;
 use crate::replay::MoveIndex;
@@ -27,17 +41,64 @@ use crate::replay::ReplayError;
 use crate::replay::replay;
 use crate::session::Session;
 
-/// Which endpoint of a binary session moved.
+/// Which way a move faces the channel.
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Side
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Facing
 {
-    /// The first endpoint of the pair [`admit`] reads.
-    Left,
-    /// The second.
-    Right,
+    /// A send or a selection: out to the other endpoint.
+    Out,
+    /// A receipt or an offer: in from the other endpoint.
+    In,
+    /// A close: neither.
+    Neither,
+}
+
+impl Facing
+{
+    /// The way the recorded move `movement` faces the channel.
+    ///
+    /// # Specification
+    /// - ensures: [`Facing::Out`] for a send and a selection, [`Facing::In`]
+    ///   for a receipt and an offer, [`Facing::Neither`] for a close.
+    /// - panics: none.
+    /// - executable: none — the clause is the body's table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue's sends and receipts read as the edges its
+    ///   decomposition orders.
+    /// - witness: `tests::dialogue::one_message_decomposes_as_its_send_before_both_tails`
+    #[inline]
+    #[must_use]
+    pub const fn of<V>(movement: &RecordedMove<V>) -> Self
+    {
+        match *movement {
+            RecordedMove::Sent(_) | RecordedMove::Selected(_) => Self::Out,
+            RecordedMove::Received(_) | RecordedMove::Offered(_) => Self::In,
+            RecordedMove::Closed => Self::Neither,
+        }
+    }
+
+    /// The way the replayed move `movement` faces the channel.
+    ///
+    /// # Specification
+    /// - ensures: as [`Facing::of`], a replayed end a close.
+    /// - panics: none.
+    /// - executable: none — the clause is the body's table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`admit`].
+    /// - witness: `tests::dialogue::the_seat_and_operator_dialogue_is_one_linearization_of_its_web`
+    const fn of_move(movement: &Move) -> Self
+    {
+        match *movement {
+            Move::Send(_) | Move::Select(_) => Self::Out,
+            Move::Receive(_) | Move::Offer(_) => Self::In,
+            Move::End => Self::Neither,
+        }
+    }
 }
 
 /// One recorded move and the endpoint that made it.
@@ -48,7 +109,7 @@ pub enum Side
 pub struct Turn
 {
     /// The endpoint.
-    pub side: Side,
+    pub side: Endpoint,
     /// Its move.
     pub movement: Move,
 }
@@ -62,7 +123,7 @@ pub struct Turn
 pub struct Event
 {
     /// The endpoint.
-    pub side: Side,
+    pub side: Endpoint,
     /// The move's position among the endpoint's own moves.
     pub at: MoveIndex,
 }
@@ -78,7 +139,7 @@ pub enum DialogueRefusal
     Replay
     {
         /// The endpoint.
-        side: Side,
+        side: Endpoint,
         /// The replay's refusal, its positions the endpoint's own.
         error: ReplayError,
     },
@@ -105,7 +166,7 @@ pub enum DialogueRefusal
     Uncovered(LinearizationRefusal),
 }
 
-/// The causal web of an admitted dialogue: its events and their precedence.
+/// The causal web of a dialogue: its events and their precedence.
 ///
 /// # Specification
 /// trivial.
@@ -123,6 +184,153 @@ pub struct DialogueWeb
 
 impl DialogueWeb
 {
+    /// The causal web of a dialogue whose moves, in the order logged, face
+    /// the channel as `turns` do: each endpoint's own order, and the `k`-th
+    /// move out of one endpoint before the `k`-th move into the other.
+    ///
+    /// # Specification
+    /// - ensures: one vertex per turn, the left endpoint's first; an edge from
+    ///   each of an endpoint's moves to its next, and from the `k`-th move out
+    ///   of one endpoint to the `k`-th move into the other, closed under
+    ///   transitivity; a move out or in with no partner on the other endpoint
+    ///   bears no cross edge.
+    /// - panics: none.
+    /// - executable: none — the clause would build the same edges again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one message decomposes to its send before the two
+    ///   endpoints' tails side by side, and two sends queued before the first
+    ///   receipt leave a prime node.
+    /// - witness: `tests::dialogue::one_message_decomposes_as_its_send_before_both_tails`
+    /// - witness: `tests::dialogue::queued_sends_leave_a_prime_node`
+    #[inline]
+    #[must_use]
+    pub fn of<Turns>(turns: Turns) -> Self
+    where
+        Turns: IntoIterator<Item = (Endpoint, Facing)>,
+    {
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        for (endpoint, facing) in turns {
+            match endpoint {
+                Endpoint::Left => left.push(facing),
+                Endpoint::Right => right.push(facing),
+            }
+        }
+        let mut web = Self {
+            left: left.len(),
+            right: right.len(),
+            precedes: DependenceBits::closure(WebVertexCount::from(0_usize), &[]),
+        };
+        let mut edges =
+            Vec::with_capacity(left.len().saturating_add(right.len()).saturating_mul(2));
+        for (side, facings) in [(Endpoint::Left, &left), (Endpoint::Right, &right)] {
+            for at in 1 .. facings.len() {
+                edges.push((
+                    web.vertex(Event {
+                        side,
+                        at: MoveIndex(at.saturating_sub(1)),
+                    }),
+                    web.vertex(Event {
+                        side,
+                        at: MoveIndex(at),
+                    }),
+                ));
+            }
+        }
+        for (sender, sent, receiver, received) in [
+            (Endpoint::Left, &left, Endpoint::Right, &right),
+            (Endpoint::Right, &right, Endpoint::Left, &left),
+        ] {
+            let outputs = sent
+                .iter()
+                .enumerate()
+                .filter(|&(_, &facing)| facing == Facing::Out);
+            let inputs = received
+                .iter()
+                .enumerate()
+                .filter(|&(_, &facing)| facing == Facing::In);
+            for ((out, _), (into, _)) in outputs.zip(inputs) {
+                edges.push((
+                    web.vertex(Event {
+                        side: sender,
+                        at: MoveIndex(out),
+                    }),
+                    web.vertex(Event {
+                        side: receiver,
+                        at: MoveIndex(into),
+                    }),
+                ));
+            }
+        }
+        web.precedes = DependenceBits::closure(
+            WebVertexCount::from(web.left.saturating_add(web.right)),
+            &edges,
+        );
+        web
+    }
+
+    /// The modular decomposition of the web, its nodes in preorder: each
+    /// series, parallel or prime node before its factors, an event as its
+    /// endpoint and its position among that endpoint's moves.
+    ///
+    /// # Specification
+    /// - ensures: one piece per node of the decomposition of the web's
+    ///   precedence, in its factor order (parallel and prime factors by least
+    ///   event, the left endpoint's events before the right's; series factors
+    ///   earliest first); no piece for a web of no event.
+    /// - fails: [`DecompositionRefusal::Cyclic`] for a web whose edges close a
+    ///   cycle, which no admitted dialogue's do.
+    /// - panics: none.
+    /// - executable: none — the clause would decompose the web again.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one message decomposes to its send before the two
+    ///   endpoints' tails side by side, two sends queued before the first
+    ///   receipt leave a prime node over the rest, and a deadlocked shape is
+    ///   refused by its cycle.
+    /// - witness: `tests::dialogue::one_message_decomposes_as_its_send_before_both_tails`
+    /// - witness: `tests::dialogue::queued_sends_leave_a_prime_node`
+    /// - witness: `tests::dialogue::a_deadlocked_shape_has_no_decomposition`
+    #[inline]
+    pub fn decompose(&self) -> Result<Arc<[WebPiece]>, DecompositionRefusal>
+    {
+        let tree = self.precedes.decompose()?;
+        let Maybe::Present(root) = tree.root()
+        else {
+            return Ok(Arc::from([]));
+        };
+        let mut pieces = Vec::with_capacity(usize::from(tree.node_count()));
+        let mut pending = Vec::from([root]);
+        while let Some(id) = pending.pop() {
+            let Maybe::Present(node) = tree.node(id)
+            else {
+                return Err(DecompositionRefusal::Malformed);
+            };
+            let (piece, factors) = match *node {
+                ModularNode::Event(vertex) => {
+                    let Event {
+                        side,
+                        at: MoveIndex(index),
+                    } = self.event(vertex);
+                    pieces.push(WebPiece::Event {
+                        endpoint: side,
+                        index,
+                    });
+                    continue;
+                },
+                ModularNode::Par(ref factors) => (WebPiece::Parallel(factors.len()), factors),
+                ModularNode::Seq(ref factors) => (WebPiece::Series(factors.len()), factors),
+                ModularNode::Prime { ref factors, .. } => (WebPiece::Prime(factors.len()), factors),
+            };
+            pieces.push(piece);
+            pending.extend(factors.iter().rev().copied());
+        }
+        Ok(Arc::from(pieces))
+    }
+
     /// The web's vertex for `event`.
     ///
     /// # Specification
@@ -144,9 +352,9 @@ impl DialogueWeb
     {
         let MoveIndex(at) = event.at;
         WebVertex::from(match event.side {
-            Side::Left if at < self.left => at,
-            Side::Right if at < self.right => self.left.saturating_add(at),
-            Side::Left | Side::Right => self.left.saturating_add(self.right),
+            Endpoint::Left if at < self.left => at,
+            Endpoint::Right if at < self.right => self.left.saturating_add(at),
+            Endpoint::Left | Endpoint::Right => self.left.saturating_add(self.right),
         })
     }
 
@@ -170,13 +378,13 @@ impl DialogueWeb
         let vertex = usize::from(vertex);
         if vertex < self.left {
             Event {
-                side: Side::Left,
+                side: Endpoint::Left,
                 at: MoveIndex(vertex),
             }
         }
         else {
             Event {
-                side: Side::Right,
+                side: Endpoint::Right,
                 at: MoveIndex(vertex.saturating_sub(self.left)),
             }
         }
@@ -265,41 +473,21 @@ pub fn admit(
     let mut right = Vec::new();
     for turn in dialogue {
         match turn.side {
-            Side::Left => left.push(turn.movement.clone()),
-            Side::Right => right.push(turn.movement.clone()),
+            Endpoint::Left => left.push(turn.movement.clone()),
+            Endpoint::Right => right.push(turn.movement.clone()),
         }
     }
     let _completion = replay(protocols.0, &left).map_err(|error| DialogueRefusal::Replay {
-        side: Side::Left,
+        side: Endpoint::Left,
         error,
     })?;
     let _completion = replay(protocols.1, &right).map_err(|error| DialogueRefusal::Replay {
-        side: Side::Right,
+        side: Endpoint::Right,
         error,
     })?;
-    let mut web = DialogueWeb {
-        left: left.len(),
-        right: right.len(),
-        precedes: DependenceBits::closure(WebVertexCount::from(0_usize), &[]),
-    };
-    let mut edges = Vec::with_capacity(left.len().saturating_add(right.len()).saturating_mul(2));
-    for (side, moves) in [(Side::Left, &left), (Side::Right, &right)] {
-        for at in 1 .. moves.len() {
-            edges.push((
-                web.vertex(Event {
-                    side,
-                    at: MoveIndex(at.saturating_sub(1)),
-                }),
-                web.vertex(Event {
-                    side,
-                    at: MoveIndex(at),
-                }),
-            ));
-        }
-    }
     for (sender, sent, receiver, received) in [
-        (Side::Left, &left, Side::Right, &right),
-        (Side::Right, &right, Side::Left, &left),
+        (Endpoint::Left, &left, Endpoint::Right, &right),
+        (Endpoint::Right, &right, Endpoint::Left, &left),
     ] {
         let outputs = sent
             .iter()
@@ -316,7 +504,7 @@ pub fn admit(
                     at: MoveIndex(out),
                 },
             };
-            let Some((into, input)) = inputs.next()
+            let Some((_, input)) = inputs.next()
             else {
                 return Err(unmatched);
             };
@@ -341,16 +529,6 @@ pub fn admit(
             if !agrees {
                 return Err(unmatched);
             }
-            edges.push((
-                web.vertex(Event {
-                    side: sender,
-                    at: MoveIndex(out),
-                }),
-                web.vertex(Event {
-                    side: receiver,
-                    at: MoveIndex(into),
-                }),
-            ));
         }
         if let Some((into, _)) = inputs.next() {
             return Err(DialogueRefusal::Unmatched {
@@ -361,16 +539,17 @@ pub fn admit(
             });
         }
     }
-    web.precedes = DependenceBits::closure(
-        WebVertexCount::from(web.left.saturating_add(web.right)),
-        &edges,
+    let web = DialogueWeb::of(
+        dialogue
+            .iter()
+            .map(|turn| (turn.side, Facing::of_move(&turn.movement))),
     );
     let (mut lefts, mut rights) = (0_usize, 0_usize);
     let mut run = Vec::with_capacity(dialogue.len());
     for turn in dialogue {
         let count = match turn.side {
-            Side::Left => &mut lefts,
-            Side::Right => &mut rights,
+            Endpoint::Left => &mut lefts,
+            Endpoint::Right => &mut rights,
         };
         run.push(web.vertex(Event {
             side: turn.side,

@@ -72,6 +72,7 @@ fn every_role_has_its_own_name()
         FrameRole::ListCaseCons,
         FrameRole::FixpointArgument,
         FrameRole::Force,
+        FrameRole::Decompose,
         FrameRole::ApplicationHead,
         FrameRole::ApplicationArgument,
         FrameRole::LambdaBody,

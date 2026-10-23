@@ -1021,7 +1021,7 @@ impl<'run> Walk<'run>
                     ..
                 },
             ) => {
-                let Some((left_fields, right_fields)) = recorded_payloads(
+                let Some(pairs) = recorded_payloads(
                     self.core,
                     self.domain,
                     (left_source, left_fields),
@@ -1031,11 +1031,10 @@ impl<'run> Walk<'run>
                     return Ok(Local::Disagree);
                 };
                 self.goals.extend(
-                    left_fields
-                        .iter()
-                        .zip(right_fields)
+                    pairs
+                        .into_iter()
                         .rev()
-                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                        .map(|(a, b)| Goal::Values(a, b, context)),
                 );
                 Ok(Local::Agree)
             },
@@ -1994,74 +1993,158 @@ pub fn equal_paths(
     Ok(gandr_core_term::CertificateEquality::Equal)
 }
 
-/// Two recorded runs' payloads, each in move order.
-pub type PayloadPairs<'domain> = (&'domain [DomainValueId], &'domain [DomainValueId]);
+/// Two recordings' payloads, paired as their conversion compares them.
+pub type PayloadPairs = Vec<(DomainValueId, DomainValueId)>;
 
-/// The payload pairs two recorded runs compare, when their moves agree.
+/// The payload pairs two recordings compare, when their moves agree.
+///
+/// A recorded run's moves compare in order. A dialogue's compare endpoint by
+/// endpoint, each endpoint's moves in its own order, so two logs that
+/// interleave the same moves differently are one dialogue. Two webs agree
+/// exactly when they are the same decomposition.
 ///
 /// # Specification
-/// - requires: each source is the recorded run its span's payloads were
-///   evaluated from.
-/// - ensures: both runs' payloads in move order when the runs take the same
-///   actions with the same labels; `None` when an action or a label differs.
+/// - requires: each source is the recording its span's payloads were evaluated
+///   from.
+/// - ensures: the payloads of each move of one recording paired with the
+///   payloads of the move it compares with, when every such move takes the same
+///   action with the same label at the same endpoint; `None` when an action, a
+///   label or a move count differs.
 /// - fails: [`ConversionFault::MachineInvariant`] for a source that is no
-///   recorded run or whose payload count differs from its span's; domain faults
+///   recording or whose payload count differs from its span's; domain faults
 ///   for dangling spans.
 /// - panics: none.
+/// - executable: none — the pairing is the projection itself; a predicate
+///   restating it would project both recordings again.
 ///
 /// # Errors
 /// A `ConversionFault`, as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two runs that differ only in a payload compare it, and
-///   two that differ in a label disagree.
+/// - hypothesis: L3 — two runs that differ only in a payload compare it, two
+///   that differ in a label disagree, and two logs of one dialogue agree.
 /// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |paired| paired.is_none_or(|(one, other)| one.len() == other.len())))]
-pub fn recorded_payloads<'domain>(
+/// - witness: `identity::tests::a_dialogue_and_its_web_read_back_as_written`
+pub fn recorded_payloads(
     core: &CoreArena,
-    domain: &'domain DomainArena,
+    domain: &DomainArena,
     (left, left_fields): (ValueId, crate::arena::FieldSpan),
     (right, right_fields): (ValueId, crate::arena::FieldSpan),
-) -> Result<Option<PayloadPairs<'domain>>, ConversionFault>
+) -> Result<Option<PayloadPairs>, ConversionFault>
 {
     use gandr_core_term::session::RecordedMove;
-    let (
-        Some(&gandr_core_term::Value::Recorded(ref left_moves)),
-        Some(&gandr_core_term::Value::Recorded(ref right_moves)),
-    ) = (core.value(left), core.value(right))
-    else {
-        return Err(ConversionFault::MachineInvariant);
-    };
     let left_fields = domain
         .fields(left_fields)
         .map_err(ConversionFault::Domain)?;
     let right_fields = domain
         .fields(right_fields)
         .map_err(ConversionFault::Domain)?;
-    if left_moves.len() != right_moves.len() {
+    let (Some(one), Some(other)) = (core.value(left), core.value(right))
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    if let (&gandr_core_term::Value::Web(ref one), &gandr_core_term::Value::Web(ref other)) =
+        (one, other)
+    {
+        return Ok((one == other).then(Vec::new));
+    }
+    let (Some(one), Some(other)) = (
+        projected(one, left_fields)?,
+        projected(other, right_fields)?,
+    )
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    if one.len() != other.len() {
         return Ok(None);
     }
-    let mut carried = 0_usize;
-    for (one, other) in left_moves.iter().zip(right_moves.iter()) {
-        match (one, other) {
+    let mut pairs = Vec::new();
+    for (&(one_side, one_move, one_payload), &(other_side, other_move, other_payload)) in
+        one.iter().zip(other.iter())
+    {
+        if one_side != other_side {
+            return Ok(None);
+        }
+        match (one_move, other_move) {
             (&RecordedMove::Sent(_), &RecordedMove::Sent(_))
-            | (&RecordedMove::Received(_), &RecordedMove::Received(_)) => {
-                carried = carried
-                    .checked_add(1_usize)
-                    .ok_or(ConversionFault::MachineInvariant)?;
-            },
+            | (&RecordedMove::Received(_), &RecordedMove::Received(_))
+            | (&RecordedMove::Closed, &RecordedMove::Closed) => {},
             (&RecordedMove::Selected(ref one), &RecordedMove::Selected(ref other))
             | (&RecordedMove::Offered(ref one), &RecordedMove::Offered(ref other))
                 if one == other => {},
-            (&RecordedMove::Closed, &RecordedMove::Closed) => {},
             _ => return Ok(None),
         }
+        match (one_payload, other_payload) {
+            (Some(one), Some(other)) => pairs.push((one, other)),
+            (None, None) => {},
+            (Some(_), None) | (None, Some(_)) => return Err(ConversionFault::MachineInvariant),
+        }
     }
-    if carried != left_fields.len() || carried != right_fields.len() {
+    Ok(Some(pairs))
+}
+
+/// A recording's moves, each with the endpoint that made it and the payload
+/// it carries, each endpoint's moves together in their own order and the left
+/// endpoint's first; a recorded run's moves are all the left endpoint's.
+///
+/// # Specification
+/// - requires: `fields` are the recording's evaluated payloads in its log's
+///   order.
+/// - ensures: `None` for a value that is neither a recorded run nor a dialogue;
+///   otherwise every move once, a send or a receive with its payload.
+/// - fails: [`ConversionFault::MachineInvariant`] when the payload count
+///   differs from the moves that carry one.
+/// - panics: none.
+/// - executable: none — the projection is the ordering itself.
+///
+/// # Errors
+/// A `ConversionFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`recorded_payloads`].
+/// - witness: `identity::tests::a_dialogue_and_its_web_read_back_as_written`
+fn projected<'core>(
+    value: &'core gandr_core_term::Value,
+    fields: &[DomainValueId],
+) -> Result<Option<Vec<ProjectedMove<'core>>>, ConversionFault>
+{
+    let mut fields = fields.iter().copied();
+    let mut projected = Vec::new();
+    let mut take = |side, movement: &'core gandr_core_term::session::RecordedMove| {
+        let payload = match crate::eval::carried(movement) {
+            Some(_) => Some(fields.next().ok_or(ConversionFault::MachineInvariant)?),
+            None => None,
+        };
+        projected.push((side, movement, payload));
+        Ok::<(), ConversionFault>(())
+    };
+    if let gandr_core_term::Value::Recorded(ref moves) = *value {
+        for movement in moves.iter() {
+            take(gandr_core_term::session::Endpoint::Left, movement)?;
+        }
+    }
+    else if let gandr_core_term::Value::Dialogue(ref moves) = *value {
+        for turn in moves.iter() {
+            take(turn.endpoint, &turn.movement)?;
+        }
+    }
+    else {
+        return Ok(None);
+    }
+    if fields.next().is_some() {
         return Err(ConversionFault::MachineInvariant);
     }
-    Ok(Some((left_fields, right_fields)))
+    projected.sort_by_key(|&(side, ..)| side);
+    Ok(Some(projected))
 }
+
+/// One move of a projected recording: its endpoint, the move and the payload
+/// it carries.
+type ProjectedMove<'core> = (
+    gandr_core_term::session::Endpoint,
+    &'core gandr_core_term::session::RecordedMove,
+    Option<DomainValueId>,
+);
 
 #[cfg(test)]
 mod tests;

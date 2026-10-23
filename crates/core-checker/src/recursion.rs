@@ -840,6 +840,8 @@ pub fn constructor_owes(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer

@@ -443,6 +443,8 @@ pub fn level_of(
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
+                | ValueTypeView::Dialogue(_)
+                | ValueTypeView::Web
                 | ValueTypeView::Buffer
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());

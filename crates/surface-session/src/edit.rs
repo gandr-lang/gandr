@@ -2669,7 +2669,8 @@ enum Agreement
                 ContentNode::Memory(ref left) => matches!(*new, ContentNode::Memory(ref right) if left.shape() == right.shape()),
                 ContentNode::KeptType { region: left, .. } => matches!(*new, ContentNode::KeptType { region: right, .. } if left == right),
                 _ if children(old).next().is_none() => old == new,
-                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
+                ContentNode::Dialogue(ref left) => matches!(*new, ContentNode::Dialogue(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(()))),
+                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -2925,6 +2926,13 @@ fn agreement(
         (&ContentNode::Memory(ref left), &ContentNode::Memory(ref right)) => {
             left.shape() == right.shape()
         },
+        (&ContentNode::Dialogue(ref left), &ContentNode::Dialogue(ref right)) => {
+            left.len() == right.len()
+                && left.iter().zip(right.iter()).all(|(left, right)| {
+                    left.endpoint == right.endpoint
+                        && left.movement.carrying(()) == right.movement.carrying(())
+                })
+        },
         _ if children(old).next().is_none() => old == new,
         _ => mem::discriminant(old) == mem::discriminant(new),
     };
@@ -3136,6 +3144,11 @@ fn read(
                     matches!(ret, ContentNode::Recorded(ref found) if found.len() == moves.len()
                         && found.iter().zip(moves.iter()).all(|(left, right)| left.carrying(()) == right.carrying(())))
                 }
+                Value::Dialogue(ref moves) => {
+                    matches!(ret, ContentNode::Dialogue(ref found) if found.len() == moves.len()
+                        && found.iter().zip(moves.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(())))
+                }
+                Value::Web(ref pieces) => matches!(ret, ContentNode::Web(ref found) if found == pieces),
                 Value::Ua { stratum, ref sides, .. } => {
                     matches!(
                         ret, ContentNode::Ua { stratum: found, sides: ref other, .. } if found
@@ -3307,6 +3320,21 @@ where
                 })
                 .collect(),
         ),
+        Some(&Value::Dialogue(ref moves)) => ContentNode::Dialogue(
+            moves
+                .iter()
+                .map(|turn| gandr_core_term::session::DialogueMove {
+                    endpoint: turn.endpoint,
+                    movement: turn
+                        .movement
+                        .try_map(|payload| {
+                            Ok::<_, core::convert::Infallible>(child(Root::Value(payload)))
+                        })
+                        .unwrap_or_else(|never| match never {}),
+                })
+                .collect(),
+        ),
+        Some(&Value::Web(ref pieces)) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
         Some(&Value::Ua {
             stratum,
             ref sides,
@@ -3435,6 +3463,7 @@ where
                 Computation::Return(..) => matches!(ret, ContentNode::Return(..)),
                 Computation::Bind(..) => matches!(ret, ContentNode::Bind(..)),
                 Computation::Force(..) => matches!(ret, ContentNode::Force(..)),
+                Computation::Decompose(..) => matches!(ret, ContentNode::Decompose(..)),
                 Computation::Case { .. } => matches!(ret, ContentNode::Case { .. }),
                 Computation::Hole(hole) => ret == ContentNode::ComputationHole(hole),
                 Computation::Mark { mark, .. } => {
@@ -3701,6 +3730,7 @@ where
             ContentNode::Bind(bound, child(Root::Computation(rest)))
         },
         Some(&Computation::Force(value)) => ContentNode::Force(child(Root::Value(value))),
+        Some(&Computation::Decompose(value)) => ContentNode::Decompose(child(Root::Value(value))),
         Some(&Computation::Case {
             scrutinee,
             ref branches,
@@ -3790,6 +3820,8 @@ where
                 ValueType::Flow { .. } => matches!(ret, ContentNode::FlowType { .. }),
                 ValueType::Run(_) => matches!(ret, ContentNode::RunType(_)),
                 ValueType::Prefix(_) => matches!(ret, ContentNode::PrefixType(_)),
+                ValueType::Dialogue(_) => matches!(ret, ContentNode::DialogueType(_)),
+                ValueType::Web => matches!(ret, ContentNode::WebType),
                 ValueType::Base(base) => {
                     matches!(ret, ContentNode::Base(found) if found == base)
                 }
@@ -3909,6 +3941,8 @@ where
         },
         Some(&ValueType::Run(code)) => ContentNode::RunType(child(Root::Value(code))),
         Some(&ValueType::Prefix(code)) => ContentNode::PrefixType(child(Root::Value(code))),
+        Some(&ValueType::Dialogue(code)) => ContentNode::DialogueType(child(Root::Value(code))),
+        Some(&ValueType::Web) => ContentNode::WebType,
         Some(&ValueType::Base(base)) => ContentNode::Base(base),
         Some(&ValueType::Product(ref parts)) => ContentNode::Product(
             parts
@@ -4569,6 +4603,9 @@ def body = 1 ;
         use gandr_core_term::effect::capability::CapabilityGrade;
         use gandr_core_term::effect::capability::Region;
         use gandr_core_term::effect::capability::RegionDepth;
+        use gandr_core_term::session::DialogueMove;
+        use gandr_core_term::session::Endpoint;
+        use gandr_core_term::session::RecordedMove;
         use gandr_kernel_strata::Level;
 
         use super::Agreement;
@@ -4818,6 +4855,12 @@ def body = 1 ;
         for (what, old, new, expected) in cases {
             assert_eq!(super::agreement(&old, &new), expected, "{what}");
         }
+        let played = |endpoint, payload: usize| {
+            ContentNode::Dialogue(Arc::from([DialogueMove {
+                endpoint,
+                movement: RecordedMove::Sent(node(payload)),
+            }]))
+        };
         let frames = [
             StackFrame::Apply(node(1_usize)),
             StackFrame::Bind(node(2_usize)),
@@ -4850,6 +4893,18 @@ def body = 1 ;
                 ContentNode::Tuple(vec![node(1_usize), node(2_usize)]),
                 ContentNode::Tuple(vec![node(3_usize), node(4_usize)]),
                 Same,
+            ),
+            (
+                "a dialogue over other payloads",
+                played(Endpoint::Left, 1),
+                played(Endpoint::Left, 3),
+                Same,
+            ),
+            (
+                "a dialogue whose move the other endpoint makes",
+                played(Endpoint::Left, 1),
+                played(Endpoint::Right, 1),
+                Differs,
             ),
         ] {
             assert_eq!(super::agreement(&old, &new), expected, "{what}");

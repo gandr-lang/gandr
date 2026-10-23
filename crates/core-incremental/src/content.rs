@@ -689,6 +689,13 @@ pub enum ContentNode
     FlowProduct(NodeIndex, NodeIndex),
     /// A recorded run, its moves in order, each payload an edge.
     Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// A dialogue, its moves in log order, each beside its endpoint, each
+    /// payload an edge.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<NodeIndex>]>),
+    /// A web: a dialogue's decomposition in preorder. It has no edge.
+    Web(alloc::sync::Arc<[gandr_core_term::session::WebPiece]>),
+    /// The decomposition of a dialogue.
+    Decompose(NodeIndex),
     /// Transport of a value along a flow in a motive under one binder.
     Ride
     {
@@ -713,6 +720,10 @@ pub enum ContentNode
     RunType(NodeIndex),
     /// The type of recorded prefixes of a session code.
     PrefixType(NodeIndex),
+    /// The type of dialogues of a session code.
+    DialogueType(NodeIndex),
+    /// The type of webs.
+    WebType,
     /// A bound variable.
     Variable
     {
@@ -983,6 +994,8 @@ pub struct Children<'node>
     frames: &'node [gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>],
     /// Recorded moves, contributing their payload values in order.
     moves: &'node [gandr_core_term::session::RecordedMove<NodeIndex>],
+    /// A dialogue's moves, contributing their payload values in log order.
+    turns: &'node [gandr_core_term::session::DialogueMove<NodeIndex>],
 }
 
 impl Default for Sort
@@ -1096,7 +1109,8 @@ impl<'node> Children<'node>
             || self.signature.is_some()
             || !self.clauses.is_empty()
             || !self.frames.is_empty()
-            || !self.moves.is_empty();
+            || !self.moves.is_empty()
+            || !self.turns.is_empty();
         let rest =
             variadic.then(move || {
                 self.suffix
@@ -1136,6 +1150,12 @@ impl<'node> Children<'node>
                                 Maybe::Absent(_) => None,
                             }),
                     )
+                    .chain(self.turns.iter().filter_map(
+                        move |turn| match turn.movement.payload() {
+                            Maybe::Present(payload) => Some((payload, Sort::Value, none)),
+                            Maybe::Absent(_) => None,
+                        },
+                    ))
             });
         fixed.chain(rest.into_iter().flatten())
     }
@@ -1244,6 +1264,8 @@ impl ContentNode
         | Self::FunctionFlow(..)
         | Self::FlowProduct(..)
         | Self::Recorded(_)
+        | Self::Dialogue(_)
+        | Self::Web(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::Funext(..)
@@ -1293,6 +1315,7 @@ impl ContentNode
         | Self::Return(_)
         | Self::Bind(..)
         | Self::Force(_)
+        | Self::Decompose(_)
         | Self::ListFold { .. }
         | Self::ListCase { .. }
         | Self::Case { .. }
@@ -1310,6 +1333,8 @@ impl ContentNode
         | Self::FlowType { .. }
         | Self::RunType(_)
         | Self::PrefixType(_)
+        | Self::DialogueType(_)
+        | Self::WebType
         | Self::Base(_)
         | Self::Product(_)
         | Self::Sum(_)
@@ -1357,6 +1382,8 @@ impl ContentNode
             | Self::FunctionFlow(..)
             | Self::FlowProduct(..)
             | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
             | Self::Funext(..)
@@ -1406,6 +1433,7 @@ impl ContentNode
             | Self::Return(_)
             | Self::Bind(..)
             | Self::Force(_)
+            | Self::Decompose(_)
             | Self::ListFold { .. }
             | Self::ListCase { .. }
             | Self::Case { .. }
@@ -1423,6 +1451,8 @@ impl ContentNode
             | Self::FlowType { .. }
             | Self::RunType(_)
             | Self::PrefixType(_)
+            | Self::DialogueType(_)
+            | Self::WebType
             | Self::Base(_)
             | Self::Product(_)
             | Self::Sum(_)
@@ -1510,6 +1540,8 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::BufferType
+            | Self::Web(_)
+            | Self::WebType
             | Self::UnknownComputationType => ret.count == 0,
             | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
             | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
@@ -1523,6 +1555,7 @@ impl ContentNode
             | Self::PathType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
             | Self::ElementTransport { motive, path, value } | Self::Ride { motive, flow: path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
             | Self::Recorded(ref moves) => ret.iter().eq(moves.iter().filter_map(|step| match step.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
+            | Self::Dialogue(ref turns) => ret.iter().eq(turns.iter().filter_map(|turn| match turn.movement.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
             | Self::TelescopeTransport { motive, path, start, over, value } => actual == Some(&[(motive, C), (path, V), (start, V), (over, V), (value, V)][..]),
             | Self::Returned(a) | Self::Nested(a) | Self::Run(a) => actual == Some(&[(a, M)][..]),
             | Self::PathRefl(a)
@@ -1531,11 +1564,13 @@ impl ContentNode
             | Self::Forward(a)
             | Self::RunType(a)
             | Self::PrefixType(a)
+            | Self::DialogueType(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
             | Self::ValueLift { body: a, .. }
             | Self::Return(a)
             | Self::Force(a)
+            | Self::Decompose(a)
             | Self::Element { code: a, .. }
             | Self::ComputationElement { code: a, .. }
             | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
@@ -1764,6 +1799,10 @@ impl ContentNode
                 moves,
                 ..Children::default()
             },
+            Self::Dialogue(ref turns) => Children {
+                turns,
+                ..Children::default()
+            },
             Self::TelescopeTransport {
                 motive,
                 path,
@@ -1784,6 +1823,8 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::BufferType
+            | Self::Web(_)
+            | Self::WebType
             | Self::UnknownComputationType => Children::default(),
             Self::Tuple(ref components) => Children::default().followed_by(components, V),
             Self::PathUniverse(first, second)
@@ -1815,10 +1856,12 @@ impl ContentNode
             | Self::Forward(body)
             | Self::RunType(body)
             | Self::PrefixType(body)
+            | Self::DialogueType(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
             | Self::Return(body)
             | Self::Force(body)
+            | Self::Decompose(body)
             | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
             Self::ComputationMark { body, .. }
             | Self::Thunk(body)
@@ -1911,7 +1954,7 @@ impl ContentNode
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         Self::Univalence(..) | Self::Abandon(_) |
-        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
@@ -1961,6 +2004,8 @@ impl ContentNode
             | Self::FlowType { .. }
             | Self::RunType(_)
             | Self::PrefixType(_)
+            | Self::DialogueType(_)
+            | Self::WebType
             | Self::SessionRelated { .. }
             | Self::Stay(_)
             | Self::Then(..)
@@ -1968,6 +2013,9 @@ impl ContentNode
             | Self::FunctionFlow(..)
             | Self::FlowProduct(..)
             | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
+            | Self::Decompose(_)
             | Self::Ride { .. }
             | Self::ElementTransport { .. }
             | Self::TelescopeTransport { .. }
@@ -3958,6 +4006,23 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     })
                     .collect(),
             ),
+            Value::Dialogue(ref turns) => ContentNode::Dialogue(
+                turns
+                    .iter()
+                    .map(|turn| gandr_core_term::session::DialogueMove {
+                        endpoint: turn.endpoint,
+                        movement: turn
+                            .movement
+                            .try_map(|payload| {
+                                Ok::<_, core::convert::Infallible>(
+                                    self.discover(ArenaNode::Value(payload)),
+                                )
+                            })
+                            .unwrap_or_else(|never| match never {}),
+                    })
+                    .collect(),
+            ),
+            Value::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
             Value::Returned(computation) => {
                 ContentNode::Returned(self.discover(ArenaNode::Computation(computation)))
             },
@@ -4357,6 +4422,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 ContentNode::Bind(bound, self.discover(ArenaNode::Computation(rest)))
             },
             Computation::Force(value) => ContentNode::Force(self.discover(ArenaNode::Value(value))),
+            Computation::Decompose(dialogue) => {
+                ContentNode::Decompose(self.discover(ArenaNode::Value(dialogue)))
+            },
             Computation::Case {
                 scrutinee,
                 ref branches,
@@ -4473,6 +4541,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             ValueType::Prefix(code) => {
                 ContentNode::PrefixType(self.discover(ArenaNode::Value(code)))
             },
+            ValueType::Dialogue(code) => {
+                ContentNode::DialogueType(self.discover(ArenaNode::Value(code)))
+            },
+            ValueType::Web => ContentNode::WebType,
             ValueType::Base(base) => ContentNode::Base(base),
             ValueType::Kept { value, region } => ContentNode::KeptType {
                 value: self.discover(ArenaNode::ValueType(value)),
@@ -4890,6 +4962,8 @@ where
         },
         ContentNode::RunType(code) => ContentNode::RunType(image(code)),
         ContentNode::PrefixType(code) => ContentNode::PrefixType(image(code)),
+        ContentNode::DialogueType(code) => ContentNode::DialogueType(image(code)),
+        ContentNode::WebType => ContentNode::WebType,
         ContentNode::SessionRelated {
             relation,
             source,
@@ -4924,6 +4998,20 @@ where
                 })
                 .collect(),
         ),
+        ContentNode::Dialogue(ref turns) => ContentNode::Dialogue(
+            turns
+                .iter()
+                .map(|turn| gandr_core_term::session::DialogueMove {
+                    endpoint: turn.endpoint,
+                    movement: turn
+                        .movement
+                        .try_map(|payload| Ok::<_, core::convert::Infallible>(image(payload)))
+                        .unwrap_or_else(|never| match never {}),
+                })
+                .collect(),
+        ),
+        ContentNode::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
+        ContentNode::Decompose(dialogue) => ContentNode::Decompose(image(dialogue)),
         ContentNode::Ride {
             motive,
             flow,
@@ -5435,7 +5523,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_))
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_))
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -5637,6 +5725,7 @@ fn mint_node(
         },
         ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
         ContentNode::BufferType => Maybe::Present(Minted::ValueType(arena.value_type_buffer())),
+        ContentNode::WebType => Maybe::Present(Minted::ValueType(arena.value_type_web())),
         ContentNode::UnknownComputationType => {
             Maybe::Present(Minted::CompType(arena.comp_type_unknown()))
         },
@@ -5646,6 +5735,7 @@ fn mint_node(
         | ContentNode::FlowType { .. }
         | ContentNode::RunType(_)
         | ContentNode::PrefixType(_)
+        | ContentNode::DialogueType(_)
         | ContentNode::SessionRelated { .. }
         | ContentNode::Stay(_)
         | ContentNode::Then(..)
@@ -5653,6 +5743,9 @@ fn mint_node(
         | ContentNode::Forward(_)
         | ContentNode::FunctionFlow(..)
         | ContentNode::Recorded(_)
+        | ContentNode::Dialogue(_)
+        | ContentNode::Web(_)
+        | ContentNode::Decompose(_)
         | ContentNode::Ride { .. }
         | ContentNode::Here(_)
         | ContentNode::Returned(_)

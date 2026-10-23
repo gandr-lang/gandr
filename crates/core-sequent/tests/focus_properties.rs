@@ -486,6 +486,9 @@ fn walked(
                             stack.push(Visit::Command(arm.body, under));
                         }
                     },
+                    ProducerNode::Decompose(dialogue) => {
+                        stack.push(Visit::Producer(dialogue, depth));
+                    },
                 }
             },
             Visit::Consumer(id, depth) => {

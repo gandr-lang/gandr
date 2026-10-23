@@ -143,7 +143,9 @@ impl Image
             ) => [Some(V(record)), None, None, None, None],
             Self::CompType(CompType::Codata { .. } | CompType::With(_))
             | Self::Computation(Computation::With(_))
-            | Self::Value(Value::Record(_) | Value::Tuple(_) | Value::Recorded(_))
+            | Self::Value(
+                Value::Record(_) | Value::Tuple(_) | Value::Recorded(_) | Value::Dialogue(_),
+            )
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
             },
@@ -153,6 +155,7 @@ impl Image
                 | Value::Literal(_)
                 | Value::ListNil
                 | Value::Reify(_)
+                | Value::Web(_)
                 | Value::Hole(_),
             )
             | Self::Computation(
@@ -171,7 +174,8 @@ impl Image
                 | ValueType::Unknown
                 | ValueType::Buffer
                 | ValueType::Session(_)
-                | ValueType::World(_),
+                | ValueType::World(_)
+                | ValueType::Web,
             )
             | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
             Self::ValueType(ValueType::Stack {
@@ -247,6 +251,7 @@ impl Image
             | Self::Computation(
                 Computation::Return(ref mut body)
                 | Computation::Abandon(ref mut body)
+                | Computation::Decompose(ref mut body)
                 | Computation::Force(ref mut body)
                 | Computation::Perform {
                     payload: ref mut body,
@@ -258,7 +263,8 @@ impl Image
                     code: ref mut body, ..
                 }
                 | ValueType::Run(ref mut body)
-                | ValueType::Prefix(ref mut body),
+                | ValueType::Prefix(ref mut body)
+                | ValueType::Dialogue(ref mut body),
             )
             | Self::CompType(CompType::Element {
                 code: ref mut body, ..
@@ -699,6 +705,16 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         },
                                     ));
                                 },
+                                Value::Dialogue(ref moves) => {
+                                    self.pending.extend(moves.iter().rev().filter_map(|turn| {
+                                        match turn.movement.payload() {
+                                            quenchant_shape::shape::Maybe::Present(value) => {
+                                                Some(Task::Open(Node::Value(value)))
+                                            },
+                                            quenchant_shape::shape::Maybe::Absent(_) => None,
+                                        }
+                                    }));
+                                },
                                 Value::Reify(ref frames) => {
                                     self.pending.extend(frames.iter().rev().filter_map(|frame| {
                                         match *frame {
@@ -744,6 +760,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Value::StaticLambda(_)
                                 | Value::StaticApplication(..)
                                 | Value::Hole(_)
+                                | Value::Web(_)
                                 | Value::Mark { .. } => {},
                             }
                         },
@@ -841,6 +858,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Computation::Transport(..)
                                 | Computation::PathTransport { .. }
                                 | Computation::Ride { .. }
+                                | Computation::Decompose(_)
                                 | Computation::TelescopeTransport { .. }
                                 | Computation::Lambda(_)
                                 | Computation::Fixpoint { .. }
@@ -908,6 +926,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
                                 | ValueType::Prefix(_)
+                                | ValueType::Dialogue(_)
+                                | ValueType::Web
                                 | ValueType::Base(_)
                                 | ValueType::Sigma { .. }
                                 | ValueType::List(_)
@@ -1087,6 +1107,26 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 let mapped = map_value(payload)?;
                                 if mapped != payload {
                                     let moved = original.carrying(mapped);
+                                    *alloc::sync::Arc::make_mut(moves)
+                                        .get_mut(index)
+                                        .ok_or(ImportFault)? = moved;
+                                }
+                            }
+                        },
+                        Image::Value(Value::Dialogue(ref mut moves)) => {
+                            for index in 0 .. moves.len() {
+                                let original = moves.get(index).ok_or(ImportFault)?;
+                                let quenchant_shape::shape::Maybe::Present(payload) =
+                                    original.movement.payload()
+                                else {
+                                    continue;
+                                };
+                                let mapped = map_value(payload)?;
+                                if mapped != payload {
+                                    let moved = crate::session::DialogueMove {
+                                        endpoint: original.endpoint,
+                                        movement: original.movement.carrying(mapped),
+                                    };
                                     *alloc::sync::Arc::make_mut(moves)
                                         .get_mut(index)
                                         .ok_or(ImportFault)? = moved;

@@ -193,6 +193,8 @@ pub fn component(
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
+                | ValueTypeView::Dialogue(_)
+                | ValueTypeView::Web
                 | ValueTypeView::Sum(_)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
@@ -221,6 +223,8 @@ pub fn component(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -345,6 +349,8 @@ pub fn flow_component(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer

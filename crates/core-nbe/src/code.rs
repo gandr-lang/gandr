@@ -692,7 +692,7 @@ Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -778,6 +778,8 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | Value::FunctionFlow(..)
                     | Value::SessionRelated { .. }
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Funext(..)
                     | Value::Equiv(..)
                     | Value::Ua { .. }
@@ -836,6 +838,8 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                         | Value::FunctionFlow(..)
                         | Value::SessionRelated { .. }
                         | Value::Recorded(_)
+                        | Value::Dialogue(_)
+                        | Value::Web(_)
                         | Value::Funext(..)
                         | Value::Equiv(..)
                         | Value::Ua { .. }
@@ -1190,10 +1194,12 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | ValueType::StaticPi { .. }
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Web
                     | ValueType::Session(_)
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Prefix(_)
+                    | ValueType::Dialogue(_)
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
                     | ValueType::World(_) => return Ok(node),
@@ -1290,7 +1296,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 2) }),
                         (&ValueType::Base(a), &ValueType::Base(b)) => Ok((Alike::between(&a, &b), 0, 0)),
                         (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
-                        (&ValueType::Buffer, &ValueType::Buffer) => Ok((Alike::Same, 0, 0)),
+                        (&ValueType::Buffer, &ValueType::Buffer) | (&ValueType::Web, &ValueType::Web) => Ok((Alike::Same, 0, 0)),
                         (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
                         (&ValueType::Stack { .. }, &ValueType::Stack { .. })
                         | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. })
@@ -1336,7 +1342,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 Ok((Alike::Same, a.types().count(), 0))
                             } else { Ok((Alike::Different, 0, 0)) },
                         (&ValueType::Run(a), &ValueType::Run(b))
-                        | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =>
+                        | (&ValueType::Prefix(a), &ValueType::Prefix(b))
+                        | (&ValueType::Dialogue(a), &ValueType::Dialogue(b)) =>
                             self.atom(Node::Code(a, here)).and_then(|left| Ok([(left, self.atom(Node::Code(b, there))?)]))
                                 .map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 1) }),
                         _ => Ok((Alike::Different, 0, 0)),
@@ -1547,7 +1554,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         Ok(Alike::Same)
                     }
                     else if let (&ValueType::Run(a), &ValueType::Run(b))
-                    | (&ValueType::Prefix(a), &ValueType::Prefix(b)) =
+                    | (&ValueType::Prefix(a), &ValueType::Prefix(b))
+                    | (&ValueType::Dialogue(a), &ValueType::Dialogue(b)) =
                         (matched_left_value, matched_right_value)
                     {
                         let session = (
@@ -1584,6 +1592,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                     else if matches!(
                         (matched_left_value, matched_right_value),
                         (&ValueType::Buffer, &ValueType::Buffer)
+                            | (&ValueType::Web, &ValueType::Web)
                     ) {
                         Ok(Alike::Same)
                     }
@@ -1753,10 +1762,12 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Sigma { .. }
                                 | ValueType::Unknown
                                 | ValueType::Buffer
+                                | ValueType::Web
                                 | ValueType::Session(_)
                                 | ValueType::Flow { .. }
                                 | ValueType::Run(_)
                                 | ValueType::Prefix(_)
+                                | ValueType::Dialogue(_)
                                 | ValueType::Staged { .. }
                                 | ValueType::Kept { .. }
                                 | ValueType::World(_) => Ok(Alike::Different),
@@ -1967,7 +1978,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
         Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
         Ok(Atom::Quote(id, _)) => match self.core.value_type(id) {
             None => ret == Err(ConversionFault::MachineInvariant),
-            Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer)) => ret == Ok(Rigidity::Rigid),
+            Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Web)) => ret == Ok(Rigidity::Rigid),
             Some(held) if matches!(*held, ValueType::Product(ref components) if components.is_empty()) => ret == Ok(Rigidity::Rigid),
             Some(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
         },
@@ -2046,6 +2057,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
@@ -2448,7 +2461,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
-                        ValueType::Run(session) | ValueType::Prefix(session) => {
+                        ValueType::Run(session)
+                        | ValueType::Prefix(session)
+                        | ValueType::Dialogue(session) => {
                             atoms.push(self.atom(Node::Code(session, place))?);
                         },
                         ValueType::Product(ref components) | ValueType::Sum(ref components) => {
@@ -2461,7 +2476,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ValueType::Base(_)
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
-                        | ValueType::Buffer => {},
+                        | ValueType::Buffer
+                        | ValueType::Web => {},
                         ValueType::Capability { ref authority, .. } => {
                             types.extend(authority.types().map(|ty| Node::ValueType(ty, place)));
                         },

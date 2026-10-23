@@ -249,6 +249,8 @@ pub enum Unbuilt
     Presentation,
     /// A recorded move that is no call and no closing name.
     RecordedMove,
+    /// A dialogue move that is no endpoint's call of one move.
+    DialogueMove,
     /// A supply whose residents mix a named supply with what is no supply.
     CombinedSupply,
     /// A staged supply no declaration owns.
@@ -474,6 +476,7 @@ impl Unbuilt
             Self::CapabilityHost => "capability_type",
             Self::Presentation => "presentation",
             Self::RecordedMove => "recorded_move",
+            Self::DialogueMove => "dialogue_move",
             Self::CombinedSupply => "instantiation_expression.combined",
             Self::UnownedSupply => "instantiation_expression.unowned",
             Self::MethodCall => "method_call",
@@ -584,6 +587,7 @@ impl Unbuilt
             | Self::CapabilityHost
             | Self::Presentation
             | Self::RecordedMove
+            | Self::DialogueMove
             | Self::CombinedSupply
             | Self::UnownedSupply
             | Self::MethodCall

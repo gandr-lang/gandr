@@ -30,11 +30,12 @@
 //! # The identity vocabulary is names nothing else binds
 //!
 //! `here`, `funext`, `equiv`, `pathProduct`, `transport`, `back`, `cong`,
-//! `bisim`, `sim`, `stay`, `forward`, `arrow`, `flowProduct`, `ride` and
-//! `recorded` are spelled as ordinary calls and resolved after every binder
-//! and every earlier declaration, so a parameter or a definition of the same
-//! name shadows them, as it shadows a prelude primitive; `then` is the
-//! grammar's own infix tile, and `Flow` a type head resolved the same way.
+//! `bisim`, `sim`, `stay`, `forward`, `arrow`, `flowProduct`, `ride`,
+//! `recorded`, `dialogue` and `decompose` are spelled as ordinary calls and
+//! resolved after every binder and every earlier declaration, so a parameter
+//! or a definition of the same name shadows them, as it shadows a prelude
+//! primitive; `then` is the grammar's own infix tile, and `Flow` a type head
+//! resolved the same way.
 //! Reserving the names outright was the alternative; it would break every
 //! program that already binds one. Reversal: a namespace for the identity
 //! vocabulary, `Path.here`, once the namespaces carry formers rather than
@@ -180,6 +181,13 @@
 //! constructor per payload type. Reversal: a run type whose moves are data
 //! the program declares.
 //!
+//! `Dialogue(S)` is the unary type former of the complete dialogues over a
+//! session code, its left endpoint following `S` and its right the dual, and
+//! `dialogue(m₀, …, mₙ)` a dialogue's literal: each move is `left(m)` or
+//! `right(m)`, `m` a run's move, logged in the order written. `decompose(d)`
+//! stands as the computation returning the dialogue's causal web, of type
+//! `Web`.
+//!
 //! # Three relations between types abbreviate a record or a flow
 //!
 //! Beside `Path(A, a, b)` and `Flow(Type, A, B)`, three infix formers relate
@@ -247,6 +255,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::identity::bi_invertible;
 use gandr_core_term::identity::quasi_inverse;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_strata::Level;
@@ -449,8 +459,8 @@ quenchant_shape::reason_enum! {
 ///   two universe paths, transport in a one-binder motive or a telescope, the
 ///   two derived operations, the native list cell, the two session statements,
 ///   the identity flow, the forward flow of a translator, the function flow of
-///   two boundary flows, a ride along a flow and a recorded run, spelled as
-///   calls.
+///   two boundary flows, a ride along a flow, a recorded run, a dialogue and a
+///   dialogue's decomposition, spelled as calls.
 /// - executable: none — a tag holds no head to check its spelling against.
 ///
 /// # Adequacy
@@ -500,6 +510,10 @@ pub(super) enum Operation
     Ride,
     /// `recorded(m₀, …, mₙ)`.
     Recorded,
+    /// `dialogue(m₀, …, mₙ)`.
+    Dialogue,
+    /// `decompose(d)`.
+    Decompose,
 }
 
 /// The identity operations a call's head spells, by name.
@@ -523,7 +537,7 @@ pub(super) enum Operation
 /// - witness: `lower::identity::tests::directed_statements_lower_to_their_formers`
 /// - witness: `lower::identity::tests::a_path_product_lowers_to_its_former`
 /// - witness: `lower::identity::tests::a_flow_product_lowers_to_its_former`
-const SPELLED: [(&str, Operation); 17] = [
+const SPELLED: [(&str, Operation); 19] = [
     (HERE, Operation::Here),
     ("funext", Operation::Funext),
     ("equiv", Operation::Equiv),
@@ -541,6 +555,8 @@ const SPELLED: [(&str, Operation); 17] = [
     ("flowProduct", Operation::FlowProduct),
     ("ride", Operation::Ride),
     ("recorded", Operation::Recorded),
+    ("dialogue", Operation::Dialogue),
+    ("decompose", Operation::Decompose),
 ];
 
 /// A derived operation's written operands.
@@ -1617,16 +1633,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   value type and the other four as values; `back(p)` and `cong(f, p)`
     ///   stand as computations derived as [`Self::derive`] does; `recorded(m₀,
     ///   …, mₙ)` stands as a value over its moves, each read as
-    ///   [`Self::recorded_move`] reads it. Every operand is read under the
-    ///   site's frame.
+    ///   [`Self::recorded_move`] reads it, and `dialogue(m₀, …, mₙ)` over its
+    ///   moves, each read as [`Self::dialogue_move`] reads it; `decompose(d)`
+    ///   stands as a computation reading its dialogue as a value. Every operand
+    ///   is read under the site's frame.
     /// - fails: the wrong-sort refusal where the operation's sort is not read;
     ///   the arity refusal for other than one argument to `here`, `stay`,
-    ///   `forward`, `ua` or `back`, two to `funext`, `equiv`, `pathProduct`,
-    ///   `flowProduct`, `cons`, `cong`, `bisim`, `sim` or `arrow`, three to
-    ///   `ride`, and three or five to `transport`; the unannotated refusal for
-    ///   a three-operand transport or a ride whose motive is no static
-    ///   abstraction; [`Self::derive`]'s refusal; a move's refusal; the
-    ///   argument list's fault.
+    ///   `forward`, `ua`, `back` or `decompose`, two to `funext`, `equiv`,
+    ///   `pathProduct`, `flowProduct`, `cons`, `cong`, `bisim`, `sim` or
+    ///   `arrow`, three to `ride`, and three or five to `transport`; the
+    ///   unannotated refusal for a three-operand transport or a ride whose
+    ///   motive is no static abstraction; [`Self::derive`]'s refusal; a move's
+    ///   refusal; the argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -1667,6 +1685,8 @@ impl<'source> Lowerer<'_, 'source>
                         | (Operation::Forward, Some(&Plan::Forward(_)))
                         | (Operation::Arrow, Some(&Plan::FunctionFlow(..)))
                         | (Operation::Recorded, Some(&Plan::Recorded(_)))
+                        | (Operation::Dialogue, Some(&Plan::Dialogue(_)))
+                        | (Operation::Decompose, Some(&Plan::Decompose(_)))
                         | (Operation::Transport, Some(&(Plan::Transport(..) | Plan::TelescopeTransport(_))))
                         | (Operation::Back | Operation::Cong, Some(&Plan::Derived(_)))
                         | (Operation::Here, Some(&Plan::Constructor(_))) => true,
@@ -1694,10 +1714,13 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Stay
             | Operation::Forward
             | Operation::Arrow
-            | Operation::Recorded => Produced::Value,
-            Operation::Back | Operation::Cong | Operation::Transport | Operation::Ride => {
-                Produced::Computation
-            },
+            | Operation::Recorded
+            | Operation::Dialogue => Produced::Value,
+            Operation::Back
+            | Operation::Cong
+            | Operation::Transport
+            | Operation::Ride
+            | Operation::Decompose => Produced::Computation,
         };
         let frame = self.require(site, produced)?;
         let start = self.operands.len();
@@ -1711,7 +1734,9 @@ impl<'source> Lowerer<'_, 'source>
             .get(start ..)
             .and_then(|written| <[NodeIndex; 5]>::try_from(written).ok());
         let moves = match operation {
-            Operation::Recorded => self.operands.get(start ..).map(<[NodeIndex]>::to_vec),
+            Operation::Recorded | Operation::Dialogue => {
+                self.operands.get(start ..).map(<[NodeIndex]>::to_vec)
+            },
             Operation::Here
             | Operation::Funext
             | Operation::Equiv
@@ -1727,7 +1752,8 @@ impl<'source> Lowerer<'_, 'source>
             | Operation::Back
             | Operation::Cong
             | Operation::Transport
-            | Operation::Ride => None,
+            | Operation::Ride
+            | Operation::Decompose => None,
         };
         self.operands.truncate(start);
         read?;
@@ -1762,7 +1788,9 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Arrow
                     | Operation::FlowProduct
                     | Operation::Ride
-                    | Operation::Recorded => Plan::Here(point),
+                    | Operation::Recorded
+                    | Operation::Dialogue
+                    | Operation::Decompose => Plan::Here(point),
                 };
                 self.plan(site, plan);
                 Ok(())
@@ -1804,7 +1832,9 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Stay
                     | Operation::Forward
                     | Operation::Ride
-                    | Operation::Recorded => Plan::Funext(left, right),
+                    | Operation::Recorded
+                    | Operation::Dialogue
+                    | Operation::Decompose => Plan::Funext(left, right),
                 };
                 self.plan(site, plan);
                 Ok(())
@@ -1847,7 +1877,9 @@ impl<'source> Lowerer<'_, 'source>
                     | Operation::Forward
                     | Operation::Arrow
                     | Operation::FlowProduct
-                    | Operation::Recorded => Plan::Transport(motive, path, value),
+                    | Operation::Recorded
+                    | Operation::Dialogue
+                    | Operation::Decompose => Plan::Transport(motive, path, value),
                 };
                 // A transport is pure: where a value is read it is the value
                 // it returns, as a derived operation's transport is.
@@ -1867,6 +1899,20 @@ impl<'source> Lowerer<'_, 'source>
                     planned.push(self.recorded_move(site, frame, movement)?);
                 }
                 self.plan(site, Plan::Recorded(Arc::from(planned)));
+                Ok(())
+            },
+            (Operation::Dialogue, ..) => {
+                let written = moves.unwrap_or_default();
+                let mut planned = Vec::with_capacity(written.len());
+                for movement in written {
+                    planned.push(self.dialogue_move(site, frame, movement)?);
+                }
+                self.plan(site, Plan::Dialogue(Arc::from(planned)));
+                Ok(())
+            },
+            (Operation::Decompose, 1_usize, Some(dialogue), ..) => {
+                self.read(dialogue, Reading::Value(frame));
+                self.plan(site, Plan::Decompose(dialogue));
                 Ok(())
             },
             (Operation::Transport, 5_usize, ..) => match written {
@@ -1954,12 +2000,12 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// Classify one move of the recorded run at `site`, written at
-    /// `movement`.
+    /// Classify one move of the recorded run or the dialogue at `site`,
+    /// written at `movement`.
     ///
     /// # Specification
-    /// - requires: `movement` is an argument of the `recorded` call at `site`,
-    ///   which stands under `frame`.
+    /// - requires: `movement` is an argument of the `recorded` call at `site`
+    ///   or of a dialogue move's endpoint, which stands under `frame`.
     /// - ensures: a bare `closed` is the close; `sent(v)` and `received(v)`
     ///   read `v` as a value under `frame` and carry it; `selected(l)` and
     ///   `offered(l)` carry the label the bare name `l` spells. The move's own
@@ -2022,26 +2068,7 @@ impl<'source> Lowerer<'_, 'source>
             at: written,
             ..site
         };
-        let start = self.operands.len();
-        let mut scratch = core::mem::take(&mut self.scratch);
-        let read = read_pieces(self.pbg, self.tree, movement, &mut scratch).and_then(|()| {
-            let mut cursor = Cursor::new(&scratch.pieces, written.span);
-            let head = at.one(cursor.operands())?;
-            arguments(at, &mut cursor, &mut self.operands)?;
-            Ok(head)
-        });
-        self.scratch = scratch;
-        let count = self.operands.len().saturating_sub(start);
-        let argument = match self.operands.get(start ..) {
-            Some(&[argument]) => Some(argument),
-            Some(_) | None => None,
-        };
-        self.operands.truncate(start);
-        let head = read?;
-        let Some(argument) = argument
-        else {
-            return Err(at.out(FragmentBoundary::Arity(OperandCount::from(count))));
-        };
+        let (head, argument) = self.unary_call(at, written)?;
         let spelled = self.name_at(head);
         match spelled.as_ref() {
             "sent" | "received" => {
@@ -2075,6 +2102,124 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => Err(unadmitted),
         }
+    }
+
+    /// The head and the one argument of the call written at `written`, a move
+    /// at `at`.
+    ///
+    /// # Specification
+    /// - requires: `written` is a call standing at `at`.
+    /// - ensures: the call's head and its one argument; the operands the
+    ///   lowering holds are those it held.
+    /// - fails: the arity boundary at `at` for a call of other than one
+    ///   argument; the refusals the tree's molds yield and the argument list's
+    ///   fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a move of each kind and each endpoint read, and a
+    ///   send of two refused by its arity.
+    /// - witness: `lower::identity::tests::a_move_out_of_shape_is_refused`
+    /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
+    #[spec(captures: start = self.operands.len(), ensures: |_| self.operands.len() == start)]
+    fn unary_call(
+        &mut self,
+        at: Site,
+        written: Placed,
+    ) -> Result<(Placed, NodeIndex), LoweringRefusal<'source>>
+    {
+        let start = self.operands.len();
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, written.node, &mut scratch).and_then(|()| {
+            let mut cursor = Cursor::new(&scratch.pieces, written.span);
+            let head = at.one(cursor.operands())?;
+            arguments(at, &mut cursor, &mut self.operands)?;
+            Ok(head)
+        });
+        self.scratch = scratch;
+        let count = self.operands.len().saturating_sub(start);
+        let argument = match self.operands.get(start ..) {
+            Some(&[argument]) => Some(argument),
+            Some(_) | None => None,
+        };
+        self.operands.truncate(start);
+        let head = read?;
+        let Some(argument) = argument
+        else {
+            return Err(at.out(FragmentBoundary::Arity(OperandCount::from(count))));
+        };
+        Ok((head, argument))
+    }
+
+    /// Classify one move of the dialogue at `site`, written at `movement`.
+    ///
+    /// # Specification
+    /// - requires: `movement` is an argument of the `dialogue` call at `site`,
+    ///   which stands under `frame`.
+    /// - ensures: `left(m)` and `right(m)` are the move `m` reads as
+    ///   [`Self::recorded_move`] reads it, made by that endpoint. The endpoint
+    ///   is read by its spelling, never resolved, so no binder shadows it.
+    /// - fails: the unadmitted boundary for a move of any other shape or
+    ///   spelling; the arity boundary for an endpoint written with other than
+    ///   one move; the inner move's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The move's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue with moves of both endpoints read back out
+    ///   of the arena, and an untagged move and an unknown endpoint each
+    ///   refused by their boundary.
+    /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| self.operands.len() == start && match ret {
+            | Ok(DialogueMove { movement: RecordedMove::Sent(payload) | RecordedMove::Received(payload), .. }) => {
+                self.reading(payload) == Reading::Value(frame)
+            },
+            | Ok(_) | Err(_) => true,
+        },
+    )]
+    fn dialogue_move(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        movement: NodeIndex,
+    ) -> Result<DialogueMove<NodeIndex>, LoweringRefusal<'source>>
+    {
+        let unadmitted = site.out(FragmentBoundary::Unadmitted(Unbuilt::DialogueMove));
+        let Some(node) = self.tree.node(movement)
+        else {
+            return Err(unadmitted);
+        };
+        let written = Placed::of(movement, node);
+        match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::Call,
+                ..
+            } => {},
+            Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => {
+                return Err(unadmitted);
+            },
+        }
+        let at = Site {
+            at: written,
+            ..site
+        };
+        let (head, inner) = self.unary_call(at, written)?;
+        let endpoint = match self.name_at(head).as_ref() {
+            "left" => Endpoint::Left,
+            "right" => Endpoint::Right,
+            _ => return Err(unadmitted),
+        };
+        Ok(DialogueMove {
+            endpoint,
+            movement: self.recorded_move(at, frame, inner)?,
+        })
     }
 
     /// Classify the derived operation `derivation`, standing as a computation
@@ -4127,6 +4272,95 @@ impl<'source> Lowerer<'_, 'source>
         let id = sink.arena.value_recorded(Arc::from(minted));
 
         Maybe::Present(sink.value(id, origin))
+    }
+
+    /// Mint `dialogue(m₀, …, mₙ)`: the dialogue over its moves in log order.
+    ///
+    /// # Specification
+    /// - requires: every payload is already minted or absent.
+    /// - ensures: the dialogue whose moves are the planned moves in order, each
+    ///   beside its endpoint, each payload its minted value and each label
+    ///   kept, carrying the written origin. Nothing when a payload did not
+    ///   lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per planned move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue with moves of both endpoints read back out
+    ///   of the arena.
+    /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Value(id)) => sink.origins.value(id) == Maybe::Present(origin)
+                && matches!(sink.arena.value(id), Some(Value::Dialogue(minted))
+                    if minted.len() == moves.len()
+                        && minted.iter().zip(moves.iter()).all(|(made, planned)| made.endpoint == planned.endpoint && made.movement.kind() == planned.movement.kind())),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_dialogue(
+        &self,
+        moves: &[DialogueMove<NodeIndex>],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut minted = Vec::with_capacity(moves.len());
+        for planned in moves {
+            match planned
+                .movement
+                .try_map(|payload| match self.value_at(payload) {
+                    Maybe::Present(value) => Ok(value),
+                    Maybe::Absent(reason) => Err(reason),
+                }) {
+                Ok(movement) => minted.push(DialogueMove {
+                    endpoint: planned.endpoint,
+                    movement,
+                }),
+                Err(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_dialogue(Arc::from(minted));
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// Mint `decompose(d)`: the computation returning the dialogue's web.
+    ///
+    /// # Specification
+    /// - requires: the dialogue is already minted or absent.
+    /// - ensures: the decomposition of the minted dialogue, carrying the
+    ///   written origin. Nothing when the dialogue did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decomposition read back out of the arena over the
+    ///   dialogue it names.
+    /// - witness: `lower::identity::tests::a_dialogue_lowers_its_moves_beside_their_endpoints`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin)
+                && matches!(sink.arena.computation(id), Some(&gandr_core_term::Computation::Decompose(_))),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_decompose(
+        &self,
+        dialogue: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        self.value_at(dialogue).map(|dialogue| {
+            let id = sink.arena.computation_decompose(dialogue);
+            sink.computation(id, origin)
+        })
     }
 
     /// Mint the dependent transport `transported`.

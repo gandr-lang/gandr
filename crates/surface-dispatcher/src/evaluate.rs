@@ -2015,12 +2015,12 @@ impl Runner for Program<'_>
     Some(&Value::Primitive { .. } |
 &(Value::ListNil | Value::Variable { .. } | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
-Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
+Value::StaticApplication(..) | Value::Hole(_) | Value::Web(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &Value::Univalence(..) |
 &(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
-Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) |
+Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. } | Value::Ascribe { .. })) => true,
 })]
@@ -2042,97 +2042,108 @@ fn references(
     let mut pending = Vec::from([Node::Value(body)]);
     while let Some(node) = pending.pop() {
         match node {
-            Node::Value(id) => match core.value(id) {
-                Some(&Value::Constructor { ref fields, .. }) => {
-                    pending.extend(fields.iter().copied().map(Node::Value));
-                },
-                Some(&Value::Record(ref fields)) => {
-                    pending.extend(fields.values().copied().map(Node::Value));
-                },
-                Some(&Value::Reify(ref frames)) => {
-                    pending.extend(frames.iter().filter_map(|frame| match *frame {
-                        gandr_core_term::control::StackFrame::Apply(value) => {
-                            Some(Node::Value(value))
-                        },
-                        gandr_core_term::control::StackFrame::Bind(body) => {
-                            Some(Node::Computation(body))
-                        },
-                        gandr_core_term::control::StackFrame::Project(_) => None,
-                    }));
-                },
+            Node::Value(id) => {
+                match core.value(id) {
+                    Some(&Value::Constructor { ref fields, .. }) => {
+                        pending.extend(fields.iter().copied().map(Node::Value));
+                    },
+                    Some(&Value::Record(ref fields)) => {
+                        pending.extend(fields.values().copied().map(Node::Value));
+                    },
+                    Some(&Value::Reify(ref frames)) => {
+                        pending.extend(frames.iter().filter_map(|frame| match *frame {
+                            gandr_core_term::control::StackFrame::Apply(value) => {
+                                Some(Node::Value(value))
+                            },
+                            gandr_core_term::control::StackFrame::Bind(body) => {
+                                Some(Node::Computation(body))
+                            },
+                            gandr_core_term::control::StackFrame::Project(_) => None,
+                        }));
+                    },
 
-                Some(&Value::Constant(constant)) => referred.push(constant),
-                Some(
-                    &(Value::PathProduct(first, second)
-                    | Value::Funext(first, second)
-                    | Value::Equiv(first, second)
-                    | Value::Univalence(first, second)
-                    | Value::Ua {
-                        forward: first,
-                        backward: second,
+                    Some(&Value::Constant(constant)) => referred.push(constant),
+                    Some(
+                        &(Value::PathProduct(first, second)
+                        | Value::Funext(first, second)
+                        | Value::Equiv(first, second)
+                        | Value::Univalence(first, second)
+                        | Value::Ua {
+                            forward: first,
+                            backward: second,
+                            ..
+                        }
+                        | Value::PathEquiv {
+                            forward: first,
+                            backward: second,
+                            ..
+                        }
+                        | Value::ListCons(first, second)
+                        | Value::Then(first, second)
+                        | Value::FlowProduct(first, second)
+                        | Value::FunctionFlow(first, second)),
+                    ) => {
+                        pending.extend([Node::Value(first), Node::Value(second)]);
+                    },
+                    Some(&Value::SessionRelated {
+                        source,
+                        target,
+                        payloads,
                         ..
-                    }
-                    | Value::PathEquiv {
-                        forward: first,
-                        backward: second,
-                        ..
-                    }
-                    | Value::ListCons(first, second)
-                    | Value::Then(first, second)
-                    | Value::FlowProduct(first, second)
-                    | Value::FunctionFlow(first, second)),
-                ) => {
-                    pending.extend([Node::Value(first), Node::Value(second)]);
-                },
-                Some(&Value::SessionRelated {
-                    source,
-                    target,
-                    payloads,
-                    ..
-                }) => {
-                    pending.extend([source, target, payloads].map(Node::Value));
-                },
-                Some(&Value::Tuple(ref components)) => {
-                    pending.extend(components.iter().map(|&component| Node::Value(component)));
-                },
-                Some(
-                    &(Value::PathRefl(inner)
-                    | Value::Here(inner)
-                    | Value::Stay(inner)
-                    | Value::Forward(inner)
-                    | Value::Injection(_, inner)
-                    | Value::Lift { body: inner, .. }
-                    | Value::Mark { body: inner, .. }
-                    | Value::Ascribe { value: inner, .. }),
-                ) => {
-                    pending.push(Node::Value(inner));
-                },
-                Some(&Value::Recorded(ref moves)) => {
-                    pending.extend(moves.iter().filter_map(|step| match step.payload() {
-                        Maybe::Present(payload) => Some(Node::Value(payload)),
-                        Maybe::Absent(_) => None,
-                    }));
-                },
-                Some(
-                    &Value::Thunk(computation)
-                    | &Value::Returned(computation)
-                    | &Value::Nested(computation)
-                    | &Value::Run(computation),
-                ) => {
-                    pending.push(Node::Computation(computation));
-                },
-                Some(
-                    &Value::Primitive { .. }
-                    | &(Value::Variable { .. }
-                    | Value::ListNil
-                    | Value::Literal(_)
-                    | Value::Quote(_)
-                    | Value::QuoteComputation(_)
-                    | Value::StaticLambda(_)
-                    | Value::StaticApplication(..)
-                    | Value::Hole(_)),
-                )
-                | None => {},
+                    }) => {
+                        pending.extend([source, target, payloads].map(Node::Value));
+                    },
+                    Some(&Value::Tuple(ref components)) => {
+                        pending.extend(components.iter().map(|&component| Node::Value(component)));
+                    },
+                    Some(
+                        &(Value::PathRefl(inner)
+                        | Value::Here(inner)
+                        | Value::Stay(inner)
+                        | Value::Forward(inner)
+                        | Value::Injection(_, inner)
+                        | Value::Lift { body: inner, .. }
+                        | Value::Mark { body: inner, .. }
+                        | Value::Ascribe { value: inner, .. }),
+                    ) => {
+                        pending.push(Node::Value(inner));
+                    },
+                    Some(&Value::Recorded(ref moves)) => {
+                        pending.extend(moves.iter().filter_map(|step| match step.payload() {
+                            Maybe::Present(payload) => Some(Node::Value(payload)),
+                            Maybe::Absent(_) => None,
+                        }));
+                    },
+                    Some(&Value::Dialogue(ref moves)) => {
+                        pending.extend(moves.iter().filter_map(
+                            |turn| match turn.movement.payload() {
+                                Maybe::Present(payload) => Some(Node::Value(payload)),
+                                Maybe::Absent(_) => None,
+                            },
+                        ));
+                    },
+                    Some(
+                        &Value::Thunk(computation)
+                        | &Value::Returned(computation)
+                        | &Value::Nested(computation)
+                        | &Value::Run(computation),
+                    ) => {
+                        pending.push(Node::Computation(computation));
+                    },
+                    Some(
+                        &Value::Primitive { .. }
+                        | &(Value::Variable { .. }
+                        | Value::ListNil
+                        | Value::Literal(_)
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::StaticLambda(_)
+                        | Value::StaticApplication(..)
+                        | Value::Hole(_)
+                        | Value::Web(_)),
+                    )
+                    | None => {},
+                }
             },
             Node::Computation(id) => match core.computation(id) {
                 Some(&Computation::DataCase {
@@ -2241,7 +2252,8 @@ fn references(
                 Some(
                     &(Computation::Return(value)
                     | Computation::Abandon(value)
-                    | Computation::Force(value)),
+                    | Computation::Force(value)
+                    | Computation::Decompose(value)),
                 ) => {
                     pending.push(Node::Value(value));
                 },

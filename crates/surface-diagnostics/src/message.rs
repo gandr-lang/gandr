@@ -827,6 +827,12 @@ fn checked(
              on it, or a value the flow's translator computes",
         ),
         CheckRefusal::RunNotAdmitted { .. } => f.write_str("the protocol does not admit this run"),
+        CheckRefusal::DialogueUnmatched { .. } => {
+            f.write_str("this dialogue's message is not received as it was sent")
+        },
+        CheckRefusal::DialogueInverted { .. } => {
+            f.write_str("this dialogue is logged out of its causal order")
+        },
         CheckRefusal::ForwardUnsupported { .. } => {
             f.write_str("`forward` cannot image this translator at every input")
         },
@@ -1972,6 +1978,15 @@ mod tests
                 fault: gandr_core_checker::RunFault::WrongLabel(gandr_core_checker::RunStep::from(
                     1_u32,
                 )),
+            },
+            CheckRefusal::DialogueUnmatched {
+                at: value,
+                step: gandr_core_checker::RunStep::from(1_u32),
+            },
+            CheckRefusal::DialogueInverted {
+                at: value,
+                earlier: gandr_core_checker::RunStep::from(0_u32),
+                later: gandr_core_checker::RunStep::from(1_u32),
             },
             CheckRefusal::ForwardUnsupported { at: value },
             CheckRefusal::Boundary { at: value },

@@ -162,6 +162,11 @@ pub enum ValueTypeView<'arena>
     /// `Prefix(s)`: the recorded prefixes of the session code `s`, closed or
     /// still open.
     Prefix(ValueId),
+    /// `Dialogue(s)`: the complete dialogues of one channel whose left
+    /// endpoint follows the session code `s` and whose right follows its dual.
+    Dialogue(ValueId),
+    /// `Web`: the decompositions of dialogues' causal webs.
+    Web,
     /// A sum of its summands, in order; the empty sum is the empty type.
     Sum(&'arena [ValueTypeId]),
     /// Finite lists over one element type.
@@ -366,6 +371,8 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Flow { carrier, source, target }) => matches!(arena.value_type(value_type), Some(&ValueType::Flow { carrier: found, source: first, target: second }) if found == carrier && first == source && second == target),
     | Ok(ValueTypeView::Run(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Run(found)) if found == session),
     | Ok(ValueTypeView::Prefix(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Prefix(found)) if found == session),
+    | Ok(ValueTypeView::Dialogue(session)) => matches!(arena.value_type(value_type), Some(&ValueType::Dialogue(found)) if found == session),
+    | Ok(ValueTypeView::Web) => matches!(arena.value_type(value_type), Some(&ValueType::Web)),
     | Ok(ValueTypeView::Sum(summands)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == *summands)),
     | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
     | Ok(ValueTypeView::Product(components)) => !components.is_empty() && arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == *components)),
@@ -470,6 +477,8 @@ pub fn value_type_view(
             region,
         }),
         ValueType::Buffer => Ok(ValueTypeView::Buffer),
+        ValueType::Dialogue(session) => Ok(ValueTypeView::Dialogue(session)),
+        ValueType::Web => Ok(ValueTypeView::Web),
         ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),
         ValueType::Kept { value, region } => Ok(ValueTypeView::Kept { value, region }),
         ValueType::World(ty) => Ok(ValueTypeView::World(ty)),

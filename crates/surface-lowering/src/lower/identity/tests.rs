@@ -22,6 +22,8 @@ use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::identity::Relation;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1705,6 +1707,96 @@ fn a_move_out_of_shape_is_refused()
         ),
         "a send of two is refused at the move, not the record around it: {:?}",
         outcome_of(&module, "twice".into())
+    );
+}
+
+#[test]
+fn a_dialogue_lowers_its_moves_beside_their_endpoints()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "module Ask {\n  type Asking = !String. end;\n}\n",
+            "def played : Dialogue(Ask.Asking);\n",
+            "def played = dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed));\n",
+            "def web() -> -F Web {\n  become decompose(played)\n}\n",
+        )),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed {
+        declared_type,
+        body,
+    } = outcome_of(&module, "played".into())
+    else {
+        panic!("the dialogue type and its literal lower");
+    };
+    assert!(
+        matches!(
+            arena.value_type(declared_type),
+            Some(&ValueType::Dialogue(code)) if matches!(arena.value(code), Some(&Value::Quote(_)))
+        ),
+        "`Dialogue(S)` reads its protocol as a value"
+    );
+    let Some(&Value::Dialogue(ref moves)) = arena.value(body)
+    else {
+        panic!("`dialogue` is the dialogue literal");
+    };
+    let literal = |payload| matches!(arena.value(payload), Some(&Value::Literal(_)));
+    assert!(
+        matches!(
+            **moves,
+            [
+                DialogueMove { endpoint: Endpoint::Left, movement: RecordedMove::Sent(sent) },
+                DialogueMove { endpoint: Endpoint::Right, movement: RecordedMove::Received(heard) },
+                DialogueMove { endpoint: Endpoint::Right, movement: RecordedMove::Closed },
+                DialogueMove { endpoint: Endpoint::Left, movement: RecordedMove::Closed },
+            ] if literal(sent) && literal(heard)
+        ),
+        "each move keeps its endpoint and its payload, in log order: {moves:?}"
+    );
+    assert!(
+        matches!(
+            arena.computation(tail_of(&module, &arena, "web".into())),
+            Some(&Computation::Decompose(dialogue)) if matches!(arena.value(dialogue), Some(&Value::Constant(_)))
+        ),
+        "`decompose` reads its dialogue as a value"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def untagged = dialogue(sent(1));\n",
+            "def elsewhere = dialogue(middle(closed));\n",
+            "def twice = dialogue(left(closed, closed));\n",
+            "def inner = dialogue(right(skipped(1)));\n",
+            "def both(d: Integer) -> -F Integer {\n  become decompose(d, d)\n}\n",
+        )),
+        &mut arena,
+    );
+    let boundary = |name: &str| match outcome_of(&module, name.into()) {
+        DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. }) => {
+            Some(boundary)
+        },
+        DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_) => None,
+    };
+    assert_eq!(
+        ["untagged", "elsewhere", "twice", "inner", "both"].map(boundary),
+        [
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::DialogueMove)),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::DialogueMove)),
+            Some(FragmentBoundary::Arity(OperandCount::from(2_usize))),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::RecordedMove)),
+            Some(FragmentBoundary::Arity(OperandCount::from(2_usize))),
+        ],
+        "an untagged move, an unknown endpoint, an endpoint of two moves, an unknown move and a decomposition of two"
     );
 }
 

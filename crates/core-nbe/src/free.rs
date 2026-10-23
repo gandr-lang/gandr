@@ -460,7 +460,7 @@ impl FreeIndices
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
-            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
+            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
@@ -835,6 +835,8 @@ enum ExtraChildren<'arena>
     Arms(alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ComputationId>),
     /// A recorded run's moves; a send's or a receive's payload is a value.
     Moves(core::slice::Iter<'arena, gandr_core_term::session::RecordedMove>),
+    /// A dialogue's moves; a send's or a receive's payload is a value.
+    Turns(core::slice::Iter<'arena, gandr_core_term::session::DialogueMove>),
 }
 
 impl Iterator for ExtraChildren<'_>
@@ -875,6 +877,9 @@ impl Iterator for ExtraChildren<'_>
                 .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
             Self::Moves(ref mut moves) => moves
                 .find_map(recorded_payload)
+                .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
+            Self::Turns(ref mut turns) => turns
+                .find_map(|turn| recorded_payload(&turn.movement))
                 .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
         }
     }
@@ -917,6 +922,10 @@ impl DoubleEndedIterator for ExtraChildren<'_>
             Self::Moves(ref mut moves) => moves
                 .rev()
                 .find_map(recorded_payload)
+                .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
+            Self::Turns(ref mut turns) => turns
+                .rev()
+                .find_map(|turn| recorded_payload(&turn.movement))
                 .map(|id| (Reached::Term(CoreTerm::Value(id)), Lowering::NONE)),
         }
     }
@@ -1087,6 +1096,10 @@ Err(_) => false,
                         extra = ExtraChildren::Moves(moves.iter());
                         [None, None, None, None, None]
                     },
+                    Value::Dialogue(ref turns) => {
+                        extra = ExtraChildren::Turns(turns.iter());
+                        [None, None, None, None, None]
+                    },
                     Value::Record(ref fields) => {
                         extra = ExtraChildren::RecordValues(fields.values());
                         [None, None, None, None, None]
@@ -1095,7 +1108,8 @@ Err(_) => false,
                         frames = held;
                         [None, None, None, None, None]
                     },
-                    Value::Variable { .. }
+                    Value::Web(_)
+                    | Value::Variable { .. }
                     | Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::ListNil
@@ -1333,7 +1347,8 @@ Err(_) => false,
                     },
                     Computation::Return(value_term)
                     | Computation::Abandon(value_term)
-                    | Computation::Force(value_term) => one(value(value_term), Lowering::NONE),
+                    | Computation::Force(value_term)
+                    | Computation::Decompose(value_term) => one(value(value_term), Lowering::NONE),
                     Computation::Bind(bound, body) => {
                         two(computation(bound), computation(body), Lowering::ONE)
                     },
@@ -1469,9 +1484,9 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    ValueType::Run(session) | ValueType::Prefix(session) => {
-                        one(value(session), Lowering::NONE)
-                    },
+                    ValueType::Run(session)
+                    | ValueType::Prefix(session)
+                    | ValueType::Dialogue(session) => one(value(session), Lowering::NONE),
                     ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]
@@ -1484,7 +1499,8 @@ Err(_) => false,
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
-                    | ValueType::Buffer => [None, None, None, None, None],
+                    | ValueType::Buffer
+                    | ValueType::Web => [None, None, None, None, None],
                     ValueType::Capability { ref authority, .. } => {
                         effects = Some(authority);
                         [None, None, None, None, None]

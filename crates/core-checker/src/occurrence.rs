@@ -1072,7 +1072,11 @@ where
                     pending.push((AnyNode::Value(source), reach.term()));
                     pending.push((AnyNode::Value(target), reach.term()));
                 },
-                Some(&(ValueType::Run(session) | ValueType::Prefix(session))) => {
+                Some(
+                    &(ValueType::Run(session)
+                    | ValueType::Prefix(session)
+                    | ValueType::Dialogue(session)),
+                ) => {
                     pending.push((AnyNode::Value(session), reach.term()));
                 },
                 Some(&ValueType::Thunk(body)) => {
@@ -1124,7 +1128,8 @@ where
                     &(ValueType::Base(_)
                     | ValueType::Universe { .. }
                     | ValueType::Unknown
-                    | ValueType::Buffer),
+                    | ValueType::Buffer
+                    | ValueType::Web),
                 )
                 | None => {},
             },
@@ -1175,157 +1180,167 @@ where
                 },
                 Some(&CompType::Unknown) | None => {},
             },
-            AnyNode::Value(id) => match arena.value(id) {
-                Some(&Value::Constant(index)) => {
-                    if index >= block.end {
-                        return Err(index);
-                    }
-                    if block.family(index) == Membership::Family {
-                        worst = worst.max(found(reach.term(), Uniformity::NonUniform));
-                    }
-                    // A definition of the block is read through: what its
-                    // body names, the field names where it names the
-                    // definition (#602).
-                    else if let Ok(position) =
-                        definitions.binary_search_by_key(&index, |&(defined, _)| defined)
-                        && let Some(&(_, body)) = definitions.get(position)
-                    {
-                        pending.read(AnyNode::Value(body), reach, Reading::Body);
-                    }
-                },
-                Some(&Value::Constructor {
-                    datatype,
-                    ref fields,
-                    ..
-                }) => {
-                    pending.push((AnyNode::ValueType(datatype), reach));
-                    pending.extend(fields.iter().map(|&field| (AnyNode::Value(field), reach)));
-                },
-                Some(&Value::Record(ref fields)) => {
-                    pending.extend(fields.values().map(|&field| (AnyNode::Value(field), reach)));
-                },
-                Some(&Value::PathEquiv {
-                    path_type,
-                    forward,
-                    backward,
-                    ..
-                }) => {
-                    pending.push((AnyNode::ValueType(path_type), reach));
-                    pending.push((AnyNode::Value(forward), reach));
-                    pending.push((AnyNode::Value(backward), reach));
-                },
-                Some(&Value::Ascribe { value, ty }) => {
-                    pending.push((AnyNode::Value(value), reach));
-                    pending.push((AnyNode::ValueType(ty), reach));
-                },
-                Some(&Value::Tuple(ref components)) => {
-                    pending.extend(
-                        components
-                            .iter()
-                            .map(|&component| (AnyNode::Value(component), reach)),
-                    );
-                },
-                Some(&Value::Recorded(ref moves)) => {
-                    pending.extend(
-                        moves
-                            .iter()
-                            .filter_map(|movement| match movement.payload() {
+            AnyNode::Value(id) => {
+                match arena.value(id) {
+                    Some(&Value::Constant(index)) => {
+                        if index >= block.end {
+                            return Err(index);
+                        }
+                        if block.family(index) == Membership::Family {
+                            worst = worst.max(found(reach.term(), Uniformity::NonUniform));
+                        }
+                        // A definition of the block is read through: what its
+                        // body names, the field names where it names the
+                        // definition (#602).
+                        else if let Ok(position) =
+                            definitions.binary_search_by_key(&index, |&(defined, _)| defined)
+                            && let Some(&(_, body)) = definitions.get(position)
+                        {
+                            pending.read(AnyNode::Value(body), reach, Reading::Body);
+                        }
+                    },
+                    Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) => {
+                        pending.push((AnyNode::ValueType(datatype), reach));
+                        pending.extend(fields.iter().map(|&field| (AnyNode::Value(field), reach)));
+                    },
+                    Some(&Value::Record(ref fields)) => {
+                        pending
+                            .extend(fields.values().map(|&field| (AnyNode::Value(field), reach)));
+                    },
+                    Some(&Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ..
+                    }) => {
+                        pending.push((AnyNode::ValueType(path_type), reach));
+                        pending.push((AnyNode::Value(forward), reach));
+                        pending.push((AnyNode::Value(backward), reach));
+                    },
+                    Some(&Value::Ascribe { value, ty }) => {
+                        pending.push((AnyNode::Value(value), reach));
+                        pending.push((AnyNode::ValueType(ty), reach));
+                    },
+                    Some(&Value::Tuple(ref components)) => {
+                        pending.extend(
+                            components
+                                .iter()
+                                .map(|&component| (AnyNode::Value(component), reach)),
+                        );
+                    },
+                    Some(&Value::Recorded(ref moves)) => {
+                        pending.extend(moves.iter().filter_map(
+                            |movement| match movement.payload() {
                                 Maybe::Present(payload) => Some((AnyNode::Value(payload), reach)),
                                 Maybe::Absent(_) => None,
-                            }),
-                    );
-                },
-                Some(
-                    &(Value::PathProduct(first, second)
-                    | Value::Funext(first, second)
-                    | Value::Equiv(first, second)
-                    | Value::Univalence(first, second)
-                    | Value::Then(first, second)
-                    | Value::FlowProduct(first, second)
-                    | Value::FunctionFlow(first, second)
-                    | Value::Ua {
-                        forward: first,
-                        backward: second,
-                        ..
-                    }
-                    | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second)),
-                ) => {
-                    pending.push((AnyNode::Value(first), reach));
-                    pending.push((AnyNode::Value(second), reach));
-                },
-                Some(&Value::SessionRelated {
-                    source,
-                    target,
-                    payloads,
-                    ..
-                }) => {
-                    pending.push((AnyNode::Value(source), reach));
-                    pending.push((AnyNode::Value(target), reach));
-                    pending.push((AnyNode::Value(payloads), reach));
-                },
-                Some(&Value::Reify(ref frames)) => {
-                    for frame in frames.iter() {
-                        match *frame {
-                            StackFrame::Apply(value) => {
-                                pending.push((AnyNode::Value(value), reach));
                             },
-                            StackFrame::Bind(body) => {
-                                pending.push((AnyNode::Computation(body), reach));
+                        ));
+                    },
+                    Some(&Value::Dialogue(ref turns)) => {
+                        pending.extend(turns.iter().filter_map(
+                            |turn| match turn.movement.payload() {
+                                Maybe::Present(payload) => Some((AnyNode::Value(payload), reach)),
+                                Maybe::Absent(_) => None,
                             },
-                            StackFrame::Project(_) => {},
+                        ));
+                    },
+                    Some(
+                        &(Value::PathProduct(first, second)
+                        | Value::Funext(first, second)
+                        | Value::Equiv(first, second)
+                        | Value::Univalence(first, second)
+                        | Value::Then(first, second)
+                        | Value::FlowProduct(first, second)
+                        | Value::FunctionFlow(first, second)
+                        | Value::Ua {
+                            forward: first,
+                            backward: second,
+                            ..
                         }
-                    }
-                },
-                Some(
-                    &(Value::PathRefl(body)
-                    | Value::Here(body)
-                    | Value::Stay(body)
-                    | Value::Forward(body)
-                    | Value::Injection(_, body)
-                    | Value::Lift { body, .. }
-                    | Value::StaticLambda(body)
-                    | Value::Mark { body, .. }),
-                ) => {
-                    pending.push((AnyNode::Value(body), reach));
-                },
-                Some(
-                    &(Value::Thunk(body)
-                    | Value::Returned(body)
-                    | Value::Nested(body)
-                    | Value::Run(body)),
-                ) => {
-                    pending.push((AnyNode::Computation(body), reach));
-                },
-                // A quoted type is a type its term denotes: in a definition's
-                // body, it is read as a field's type is.
-                Some(&Value::Quote(quoted)) => {
-                    let reading = pending.reading().quote();
-                    pending.read(AnyNode::ValueType(quoted), reach, reading);
-                },
-                Some(&Value::QuoteComputation(quoted)) => {
-                    let reading = pending.reading().quote();
-                    pending.read(AnyNode::CompType(quoted), reach, reading);
-                },
-                // A parameter of the walked declaration used anywhere a
-                // strictly positive use was not read is not strictly
-                // positive; a definition's body names none.
-                Some(&Value::Variable {
-                    zone: Zone::Intuitionistic,
-                    index,
-                }) => {
-                    if reading == Reading::Field {
-                        mark(parameters, index, reach, scope);
-                    }
-                },
-                Some(
-                    &(Value::Primitive { .. }
-                    | Value::Variable { .. }
-                    | Value::ListNil
-                    | Value::Literal(_)
-                    | Value::Hole(_)),
-                )
-                | None => {},
+                        | Value::ListCons(first, second)
+                        | Value::StaticApplication(first, second)),
+                    ) => {
+                        pending.push((AnyNode::Value(first), reach));
+                        pending.push((AnyNode::Value(second), reach));
+                    },
+                    Some(&Value::SessionRelated {
+                        source,
+                        target,
+                        payloads,
+                        ..
+                    }) => {
+                        pending.push((AnyNode::Value(source), reach));
+                        pending.push((AnyNode::Value(target), reach));
+                        pending.push((AnyNode::Value(payloads), reach));
+                    },
+                    Some(&Value::Reify(ref frames)) => {
+                        for frame in frames.iter() {
+                            match *frame {
+                                StackFrame::Apply(value) => {
+                                    pending.push((AnyNode::Value(value), reach));
+                                },
+                                StackFrame::Bind(body) => {
+                                    pending.push((AnyNode::Computation(body), reach));
+                                },
+                                StackFrame::Project(_) => {},
+                            }
+                        }
+                    },
+                    Some(
+                        &(Value::PathRefl(body)
+                        | Value::Here(body)
+                        | Value::Stay(body)
+                        | Value::Forward(body)
+                        | Value::Injection(_, body)
+                        | Value::Lift { body, .. }
+                        | Value::StaticLambda(body)
+                        | Value::Mark { body, .. }),
+                    ) => {
+                        pending.push((AnyNode::Value(body), reach));
+                    },
+                    Some(
+                        &(Value::Thunk(body)
+                        | Value::Returned(body)
+                        | Value::Nested(body)
+                        | Value::Run(body)),
+                    ) => {
+                        pending.push((AnyNode::Computation(body), reach));
+                    },
+                    // A quoted type is a type its term denotes: in a definition's
+                    // body, it is read as a field's type is.
+                    Some(&Value::Quote(quoted)) => {
+                        let reading = pending.reading().quote();
+                        pending.read(AnyNode::ValueType(quoted), reach, reading);
+                    },
+                    Some(&Value::QuoteComputation(quoted)) => {
+                        let reading = pending.reading().quote();
+                        pending.read(AnyNode::CompType(quoted), reach, reading);
+                    },
+                    // A parameter of the walked declaration used anywhere a
+                    // strictly positive use was not read is not strictly
+                    // positive; a definition's body names none.
+                    Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index,
+                    }) => {
+                        if reading == Reading::Field {
+                            mark(parameters, index, reach, scope);
+                        }
+                    },
+                    Some(
+                        &(Value::Web(_)
+                        | Value::Primitive { .. }
+                        | Value::Variable { .. }
+                        | Value::ListNil
+                        | Value::Literal(_)
+                        | Value::Hole(_)),
+                    )
+                    | None => {},
+                }
             },
             AnyNode::Computation(id) => match arena.computation(id) {
                 Some(&Computation::DataCase {
@@ -1354,7 +1369,8 @@ where
                     | Computation::TupleProjection(value, _)
                     | Computation::Return(value)
                     | Computation::Abandon(value)
-                    | Computation::Force(value)),
+                    | Computation::Force(value)
+                    | Computation::Decompose(value)),
                 ) => {
                     pending.push((AnyNode::Value(value), reach));
                 },

@@ -31,6 +31,9 @@ use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::primitive::PrimitiveError;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
+use gandr_core_term::session::RecordedMove;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -698,7 +701,56 @@ fn forms() -> Vec<Form>
                 matches!(*declined, Declined::Exhausted(Status::FuelExhausted))
             }),
         },
+        Form {
+            what: "decompose(dialogue(left(sent(1)), right(received(1)), left(closed), \
+                   right(closed)))",
+            build: |core| {
+                (
+                    exchanged(core, [Endpoint::Left, Endpoint::Right]),
+                    Vec::new(),
+                )
+            },
+            ends: Ends::Shows(EXCHANGED),
+        },
+        Form {
+            what: "decompose(dialogue(left(sent(1)), right(received(1)), right(closed), \
+                   left(closed)))",
+            build: |core| {
+                (
+                    exchanged(core, [Endpoint::Right, Endpoint::Left]),
+                    Vec::new(),
+                )
+            },
+            ends: Ends::Shows(EXCHANGED),
+        },
     ])
+}
+
+/// The web of one message on `!Integer. end` and both closes, as the IL
+/// renders its pieces in preorder: the send, then the left's close beside the
+/// right's receipt and close, whichever endpoint the log closes first.
+const EXCHANGED: &str = "⟨web[series(2), event(left, 0), parallel(2), event(left, 1), series(2), \
+                         event(right, 0), event(right, 1)]() |+ ★⟩";
+
+/// `decompose` of the dialogue that sends one and closes, its closes logged in
+/// the order `closes` names.
+///
+/// # Specification
+/// trivial.
+fn exchanged(
+    core: &mut CoreArena,
+    closes: [Endpoint; 2],
+) -> ComputationId
+{
+    let [one, _, _] = one_two_three(core);
+    let turn = |endpoint, movement| DialogueMove { endpoint, movement };
+    let dialogue = core.value_dialogue(Arc::from([
+        turn(Endpoint::Left, RecordedMove::Sent(one)),
+        turn(Endpoint::Right, RecordedMove::Received(one)),
+        turn(closes[0], RecordedMove::Closed),
+        turn(closes[1], RecordedMove::Closed),
+    ]));
+    core.computation_decompose(dialogue)
 }
 
 /// Which former handles an operation.

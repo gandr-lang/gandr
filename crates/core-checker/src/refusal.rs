@@ -152,6 +152,9 @@ pub enum ExpectedShape
     /// A run type `Run(S)` or a prefix type `Prefix(S)`: what a recorded run is
     /// checked against.
     Run,
+    /// A dialogue type `Dialogue(S)`: what a dialogue is checked against and
+    /// what the dialogue a decomposition reads must synthesise.
+    Dialogue,
 }
 
 /// A checking-only form, met where a type had to be synthesised.
@@ -1241,6 +1244,28 @@ pub enum CheckRefusal
         /// What the session refuses.
         fault: RunFault,
     },
+    /// A dialogue whose message is not received as sent: a move out of one
+    /// endpoint with no move into the other that agrees with it — a receipt
+    /// of the payload sent, an offer of the label selected — or a move in
+    /// with nothing sent to match it.
+    DialogueUnmatched
+    {
+        /// The dialogue.
+        at: ValueId,
+        /// The unmatched move's position in the log.
+        step: RunStep,
+    },
+    /// A dialogue logged out of its causal order: a move logged before the
+    /// send it receives, or before an earlier move of its own endpoint.
+    DialogueInverted
+    {
+        /// The dialogue.
+        at: ValueId,
+        /// The log position of the move the web orders first, logged second.
+        earlier: RunStep,
+        /// The log position of the move the web orders second, logged first.
+        later: RunStep,
+    },
     /// A `forward` the rule does not decide: its translator is open, its
     /// classifier is no thunk of a pure non-dependent arrow, a code is outside
     /// the unit type, the base atoms, sums of at least one summand and
@@ -1337,7 +1362,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1412,6 +1437,8 @@ impl CheckRefusal
             | Self::OpenSessionPayload { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
+            | Self::DialogueUnmatched { .. }
+            | Self::DialogueInverted { .. }
             | Self::Boundary { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { former, .. } => former.judged(),
             Self::FunextUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FUNEXT),
@@ -1625,6 +1652,8 @@ impl CheckRefusal
             | Self::NonCovariantMotive { .. }
             | Self::RideUnsupported { .. }
             | Self::RunNotAdmitted { .. }
+            | Self::DialogueUnmatched { .. }
+            | Self::DialogueInverted { .. }
             | Self::ForwardUnsupported { .. }
             | Self::Boundary { .. } => (UNNAMED, UNNAMED),
         };

@@ -2111,6 +2111,7 @@ fn rebuild(
         | Computation::Return(_)
         | Computation::Ascribe { .. }
         | Computation::Force(_)
+        | Computation::Decompose(_)
         | Computation::RecordProjection(..)
         | Computation::TupleProjection(..)
         | Computation::Hole(_)

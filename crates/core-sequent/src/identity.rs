@@ -285,6 +285,8 @@ pub enum MotiveHead
     RecursiveRun,
     /// A prefix type: an open play does not transport.
     Prefix,
+    /// A dialogue type: a dialogue does not transport.
+    Dialogue,
     /// A base type.
     Base,
     /// A dependent pair type.
@@ -352,6 +354,7 @@ impl fmt::Display for MotiveHead
             Self::Run => "a run type",
             Self::RecursiveRun => "a run of a recursive session",
             Self::Prefix => "a prefix type",
+            Self::Dialogue => "a dialogue type",
             Self::Base => "a base type",
             Self::Sigma => "a dependent pair type",
             Self::Thunk => "a thunk type",
@@ -498,8 +501,8 @@ fn occurrence(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the head of `node`'s former; a base type, a product, a sum and a
-///   list share [`MotiveHead::Base`].
+/// - ensures: the head of `node`'s former; a base type, a web, a product, a sum
+///   and a list share [`MotiveHead::Base`].
 /// - provides: the head a refused transport names.
 /// - panics: none.
 /// - executable: none — a clause would restate the match arm by arm.
@@ -518,9 +521,12 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::Flow { .. } => MotiveHead::Flow,
         ValueType::Run(_) => MotiveHead::Run,
         ValueType::Prefix(_) => MotiveHead::Prefix,
-        ValueType::Base(_) | ValueType::Product(_) | ValueType::Sum(_) | ValueType::List(_) => {
-            MotiveHead::Base
-        },
+        ValueType::Dialogue(_) => MotiveHead::Dialogue,
+        ValueType::Base(_)
+        | ValueType::Web
+        | ValueType::Product(_)
+        | ValueType::Sum(_)
+        | ValueType::List(_) => MotiveHead::Base,
         ValueType::Sigma { .. } => MotiveHead::Sigma,
         ValueType::Thunk(_) => MotiveHead::Thunk,
         ValueType::Universe { .. } => MotiveHead::Universe,
@@ -661,6 +667,8 @@ fn row(
         | ValueType::Flow { .. }
         | ValueType::Run(_)
         | ValueType::Prefix(_)
+        | ValueType::Dialogue(_)
+        | ValueType::Web
         | ValueType::Base(_)
         | ValueType::Product(_)
         | ValueType::Sigma { .. }

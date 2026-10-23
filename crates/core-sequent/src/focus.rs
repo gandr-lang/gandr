@@ -855,6 +855,12 @@ enum Task
         /// The caller's return point.
         continuation: ConsumerId,
     },
+    /// Complete a decomposition after translating its dialogue.
+    Decompose
+    {
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
     /// Translate a value; leaves one producer.
     Value(ValueId),
     /// Translate a computation under a continuation; leaves one command.
@@ -872,6 +878,9 @@ enum Task
     /// Pop one producer per payload move and mint the recorded run of these
     /// moves.
     Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
+    /// Pop one producer per payload move and mint the dialogue of these
+    /// moves.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
     /// Pop head and tail producers and mint their native cell.
     ListCons,
     /// Pop one producer and mint its injection into this summand.
@@ -1084,7 +1093,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
@@ -1093,12 +1102,12 @@ impl<'run> Focusing<'run>
                 Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
                 Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
                 Computation::With(ref components) => self.commands.len() >= components.len(),
-                Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
+                Computation::Primitive { .. } | Computation::Decompose(_) | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => true,
             }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
-            | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
+            | &Task::Decompose { .. } | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
@@ -1107,6 +1116,7 @@ impl<'run> Focusing<'run>
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::Record(ref labels) => self.producers.len() >= labels.len(),
             | &Task::Recorded(ref moves) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
+            | &Task::Dialogue(ref turns) => self.producers.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
         },
@@ -1148,6 +1158,18 @@ impl<'run> Focusing<'run>
                     continuation,
                 )
             },
+            Task::Decompose { continuation } => {
+                let dialogue = self.pop_producer()?;
+                let producer = self
+                    .arena
+                    .mint_producer(ProducerNode::Decompose(dialogue))?;
+                self.cut(
+                    FocusOrigin::Return,
+                    Polarity::Positive,
+                    producer,
+                    continuation,
+                )
+            },
             Task::Value(value) => self.value(value),
             Task::Computation {
                 computation,
@@ -1174,6 +1196,16 @@ impl<'run> Focusing<'run>
             },
             Task::Recorded(moves) => {
                 let tag = ConstructorTag::Recorded(moves);
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(tag.producer_arity()))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let payloads: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(tag, &payloads)
+            },
+            Task::Dialogue(turns) => {
+                let tag = ConstructorTag::Dialogue(turns);
                 let start = self
                     .producers
                     .len()
@@ -1597,6 +1629,7 @@ impl<'run> Focusing<'run>
                 let (introduces, origin) = match *node {
                     Computation::Scope { .. } => (Introduces::Capability, FocusOrigin::Scope),
                     Computation::Primitive { .. }
+                    | Computation::Decompose(_)
                     | Computation::Transport(..)
                     | Computation::PathTransport { .. }
                     | Computation::Ride { .. }
@@ -1722,6 +1755,7 @@ impl<'run> Focusing<'run>
                 );
             },
             Computation::Primitive { .. }
+            | Computation::Decompose(_)
             | Computation::Transport(..)
             | Computation::PathTransport { .. }
             | Computation::Ride { .. }
@@ -1891,6 +1925,30 @@ impl<'run> Focusing<'run>
                 }
                 return Ok(());
             },
+            Value::Dialogue(ref turns) => {
+                self.tasks.push(Task::Dialogue(
+                    turns
+                        .iter()
+                        .map(|turn| gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement: turn.movement.carrying(()),
+                        })
+                        .collect(),
+                ));
+                for turn in turns.iter().rev() {
+                    if let gandr_core_term::session::RecordedMove::Sent(payload)
+                    | gandr_core_term::session::RecordedMove::Received(payload) = turn.movement
+                    {
+                        self.tasks.push(Task::Value(payload));
+                    }
+                }
+                return Ok(());
+            },
+            Value::Web(ref pieces) => ProducerNode::Constructor {
+                tag: ConstructorTag::Web(alloc::sync::Arc::clone(pieces)),
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
             Value::Injection(summand, body) => {
                 self.tasks.push(Task::Injection(summand));
                 self.tasks.push(Task::Value(body));
@@ -1990,6 +2048,8 @@ impl<'run> Focusing<'run>
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -2335,6 +2395,10 @@ impl<'run> Focusing<'run>
                 for argument in arguments.iter().rev() {
                     self.tasks.push(Task::Value(*argument));
                 }
+            },
+            Computation::Decompose(dialogue) => {
+                self.tasks.push(Task::Decompose { continuation });
+                self.tasks.push(Task::Value(dialogue));
             },
             // A transport runs as its motive's action applied to the path's
             // two maps and the moved value; along a native path the action

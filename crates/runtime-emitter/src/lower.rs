@@ -932,6 +932,8 @@ pub enum Callee
     /// first, each application's argument among the call's arguments in
     /// order.
     Reify(Vec<Reified>),
+    /// Decompose a dialogue: answers its web, a head the run's table joins.
+    Decompose,
     /// Stick at a constant the definitions do not hold.
     Undefined(ConstantIndex),
     /// Stick at a constant whose unfolding needs its own value.
@@ -1650,7 +1652,9 @@ impl Lowering<'_>
             | ConstructorTag::ListNil
             | ConstructorTag::ListCons
             | ConstructorTag::Lift(_)
-            | ConstructorTag::Recorded(_) => Ok(Header::new(
+            | ConstructorTag::Recorded(_)
+            | ConstructorTag::Dialogue(_)
+            | ConstructorTag::Web(_) => Ok(Header::new(
                 Kind::Head,
                 Tag::try_from(0_usize).map_err(width)?,
                 Arity::try_from(usize::from(tag.producer_arity())).map_err(width)?,
@@ -2804,6 +2808,7 @@ impl Lowering<'_>
             | ProducerNode::Fixpoint { .. }
             | ProducerNode::Cocase { .. }
             | ProducerNode::Primitive { .. }
+            | ProducerNode::Decompose(_)
             | ProducerNode::Reify(_) => {
                 self.tasks.push(Task::Deliver(consumer, scope));
                 self.tasks.push(Task::Producer(producer, scope));
@@ -3047,6 +3052,12 @@ impl Lowering<'_>
                     self.tasks.push(PUSH);
                     self.tasks.push(Task::Producer(argument, scope));
                 }
+            },
+            ProducerNode::Decompose(dialogue) => {
+                let call = self.call(&Callee::Decompose, Immediate::from(1_u32))?;
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(Task::Producer(dialogue, scope));
             },
             ProducerNode::Reify(ref frames) => {
                 let mut shape = Vec::with_capacity(frames.len());
@@ -3862,7 +3873,9 @@ pub fn lower_unfused(
                 | ConstructorTag::ListNil
                 | ConstructorTag::ListCons
                 | ConstructorTag::Lift(_)
-                | ConstructorTag::Recorded(_) => 0,
+                | ConstructorTag::Recorded(_)
+                | ConstructorTag::Dialogue(_)
+                | ConstructorTag::Web(_) => 0,
             };
             table.push(Word::from(position));
         }
@@ -3966,6 +3979,7 @@ fn survey(
                     },
                     ProducerNode::Mu { .. }
                     | ProducerNode::Primitive { .. }
+                    | ProducerNode::Decompose(_)
                     | ProducerNode::Variable { .. }
                     | ProducerNode::Literal(_)
                     | ProducerNode::Code(_)
