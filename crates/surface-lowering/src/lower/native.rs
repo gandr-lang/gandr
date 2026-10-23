@@ -8823,7 +8823,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   as the same variable, passes its arguments as a descent call does, and
     ///   claims nothing: the fixpoint stays partial. An instantiation whose
     ///   residents supply a function's implicits by name is planned as
-    ///   [`Self::supplied_value`] plans it.
+    ///   [`Self::supplied_value`] plans it; one whose head names a held slot
+    ///   and whose bracket holds one number is the element there, as
+    ///   [`Self::element`] plans it.
     /// - provides: the head of a recursive call, and the self reference a value
     ///   position passes on.
     /// - fails: the reserved refusal for any other resident, a termination
@@ -8868,6 +8870,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         if let Some(&place) = self.view_places.get(&site.at.node) {
             return self.view_place(site, cursor, place);
+        }
+        if let Maybe::Present(lent) = self.lent_head(site)? {
+            return self.element(site, cursor, lent);
         }
         if self.supplied_value(site)? == arity::Planned(true) {
             return Ok(());

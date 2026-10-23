@@ -51,12 +51,10 @@ def raisedWhileRead() -> -F Integer {
   access shared xs as v { xs.first() as w { resume(w, 3) } ; pure 0 }
 }
 
-/// A bare index outside a method's body, which does not yet read its place
-/// (#1536).
+/// A bare index of a list no hold holds: there is no place to lend.
 @[ refuses("OutOfFragment.index_expression") ]
-def bare(i : Integer) -> -F Integer {
-  hold xs = pair;
-  run y <- xs[i];
+def unheldIndex(ys : List(Integer), i : Integer) -> -F Integer {
+  run y <- ys[i];
   pure y
 }
 
