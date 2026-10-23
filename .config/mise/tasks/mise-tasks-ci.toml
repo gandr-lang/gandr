@@ -868,12 +868,12 @@ done < "$report"
 # already carries (`own_fork`, #1298), so a rerun after the top moved never
 # carries another pull request's change. Its obligations are measured against
 # the top's head, and it opens with the top's branch as its base, linked into
-# the top's stack (`gh stack link`). A chain with a pull request below that
-# lands on its own, in the merge queue or set to auto-merge, cannot take a link
-# (#1353); the pull request then opens unlinked on the top, and `pr:land` from
-# the top waits for that one to merge, then restacks and queues the chain.
-# `decide.jq` reads which, as it does for `pr:land`. The task prints which path
-# it took. With nothing open it opens against main.
+# the top's stack (`gh stack link`). Above members already in the merge queue
+# only the open members are linked (#1988); where GitHub refuses that link,
+# as it does over a pull request queued on its own (#1353), the pull request
+# waits unlinked on the top, and GitHub moves it to main when the queued one
+# merges. The task prints which path it took. With nothing open it opens
+# against main.
 #
 # Every new pull request targets the top of the latest stack, queued or not
 # (#1983): a top not landing is read first, and with every open pull request
@@ -885,18 +885,14 @@ done < "$report"
 # #1420) as belt and braces. Nothing waits for the queue, and nothing opens a
 # second root on main.
 #
-# A pull request a `pr:land` is waiting to queue carries the `landing` label
-# (#1556): stacked on, it would stop being the top under the landing, which
-# then refuses and starts again from the new top, a whole checks cycle
-# later. A top carrying it is waited out (`await_top`), never the queue: once
-# the chain is queued the label is gone and the new pull request opens on the
-# queued top. The top is read at the start and again just before the push
-# (#1601): the obligations step between takes about a minute, and a
-# `pr:land` started on the top inside it holds and restacks the top. A top
-# changed or restacked by then is refused, to be opened again. `pr:land`
-# holds its pull request before it reads the chain and reads the chain again
-# before it queues, so an open that read the top before the hold and pushes
-# after it makes the landing refuse instead.
+# A prefix a landing is queueing carries the `landing` label (#1556) while
+# the landing waits on its members' required checks. A top carrying it is
+# waited out (`await_top`), never the queue: once the prefix is queued the
+# label is gone and the new pull request opens on the queued top. The top is
+# read at the start and again just before the push
+# (#1601): the obligations step between takes about a minute, and a landing
+# started inside it holds and queues the top. A top changed or restacked by
+# then is refused, to be opened again.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -907,7 +903,7 @@ done < "$report"
 # pull request it unblocks. `--unblocks <n>` names that pull request, and the
 # fix opens as a second bottom on main, measured against main, and is set to
 # auto-merge so it queues on its own (#1353). The body must name #n. Once it
-# merges, `pr:land` from the stack's top rebases the chain onto it. Every
+# merges, `pr:land` from the red stack restacks it onto main. Every
 # other second bottom is refused.
 ["pr:open"]
 description = "Open the pull request on the server's top once its body acknowledges every prose obligation"
@@ -983,22 +979,20 @@ url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_titl
 echo "$url"
 if [[ -n "$unblocks" ]]; then
   gh pr merge "${url##*/}" -R "$repo" --merge --auto
-  echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the stack's top rebases the chain onto it"
+  echo "#${url##*/} opens on $trunk to unblock #$unblocks and queues on its own; once it merges, \`pr:land\` from the red stack restacks it onto main"
 fi
 if [[ "$base" != "$trunk" ]]; then
   number=${url##*/}
   stack=$(server_stack "$number")
-  decision=$(jq -rn --argjson server "$stack" --arg own "$own" --argjson queued "$(queued_of "$stack")" \
-    '{server: $server, own: $own, queued: $queued}' | jq -r -f "$pr_stack_dir/decide.jq")
-  case "$decision" in
-    wait$'\t'*)
-      echo "#${decision#*$'\t'} below is queued, so #$number waits unlinked on $base: when the queued top merges GitHub moves #$number to $trunk, and \`pr:land\` from the top lands it with the rest"
-      ;;
-    *)
-      stack_link "$stack"
-      echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
-      ;;
-  esac
+  queued=$(queued_of "$stack")
+  if [[ "$queued" == '[]' ]]; then
+    stack_link "$stack"
+    echo "#$number stacked on #$top_number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
+  elif stack_link "$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")" 2> /dev/null; then
+    echo "#$number stacked on #$top_number above the queued #$(jq -r '.[-1]' <<< "$queued"): $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")"
+  else
+    echo "#$number waits unlinked on $base above the queued #$(jq -r '.[-1]' <<< "$queued"): GitHub moves it to $trunk when that one merges, and the next landing links and queues it"
+  fi
 fi
 {% endraw %}'''
 
@@ -1010,37 +1004,42 @@ fi
 #
 # Every landing is a stack's (#1264), read from the server, the only record:
 # the pull request's base chain down to main and the open pull requests based
-# on it up to the top (`chain.jq`). A chain of one is a plain landing. A
-# longer chain lands whole from its top: it is restacked onto `origin/main` in
-# a scratch worktree, so a branch another seat has checked out moves only on
-# the server, pushed in one atomic push, linked (`gh stack link`), and queued
-# as one group (`gh stack merge` by the top), and the task waits on the top.
-# A chain whose lower pull request is already queued on its own waits for it
-# to merge and reads the chain again, and so does a chain whose top holds the
-# branch of one queued on its own outside it (`carried_queued`). Before any
-# queueing and before such a wait, every open pull request on a branch the
-# landing deletes, outside it, is retargeted to main (`retarget_landing`):
-# GitHub closes an unlinked pull request, unmerged, when a merge deletes its
-# base branch (#1420). One linked into the landing's stack is left alone: the
-# stack carries it, and GitHub refuses to change its base (#1520). Run from a
-# branch that is not the top, the landing is refused, naming the top.
-# `.config/pr-stack/decide.jq` makes the decision and `check:pr-stack` holds
-# its cases.
+# on it up to the top (`chain.jq`). What lands is the largest prefix that is
+# ready (#1988, `land_prefix`, decided by `.config/pr-stack/prefix.jq`, its
+# cases held by `check:pr-stack`): the members already in the merge queue are
+# skipped, and above them every member green on the trunk's required
+# contexts is queued, up to the first red or pending one, which the task
+# names. The tail above it is the next stack. The task runs from any member,
+# and the caller's own pull request need not be in the prefix: with something
+# below it red or pending the task says so and exits 0, and `pr:watch` lands
+# the stack the moment that one goes green. A chain of one is a plain
+# landing, by auto-merge; a longer one is linked (`gh stack link`) and queued
+# as one group by `gh stack merge` up to the prefix's top, and the task waits
+# on the caller's pull request when it is in the queue. A stack whose top
+# holds the branch of a pull request queued on its own outside it
+# (`carried_queued`) waits for that one to merge and reads the stack again.
+# Before any queueing, every open pull request on a branch the landing
+# deletes, outside it, is retargeted to main (`retarget_landing`, #1420); one
+# linked into the landing's stack is left alone (#1520).
 #
-# Before queueing, the prose obligations are written into the pull request's
-# body against the rebased branch, its ticks carried, and the landing is
-# refused while a box is unticked; a stack is measured whole against
-# origin/main into its top pull request's body, whose own labels join its
-# targets' for the lint assessment, and whose head's red hotpath checks owe
-# the hotpath verdict. Once every box is ticked, a failed obligations lane is
-# rerun so it reads the ticks.
+# Nothing is restacked before the queue: a restack moves every head and
+# reruns every check, so a ready prefix would wait a checks cycle for a
+# rebase the queue does itself when it builds the merge group. A prefix that
+# comes back unmergeable is restacked by `pr:watch`.
+#
+# Before the landing, when the checked-out branch is the pull request's own,
+# the prose obligations are written into its body against its base, its
+# ticks carried, and the landing is refused while a box is unticked; its own
+# labels join its targets' for the lint assessment, and its head's red
+# hotpath checks owe the hotpath verdict. Once every box is ticked, a failed
+# obligations lane is rerun so it reads the ticks.
 #
 # A queued stack member leaves the queue alone only by being closed and
 # reopened: `dequeuePullRequest` looks for a queue on the member's own base
 # branch and finds none, a push to a queued branch is refused, and a stack
 # member's base cannot be edited. The members below it stay queued.
 ["pr:land"]
-description = "Restack, queue and wait for the merge queue outcome of the pull request's stack"
+description = "Queue the ready prefix of the pull request's stack and wait for the merge queue outcome"
 usage = '''
 arg "[number]" help="pull request number; defaults to the current branch"
 '''
@@ -1128,119 +1127,89 @@ conflicts() {
   echo "rebase onto main once they merge, then run \`pr:land\` again"
 }
 
-# The landing's shape is the server's stack (#1264): one pull request lands
-# alone, a longer chain lands whole from its top, and a chain whose lower pull
-# request is queued on its own, or whose top holds the branch of one, waits
-# for it to merge, after every pull request on that one's branch is
-# retargeted to main.
+# The landing is the stack's largest ready prefix (#1988, `land_prefix`): run
+# from any member, it queues every member green on the required contexts, up
+# to the first red or pending one. A stack that holds the commits of a pull
+# request queued on its own waits for that one to merge, then reads the stack
+# again.
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
-own_head=$(git branch --show-current)
-# From the moment the landing is this run's until its chain is queued, the
-# chain's pull requests carry the `landing` label, so `pr:open` stacks
-# nothing on the top under it (#1556); every exit takes the label off. The
-# pull request is held before the chain is first read (#1601): a land runs
-# from the top, so a `pr:open` whose last read of the top follows this label
-# refuses, and one whose last read came before it opens a pull request the
-# read below, or the one before queueing, finds above the top.
 trap release_landing EXIT
-hold_landing "[$number]"
+
+# The prose obligations are measured on the checked-out tree when it is the
+# pull request's own branch, against its base, and written into its body, its
+# ticks carried; the landing is refused while a box is unticked, and a failed
+# obligations lane is rerun once every box is ticked, so it reads the ticks.
+# A pull request landed from elsewhere is landed on its required checks,
+# which hold the obligations lane.
+own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
+if [[ "$own" == "$number" ]]; then
+  base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
+  git fetch --quiet origin "$base"
+  measured=origin/$base
+  if [[ "$base" == "$trunk" ]]; then measured=$(git merge-base HEAD "origin/$trunk"); fi
+  body=$(mktemp)
+  gh pr view "$number" -R "$repo" --json body --jq .body > "$body"
+  cp "$body" "$body.read"
+  status=0
+  mise run evidence:obligations "$measured" --body "$body" --pr "$number" --require-acknowledged || status=$?
+  if (( status != 0 && status != 2 )); then rm -f "$body" "$body.read"; exit "$status"; fi
+  if ! cmp -s "$body" "$body.read"; then gh pr edit "$number" -R "$repo" --body-file "$body" > /dev/null; fi
+  rm -f "$body" "$body.read"
+  if (( status == 2 )); then
+    echo "PR #$number: tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in its body's ## Re-verification section, then run \`pr:land\` again" >&2
+    exit 2
+  fi
+  lane=$(gh pr checks "$number" -R "$repo" --json name,bucket,link --jq '.[] | select(.name == "re-verify obligated specifications (linux)" and .bucket == "fail") | .link')
+  if [[ -n "$lane" ]]; then
+    run_id=${lane#*/runs/}
+    gh run rerun "${run_id%%/*}" -R "$repo" --job "${lane##*/job/}"
+  fi
+fi
+
 while :; do
-  server=$(server_stack "$number")
-  [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$number is not open" >&2; exit 2; }
-  in_stack=$(queued_of "$server")
-  decision=$(jq -rn --argjson server "$server" --arg own "$own_head" --argjson queued "$in_stack" \
-    --argjson carried "$(carried_queued "$server")" \
-    '{server: $server, own: $own, queued: $queued, carried: $carried}' | jq -r -f "$pr_stack_dir/decide.jq")
-  case "$decision" in
-    wait$'\t'*)
-      (( SECONDS < deadline )) || { echo "timed out waiting on #${decision#*$'\t'} below" >&2; exit 2; }
-      retarget_landing "$in_stack"
-      hold_landing "$(jq -c --argjson queued "$in_stack" '[.[].number | select(IN($queued[]) | not)]' <<< "$server")"
-      echo "#${decision#*$'\t'} below is queued on its own; landing once it merges"
+  status=0
+  land_prefix "$number" || status=$?
+  case "$status" in
+    0) break ;;
+    3)
+      (( SECONDS < deadline )) || { echo "timed out waiting on the pull request queued below" >&2; exit 2; }
       sleep 60
       ;;
-    *) break ;;
+    *) exit "$status" ;;
   esac
 done
-case "$decision" in
-  refuse$'\t'*) echo "${decision#*$'\t'}" >&2; exit 2 ;;
-  stack$'\t'*) number=${decision#*$'\t'}; stack=true ;;
-  single) stack=false ;;
-  *) echo "unexpected stack decision: $decision" >&2; exit 2 ;;
-esac
-hold_landing "$(jq -c --argjson queued "$in_stack" '[.[].number | select(IN($queued[]) | not)]' <<< "$server")"
-
-# A branch behind main enters the queue only to come back UNMERGEABLE or to
-# fail on what landed ahead of it, so the stack is restacked onto
-# `origin/main` and pushed before the queue sees it. The queue then runs CI on
-# the merged result, which is the re-verification; a clean rebase runs no
-# local gate again. A rebase that conflicts stops here for a hand, naming the
-# branch. A pull request named by number from elsewhere lands as it stands.
-if [[ "$stack" == true || -z "${usage_number:-}" ]]; then
-  if [[ "$stack" == false ]]; then
-    base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
-    if [[ "$base" != "$trunk" ]]; then
-      echo "PR #$number's base is $base, which has no open pull request; retarget it to $trunk or open its base again" >&2
+# A stack whose bottom is red while it sits behind main, with nothing of it
+# queued, may be red for what main has fixed since, as a fix opened with
+# `pr:open --unblocks` is: it is restacked onto main, its checks run again,
+# and `pr:watch` lands it once they are green. The rebase runs in a scratch
+# worktree; the checked-out branch, when the stack moved it, is taken back.
+IFS=$'\t' read -r verdict _upto stop <<< "$prefix_decision"
+if [[ "$verdict" == hold && "$stop" == red && "$prefix_queued" == '[]' ]]; then
+  bottom=$(jq -r '.[0].head' <<< "$prefix_server")
+  git fetch --quiet origin "$trunk" "$bottom"
+  if ! git merge-base --is-ancestor "origin/$trunk" "origin/$bottom"; then
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+      echo "the checkout has uncommitted changes; commit or drop them, then run \`pr:land\` again to restack the stack onto $trunk" >&2
       exit 2
     fi
-  fi
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "the checkout has uncommitted changes; commit or drop them, then run \`pr:land\` again" >&2
-    exit 2
-  fi
-  if [[ $(in_queue "$number") != true ]]; then
-    restack "$server"
-    git reset --quiet --keep "origin/$own_head"
+    echo "the stack's bottom is red and behind $trunk: restacking it onto $trunk"
+    restack "$prefix_server"
+    own_head=$(git branch --show-current)
+    if jq -e --arg head "$own_head" 'any(.[]; .head == $head)' <<< "$prefix_server" > /dev/null; then
+      git reset --quiet --keep "origin/$own_head"
+    fi
   fi
 fi
-
-# The obligations are measured on the checked-out tree, so it must be the
-# pull request's own branch: a stack's top branch.
-own=$(gh pr view --json number --jq .number 2> /dev/null) || own=
-if [[ "$own" != "$number" ]]; then
-  echo "PR #$number is not the checked-out branch's pull request; run \`pr:land\` from its branch, a stack from its top branch" >&2
-  exit 2
-fi
-body=$(mktemp)
-gh pr view "$number" -R "$repo" --json body --jq .body > "$body"
-cp "$body" "$body.read"
-status=0
-mise run evidence:obligations --body "$body" --pr "$number" --require-acknowledged || status=$?
-if (( status != 0 && status != 2 )); then rm -f "$body" "$body.read"; exit "$status"; fi
-if ! cmp -s "$body" "$body.read"; then gh pr edit "$number" -R "$repo" --body-file "$body" > /dev/null; fi
-rm -f "$body" "$body.read"
-if (( status == 2 )); then
-  echo "PR #$number: tick one box per prose obligation, and the lint assessment's and the hotpath verdict's boxes once their verdicts are written, in its body's ## Re-verification section, then run \`pr:land\` again" >&2
-  exit 2
-fi
-lane=$(gh pr checks "$number" -R "$repo" --json name,bucket,link --jq '.[] | select(.name == "re-verify obligated specifications (linux)" and .bucket == "fail") | .link')
-if [[ -n "$lane" ]]; then
-  run_id=${lane#*/runs/}
-  gh run rerun "${run_id%%/*}" -R "$repo" --job "${lane##*/job/}"
-fi
-
-initial=$(pr_state)
-IFS=$'\t' read -r state mergeable merge_status auto commit base check_count <<< "$initial"
-entry=$(queue_state)
-IFS=$'\t' read -r in_queue queue_status position <<< "$entry"
-if [[ "$in_queue" == true ]]; then queued=true; fi
-if [[ "$state" == OPEN && "$auto" == false && "$in_queue" == false ]]; then
-  # A pull request opened on the top after the chain was read, by a
-  # `pr:open` whose last read of the top preceded the hold, would be left out
-  # of the queued chain and closed with its base (#1601).
-  now=$(server_stack "$number")
-  if [[ $(jq -c 'map(.number)' <<< "$now") != "$(jq -c 'map(.number)' <<< "$server")" ]]; then
-    echo "the stack changed while it was readied to land: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$now"); run \`pr:land\` again from its top" >&2
-    exit 2
-  fi
-  queue_stack "$server"
-fi
-# Queued, the chain is landing (`open_prs`), so nothing stacks on it.
-release_landing
 # The seat's wake-up: run as a deferred job, `pr:watch` exits with one line
-# the moment the pull request needs a hand or has landed.
+# the moment the pull request needs a hand or has landed, and lands its
+# stack the moment it goes green.
 printf "arm: /bin/bash -c 'mise run pr:watch %s' timer-pr-%s\n" "$number" "$number"
+if [[ $(in_queue "$number") != true ]]; then
+  echo "#$number is not in this landing; \`pr:watch\` lands it once it and every pull request below it are green"
+  exit 0
+fi
+queued=true
 while (( SECONDS < deadline )); do
   snapshot=$(pr_state)
   IFS=$'\t' read -r state mergeable merge_status auto commit base check_count <<< "$snapshot"
@@ -1347,14 +1316,21 @@ exit 2
 # is no event. An entry the queue removes because it merged is waited out
 # until the state reads MERGED.
 #
+# The watch is also the landing trigger (#1988): the moment the pull
+# request's head reads green on the trunk's required contexts, out of the
+# queue, it queues the stack's ready prefix (`land_prefix`), as `pr:land`
+# does, once per head; a stack waiting on a pull request queued on its own
+# is tried again every 10 minutes. A seat's `pr:open` and `pr:watch` land its
+# pull request without a `pr:land`.
+#
 # A dequeue or a conflict with no red check anywhere in the pull request's
-# server stack needs no hand (#1264): the stack is restacked onto main, linked
-# and queued again (`.config/pr-stack/stack.bash`), what moved is printed on
-# stderr, and the watch goes on, up to three times. A branch the restack moved
-# is moved on the server only; its seat's checkout reads it at its next fetch.
-# A red check, or a restack that conflicts, is the event line as before.
-# A `landing` label `pr:land` left on the pull request, queued or merged, is
-# taken off (#1556).
+# server stack needs no hand (#1264): the stack is restacked onto main, what
+# moved is printed on stderr, the landing trigger queues it again once its
+# checks are green, and the watch goes on, up to three times. A branch the
+# restack moved is moved on the server only; its seat's checkout reads it at
+# its next fetch. A red check, or a restack that conflicts, is the event line
+# as before. A `landing` label a landing left on the pull request, queued or
+# merged, is taken off (#1556).
 ["pr:watch"]
 description = "Wait for the one event that needs a hand on a pull request"
 quiet = true
@@ -1374,18 +1350,22 @@ owner=${repo%/*}
 name=${repo#*/}
 deadline=$((SECONDS + timeout))
 seen_queued=false
+# The head the landing trigger last ran on, and the earliest time it runs
+# again on a stack that waits.
+landed_head=
+retry_at=0
 # A reading out of the queue after one in it counts only when the next poll
 # repeats it, so a moment between readings is no removal.
 gone=0
 
 # State, merge state, queued, the entry's state and head, the last removal,
-# and whether it carries the `landing` label.
+# whether it carries the `landing` label, and the pull request's head.
 snapshot() {
   gh api graphql -f owner="$owner" -f name="$name" -F number="$number" -f query="
     query(\$owner: String!, \$name: String!, \$number: Int!) {
       repository(owner: \$owner, name: \$name) {
         pullRequest(number: \$number) {
-          state mergeStateStatus isInMergeQueue
+          state mergeStateStatus isInMergeQueue headRefOid
           mergeQueueEntry { state headCommit { oid } }
           timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
             nodes { ... on RemovedFromMergeQueueEvent { reason } }
@@ -1393,7 +1373,7 @@ snapshot() {
           labels(first: 50) { nodes { name } }
         }
       }
-    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing")] | @tsv'
+    }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
 # default, if any.
@@ -1407,8 +1387,10 @@ red_check() {
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 heals=0
-# Restack this pull request's server stack onto main and queue it again, when
-# no pull request in it has a red check; succeeds once it is queued.
+required=$(required_contexts)
+# Restack this pull request's server stack onto main, when no pull request in
+# it has a red check; the landing trigger queues it again once its checks are
+# green.
 heal() {
   local stack member red
   (( heals < 3 )) || return 1
@@ -1419,11 +1401,10 @@ heal() {
     [[ -z "$red" ]] || return 1
   done
   restack "$stack" >&2 || return 1
-  queue_stack "$stack" > /dev/null || return 1
   heals=$((heals + 1))
   seen_queued=false
   gone=0
-  echo "pr-requeued #$number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" >&2
+  echo "pr-restacked #$number: $(jq -r 'map("#\(.number)") | join(" ← ")' <<< "$stack")" >&2
 }
 # The open pull requests stacked above this one, bottom first: each one's base
 # is the branch of the one below it.
@@ -1462,7 +1443,7 @@ red_entry() {
 while (( SECONDS < deadline )); do
   # A failed read is no event; the next poll reads again.
   if ! reading=$(snapshot) || [[ -z "$reading" ]]; then sleep 60; continue; fi
-  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held <<< "$reading"
+  IFS=$'\t' read -r state merge_status in_queue entry_state entry_head removed held head <<< "$reading"
   if [[ "$in_queue" == true ]]; then seen_queued=true; fi
   # A `landing` label still on a queued or merged pull request was left by a
   # `pr:land` that never reached its exit (#1556): it would hold `pr:open`.
@@ -1499,6 +1480,12 @@ while (( SECONDS < deadline )); do
     if heal; then sleep 60; continue; fi
     echo "pr-dequeued #$number ${removed/#-/removed} $(above_word)"
     exit 1
+  fi
+  if [[ "$in_queue" == false && "$head" != "$landed_head" ]] && (( SECONDS >= retry_at )) \
+    && [[ $(required_state "$number" "$required") == green ]]; then
+    status=0
+    land_prefix "$number" >&2 || status=$?
+    if (( status == 3 )); then retry_at=$((SECONDS + 600)); else landed_head=$head; fi
   fi
   sleep 60
 done

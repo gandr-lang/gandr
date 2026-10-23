@@ -695,9 +695,10 @@ echo 'workflow hashing check OK: no hashFiles over a tarball'
 
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on, and
-# `decide.jq` how `pr:land` lands. Each case in `.config/pr-stack/cases.json`
-# names its program, its arguments and input, and the output it must give;
-# `decide.jq`'s output is its raw line, the others' compact JSON.
+# `prefix.jq` what a landing queues (#1988). Each case in
+# `.config/pr-stack/cases.json` names its program, its arguments and input,
+# and the output it must give; `prefix.jq`'s output is its raw line, the
+# others' compact JSON.
 ["check:pr-stack"]
 description = "The stacking rule's readings give each recorded case its output"
 tools.jq = "1.8.1"
@@ -710,7 +711,7 @@ while IFS= read -r case; do
   program=$(jq -r .program <<< "$case")
   mapfile -t args < <(jq -r '(.args // {}) | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
   mode=-c
-  if [[ "$program" == decide.jq ]]; then mode=-r; fi
+  if [[ "$program" == prefix.jq ]]; then mode=-r; fi
   got=$(jq .input <<< "$case" | jq "$mode" "${args[@]}" -f ".config/pr-stack/$program")
   want=$(jq -r .output <<< "$case")
   if [[ "$got" != "$want" ]]; then

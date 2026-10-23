@@ -241,77 +241,141 @@
     "output": "{\"number\":1990,\"head\":\"triage-1505-interpolation\",\"depth\":3,\"held\":false,\"landing\":false}"
   },
   {
-    "name": "a pull request alone lands alone",
-    "program": "decide.jq",
+    "name": "a green pull request alone lands alone",
+    "program": "prefix.jq",
     "input": {
       "server": [{ "number": 1242, "head": "triage-1167-receive" }],
-      "own": "triage-1167-receive",
-      "queued": []
+      "queued": [],
+      "states": { "1242": "green" }
     },
-    "output": "single"
+    "output": "land\t1242"
   },
   {
-    "name": "a stack lands whole from its top",
-    "program": "decide.jq",
+    "name": "a stack green throughout lands whole, up to its top",
+    "program": "prefix.jq",
     "input": {
       "server": [
         { "number": 1262, "head": "theory-solve" },
         { "number": 1258, "head": "pending-diag-1248" },
         { "number": 1264, "head": "triage-1264-stack-tasks" }
       ],
-      "own": "triage-1264-stack-tasks",
-      "queued": []
+      "queued": [],
+      "states": { "1262": "green", "1258": "green", "1264": "green" }
     },
-    "output": "stack\t1264"
+    "output": "land\t1264"
   },
   {
-    "name": "a stack is refused from a branch below its top, naming the top",
-    "program": "decide.jq",
+    "name": "a stack whose bottom three are green and fourth red lands three and names the fourth (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1939, "head": "surface-1834-imported-synonym" },
+        { "number": 1940, "head": "surface-1815-notebook" },
+        { "number": 1942, "head": "surface-1824-workspace-diagnostic" },
+        { "number": 1943, "head": "theory-1580-atom-occurrence" },
+        { "number": 1953, "head": "theory-1480-record-transport" }
+      ],
+      "queued": [],
+      "states": {
+        "1939": "green",
+        "1940": "green",
+        "1942": "green",
+        "1943": "red",
+        "1953": "green"
+      }
+    },
+    "output": "land\t1942\t1943\tred"
+  },
+  {
+    "name": "a member still pending stops the prefix below it, though a member above it is green (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1939, "head": "surface-1834-imported-synonym" },
+        { "number": 1940, "head": "surface-1815-notebook" },
+        { "number": 1942, "head": "surface-1824-workspace-diagnostic" }
+      ],
+      "queued": [],
+      "states": { "1939": "green", "1940": "pending", "1942": "green" }
+    },
+    "output": "land\t1939\t1940\tpending"
+  },
+  {
+    "name": "a stack whose bottom member is red lands nothing and names it (#1988)",
+    "program": "prefix.jq",
     "input": {
       "server": [
         { "number": 1262, "head": "theory-solve" },
         { "number": 1258, "head": "pending-diag-1248" }
       ],
-      "own": "theory-solve",
-      "queued": []
+      "queued": [],
+      "states": { "1262": "red", "1258": "green" }
     },
-    "output": "refuse\tthe checked-out branch is not the top of the server stack #1262 ← #1258; land it with `pr:land` from #1258's branch"
+    "output": "hold\t1262\tred"
   },
   {
-    "name": "a pull request on a queued one waits for it to merge",
-    "program": "decide.jq",
+    "name": "a member not read is pending, and holds the prefix there (#1988)",
+    "program": "prefix.jq",
     "input": {
       "server": [
         { "number": 1262, "head": "theory-solve" },
         { "number": 1258, "head": "pending-diag-1248" }
       ],
-      "own": "pending-diag-1248",
-      "queued": [1262]
+      "queued": [],
+      "states": { "1262": "green" }
     },
-    "output": "wait\t1262"
+    "output": "land\t1262\t1258\tpending"
   },
   {
-    "name": "a pull request two above one that lands on its own waits for it, not the one between (#1353)",
-    "program": "decide.jq",
+    "name": "a queued prefix below a green top is skipped, and the remainder lands behind it (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1939, "head": "surface-1834-imported-synonym" },
+        { "number": 1969, "head": "core-1314-prune" },
+        { "number": 1970, "head": "triage-1966-sweep-witnesses" },
+        { "number": 1971, "head": "surface-1416-linear-run" }
+      ],
+      "queued": [1939, 1969],
+      "states": { "1970": "green", "1971": "green" }
+    },
+    "output": "land\t1971"
+  },
+  {
+    "name": "a queued prefix below a pending member lands nothing more and names it (#1988)",
+    "program": "prefix.jq",
     "input": {
       "server": [
         { "number": 1349, "head": "surface-1327-tail" },
         { "number": 1351, "head": "core-1334-host" },
         { "number": 1352, "head": "triage-fmt-pool" }
       ],
-      "own": "triage-fmt-pool",
-      "queued": [1349]
+      "queued": [1349],
+      "states": { "1351": "pending", "1352": "green" }
     },
-    "output": "wait\t1349"
+    "output": "hold\t1351\tpending"
+  },
+  {
+    "name": "a stack queued throughout has nothing left to land (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1262, "head": "theory-solve" },
+        { "number": 1258, "head": "pending-diag-1248" }
+      ],
+      "queued": [1262, 1258],
+      "states": {}
+    },
+    "output": "queued"
   },
   {
     "name": "a pull request retargeted off a branch that lands on its own waits for it, though alone on main (#1420)",
-    "program": "decide.jq",
+    "program": "prefix.jq",
     "input": {
       "server": [{ "number": 1417, "head": "witness-storage-artifact" }],
-      "own": "witness-storage-artifact",
       "queued": [],
-      "carried": [1415]
+      "carried": [1415],
+      "states": { "1417": "green" }
     },
     "output": "wait\t1415"
   },
