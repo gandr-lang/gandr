@@ -74,9 +74,10 @@
 //! the term to one elaboration; the type is the judgement's answer, and the
 //! hole is only its name.
 //!
-//! A hole a call nominates for an implicit it omits ([`HoleId::nominated`])
-//! stands for a metavariable, whose solution is written under the binders the
-//! call stands under. `fill_value_hole`, `fill_value_type_hole` and
+//! A hole a call nominates for an implicit it omits ([`HoleId::nominated`]),
+//! or the elaborator for a wildcard `_` ([`HoleId::wildcard`]), stands for a
+//! metavariable, whose solution is written under the binders the call or the
+//! wildcard stands under. `fill_value_hole`, `fill_value_type_hole` and
 //! `fill_comp_type_hole` place the solution wherever the hole stands, raised
 //! past the binders between: inside a type the call's head was instantiated
 //! at, or inside another solution, the hole stands deeper than its scope.
@@ -98,22 +99,28 @@ use crate::syntax::ValueType;
 /// The elaborator issues hole names; this crate compares them and splits
 /// them in two halves, so two holes with one name are one hole filled at
 /// once. A hole the text writes is named in the lower half, by its place; a
-/// hole the elaborator nominates as a metavariable, standing for an argument
-/// the text omits, is named in the upper half, counted down from the last
-/// name ([`HoleId::nominated`]), so the two never share a name.
+/// hole the elaborator nominates as a metavariable is named in the upper
+/// half: one standing for an implicit the text omits in its upper quarter,
+/// counted down from the last name ([`HoleId::nominated`]), and one standing
+/// for a wildcard `_` the text writes in its lower quarter, counted up from
+/// the half's first name ([`HoleId::wildcard`]). No two of the three share a
+/// name, and a hole's name says which it is.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HoleId(u32);
 
-/// Where a hole comes from, read off its name's half.
+/// Where a hole comes from, read off the part of the names its own is in.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum HoleOrigin
 {
     /// A hole the text writes, which its author fills.
     Written,
-    /// A hole the elaborator nominates for an argument the text omits, which
+    /// A hole the elaborator nominates for an implicit the text omits, which
     /// the checker solves as a metavariable.
     Nominated,
+    /// A hole the elaborator nominates for a wildcard `_` the text writes,
+    /// which the checker solves as a metavariable.
+    Wildcard,
 }
 
 /// The place of a hole among those an elaborator nominates, counted from
@@ -140,36 +147,71 @@ impl HoleId
     /// The first name of the upper half, the nominated holes'.
     const NOMINATED: u32 = 1 << 31_u32;
 
-    /// The name of the `index`th hole an elaborator nominates: the last name
-    /// less `index`, which is `index`'s complement.
+    /// The first name of the upper half's upper quarter, the holes nominated
+    /// for omitted implicits; the quarter below it is the wildcards'.
+    const OMITTED: u32 = 3 << 30_u32;
+
+    /// How many names each quarter of the upper half holds.
+    const QUARTER: u32 = 1 << 30_u32;
+
+    /// The name of the `index`th hole an elaborator nominates for an implicit
+    /// the text omits: the last name less `index`, which is `index`'s
+    /// complement.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a nominated name for each `index` below the upper half's
-    ///   size, distinct indices naming distinct holes; `None` past it.
+    /// - ensures: a nominated name for each `index` below a quarter's size,
+    ///   distinct indices naming distinct holes; `None` past it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the first and the last index of the upper half, and
-    ///   the index past it, separate the names from the refusal; a written name
-    ///   below the half is never nominated.
+    /// - hypothesis: L3 — the first and the last index of the quarter, and the
+    ///   index past it, separate the names from the refusal; a written name
+    ///   below the half and a wildcard's name are never nominated.
     /// - witness: `hole::tests::a_nominated_hole_shares_no_name_with_a_written_one`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match ret {
         Some(hole) => matches!(hole.origin(), HoleOrigin::Nominated) && hole.0 == !index.0,
-        None => index.0 >= Self::NOMINATED,
+        None => index.0 >= Self::QUARTER,
     })]
     pub const fn nominated(index: NominationIndex) -> Option<Self>
     {
-        if index.0 >= Self::NOMINATED {
+        if index.0 >= Self::QUARTER {
             return None;
         }
         Some(Self(!index.0))
     }
 
-    /// Where this hole comes from: nominated when its name is in the upper
-    /// half, written otherwise.
+    /// The name of the `index`th hole an elaborator nominates for a wildcard
+    /// `_` the text writes: the upper half's first name plus `index`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a wildcard's name for each `index` below a quarter's size,
+    ///   distinct indices naming distinct holes; `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::nominated`], over the quarter below.
+    /// - witness: `hole::tests::a_nominated_hole_shares_no_name_with_a_written_one`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Some(hole) => matches!(hole.origin(), HoleOrigin::Wildcard) && hole.0 == (Self::NOMINATED | index.0),
+        None => index.0 >= Self::QUARTER,
+    })]
+    pub const fn wildcard(index: NominationIndex) -> Option<Self>
+    {
+        if index.0 >= Self::QUARTER {
+            return None;
+        }
+        Some(Self(Self::NOMINATED | index.0))
+    }
+
+    /// Where this hole comes from: nominated for an omitted implicit in the
+    /// upper half's upper quarter, for a wildcard in its lower quarter, and
+    /// written below the half.
     ///
     /// # Specification
     /// trivial.
@@ -177,8 +219,11 @@ impl HoleId
     #[must_use]
     pub const fn origin(self) -> HoleOrigin
     {
-        if self.0 >= Self::NOMINATED {
+        if self.0 >= Self::OMITTED {
             HoleOrigin::Nominated
+        }
+        else if self.0 >= Self::NOMINATED {
+            HoleOrigin::Wildcard
         }
         else {
             HoleOrigin::Written

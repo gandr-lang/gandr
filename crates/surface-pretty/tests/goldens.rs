@@ -2197,6 +2197,44 @@ fn a_call_leaves_out_the_implicits_it_omits_1216()
     );
 }
 
+/// A call holding a wildcard writes its `_` where the source wrote it, beside
+/// an implicit the same call omits, which it leaves out: `_` reads back as a
+/// wildcard at the same place, so the spelling is faithful, where leaving it
+/// out would read back as a call short of an argument.
+#[test]
+fn a_call_writes_the_wildcards_it_holds_528()
+{
+    let names = [Name::from("idAt"), Name::from("first")];
+    let mut core = CoreArena::new();
+    let [wildcard, omitted] = [
+        HoleId::wildcard(NominationIndex::from(0_u32)),
+        HoleId::nominated(NominationIndex::from(1_u32)),
+    ]
+    .map(|hole| core.value_hole(hole.expect("a nominated name")));
+    let three = integer(&mut core, Sign::NonNegative, Written("3"));
+    let call = |core: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = core.value_constant(ConstantIndex::from(constant));
+        let mut applied = core.computation_force(head);
+        for &argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        core.computation_lambda(applied)
+    };
+    let forced = call(&mut core, 0, &[wildcard, three]);
+    let mixed = call(&mut core, 1, &[wildcard, omitted, three]);
+    let source = CoreSource::new(&core, &names);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(forced)),
+        faithful(Written("fn (a) { idAt(_, 3) }"))
+    );
+    assert_eq!(
+        spelled(&source, body(mixed)),
+        faithful(Written("fn (a) { first(_, 3) }")),
+        "the wildcard is written, the omitted implicit left out"
+    );
+}
+
 /// A body in braces holds a sequence bare: the braces a block writes are
 /// the sequence's own, never doubled.
 #[test]

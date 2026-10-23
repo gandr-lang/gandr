@@ -1,0 +1,8 @@
+/// `wildcard.expression`: the wildcard where a value is read, a term the
+/// elaborator answers from the comparisons that force it.
+@[ checks ]
+def idAt(a : Type, y : a) -> -F a { y }
+
+/// `3` forces the wildcard to `Integer`.
+@[ runs("3") ]
+def forced() -> -F Integer { become idAt(_, 3) }

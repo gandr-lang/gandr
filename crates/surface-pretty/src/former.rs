@@ -1015,6 +1015,10 @@ pub enum Unreadable
     /// wrote nothing there, so a call's arguments leave it out, and the checker
     /// left it unsolved wherever else it stands.
     Omitted,
+    /// A metavariable the elaborator nominated for a wildcard `_` the source
+    /// writes. Its `_` reads back as a wildcard at the same place, so it is
+    /// written faithfully, a call's arguments included.
+    Wildcard,
     /// A mark: a term the elaborator could not type, kept as written.
     Mark,
     /// A universe lift of a type or a value: the core's explicit cumulativity,

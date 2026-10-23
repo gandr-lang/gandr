@@ -3219,8 +3219,9 @@ struct Lowerer<'run, 'source>
     /// operand's node is the call's own, which no value lowers at, and the
     /// application mints the hole there.
     nominated: BTreeMap<usize, gandr_core_term::hole::HoleId>,
-    /// Each hole nominated for an omitted implicit, in the order nominated,
-    /// with the call that omits it: the hole's name counts them.
+    /// Each hole nominated for an omitted implicit or a written wildcard, in
+    /// the order nominated, with what it stands for: the hole's name counts
+    /// them.
     nominations: BTreeMap<gandr_core_term::hole::HoleId, implicit::Nomination<'source>>,
     /// Each callable operation's minted type and body, by slot.
     operated: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
@@ -6015,7 +6016,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Name => self.name(site),
             Former::Constructor => self.constructor(site),
             Former::Hole => {
-                let hole = self.hole(site.at)?;
+                // A wildcard stands for a value the equations force; where a
+                // computation is read it is a form of the wrong sort, since the
+                // solver binds values only.
+                let hole = if site.name == FormName::WILDCARD {
+                    if matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
+                        return Err(site.out(FragmentBoundary::WrongSort));
+                    }
+                    self.nominate(implicit::Nomination::Wildcard)?
+                }
+                else {
+                    self.hole(site.at)?
+                };
                 let plan = if matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
                     let _frame = self.require(site, Produced::Computation)?;
                     Plan::CompHole(hole)
@@ -13186,6 +13198,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         match *plan {
             Plan::ValueHole(hole) => {
                 let id = sink.arena.value_hole(hole);
+                if self.nominations.get(&hole) == Some(&implicit::Nomination::Wildcard) {
+                    sink.origins.record_omitted(id, Omitted::Wildcard);
+                }
                 Maybe::Present(sink.value(id, origin))
             },
             Plan::CompHole(hole) => {
@@ -14982,14 +14997,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_hole(hole);
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
-                if let Some(nomination) = self.nominations.get(&hole) {
-                    sink.origins.record_omitted(
-                        id,
-                        Omitted::new(
-                            String::from(nomination.function().as_ref()),
-                            String::from(nomination.implicit().as_ref()),
-                        ),
-                    );
+                if let Some(&implicit::Nomination::Omitted { function, implicit }) =
+                    self.nominations.get(&hole)
+                {
+                    sink.origins.record_omitted(id, Omitted::Implicit {
+                        function: String::from(function.as_ref()),
+                        implicit: String::from(implicit.as_ref()),
+                    });
                 }
                 id
             }

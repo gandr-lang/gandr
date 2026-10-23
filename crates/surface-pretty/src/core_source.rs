@@ -897,6 +897,7 @@ impl<'arena> CoreSource<'arena>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Hole)) => hole.origin() == HoleOrigin::Written,
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Omitted)) => hole.origin() == HoleOrigin::Nominated,
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Wildcard)) => hole.origin() == HoleOrigin::Wildcard,
         (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
             | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
@@ -975,6 +976,17 @@ impl<'arena> CoreSource<'arena>
             )]
             Value::Hole(hole) if hole.origin() == HoleOrigin::Nominated => {
                 Former::Unreadable(Unreadable::Omitted)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a metavariable the elaborator nominated for a wildcard the text \
+                              writes: the walk writes it back as the grammar's `_`"
+                )
+            )]
+            Value::Hole(hole) if hole.origin() == HoleOrigin::Wildcard => {
+                Former::Unreadable(Unreadable::Wildcard)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

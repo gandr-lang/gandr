@@ -29,6 +29,13 @@
 //! to; the lowering keeps which call nominated each hole, and for which
 //! implicit ([`Nomination`]), so a refusal names it.
 //!
+//! A wildcard `_` written where a value is read is the same hole the text
+//! asks for: the lowering nominates one for it, recorded as a wildcard, and
+//! the checker solves it as it solves an omitted implicit, from the
+//! comparisons that force it, `idAt(_, 3)` lowering to the body
+//! `idAt(Integer, 3)` lowers to. Where a computation is read the wildcard
+//! leaves the fragment: the solver binds values.
+//!
 //! # Boundaries
 //!
 //! - A use of a function with implicits standing as a value supplies all of
@@ -101,11 +108,12 @@ enum Use<'cursor>
     Standing,
 }
 
-/// The call that omits an implicit, for the hole nominated in its place.
+/// What a nominated hole stands for: an implicit a call omits, or a wildcard
+/// the text writes.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the function's name and the implicit's name.
+/// - ensures: an omitted implicit keeps the function's name and the implicit's.
 /// - provides: what the origin table records for the hole once it is minted,
 ///   and a refusal of the hole names.
 /// - panics: none.
@@ -114,40 +122,23 @@ enum Use<'cursor>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a call omitting both implicits of `first` nominates one
-///   hole per implicit, each naming it.
+///   hole per implicit, each naming it; a wildcard beside them nominates its
+///   own.
 /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+/// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Nomination<'source>
+pub(super) enum Nomination<'source>
 {
-    /// The function the call applies.
-    function: SurfaceName<'source>,
-    /// The implicit the call omits.
-    implicit: SurfaceName<'source>,
-}
-
-impl<'source> Nomination<'source>
-{
-    /// The function the call applies.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub(super) const fn function(&self) -> SurfaceName<'source>
+    /// The implicit `implicit` of `function`, which a call omits.
+    Omitted
     {
-        self.function
-    }
-
-    /// The implicit the call omits.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub(super) const fn implicit(&self) -> SurfaceName<'source>
-    {
-        self.implicit
-    }
+        /// The function the call applies.
+        function: SurfaceName<'source>,
+        /// The implicit the call omits.
+        implicit: SurfaceName<'source>,
+    },
+    /// A wildcard `_` written where a value is read.
+    Wildcard,
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -678,7 +669,10 @@ impl<'source> Lowerer<'_, 'source>
                         Some(value)
                     }
                     else {
-                        let hole = self.nominate(function, entry.name)?;
+                        let hole = self.nominate(Nomination::Omitted {
+                            function,
+                            implicit: entry.name,
+                        })?;
                         let _first = self.nominated.insert(self.operands.len(), hole);
                         Some(site.at.node)
                     }
@@ -712,14 +706,15 @@ impl<'source> Lowerer<'_, 'source>
         Ok(arity::Planned(true))
     }
 
-    /// Nominate a hole for the implicit `implicit` of `function`, which a
-    /// call omits, the next nominated name.
+    /// Nominate a hole for `nomination`, an implicit a call omits or a
+    /// wildcard the text writes, the next nominated name of its kind.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a nominated name no hole before it carries, kept beside the
-    ///   names.
-    /// - fails: the budget refusal once the nominated half has no more names.
+    /// - ensures: a name no hole before it carries, kept beside `nomination`: a
+    ///   wildcard's name for a wildcard, so the printer writes it back as `_`,
+    ///   and a nominated one for an omitted implicit, which it leaves out.
+    /// - fails: the budget refusal once the kind's quarter has no more names.
     /// - panics: none.
     ///
     /// # Errors
@@ -727,33 +722,39 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two implicits a call omits are two distinct holes,
-    ///   each kept with its implicit's name.
+    ///   each kept with its implicit's name, and a wildcard beside them a
+    ///   third, named as a wildcard.
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    /// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
     #[spec(
         captures: before = self.nominations.len(),
         ensures: |ret| match ret {
-            Ok(hole) => hole.origin() == gandr_core_term::hole::HoleOrigin::Nominated
-                && self.nominations.len() == before.saturating_add(1)
-                && self.nominations.get(&hole).is_some_and(|kept| kept.implicit == implicit),
+            Ok(hole) => matches!(
+                (hole.origin(), nomination),
+                (gandr_core_term::hole::HoleOrigin::Wildcard, Nomination::Wildcard)
+                    | (gandr_core_term::hole::HoleOrigin::Nominated, Nomination::Omitted { .. })
+            ) && self.nominations.len() == before.saturating_add(1)
+                && self.nominations.get(&hole) == Some(&nomination),
             Err(_) => self.nominations.len() == before,
         },
     )]
-    fn nominate(
+    pub(super) fn nominate(
         &mut self,
-        function: SurfaceName<'source>,
-        implicit: SurfaceName<'source>,
+        nomination: Nomination<'source>,
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
+        let named = match nomination {
+            Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard,
+            Nomination::Omitted { .. } => gandr_core_term::hole::HoleId::nominated,
+        };
         let hole = u32::try_from(self.nominations.len())
             .ok()
             .map(gandr_core_term::hole::NominationIndex::from)
-            .and_then(gandr_core_term::hole::HoleId::nominated)
+            .and_then(named)
             .ok_or(LoweringRefusal::BudgetExceeded {
                 budget: self.fuel.budget,
             })?;
-        let _first = self
-            .nominations
-            .insert(hole, Nomination { function, implicit });
+        let _first = self.nominations.insert(hole, nomination);
         Ok(hole)
     }
 }

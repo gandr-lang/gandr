@@ -1,4 +1,5 @@
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_core_checker::Verdict;
@@ -21,6 +22,7 @@ use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
+use crate::origin::Omitted;
 use crate::resolve::SurfaceName;
 
 /// The identity at a type supplied by name.
@@ -221,24 +223,28 @@ fn an_unsupplied_implicit_is_refused_with_its_slot_spelling()
     );
 }
 
-#[test]
-fn an_omitted_implicit_is_a_nominated_hole()
+/// The holes the elaborator nominated in the body of `name`, for omitted
+/// implicits and for wildcards, in the order the walk meets them: the
+/// arguments of an application before the function's, the last argument
+/// first.
+///
+/// # Specification
+/// trivial.
+fn nominated_holes(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+    name: SurfaceName<'_>,
+) -> Vec<(gandr_core_term::ValueId, gandr_core_term::hole::HoleId)>
 {
-    // `first(5, unit)`: one nominated hole per omitted implicit, applied in
-    // the telescope's order, each recorded with the implicit it stands for;
-    // the checker solves both.
-    let source = format!(
-        "{FIRST}def omitted : () => Integer ;\ndef omitted = thunk {{ become first(5, unit) }} ;\n"
-    );
-    let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let mut holes = Vec::new();
-    let mut pending = Vec::from([body_named(&module, SurfaceName::from("omitted"))]);
+    let mut pending = Vec::from([body_named(module, name)]);
     let mut computations = Vec::new();
     while let Some(value) = pending.pop() {
         match arena.value(value) {
             Some(&Value::Thunk(computation)) => computations.push(computation),
-            Some(&Value::Hole(hole)) if hole.origin() == HoleOrigin::Nominated => {
+            Some(&Value::Hole(hole))
+                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) =>
+            {
                 holes.push((value, hole));
             },
             _ => {},
@@ -254,23 +260,35 @@ fn an_omitted_implicit_is_a_nominated_hole()
             }
         }
     }
-    let named: Vec<Maybe<(SurfaceName<'_>, SurfaceName<'_>), _>> = holes
-        .iter()
-        .map(|&(at, _)| {
-            module
-                .origins()
-                .omitted(at)
-                .map(|omitted| (omitted.function(), omitted.implicit()))
-        })
-        .collect();
-    let (first, a, b) = (
-        SurfaceName::from("first"),
-        SurfaceName::from("a"),
-        SurfaceName::from("b"),
+    holes
+}
+
+#[test]
+fn an_omitted_implicit_is_a_nominated_hole()
+{
+    // `first(5, unit)`: one nominated hole per omitted implicit, applied in
+    // the telescope's order, each recorded with the implicit it stands for;
+    // the checker solves both.
+    let source = format!(
+        "{FIRST}def omitted : () => Integer ;\ndef omitted = thunk {{ become first(5, unit) }} ;\n"
     );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
+    let named: Vec<Maybe<&Omitted, _>> = holes
+        .iter()
+        .map(|&(at, _)| module.origins().omitted(at))
+        .collect();
+    let implicit = |name: &str| Omitted::Implicit {
+        function: String::from("first"),
+        implicit: String::from(name),
+    };
     assert_eq!(
         named,
-        [Maybe::Present((first, a)), Maybe::Present((first, b))],
+        [
+            Maybe::Present(&implicit("a")),
+            Maybe::Present(&implicit("b"))
+        ],
         "each omitted implicit is a hole naming it, in the telescope's order"
     );
     assert_ne!(
@@ -278,6 +296,94 @@ fn an_omitted_implicit_is_a_nominated_hole()
         "the two holes are distinct metavariables"
     );
     assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_wildcard_is_a_nominated_hole_of_its_own()
+{
+    // `first[a = _](5, unit)`: the wildcard the slot writes for `a` and the
+    // hole the call nominates for the `b` it omits are two metavariables,
+    // the one recorded and named as a wildcard and the other naming its
+    // implicit; the checker solves both, `5` forcing the wildcard and `unit`
+    // the implicit.
+    let source = format!(
+        "{FIRST}def wild : () => Integer ;\ndef wild = thunk {{ become first[a = _](5, unit) \
+         }} ;\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes = nominated_holes(&module, &arena, SurfaceName::from("wild"));
+    let mut named: Vec<Maybe<&Omitted, _>> = holes
+        .iter()
+        .map(|&(at, _)| module.origins().omitted(at))
+        .collect();
+    named.sort_by_key(|omitted| matches!(omitted, Maybe::Present(Omitted::Implicit { .. })));
+    let implicit = Omitted::Implicit {
+        function: String::from("first"),
+        implicit: String::from("b"),
+    };
+    assert_eq!(
+        named,
+        [
+            Maybe::Present(&Omitted::Wildcard),
+            Maybe::Present(&implicit)
+        ],
+        "the wildcard is recorded as one, the omitted implicit by its name"
+    );
+    assert_ne!(
+        holes[0].1, holes[1].1,
+        "the wildcard and the implicit are distinct metavariables"
+    );
+    assert!(
+        holes.iter().all(|&(at, hole)| matches!(
+            (module.origins().omitted(at), hole.origin()),
+            (Maybe::Present(&Omitted::Wildcard), HoleOrigin::Wildcard)
+                | (
+                    Maybe::Present(&Omitted::Implicit { .. }),
+                    HoleOrigin::Nominated
+                )
+        )),
+        "each hole's name says whether the text wrote `_` there"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_wildcard_emits_the_body_written_by_hand_528()
+{
+    // `idAt(_, 3)` and `idAt(Integer, 3)`: the checker writes the term the
+    // wildcard's comparison forces in its place, so the body it accepts is
+    // the one the author could have written, the wildcard adding nothing.
+    let source = "def idAt(a : Type, y : a) -> -F a { return y }\ndef forced : () => Integer \
+                  ;\ndef forced = thunk { become idAt(_, 3) } ;\ndef written : () => Integer ;\n\
+                  def written = thunk { become idAt(Integer, 3) } ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let report = judged(&module, &mut arena);
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("forced"))
+    else {
+        panic!("`forced` is declared");
+    };
+    let Some(Verdict::Checked { body, .. }) = report
+        .judged()
+        .iter()
+        .find(|judged| judged.constant() == declaration.constant())
+        .map(gandr_core_checker::Judged::verdict)
+    else {
+        panic!("`forced` checks: {report:?}");
+    };
+    assert_eq!(
+        equal_certificate_syntax(
+            &arena,
+            body,
+            body_named(&module, SurfaceName::from("written"))
+        ),
+        CertificateEquality::Equal,
+        "the wildcard is solved as `Integer` and the body emitted with it written"
+    );
 }
 
 #[test]

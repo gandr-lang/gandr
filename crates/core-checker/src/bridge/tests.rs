@@ -5191,6 +5191,64 @@ fn one_static_definition_at_two_instances_records_two_certificates()
 }
 
 #[test]
+fn a_skipped_repeat_records_what_its_own_replay_records_528()
+{
+    // def Pair : Type -> Type = \X. El X * El X ;
+    // def twice : Type = El (Pair Integer) * El (Pair Integer) ;
+    // def again : Type = El (Pair Integer) ;
+    // `twice` replays its first instance and skips the second; `again`
+    // replays that second instance's nodes alone.
+    let mut arena = CoreArena::new();
+    let small = small(&mut arena);
+    let operator_type = arena.value_type_static_pi(small, small);
+    let operator = pair_operator(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let integer_code = arena.value_quote(integer);
+    let repeated_code = arena.value_quote(integer);
+    let pair = arena.value_constant(ConstantIndex::from(0_usize));
+    let kept = arena.value_static_application(pair, integer_code);
+    let skipped = arena.value_static_application(pair, repeated_code);
+    let first = arena.value_type_element(kept, Level::zero());
+    let repeated = arena.value_type_element(skipped, Level::zero());
+    let twice = arena.value_type_product(&[first, repeated]);
+    let twice_code = arena.value_quote(twice);
+    let alone = arena.value_quote(repeated);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(
+            At(0),
+            Maybe::Present(operator_type),
+            Maybe::Present(operator),
+        ),
+        declaration(At(1), Maybe::Present(small), Maybe::Present(twice_code)),
+        declaration(At(2), Maybe::Present(small), Maybe::Present(alone)),
+    ]);
+    for judged in report.judged() {
+        assert!(
+            matches!(judged.verdict(), Verdict::Checked { .. }),
+            "every declaration checks: {:?}",
+            judged.verdict()
+        );
+    }
+    let [_, ref twice_entry, ref again_entry] = *readmission.readmitted()
+    else {
+        panic!("one outcome per declaration");
+    };
+    assert_eq!(
+        steps(twice_entry),
+        [convertible(At(0))],
+        "the repeat is skipped: {:?}",
+        twice_entry.outcome()
+    );
+    assert_eq!(
+        steps(twice_entry),
+        steps(again_entry),
+        "the skipped instance replayed on its own records the step and the verdict \
+         the kept one did: the verdict is a function of the content, so the skip \
+         drops nothing"
+    );
+}
+
+#[test]
 fn a_rigid_static_instance_crosses_as_a_kernel_application()
 {
     // def G : Type -> Type ;

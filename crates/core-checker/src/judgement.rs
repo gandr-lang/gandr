@@ -4686,7 +4686,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 form: CheckingForm::Run(term),
             }),
             Value::Hole(hole) => {
-                if hole.origin() == HoleOrigin::Nominated {
+                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
                     self.context.nominate(term, hole)?;
                 }
                 let unknown = self.context.arena_mut().value_type_unknown();
@@ -5141,7 +5141,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
             Value::Hole(hole) => {
-                if hole.origin() == HoleOrigin::Nominated {
+                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
                     self.context.nominate(term, hole)?;
                 }
                 Ok(Step::Ascend(Produced::Checked))

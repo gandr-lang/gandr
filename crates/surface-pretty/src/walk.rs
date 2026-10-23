@@ -6747,6 +6747,12 @@ impl Walk<'_, '_>
             Former::Unreadable(Unreadable::Hole) => {
                 return writes(Production("hole"), self.atom(Glyphs("?")));
             },
+            // A wildcard is a term the elaborator was asked to find; its `_`
+            // reads back as a wildcard at the same place, which the checker
+            // answers alike, so it is written as the text wrote it.
+            Former::Unreadable(Unreadable::Wildcard) => {
+                return writes(Production("wildcard.expression"), self.atom(Glyphs("_")));
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -7594,12 +7600,13 @@ impl Walk<'_, '_>
     ///   return stays a call; a recursive definition's call under one and two
     ///   uniform parameters observes them passed first, in order; a call
     ///   omitting an implicit, and one omitting its every argument, write only
-    ///   what the source wrote.
+    ///   what the source wrote, and a call holding a wildcard writes its `_`.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
     /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
     /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
+    /// - witness: `tests::goldens::a_call_writes_the_wildcards_it_holds_528`
     #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
@@ -7680,7 +7687,8 @@ impl Walk<'_, '_>
             }
         }
         // A hole the call nominated for an implicit it omits is what the
-        // source left out: the call writes nothing there.
+        // source left out: the call writes nothing there. A wildcard is what
+        // the source wrote, and stays among the arguments as its `_`.
         arguments
             .retain(|&node| !matches!(source.read(node), Former::Unreadable(Unreadable::Omitted)));
         // A recursive definition's call of itself passes each uniform
