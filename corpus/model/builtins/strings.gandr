@@ -1,6 +1,8 @@
 // The string operations of the `string` namespace: containment, equality,
-// prefix and suffix, escaping and splitting. Each is reached by projection
-// from its namespace, which the lowering admits for no builtin yet (#1106).
+// prefix and suffix, escaping and splitting. The native `string` namespace
+// holds `append` alone (`simple-builtins.gandr`), so each of these names no
+// member of it; scanning and escaping are planned text primitives (#318), and
+// comparison is #1832.
 
 /// A string, named.
 @[ checks ]
@@ -16,15 +18,15 @@ string.contains(slogan, "machine");
 string.eq(slogan, "types are machines");
 
 /// Whether the string starts with a word.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[ refuses("UnknownMember") ]
 def has_prefix = string.starts_with(slogan, "types");
 
 /// Whether the string ends with a word.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[ refuses("UnknownMember") ]
 def has_suffix = string.ends_with(slogan, "machines");
 
 /// A path with its special characters escaped.
-@[ refuses("OutOfFragment.projection_expression") ]
+@[ refuses("UnknownMember") ]
 def escaped = string.escape("a+b.txt");
 
 /// The run target splits at a comma (#1105).

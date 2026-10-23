@@ -1,8 +1,9 @@
 // One builtin of each namespace over its simplest values: negation, division
 // and remainder, a list's length and element, and string append and length.
 // Each is reached by projection from its namespace, which the lowering admits
-// for no builtin yet (#1106), but where the definition's value is first a
-// computation with no stated type. Division with its type stated checks.
+// for the native primitives alone (#1170) and for no other builtin yet
+// (#1106), but where the definition's value is first a computation with no
+// stated type. Division and append with their types stated check and run.
 
 /// Negation of a comparison. A comparison is a computation, and a definition
 /// with no stated type reads its value where nothing infers that type.
@@ -33,13 +34,22 @@ def size = list.length([1, 2, 3]);
 @[ refuses("OutOfFragment.projection_expression") ]
 def second = list.get([10, 20, 30], 1);
 
-/// Two strings, appended.
-@[ refuses("OutOfFragment.projection_expression") ]
+/// Two strings, appended, the value a computation as above.
+@[ refuses("NotSynthesisable") ]
 def phrase = string.append("types are ", "machines");
 
-/// The appended string's length.
-@[ refuses("OutOfFragment.projection_expression") ]
-def letters = string.length(phrase);
+/// Two strings appended with the type stated, which checks and runs: the
+/// first string's characters, then the second's.
+@[ runs("\"types are machines\"") ]
+def stated() -> -F String {
+  run joined <- string.append("types are ", "machines");
+  joined
+}
+
+/// The appended string's length. The native `string` namespace holds
+/// `append` alone, so `length` is no member of it (#1106).
+@[ refuses("UnknownMember") ]
+def letters = string.length(stated);
 
 /// The run target appends an exclamation (#1105).
 @[ refuses("OutOfFragment.WrongSort.declaration") ]

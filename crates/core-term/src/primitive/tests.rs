@@ -158,6 +158,52 @@ fn comparisons_and_booleans()
 }
 
 #[test]
+fn an_append_writes_the_first_string_then_the_second()
+{
+    let append = named(PrimitiveName("string.append"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let (types, machines) = (text("types are "), text("machines"));
+    assert_eq!(
+        append.evaluate(&[types.borrowed(), machines.borrowed()]),
+        Ok(text("types are machines"))
+    );
+    assert_eq!(
+        append.evaluate(&[machines.borrowed(), types.borrowed()]),
+        Ok(text("machinestypes are ")),
+        "the order is the operands'"
+    );
+    assert_eq!(
+        append.evaluate(&[text("").borrowed(), text("λ\n").borrowed()]),
+        Ok(text("λ\n"))
+    );
+    assert_eq!(
+        append.evaluate(&[types.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
+    assert_eq!(
+        named(PrimitiveName("add")).evaluate(&[types.borrowed(), machines.borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "an integer row refuses text"
+    );
+    let mut arena = CoreArena::new();
+    let signature = append.declared_type(&mut arena);
+    let Some(&CompType::Arrow { domain, .. }) = arena.comp_type(signature)
+    else {
+        panic!("curried arrow");
+    };
+    assert_eq!(
+        arena.value_type(domain),
+        Some(&ValueType::Base(BaseType::String))
+    );
+    let minted = types.mint(&mut arena);
+    assert!(matches!(
+        arena.value(minted),
+        Some(Value::Literal(Literal::Text(content))) if content.as_ref() == "types are "
+    ));
+}
+
+#[test]
 fn table_signatures_and_currying_agree()
 {
     let mut arena = CoreArena::new();

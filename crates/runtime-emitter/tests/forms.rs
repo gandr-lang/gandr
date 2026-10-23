@@ -262,6 +262,20 @@ fn forms() -> Vec<Form>
             ends: Ends::Shows("⟨3 |+ ★⟩"),
         },
         Form {
+            what: r#"string.append("types are ", "machines")"#,
+            build: |core| {
+                let operands = ["types are ", "machines"].map(|text| {
+                    core.value_literal(gandr_kernel_term::Literal::Text(
+                        gandr_kernel_term::StringLiteral::new(String::from(text)),
+                    ))
+                });
+                let append = prelude(Row("string.append"));
+                let root = core.computation_primitive(append, Arguments::Binary(operands));
+                (root, Vec::new())
+            },
+            ends: Ends::Shows(r#"⟨"types are machines" |+ ★⟩"#),
+        },
+        Form {
             what: "project 1 (x <- return 1; with { return x } { return 2 })",
             build: |core| {
                 let [one, two, _] = one_two_three(core);
@@ -591,7 +605,9 @@ fn forms() -> Vec<Form>
                 let root = core.computation_primitive(add(), Arguments::Binary([text, one]));
                 (root, Vec::new())
             },
-            ends: Ends::Stuck(|stuck| matches!(*stuck, Stuck::NonScalar(_))),
+            ends: Ends::Stuck(|stuck| {
+                matches!(*stuck, Stuck::Primitive(PrimitiveError::ArgumentType))
+            }),
         },
         Form {
             what: "handle a : Proc { a.exit(()) } with { pure(x) => x, oper exit(p, k) => k(p) }",
