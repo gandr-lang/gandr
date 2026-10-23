@@ -245,6 +245,7 @@ pub use crate::region::Program;
 pub use crate::region::ProgramError;
 pub use crate::region::Reference;
 pub use crate::region::naming;
+pub use crate::session::Handed;
 pub use crate::session::IncrementalSession;
 pub use crate::session::SessionError;
 pub use crate::session::submitted;

@@ -1577,19 +1577,25 @@ where
     }
 }
 
-/// What a session's first submission restores its checkpoints from: the set
-/// stored for the program it submits, if one is.
+/// What a session's first submission restores its checkpoints from.
+///
+/// The set a store holds for the program it submits, as [`RestoreFrom`] reads
+/// it, or the set an earlier revision of it judged, as a
+/// [`Handed`](crate::session::Handed) holds it. Either is a base the resume
+/// validates item by item, as it does a predecessor's.
 ///
 /// # Specification
-/// - executable: none — a trait has no call boundary; [`RestoreFrom`] carries
-///   the implementation's clauses.
+/// - executable: none — a trait has no call boundary; [`RestoreFrom`] and
+///   [`Handed`](crate::session::Handed) carry the implementations' clauses.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`RestoreFrom`].
+/// - hypothesis: L3 — as [`RestoreFrom`] and
+///   [`Handed`](crate::session::Handed).
 /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+/// - witness: `session::tests::a_set_handed_on_resumes_a_later_revision_s_first_submission_2102`
 pub trait Restorer: Send
 {
-    /// The set stored for `program`, or why none is.
+    /// The set `program`'s first submission resumes from, or why none is.
     ///
     /// # Specification
     /// - requires: nothing.

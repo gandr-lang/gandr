@@ -8,11 +8,12 @@
 //! the checkpoints of the copy's latest judgement into a [`Saved`] store, a
 //! [`FileCheckpointStore`] directory the driver names under the user's cache
 //! (`$XDG_CACHE_HOME/gandr/checkpoints`), one directory every connection of a
-//! hub shares. A copy opened later, by any connection or any server process,
-//! has its first judgement restore from that store: when the store holds the
-//! set of the program that judgement lowers — the saved text, laid after the
-//! same closure — the judgement resumes from it, adopting what the save
-//! judged rather than judging the text whole. A save that lands while the
+//! hub shares. A copy opened later in another server process, or in one whose
+//! workspace hands it no set an earlier copy of its document recorded, has
+//! its first judgement restore from that store: when the store holds the set
+//! of the program that judgement lowers — the saved text, laid after the same
+//! closure — the judgement resumes from it, adopting what the save judged
+//! rather than judging the text whole. A save that lands while the
 //! copy's judgement runs persists once that judgement is published; a change
 //! read before then withdraws it, since the judgement is then of another text.
 //!
@@ -24,13 +25,11 @@
 //! hold or read leaves the judgement whole, and a save it fails to keep is
 //! said in a warning and changes nothing else.
 //!
-//! The alternatives were a sweep at each save over the importers of the saved
-//! file under the opened folders, which moves earlier the work a workspace
-//! pull already does when it is made, and persisting the kernel artifact,
-//! which waits on a durable block store and a reader of what it holds. A
-//! session that hands its records on across revisions by content, beside the
-//! closure's own, is the durable form; this is the save-shaped cheap one, and
-//! gives way to it once that exists.
+//! Within one workspace a set needs no store: a copy let go hands what its
+//! last judgement recorded to the next copy opened at its URI, whatever its
+//! text, and a connection opening a copy another holds starts from that
+//! one's, as the `server` module's `Workspace` states. The store is what
+//! outlasts the server.
 
 use alloc::boxed::Box;
 use core::fmt;
