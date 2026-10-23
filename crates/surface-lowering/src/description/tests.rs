@@ -1173,6 +1173,89 @@ fn a_codata_declaration_lowers_to_its_signature()
     assert!(matches!(later.outcome(), DeclarationOutcome::Bodied { .. }));
 }
 
+/// #2188: a codata family's self reference reaches the checker at the
+/// arguments its source writes, so the occurrence guard sees a non-uniform
+/// one: `Swap`'s tail at its parameters swapped, `Twisted`'s at the family
+/// applied again, and `Stream`'s at its parameter, as the code alone said.
+#[test]
+fn a_codata_self_reference_keeps_its_written_arguments_2188()
+{
+    use gandr_core_term::CompType;
+    use gandr_core_term::Value;
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use crate::DeclarationOutcome;
+    use crate::LoweringBudget;
+    use crate::lower_module;
+    use crate::namespace::Recognition;
+    let grammar = grammar();
+    let source = "codata Swap(a : Type, b : Type) : Type[-] { head : a; tail : Swap(b, a); }\ncodata Twisted(a : Type) : Type[-] { head : a; tail : Twisted(Twisted(a)); }\ncodata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }";
+    let tree = parsed(&grammar, source.into());
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap();
+    let tail = |declaration: &crate::LoweredDeclaration<'_>| {
+        let DeclarationOutcome::Codata(index) = declaration.outcome()
+        else {
+            panic!("the codata family lowers: {:?}", declaration.outcome())
+        };
+        let Maybe::Present(codata) = module.codata(index)
+        else {
+            panic!("the module holds the codata family's signature")
+        };
+        let [_, tail] = *codata.observations()
+        else {
+            panic!("two observations")
+        };
+        let Some(&CompType::Codata {
+            declaration: applied,
+            ref arguments,
+        }) = arena.comp_type(tail)
+        else {
+            panic!(
+                "the tail is a codata application: {:?}",
+                arena.comp_type(tail)
+            )
+        };
+        assert_eq!(
+            applied,
+            declaration.constant(),
+            "the tail applies its own family"
+        );
+        arguments
+            .iter()
+            .map(|&argument| arena.value(argument).cloned())
+            .collect::<Vec<_>>()
+    };
+    let variable = |index: u32| {
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        })
+    };
+    let [ref swap, ref twisted, ref stream] = *module.declarations()
+    else {
+        panic!("three codata families")
+    };
+    assert_eq!(
+        tail(swap),
+        [variable(0), variable(1)],
+        "`Swap(b, a)` keeps its parameters swapped: `b` is the inner variable"
+    );
+    assert!(
+        matches!(tail(twisted).as_slice(), [Some(Value::QuoteComputation(_))]),
+        "`Twisted(Twisted(a))` applies the family to the family applied again"
+    );
+    assert_eq!(tail(stream), [variable(0)], "`Stream(a)` stays uniform");
+}
+
 #[test]
 fn an_attribute_block_decorates_the_codata_declaration_after_it()
 {
