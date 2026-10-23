@@ -756,7 +756,6 @@
 1330 Keyword lambda_expression val L[{] R[<pattern>]
 1331 Other lambda_expression = L[<pattern>] R[<expression>]
 1332 Other lambda_expression ; L[<expression>] R[<expression> }]
-1334 Other lambda_expression : L[<pattern>] R[<type>]
 1337 Keyword lambda_expression unpack L[{] R[identifier]
 1338 VariableDef lambda_expression identifier L[unpack] R[:]
 1339 Other lambda_expression : L[identifier] R[<type>]
