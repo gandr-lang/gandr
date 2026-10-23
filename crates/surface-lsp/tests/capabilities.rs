@@ -40,7 +40,7 @@ fn advertised_capabilities_name_the_token_legend()
                 },
                 "inlineCompletionProvider": true,
                 "documentSymbolProvider": true,
-                "executeCommandProvider": {"commands": ["gandr.applyFill"]},
+                "executeCommandProvider": {"commands": ["gandr.applyFill", "gandr.run"]},
                 "foldingRangeProvider": true,
                 "inlayHintProvider": {"resolveProvider": true},
                 "selectionRangeProvider": true,

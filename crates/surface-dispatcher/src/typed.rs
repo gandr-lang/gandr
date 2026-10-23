@@ -820,6 +820,9 @@ pub struct TypeTable
     /// The reduct the value bridge carried each term by, by the term, as the
     /// constant the reduct is declared at.
     crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// The declarations of the source's own text a run can start at, each by
+    /// where its name is written and the constant it admits, ascending.
+    runs: Vec<(Referent, ConstantIndex)>,
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
@@ -2022,6 +2025,7 @@ impl TypeTable
         });
         let own_source = unit.source_at(base);
         let mut declared = BTreeMap::new();
+        let mut runs = Vec::new();
         for declaration in module.declarations() {
             // A `data` family's operation and the words of its loops are
             // declared from the family's form and have no form of their own:
@@ -2067,6 +2071,31 @@ impl TypeTable
                 (Some(held), _) => held,
                 (None, None) => continue,
             };
+            // A run starts at a declaration the source names, read whole by the
+            // lowering and not refused by the checker, whose type is a value
+            // that takes no argument and is no type: a thunk of a function, a
+            // static abstraction and a universe each wait on what applies them.
+            if declaration.role() == Role::Declared
+                && matches!(
+                    declaration.outcome(),
+                    DeclarationOutcome::Completed { .. } | DeclarationOutcome::Bodied { .. }
+                )
+                && let Held::Typed(TypeNode::Value(ty)) = held
+                && let Some(shape) = arena.value_type(ty)
+                && !matches!(
+                    *shape,
+                    ValueType::Universe { .. }
+                        | ValueType::PathUniverse(..)
+                        | ValueType::StaticPi { .. }
+                        | ValueType::Unknown
+                )
+                && !matches!(*shape, ValueType::Thunk(computation) if matches!(
+                    arena.comp_type(computation),
+                    Some(&(CompType::Arrow { .. } | CompType::Pi { .. }))
+                ))
+            {
+                runs.push(declaration.constant());
+            }
             // A reduct or a forgetting map is derived from its theory's block
             // and has no form of its own: the block's key is the theory's, so a
             // derived declaration never displaces what another placed there.
@@ -2162,6 +2191,16 @@ impl TypeTable
             &hidden,
             &described.uses,
         );
+        let mut runs: Vec<(Referent, ConstantIndex)> = runs
+            .into_iter()
+            .filter_map(|constant| {
+                referents
+                    .declared(constant)
+                    .filter(|referent| referent.source() == own_source)
+                    .map(|referent| (referent, constant))
+            })
+            .collect();
+        runs.sort_unstable();
         // A recursive call's head is written with its claim, `plus[<]`: the
         // force runs the whole head, while the use is the name alone, which no
         // entry of its own covers. Such a use reads as the force it begins.
@@ -2219,6 +2258,7 @@ impl TypeTable
             in_scope: module.into_in_scope(),
             refused: None,
             documented,
+            runs,
             crossings,
         }
     }
@@ -2732,6 +2772,40 @@ impl TypeTable
     pub fn declared_names(&self) -> &[(Referent, NameKind)]
     {
         self.referents.offered()
+    }
+
+    /// The declarations of the table's own source a run can start at, each
+    /// by where its name is written and the constant it admits, ascending:
+    /// those that run as they stand, applied to nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per declaration the source names (no derived,
+    ///   witnessing, held, abstract, run-target or parameter declaration, no
+    ///   family's operation or words), whose body the lowering read whole —
+    ///   none a hole, a data or codata family or a sealed type — and the
+    ///   checker did not refuse, whose type is a value type and none of a
+    ///   universe, a path universe, a static Π, an unknown type or a thunk of
+    ///   an arrow or a Π; the declaration's name tile is in the table's own
+    ///   source. A declaration the checker owes for a hole it waits on is kept:
+    ///   the table reads no verdict, and the run declines it.
+    /// - provides: where a run lens stands, and the constant its command runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value, a computation applied to nothing and a
+    ///   record each start a run; a function, a static abstraction, a type, a
+    ///   family, a hole, a refused declaration and an imported sibling's
+    ///   declaration none.
+    /// - witness: `typed::tests::a_run_starts_only_where_nothing_is_applied_1818`
+    #[spec(ensures: |ret| ret.is_sorted()
+        && ret.iter().all(|&(referent, _)| referent.source() == self.own_source()))]
+    #[inline]
+    #[must_use]
+    pub fn runs(&self) -> &[(Referent, ConstantIndex)]
+    {
+        &self.runs
     }
 
     /// The span, in the table's own text, of each name its source writes
@@ -5565,6 +5639,68 @@ mod tests
                 ),
             ],
             "each declared name once, in the order the unit writes them, with its kind"
+        );
+    }
+
+    /// #1818: a run starts at a value, a computation applied to nothing and a
+    /// constructed value of the importer's own text, each by the constant its
+    /// name admits; never at a function, a static abstraction, a type, a
+    /// family, a hole, a refused declaration or a sibling's declaration.
+    #[test]
+    fn a_run_starts_only_where_nothing_is_applied_1818()
+    {
+        use gandr_surface_lowering::ImportTarget;
+        use gandr_surface_lowering::SourceIndex;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_lowering::UnitSource;
+
+        let sibling = SourceText::from("def here = 7 ;");
+        let importer = SourceText::from(
+            "import \"./here.gandr\" ;\ndata Point : Type {\n  Origin : Point;\n}\ndef answer = 42 \
+             ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { \
+             return n + n }\ndef idAt(A : Type, x : A) -> -F A { x }\ndef opt : Type -> Type[-] \
+             ;\ndef opt = \\A. -F A ;\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U \
+             (-F Integer) ;\ndef broken : String ;\ndef broken = 1 ;\ndef origin = Origin ;",
+        );
+        let laid = format!("{}\n{}", <&str>::from(sibling), <&str>::from(importer));
+        let base = ByteOffset::from(<&str>::from(sibling).len().saturating_add(1_usize));
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+            UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+        ])
+        .expect("the unit's sources start in order");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = TypeTable::of_unit(&grammar, SourceText::from(laid.as_str()), &unit, base)
+            .expect("the unit parses");
+        let runs: Vec<(Site, Option<&str>)> = table
+            .runs()
+            .iter()
+            .filter_map(|&(referent, constant)| {
+                Some((
+                    written(&table, referent)?,
+                    table.names.get(usize::from(constant)).map(String::as_str),
+                ))
+            })
+            .collect();
+        let site = |needle: &'static str, name: &'static str| {
+            (
+                Site {
+                    source: SourceIndex::from(1_usize),
+                    at: found(importer, SourceText::from(needle)),
+                    name: String::from(name),
+                },
+                Some(name),
+            )
+        };
+        assert_eq!(
+            runs,
+            [
+                site("answer = 42", "answer"),
+                site("step()", "step"),
+                site("origin = Origin", "origin"),
+            ],
+            "only what runs applied to nothing, in the importer's own text, each at its own \
+             constant"
         );
     }
 

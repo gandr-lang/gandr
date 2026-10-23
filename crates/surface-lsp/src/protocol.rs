@@ -2406,7 +2406,7 @@ impl InitializeResult
             && matches!(ret.capabilities.document_on_type_formatting_provider.first_trigger_character.as_bytes(), b";")
             && ret.capabilities.code_action_provider.resolve_provider
             && matches!(ret.capabilities.execute_command_provider.commands,
-                [command] if matches!(command.as_bytes(), b"gandr.applyFill"))
+                [fill, run] if matches!(fill.as_bytes(), b"gandr.applyFill") && matches!(run.as_bytes(), b"gandr.run"))
             && ret.capabilities.workspace_symbol_provider.resolve_provider
             && ret.capabilities.document_highlight_provider.0
             && ret.capabilities.references_provider.0
@@ -2680,7 +2680,7 @@ pub struct CompletionItemOptions
 pub struct CommandOptions
 {
     /// Their names.
-    pub commands: [&'static str; 1],
+    pub commands: [&'static str; 2],
 }
 
 /// The command applying the one checked fill a model proposed for a range:
@@ -2688,13 +2688,19 @@ pub struct CommandOptions
 /// asking the client to apply the fill's edit.
 pub const APPLY_FILL: &str = "gandr.applyFill";
 
+/// The command running the declaration a run lens stands over: its arguments
+/// are the document's URI and the position of the declaration's name. The
+/// server runs it, showing the line `gandr run` prints of the run and
+/// answering that line.
+pub const RUN: &str = "gandr.run";
+
 /// The command a references lens names: its arguments are the document's
 /// URI, the name's position and the locations of its uses. The client runs
 /// it, showing those uses; the server runs nothing for it.
 pub const SHOW_REFERENCES: &str = "gandr.showReferences";
 
 /// Every command the server runs.
-pub const COMMANDS: [&str; 1] = [APPLY_FILL];
+pub const COMMANDS: [&str; 2] = [APPLY_FILL, RUN];
 
 /// The parameters of `workspace/executeCommand`: the command and what it is
 /// run on.
@@ -3112,6 +3118,9 @@ pub enum Answer
     /// What a code-lens resolution answers for a references lens: the lens
     /// with its count and the command showing its uses.
     Lens(CodeLens),
+    /// What running a declaration answers: the line `gandr run` prints of its
+    /// run.
+    Ran(String),
     /// What a code-action request answers over a range of an open document.
     Actions(Vec<CodeAction>),
     /// What a workspace-symbol request answers: the names found, each where
