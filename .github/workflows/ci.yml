@@ -680,6 +680,22 @@ jobs:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'check:tests' || env.CI_DOCS == 'true' && 'check:doctests' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
+      # Each Linux enforcing shard lists its tests where they were built, and
+      # the gate job resolves the witnesses against the shards' listings
+      # (#1994): the join hands the state on beside the verdict, not before it.
+      - name: list the shard's tests for the witness gate
+        id: witness-listing
+        if: ${{ !cancelled() && env.CI_LISTING == 'true' && steps.build-workspace.outcome == 'success' }}
+        env:
+          CI_WITNESS_LISTING: target/witness-listing-${{ env.CI_SHARD }}.json
+        run: mise run ci:witness-listing
+      - name: keep the shard's test listing
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.witness-listing.outcome == 'success' }}
+        uses: *upload-artifact
+        with:
+          name: witness-listing-${{ env.CI_SHARD }}
+          path: target/witness-listing-${{ env.CI_SHARD }}.json
+          retention-days: 1
       # A change that reaches the recovery records sweeps every one of them at
       # every row, about a minute plain; the enforcing shards keep their
       # sample, where every row would take half an hour (#1434).
@@ -688,18 +704,20 @@ jobs:
         run: mise run ci:recovery
       # Witness discovery lists the enforcing test inventory, so it runs where
       # that graph is already built: anywhere else it compiles the graph again.
-      # The gate binary comes from the revision's cache when present.
+      # The gate binary comes from the revision's cache when present. The
+      # join resolves them only under act, where no shard uploads its listing
+      # (`CI_WITNESSES=act`); in GitHub's runs the gate job does.
       - *identify-policy
       - &restore-witness-gate
         name: restore the gate binary
-        if: ${{ env.CI_WITNESSES == 'true' }}
+        if: ${{ env.CI_WITNESSES == 'true' || env.CI_WITNESSES == 'act' && env.ACT == 'true' }}
         uses: *cache-restore
         with:
           path: *gate-binary
           key: *gate-binary-key
       - &resolve-witnesses
         name: resolve adequacy witnesses
-        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
+        if: ${{ !cancelled() && (env.CI_WITNESSES == 'true' || env.CI_WITNESSES == 'act' && env.ACT == 'true') && steps.build-workspace.outcome == 'success' }}
         run: mise run check:witnesses
       - name: run the corpus roots
         if: &plain-gate ${{ env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' }}
@@ -854,13 +872,15 @@ jobs:
       CI_SHARD: ${{ matrix.shard }}
       CI_SHARD_PACKAGES: ${{ matrix.packages }}
       CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
+      CI_LISTING: "true"
     steps: *workspace-test-steps
 
   # The join: the lane's state, every shard's build over it, one mtime for
   # the whole (Cargo reads a unit whose dependency is newer than it as stale,
   # and each shard built its shared units at its own time; sources are
-  # checked by checksum). Witness discovery lists the whole inventory here,
-  # fresh, and the joined state is what the next landing restores.
+  # checked by checksum). The joined state is what the next landing
+  # restores; no verdict waits on it, since the witnesses resolve against
+  # the shards' listings in the gate job (#1994).
   cargo-test-enforcing:
     name: join the enforcing shards (linux)
     needs: [prepare, ci-image, cargo-test-enforcing-shard]
@@ -874,7 +894,7 @@ jobs:
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_SHARDS: cargo-test-enforcing-shard
       CI_ENFORCING: "true"
-      CI_WITNESSES: "true"
+      CI_WITNESSES: act
     steps: &join-steps
       - *git-checkout
       - *trust-workspace
@@ -984,22 +1004,41 @@ jobs:
 
   # Preserve the required gate identities. These must run after a failed,
   # skipped or cancelled lane: accepting a partial result would weaken CI.
+  # The Linux job also resolves the witnesses against the enforcing shards'
+  # listings, so it waits on the shards and not on their join (#1994).
   cargo-test:
     name: test the workspace (linux)
-    needs:
-      [cargo-test-plain-only, cargo-test-docs, cargo-test-enforcing-shard, cargo-test-enforcing]
+    needs: [prepare, ci-image, cargo-test-plain-only, cargo-test-docs, cargo-test-enforcing-shard]
     if: ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
-    permissions: {}
-    timeout-minutes: 5
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
     env:
       PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
       DOCS_RESULT: ${{ needs.cargo-test-docs.result }}
       SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
-      JOIN_RESULT: ${{ needs.cargo-test-enforcing.result }}
+      CI_WITNESSES: "true"
+      CI_WITNESS_LISTINGS: target/witness-listings
     steps:
-      - name: require both test flavors, the documentation and the witnesses
-        run: test "$PLAIN_RESULT:$DOCS_RESULT:$SHARDS_RESULT:$JOIN_RESULT" = success:success:success:success
+      - name: require both test flavors and the documentation
+        run: test "$PLAIN_RESULT:$DOCS_RESULT:$SHARDS_RESULT" = success:success:success
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *identify-policy
+      - *restore-witness-gate
+      # Under act no shard uploads its listing; the join resolves them there.
+      - name: download the shards' test listings
+        if: ${{ env.ACT != 'true' }}
+        uses: *download-artifact
+        with:
+          pattern: witness-listing-*
+          path: target/witness-listings
+          merge-multiple: true
+      - name: resolve adequacy witnesses
+        if: ${{ env.ACT != 'true' }}
+        run: mise run check:witnesses
 
   # Skipped on a pull request, in the queue and on a push, which a skipped
   # job satisfies; in the daily run a failed macOS lane fails it there.

@@ -400,6 +400,16 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 description = "Each CI lane's median job time over recent runs against its budget"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-lane-budget --"
 
+# An enforcing shard's test listing, written to `CI_WITNESS_LISTING` for the
+# witness gate (`check:witnesses` with `CI_WITNESS_LISTINGS`). The flags are
+# the shard's test task's, so the listing builds nothing the shard did not.
+["ci:witness-listing"]
+description = "List an enforcing shard's tests as nextest JSON for the witness gate"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
+run = ".config/mise/scope cargo nextest list {{ env.CI_SHARD_ARGS | default(value='--workspace') }} --locked --config 'resolver.feature-unification=\"workspace\"' --message-format json > \"${CI_WITNESS_LISTING:?}\""
+
 # The build state a test lane hands to the next landing holds what this run's
 # builds used: Cargo never deletes a unit a dependency, feature or lockfile
 # change superseded, so a state restored and saved on every landing grows
