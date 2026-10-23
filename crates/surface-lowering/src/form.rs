@@ -685,6 +685,9 @@ impl TileName
     pub const WITH: Self = Self("with");
     /// The session keyword `close`.
     pub const CLOSE: Self = Self("close");
+    /// The session keyword `drop`, which ends an endpoint at `end` as `close`
+    /// does.
+    pub const DROP: Self = Self("drop");
     /// The closed session type `end`.
     pub const END: Self = Self("end");
     /// The recursive session type's binder keyword `mu`.
@@ -1156,6 +1159,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("send_expression", Former::Action),
     ("select_expression", Former::Action),
     ("close_expression", Former::Action),
+    ("drop_expression", Former::Action),
     ("offer_expression", Former::Offer),
     ("access_expression", Former::Access),
     ("resume_expression", Former::Access),
@@ -1185,7 +1189,6 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
         "double_quoted_string",
         Former::Unadmitted(Unbuilt::DoubleQuotedString),
     ),
-    ("drop_expression", Former::Unadmitted(Unbuilt::Drop)),
     (
         "environment_assignment",
         Former::Unadmitted(Unbuilt::EnvironmentAssignment),

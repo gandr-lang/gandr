@@ -852,3 +852,26 @@ fn an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms()
         );
     }
 }
+
+#[test]
+fn a_drop_is_the_end_action_1054()
+{
+    let source = SourceText::from(
+        "def dropped() -> -F Unit {\n\
+           fork (seat : end) { drop(seat) } as desk ;\n\
+           drop(desk)\n\
+         }\n\
+         def closed() -> -F Unit {\n\
+           fork (seat : end) { close(seat) } as desk ;\n\
+           close(desk)\n\
+         }\n",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("dropped"), SurfaceName::from("closed")),
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

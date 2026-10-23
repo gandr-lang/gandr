@@ -123,7 +123,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`close_expression`](../corpus/ledger/syntax/close_expression.gandr) | `close ( EXPRESSION )` | `expression.atom` | `close_expression` | admitted | Keyword, Other |
 | [`select_expression`](../corpus/ledger/syntax/select_expression.gandr) | `select ( EXPRESSION , ‹identifier› )` | `expression.atom` | `select_expression` | admitted | Keyword, Other, Label |
 | [`dup_expression`](../corpus/ledger/syntax/dup_expression.gandr) | `dup ( EXPRESSION )` | `expression.atom` | `dup_expression` | reserved | Keyword, Other |
-| [`drop_expression`](../corpus/ledger/syntax/drop_expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | unadmitted | Keyword, Other |
+| [`drop_expression`](../corpus/ledger/syntax/drop_expression.gandr) | `drop ( EXPRESSION )` | `expression.atom` | `drop_expression` | admitted | Keyword, Other |
 | [`access_expression`](../corpus/ledger/syntax/access_expression.gandr) | `access ⦅ shared ‖ exclusive ⦆? ‹identifier› ⦅ [ EXPRESSION ] ⦆? as ‹identifier› ⟨block⟩ ⦅ unwind ⟨block⟩ ⦆?` | `expression.atom` | `access_expression` * | admitted | Keyword, Other, Variable, VariableDef, Operator, Number, VariableParam |
 | [`resume_expression`](../corpus/ledger/syntax/resume_expression.gandr) | `resume ( ‹identifier› , EXPRESSION )` | `expression.atom` | `resume_expression` * | admitted | Keyword, Other, Variable |
 | [`abort_expression`](../corpus/ledger/syntax/abort_expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |

@@ -113,8 +113,6 @@ pub enum Unbuilt
     ListPattern,
     /// The rest pattern `..p`.
     RestPattern,
-    /// The endpoint drop `drop(e)`.
-    Drop,
     /// The type `forall a. T`.
     Forall,
     /// The union type `A | B`.
@@ -278,7 +276,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 86_usize] = [
+    pub const ALL: [Self; 85_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -292,7 +290,6 @@ impl Unbuilt
         Self::AsPattern,
         Self::ListPattern,
         Self::RestPattern,
-        Self::Drop,
         Self::Forall,
         Self::Union,
         Self::Intersection,
@@ -402,7 +399,6 @@ impl Unbuilt
             Self::AsPattern => "as_pattern",
             Self::ListPattern => "list_pattern",
             Self::RestPattern => "rest_pattern",
-            Self::Drop => "drop_expression",
             Self::Forall => "forall_type",
             Self::Union => "union_type",
             Self::Intersection => "intersection_type",
@@ -508,7 +504,6 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
-            Self::Drop => TrackingIssue::DROP,
             Self::Forall => TrackingIssue::FORALL,
             Self::Union | Self::Intersection => TrackingIssue::UNION_INTERSECTION,
             Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,

@@ -261,9 +261,9 @@ fn an_unclosed_call_keeps_its_head_s_referent_843()
 }
 
 /// #1265: a declaration the lowering refuses keeps what each name written
-/// inside the refused form names: a parameter and a forked endpoint inside a
-/// refused `drop`, and a parameter inside a `case` whose block is refused for
-/// its joins, each its own binder.
+/// inside the refused form names: a parameter inside a `drop` of no endpoint,
+/// a forked endpoint inside a reserved `dup`, and a parameter inside a `case`
+/// whose block is refused for its joins, each its own binder.
 #[test]
 fn a_use_inside_a_refused_form_keeps_its_referent_1265()
 {
@@ -274,11 +274,11 @@ fn a_use_inside_a_refused_form_keeps_its_referent_1265()
         "the parameter used inside the refused `drop` names its binder"
     );
     let endpoint = "def forked() -> -F Unit {\n  fork (seat : end) { close(seat) } as desk;\n  \
-                    drop(desk)\n}\n";
+                    dup(desk)\n}\n";
     assert_eq!(
-        resolved(SourceText::from(endpoint), SourceText::from("drop(")),
+        resolved(SourceText::from(endpoint), SourceText::from("dup(")),
         [(String::from("desk"), String::from("desk"))],
-        "the endpoint a `fork` binds, used inside the refused `drop`, names its binder"
+        "the endpoint a `fork` binds, used inside the refused `dup`, names its binder"
     );
     let joined = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef joined(n : \
                   Nat) -> -F Nat {\n  run m <- case n -> -F Nat {\n    Zero => return n,\n    \
