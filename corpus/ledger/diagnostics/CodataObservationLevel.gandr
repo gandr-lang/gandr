@@ -1,0 +1,5 @@
+/// `CodataObservationLevel`: an observation lives above the codata declaration's universe.
+@[ refuses("CodataObservationLevel") ]
+codata Holder(a : Type[+, 1]) : Type[-] {
+  held : a;
+}

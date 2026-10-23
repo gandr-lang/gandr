@@ -86,6 +86,10 @@ const MODULE_HEADER: Issue = Issue(1274);
 /// apart.
 const DATA_MEMBER: Issue = Issue(1462);
 
+/// The issue carrying a codata declaration's self reference at other
+/// arguments to the checker as it is written.
+const CODATA_SELF: Issue = Issue(2188);
+
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
@@ -125,7 +129,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 83_usize] = [
+const OWED: [(&str, Owed); 81_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -251,9 +255,7 @@ const OWED: [(&str, Owed); 83_usize] = [
     ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
     ("DependentStack", Owed::Unwritten(CHECKER)),
     ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
-    ("CodataUndeclared", Owed::Unwritten(CHECKER)),
-    ("CodataOccurrence", Owed::Unwritten(CHECKER)),
-    ("CodataObservationLevel", Owed::Unwritten(CHECKER)),
+    ("CodataOccurrence", Owed::Unwritten(CODATA_SELF)),
     ("CodataArity", Owed::Unwritten(CHECKER)),
     ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
     ("MarkUnfounded", Owed::Unwritten(CHECKER)),
