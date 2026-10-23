@@ -1,4 +1,4 @@
-/// `co_expression`: a copattern bundle of explicit instantiations.
-/// The checker does not reach this form yet; #1053 tracks it.
-@[ refuses("OutOfFragment.co_expression") ]
-def sized = co { size = 1 } ;
+/// `co_expression`: a copattern bundle, the lazy record `&{.l => c, …}`
+/// written over bare labels.
+@[ checks ]
+def sized() -> &{size : -F Integer, name : -F String} { co { name = "unit", size = 1 } }

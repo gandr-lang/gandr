@@ -499,6 +499,8 @@ impl TileName
     pub const COLON: Self = Self(":");
     /// The comma separating list members.
     pub const COMMA: Self = Self(",");
+    /// The bundle keyword `co`, opening a lazy record over bare labels.
+    pub const CO: Self = Self("co");
     /// The declaration keyword `def`.
     pub const DEF: Self = Self("def");
     /// The selection dot `.` of a path.
@@ -1108,6 +1110,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("labelled_sum_expression", Former::Injection),
     ("pack_model_expression", Former::PackModel),
     ("lazy_record_expression", Former::LazyRecord),
+    ("co_expression", Former::LazyRecord),
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
@@ -1167,7 +1170,6 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("as_pattern", Former::Unadmitted(Unbuilt::AsPattern)),
     ("bind_expression", Former::Unadmitted(Unbuilt::Bind)),
     ("circuit_declaration", Former::Unadmitted(Unbuilt::Circuit)),
-    ("co_expression", Former::Unadmitted(Unbuilt::CoBundle)),
     ("codata_declaration", Former::Unadmitted(Unbuilt::Codata)),
     (
         "command_substitution",

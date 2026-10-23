@@ -158,7 +158,7 @@ unproduced = [
   { rule = "boolean.expression", reason = "core has no boolean literal: the lowering names no former for `true` or `false` in a term" },
   { rule = "break_expression", reason = "a loop's end without a value is its end with unit: the lowering reads `break` as `break(unit)`, and the printer writes the returner a pass ends with as `break_value_expression`" },
   { rule = "circuit_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
-  { rule = "co_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+  { rule = "co_expression", reason = "sugar the lowering elaborates away: a bundle `co { l = c, … }` lowers to the lazy record over its labels, which the printer writes as `lazy_record_expression`" },
   { rule = "codata_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "command_substitution", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "data_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

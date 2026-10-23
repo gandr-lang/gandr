@@ -750,6 +750,52 @@ impl<'source> Lowerer<'_, 'source>
         Ok(entries)
     }
 
+    /// Read the entries `l = e` of a `co` bundle up to `}`, each key a bare
+    /// label.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the bundle's `{`.
+    /// - ensures: every entry in written order, each labelled by its word, the
+    ///   cursor exhausted.
+    /// - fails: a misplaced tile, and a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bundle of two fields written out of the stated
+    ///   order reads as the lazy record of its labels.
+    /// - witness: `lower::arity::tests::a_co_bundle_is_the_lazy_record_of_its_labels`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.key, Key::Label(..)))))]
+    fn bundle_entries(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        let mut entries = Vec::new();
+        while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            let Maybe::Present(word) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, cursor, TileName::EQUALS)?;
+            entries.push(Entry {
+                key: Key::Label(self.name_at(word), word),
+                held: Held::Operand(site.one(cursor.operands())?),
+            });
+            separated(site, cursor, TileName::BRACE_CLOSE)?;
+        }
+        exhausted(site, cursor)?;
+
+        Ok(entries)
+    }
+
     /// Read the hole-led entries of a telescope value up to `}`: each a
     /// positional `e`, or the shorthand `l = e` whose key is a bare name; or
     /// the update `#{ e | l = a, … }`.
@@ -2158,7 +2204,8 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// Classify a copattern block, `&{ .l => c, … }`.
+    /// Classify a copattern block, `&{ .l => c, … }`, or the bundle
+    /// `co { l = c, … }` that spells the same lazy record over bare labels.
     ///
     /// # Specification
     /// - requires: `site` is a copattern block in term position.
@@ -2191,9 +2238,15 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        closed(site, &mut cursor, TileName::AMPERSAND)?;
-        closed(site, &mut cursor, TileName::BRACE_OPEN)?;
-        let entries = self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?;
+        let entries = if let Maybe::Present(_) = cursor.tile(TileName::CO) {
+            closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+            self.bundle_entries(site, &mut cursor)?
+        }
+        else {
+            closed(site, &mut cursor, TileName::AMPERSAND)?;
+            closed(site, &mut cursor, TileName::BRACE_OPEN)?;
+            self.dotted_entries(site, &mut cursor, TileName::FAT_ARROW)?
+        };
         let answer = self.answers.get(&site.at.node).copied();
         let stated = match answer {
             Some(answer) => {

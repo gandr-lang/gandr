@@ -1126,6 +1126,42 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
 }
 
 #[test]
+fn a_co_bundle_is_the_lazy_record_of_its_labels()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def bundled(n : Integer) -> &{get : -F Integer, put : -F String} { co { put = return \
+         \"s\", get = return n } }\ndef blocked(n : Integer) -> &{get : -F Integer, put : -F \
+         String} { &{.put => return \"s\", .get => return n} }\n",
+        &mut arena,
+    );
+    assert_eq!(
+        body(&arena, &module, "bundled"),
+        body(&arena, &module, "blocked"),
+        "`co {{ l = c }}` lowers as the copattern block `&{{.l => c}}`, clauses in the stated \
+         order"
+    );
+    let source = "def loose(n : Integer) -> -F Integer { co { get = return n } }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated | FragmentBoundary::WrongSort,
+            ..
+        }),
+        "a bundle with no lazy record stated has no order: {:?}",
+        refused(source)
+    );
+    let bundled =
+        refused("def stray(n : Integer) -> &{get : -F Integer} { co { got = return n } }\n");
+    let blocked =
+        refused("def stray(n : Integer) -> &{get : -F Integer} { &{.got => return n} }\n");
+    assert_eq!(
+        core::mem::discriminant(&bundled),
+        core::mem::discriminant(&blocked),
+        "a label the stated record lacks is refused as the block refuses it: {bundled:?}"
+    );
+}
+
+#[test]
 fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
 {
     let pair = "codata Duo : Type[-] { fst : Integer; snd : String; }\n";
