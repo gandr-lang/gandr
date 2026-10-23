@@ -119,6 +119,10 @@ impl RepairCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each repair raises the telemetry's count by one.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -150,6 +154,10 @@ impl RefusalCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each refusal raises the telemetry's count by one.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -182,6 +190,10 @@ impl VisitCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each visit raises the telemetry's count by one.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -214,6 +226,10 @@ impl RelocationCount
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each relocation raises the telemetry's count by one.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn saturating_increment(self) -> Self
     {
@@ -260,6 +276,10 @@ impl core::ops::Not for TopologicalOrderStatus
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a negated topological status reads false.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn not(self) -> Self::Output
     {
@@ -493,6 +513,11 @@ impl AcyclicityMaintenance
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the count reads as built, the same as through the
+    ///   edge source.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     #[must_use]
     pub fn nodes(&self) -> NodeCount
@@ -967,6 +992,7 @@ impl AcyclicityMaintenance
     ///   graphs. The relocation moves only the arranged nodes, so the predicate
     ///   checks the edges around them.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
+    /// - witness: `maintenance::tests::a_saturated_epoch_restarts_the_marks_before_searching`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |discovery| !matches!(*discovery, Discovery::Repaired)
         || bool::from(self.order_is_topological_around(&scratch.arrangement))))]
@@ -1385,6 +1411,10 @@ impl EdgeSource for AcyclicityMaintenance
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the count reads the same as the structure's own.
+    /// - witness: `maintenance::tests::the_telemetry_and_node_count_track_each_insertion`
     #[inline]
     fn node_count(&self) -> NodeCount
     {
@@ -1463,7 +1493,9 @@ mod tests
     use gandr_theory_graphs::cycle_witness;
 
     use super::AcyclicityMaintenance;
+    use super::EdgeSource as _;
     use super::EdgeVerdict;
+    use super::Epoch;
 
     /// A node identifier from a small dense index.
     ///
@@ -1583,6 +1615,59 @@ mod tests
         assert!(
             bool::from(structure.order_is_topological()),
             "the repaired order is topological"
+        );
+    }
+
+    #[test]
+    fn the_telemetry_and_node_count_track_each_insertion()
+    {
+        let mut structure = AcyclicityMaintenance::new().expect("a fresh structure is available");
+        structure
+            .ensure_node(node(3u32))
+            .expect("nodes are creatable");
+        let repaired = structure
+            .insert_edge(edge(2u32, 1u32))
+            .expect("insertion succeeds");
+        assert_eq!(EdgeVerdict::AdmittedAfterRepair, repaired);
+        let refused = structure
+            .insert_edge(edge(1u32, 2u32))
+            .expect("insertion succeeds");
+        assert!(matches!(refused, EdgeVerdict::Refused(_)));
+        let telemetry = structure.telemetry();
+        assert_eq!(2, u64::from(telemetry.insertions));
+        assert_eq!(1, u64::from(telemetry.repairs));
+        assert_eq!(1, u64::from(telemetry.refusals));
+        assert_eq!(3, u64::from(telemetry.nodes_visited));
+        assert_eq!(2, u64::from(telemetry.nodes_relocated));
+        assert_eq!(4, u32::from(structure.nodes()), "nodes 0 to 3 exist");
+        assert_eq!(4, u32::from(structure.node_count()));
+        assert!(
+            !bool::from(!structure.order_is_topological()),
+            "negating a topological status reads not topological"
+        );
+    }
+
+    #[test]
+    fn a_saturated_epoch_restarts_the_marks_before_searching()
+    {
+        let mut structure = admit(&[edge(1u32, 2u32)]);
+        structure
+            .ensure_node(node(3u32))
+            .expect("nodes are creatable");
+        structure.scratch.epoch = Epoch(u64::MAX);
+        // The order is 0, 1, 2, 3; repairing 3 -> 1 searches forward through
+        // 1 and 2 at the saturated epoch.
+        let repaired = structure
+            .insert_edge(edge(3u32, 1u32))
+            .expect("insertion succeeds");
+        assert_eq!(EdgeVerdict::AdmittedAfterRepair, repaired);
+        // The cycle 3 -> 1 -> 2 -> 3 is found only through node 1.
+        let refused = structure
+            .insert_edge(edge(2u32, 3u32))
+            .expect("insertion succeeds");
+        assert!(
+            matches!(refused, EdgeVerdict::Refused(_)),
+            "the search after a saturated epoch still finds the cycle"
         );
     }
 
