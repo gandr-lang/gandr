@@ -1,0 +1,18 @@
+/// `CrossBlockReference`: a data declaration's field names a family written past its block.
+rec {
+  @[ refuses("CrossBlockReference") ]
+  data Front : Type {
+    Hold : (b : Back) --> Front;
+  }
+
+  /// A definition between the two families ends the first one's block.
+  @[ checks ]
+  def between(x : Integer) -> -F Integer {
+    return x
+  }
+
+  @[ checks ]
+  data Back : Type {
+    Only : Back;
+  }
+}

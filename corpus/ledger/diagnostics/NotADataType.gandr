@@ -1,0 +1,10 @@
+/// `NotADataType`: a type names a data declaration the checker refused.
+@[ refuses("DataKindNotUniverse") ]
+data Odd : Integer {
+  Z : Odd;
+}
+
+@[ refuses("NotADataType") ]
+def held(x : Odd) -> -F Integer {
+  return 1
+}
