@@ -90,8 +90,6 @@ impl TrackingIssue
     pub const UNFILED: Self = Self(1207);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
-    /// A constructor field's grade other than the default `ω`.
-    pub const FIELD_GRADE: Self = Self(1295);
     /// A case or a form over an indexed family.
     pub const INDEXED: Self = Self(1314);
     /// Function extensionality past the first-order coverage.
@@ -170,6 +168,8 @@ impl TrackingIssue
     /// A match of no arms over a type no data switch reads, written with its
     /// answer type.
     pub const EMPTY_CASE_ANSWER: Self = Self(1998);
+    /// A constructor field at a finite grade other than `1`.
+    pub const FIELD_GRADE: Self = Self(2033);
 
     /// The issue's page.
     ///

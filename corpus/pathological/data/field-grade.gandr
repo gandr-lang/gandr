@@ -1,0 +1,8 @@
+// A constructor field's grade: `1` and `ω` are read, any other numeral is not.
+
+/// A pair whose first field is held twice: a field takes the grade `1` or
+/// `ω`, and the declaration is refused at the grade `2` (#2033).
+@[ refuses("OutOfFragment.grade.declaration") ]
+data Twice(a : Type) : Type {
+  Both : (2 first : a, second : a) --> Twice(a);
+}

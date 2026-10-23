@@ -106,7 +106,7 @@ pub enum Unbuilt
     TypedNumber,
     /// The shell block, `#!{ … }`.
     ShellBlock,
-    /// A constructor field's grade.
+    /// A constructor field at a finite grade other than `1`.
     FieldGrade,
     /// The as-pattern `p as x`.
     AsPattern,

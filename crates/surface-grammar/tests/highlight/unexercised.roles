@@ -84,7 +84,6 @@
 132 Keyword def_value val L[{] R[<pattern>]
 133 Other def_value = L[<pattern>] R[<expression>]
 134 Other def_value ; L[<expression>] R[<expression> }]
-205 Number data_declaration number L[(] R[identifier]
 206 Number data_declaration ω L[(] R[identifier]
 210 Number data_declaration number L[,] R[identifier]
 211 Number data_declaration ω L[,] R[identifier]
