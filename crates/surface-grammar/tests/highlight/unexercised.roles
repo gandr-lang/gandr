@@ -78,7 +78,6 @@
 116 TypeVariable def_value type_variable L[(] R[) , :]
 120 Other def_value consumed L[:] R[<type>]
 123 TypeVariable def_value type_variable L[,] R[) , :]
-124 Type def_value type_identifier L[,] R[) , :]
 126 Other def_value shared L[:] R[<type>]
 127 Other def_value consumed L[:] R[<type>]
 132 Keyword def_value val L[{] R[<pattern>]

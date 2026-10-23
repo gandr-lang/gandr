@@ -1,0 +1,17 @@
+// The twin of `model/desc/relative-monad.gandr`: the right unit, which a
+// theory cannot state yet. Associativity waits on two refusals at once, an
+// abstraction at the continuation's port (#2115) and its left side's
+// overlap with itself (#2116, `second-order-rules.gandr`'s `LetOverlap`), and
+// is written once one expectation can name what it refuses.
+
+/// The right unit: extending a computation by the unit is the computation.
+/// `bind x . ret(x)` is an abstraction at `k`'s port, which no rule writes
+/// yet (#2115).
+@[ refuses("IllFormedDescription") ]
+theory MonadRightUnit {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitR : ext(m, bind x . ret(x)) <=> m;
+}
