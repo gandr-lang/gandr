@@ -2842,6 +2842,54 @@ fn an_update_in_a_type_builds_its_record_2159()
     );
 }
 
+/// #2217: an update whose base is another update keeps, in a type's build, the
+/// component the record the inner update stands as holds, never a projection
+/// off that record; a body's build keeps the projection, its base run as
+/// written.
+#[test]
+fn an_update_of_an_update_in_a_type_keeps_the_inner_record_s_fields_2217()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| crate::FieldLabel::from(String::from(name));
+    let base = arena.value_constant(ConstantIndex::from(0_usize));
+    let unit = arena.value_unit();
+    let first = arena.value_record(BTreeMap::from([(label("a"), unit)]));
+    let inner = arena.value_record_update(base, first);
+    let second = arena.value_record(BTreeMap::from([(label("b"), unit)]));
+    let outer = arena.value_record_update(inner, second);
+    let carrier = arena.value_type_unit();
+    let subject = arena.value_type_path(carrier, outer, base);
+    let updates = BTreeMap::from([
+        (inner, Vec::from([label("b")])),
+        (outer, Vec::from([label("a")])),
+    ]);
+    let rebuilt = super::build_type_updates(&mut arena, subject, &updates, &mut Vec::new());
+    let Some(&crate::ValueType::Path { left, .. }) = arena.value_type(rebuilt)
+    else {
+        panic!("the rebuilt type is still a path");
+    };
+    let record = arena.value_record(BTreeMap::from([(label("a"), unit), (label("b"), unit)]));
+    assert_eq!(
+        crate::equal_certificate_syntax(&arena, left, record),
+        crate::CertificateEquality::Equal,
+        "the outer update keeps `a` as the inner record holds it, beside its own `b`"
+    );
+    let projected = {
+        let kept = arena.computation_record_projection(base, label("b"));
+        let kept = arena.value_returned(kept);
+        let built = arena.value_record(BTreeMap::from([(label("a"), unit), (label("b"), kept)]));
+        let kept = arena.computation_record_projection(built, label("a"));
+        let kept = arena.value_returned(kept);
+        arena.value_record(BTreeMap::from([(label("a"), kept), (label("b"), unit)]))
+    };
+    let body = super::build_updates(&mut arena, outer, &updates, &mut Vec::new());
+    assert_eq!(
+        crate::equal_certificate_syntax(&arena, body, projected),
+        crate::CertificateEquality::Equal,
+        "a body's build projects the kept field off the inner record"
+    );
+}
+
 #[test]
 fn a_crossing_applies_its_carriers_before_the_value()
 {

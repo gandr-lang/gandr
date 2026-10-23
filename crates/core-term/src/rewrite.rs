@@ -493,6 +493,19 @@ enum Occurrence
     Carried(ValueId, Binders),
 }
 
+/// Where a build reads each field an update keeps off its base.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kept
+{
+    /// By a projection off the base, `⟨b.k⟩`: a body's build, whose base
+    /// runs as written, every component a literal base holds with it.
+    Projected,
+    /// Off a base that is a record literal, its own component at the label,
+    /// else by a projection: a type's build, which runs nothing, so a record
+    /// the build stood an inner update as is never projected off.
+    Literal,
+}
+
 /// The engine's state for one rewrite of one subject.
 struct Engine<'arena>
 {
@@ -514,6 +527,8 @@ struct Engine<'arena>
     /// The record updates a build turns into records, each with the labels
     /// its base keeps.
     updates: BTreeMap<ValueId, Vec<FieldLabel>>,
+    /// Where a build reads each field an update keeps off its base.
+    kept: Kept,
     /// The entries an environment substitution replaces free indices by,
     /// innermost first.
     environment: Vec<ValueId>,
@@ -559,6 +574,7 @@ impl<'arena> Engine<'arena>
             crossings: BTreeMap::new(),
             crossed: Vec::new(),
             updates: BTreeMap::new(),
+            kept: Kept::Projected,
             environment: Vec::new(),
             nesting: BTreeMap::new(),
             regions: BTreeMap::new(),
@@ -1110,14 +1126,15 @@ impl<'arena> Engine<'arena>
     /// - requires: `rewritten` is `node`'s rewritten form, in its family.
     /// - ensures: under a wrap, a fresh record when the updates name `node` and
     ///   `rewritten` is an update of a record by a record — the overlay's
-    ///   fields beside `⟨b.k⟩` for each label `k` the base `b` keeps — then a
-    ///   fresh run of the reduct applied to `rewritten` when the crossings name
-    ///   `node`, and otherwise a fresh mark over `rewritten` when the sites
-    ///   name `node` and it is a term; under an elaboration, a fresh thunk over
-    ///   the computation of `rewritten` when `node` is a nested computation the
-    ///   checker decided to suspend, and a fresh returned value over it when
-    ///   the checker decided it stands as what it returns; `rewritten` itself
-    ///   otherwise.
+    ///   fields beside, for each label `k` the base `b` keeps, `b`'s own
+    ///   component at `k` when the build reads [`Kept::Literal`] and `b` is a
+    ///   record literal, and `⟨b.k⟩` otherwise — then a fresh run of the reduct
+    ///   applied to `rewritten` when the crossings name `node`, and otherwise a
+    ///   fresh mark over `rewritten` when the sites name `node` and it is a
+    ///   term; under an elaboration, a fresh thunk over the computation of
+    ///   `rewritten` when `node` is a nested computation the checker decided to
+    ///   suspend, and a fresh returned value over it when the checker decided
+    ///   it stands as what it returns; `rewritten` itself otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1158,12 +1175,24 @@ impl<'arena> Engine<'arena>
             && let Some(&Value::Record(ref fields)) = self.arena.value(overlay)
         {
             let mut built = fields.clone();
+            let literal = match (self.kept, self.arena.value(base)) {
+                (Kept::Literal, Some(&Value::Record(ref components))) => Some(components.clone()),
+                (Kept::Literal | Kept::Projected, _) => None,
+            };
             for label in kept {
-                let projection = self
-                    .arena
-                    .computation_record_projection(base, label.clone());
-                let returned = self.arena.value_returned(projection);
-                built.insert(label.clone(), returned);
+                let field = if let Some(&component) = literal
+                    .as_ref()
+                    .and_then(|components| components.get(label))
+                {
+                    component
+                }
+                else {
+                    let projection = self
+                        .arena
+                        .computation_record_projection(base, label.clone());
+                    self.arena.value_returned(projection)
+                };
+                built.insert(label.clone(), field);
             }
             return Node::Value(self.arena.value_record(built));
         }
@@ -5573,14 +5602,19 @@ pub fn build_updates(
 }
 
 /// Build, within the value type `subject`, each record update `updates` names
-/// as a record, as [`build_updates`] builds one in a value: a type a
-/// signature writes reads the record each update stands for.
+/// as a record, as [`build_updates`] builds one in a value.
+///
+/// A field an update keeps off a base that is a record literal is read off the
+/// literal's own component, so a type a signature writes reads the record each
+/// update stands for, an update of an update included, with no projection off
+/// a record literal, which no written type can state.
 ///
 /// # Specification
 /// - requires: as [`build_updates`], with `subject` a value type.
 /// - ensures: `subject` rebuilt with every named update standing as its record,
-///   as [`build_updates`]; `subject` itself when `updates` names nothing it
-///   reaches; `carried` gains one pair per node the rebuild carried over.
+///   as [`build_updates`], each field kept off a record literal its component
+///   there; `subject` itself when `updates` names nothing it reaches; `carried`
+///   gains one pair per node the rebuild carried over.
 /// - provides: the signature a declaration's body is checked against, with no
 ///   update left (#2159).
 /// - fails: never.
@@ -5588,8 +5622,11 @@ pub fn build_updates(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an update standing in a path type's endpoint, keeping one
-///   label and overlaying another, separates the build from the identity.
+///   label and overlaying another, separates the build from the identity; an
+///   update of an update keeps the inner record's component, never a projection
+///   off it.
 /// - witness: `rewrite::tests::an_update_in_a_type_builds_its_record_2159`
+/// - witness: `rewrite::tests::an_update_of_an_update_in_a_type_keeps_the_inner_record_s_fields_2217`
 #[spec(captures: held = carried.len(), ensures: carried.len() >= held)]
 #[inline]
 pub fn build_type_updates(
@@ -5601,6 +5638,7 @@ pub fn build_type_updates(
 {
     let mut engine = Engine::new(arena);
     engine.updates = updates.clone();
+    engine.kept = Kept::Literal;
     let built = engine.run(Node::ValueType(subject), Binders::NONE, Rewrite::Wrap);
     report(&engine.memo, carried);
     match built {
