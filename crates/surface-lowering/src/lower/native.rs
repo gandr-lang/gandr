@@ -2126,19 +2126,27 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: when `head` is a bare name of a declaration written with a
     ///   parameter list, each argument at a parameter written with a type maps
     ///   to that type in [`Lowerer::parameter_typed`], read by a constructor
-    ///   written there as [`Classifier::Parameter`]; nothing changes for any
+    ///   written there as [`Classifier::Parameter`]; an argument written as a
+    ///   thunk or a bare lambda is answered by that type as a signed
+    ///   definition's is ([`Self::signed_answer`]); nothing changes for any
     ///   other head, a binder's name among them.
-    /// - fails: never: a name the head's own reading refuses is refused there.
+    /// - fails: as [`Self::unwrapped`]; a name the head's own reading refuses
+    ///   is refused there.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a list and a bare constructor passed to a function of
     ///   a closed parameter type, and a local function's name, which classifies
-    ///   nothing.
+    ///   nothing; a lambda passed in a thunk and bare for a parameter typed
+    ///   `Empty => Integer` matches no arm on its binder.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
     #[spec(
-        captures: before = self.parameter_typed.len(),
-        ensures: self.parameter_typed.len() >= before,
+        captures: before = (self.parameter_typed.len(), self.thunked.len()),
+        ensures: |ret| ret.is_err() || (self.parameter_typed.len() >= before.0 && self.thunked.len() >= before.1),
     )]
     pub(super) fn parameters_classify(
         &mut self,
@@ -2146,7 +2154,7 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
         head: Placed,
         applied: Stretch,
-    )
+    ) -> Result<(), LoweringRefusal<'source>>
     {
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
@@ -2158,26 +2166,49 @@ impl<'source> Lowerer<'_, 'source>
             )
         });
         if !named {
-            return;
+            return Ok(());
         }
         let name = self.name_at(head);
         let Ok(Maybe::Present(Resolved::Declaration { constant, .. })) =
             self.resolve_name(site, frame, name)
         else {
-            return;
+            return Ok(());
         };
         let slot = SlotIndex::from(usize::from(constant));
         let Some(parameters) = self.collected.parameters.get(&slot)
         else {
-            return;
+            return Ok(());
         };
-        for (position, declared) in (applied.start .. applied.end).zip(parameters) {
-            if let Maybe::Present(declared) = *declared
-                && let Some(&argument) = self.operands.get(position)
-            {
-                let _first = self.parameter_typed.insert(argument, declared);
+        let typed: Vec<(NodeIndex, Placed)> = (applied.start .. applied.end)
+            .zip(parameters)
+            .filter_map(|(position, declared)| match *declared {
+                Maybe::Present(declared) => Some((*self.operands.get(position)?, declared)),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        for (argument, declared) in typed {
+            let _first = self.parameter_typed.insert(argument, declared);
+            let opened = self.tree.node(argument).is_some_and(|node| {
+                matches!(
+                    shape_of(self.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::Thunk | Former::Lambda,
+                        ..
+                    })
+                )
+            });
+            if !opened {
+                continue;
+            }
+            let Maybe::Present(written) = self.unwrapped(declared.node)?
+            else {
+                continue;
+            };
+            if let Some(answer) = self.signed_answer(&written)? {
+                let _first = self.thunked.insert(argument, answer);
             }
         }
+        Ok(())
     }
 
     /// The classifier the field `at` of the constructor written at `around`
@@ -2383,37 +2414,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 continue;
             };
-            let thunked = matches!(written.former, Former::ThunkType | Former::ReturnerType)
-                && written.keyword.is_some_and(|at| {
-                    type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
-                });
-            let answer = match *written.operands.as_slice() {
-                [body] if thunked => Some(Answer {
-                    node: body,
-                    frame: Frame::Outermost,
-                    over: Over::Written,
-                }),
-                [domain, codomain] if written.former == Former::ValueFunctionType => {
-                    match self.unwrapped(domain)? {
-                        Maybe::Present(Unwrapped {
-                            former: Former::ParenthesizedType,
-                            ref operands,
-                            ..
-                        }) if operands.is_empty() => Some(Answer {
-                            node: codomain,
-                            frame: Frame::Outermost,
-                            over: Over::Returning,
-                        }),
-                        Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
-                            node: written.node,
-                            frame: Frame::Outermost,
-                            over: Over::Valued { taken: 0_usize },
-                        }),
-                    }
-                },
-                _ => None,
-            };
-            if let Some(answer) = answer {
+            if let Some(answer) = self.signed_answer(&written)? {
                 let _first = self.thunked.insert(definition, answer);
             }
             else {
@@ -2423,6 +2424,63 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         Ok(())
+    }
+
+    /// What the written type `written`, its parentheses stripped, answers a
+    /// thunk's body or a bare lambda it types: `C` for `+U C`, `-F B` for
+    /// `() => B` and the arrows any other value function space `(A1, …, An)
+    /// => B` stands for, each read under the outermost frame.
+    ///
+    /// # Specification
+    /// - ensures: the answer for a thunk type of one operand and for a value
+    ///   function space; nothing for any other type.
+    /// - fails: as [`Self::unwrapped`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::sign_definitions`] and
+    ///   [`Self::parameters_classify`].
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |answer| answer.is_none_or(|answer| answer.frame == Frame::Outermost)))]
+    fn signed_answer(
+        &mut self,
+        written: &Unwrapped,
+    ) -> Result<Option<Answer>, LoweringRefusal<'source>>
+    {
+        let thunked = matches!(written.former, Former::ThunkType | Former::ReturnerType)
+            && written.keyword.is_some_and(|at| {
+                type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
+            });
+        Ok(match *written.operands.as_slice() {
+            [body] if thunked => Some(Answer {
+                node: body,
+                frame: Frame::Outermost,
+                over: Over::Written,
+            }),
+            [domain, codomain] if written.former == Former::ValueFunctionType => {
+                match self.unwrapped(domain)? {
+                    Maybe::Present(Unwrapped {
+                        former: Former::ParenthesizedType,
+                        ref operands,
+                        ..
+                    }) if operands.is_empty() => Some(Answer {
+                        node: codomain,
+                        frame: Frame::Outermost,
+                        over: Over::Returning,
+                    }),
+                    Maybe::Present(_) | Maybe::Absent(_) => Some(Answer {
+                        node: written.node,
+                        frame: Frame::Outermost,
+                        over: Over::Valued { taken: 0_usize },
+                    }),
+                }
+            },
+            _ => None,
+        })
     }
 
     /// The value and the type of the annotation `(e : T)` that `node` writes.
