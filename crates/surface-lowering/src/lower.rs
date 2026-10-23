@@ -3063,6 +3063,13 @@ struct Lowerer<'run, 'source>
     /// its binder, `a.C`, stands for: minted before the sweep reaches the
     /// reading, which can sit deeper in the tree than the type.
     fixed_carriers: Vec<Placed>,
+    /// The nodes the form being classified asks classified next, before the
+    /// sweep moves on: a manifest type's `Model(T)` application, whose bundle
+    /// a reading of its sorts can stand before.
+    ahead: Vec<NodeIndex>,
+    /// Each node classified ahead of the sweep, which the sweep then passes
+    /// over.
+    classified_ahead: BTreeSet<NodeIndex>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -4630,6 +4637,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             stand_ins: BTreeSet::new(),
             fixed_sorts: BTreeMap::new(),
             fixed_carriers: Vec::new(),
+            ahead: Vec::new(),
+            classified_ahead: BTreeSet::new(),
             answers: BTreeMap::new(),
             cocased: BTreeSet::new(),
             synthesised: Vec::new(),
@@ -5649,17 +5658,60 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             };
             self.fuel.spend()?;
-            self.inherit_owner(position);
-            self.inherit_payload(position);
-            self.inherit_scope(position);
-            self.inherit_type(position);
-            self.inherit_scrutiny(position);
-            if let Err(refusal) = self.classify_node(position) {
-                if refusal.classify() == FailureClass::EngineFault {
-                    return Err(refusal);
-                }
-                self.collected.offer(position, refusal);
+            if self.classified_ahead.contains(&position) {
+                continue;
             }
+            self.classify_one(position)?;
+            while let Some(next) = self.ahead.pop() {
+                if self.classified_ahead.insert(next) {
+                    self.classify_one(next)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Hand `position`'s records to its children and classify it, offering a
+    /// refusal to its declaration.
+    ///
+    /// # Specification
+    /// - requires: `position` is reached in ascending arena order, or asked
+    ///   ahead by the form it stands under, so the records the sweep hands down
+    ///   have reached it.
+    /// - ensures: `position`'s children carry its records, and it is planned or
+    ///   its refusal offered to it.
+    /// - provides: the per-position step of [`Self::classify`].
+    /// - fails: an engine fault, on which [`Self::classify`] aborts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declaration refusals remain local while grammar and
+    ///   budget faults abort the run; a manifest model type's application,
+    ///   asked ahead, is planned before a later parameter reads a sort the type
+    ///   leaves a field.
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    /// - witness: `tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault))]
+    fn classify_one(
+        &mut self,
+        position: NodeIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        self.inherit_owner(position);
+        self.inherit_payload(position);
+        self.inherit_scope(position);
+        self.inherit_type(position);
+        self.inherit_scrutiny(position);
+        if let Err(refusal) = self.classify_node(position) {
+            if refusal.classify() == FailureClass::EngineFault {
+                return Err(refusal);
+            }
+            self.collected.offer(position, refusal);
         }
 
         Ok(())
@@ -6008,7 +6060,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Classify one node at the reading its parent fixed.
     ///
     /// # Specification
-    /// - requires: `position` is visited in ascending arena order.
+    /// - requires: `position` is visited in ascending arena order, or asked
+    ///   ahead by the form it stands under, as [`Self::classify_one`] reaches
+    ///   it.
     /// - ensures: an unread node, an own tile, layout and repairs are skipped;
     ///   a read form is checked in the crate's one order and either planned,
     ///   with its operands read at the sorts it demands, or refused.
