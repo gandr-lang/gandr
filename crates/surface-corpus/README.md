@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
+The expectation language over a lowered module and its verdicts — the `checks`, `owes`, `refuses`, `runs` and `normalizes` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, the strict root under `strict/` and the fixture root at the repository's top under `corpus/`.
 
 <!-- toc -->
 - [Synopsis](#synopsis)

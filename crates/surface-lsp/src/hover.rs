@@ -1960,7 +1960,7 @@ mod tests
     fn an_imported_name_hovers_its_declaration_s_type()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-elim.gandr");
+            .join("../../corpus/model/identity/circle-elim.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
         let text = SourceText::from(written.as_str());
         let at = written
@@ -1995,7 +1995,7 @@ mod tests
     fn a_declaration_s_name_and_its_written_type_print_one_form_754()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle.gandr");
+            .join("../../corpus/model/identity/circle.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus source is read");
         let text = SourceText::from(written.as_str());
         let line = written
@@ -2774,8 +2774,7 @@ mod tests
     #[test]
     fn an_import_hovers_the_file_it_reads_1203()
     {
-        let corpus =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/fixture");
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
         let at = |path: &std::path::Path, written: &str, needle: &str| {
             let text = SourceText::from(written);
             let index = LineIndex::new(written.into());
@@ -2853,7 +2852,7 @@ mod tests
     fn a_source_s_own_documentation_hovers_at_its_head_1365()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+            .join("../../corpus/model/identity/circle-base.gandr");
         let written = std::fs::read_to_string(&path).expect("the source is read");
         let text = SourceText::from(written.as_str());
         let session = checked(text);

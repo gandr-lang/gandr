@@ -3,7 +3,7 @@
 //! decoder, and every declaration classified by what became of it at the
 //! kernel boundary.
 //!
-//! The sweep lists `strict/` and `fixture/` itself — `.gandr` files, links not
+//! The sweep lists `strict/` and `corpus/` itself — `.gandr` files, links not
 //! followed, as the dispatcher's walk lists them — and runs the composition a
 //! driver runs: parse, lower, check, readmit, export. Nothing here pins a
 //! count: each root is asserted to export a declaration, so a source added to
@@ -26,7 +26,7 @@
 //!
 //! `kernel_export::kernel_generative_distinctness::the_generative_distinctness_golden`
 //! pins what generativity leaves in an artifact: the classic functor pair
-//! (`fixture/model/modules/functor-pair.gandr`) exports the argument's atom
+//! (`corpus/model/modules/functor-pair.gandr`) exports the argument's atom
 //! and one atom per application, the header's minted-atom table names the
 //! three apart, and each application's members are typed at its own atom by a
 //! node the other's do not share.
@@ -36,7 +36,7 @@
 //! an atom is a refusal at admission, not a convention of the producer.
 //!
 //! `kernel_export::kernel_ride_readmission::a_ride_dialogue_reading_the_wrong_unfolding_is_refused_by_name`
-//! readmits `fixture/model/higher-cells/ua-by-hand.gandr`, whose `rides`
+//! readmits `corpus/model/higher-cells/ua-by-hand.gandr`, whose `rides`
 //! relates a ride along the named flow `opposite_dir_by_hand` to its image by
 //! the dialogue the checker recorded, then tampers that dialogue so it reads
 //! the flow's unfolding on the wrong side: the kernel refuses `rides` at that
@@ -44,7 +44,7 @@
 //! the unfolding itself.
 //!
 //! `kernel_export::kernel_transport_readmission::a_returned_endpoint_read_as_fibre_evidence_is_refused_by_name`
-//! readmits `fixture/model/identity/transport-path.gandr`, whose `moved_end`
+//! readmits `corpus/model/identity/transport-path.gandr`, whose `moved_end`
 //! stands a reflexive transport at a path-type motive as an endpoint of a
 //! path between paths, then forges a twin relating a transported unit to
 //! itself at that path type: the kernel reads the returned endpoint by the
@@ -53,7 +53,7 @@
 //! unit.
 //!
 //! `kernel_export::kernel_here_congruence_readmission::reflexivities_related_through_the_wrong_side_are_refused_by_name`
-//! readmits `fixture/model/identity/here-congruence.gandr`, whose
+//! readmits `corpus/model/identity/here-congruence.gandr`, whose
 //! `here_two_up` relates `here(two)` to `here(here(2))` by the dialogue that
 //! decomposes the two reflexivities to their points and unfolds `two`, then
 //! tampers that dialogue so it reads the unfolding on the other point: the
@@ -61,14 +61,14 @@
 //! replay refusal.
 //!
 //! `kernel_export::kernel_discard_readmission::an_unread_call_readmits_and_a_discard_on_the_other_side_is_refused_by_name`
-//! readmits `fixture/model/control/divergence.gandr`, whose `unreadApplied`
+//! readmits `corpus/model/control/divergence.gandr`, whose `unreadApplied`
 //! relates a function that calls `g` and never reads the result to `f` by the
 //! dialogue that drops the call, then tampers that dialogue so the drop names
 //! the other side: the kernel refuses `unreadApplied` at that decision, naming
 //! the endpoint and the replay refusal.
 //!
 //! `kernel_export::kernel_presented_readmission::a_circle_read_without_or_against_its_rules_is_refused_by_name`
-//! readmits `fixture/model/identity/loop-words.gandr`, whose `cancelled_word`
+//! readmits `corpus/model/identity/loop-words.gandr`, whose `cancelled_word`
 //! relates `Loop(Unloop(Loop(Nil)))` to `Loop(Nil)` by reflexivity alone: the
 //! kernel reads both endpoints by their normal forms under the words' rules. A
 //! twin whose `Words` carries no rules is refused at `cancelled_word`, naming
@@ -77,9 +77,9 @@
 //!
 //! `kernel_export::kernel_presented_readmission::a_section_at_a_variable_readmits_and_a_tampered_twin_is_refused_by_name`
 //! readmits the round trips at a variable at both strata:
-//! `fixture/model/identity/loop-space.gandr`'s `sectWords`, a fold into
+//! `corpus/model/identity/loop-space.gandr`'s `sectWords`, a fold into
 //! `Path(Words, spinWords(windWords(c)), c)`, and the identity base's `sect`,
-//! which `fixture/model/identity/circle.gandr` imports, a fold over the words
+//! which `corpus/model/identity/circle.gandr` imports, a fold over the words
 //! into `Path(Path(Circle, Base, Base), spin(wind(p)), p)`, each with respect
 //! obligations that are cong chains the kernel reads as their paths, then the
 //! retraction and the equivalence that holds them (`retrWords` and
@@ -88,7 +88,7 @@
 //! computation type its loop arm does not answer.
 //!
 //! `kernel_export::kernel_open_fold_readmission::a_step_case_read_through_a_swapped_fold_is_refused_by_name`
-//! readmits `fixture/model/identity/open-fold.gandr`, whose `wind_unfolded`
+//! readmits `corpus/model/identity/open-fold.gandr`, whose `wind_unfolded`
 //! relates `windWords(Loop(x))` to `S(windWords(x))` at a variable: the kernel
 //! reads the `Loop` arm's bind over the stuck `windWords(x)` itself. A twin
 //! whose fold swaps its two loop arms still respects the words' rules and
@@ -97,7 +97,7 @@
 //! reaches.
 //!
 //! `kernel_export::kernel_presented_readmission::a_loop_readmits_as_its_words_and_dropped_cancellations_are_refused_by_name`
-//! readmits `fixture/model/identity/circle.gandr`, whose `loop : Base <-> Base`
+//! readmits `corpus/model/identity/circle.gandr`, whose `loop : Base <-> Base`
 //! crosses as one type of words over the circle's point and whose `cancelled`
 //! relates `then(loop, back(loop))` to `here(Base)` by reflexivity alone: the
 //! kernel re-mints the words from their cell and reads the path type at the
@@ -105,10 +105,10 @@
 //! is refused at the words, naming the fault.
 //!
 //! `kernel_export::kernel_presented_readmission::an_absurd_case_readmits_by_apartness_and_forged_twins_are_refused_by_name`
-//! readmits `fixture/model/data/empty.gandr`, whose `not_zero` eliminates a
+//! readmits `corpus/model/data/empty.gandr`, whose `not_zero` eliminates a
 //! path between `S(Z)` and `Z` by a case of no branch: the kernel decides the
 //! endpoints apart itself, from the integers' rules. It readmits
-//! `fixture/model/identity/circle-apart.gandr` the same way, the loop apart
+//! `corpus/model/identity/circle-apart.gandr` the same way, the loop apart
 //! from the empty word at the circle's words. A twin stating the path between
 //! `S(P(Z))` and `Z` is refused at `not_zero`, the endpoints named as
 //! agreeing; a twin presenting the integers by two rules that rewrite one
@@ -190,7 +190,7 @@ enum Root
 {
     /// `strict/`.
     Strict,
-    /// `fixture/`, the pending set among it.
+    /// `corpus/`, the pending set among it.
     Fixture,
 }
 
@@ -347,7 +347,7 @@ enum Swept
     ensures: |ret| {
     let directory = match root {
         Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
     };
     ret
         .iter()
@@ -362,7 +362,7 @@ fn sources(root: Root) -> Vec<PathBuf>
 {
     let directory = match root {
         Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
     };
     let mut pending = vec![PathBuf::from(directory)];
     let mut found = Vec::new();
@@ -751,7 +751,7 @@ struct Shard(usize);
                 .starts_with(
                     match exported.root {
                         Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-                        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+                        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
                     },
                 )
         })
@@ -1084,7 +1084,7 @@ mod kernel_generative_distinctness
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/modules/functor-pair.gandr"
+            "/../../corpus/model/modules/functor-pair.gandr"
         ));
         match export(&pbg, path, Root::Fixture) {
             Swept::Exported(exported) => exported,
@@ -1221,7 +1221,7 @@ mod kernel_ride_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/higher-cells/ua-by-hand.gandr"
+            "/../../corpus/model/higher-cells/ua-by-hand.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1354,7 +1354,7 @@ mod kernel_transport_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/transport-path.gandr"
+            "/../../corpus/model/identity/transport-path.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1470,7 +1470,7 @@ mod kernel_here_congruence_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/here-congruence.gandr"
+            "/../../corpus/model/identity/here-congruence.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1590,7 +1590,7 @@ mod kernel_discard_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/control/divergence.gandr"
+            "/../../corpus/model/control/divergence.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1746,7 +1746,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/loop-words.gandr"
+            "/../../corpus/model/identity/loop-words.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1823,7 +1823,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/circle.gandr"
+            "/../../corpus/model/identity/circle.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1877,7 +1877,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/data/empty.gandr"
+            "/../../corpus/model/data/empty.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -1890,7 +1890,7 @@ mod kernel_presented_readmission
             .expect("every absurd case readmits: its endpoints are apart");
         let circle = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/circle-apart.gandr"
+            "/../../corpus/model/identity/circle-apart.gandr"
         ));
         let Swept::Exported(circle) = export(&pbg, circle, Root::Fixture)
         else {
@@ -2004,7 +2004,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/loop-words.gandr"
+            "/../../corpus/model/identity/loop-words.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2077,7 +2077,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/loop-winding.gandr"
+            "/../../corpus/model/identity/loop-winding.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2124,7 +2124,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/desc/rules-overlap-joinable.gandr"
+            "/../../corpus/model/desc/rules-overlap-joinable.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2188,7 +2188,7 @@ mod kernel_presented_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/desc/rules-overlap-joinable.gandr"
+            "/../../corpus/model/desc/rules-overlap-joinable.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2242,14 +2242,14 @@ mod kernel_presented_readmission
             (
                 concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/fixture/model/identity/loop-space.gandr"
+                    "/../../corpus/model/identity/loop-space.gandr"
                 ),
                 ["sectWords", "retrWords", "wordsWinding"],
             ),
             (
                 concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/fixture/model/identity/circle.gandr"
+                    "/../../corpus/model/identity/circle.gandr"
                 ),
                 ["sect", "retr", "winding"],
             ),
@@ -2363,7 +2363,7 @@ mod kernel_open_fold_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/open-fold.gandr"
+            "/../../corpus/model/identity/open-fold.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2481,7 +2481,7 @@ mod kernel_loop_elimination_readmission
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/fixture/model/identity/circle-elim.gandr"
+            "/../../corpus/model/identity/circle-elim.gandr"
         ));
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {
@@ -2601,7 +2601,7 @@ mod kernel_presentation_readmission
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("fixture")
+            .join("../../corpus")
             .join(fixture);
         let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
         else {

@@ -44,30 +44,38 @@ use gandr_surface_lowering::Role;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// The corpus directory `name`, under the corpus crate.
+/// The corpus's strict root, under the corpus crate.
 ///
 /// # Specification
-/// - requires: `name` is empty or consists only of normal relative path
-///   components, so it cannot replace or escape the corpus directory.
-/// - ensures: an absolute corpus path retaining the offered suffix.
+/// - requires: nothing.
+/// - ensures: the absolute path of the strict root.
 /// - fails: never; this only constructs the path, without reading it.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — empty, strict and fixture suffixes locate the actual
-///   corpus sweeps; absolute and parent components are outside this domain.
+/// - hypothesis: L3 — the strict root is the one the gate runs.
 /// - witness: `tests::corpus::the_strict_root_checks_owing_nothing`
-/// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
-/// - witness: `tests::corpus::every_corpus_source_is_registered`
-#[spec(
-        requires: name.components().all(|component| matches!(component, std::path::Component::Normal(_))),
-        ensures: |ref ret| ret.is_absolute() && ret.ends_with(name)
-    )]
-fn root(name: &Path) -> PathBuf
+#[spec(ensures: |ref ret| ret.is_absolute() && ret.ends_with("strict"))]
+fn strict_root() -> PathBuf
 {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../surface-corpus")
-        .join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict")
+}
+
+/// The corpus's fixture root, at the repository's top.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the absolute path of the fixture root.
+/// - fails: never; this only constructs the path, without reading it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixture root is the one the gate runs.
+/// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
+#[spec(ensures: |ref ret| ret.is_absolute() && ret.ends_with("corpus"))]
+fn fixture_root() -> PathBuf
+{
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus")
 }
 
 /// The report of a visit over `path`, every step a source.
@@ -89,9 +97,9 @@ fn root(name: &Path) -> PathBuf
 /// - witness: `tests::corpus::a_run_lowers_each_source_once`
 #[spec(ensures: |ref ret| usize::from(ret.sources().faulted()) == 0_usize
         && usize::from(ret.lowerings()) == usize::from(ret.sources().read()))]
-fn run(path: PathBuf) -> RunReport
+fn run(paths: Vec<PathBuf>) -> RunReport
 {
-    let ControlFlow::Continue(report) = Walk::new(vec![path]).visit(
+    let ControlFlow::Continue(report) = Walk::new(paths).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
             if let Step::Fault { path, fault } = step {
@@ -106,7 +114,7 @@ fn run(path: PathBuf) -> RunReport
 #[test]
 fn the_strict_root_checks_owing_nothing()
 {
-    let report = run(root(Path::new("strict")));
+    let report = run(vec![strict_root()]);
     assert_eq!(
         report.verdict(Verb::Check(Goals::Gated)),
         RunVerdict::Settled,
@@ -150,7 +158,7 @@ fn the_strict_root_checks_owing_nothing()
 #[test]
 fn the_fixture_root_settles_every_fixture()
 {
-    let report = run(root(Path::new("fixture")));
+    let report = run(vec![fixture_root()]);
     assert_eq!(
         report.verdict(Verb::Test),
         RunVerdict::Settled,
@@ -183,15 +191,15 @@ fn the_fixture_root_settles_every_fixture()
 #[test]
 fn the_two_roots_exercise_every_row()
 {
-    let mut exercised = run(root(Path::new("strict"))).exercised();
-    exercised.absorb(&run(root(Path::new("fixture"))).exercised());
+    let mut exercised = run(vec![strict_root()]).exercised();
+    exercised.absorb(&run(vec![fixture_root()]).exercised());
     assert_eq!(exercised.missing(), Vec::new(), "every row is carried");
 }
 
 #[test]
 fn a_run_lowers_each_source_once()
 {
-    let report = run(root(Path::new("")));
+    let report = run(vec![strict_root(), fixture_root()]);
     assert_eq!(
         usize::from(report.lowerings()),
         usize::from(report.sources().read()),
@@ -204,7 +212,7 @@ fn a_run_lowers_each_source_once()
 #[test]
 fn the_identity_base_is_lowered_once_for_its_importers()
 {
-    let subject = root(Path::new("fixture/model/identity"));
+    let subject = fixture_root().join("model/identity");
     let base = subject.join("circle-base.gandr");
     let mut certificates = Vec::new();
     let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
@@ -261,7 +269,7 @@ fn the_identity_base_is_lowered_once_for_its_importers()
 #[test]
 fn the_identity_base_is_spelled_once_for_its_importers_595()
 {
-    let subject = root(Path::new("fixture/model/identity"));
+    let subject = fixture_root().join("model/identity");
     let mut components = BTreeSet::new();
     let ControlFlow::Continue(report) = Walk::new(vec![subject]).visit(
         &Pool::new(Width::SERIAL),
@@ -293,15 +301,16 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
     );
 }
 
-/// Every non-directory `.gandr` entry under `corpus`, with directory
+/// Every non-directory `.gandr` entry under one of `roots`, with directory
 /// links followed and each canonical directory listed once.
 ///
 /// # Specification
 /// - requires: a finite, quiescent directory graph whose directories resolve
 ///   and list successfully.
-/// - ensures: selected entries retain their paths under `corpus` and exact
-///   `.gandr` extension; a directory with that extension is traversed rather
-///   than returned. Revisited directory identities do not create a cycle.
+/// - ensures: selected entries retain their paths under one of `roots` and
+///   exact `.gandr` extension; a directory with that extension is traversed
+///   rather than returned. Revisited directory identities do not create a
+///   cycle.
 /// - fails: does not silently omit a directory that fails to resolve or list.
 /// - panics: on a directory-resolution, listing or entry-read failure.
 ///
@@ -312,13 +321,13 @@ fn the_identity_base_is_spelled_once_for_its_importers_595()
 ///   separately generated.
 /// - witness: `tests::corpus::a_planted_orphan_is_not_registered`
 /// - witness: `tests::corpus::every_corpus_source_is_registered`
-#[spec(ensures: |ref ret| ret.iter().all(|path| path.starts_with(corpus)
+#[spec(ensures: |ref ret| ret.iter().all(|path| roots.iter().any(|root| path.starts_with(root))
         && path.extension().is_some_and(|extension| extension == "gandr")))]
-fn sources_under(corpus: &Path) -> BTreeSet<PathBuf>
+fn sources_under(roots: &[PathBuf]) -> BTreeSet<PathBuf>
 {
     let mut found = BTreeSet::new();
     let mut listed = BTreeSet::new();
-    let mut directories = vec![corpus.to_path_buf()];
+    let mut directories = roots.to_vec();
     while let Some(directory) = directories.pop() {
         let canonical = directory.canonicalize().expect("the directory resolves");
         if !listed.insert(canonical) {
@@ -340,15 +349,15 @@ fn sources_under(corpus: &Path) -> BTreeSet<PathBuf>
     found
 }
 
-/// The `.gandr` files under `corpus` that the one walk over its two roots
-/// does not reach.
+/// The `.gandr` files under one of `roots` that the one walk over them does
+/// not reach.
 ///
 /// # Specification
-/// - requires: `corpus` meets the stable, readable directory-graph premise of
+/// - requires: `roots` meet the stable, readable directory-graph premise of
 ///   `sources_under`.
-/// - ensures: the independently listed source entries not reached by the
-///   two-root walk, in strictly increasing path order. A fault at a source
-///   still establishes that the walk reached that path.
+/// - ensures: the independently listed source entries not reached by the walk,
+///   in strictly increasing path order. A fault at a source still establishes
+///   that the walk reached that path.
 /// - fails: directory-inventory errors are not mistaken for registration.
 /// - panics: when the independent directory inventory cannot be read.
 ///
@@ -358,28 +367,27 @@ fn sources_under(corpus: &Path) -> BTreeSet<PathBuf>
 ///   Transient filesystem failures are outside the quiescent domain.
 /// - witness: `tests::corpus::a_planted_orphan_is_not_registered`
 /// - witness: `tests::corpus::every_corpus_source_is_registered`
-#[spec(ensures: |ref ret| ret.iter().all(|path| path.starts_with(corpus)
+#[spec(ensures: |ref ret| ret.iter().all(|path| roots.iter().any(|root| path.starts_with(root))
         && path.extension().is_some_and(|extension| extension == "gandr"))
         && ret.windows(2_usize).all(|pair| match *pair {
             [ref first, ref second] => first < second,
             _ => false,
         }))]
-fn orphans(corpus: &Path) -> Vec<PathBuf>
+fn orphans(roots: &[PathBuf]) -> Vec<PathBuf>
 {
     let mut reached = BTreeSet::new();
-    let ControlFlow::Continue(_report) =
-        Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                match step {
-                    Step::Source { path, .. } | Step::Fault { path, .. } => {
-                        reached.insert(path.to_path_buf());
-                    },
-                }
-                ControlFlow::Continue(())
-            },
-        );
-    sources_under(corpus)
+    let ControlFlow::Continue(_report) = Walk::new(roots.to_vec()).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            match step {
+                Step::Source { path, .. } | Step::Fault { path, .. } => {
+                    reached.insert(path.to_path_buf());
+                },
+            }
+            ControlFlow::Continue(())
+        },
+    );
+    sources_under(roots)
         .into_iter()
         .filter(|source| !reached.contains(source))
         .collect()
@@ -388,13 +396,13 @@ fn orphans(corpus: &Path) -> Vec<PathBuf>
 #[test]
 fn every_corpus_source_is_registered()
 {
-    let corpus = root(Path::new(""));
+    let roots = vec![strict_root(), fixture_root()];
     assert!(
-        !sources_under(&corpus).is_empty(),
+        !sources_under(&roots).is_empty(),
         "the corpus holds sources"
     );
     assert_eq!(
-        orphans(&corpus),
+        orphans(&roots),
         Vec::<PathBuf>::new(),
         "every source sits where the walk reaches it"
     );
@@ -427,7 +435,7 @@ fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
     };
     let mut tabled = 0_usize;
     let mut differing = Vec::new();
-    for path in sources_under(&root(Path::new(""))) {
+    for path in sources_under(&[strict_root(), fixture_root()]) {
         let own = std::fs::read_to_string(&path).expect("a corpus source reads");
         let text = SourceText::from(own.as_str());
         let Ok(alone) = TypeTable::of(&grammar, text)
@@ -500,7 +508,23 @@ fn a_planted_orphan_is_not_registered()
         planted.push(corpus.join("strict/shelved/stray.gandr"));
     }
     planted.sort();
-    let found = orphans(&corpus);
+    let mut reached = BTreeSet::new();
+    let ControlFlow::Continue(_report) =
+        Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]).visit(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                match step {
+                    Step::Source { path, .. } | Step::Fault { path, .. } => {
+                        reached.insert(path.to_path_buf());
+                    },
+                }
+                ControlFlow::Continue(())
+            },
+        );
+    let found: Vec<PathBuf> = sources_under(core::slice::from_ref(&corpus))
+        .into_iter()
+        .filter(|source| !reached.contains(source))
+        .collect();
     std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
     assert_eq!(
         found, planted,
@@ -546,35 +570,34 @@ fn each_settled(
     mut visit: impl FnMut(&Path, &Composed<'_>),
 )
 {
-    let ControlFlow::Continue(_report) =
-        Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]).visit(
-            &Pool::new(Width::SERIAL),
-            |step| -> ControlFlow<Infallible> {
-                let Step::Source {
-                    path,
-                    root,
-                    ref composed,
-                    ..
-                } = step
-                else {
-                    return ControlFlow::Continue(());
-                };
-                let pathological = path
-                    .components()
-                    .any(|component| component.as_os_str() == "pathological");
-                let sweeps = match tree {
-                    Tree::Model => !pathological,
-                    Tree::Pathological => pathological,
-                };
-                if sweeps
-                    && root != SourceRoot::Pending
-                    && matches!(*composed, Composed::Settled { .. })
-                {
-                    visit(path, composed);
-                }
-                ControlFlow::Continue(())
-            },
-        );
+    let ControlFlow::Continue(_report) = Walk::new(vec![strict_root(), fixture_root()]).visit(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path,
+                root,
+                ref composed,
+                ..
+            } = step
+            else {
+                return ControlFlow::Continue(());
+            };
+            let pathological = path
+                .components()
+                .any(|component| component.as_os_str() == "pathological");
+            let sweeps = match tree {
+                Tree::Model => !pathological,
+                Tree::Pathological => pathological,
+            };
+            if sweeps
+                && root != SourceRoot::Pending
+                && matches!(*composed, Composed::Settled { .. })
+            {
+                visit(path, composed);
+            }
+            ControlFlow::Continue(())
+        },
+    );
 }
 
 /// Each declaration of `tree` that states a run outcome, described, and
@@ -781,7 +804,7 @@ fn no_subject_declares_a_name_twice()
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
-    let model = root(Path::new("fixture/model"));
+    let model = fixture_root().join("model");
     let mut declared: BTreeMap<(PathBuf, String), BTreeSet<PathBuf>> = BTreeMap::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![model.clone()]).visit(
         &Pool::new(Width::SERIAL),
@@ -861,7 +884,7 @@ mod sweeps
         let sweep = Sweep::asked().expect("the run's sweep resolves");
         let paths: Vec<PathBuf> = match sweep.coverage() {
             gandr_workflow_sweep::Coverage::Full => {
-                vec![root(Path::new("strict")), root(Path::new("fixture"))]
+                vec![strict_root(), fixture_root()]
             },
             gandr_workflow_sweep::Coverage::Sampled => {
                 let visited = sweep.visit(

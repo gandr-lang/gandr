@@ -1931,7 +1931,7 @@ mod tests
         use crate::recheck::recheck;
 
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-elim.gandr");
+            .join("../../corpus/model/identity/circle-elim.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
         let text = SourceText::from(written.as_str());
         let uri = DocumentUri::from(format!("file://{}", path.display()).as_str());

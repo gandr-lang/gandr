@@ -15,6 +15,10 @@ mod shape;
 
 use std::path::PathBuf;
 
+use gandr_surface_grammar::Pbg;
+
+use crate::comments::error::CommentError;
+use crate::comments::judge::Finding;
 use crate::comments::judge::grammar;
 use crate::comments::ledger::discrepancies;
 use crate::comments::ledger::ledger_text;
@@ -27,7 +31,7 @@ use crate::comments::scan::replace;
 /// trivial.
 fn fixture() -> PathBuf
 {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixture")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus")
 }
 
 /// The committed ledger.
@@ -39,12 +43,26 @@ fn ledger() -> PathBuf
     fixture().join("uncommented.ledger")
 }
 
+/// Every uncommented item under the fixture root, ledger keys relative to it,
+/// the ledger's exemplar subtree excluded: the exemplars are a separate root
+/// with their own comment discipline, not in the fixture's uncommented ledger.
+///
+/// # Specification
+/// trivial.
+fn collect_fixture(pbg: &Pbg) -> Result<Vec<Finding>, CommentError>
+{
+    let found = collect(pbg, &fixture())?;
+    Ok(found
+        .into_iter()
+        .filter(|finding| !finding.line().0.starts_with("ledger/"))
+        .collect())
+}
+
 #[cfg(test)]
 mod gate
 {
-    use super::collect;
+    use super::collect_fixture;
     use super::discrepancies;
-    use super::fixture;
     use super::grammar;
     use super::ledger;
     use super::ledger_text;
@@ -54,7 +72,7 @@ mod gate
     fn the_fixture_matches_the_ledger()
     {
         let pbg = grammar().expect("the built-in grammar builds");
-        let found = collect(&pbg, &fixture()).expect("the fixture walks");
+        let found = collect_fixture(&pbg).expect("the fixture walks");
         let path = ledger();
         if std::env::var_os("CORPUS_COMMENTS_WRITE_LEDGER").is_some() {
             let text = ledger_text(&found);

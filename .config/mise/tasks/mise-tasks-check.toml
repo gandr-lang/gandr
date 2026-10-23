@@ -13,7 +13,7 @@ description = "Every gate"
 depends = ["check:*"]
 
 # Every corpus source stays in the gandr formatter's layout (#492): one
-# process over the corpus, every root under `crates/surface-corpus`, beside
+# process over the corpus, every root under the fixture subtrees of `corpus/` and `crates/surface-corpus/strict`, beside
 # rustfmt. The formatter keeps each token as written, so the explicit-form
 # sources keep their spelling.
 ["check:fmt"]
@@ -26,7 +26,7 @@ run = ".config/mise/scope cargo fmt --all --check"
 # which would build the driver from nothing on every run.
 ["check:corpus-format"]
 description = "Every corpus source in the gandr formatter's layout"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check crates/surface-corpus"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict"
 
 ["check:clippy"]
 description = "The clippy half of the lint wall"
@@ -480,7 +480,8 @@ echo 'markdown check OK: every tracked markdown file is on the README allowlist'
 # (`gandr-surface-dispatcher`'s `ledger` module): regenerated into a temporary
 # directory and compared with the committed `ledger/syntax.md` and
 # `ledger/syntax.json` byte for byte. A difference is printed and fails the
-# gate; `gandr ledger syntax --write ledger` rewrites both files.
+# gate; `gandr ledger syntax --write ledger --exemplars corpus/ledger` rewrites
+# both files.
 ["check:syntax-ledger"]
 description = "The committed syntax ledger is the one the grammar generates"
 run = '''
@@ -488,32 +489,32 @@ run = '''
 set -euo pipefail
 fresh=$(mktemp -d)
 trap 'rm -rf "$fresh"' EXIT
-.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" --exemplars ledger/exemplars > /dev/null
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger syntax --write "$fresh" --exemplars corpus/ledger > /dev/null
 stale=0
 for file in syntax.md syntax.json; do
   diff -u "ledger/$file" "$fresh/$file" || stale=1
 done
 if (( stale )); then
-  echo 'syntax ledger check FAILED: the committed ledger is not the grammar'"'"'s; run `gandr ledger syntax --write ledger`' >&2
+  echo 'syntax ledger check FAILED: the committed ledger is not the grammar'"'"'s; run `gandr ledger syntax --write ledger --exemplars corpus/ledger`' >&2
   exit 1
 fi
 echo 'syntax ledger check OK: the committed ledger is the grammar'"'"'s'
 '''
 
 # One exemplar per committed rule of the syntax ledger and per attribute
-# (`ledger/exemplars/{syntax,attributes}`), verified by the driver: the files
+# (`corpus/ledger/{syntax,attributes}`), verified by the driver: the files
 # and the rules match by name, each exemplar parses with no obligation and
 # holds a tile of its rule, and each attribute exemplar lowers with its
 # attribute filed. Every features exemplar states only `checks`, `runs` or
 # `normalizes`. Every refusal name no form qualifies, and the reserved and
-# unadmitted boundaries, have an exemplar (`ledger/exemplars/diagnostics`)
+# unadmitted boundaries, have an exemplar (`corpus/ledger/diagnostics`)
 # holding a declaration refused with it, or a row of the owed table with its
 # reason or issue. Every finding is printed, `<file>: <fault>`.
 ["check:syntax-exemplars"]
 description = "One verified exemplar per committed rule and attribute of the syntax ledger, every features exemplar exhibiting, and every refusal name an exemplar or an owed row"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars ledger/exemplars"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars corpus/ledger"
 
-# Every exemplar under `ledger/exemplars` (syntax, attributes, features and
+# Every exemplar under `corpus/ledger` (syntax, attributes, features and
 # diagnostics), settled as an author runs them. `ledger/` is a fixture root, so
 # each declaration states what the checker makes of it: `checks`, `runs` or
 # `normalizes` where it holds, `refuses` where the checker does not reach the
@@ -522,16 +523,16 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # which exhibits what holds.
 ["check:exemplars"]
 description = "Every exemplar settles under `gandr test`"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test ledger/exemplars"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/ledger"
 
 # The features ledger (`ledger/features.sql`, `ledger/README.md`): the dump
 # builds with every CHECK constraint holding (a refused row stops the build),
 # re-dumps byte-identical, and every `parent` resolves; every path a row
 # names exists — a `crate` a directory under `crates/` or a `contrib/` path, a
-# `corpus` entry a path from the root or under `crates/surface-corpus/` (a
+# `corpus` entry a path from the root (a
 # `::item` suffix naming a test inside it), an `exemplar` a file outside
 # `pathological/`, which holds refusals; every file under
-# `ledger/exemplars/features/` is named by a row; and every implemented or
+# `corpus/ledger/features/` is named by a row; and every implemented or
 # partial row outside the areas `exempt` lists, whose evidence is crate tests,
 # names an exemplar. Every finding is printed before the gate fails.
 ["check:ledger"]
@@ -576,7 +577,7 @@ done < <(sqlite3 -separator '|' "$db" "
   UNION ALL SELECT id, 'corpus', corpus FROM feature WHERE corpus IS NOT NULL
   UNION ALL SELECT id, 'exemplar', exemplar FROM feature WHERE exemplar IS NOT NULL;")
 sqlite3 "$db" "SELECT exemplar FROM feature WHERE exemplar IS NOT NULL;" | tr ' ' '\n' | sort -u > "$tmp/named"
-git ls-files -- 'ledger/exemplars/features/*.gandr' | sort > "$tmp/files"
+git ls-files -- 'corpus/ledger/features/*.gandr' | sort > "$tmp/files"
 while read -r file; do
   echo "$file: no row of the features ledger names it" >&2
   failed=1
@@ -613,8 +614,8 @@ run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ en
 description = "The strict root under `gandr check`, the fixture root under `gandr test`, and both in the sugared form"
 run = [
   ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
-  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared crates/surface-corpus",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- test corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface",
+  ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- fmt --check --form=sugared corpus/classifier corpus/fragment corpus/model corpus/pathological corpus/pending corpus/surface crates/surface-corpus/strict",
 ]
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes

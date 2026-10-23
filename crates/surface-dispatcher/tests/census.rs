@@ -529,12 +529,21 @@ mod sweeps
             visited.len()
         );
         let visited: BTreeSet<PathBuf> = visited.into_iter().map(|source| source.path).collect();
-        let corpus = gandr_workflow_sweep::corpus::directory().expect("the corpus resolves");
+        let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus")
+            .canonicalize()
+            .expect("the corpus resolves");
         let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
         let mut unread: Vec<String> = Vec::new();
         let mut moved: Vec<String> = Vec::new();
         let mut over = 0_usize;
-        let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+        let walk = Walk::new(vec![
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../surface-corpus/strict")
+                .canonicalize()
+                .expect("the strict root resolves"),
+            corpus,
+        ]);
         let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {

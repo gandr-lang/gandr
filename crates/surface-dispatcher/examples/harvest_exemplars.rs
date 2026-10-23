@@ -9,7 +9,7 @@
 //! `<seed directory>/attributes/<name>.gandr`, opening with a comment naming
 //! the source it was cut from; the rules and attributes no corpus source
 //! exercises are printed, one per line. A seed is where an exemplar starts:
-//! the exemplar under `ledger/exemplars/` is the seed cut down by hand to the
+//! the exemplar under `corpus/ledger/` is the seed cut down by hand to the
 //! smallest item that still shows its rule, which `gandr ledger exemplars`
 //! verifies.
 //!

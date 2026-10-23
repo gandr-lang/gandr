@@ -1045,12 +1045,12 @@ mod tests
         let corolla = concat!(
             "file://",
             env!("CARGO_MANIFEST_DIR"),
-            "/../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"
+            "/../../corpus/model/higher-cells/ua-corolla.gandr"
         );
         assert_eq!(
             hovered(
                 corolla,
-                include_str!("../../surface-corpus/fixture/model/higher-cells/ua-corolla.gandr"),
+                include_str!("../../../corpus/model/higher-cells/ua-corolla.gandr"),
                 (49, 4),
             ),
             Some(serde_json::json!(format!(

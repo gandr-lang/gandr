@@ -770,7 +770,7 @@ fn the_syntax_ledger_is_written_and_reproduced()
 {
     let scratch = Scratch::new(Path::new("ledger"));
     let directory = scratch.0.join("ledger");
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars");
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/ledger");
     let (ledger, syntax, write, with) = (
         Path::new("ledger"),
         Path::new("syntax"),
@@ -839,7 +839,7 @@ fn the_syntax_ledger_is_written_and_reproduced()
 #[test]
 fn the_exemplars_verify_and_a_stray_one_is_named()
 {
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars");
+    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/ledger");
     let (ledger, exemplars) = (Path::new("ledger"), Path::new("exemplars"));
 
     let clean = ran(gandr(&[ledger, exemplars, &committed]));
@@ -1017,13 +1017,23 @@ fn every_width_prints_the_serial_run()
     );
     let empty = scratch.0.join("empty");
     std::fs::create_dir_all(&empty).expect("the empty directory is created");
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let runs = [
-        vec![
-            PathBuf::from("test"),
-            corpus.join("strict"),
-            corpus.join("fixture"),
-        ],
+        [
+            "crates/surface-corpus/strict",
+            "corpus/classifier",
+            "corpus/fragment",
+            "corpus/model",
+            "corpus/pathological",
+            "corpus/pending",
+            "corpus/surface",
+        ]
+        .into_iter()
+        .map(|root| corpus.join(root))
+        .fold(vec![PathBuf::from("test")], |mut run, root| {
+            run.push(root);
+            run
+        }),
         vec![
             PathBuf::from("check"),
             settled,

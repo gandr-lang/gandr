@@ -48,7 +48,7 @@ The emitter's witnesses run the named programs on both tiers and under the polic
 
 ```sh
 cargo test -p gandr-runtime-emitter
-GANDR_NATIVE=never cargo run -p gandr-lang -- test crates/surface-corpus/fixture/model
+GANDR_NATIVE=never cargo run -p gandr-lang -- test corpus/model
 ```
 
 ## Where the detail lives

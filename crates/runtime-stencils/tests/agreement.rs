@@ -242,8 +242,21 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
 #[test]
 fn the_corpus_runs_items_agree_on_both_executors()
 {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-    let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let walk = Walk::new(
+        [
+            "crates/surface-corpus/strict",
+            "corpus/classifier",
+            "corpus/fragment",
+            "corpus/model",
+            "corpus/pathological",
+            "corpus/pending",
+            "corpus/surface",
+        ]
+        .into_iter()
+        .map(|root| corpus.join(root))
+        .collect(),
+    );
     let mut stated = 0_usize;
     let mut answered = 0_usize;
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();

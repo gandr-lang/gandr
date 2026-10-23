@@ -616,8 +616,21 @@ fn compared(
 #[test]
 fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
 {
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
-    let walk = Walk::new(vec![corpus.join("strict"), corpus.join("fixture")]);
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let walk = Walk::new(
+        [
+            "crates/surface-corpus/strict",
+            "corpus/classifier",
+            "corpus/fragment",
+            "corpus/model",
+            "corpus/pathological",
+            "corpus/pending",
+            "corpus/surface",
+        ]
+        .into_iter()
+        .map(|root| corpus.join(root))
+        .collect(),
+    );
     let mut counted: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut differing = String::new();
     let ControlFlow::Continue(_report) = walk.visit_admitting(
@@ -733,7 +746,7 @@ fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
 fn a_transport_along_an_inline_equivalence_normalises_1677()
 {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../surface-corpus/fixture/model/identity/transport-list.gandr");
+        .join("../../corpus/model/identity/transport-list.gandr");
     let mut answers: BTreeMap<String, Compared> = BTreeMap::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![source]).visit_admitting(
         &Pool::new(Width::SERIAL),

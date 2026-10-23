@@ -9,11 +9,12 @@ use anodized::spec;
 
 use crate::error::SweepError;
 
-/// The corpus crate's directory, beside this one in the workspace.
+/// The corpus crate's directory, beside this one in the workspace: the strict
+/// root's parent.
 const CORPUS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus");
 
-/// The two roots a source sits under, as the dispatcher's walk names them.
-const ROOTS: [&str; 2] = ["strict", "fixture"];
+/// The fixture root, at the repository's top.
+const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus");
 
 /// A source's path below the corpus crate, `/`-separated:
 /// `strict/values.gandr`, `fixture/model/identity/circle.gandr`. The name a
@@ -175,10 +176,11 @@ pub fn directory() -> Result<PathBuf, SweepError>
 /// - requires: nothing.
 /// - ensures: one source per `.gandr` file under `strict/` and `fixture/`,
 ///   reached without following a symbolic link — the dispatcher walk's rule —
-///   each named by its path below the corpus crate, sorted by name.
+///   each named by its path below its root, `strict/…` or `fixture/…`, sorted
+///   by name.
 /// - provides: the candidates a sweep samples.
-/// - fails: [`SweepError::Walk`] when the corpus directory, one of its
-///   directories or one of their entries cannot be read.
+/// - fails: [`SweepError::Walk`] when a root, one of its directories or one of
+///   their entries cannot be read.
 /// - panics: none.
 ///
 /// # Errors
@@ -193,42 +195,56 @@ pub fn directory() -> Result<PathBuf, SweepError>
 #[inline]
 pub fn sources() -> Result<Vec<Source>, SweepError>
 {
-    let corpus = directory()?;
-    let mut pending: Vec<PathBuf> = ROOTS.iter().map(|root| corpus.join(root)).collect();
-    let mut found = Vec::new();
-    while let Some(at) = pending.pop() {
-        let unreadable = |error: std::io::Error| SweepError::Walk {
-            path: at.clone(),
+    let strict = Path::new(CORPUS)
+        .join("strict")
+        .canonicalize()
+        .map_err(|error| SweepError::Walk {
+            path: PathBuf::from(CORPUS),
             detail: error.to_string(),
-        };
-        for entry in std::fs::read_dir(&at).map_err(unreadable)? {
-            let entry = entry.map_err(unreadable)?;
-            let kind = entry.file_type().map_err(unreadable)?;
-            let path = entry.path();
-            if kind.is_dir() {
-                pending.push(path);
-            }
-            else if !kind.is_symlink()
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-            {
-                let below = path
-                    .strip_prefix(&corpus)
-                    .map_err(|error| SweepError::Walk {
+        })?;
+    let fixture = Path::new(FIXTURE)
+        .canonicalize()
+        .map_err(|error| SweepError::Walk {
+            path: PathBuf::from(FIXTURE),
+            detail: error.to_string(),
+        })?;
+    let mut found = Vec::new();
+    for (root, base) in [("strict", &strict), ("fixture", &fixture)] {
+        let mut pending = vec![base.clone()];
+        while let Some(at) = pending.pop() {
+            let unreadable = |error: std::io::Error| SweepError::Walk {
+                path: at.clone(),
+                detail: error.to_string(),
+            };
+            for entry in std::fs::read_dir(&at).map_err(unreadable)? {
+                let entry = entry.map_err(unreadable)?;
+                let kind = entry.file_type().map_err(unreadable)?;
+                let path = entry.path();
+                if kind.is_dir() {
+                    if at == fixture && path.ends_with("ledger") {
+                        continue;
+                    }
+                    pending.push(path);
+                }
+                else if !kind.is_symlink()
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension == "gandr")
+                {
+                    let below = path.strip_prefix(base).map_err(|error| SweepError::Walk {
                         path: path.clone(),
                         detail: error.to_string(),
                     })?;
-                let mut name = String::new();
-                for part in below.components() {
-                    if !name.is_empty() {
+                    let mut name = String::new();
+                    name.push_str(root);
+                    for part in below.components() {
                         name.push('/');
+                        name.push_str(&part.as_os_str().to_string_lossy());
                     }
-                    name.push_str(&part.as_os_str().to_string_lossy());
+                    let name = CorpusName(name);
+                    let class = Class::of(&name);
+                    found.push(Source { path, name, class });
                 }
-                let name = CorpusName(name);
-                let class = Class::of(&name);
-                found.push(Source { path, name, class });
             }
         }
     }
@@ -293,9 +309,13 @@ mod tests
             "the sources are in name order"
         );
         assert!(
-            found
-                .iter()
-                .all(|source| source.path.ends_with(source.name.as_ref())),
+            found.iter().all(|source| {
+                let below = match source.name.as_ref().split_once('/') {
+                    Some((_, below)) => below,
+                    None => source.name.as_ref(),
+                };
+                source.path.ends_with(below)
+            }),
             "each path is the source its name stands for"
         );
     }

@@ -2536,9 +2536,11 @@ mod sweeps
             "the sample is drawn: {}",
             visited.len()
         );
-        let root = gandr_workflow_sweep::corpus::directory()
-            .expect("the corpus is checked out beside this crate")
-            .join("fixture/pathological");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus")
+            .join("pathological")
+            .canonicalize()
+            .expect("the corpus is checked out beside this crate");
         let mut repaired = 0_usize;
         let mut severities = Vec::new();
         let ControlFlow::Continue(_report) = Walk::new(vec![root]).visit(

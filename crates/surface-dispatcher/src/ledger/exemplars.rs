@@ -1039,7 +1039,7 @@ mod tests
     /// trivial.
     fn committed() -> PathBuf
     {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/ledger")
     }
 
     /// A copy of the committed exemplars in a directory of this test's own.

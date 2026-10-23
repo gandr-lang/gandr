@@ -41,7 +41,7 @@ set -euo pipefail
 report={{ usage.report }}
 mkdir -p "$(dirname "$report")"
 status=0
-.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger recovery ledger/exemplars > "$report" || status=$?
+.config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger recovery corpus/ledger > "$report" || status=$?
 if (( status > 1 )); then
   cat "$report"
   exit "$status"

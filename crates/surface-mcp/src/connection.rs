@@ -1057,7 +1057,7 @@ mod tests
         );
         assert_eq!(
             shown.pointer("/structuredContent/corpus/0"),
-            Some(&json!("ledger/exemplars/features"))
+            Some(&json!("corpus/ledger/features"))
         );
         for (tool, arguments, error) in [
             (

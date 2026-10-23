@@ -8870,7 +8870,7 @@ mod tests
     {
         let changed = |name: &str| -> Vec<String> {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus/fixture/model/data")
+                .join("../../corpus/model/data")
                 .join(name);
             let text = std::fs::read_to_string(&path).expect("the source is read");
             let mut server = initialized();
@@ -8988,7 +8988,7 @@ mod tests
     {
         let read = |name: &str, lines: core::ops::RangeInclusive<u32>| -> Vec<String> {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus/fixture/model/data")
+                .join("../../corpus/model/data")
                 .join(name);
             let text = std::fs::read_to_string(&path).expect("the source is read");
             let mut server = initialized();
@@ -10004,7 +10004,7 @@ mod tests
     fn the_call_hierarchy_follows_a_corpus_closure()
     {
         let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/data")
+            .join("../../corpus/model/data")
             .canonicalize()
             .expect("the data subject is checked out");
         let uri = |file: &str| format!("file://{}", corpus.join(file).display());
@@ -10200,7 +10200,7 @@ mod tests
     fn a_references_lens_counts_a_name_s_uses_in_every_open_document()
     {
         let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity")
+            .join("../../corpus/model/identity")
             .canonicalize()
             .expect("the identity subject is checked out");
         let uri = |file: &str| format!("file://{}", corpus.join(file).display());
@@ -12481,7 +12481,7 @@ mod tests
     fn an_inlay_hint_links_the_families_its_type_names_764()
     {
         let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/data")
+            .join("../../corpus/model/data")
             .canonicalize()
             .expect("the data subject is checked out");
         let uri = |file: &str| format!("file://{}", corpus.join(file).display());
@@ -12787,8 +12787,7 @@ mod tests
     fn a_copy_answers_the_sources_its_names_are_declared_in()
     {
         let directory = std::fs::canonicalize(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../surface-corpus/fixture/model/data"),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/data"),
         )
         .expect("the data subject is checked out");
         let written = std::fs::read_to_string(directory.join("following.gandr"))
@@ -13088,7 +13087,7 @@ mod tests
         let corpus = |file: &str| {
             let path = std::fs::canonicalize(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../surface-corpus/fixture")
+                    .join("../../corpus")
                     .join(file),
             )
             .expect("the corpus source is checked out");
@@ -13134,7 +13133,7 @@ mod tests
         let opened = |server: &mut Connected, file: &str| {
             let path = std::fs::canonicalize(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../surface-corpus/fixture")
+                    .join("../../corpus")
                     .join(file),
             )
             .expect("the corpus source is checked out");
@@ -13192,7 +13191,7 @@ mod tests
         let opened = |server: &mut Connected, file: &str| {
             let path = std::fs::canonicalize(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../surface-corpus/fixture")
+                    .join("../../corpus")
                     .join(file),
             )
             .expect("the corpus source is checked out");
@@ -16161,7 +16160,7 @@ mod tests
         let (mut workspace, [mut first, _second]) = two_connections();
         let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+            .join("../../corpus/model/identity/circle-base.gandr");
         let written = std::fs::read_to_string(&path)
             .expect("the fixture is read")
             .replacen("  loop ∷ p\n", "  loop ∷ ?\n", 1);

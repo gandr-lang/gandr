@@ -1099,7 +1099,7 @@ mod tests
     fn a_keyword_inserts_its_form_as_a_snippet()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+            .join("../../corpus/model/identity/circle-base.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus source is read");
         let table = |before: &str, after: &str, snippets: bool| {
             listed(
@@ -1228,7 +1228,7 @@ mod tests
     fn a_call_fills_its_parameters_as_tab_stops()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../surface-corpus/fixture/model/identity/circle-base.gandr");
+            .join("../../corpus/model/identity/circle-base.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus source is read");
         let table = |before: &str, after: &str, snippets: bool| {
             listed(

@@ -880,7 +880,7 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| [`{name}`](exemplars/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
+                    "| [`{name}`](../corpus/ledger/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
                     Forms(row),
                     row.group,
                     row.kind,
@@ -924,7 +924,7 @@ impl SyntaxLedger
         for row in &self.attributes {
             writeln!(
                 out,
-                "| [`{name}`](exemplars/attributes/{name}.gandr) | {} |",
+                "| [`{name}`](../corpus/ledger/attributes/{name}.gandr) | {} |",
                 row.schema,
                 name = row.name
             )?;
@@ -1076,7 +1076,7 @@ fn rule_json(row: &RuleRow) -> Value
             fields.insert("standing".to_owned(), Value::from("committed"));
             fields.insert(
                 "exemplar".to_owned(),
-                Value::from(format!("exemplars/syntax/{}.gandr", row.name)),
+                Value::from(format!("../corpus/ledger/syntax/{}.gandr", row.name)),
             );
         },
         Standing::Internal(reason) => {
@@ -1114,7 +1114,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         "name": row.name,
         "payload": payload,
         "reads": row.schema.to_string(),
-        "exemplar": format!("exemplars/attributes/{}.gandr", row.name),
+        "exemplar": format!("../corpus/ledger/attributes/{}.gandr", row.name),
     })
 }
 
@@ -1958,7 +1958,7 @@ mod tests
     /// trivial.
     fn committed() -> PathBuf
     {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ledger/exemplars")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/ledger")
     }
 
     /// A directory of this test's own under the system's temporary directory,
@@ -2353,7 +2353,7 @@ mod tests
             match row.standing {
                 Standing::Committed => core::fmt::Write::write_fmt(
                     &mut cell,
-                    format_args!("| [`{0}`](exemplars/syntax/{0}.gandr) |", row.name),
+                    format_args!("| [`{0}`](../corpus/ledger/syntax/{0}.gandr) |", row.name),
                 ),
                 Standing::Internal(_) => {
                     core::fmt::Write::write_fmt(&mut cell, format_args!("| `{}` |", row.name))
@@ -2366,7 +2366,10 @@ mod tests
             cell.clear();
             core::fmt::Write::write_fmt(
                 &mut cell,
-                format_args!("| [`{0}`](exemplars/attributes/{0}.gandr) |", row.name),
+                format_args!(
+                    "| [`{0}`](../corpus/ledger/attributes/{0}.gandr) |",
+                    row.name
+                ),
             )
             .expect("a string accepts every write");
             assert!(markdown.contains(&cell), "`{}` has a row", row.name);

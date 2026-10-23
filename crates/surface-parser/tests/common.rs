@@ -134,14 +134,57 @@ pub fn root_digest(tree: &SyntaxTree<'_>) -> Option<NodeDigest>
     tree.digest()
 }
 
-/// The language's source corpus, which the corpus crate owns: the strict
-/// root, the fixture root and its pending set.
+/// The language's source corpus: the strict root, under the corpus crate, and
+/// the fixture families, at the repository's top.
 ///
 /// # Specification
 /// trivial.
 pub fn corpus_root() -> PathBuf
 {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("corpus")
+}
+
+/// Every corpus source, strict and fixture, as its path and its logical name:
+/// `strict/…` for a strict source, `fixture/<family>/…` for a fixture one.
+///
+/// # Specification
+/// - ensures: one entry per `.gandr` file under the strict root and the fixture
+///   families, sorted by logical name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the corpus holds strict and nested fixture sources under
+///   two roots, plus a ledger family that is excluded. Two-root walks, ledger
+///   exclusion, logical-name assembly and ordering distinguish a single-root
+///   walk, an unsorted or ledger-leaking output.
+/// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
+#[spec(ensures: |ret| ret.iter().all(|entry| !entry.1.starts_with("fixture/ledger/")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left.1 <= right.1)))]
+pub fn corpus_sources() -> Vec<(PathBuf, String)>
+{
+    let strict = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict");
+    let fixture = corpus_root();
+    let mut out: Vec<(PathBuf, String)> = Vec::new();
+    for (root, base) in [("strict", &strict), ("fixture", &fixture)] {
+        for path in gandr_files(base) {
+            let below = path
+                .strip_prefix(base)
+                .expect("a corpus source is under its root");
+            if root == "fixture"
+                && below
+                    .components()
+                    .next()
+                    .is_some_and(|part| part.as_os_str() == "ledger")
+            {
+                continue;
+            }
+            let name = format!("{root}/{}", below.to_string_lossy());
+            out.push((path, name));
+        }
+    }
+    out.sort_by(|left, right| left.1.cmp(&right.1));
+    out
 }
 
 /// Every `.gandr` file under `dir`, sorted.

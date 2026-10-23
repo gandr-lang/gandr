@@ -115,12 +115,24 @@ fn files_under(
 ///   checks the root order and each root's lexical order; filesystem
 ///   completeness under read errors or concurrent changes is not established.
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| { let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus")); let is_fixture = |path: &Path| { let relative = path.strip_prefix(root).ok()?; let component = relative.components().next()?; let name = component.as_os_str(); if name == OsStr::new("strict") { Some(false) } else if name == OsStr::new("fixture") { Some(true) } else { None } }; ret.iter().all(|path| is_fixture(path).is_some() && path.extension() == Some(OsStr::new("gandr"))) && ret.is_sorted_by(|left, right| (is_fixture(left), left) <= (is_fixture(right), right)) })]
+#[spec(ensures: |ret| { let strict = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus/strict")); let fixture = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")); let is_fixture = |path: &Path| { if path.starts_with(strict) { Some(false) } else if path.starts_with(fixture) { Some(true) } else { None } }; ret.iter().all(|path| is_fixture(path).is_some() && path.extension() == Some(OsStr::new("gandr"))) && ret.is_sorted_by(|left, right| (is_fixture(left), left) <= (is_fixture(right), right)) })]
 fn corpus_sources() -> Vec<PathBuf>
 {
-    let root = corpus_root();
-    let mut sources = files_under(&root.join("strict"), OsStr::new("gandr"));
-    sources.extend(files_under(&root.join("fixture"), OsStr::new("gandr")));
+    let strict = corpus_root().join("strict");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("corpus");
+    let mut sources = files_under(&strict, OsStr::new("gandr"));
+    for family in [
+        "classifier",
+        "fragment",
+        "model",
+        "pathological",
+        "pending",
+        "surface",
+    ] {
+        sources.extend(files_under(&fixture.join(family), OsStr::new("gandr")));
+    }
     sources
 }
 
@@ -374,6 +386,9 @@ fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
     let corpus = corpus_root();
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("corpus");
     let goldens = golden_root();
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let mut exercised: BTreeSet<MoldId> = BTreeSet::new();
@@ -396,9 +411,13 @@ fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
                 }),
         );
         let spans = table.highlight(tree)?;
-        let golden = goldens
-            .join(path.strip_prefix(&corpus)?)
-            .with_extension("roles");
+        let relative = if path.starts_with(&corpus) {
+            path.strip_prefix(&corpus)?.to_path_buf()
+        }
+        else {
+            Path::new("fixture").join(path.strip_prefix(&fixture)?)
+        };
+        let golden = goldens.join(relative).with_extension("roles");
         if update && let Some(parent) = golden.parent() {
             std::fs::create_dir_all(parent)?;
         }

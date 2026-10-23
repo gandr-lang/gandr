@@ -8,9 +8,10 @@
 //! reviewer sees. The innermost root directory a source sits under decides.
 //!
 //! `classify` decides a source's root from the directories containing it, never
-//! from its own name or text: the innermost directory named `strict`, `fixture`
-//! or `ledger` decides, a directory named `pending` directly inside a `fixture`
-//! directory marks the pending set, and a path under none of them is strict.
+//! from its own name or text: the innermost directory named `strict`,
+//! `fixture`, `corpus` or `ledger` decides, a directory named `pending`
+//! directly inside a `fixture` or `corpus` directory marks the pending set, and
+//! a path under none of them is strict.
 //! The walk classifies each source by its canonical path, so a relative path
 //! and a symbolic link to the same directory classify alike. The strict root
 //! settles under `CorpusRoot::Strict`, where `owes` and `refuses` are
@@ -59,6 +60,10 @@ const STRICT: &str = "strict";
 /// The directory name of the fixture root.
 const FIXTURE: &str = "fixture";
 
+/// The directory name of the corpus root, the fixture root at the repository's
+/// top.
+const CORPUS: &str = "corpus";
+
 /// The directory name of the ledgers, a fixture root of its own.
 const LEDGER: &str = "ledger";
 
@@ -73,8 +78,8 @@ pub enum SourceRoot
     /// is held to *checks, owing nothing*, and `owes` and `refuses` are
     /// refused.
     Strict,
-    /// Under a `fixture` or `ledger` directory: the five expectation schemas
-    /// are admitted.
+    /// Under a `fixture`, `corpus` or `ledger` directory: the five expectation
+    /// schemas are admitted.
     Fixture,
     /// Under the `pending` directory directly inside a fixture root: the
     /// lowering is expected to refuse the source as a whole, as outside the
@@ -141,10 +146,10 @@ impl core::fmt::Display for SourceRoot
 ///   written, so a caller wanting the location a source really has passes its
 ///   canonical path.
 /// - ensures: only the directories containing the source are read, never its
-///   own file name. The innermost directory named `strict`, `fixture` or
-///   `ledger` decides, and a directory named `pending` decides when its own
-///   parent directory is named `fixture`; a path under none of them is
-///   [`SourceRoot::Strict`].
+///   own file name. The innermost directory named `strict`, `fixture`, `corpus`
+///   or `ledger` decides, and a directory named `pending` decides when its own
+///   parent directory is named `fixture` or `corpus`; a path under none of them
+///   is [`SourceRoot::Strict`].
 /// - provides: the membership the walk settles each source under.
 /// - fails: never; every path classifies.
 /// - panics: none.
@@ -167,9 +172,9 @@ impl core::fmt::Display for SourceRoot
 #[spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
     let name = directory.file_name()?;
     if name == STRICT { Some(SourceRoot::Strict) }
-    else if name == FIXTURE || name == LEDGER { Some(SourceRoot::Fixture) }
+    else if name == FIXTURE || name == CORPUS || name == LEDGER { Some(SourceRoot::Fixture) }
     else if name == PENDING
-        && directory.parent().and_then(Path::file_name) == Some(OsStr::new(FIXTURE))
+        && matches!(directory.parent().and_then(Path::file_name), Some(parent) if parent == OsStr::new(FIXTURE) || parent == OsStr::new(CORPUS))
     { Some(SourceRoot::Pending) }
     else { None }
 }).unwrap_or(SourceRoot::Strict))]
@@ -181,10 +186,10 @@ pub fn classify(path: &Path) -> SourceRoot
         if directory == STRICT {
             root = SourceRoot::Strict;
         }
-        else if directory == FIXTURE || directory == LEDGER {
+        else if directory == FIXTURE || directory == CORPUS || directory == LEDGER {
             root = SourceRoot::Fixture;
         }
-        else if directory == PENDING && parent == FIXTURE {
+        else if directory == PENDING && (parent == FIXTURE || parent == CORPUS) {
             root = SourceRoot::Pending;
         }
         parent = directory;
@@ -245,12 +250,13 @@ mod tests
         let rows = [
             ("corpus/strict/a.gandr", SourceRoot::Strict),
             ("corpus/fixture/a.gandr", SourceRoot::Fixture),
+            ("corpus/model/a.gandr", SourceRoot::Fixture),
             ("corpus/fixture/deep/er/a.gandr", SourceRoot::Fixture),
             ("corpus/strict/fixture/a.gandr", SourceRoot::Fixture),
             ("corpus/fixture/strict/a.gandr", SourceRoot::Strict),
             ("corpus/fixture/pending/model/a.gandr", SourceRoot::Pending),
             ("corpus/fixture/pending/strict/a.gandr", SourceRoot::Strict),
-            ("ledger/exemplars/syntax/a.gandr", SourceRoot::Fixture),
+            ("corpus/ledger/syntax/a.gandr", SourceRoot::Fixture),
             ("corpus/ledger/features/a.gandr", SourceRoot::Fixture),
             ("corpus/strict/ledger/a.gandr", SourceRoot::Fixture),
             ("corpus/ledger/strict/a.gandr", SourceRoot::Strict),
@@ -269,6 +275,8 @@ mod tests
             ("strict/pending/a.gandr", SourceRoot::Strict),
             ("pending/fixture/a.gandr", SourceRoot::Fixture),
             ("ledger/pending/a.gandr", SourceRoot::Fixture),
+            ("corpus/pending/a.gandr", SourceRoot::Pending),
+            ("corpus/model/pending/a.gandr", SourceRoot::Fixture),
         ];
         for (path, root) in rows {
             assert_eq!(classify(Path::new(path)), root, "{path}");

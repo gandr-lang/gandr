@@ -416,9 +416,9 @@ fn golden(
 {
     let text = Text(&source.text);
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../surface-corpus")
+        .join("../..")
         .canonicalize()
-        .expect("the corpus directory exists")
+        .expect("the repository root resolves")
         .display()
         .to_string();
     let place = |offset: usize| {
@@ -498,7 +498,11 @@ fn the_headline_sources_hover_as_their_goldens()
     let mut suffix = String::new();
     for path in GOLDENS {
         suffix.clear();
-        let _written = write!(suffix, "surface-corpus/{path}");
+        let _written = write!(
+            suffix,
+            "corpus/{}",
+            path.strip_prefix("fixture/").unwrap_or(path)
+        );
         let source = sources
             .iter()
             .find(|source| source.uri.ends_with(suffix.as_str()))

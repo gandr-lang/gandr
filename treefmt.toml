@@ -49,7 +49,15 @@ options = [
   "--",
   "fmt",
 ]
-includes = ["crates/surface-corpus/**/*.gandr"]
+includes = [
+  "corpus/classifier/**/*.gandr",
+  "corpus/fragment/**/*.gandr",
+  "corpus/model/**/*.gandr",
+  "corpus/pathological/**/*.gandr",
+  "corpus/pending/**/*.gandr",
+  "corpus/surface/**/*.gandr",
+  "crates/surface-corpus/strict/**/*.gandr",
+]
 
 # The mutating formatter takes the lower priority so `fmt` completes before
 # `check` when both cover the same markdown set.

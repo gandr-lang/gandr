@@ -1394,7 +1394,20 @@ mod sweeps
         let root = corpus();
         let sweep = Sweep::asked().expect("the run's sweep resolves");
         let paths: Vec<PathBuf> = match sweep.coverage() {
-            Coverage::Full => vec![root.join("strict"), root.join("fixture")],
+            Coverage::Full => {
+                let top = Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("corpus");
+                vec![
+                    root.join("strict"),
+                    top.join("classifier"),
+                    top.join("fragment"),
+                    top.join("model"),
+                    top.join("pathological"),
+                    top.join("pending"),
+                    top.join("surface"),
+                ]
+            },
             Coverage::Sampled => sweep
                 .visit(
                     DIAGNOSTICS,
@@ -1506,7 +1519,32 @@ mod sweeps
         let roles = RoleTable::build(&grammar).expect("the role table builds");
         let all = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
         let root = corpus();
-        let walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
+        let top = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("corpus");
+        let walk = Walk::new(vec![
+            root.join("strict")
+                .canonicalize()
+                .expect("the strict root resolves"),
+            top.join("classifier")
+                .canonicalize()
+                .expect("the family resolves"),
+            top.join("fragment")
+                .canonicalize()
+                .expect("the family resolves"),
+            top.join("model")
+                .canonicalize()
+                .expect("the family resolves"),
+            top.join("pathological")
+                .canonicalize()
+                .expect("the family resolves"),
+            top.join("pending")
+                .canonicalize()
+                .expect("the family resolves"),
+            top.join("surface")
+                .canonicalize()
+                .expect("the family resolves"),
+        ]);
         let mut expected_uris = alloc::collections::BTreeSet::new();
         let ControlFlow::Continue(_report) = walk.visit(
             &Pool::new(Width::SERIAL),
