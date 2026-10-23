@@ -109,7 +109,7 @@ jobs:
   # Definitions only: aliases run in each consuming job's context.
   template:
     if: false
-    needs: &rust-needs [changes, ci-image-ref]
+    needs: &rust-needs [prepare, ci-image]
     # arm64, measured on the enforcing lane (#702): the suite 27% and a
     # warm rebuild 9% faster than ubuntu-latest's x86-64, and Linux arm64
     # runs native code through the emitter's arm64 patcher. Every lane that
@@ -154,14 +154,14 @@ jobs:
         if: ${{ github.event_name != 'push' || env.CI_ON_MAIN == 'true' || env.CI_BUILD_STATE_FOUND == 'true' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
-          install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
+          install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.prepare.outputs.image == '' }}
           cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && env.CI_DOCS != 'true' && (env.CI_BUILD_STATE_FOUND == 'true' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) || ((github.event_name == 'push' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true' && (env.CI_SHARDS != '' || env.CI_ENFORCING != 'true'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache
       # (`.github/actions/install-tools`, shared with every workflow).
       - &install-policy-tools
         name: install mise-managed policy tools
-        if: &without-image ${{ needs.ci-image-ref.outputs.ref == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
+        if: &without-image ${{ needs.prepare.outputs.image == '' || env.CI_INSTALL_TOOLCHAIN == 'true' }}
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
           cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'schedule' && env.CI_ON_MAIN == 'true') || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
@@ -357,11 +357,11 @@ jobs:
       - &download-build-state
         name: download reusable queue build state
         id: download-build-state
-        if: ${{ (github.event_name == 'push' && env.CI_ON_MAIN != 'true' && steps.test-state-restore.outputs.cache-hit != 'true' || (github.event_name != 'push' || env.CI_ON_MAIN == 'true') && steps.test-state-restore.outputs.cache-hit != 'true' && (steps.test-state-restore.outputs.cache-matched-key == '' || needs.build-state.outputs.queue-newer == 'true')) && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
+        if: ${{ (github.event_name == 'push' && env.CI_ON_MAIN != 'true' && steps.test-state-restore.outputs.cache-hit != 'true' || (github.event_name != 'push' || env.CI_ON_MAIN == 'true') && steps.test-state-restore.outputs.cache-hit != 'true' && (steps.test-state-restore.outputs.cache-matched-key == '' || needs.prepare.outputs.queue-newer == 'true')) && contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
         uses: &download-artifact actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_GENERATION }}
-          run-id: ${{ needs.build-state.outputs.run-id }}
+          run-id: ${{ needs.prepare.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: queue-state
       # Whether a build state or the Dylint drivers came down, tested once in
@@ -386,40 +386,83 @@ jobs:
         if: *state-found
         run: cargo fetch --locked
 
+  # Every lookup the run decides on, in one job (#2045): a job's runner
+  # start-up costs more than any of these lookups' work, and each job is a
+  # slot of the account's concurrency cap. It reads
+  # - the changed-file categories (`rust`, `extension`, `parser`): missing
+  #   bases and failed fetches or diffs force the checks, never skip them; the
+  #   queue always checks its complete merge result; a Rust-only pull request
+  #   or queue entry does not pay for the extension lane; a change to the
+  #   parser, its grammar or its syntax tree reaches every recovery record
+  #   (#1434). A push and the daily run gate nothing and read none;
+  # - `stacked`: a pull request whose base is not the trunk, a stack member
+  #   (#2045). Its run is the lint, Clippy and formatting; the merge group
+  #   tests its tree, and the reports run on the stack's bottom;
+  # - the pin-file tag of this checkout and whether it is published
+  #   (`.github/actions/find-image`, shared with every image workflow): a
+  #   pull request from a fork cannot publish with its read-only token, so a
+  #   missing tag there selects the bare runner instead of a build;
+  # - the reusable queue build state, on a push to main, in the queue and on
+  #   a dispatch. Completed queue runs supply successful builds independently
+  #   of their test verdict, and a new queue ref can read their artifacts
+  #   even when it cannot read its predecessor's branch-local cache; Cargo
+  #   still checks all fingerprints. Main promotion requires the exact
+  #   landing SHA; a test lane reuses the latest successful queue build when
+  #   no cached state of its generation matched or when that build completed
+  #   after main's newest state was saved. Artifact discovery is skipped
+  #   under act, and a failed lookup means no reuse, not a failed run;
+  # - the comments the obligations and mutants lanes update in place, on a
+  #   pull request of this repository: only this workflow's own comment is
+  #   updated, a comment by anyone else that copies the marker is ignored.
+  #   The comment is found here and posted after the lane, from bare runners,
+  #   so the job running the change's code holds no write token.
   # Always trigger the workflow: a skipped workflow supplies no required
-  # check, whereas a skipped job succeeds. Formatting sees docs-only changes.
-  # A push and the daily run gate nothing; the macOS verdict runs only in
-  # the daily run and a dispatch, so the required macOS check is a skipped job
-  # on a pull request, in the queue and on a push.
-  # Dependency updates land through a maintainer's pull request, so a
-  # dependabot pull request runs nothing: the entry jobs, formatting and the
-  # obligations read skip, and the rest skip without `changes`' outputs.
-  changes:
-    name: detect changed-file categories
-    if: &gate-run ${{ !cancelled() && !failure() && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+  # check, whereas a skipped job succeeds. Dependency updates land through a
+  # maintainer's pull request, so a dependabot pull request runs nothing:
+  # this job skips, and every job after it skips without its outputs.
+  prepare:
+    name: prepare the run
+    if: ${{ github.actor != 'dependabot[bot]' }}
     runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+      pull-requests: read
     outputs:
-      # Missing bases and failed fetches/diffs force Rust checks, never skip
-      # them. The queue always checks its complete merge result.
-      rust: ${{ github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true' }}
-      # Same fail-open for the extension, including a dispatch with no diff.
-      # A Rust-only pull request or queue entry does not pay for the lane.
-      extension: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true' }}
-      # A change to the parser, its grammar or its syntax tree reaches every
-      # recovery record (#1434); the same fail-open.
-      parser: ${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true' }}
+      rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') }}
+      extension: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') }}
+      parser: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') }}
+      stacked: ${{ github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch }}
+      image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
+      build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
+      run-id: &queue-run ${{ steps.run.outputs.run-id || steps.previous.outputs.run-id }}
+      queue-newer: ${{ steps.fresher.outputs.queue-newer }}
+      artifacts: ${{ steps.artifacts.outputs.artifacts }}
+      baseline-run-id: ${{ steps.baseline.outputs.run-id }}
+      baseline-sha: ${{ steps.baseline.outputs.sha }}
+      baseline-created: ${{ steps.baseline.outputs.created }}
+      obligations-comment: ${{ steps.obligations-comment.outputs.id }}
+      mutants-comment: ${{ steps.mutants-comment.outputs.id }}
     env:
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+      CI_SHA: ${{ github.sha }}
+      CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+      CI_QUEUE_STATE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
+      CI_COMMENTS: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.base_ref == github.event.repository.default_branch }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - *git-checkout
       - id: fetch
         name: fetch the comparison tree
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+        if: ${{ env.CI_GATE == 'true' }}
         continue-on-error: true
         run: git fetch --depth=1 origin "$CI_BASE_SHA"
       - id: filter
         name: filter changed paths
-        if: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && steps.fetch.outcome == 'success' }}
+        if: ${{ env.CI_GATE == 'true' && steps.fetch.outcome == 'success' }}
         continue-on-error: true
         # One pipeline, no shell control flow or third-party filter action.
         # NUL framing preserves filenames; no-renames retains source deletions.
@@ -428,60 +471,100 @@ jobs:
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
           jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/")) | tostring)' >> "$GITHUB_OUTPUT"
-
-  # Finds the pin-file tag of this checkout and whether it is published
-  # (`.github/actions/find-image`, shared with every image workflow). A pull
-  # request from a fork cannot publish with its read-only token, so a missing
-  # tag there selects the bare runner instead of a build.
-  ci-image-tag:
-    name: find the CI image for this checkout
-    if: ${{ github.actor != 'dependabot[bot]' }}
-    runs-on: *linux
-    permissions: *image-read-permissions
-    outputs:
-      ref: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
-      build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
-    steps:
-      - *git-checkout
       - id: image
         name: find the published image
         uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
         with:
           enabled: ${{ env.GANDR_CI_IMAGE != '' }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - id: run
+        name: find the completed queue run for this landing
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name == 'push' }}
+        continue-on-error: true
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
+          -f event=merge_group -f status=completed -f head_sha="$CI_SHA"
+          --jq '"run-id=" + ((.workflow_runs[0].id // "") | tostring)'
+          >> "$GITHUB_OUTPUT"
+      - id: previous
+        name: find the latest successful queue run
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' }}
+        continue-on-error: true
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
+          -f event=merge_group -f status=success -f per_page=1
+          --jq '.workflow_runs[0] // {} | "run-id=\(.id // "")\ncompleted=\(.updated_at // "")"'
+          >> "$GITHUB_OUTPUT"
+      # Main's state is a promoted queue build, saved after its run completed,
+      # or a push's own build. A queue build that completed after main's
+      # newest test state was saved holds every landing that state holds and
+      # the entries queued ahead of this group besides.
+      - id: fresher
+        name: compare it with main's newest test state
+        if: ${{ steps.previous.outputs.completed != '' }}
+        continue-on-error: true
+        env:
+          CI_QUEUE_COMPLETED: ${{ steps.previous.outputs.completed }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/caches"
+          -f ref=refs/heads/main -f key=gandr-v3-test-state- -f sort=created_at -f direction=desc -f per_page=1
+          --jq '(.actions_caches[0].created_at // "") as $main | "queue-newer=\($main == "" or env.CI_QUEUE_COMPLETED > $main)"'
+          >> "$GITHUB_OUTPUT"
+      - id: artifacts
+        name: list its build-state artifacts
+        if: ${{ steps.run.outputs.run-id != '' || steps.previous.outputs.run-id != '' }}
+        continue-on-error: true
+        env:
+          CI_RUN_ID: *queue-run
+        run: >-
+          gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/artifacts"
+          --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
+          >> "$GITHUB_OUTPUT"
+      # The newest plain baseline a scheduled or dispatched run of this
+      # repository's main published; a failed lookup only skips the ratio.
+      - id: baseline
+        name: find the newest plain baseline of main
+        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' }}
+        continue-on-error: true
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/artifacts"
+          -f name=junit-cargo-test-plain-baseline -f per_page=100
+          --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id)]
+          | max_by(.created_at) // {}
+          | "run-id=\(.workflow_run.id // "")\nsha=\(.workflow_run.head_sha // "")\ncreated=\(.created_at // "")"'
+          >> "$GITHUB_OUTPUT"
+      - id: obligations-comment
+        name: find the obligations comment
+        if: ${{ env.CI_COMMENTS == 'true' }}
+        shell: bash
+        run: |
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- quenchant-obligations -->")))] | first | .id // ""')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+      - id: mutants-comment
+        name: find the mutants comment
+        if: ${{ env.CI_COMMENTS == 'true' }}
+        shell: bash
+        run: |
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .id // ""')
+          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
 
   # Builds and publishes the missing tag with the image workflow itself.
+  # Every image job needs it, so all of them wait for a build. A job's
+  # default condition skips it when any ancestor was skipped, so every job
+  # downstream states `!cancelled() && !failure()`: a skipped build lets it
+  # run, and a failed one stops it. The formatting gate runs over a failed
+  # build and fails pulling the missing image, so a failed build fails a
+  # required check rather than skipping them all, which would pass.
   ci-image:
     name: build the missing CI image
-    needs: ci-image-tag
-    if: ${{ needs.ci-image-tag.outputs.build == 'true' }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.build == 'true' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/ci-image.yml # zizmor: ignore[self-repository]
-
-  # container cannot read env directly; needs carries the resolved reference.
-  # Every image job needs this job alone, so all of them wait for a build. It
-  # runs even when the build was skipped, and fails rather than skips when the
-  # lookup or the build failed: a skipped required check would pass. A job's
-  # default condition also skips it when any ancestor was skipped, so every
-  # job downstream states `!cancelled() && !failure()`: a skipped build lets
-  # it run, and a failed ancestor still stops it.
-  ci-image-ref:
-    name: resolve the CI image reference
-    needs: [ci-image-tag, ci-image]
-    if: ${{ !cancelled() && github.actor != 'dependabot[bot]' }}
-    runs-on: *linux
-    outputs:
-      ref: ${{ steps.resolve.outputs.ref }}
-    steps:
-      - id: resolve
-        name: resolve the image reference
-        env:
-          TAG_RESULT: ${{ needs.ci-image-tag.result }}
-          BUILD_RESULT: ${{ needs.ci-image.result }}
-          IMAGE_REF: ${{ needs.ci-image-tag.outputs.ref }}
-        run: test "$TAG_RESULT" = success && test "$BUILD_RESULT" != failure && echo "ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
 
   # The enforcing run is the full test pass on each platform. The plain lane
   # compiles and runs only what enforcement removes, the corpus roots; the
@@ -492,19 +575,19 @@ jobs:
   # main's state and cache theirs as main's.
   cargo-test-plain-only:
     name: test plain-only targets (linux)
-    needs: &cached-test-needs [changes, ci-image-ref, build-state]
-    if: &test-lane ${{ !cancelled() && !failure() && (needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build-state.outputs.run-id == '') }}
+    needs: *rust-needs
+    if: &test-lane ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.run-id == '') }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
       packages: read
       actions: read
-    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+    container: &ci-image ${{ needs.prepare.outputs.image }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
-      CI_RECOVERY: ${{ needs.changes.outputs.parser }}
+      CI_RECOVERY: ${{ needs.prepare.outputs.parser }}
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
@@ -618,13 +701,13 @@ jobs:
       # measurement, never a gate: no outcome here fails the lane.
       - name: download the plain baseline
         id: plain-baseline
-        if: ${{ !cancelled() && env.CI_SPEC_COST_RATIO == 'true' && env.ACT != 'true' && needs.build-state.outputs.baseline-run-id != '' && hashFiles('target/nextest/ci-enforcing/junit.xml') != '' }}
+        if: ${{ !cancelled() && env.CI_SPEC_COST_RATIO == 'true' && env.ACT != 'true' && needs.prepare.outputs.baseline-run-id != '' && hashFiles('target/nextest/ci-enforcing/junit.xml') != '' }}
         continue-on-error: true
         uses: *download-artifact
         with:
           name: junit-cargo-test-plain-baseline
           path: target/plain-baseline
-          run-id: ${{ needs.build-state.outputs.baseline-run-id }}
+          run-id: ${{ needs.prepare.outputs.baseline-run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: report each test's specification cost
         id: spec-cost-ratio
@@ -632,8 +715,8 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          CI_BASELINE_SHA: ${{ needs.build-state.outputs.baseline-sha }}
-          CI_BASELINE_CREATED: ${{ needs.build-state.outputs.baseline-created }}
+          CI_BASELINE_SHA: ${{ needs.prepare.outputs.baseline-sha }}
+          CI_BASELINE_CREATED: ${{ needs.prepare.outputs.baseline-created }}
         run: >-
           mise run ci:spec-cost-ratio
           --plain target/plain-baseline/ci/junit.xml
@@ -659,7 +742,7 @@ jobs:
   # (#1177).
   cargo-test-docs:
     name: document the workspace (linux)
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -685,7 +768,7 @@ jobs:
   # built on that state and hands the whole on.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -727,7 +810,7 @@ jobs:
   # fresh, and the joined state is what the next landing restores.
   cargo-test-enforcing:
     name: join the enforcing shards (linux)
-    needs: [changes, ci-image-ref, build-state, cargo-test-enforcing-shard]
+    needs: [prepare, ci-image, cargo-test-enforcing-shard]
     if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -786,7 +869,7 @@ jobs:
   # and saves none of its own.
   cargo-test-plain-baseline:
     name: time the plain baseline (linux)
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || inputs.plain-baseline) }}
     runs-on: *linux
     permissions: *build-state-read-permissions
@@ -808,7 +891,7 @@ jobs:
   # its join caches the result, so it needs no promotion.
   cargo-test-macos-enforcing-shard:
     name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: &main-lane ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: macos-latest
     permissions:
@@ -831,7 +914,7 @@ jobs:
   # run caches the state in place of the one it supersedes.
   cargo-test-macos-enforcing:
     name: join the enforcing shards (macos-arm64)
-    needs: [changes, build-state, cargo-test-macos-enforcing-shard]
+    needs: [prepare, cargo-test-macos-enforcing-shard]
     if: *main-lane
     runs-on: macos-latest
     permissions:
@@ -893,7 +976,7 @@ jobs:
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && (needs.changes.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     runs-on: *linux
     # A landing's push deletes the Clippy state it superseded.
     permissions:
@@ -949,7 +1032,7 @@ jobs:
   cargo-dylint-crate:
     name: check quenchant compiler policy
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -992,7 +1075,7 @@ jobs:
       - *save-gate-binary
       - name: archive Dylint drivers
         id: dylint-drivers-archive
-        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.ci-image-ref.outputs.ref == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.prepare.outputs.image == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
         run: tar -cf dylint-drivers.tar -C "$HOME" .dylint_drivers
       - name: upload Dylint drivers
         if: ${{ !cancelled() && env.ACT != 'true' && steps.dylint-drivers-archive.outcome == 'success' }}
@@ -1011,39 +1094,16 @@ jobs:
   # clauses to re-read are the pull request body's `## Re-verification`
   # section (`pr:open` and `pr:land` write it), and the lane fails while one
   # of its boxes is unticked, the lint assessment a performance fix owes and
-  # the verdict a red hotpath check owes among them. Dispatches run the lane
-  # too, against the parent commit and without a body, so `ci:act` exercises
-  # it. A fork's read-only token cannot comment: its witnesses stay in the
-  # log. The comment is found before the lane and
-  # posted after it, from bare runners, so the job running the change's code
-  # holds no write token.
-  obligations-comment-read:
-    name: find the obligations comment
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
-    runs-on: *linux
-    permissions:
-      pull-requests: read
-    outputs:
-      id: ${{ steps.find.outputs.id }}
-    env: &obligations-comment-env
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-    steps:
-      # Only this workflow's own comment is updated: a comment by anyone else
-      # that copies the marker is ignored.
-      - id: find
-        name: find this workflow's comment
-        shell: bash
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
-            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- quenchant-obligations -->")))] | first | .id // ""')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-
+  # the verdict a red hotpath check owes among them. A stack member's pull
+  # request skips it (#2045). Dispatches run the lane too, against the
+  # parent commit and without a body, so `ci:act` exercises it. A fork's
+  # read-only token cannot comment: its witnesses stay in the log. The
+  # comment is found by `prepare` and posted after the lane, from bare
+  # runners, so the job running the change's code holds no write token.
   obligations:
     name: re-verify obligated specifications (linux)
-    needs: [changes, ci-image-ref, obligations-comment-read]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1142,12 +1202,15 @@ jobs:
   # boundary below that, and the comment links the full report's artifact.
   obligations-comment:
     name: post the obligations comment
-    needs: [obligations-comment-read, obligations]
+    needs: [prepare, obligations]
     if: ${{ !cancelled() && needs.obligations.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
     runs-on: *linux
     permissions:
       pull-requests: write
-    env: *obligations-comment-env
+    env: &obligations-comment-env
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - name: download the obligations comment
         uses: *download-artifact
@@ -1156,7 +1219,7 @@ jobs:
       - name: create or update the comment
         shell: bash
         env:
-          COMMENT_ID: ${{ needs.obligations-comment-read.outputs.id }}
+          COMMENT_ID: ${{ needs.prepare.outputs.obligations-comment }}
           REPORT_URL: ${{ needs.obligations.outputs.report }}
         run: |
           if (( $(wc -c < comment.md) > 60000 )); then
@@ -1178,33 +1241,16 @@ jobs:
   # and one comment, updated in place, names the survivors. The lane is a
   # report, never a gate. No check of it is required and nothing needs it; it
   # fails while a mutant survives, as a hotpath check fails on a regression.
-  # The merge queue and main do not run it. The daily run maps each crate
-  # whole (`mutants-nightly`). Dispatches run it against the parent commit, so `ci:act` exercises
-  # it. As with the obligations comment, the comment is found before the lane
-  # and posted after it from bare runners, so the job running the change's
+  # The merge queue, main and a stack member's pull request (#2045) do not
+  # run it. The daily run maps each crate whole (`mutants-nightly`).
+  # Dispatches run it against the parent commit, so `ci:act` exercises it. As
+  # with the obligations comment, the comment is found by `prepare` and
+  # posted after the lane from bare runners, so the job running the change's
   # code holds no write token.
-  mutants-comment-read:
-    name: find the mutants comment
-    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
-    runs-on: *linux
-    permissions:
-      pull-requests: read
-    outputs:
-      id: ${{ steps.find.outputs.id }}
-    env: *obligations-comment-env
-    steps:
-      - id: find
-        name: find this workflow's comment
-        shell: bash
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
-            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .id // ""')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-
   mutants:
     name: report the mutants of the change (linux)
-    needs: [changes, ci-image-ref, mutants-comment-read]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'pull_request' && needs.prepare.outputs.stacked != 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions:
       contents: read
@@ -1266,7 +1312,7 @@ jobs:
 
   mutants-comment:
     name: post the mutants comment
-    needs: [mutants-comment-read, mutants]
+    needs: [prepare, mutants]
     if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
     runs-on: *linux
     permissions:
@@ -1280,7 +1326,7 @@ jobs:
       - name: create or update the comment
         shell: bash
         env:
-          COMMENT_ID: ${{ needs.mutants-comment-read.outputs.id }}
+          COMMENT_ID: ${{ needs.prepare.outputs.mutants-comment }}
           REPORT_URL: ${{ needs.mutants.outputs.report }}
         run: |
           if (( $(wc -c < comment.md) > 60000 )); then
@@ -1312,7 +1358,7 @@ jobs:
   # budget holds it over the scheduled runs.
   mutants-nightly:
     name: mutate the night's crate (linux)
-    needs: ci-image-ref
+    needs: *rust-needs
     if: *main-lane
     runs-on: *linux
     permissions:
@@ -1390,7 +1436,7 @@ jobs:
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.changes.outputs.rust == 'true')) }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
     runs-on: *linux
     permissions:
       actions: read
@@ -1453,7 +1499,7 @@ jobs:
   # hotpath guard workflow filed. Nothing needs this job.
   hotpath-landed:
     name: add the landings' hotpath verdicts to the ledger
-    needs: ci-image-ref
+    needs: *rust-needs
     if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
@@ -1482,7 +1528,7 @@ jobs:
   # needs this job.
   mutants-landed:
     name: file the landings' surviving mutants
-    needs: ci-image-ref
+    needs: *rust-needs
     if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
     runs-on: *linux
     permissions:
@@ -1503,11 +1549,12 @@ jobs:
       - name: file the surviving mutants
         run: mise run ci:mutants-landed
 
-  # Formatting and workflow security lint share the treefmt pass.
+  # Formatting and workflow security lint share the treefmt pass. It runs
+  # over a failed image build and fails pulling the missing image (`ci-image`).
   format-gate:
     name: check formatting and lint gates (treefmt)
-    needs: ci-image-ref
-    if: *gate-run
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1568,8 +1615,8 @@ jobs:
   # aube; the bare-runner fallback installs the same pins.
   extension-gate:
     name: check the VS Code extension
-    needs: [changes, ci-image-ref]
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.extension == 'true' && github.event_name != 'push' }}
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.extension == 'true' && github.event_name != 'push' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1581,94 +1628,10 @@ jobs:
       - name: check the input table against its pinned sources
         run: mise run check:input-table
 
-  # Completed queue runs supply successful builds independently of their test
-  # verdict. A new queue ref can read these artifacts even when it cannot read
-  # its predecessor's branch-local cache. Cargo still checks all fingerprints.
-  # Main promotion requires the exact landing SHA; a test lane reuses the
-  # latest successful queue build when no cached state of its generation
-  # matched or when that build completed after main's newest state was saved.
-  # Hosted artifact discovery is skipped under act, never a compilation gate.
-  # A failed lookup means no reuse, not a failed queue: the test lanes need
-  # this job, and the verdicts would fail behind a transient API error.
-  build-state:
-    name: find reusable queue build state
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
-    runs-on: *linux
-    permissions:
-      actions: read
-    outputs:
-      run-id: &queue-run ${{ steps.run.outputs.run-id || steps.previous.outputs.run-id }}
-      queue-newer: ${{ steps.fresher.outputs.queue-newer }}
-      artifacts: ${{ steps.artifacts.outputs.artifacts }}
-      baseline-run-id: ${{ steps.baseline.outputs.run-id }}
-      baseline-sha: ${{ steps.baseline.outputs.sha }}
-      baseline-created: ${{ steps.baseline.outputs.created }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
-      CI_SHA: ${{ github.sha }}
-    steps:
-      - id: run
-        name: find the completed queue run for this landing
-        if: ${{ env.ACT != 'true' && github.event_name == 'push' }}
-        continue-on-error: true
-        run: >-
-          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
-          -f event=merge_group -f status=completed -f head_sha="$CI_SHA"
-          --jq '"run-id=" + ((.workflow_runs[0].id // "") | tostring)'
-          >> "$GITHUB_OUTPUT"
-      - id: previous
-        name: find the latest successful queue run
-        if: ${{ env.ACT != 'true' && github.event_name != 'push' }}
-        continue-on-error: true
-        run: >-
-          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
-          -f event=merge_group -f status=success -f per_page=1
-          --jq '.workflow_runs[0] // {} | "run-id=\(.id // "")\ncompleted=\(.updated_at // "")"'
-          >> "$GITHUB_OUTPUT"
-      # Main's state is a promoted queue build, saved after its run completed,
-      # or a push's own build. A queue build that completed after main's
-      # newest test state was saved holds every landing that state holds and
-      # the entries queued ahead of this group besides.
-      - id: fresher
-        name: compare it with main's newest test state
-        if: ${{ steps.previous.outputs.completed != '' }}
-        continue-on-error: true
-        env:
-          CI_QUEUE_COMPLETED: ${{ steps.previous.outputs.completed }}
-        run: >-
-          gh api --method GET "repos/$GH_REPO/actions/caches"
-          -f ref=refs/heads/main -f key=gandr-v3-test-state- -f sort=created_at -f direction=desc -f per_page=1
-          --jq '(.actions_caches[0].created_at // "") as $main | "queue-newer=\($main == "" or env.CI_QUEUE_COMPLETED > $main)"'
-          >> "$GITHUB_OUTPUT"
-      - id: artifacts
-        name: list its build-state artifacts
-        if: ${{ steps.run.outputs.run-id != '' || steps.previous.outputs.run-id != '' }}
-        continue-on-error: true
-        env:
-          CI_RUN_ID: *queue-run
-        run: >-
-          gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/artifacts"
-          --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
-          >> "$GITHUB_OUTPUT"
-      # The newest plain baseline a scheduled or dispatched run of this
-      # repository's main published; a failed lookup only skips the ratio.
-      - id: baseline
-        name: find the newest plain baseline of main
-        if: ${{ env.ACT != 'true' && github.event_name != 'push' }}
-        continue-on-error: true
-        run: >-
-          gh api --method GET "repos/$GH_REPO/actions/artifacts"
-          -f name=junit-cargo-test-plain-baseline -f per_page=100
-          --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main" and .workflow_run.head_repository_id == .workflow_run.repository_id)]
-          | max_by(.created_at) // {}
-          | "run-id=\(.workflow_run.id // "")\nsha=\(.workflow_run.head_sha // "")\ncreated=\(.created_at // "")"'
-          >> "$GITHUB_OUTPUT"
-
   promote-cargo-test-plain-only:
     name: promote plain build state (linux)
-    needs: &promote-needs [build-state, ci-image-ref]
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
+    needs: &promote-needs [prepare, ci-image]
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
     runs-on: *linux
     # Promotion deletes the state its landing superseded.
     permissions: &promote-permissions
@@ -1695,7 +1658,7 @@ jobs:
   promote-cargo-test-enforcing:
     name: promote enforcing build state (linux)
     needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-enforcing--') }}
     runs-on: *linux
     permissions: *promote-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1707,7 +1670,7 @@ jobs:
   promote-cargo-test-docs:
     name: promote documentation build state (linux)
     needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-docs--') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-docs--') }}
     runs-on: *linux
     permissions: *promote-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1719,7 +1682,7 @@ jobs:
   promote-dylint-crate:
     name: promote the compiler policy state
     needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-dylint-crate--') || contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers')) }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-dylint-crate--') || contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), 'dylint-drivers')) }}
     runs-on: *linux
     permissions: *promote-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1731,11 +1694,11 @@ jobs:
       - *install-policy-tools
       - *download-build-state
       - name: download the landing's Dylint drivers
-        if: ${{ needs.ci-image-ref.outputs.ref == '' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers') }}
+        if: ${{ needs.prepare.outputs.image == '' && contains(fromJSON(needs.prepare.outputs.artifacts || '[]'), 'dylint-drivers') }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dylint-drivers
-          run-id: ${{ needs.build-state.outputs.run-id }}
+          run-id: ${{ needs.prepare.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - *find-build-state
       - *identify-policy
