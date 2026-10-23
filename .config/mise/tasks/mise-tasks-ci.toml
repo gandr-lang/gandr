@@ -1266,6 +1266,10 @@ wt step copy-ignored
 # merges, `pr:land` from the red stack restacks it onto main. Every
 # other second bottom is refused.
 #
+# A change that reaches the recovery records (the parser, its grammar, its
+# syntax tree or a corpus source) is swept whole before it opens, and a stale
+# record refuses it, naming `corpus:goldens` (#2101).
+#
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
 ["pr:open"]
@@ -1325,6 +1329,15 @@ if (( status == 2 )); then
   exit 2
 fi
 (( status == 0 )) || exit "$status"
+# A change that reaches the recovery records, as prepare's `parser` filter
+# reads it, sweeps them whole first (`ci:recovery`, about two minutes
+# plain): a stale record is refused here rather than met in the queue
+# (#2101).
+if git diff --no-renames --name-only "$measured" HEAD \
+  | grep -qE '^(crates/surface-(parser|grammar|syntax)/|corpus/.*\.gandr$)'; then
+  mise run ci:recovery \
+    || { echo "a recovery record the change reaches is stale; re-record with \`mise run corpus:goldens\`, commit, and run \`pr:open\` again" >&2; exit 1; }
+fi
 # A second bottom is refused unless it unblocks the open stack: with any other
 # pull request open and not landing, the base is a branch of the stack.
 if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" '[.[] | select(.head != $own and (.landing | not))] | length') != 0 ]]; then
