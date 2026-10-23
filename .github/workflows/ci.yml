@@ -1258,11 +1258,12 @@ jobs:
           mkdir -p target/evidence
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > target/evidence/body.md
       # The change is measured as `pr:open` and `pr:land` measure it: the pull
-      # request's head against its merge base with the trunk as it reads now
-      # (`evidence:obligations`' default), never GitHub's merge commit, whose
-      # first parent can be a trunk older than the run (#2067). The trunk is
-      # fetched until its history meets the head's. A dispatch reads its
-      # parent commit.
+      # request's head against `evidence:base`, its merge base with the trunk
+      # as it reads now, or the head of an open pull request below it that it
+      # carries past that, never GitHub's merge commit, whose first parent can
+      # be a trunk older than the run (#2067). The trunk is fetched until its
+      # history meets the head's, which holds every carried head. A dispatch
+      # reads its parent commit.
       - name: fetch the trunk to the change's merge base
         shell: bash
         env:

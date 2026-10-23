@@ -1387,7 +1387,7 @@ fi
 git fetch --quiet origin "$trunk"
 if [[ "$top" == null ]]; then
   base=$trunk
-  measured=$(git merge-base HEAD "origin/$trunk")
+  measured=$(mise run --quiet evidence:base)
   if [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
 else
   base=$(jq -r .head <<< "$top")
@@ -1620,7 +1620,7 @@ if [[ "$own" == "$number" ]]; then
   base=$(gh pr view "$number" -R "$repo" --json baseRefName --jq .baseRefName)
   git fetch --quiet origin "$base"
   measured=origin/$base
-  if [[ "$base" == "$trunk" ]]; then measured=$(git merge-base HEAD "origin/$trunk"); fi
+  if [[ "$base" == "$trunk" ]]; then measured=$(mise run --quiet evidence:base); fi
   body=$(mktemp)
   gh pr view "$number" -R "$repo" --json body --jq .body > "$body"
   cp "$body" "$body.read"

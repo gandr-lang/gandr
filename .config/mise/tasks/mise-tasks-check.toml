@@ -351,10 +351,42 @@ env.RUSTDOCFLAGS = "-Z unstable-options --output-format json"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/evidence"
 run = ".config/mise/scope cargo doc --workspace --locked --no-deps --document-private-items"
 
+# The revision a change starts from, which every measurement of it reads
+# (#2067): where HEAD left origin/main, or, past it, the newest head of
+# another open pull request HEAD carries. A pull request retargeted onto the
+# trunk while the ones below it are still queued carries their commits, and
+# the merge base with the trunk reads them as its own change until they merge;
+# the queue lands by merge commit, so a merged one leaves the merge base past
+# it. The branch's own pull request is never its base: its pushed head trails
+# HEAD by the commits not yet pushed. The open pull requests are read through
+# `gh` (`GH_TOKEN` in CI); without them the merge base stands.
+["evidence:base"]
+description = "Print the revision the checked-out change is measured against"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+base=$(git merge-base origin/main HEAD)
+own=${GITHUB_HEAD_REF:-$(git branch --show-current)}
+head=$(git rev-parse HEAD)
+heads=$(gh api --paginate "repos/{owner}/{repo}/pulls?state=open&per_page=100" --jq '.[] | [.number, .head.ref, .head.sha] | @tsv' 2> /dev/null) \
+  || { echo "the open pull requests are unreadable; measuring from the merge base with origin/main" >&2; heads=; }
+carried=
+while IFS=$'\t' read -r number ref sha; do
+  [[ -n $sha && $ref != "$own" && $sha != "$head" ]] || continue
+  if git merge-base --is-ancestor "$base" "$sha" 2> /dev/null && git merge-base --is-ancestor "$sha" HEAD 2> /dev/null; then
+    base=$sha
+    carried=$number
+  fi
+done <<< "$heads"
+if [[ -n $carried ]]; then echo "measuring from #$carried's head, which HEAD carries past origin/main" >&2; fi
+printf '%s\n' "$base"
+'''
+
 # Lists the changed items against the base, the obligations they raise and the
 # witnesses to rerun, and writes the pull-request comment (the witnesses) and
-# the witness selection beside the records. The base defaults to where HEAD
-# left origin/main, so work landed on main since is not read as this change.
+# the witness selection beside the records. The base defaults to
+# `evidence:base`, so neither work landed on main since nor a carried pull
+# request's commits are read as this change.
 # `--body` reads a pull-request body's ticked boxes and writes the body back
 # with its `## Re-verification` section, one line per prose obligation; a tick
 # holds while the clause and the items it names are unchanged. `--previous`
@@ -386,7 +418,7 @@ description = "List the specifications a change obliges to re-verify"
 depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
 tools.jq = "1.8.1"
 usage = '''
-arg "[base]" help="the revision the change is measured against; defaults to the merge base with origin/main"
+arg "[base]" help="the revision the change is measured against; defaults to evidence:base"
 flag "--previous <file>" help="a pull-request body whose acknowledgements carry over, left unchanged"
 flag "--body <file>" help="a pull-request body whose acknowledgements carry over, rewritten with its re-verification section"
 flag "--pr <number>" help="the pull request whose own labels join its targets' for the lint assessment, and whose head's hotpath checks owe a verdict when red"
@@ -396,7 +428,7 @@ env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-base=${usage_base:-$(git merge-base origin/main HEAD)}
+base=${usage_base:-$(mise run --quiet evidence:base)}
 extra=()
 if [[ -n ${usage_previous:-} ]]; then extra+=(--previous "$usage_previous"); fi
 if [[ -n ${usage_body:-} ]]; then extra+=(--body "$usage_body"); fi
