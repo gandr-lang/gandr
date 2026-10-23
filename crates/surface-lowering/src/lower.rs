@@ -3522,16 +3522,50 @@ fn sources_of(
 ) -> Vec<SourceIndex>
 {
     let mut of = Vec::new();
-    of.resize(usize::from(tree.node_count()), SourceIndex::default());
+    extend_sources(&mut of, tree, unit);
+    of
+}
+
+/// Extend `of`, the sources of `tree`'s first nodes, with those of the nodes
+/// after them, as [`sources_of`] reads them.
+///
+/// # Specification
+/// - requires: `of` is [`sources_of`] of a tree whose nodes `tree`'s first
+///   nodes are, at the same positions over the same text, under a unit whose
+///   sources `unit`'s first sources are; empty for a whole tree.
+/// - ensures: `of` is [`sources_of`] of `tree` under `unit`.
+/// - fails: never.
+/// - panics: none.
+/// - intension: only the nodes after `of`'s first are visited. Under the
+///   level-order layout each of those is a root added after the first nodes or
+///   a child of a node added after them, and every child of a first node is a
+///   first node, so a document resumed after its closure reads its own nodes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`sources_of`].
+/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+#[spec(ensures: of.len() == usize::from(tree.node_count()))]
+fn extend_sources(
+    of: &mut Vec<SourceIndex>,
+    tree: &SyntaxTree<'_>,
+    unit: &Unit,
+)
+{
+    let read = of.len();
+    let count = usize::from(tree.node_count());
+    of.resize(count, SourceIndex::default());
     let roots = tree.roots();
-    for &root in roots {
+    let added = roots
+        .get(roots.partition_point(|&root| usize::from(root) < read) ..)
+        .unwrap_or_default();
+    for &root in added {
         if let (Some(held), Some(node)) = (of.get_mut(usize::from(root)), tree.node(root)) {
             *held = unit.source_at(node.span().start());
         }
     }
-    for position in tree.positions() {
+    for position in (read .. count).map(NodeIndex::from) {
         let own = of.get(usize::from(position)).copied().unwrap_or_default();
-        let rooted = roots.binary_search(&position).is_ok();
+        let rooted = added.binary_search(&position).is_ok();
         for child in tree.children(position) {
             let source = if rooted {
                 tree.node(child)
@@ -3545,8 +3579,6 @@ fn sources_of(
             }
         }
     }
-
-    of
 }
 
 /// Where `half` is written: its form's bytes and its name tile's.
@@ -4500,7 +4532,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.leaves.resize(count, exits::Leaves::Never);
         self.collected
             .widen(tree.node_count(), unit, described, decisions);
-        self.source_of = sources_of(tree, unit);
+        extend_sources(&mut self.source_of, tree, unit);
         if !self.holes.is_empty() {
             self.read_holes(read);
         }

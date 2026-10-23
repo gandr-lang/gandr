@@ -2715,17 +2715,34 @@ fn share<'source>(
 {
     let own = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
     let exercised = Exercised::of(arena, module, &report);
-    let mut unstatable = unit.unstatable.clone();
-    unstatable.retain(|refusal| match refusal.span() {
-        Maybe::Present(span) => own(span),
-        Maybe::Absent(_) => true,
-    });
-    let mut shadowed = module.recognition().shadowed().to_vec();
-    shadowed.retain(|shadow| own(shadow.span));
-    let mut inferred = module.inferred_exits().to_vec();
-    inferred.retain(|exit| own(exit.span));
-    let mut runs = unit.runs.clone();
-    runs.retain(|run| own(run.span));
+    let unstatable = unit
+        .unstatable
+        .iter()
+        .filter(|refusal| match refusal.span() {
+            Maybe::Present(span) => own(span),
+            Maybe::Absent(_) => true,
+        })
+        .copied()
+        .collect();
+    let shadowed = module
+        .recognition()
+        .shadowed()
+        .iter()
+        .filter(|shadow| own(shadow.span))
+        .cloned()
+        .collect();
+    let inferred = module
+        .inferred_exits()
+        .iter()
+        .filter(|exit| own(exit.span))
+        .copied()
+        .collect();
+    let runs = unit
+        .runs
+        .iter()
+        .filter(|run| own(run.span))
+        .copied()
+        .collect();
     let deprecated = unit
         .deprecated
         .iter()
@@ -2773,6 +2790,9 @@ fn share<'source>(
 ///   [`CheckRefusal::CapabilityConsumable`]; the spans ascend without repeats.
 /// - fails: never.
 /// - panics: none.
+/// - intension: one pass over the module's declarations, binders, bindings and
+///   resolutions; every table it keeps holds only spans `own` holds of, so a
+///   member judged after a large closure builds tables its own size.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — parameters, `run` binders, pattern variables and lambda
@@ -2819,6 +2839,7 @@ fn unused_binders(
             Maybe::Present(at) => Some(at.span),
             Maybe::Absent(_) => None,
         })
+        .filter(|&span| own(span))
         .collect();
     let origins = module.origins();
     let opens = |opener: ComputationId| {
@@ -2830,14 +2851,14 @@ fn unused_binders(
     let held: BTreeSet<ByteSpan> = origins
         .binders()
         .iter()
-        .filter(|binder| !opens(binder.0))
+        .filter(|binder| own(binder.1.span()) && !opens(binder.0))
         .map(|binder| binder.1.span())
         .collect();
     let written = |variable: ValueId| matches!(origins.value(variable), Maybe::Present(origin) if origin.provenance() == Provenance::Written);
     let read: BTreeSet<ByteSpan> = origins
         .bindings()
         .iter()
-        .filter(|binding| written(binding.0))
+        .filter(|binding| own(binding.1) && written(binding.0))
         .map(|binding| binding.1)
         .chain(
             module
@@ -2846,7 +2867,8 @@ fn unused_binders(
                 .filter_map(|resolution| match resolution.1 {
                     Resolution::Binder(binder) => Some(binder),
                     Resolution::Declaration(_) | Resolution::Constructor { .. } => None,
-                }),
+                })
+                .filter(|&binder| own(binder)),
         )
         .collect();
     let mut unused: Vec<ByteSpan> = origins
