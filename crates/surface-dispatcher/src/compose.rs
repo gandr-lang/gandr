@@ -1837,6 +1837,7 @@ fn judge_closure<'held>(
         context.grant(grants);
         context.enter_at(entry.clone());
         context.keep_pattern_holes(&holes);
+        context.keep_reducts(module.reducts());
         run.judge(&mut context, &declarations, |_, _, _| {});
         context.checkpoint()
     };
@@ -2491,6 +2492,7 @@ where
             (context, ModuleRun::new(), declarations.as_slice())
         };
         context.keep_pattern_holes(&holes);
+        context.keep_reducts(module.reducts());
         if let Some(ref written) = written {
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
@@ -3506,6 +3508,7 @@ impl gandr_surface_format::Elaborate for Elaborating
         context.grant(grants);
         context.enter_at(entry);
         context.keep_pattern_holes(&pattern_holes(module));
+        context.keep_reducts(module.reducts());
         let report = check_module(&mut context, &declarations);
         let definitions = report.definitions();
         module

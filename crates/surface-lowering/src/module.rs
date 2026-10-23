@@ -272,6 +272,7 @@ use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_levitation::THEORY_CONSTRUCTORS;
+use gandr_theory_levitation::TheoryInclusion;
 use gandr_theory_levitation::theory_desc;
 use quenchant_shape::shape::Maybe;
 
@@ -311,6 +312,7 @@ use crate::lower::InferredRun;
 use crate::lower::LinearRun;
 use crate::lower::NestedSite;
 use crate::lower::decode_escapes;
+use crate::model::Included;
 use crate::namespace::Recognition;
 use crate::namespace::Scope;
 use crate::origin::Insertion;
@@ -337,6 +339,8 @@ mod model;
 mod plicity;
 
 mod receiver;
+
+mod reduct;
 
 mod sealing;
 
@@ -376,6 +380,7 @@ pub use self::plicity::TelescopeEntry;
 pub use self::plicity::merged;
 pub use self::receiver::ReceiverMode;
 use self::receiver::receiver_of;
+pub use self::reduct::ReductSlot;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
 use self::sealing::KindForm;
@@ -1364,6 +1369,12 @@ pub struct Collected<'source>
     /// Each derived rule's plan, by its slot: the statement of a `derive`
     /// declaration, and each lemma its proof rests on.
     pub derived: BTreeMap<SlotIndex, DerivedSlot>,
+    /// Each reduct's plan, by its slot: one per theory a `theory` block
+    /// includes, directly or through another.
+    pub reducts: BTreeMap<SlotIndex, ReductSlot>,
+    /// The theories each `theory` block includes, by its slot: each with the
+    /// inclusion composed along the way first reached, in the order reached.
+    pub included: BTreeMap<SlotIndex, Vec<(SlotIndex, TheoryInclusion)>>,
     /// Each callable operation's slot, by the source declaring it and its
     /// name: operations are declared at the top level only.
     pub operation_names: BTreeMap<(SourceIndex, SurfaceName<'source>), SlotIndex>,
@@ -2611,6 +2622,8 @@ pub fn begin_collection<'source>(
         operations: BTreeMap::new(),
         operation_names: BTreeMap::new(),
         derived: BTreeMap::new(),
+        reducts: BTreeMap::new(),
+        included: BTreeMap::new(),
         abstracts: BTreeMap::new(),
         unread_expectations: BTreeMap::new(),
         data_members: BTreeMap::new(),
@@ -4264,7 +4277,8 @@ impl<'source> Collector<'_, 'source>
     ///   a `Theory` the module declared otherwise, refuses it; a name declared
     ///   before refuses the block as a duplicate. Each `include` the block
     ///   writes is kept among the declared uses, its name tile beside the slot
-    ///   owning the theory it includes.
+    ///   owning the theory it includes; a block whose slot stands unrefused
+    ///   takes its reducts' slots after it ([`Self::reducts`]).
     /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
     ///   is the presentation's value.
     /// - panics: none.
@@ -4289,17 +4303,15 @@ impl<'source> Collector<'_, 'source>
             return;
         };
         let named = entry.named;
-        let included: Vec<(ByteSpan, NodeIndex)> = match entry.presentation {
-            Maybe::Present(ref presentation) => presentation
-                .inclusions
-                .iter()
-                .map(|inclusion| (inclusion.named.span, inclusion.block.node))
-                .collect(),
+        let inclusions: Vec<Included> = match entry.presentation {
+            Maybe::Present(ref presentation) => presentation.inclusions.clone(),
             Maybe::Absent(_) => Vec::new(),
         };
-        for (span, block) in included {
-            if let Maybe::Present(slot) = self.collected.owner_of(block) {
-                self.collected.declared_uses.push((span, slot));
+        for included in &inclusions {
+            if let Maybe::Present(slot) = self.collected.owner_of(included.block.node) {
+                self.collected
+                    .declared_uses
+                    .push((included.named.span, slot));
             }
         }
         let name = self.name_of(named);
@@ -4362,6 +4374,16 @@ impl<'source> Collector<'_, 'source>
                 });
                 slot.refuse(child.node, refusal);
             }
+        }
+        let clean = self
+            .collected
+            .slots
+            .get(usize::from(position))
+            .is_some_and(|slot| {
+                slot.introduced_by.node == child.node && matches!(slot.refusal, Maybe::Absent(_))
+            });
+        if clean {
+            self.reducts((position, child), &inclusions);
         }
     }
 
@@ -8945,6 +8967,8 @@ pub struct LoweredModule<'source>
     /// The theory each derived rule's statement is read under, `T` in `T.r`,
     /// by the statement's position.
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
+    /// The reducts the module mints, ascending by position.
+    reducts: Vec<ConstantIndex>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -8991,6 +9015,7 @@ impl<'source> LoweredModule<'source>
             stage_bounds: BTreeMap::new(),
             supplies: BTreeMap::new(),
             qualified: BTreeMap::new(),
+            reducts: Vec::new(),
         }
     }
 
@@ -9058,6 +9083,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.qualified = qualified;
+        self
+    }
+
+    /// This module, carrying `reducts`, the positions of the reducts it
+    /// mints, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_reducts(
+        mut self,
+        reducts: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        self.reducts = reducts;
         self
     }
 
@@ -9661,7 +9702,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The theory `declaration` is read under when it is a derived rule's
-    /// statement, `T` in `T.r`.
+    /// statement or a reduct, `T` in `T.r` or `T.S`.
     ///
     /// # Specification
     /// trivial.
@@ -9673,6 +9714,19 @@ impl<'source> LoweredModule<'source>
     ) -> Option<SurfaceName<'source>>
     {
         self.qualified.get(&declaration.constant()).copied()
+    }
+
+    /// The reducts this module mints, ascending by position: each restricts
+    /// the models of a theory to a theory it includes, and the checker inserts
+    /// it where a model of the first stands at a model of the second.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn reducts(&self) -> &[ConstantIndex]
+    {
+        &self.reducts
     }
 
     /// The structured name of `declaration`: the path of the module it is

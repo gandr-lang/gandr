@@ -36,6 +36,7 @@ use super::Node;
 use super::Renaming;
 use super::Unenclosed;
 use super::constructor_classifier;
+use super::cross_reducts;
 use super::elaborate_nested_traced;
 use super::fill_comp_type_hole;
 use super::fill_hole;
@@ -2662,6 +2663,77 @@ fn a_wrap_marks_exactly_the_named_nodes()
         TermId::Value(unit)
     );
     assert_eq!(mark, arena.watermark(), "an unnamed subject mints nothing");
+}
+
+#[test]
+fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
+{
+    let mut arena = CoreArena::new();
+    let crossed = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let unit = arena.value_unit();
+    let pair = arena.value_tuple(&[crossed, unit]);
+    let returned = arena.computation_return(pair);
+    let subject = arena.value_thunk(returned);
+    let reduct = ConstantIndex::from(7_usize);
+    let crossings = BTreeMap::from([(crossed, reduct)]);
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
+    let Some(&Value::Thunk(body)) = arena.value(rebuilt)
+    else {
+        panic!("the rebuilt subject is a thunk");
+    };
+    let Some(&Computation::Return(value)) = arena.computation(body)
+    else {
+        panic!("the thunk's body is a return");
+    };
+    let Some(&[first, second]) = arena.value(value).and_then(Value::components)
+    else {
+        panic!("the return's value is a pair");
+    };
+    assert_eq!(second, unit, "an uncrossed sibling stands");
+    assert_eq!(
+        runs,
+        [first],
+        "the crossed value stands as the run minted for it"
+    );
+    let Some(&Value::Run(applied)) = arena.value(first)
+    else {
+        panic!("a crossed value stands as a run");
+    };
+    let Some(&Computation::Application(head, argument)) = arena.computation(applied)
+    else {
+        panic!("the run applies the reduct");
+    };
+    assert_eq!(
+        argument, crossed,
+        "the reduct is applied to the crossed value itself"
+    );
+    let Some(&Computation::Force(forced)) = arena.computation(head)
+    else {
+        panic!("the application's head forces a value");
+    };
+    assert_eq!(
+        arena.value(forced),
+        Some(&Value::Constant(reduct)),
+        "the run forces the reduct the crossing names"
+    );
+    assert!(
+        carried.contains(&Carried::Value(subject, rebuilt))
+            && !carried
+                .iter()
+                .any(|&pair| matches!(pair, Carried::Value(held, _) if held == crossed)),
+        "the rebuild reports the subject, and a crossed value carried to itself is no pair: {carried:?}"
+    );
+    let mark = arena.watermark();
+    let (mut none, mut minted) = (Vec::new(), Vec::new());
+    assert_eq!(
+        cross_reducts(&mut arena, unit, &crossings, &mut none, &mut minted),
+        unit
+    );
+    assert!(
+        mark == arena.watermark() && none.is_empty() && minted.is_empty(),
+        "a subject reaching no crossed value mints nothing"
+    );
 }
 
 /// Apply the constant `callee`, forced, to `argument`.

@@ -13,6 +13,7 @@ use super::SidePlace;
 use super::Tag;
 use super::TheoryBinder;
 use super::TheoryFault;
+use super::TheoryInclusion;
 use super::TheoryOperation;
 use super::TheoryParts;
 use super::TheoryPort;
@@ -947,6 +948,47 @@ fn two_extensions_of_one_presentation_meet_along_it()
         first.operations.first(),
         second.operations.first(),
         "both inclusions send the shared operation to one position"
+    );
+}
+
+#[test]
+fn the_ways_round_a_diamond_compose_to_one_inclusion()
+{
+    let (one, unit_left) = unit_named(Name::from("one"), Name::from("unitL"));
+    let (zero, zero_left) = unit_named(Name::from("zero"), Name::from("zeroL"));
+    let mut pointed = TheoryParts {
+        operations: vec![one],
+        rules: vec![unit_left],
+        ..TheoryParts::default()
+    };
+    let through_pointed = pointed.include(&semigroup()).unwrap();
+    let mut copointed = TheoryParts {
+        operations: vec![zero],
+        rules: vec![zero_left],
+        ..TheoryParts::default()
+    };
+    let through_copointed = copointed.include(&semigroup()).unwrap();
+    let mut both = TheoryParts::default();
+    let pointed_in_both = both.include(&pointed).unwrap();
+    let copointed_in_both = both.include(&copointed).unwrap();
+    let left = through_pointed.then(&pointed_in_both).unwrap();
+    let right = through_copointed.then(&copointed_in_both).unwrap();
+    assert_eq!(left, right, "the two ways round are one inclusion");
+    assert_eq!(
+        both.clone().include(&semigroup()),
+        Ok(left.clone()),
+        "the semigroup included directly stands where the composite places it"
+    );
+    assert_eq!(both.restrict(&left), semigroup());
+    assert_eq!(
+        both.restrict(&left),
+        both.restrict(&pointed_in_both).restrict(&through_pointed),
+        "restricting along the composite is restricting along each step"
+    );
+    assert_eq!(
+        through_pointed.then(&TheoryInclusion::default()),
+        None,
+        "a position the outer inclusion does not place composes to nothing"
     );
 }
 

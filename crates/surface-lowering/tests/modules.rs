@@ -939,7 +939,8 @@ fn strata(lowered: &Lowered<'_>) -> Vec<Stratum>
         .collect()
 }
 
-/// The checker's report over every declaration `lowered` did not refuse.
+/// The checker's report over every declaration `lowered` did not refuse, the
+/// reducts the module mints kept as the dispatcher keeps them.
 ///
 /// # Specification
 /// - requires: the fixture’s core identifiers belong to its arena and fit the
@@ -1049,10 +1050,9 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
             ))
         })
         .collect();
-    check_module(
-        &mut CheckingContext::new(&mut lowered.arena, CheckBudget::DEFAULT),
-        &declarations,
-    )
+    let mut context = CheckingContext::new(&mut lowered.arena, CheckBudget::DEFAULT);
+    context.keep_reducts(lowered.module.reducts());
+    check_module(&mut context, &declarations)
 }
 
 /// The checker's judgement of every declaration `lowered` did not refuse,

@@ -1080,6 +1080,120 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
 }
 
 #[test]
+fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
+{
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(index),
+        )
+    };
+    // The narrow pair keeps the first two of the wide nesting's three
+    // components, as a theory included in another keeps some of its members.
+    let check = |kept: &[ConstantIndex]| {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let narrow = arena.value_type_product(&[integer, integer]);
+        let wide = arena.value_type_product(&[integer, narrow]);
+        let thunk_of = |arena: &mut CoreArena, domain, result| {
+            let returns = arena.comp_type_returner(result);
+            let arrow = arena.comp_type_arrow(domain, returns);
+            arena.value_type_thunk(arrow)
+        };
+        // `reduct = thunk(λm. split m as (a, r). split r as (b, c). return (a, b))`.
+        let reduct_type = thunk_of(&mut arena, wide, narrow);
+        let reduct = {
+            let a = variable(&mut arena, 3);
+            let b = variable(&mut arena, 1);
+            let pair = arena.value_tuple(&[a, b]);
+            let returned = arena.computation_return(pair);
+            let pair_of = gandr_core_term::ComponentCount::from(2_usize);
+            let rest = variable(&mut arena, 0);
+            let inner = arena.computation_split(rest, pair_of, returned);
+            let model = variable(&mut arena, 0);
+            let outer = arena.computation_split(model, pair_of, inner);
+            let lambda = arena.computation_lambda(outer);
+            arena.value_thunk(lambda)
+        };
+        // `taker = thunk(λn. return 0)`, asking for the narrow pair.
+        let taker_type = thunk_of(&mut arena, narrow, integer);
+        let taker = {
+            let zero = arena.value_literal(crate::fixture::integer_literal());
+            let returned = arena.computation_return(zero);
+            let lambda = arena.computation_lambda(returned);
+            arena.value_thunk(lambda)
+        };
+        // `user = thunk(λm. taker(m))`, `m` the wide nesting.
+        let user_type = thunk_of(&mut arena, wide, integer);
+        let site = variable(&mut arena, 0);
+        let user = {
+            let called = call(&mut arena, ConstantIndex::from(1_usize), site);
+            let lambda = arena.computation_lambda(called);
+            arena.value_thunk(lambda)
+        };
+        // `thunk(λm. bind reduct(m) as n. taker(n))`.
+        let expected = {
+            let model = variable(&mut arena, 0);
+            let reduced = call(&mut arena, ConstantIndex::from(0_usize), model);
+            let bound = variable(&mut arena, 0);
+            let called = call(&mut arena, ConstantIndex::from(1_usize), bound);
+            let ran = arena.computation_bind(reduced, called);
+            let lambda = arena.computation_lambda(ran);
+            arena.value_thunk(lambda)
+        };
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            context.keep_reducts(kept);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(reduct_type), Maybe::Present(reduct)),
+                declaration(At(1), Maybe::Present(taker_type), Maybe::Present(taker)),
+                declaration(At(2), Maybe::Present(user_type), Maybe::Present(user)),
+            ])
+        };
+        (arena, report, site, expected)
+    };
+    let (mut arena, report, site, expected) = check(&[ConstantIndex::from(0_usize)]);
+    let Verdict::Checked { body, .. } = report.judged()[2].verdict()
+    else {
+        panic!(
+            "the wide nesting checks where the narrow pair is asked: {:?}",
+            report.judged()[2].verdict()
+        );
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, body, expected),
+        gandr_core_term::CertificateEquality::Equal,
+        "the reduct runs at the wide nesting, and the call reads what it returns"
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(2_usize)]
+            .crossings()
+            .iter()
+            .map(|(&at, &reduct)| (at, reduct))
+            .collect::<Vec<_>>(),
+        [(site, ConstantIndex::from(0_usize))],
+        "the crossing is recorded at the argument, by the reduct"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives the application of the reduct: {readmission:?}"
+    );
+    let (_, unkept, ..) = check(&[]);
+    assert!(
+        matches!(
+            unkept.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "with no reduct kept, the wide nesting is refused where the narrow pair is asked: {:?}",
+        unkept.judged()[2].verdict()
+    );
+}
+
+#[test]
 fn a_nested_call_runs_with_the_effects_its_returner_performs()
 {
     use gandr_core_term::effect::EffectOp;

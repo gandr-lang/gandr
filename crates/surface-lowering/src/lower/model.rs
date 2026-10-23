@@ -1781,12 +1781,6 @@ impl<'source> Lowerer<'_, 'source>
     /// [`LoweringRefusal::OutOfFragment`] and the refusals of
     /// [`crate::module::Collected::presented_theory`].
     ///
-    /// # Termination
-    /// Every pass advances the top frame past one component or pops it. A
-    /// frame is pushed only for a theory no frame on the stack holds, so the
-    /// stack is no deeper than the unit's finite slots, and each frame reads
-    /// its signature's finite components once.
-    ///
     /// # Adequacy
     /// - hypothesis: L3 — a theory of sorts and operations, one with a law, one
     ///   with a family sort, one nesting another, and a name no theory answers.
@@ -1796,13 +1790,6 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
     /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |theories| !theories.is_empty()))]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: one search of the unit's slots and of the frame stack per nested component, and a bundle nests few"
-        )
-    )]
     fn bundled(
         &mut self,
         written: Site,
@@ -1826,20 +1813,96 @@ impl<'source> Lowerer<'_, 'source>
         {
             self.collected.reach_source(using, declaring);
         }
-        let read = |at: ByteOffset, name: SurfaceName<'source>| {
-            let (position, presentation) = self.collected.presented_theory(at, span, name)?;
-            let Ok(signature) = crate::model::derive(presentation)
-            else {
-                return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
-            };
-            let start = self
-                .collected
-                .slots
-                .get(usize::from(position))
-                .map_or(at, |slot| slot.introduced_by.span.start());
-            Ok((position, start, signature))
+        let outermost = self.bundle_theory(written, (at, name))?;
+        self.bundled_from(written, outermost)
+    }
+
+    /// The signature the theory `name` names where a form starting at `at`
+    /// stands derives, beside the theory's slot and where its declaration
+    /// starts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the theory's slot, the start of its declaration — `at` when
+    ///   the unit holds no such slot — and the signature its presentation
+    ///   derives.
+    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
+    ///   yields at `written`'s span; an unadmitted form for a theory whose
+    ///   value codes no presentation.
+    /// - panics: none.
+    /// - executable: none — the slot and its start are read through the
+    ///   receiver's collected slots, which a predicate would search again.
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bundled`].
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `tests::modules::models::a_model_type_of_an_undeclared_theory_is_refused`
+    fn bundle_theory(
+        &self,
+        written: Site,
+        (at, name): (ByteOffset, SurfaceName<'source>),
+    ) -> Result<(SlotIndex, ByteOffset, ModelSignature), LoweringRefusal<'source>>
+    {
+        let (position, presentation) =
+            self.collected.presented_theory(at, written.at.span, name)?;
+        let Ok(signature) = crate::model::derive(presentation)
+        else {
+            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
-        let (slot, start, signature) = read(at, name)?;
+        let start = self
+            .collected
+            .slots
+            .get(usize::from(position))
+            .map_or(at, |slot| slot.introduced_by.span.start());
+        Ok((position, start, signature))
+    }
+
+    /// The theories of the bundle whose outermost theory `outermost` reads,
+    /// as its slot, the start of its declaration and its signature, the
+    /// refusals placed at `written`.
+    ///
+    /// # Specification
+    /// - requires: `outermost` is a theory as [`Self::bundle_theory`] reads
+    ///   one.
+    /// - ensures: `outermost`'s signature first, then, depth first in the order
+    ///   the components stand, the signature of each theory a nested component
+    ///   names, read where the nesting theory's declaration starts, each theory
+    ///   beside the places of the theories it nests.
+    /// - fails: as [`Self::bundled`] past the outermost theory.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::bundled`].
+    ///
+    /// # Termination
+    /// Every pass advances the top frame past one component or pops it. A
+    /// frame is pushed only for a theory no frame on the stack holds, so the
+    /// stack is no deeper than the unit's finite slots, and each frame reads
+    /// its signature's finite components once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bundled`], and a reduct bundling a theory
+    ///   an import of an import declares.
+    /// - witness: `tests::modules::models::a_nesting_model_type_bundles_the_inner_one`
+    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |theories| !theories.is_empty()))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: one search of the unit's slots and of the frame stack per nested component, and a bundle nests few"
+        )
+    )]
+    fn bundled_from(
+        &self,
+        written: Site,
+        (slot, start, signature): (SlotIndex, ByteOffset, ModelSignature),
+    ) -> Result<Vec<BundledTheory>, LoweringRefusal<'source>>
+    {
+        let span = written.at.span;
         let mut theories = vec![BundledTheory {
             signature,
             nested: Vec::new(),
@@ -1885,7 +1948,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             };
-            let (slot, start, signature) = read(start, name)?;
+            let (slot, start, signature) = self.bundle_theory(written, (start, name))?;
             if frames.iter().any(|frame| frame.slot == slot) {
                 return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             }
@@ -3208,3 +3271,5 @@ fn member_read<'source>(
 }
 
 mod derived;
+
+mod reduct;

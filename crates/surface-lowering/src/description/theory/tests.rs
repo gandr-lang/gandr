@@ -2089,6 +2089,67 @@ fn an_included_theory_is_the_extension_restricted()
 }
 
 #[test]
+fn the_include_subject_s_ways_round_compose_to_one_inclusion()
+{
+    let report = described(include_str!(
+        "../../../../../corpus/model/include/monoid.gandr"
+    ));
+    assert_eq!(report.diagnostics, []);
+    let theories: Vec<_> = report
+        .declarations
+        .iter()
+        .filter_map(|declaration| match declaration.presentation {
+            Maybe::Present(ref presentation) => Some((&declaration.description.id, presentation)),
+            Maybe::Absent(_) => None,
+        })
+        .collect();
+    let place = |id: &NominalId| theories.iter().position(|&(held, _)| *held == *id).unwrap();
+    // Every way down the include graph from each theory, each step composed
+    // onto the inclusion of the theory it leaves.
+    let mut ways = alloc::collections::BTreeMap::new();
+    let mut pending = Vec::new();
+    for (root, &(_, top)) in theories.iter().enumerate() {
+        pending.extend(
+            top.inclusions
+                .iter()
+                .map(|included| (place(&included.theory), included.inclusion.clone())),
+        );
+        while let Some((reached, inclusion)) = pending.pop() {
+            pending.extend(theories[reached].1.inclusions.iter().map(|further| {
+                (
+                    place(&further.theory),
+                    further
+                        .inclusion
+                        .then(&inclusion)
+                        .expect("an inclusion composes"),
+                )
+            }));
+            ways.entry((root, reached))
+                .or_insert_with(Vec::new)
+                .push(inclusion);
+        }
+    }
+    let around = ways.values().filter(|found| found.len() > 1).count();
+    assert_eq!(
+        around, 1,
+        "the subject's one diamond is the only pair reached twice"
+    );
+    for (&(root, reached), found) in &ways {
+        let parts = theories[root].1.value.decode().unwrap();
+        let included = theories[reached].1.value.decode().unwrap();
+        assert!(
+            found.iter().all(|inclusion| *inclusion == found[0]),
+            "every way round from one theory to another is one inclusion: {found:?}"
+        );
+        assert_eq!(
+            parts.restrict(&found[0]),
+            included,
+            "and it restricts the including theory to the included one"
+        );
+    }
+}
+
+#[test]
 fn an_include_is_refused_at_its_member()
 {
     let source = "theory Pointed {\n  include Mag;\n  sort M : Type;\n}\ntheory Mag {\n  sort M : Type;\n  oper e : () --> M;\n}\ntheory Unary {\n  sort M : Type;\n  oper e : (x : M) --> M;\n}\ntheory Both {\n  include Mag;\n  include Unary;\n}\n";

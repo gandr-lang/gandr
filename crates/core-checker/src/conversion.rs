@@ -400,8 +400,10 @@ pub enum Agreement
 ///   at `at` from the synthesised level to the expected one — in the side table
 ///   under ordinary checking, as one more occurrence of `at` under a
 ///   term-producing run, which records an equal level as an identity occurrence
-///   too; otherwise success exactly when [`convert`] answers convertible.
-///   `tally` advances once on every outcome, saturating at its ceiling.
+///   too; otherwise success exactly when [`convert`] answers convertible, or
+///   when it answers apart and a kept reduct carries the synthesised type to
+///   the expected one, which records the crossing at `at` by the first such
+///   reduct. `tally` advances once on every outcome, saturating at its ceiling.
 /// - provides: the only comparison of value types the judgement makes, and the
 ///   only place a code moves up a universe.
 /// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
@@ -430,13 +432,16 @@ pub enum Agreement
 ///   an agreeing and a differing pair, a value code checked at its own level,
 ///   one level up and one level down, a computation code one level up, and a
 ///   code of the other sort, each answer and count asserted; a relocated
-///   synthesised type answers as its settled reading does.
+///   synthesised type answers as its settled reading does; a pair nesting more
+///   components than the one asked crosses by the reduct kept, and is refused
+///   with none kept.
 /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
 /// - witness: `conversion::tests::a_relocated_type_converts_as_its_settled_reading`
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
 /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
 #[spec(
     captures: before = tally.0,
     ensures: |ret| tally.0 == before.saturating_add(1)
@@ -510,6 +515,14 @@ where
     if agreement == Agreement::Convertible {
         return Ok(());
     }
+    // A model of a theory stands at a model of one it includes by the reduct
+    // between them, which the elaboration applies where the bridge crossed.
+    if agreement == Agreement::Apart
+        && let Maybe::Present(reduct) = crossing(context, found, wanted)?
+    {
+        context.record_crossing(at, reduct);
+        return Ok(());
+    }
     let forged = agreement == Agreement::Apart
         && matches!(
             value_type_view(context.arena(), wanted)?,
@@ -539,6 +552,65 @@ where
             Err(CheckRefusal::StageNotBelow { at, found, bound })
         },
     }
+}
+
+/// The first kept reduct whose signature carries the type `found` to the type
+/// `wanted`.
+///
+/// # Specification
+/// - requires: both types are formed, in the context's arena.
+/// - ensures: the first reduct the context keeps whose signature is a thunk of
+///   an arrow `A → F B` with `found` converting to `A` and `B` to `wanted`;
+///   nothing when no kept reduct's does.
+/// - fails: the refusals [`convert`] yields, and a view's of a signature.
+/// - panics: none.
+/// - executable: none — the kept reducts and their signatures are the
+///   context's, which a predicate would search and convert again.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a monoid's model at a semigroup's crosses by the monoid's
+///   reduct, and at an unrelated theory's by none.
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+fn crossing(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<gandr_kernel_term::ConstantIndex, ()>, CheckRefusal>
+{
+    let mut next = 0_usize;
+    while let Some(&reduct) = context.reducts().get(next) {
+        next = next.saturating_add(1);
+        let Maybe::Present(signature) = context.signature(reduct)
+        else {
+            continue;
+        };
+        let ValueTypeView::Thunk(arrow) = value_type_view(context.arena(), signature.id())?
+        else {
+            continue;
+        };
+        let CompTypeView::Arrow { domain, codomain } = comp_type_view(context.arena(), arrow)?
+        else {
+            continue;
+        };
+        let CompTypeView::Returner { result, .. } = comp_type_view(context.arena(), codomain)?
+        else {
+            continue;
+        };
+        if convert(context, Pairing::Assignable(found, Relocated::from(domain)))?
+            == Agreement::Convertible
+            && convert(
+                context,
+                Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
+            )? == Agreement::Convertible
+        {
+            return Ok(Maybe::Present(reduct));
+        }
+    }
+
+    Ok(Maybe::Absent(()))
 }
 
 /// Cross the computation bridge: the type `at` synthesised against the type it

@@ -1029,15 +1029,15 @@ struct Decision
 ///   run, whose refusal is the verdict's; when the body's calls omit implicits,
 ///   the verdict of the run over the body filled with their solutions
 ///   ([`implicits`]); when the first run accepted a body holding a computation
-///   written where a value is read, what elaborating it did, the verdict then
-///   being the second run's over the elaborated body; and, when `run` is
-///   [`Run::Typed`] and the body was run, what [`type_value`] keeps for the
-///   body as written, each type read with the solutions of the holes its calls
-///   nominated, read before the declaration's own type entered the table. An
-///   accepted value keeps, under its position, the path endpoint pairs the run
-///   its verdict is from related, and nothing an earlier declaration or another
-///   run related. A suspended verdict carries the residue its verdict's run
-///   left; every other verdict an empty one.
+///   written where a value is read, or a value the bridge carried by a reduct,
+///   what elaborating it did, the verdict then being the second run's over the
+///   elaborated body; and, when `run` is [`Run::Typed`] and the body was run,
+///   what [`type_value`] keeps for the body as written, each type read with the
+///   solutions of the holes its calls nominated, read before the declaration's
+///   own type entered the table. An accepted value keeps, under its position,
+///   the path endpoint pairs the run its verdict is from related, and nothing
+///   an earlier declaration or another run related. A suspended verdict carries
+///   the residue its verdict's run left; every other verdict an empty one.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -1244,11 +1244,20 @@ fn decide(
             let (solved, first, solutions) =
                 implicits(context, body, (direction, declaration.stages()), first);
             let decisions = context.take_nesting();
+            let crossings = context.take_crossings();
+            // A value the bridge carried by a reduct runs the reduct at it, a
+            // run the nested elaboration binds before its region.
+            let (solved, crossed, decisions) = if first.is_ok() && !crossings.is_empty() {
+                crate::nested::cross(context.arena_mut(), solved, &crossings, &decisions)
+            }
+            else {
+                (solved, Vec::new(), decisions)
+            };
             let judged = match first {
                 Ok(_) if !decisions.is_empty() => {
                     match crate::nested::elaborate(context.arena_mut(), solved, &decisions) {
                         Ok((elaborated, done)) => {
-                            elaboration = Maybe::Present(done);
+                            elaboration = Maybe::Present(done.after_crossing(crossings, crossed));
                             // The verdict is the second run's, and so are the
                             // pairs it relates and what it leaves undecided.
                             let _first = context.take_relating();
@@ -1256,7 +1265,9 @@ fn decide(
                             crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);
                             context.own_body(elaborated);
-                            judge(context, elaborated, direction)
+                            let second = judge(context, elaborated, direction);
+                            let _second = context.take_crossings();
+                            second
                         },
                         Err(unenclosed) => Err(unenclosed_failure(unenclosed.run())),
                     }
@@ -1285,6 +1296,7 @@ fn decide(
                     solved_type(context.arena_mut(), (ty, depth), &solutions)
                 }));
                 let _typed = context.take_nesting();
+                let _crossed = context.take_crossings();
             }
             spending = context.worlds_mut().leave();
             match judged {
@@ -1619,6 +1631,7 @@ fn implicits(
     let filled = fill(context.arena_mut(), body, &solutions);
     let _first = context.take_relating();
     let _stale = context.take_nesting();
+    let _crossed = context.take_crossings();
     context.forget_stages();
     crate::quantified::mint(context.stages_mut(), stages);
     context.deferrals_mut().open(Collecting::On);

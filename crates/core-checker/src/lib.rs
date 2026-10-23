@@ -52,6 +52,14 @@
 //! value universe at or above its own, and the crossing records the lift the
 //! kernel bridge writes; nothing else moves a type up a universe.
 //!
+//! **A model stands at a model of a theory it includes by its reduct.** Where
+//! two value types are apart and a reduct the module mints
+//! ([`CheckingContext::keep_reducts`]) carries the one to the other, the value
+//! bridge crosses by it and records the crossing at the value; the elaboration
+//! applies the reduct there as a run, bound before its region as a nested
+//! run is, so the run and the kernel read the application. Conversion itself
+//! never relates the two types.
+//!
 //! **Holes come in two grains.** A declaration with no body under a declared
 //! type absorbs it and owes it, and one with nothing to absorb is refused. A
 //! hole written inside a body synthesises the unknown type and checks against

@@ -121,6 +121,49 @@ fn a_lowered_theory_exposes_its_description_and_its_model()
     );
 }
 
+/// The include subject's base: the semigroup, the monoid, the left zero, the
+/// two extensions at once, and the endomorphism monoid.
+const INCLUDED: &str = include_str!("../../../../corpus/model/include/monoid.gandr");
+
+#[test]
+fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
+{
+    let source = format!(
+        "{INCLUDED}def endo : Model(Monoid) ;\ndef endo = pack Endo at Model(Monoid) ;\ndef \
+         multiplies(s : Model(Semigroup)) -> -F Integer {{\n  case s {{ #{{.mul = m}} => 0 }}\n}}\ndef \
+         asked() -> -F Integer {{ become multiplies(endo) }}\ndef named() -> -F Integer {{\n  run s \
+         <- Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
+    );
+    let mut lowered = lower(source.as_str());
+    let reducts: Vec<String> = rows(&lowered)
+        .into_iter()
+        .filter(|&(_, role, _)| role == Role::Derived)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        reducts,
+        [
+            "Monoid.Semigroup",
+            "LeftZero.Semigroup",
+            "UnitAndZero.Monoid",
+            "UnitAndZero.Semigroup",
+            "UnitAndZero.LeftZero"
+        ],
+        "each theory takes one reduct per theory it includes, directly or through another, the \
+         diamond's semigroup once"
+    );
+    assert_eq!(lowered.module.reducts().len(), reducts.len());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+        )),
+        "every reduct checks, and the monoid stands where the semigroup is asked, by the reduct \
+         inserted and by the reduct named: {judgements:?}"
+    );
+}
+
 #[test]
 fn a_model_of_an_undeclared_theory_is_refused_by_name()
 {
