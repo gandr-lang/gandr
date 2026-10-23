@@ -215,6 +215,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ViewNotPlace { .. } => "no place of the receiver",
         LoweringRefusal::ViewOfNoPlace { .. } => "a call answering no place",
         LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
+        LoweringRefusal::MismatchedPattern { .. } => "a pattern of another type",
         LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
         LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
         LoweringRefusal::DescentOnSeveralParameters { .. } => "descends on another parameter",
@@ -607,6 +608,7 @@ mod tests
             LoweringRefusal::ViewNotPlace { .. } => "no place of the receiver",
             LoweringRefusal::ViewOfNoPlace { .. } => "a call answering no place",
             LoweringRefusal::NonExhaustiveMatch { .. } => "some value matches no arm",
+            LoweringRefusal::MismatchedPattern { .. } => "a pattern of another type",
             LoweringRefusal::UnmarkedSelfReference { .. } => "recursion without a claim",
             LoweringRefusal::UnguardedCorecursion { .. } => "not the whole arm of a copattern",
             LoweringRefusal::DescentOnSeveralParameters { .. } => "descends on another parameter",
@@ -897,6 +899,10 @@ mod tests
             LoweringRefusal::ViewNotPlace { span: at },
             LoweringRefusal::ViewOfNoPlace { span: at },
             LoweringRefusal::NonExhaustiveMatch { span: at },
+            LoweringRefusal::MismatchedPattern {
+                span: at,
+                first: at,
+            },
             LoweringRefusal::UnmarkedSelfReference { span: at, name },
             LoweringRefusal::UnguardedCorecursion { span: at, name },
             LoweringRefusal::DescentOnSeveralParameters {

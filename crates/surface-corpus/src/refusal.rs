@@ -636,6 +636,8 @@ pub enum RefusalName
     ViewOfNoPlace,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
+    /// A match pattern of another kind than the first tested at its place.
+    MismatchedPattern,
     /// A recursive definition's own name written without a descent claim.
     UnmarkedSelfReference,
     /// A productivity claim standing outside a copattern arm.
@@ -864,7 +866,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 202_usize] = [
+    pub const VOCABULARY: [Self; 203_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -971,6 +973,7 @@ impl RefusalName
         Self::ViewNotPlace,
         Self::ViewOfNoPlace,
         Self::NonExhaustiveMatch,
+        Self::MismatchedPattern,
         Self::UnmarkedSelfReference,
         Self::UnguardedCorecursion,
         Self::DescentOnSeveralParameters,
@@ -1160,6 +1163,7 @@ impl RefusalName
         (Self::ViewNotPlace, b"ViewNotPlace") |
         (Self::ViewOfNoPlace, b"ViewOfNoPlace") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
+        (Self::MismatchedPattern, b"MismatchedPattern") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::UnguardedCorecursion, b"UnguardedCorecursion") |
         (Self::DescentOnSeveralParameters, b"DescentOnSeveralParameters") |
@@ -1486,6 +1490,7 @@ impl RefusalName
             Self::ViewNotPlace => "ViewNotPlace",
             Self::ViewOfNoPlace => "ViewOfNoPlace",
             Self::NonExhaustiveMatch => "NonExhaustiveMatch",
+            Self::MismatchedPattern => "MismatchedPattern",
             Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             Self::UnguardedCorecursion => "UnguardedCorecursion",
             Self::DescentOnSeveralParameters => "DescentOnSeveralParameters",
@@ -2065,6 +2070,8 @@ impl Refusal<'_>
         RefusalName::ViewOfNoPlace) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
+        (Self::Lowering(LoweringRefusal::MismatchedPattern { .. }),
+        RefusalName::MismatchedPattern) |
         (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
         RefusalName::UnmarkedSelfReference) |
         (Self::Lowering(LoweringRefusal::UnguardedCorecursion { .. }),
@@ -2309,7 +2316,8 @@ impl Refusal<'_>
         RefusalName::AmbiguousMethod) | (LoweringRefusal::ViewNotPlace { .. },
         RefusalName::ViewNotPlace) | (LoweringRefusal::ViewOfNoPlace { .. },
         RefusalName::ViewOfNoPlace) | (LoweringRefusal::NonExhaustiveMatch { .. },
-        RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
+        RefusalName::NonExhaustiveMatch) | (LoweringRefusal::MismatchedPattern { .. },
+        RefusalName::MismatchedPattern) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::UnguardedCorecursion { .. },
         RefusalName::UnguardedCorecursion) | (LoweringRefusal::DescentOnSeveralParameters { .. },
         RefusalName::DescentOnSeveralParameters) | (LoweringRefusal::Unreachable { .. },
@@ -2398,6 +2406,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ViewNotPlace { .. } => RefusalName::ViewNotPlace,
         LoweringRefusal::ViewOfNoPlace { .. } => RefusalName::ViewOfNoPlace,
         LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
+        LoweringRefusal::MismatchedPattern { .. } => RefusalName::MismatchedPattern,
         LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         LoweringRefusal::UnguardedCorecursion { .. } => RefusalName::UnguardedCorecursion,
         LoweringRefusal::DescentOnSeveralParameters { .. } => {

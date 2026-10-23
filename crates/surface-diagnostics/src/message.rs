@@ -520,6 +520,9 @@ fn lowered(
         LoweringRefusal::NonExhaustiveMatch { .. } => {
             f.write_str("this match does not cover every value it can be given")
         },
+        LoweringRefusal::MismatchedPattern { .. } => f.write_str(
+            "this pattern matches another type than the first arm's pattern at its place",
+        ),
         LoweringRefusal::UnmarkedSelfReference { name, .. } => write!(
             f,
             "`{name}` calls itself without saying how it recurses; write `{name}[<](…)`"
@@ -1460,6 +1463,7 @@ mod tests
             LoweringRefusal::ViewNotPlace { span },
             LoweringRefusal::ViewOfNoPlace { span },
             LoweringRefusal::NonExhaustiveMatch { span },
+            LoweringRefusal::MismatchedPattern { span, first: span },
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::UnguardedCorecursion { span, name },
             LoweringRefusal::DescentOnSeveralParameters {

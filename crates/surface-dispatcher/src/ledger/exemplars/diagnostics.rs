@@ -82,10 +82,6 @@ const ASCRIPTION: Issue = Issue(1321);
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
-/// The issue settling which of the lowering and the checker refuses a case
-/// arm of another data type's constructor.
-const FOREIGN_ARM: Issue = Issue(2208);
-
 /// Why no source reaches an effectful former's refusal: only the kernel's
 /// readmission refuses it, and there the declaration stays on the checker's
 /// side instead of being refused.
@@ -227,7 +223,14 @@ const OWED: [(&str, Owed); 65_usize] = [
     ("LoopUndecided", Owed::Unwritten(CHECKER)),
     ("SealSiteRepeated", Owed::Unwritten(CHECKER)),
     ("DataArgumentArity", Owed::Unwritten(CHECKER)),
-    ("UnknownConstructor", Owed::Unwritten(FOREIGN_ARM)),
+    (
+        "UnknownConstructor",
+        Owed::Unreachable(Reason(
+            "the lowering refuses a case arm of another data type's constructor as \
+             `MismatchedPattern`, and a construction of one synthesises its own type, a \
+             `TypeMismatch` where another is checked",
+        )),
+    ),
     (
         "ConstructorArity",
         Owed::Unreachable(Reason(

@@ -1615,6 +1615,40 @@ impl Written
             .and_then(|&at| self.shapes.get(at.0))
             .map_or(&WILD, |held| &held.1)
     }
+
+    /// The refusal of the pattern `row` holds in `switch`'s column, of
+    /// another kind than the first pattern the switch tests there.
+    ///
+    /// # Specification
+    /// - requires: the pattern `row` holds in the column is of another kind
+    ///   than the switch's first.
+    /// - ensures: [`LoweringRefusal::MismatchedPattern`] at the bytes of that
+    ///   pattern, naming the first's; at the first's own bytes for an entry no
+    ///   written pattern fills.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor of another data type and an integer
+    ///   literal beside a constructor are each refused at their own arm.
+    /// - witness: `lower::native::tests::a_pattern_of_another_type_is_refused_at_its_arm`
+    #[spec(ensures: |ret| matches!(ret, LoweringRefusal::MismatchedPattern { first, .. } if first == switch.first))]
+    fn mismatched<'source>(
+        &self,
+        row: &Row,
+        switch: Switch,
+    ) -> LoweringRefusal<'source>
+    {
+        let span = row
+            .columns
+            .get(switch.column.0)
+            .and_then(|&at| self.shapes.get(at.0))
+            .map_or(switch.first, |held| held.0.span);
+        LoweringRefusal::MismatchedPattern {
+            span,
+            first: switch.first,
+        }
+    }
 }
 
 /// What the leftmost written pattern of a matrix's first row tests.
@@ -1728,8 +1762,8 @@ struct Queued
     punned: Punned,
 }
 
-/// The column a switch tests, and the refusal a row of another kind there
-/// earns.
+/// The column a switch tests, and the bytes of the first pattern tested
+/// there, which a row of another kind is refused against.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -1740,14 +1774,14 @@ struct Queued
 /// - hypothesis: L3 — as [`Test`].
 /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Switch<'source>
+struct Switch
 {
     /// The column.
     column: Column,
     /// The tree level it scrutinises.
     level: TreeLevel,
-    /// The refusal for a pattern of the wrong kind in the column.
-    wrong: LoweringRefusal<'source>,
+    /// The bytes of the first pattern the switch tests in the column.
+    first: ByteSpan,
 }
 
 /// A decision tree under construction: its nodes, and the matrices still to
@@ -3418,10 +3452,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   form `case … with` by the view's name; a match of no arms as
     ///   [`Self::empty_case`] refuses it; a written answer on a match whose
     ///   arms continue a block as joining it; a pattern the fragment does not
-    ///   read by its own name; a pattern of the wrong kind for its column as
-    ///   the wrong sort; a variable bound twice in one pattern; a
-    ///   non-exhaustive match; a match whose tree eliminates native data with
-    ///   no answer as unannotated; and the tiles' and holes' own faults.
+    ///   read by its own name; a pattern of another kind than the first tested
+    ///   at its place, a constructor of another data type among them, as
+    ///   [`LoweringRefusal::MismatchedPattern`] at that pattern; a variable
+    ///   bound twice in one pattern; a non-exhaustive match; a match whose tree
+    ///   eliminates native data with no answer as unannotated; and the tiles'
+    ///   and holes' own faults.
     /// - panics: none.
     ///
     /// # Errors
@@ -5445,12 +5481,7 @@ impl<'source> Lowerer<'_, 'source>
         let switch = Switch {
             column,
             level: item.levels.get(column.0).copied().unwrap_or_default(),
-            wrong: LoweringRefusal::OutOfFragment {
-                span: written.span,
-                form: FormName::CASE,
-                sort: site.reading.sort(),
-                boundary: FragmentBoundary::WrongSort,
-            },
+            first: written.span,
         };
         match head {
             Head::Hole(hole) => Ok(Test::Stuck(hole)),
@@ -5493,7 +5524,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         form: Generators,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
@@ -5583,7 +5614,7 @@ impl<'source> Lowerer<'_, 'source>
                         fields,
                     } => {
                         if other != form {
-                            return Err(switch.wrong);
+                            return Err(patterns.mismatched(row, switch));
                         }
                         if written != tag {
                             continue;
@@ -5605,7 +5636,7 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Injection { .. }
                     | Matcher::Nil
                     | Matcher::Cell { .. }
-                    | Matcher::Alias { .. } => return Err(switch.wrong),
+                    | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
                 };
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
@@ -5664,7 +5695,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
@@ -5690,7 +5721,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Injection { .. }
                 | Matcher::Nil
                 | Matcher::Cell { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             }
         }
         let without = splice(&item.levels, switch.column, &[]);
@@ -5731,7 +5762,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         literal: Literal,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
@@ -5758,7 +5789,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Injection { .. }
                 | Matcher::Nil
                 | Matcher::Cell { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             }
         }
         let depth = Depth(item.depth.0.saturating_add(2));
@@ -5811,7 +5842,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         width: Width,
         dependent: Dependent,
         tree: &mut Compiling,
@@ -5855,7 +5886,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Injection { .. }
                 | Matcher::Nil
                 | Matcher::Cell { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             };
             next.columns = splice(&row.columns, switch.column, &replacement);
             specialised.push(next);
@@ -5902,7 +5933,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
@@ -5918,7 +5949,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Injection { .. }
                 | Matcher::Nil
                 | Matcher::Cell { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             }
         }
         let labels: Vec<FieldLabel> = named.into_iter().collect();
@@ -5958,7 +5989,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Injection { .. }
                 | Matcher::Nil
                 | Matcher::Cell { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             };
             next.columns = splice(&row.columns, switch.column, &replacement);
             specialised.push(next);
@@ -6008,7 +6039,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         width: Width,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
@@ -6028,7 +6059,7 @@ impl<'source> Lowerer<'_, 'source>
                         field,
                     } => {
                         if of != arity {
-                            return Err(switch.wrong);
+                            return Err(patterns.mismatched(row, switch));
                         }
                         if written != summand {
                             continue;
@@ -6046,7 +6077,7 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Record { .. }
                     | Matcher::Nil
                     | Matcher::Cell { .. }
-                    | Matcher::Alias { .. } => return Err(switch.wrong),
+                    | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
                 };
                 next.columns = splice(&row.columns, switch.column, &[replacement]);
                 specialised.push(next);
@@ -6093,7 +6124,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         patterns: &Written,
         item: &Work,
-        switch: Switch<'source>,
+        switch: Switch,
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
@@ -6130,7 +6161,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Tuple { .. }
                 | Matcher::Record { .. }
                 | Matcher::Injection { .. }
-                | Matcher::Alias { .. } => return Err(switch.wrong),
+                | Matcher::Alias { .. } => return Err(patterns.mismatched(row, switch)),
             }
         }
         let cell = tree.queue(

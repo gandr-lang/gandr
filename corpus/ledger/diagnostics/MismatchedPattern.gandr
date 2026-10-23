@@ -1,0 +1,19 @@
+/// `MismatchedPattern`: a case arm naming a constructor of another data type than the first arm's.
+@[ checks ]
+data Bit : Type {
+  Zero : Bit;
+  One : Bit;
+}
+
+@[ checks ]
+data Box : Type {
+  Boxed : (n : Integer) --> Box;
+}
+
+@[ refuses("MismatchedPattern") ]
+def mixed(b : Bit) -> -F Integer {
+  case b {
+    Zero => return 0,
+    Boxed(n) => return n
+  }
+}
