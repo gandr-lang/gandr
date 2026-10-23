@@ -2311,16 +2311,10 @@ fn an_adopted_answer_is_read_as_if_judged()
     let decoded = arena.value_type_element(adopted, gandr_kernel_strata::Level::zero());
     let zero = arena.value_literal(integer_literal());
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    let formed =
-        crate::formation::form_value_type(&mut context, small).expect("the universe forms");
     assert_eq!(
-        context.adopt(
-            ConstantIndex::from(0_usize),
-            Maybe::Present(formed),
-            Maybe::Present(code)
-        ),
+        context.adopt_formed(ConstantIndex::from(0_usize), small, Maybe::Present(code)),
         Ok(()),
-        "a first adoption takes any position"
+        "a first adoption takes any position, its type seated as the reused judgement formed it"
     );
     assert_eq!(
         context.adopt(
