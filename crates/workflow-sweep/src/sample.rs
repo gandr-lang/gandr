@@ -134,6 +134,11 @@ impl Sample
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two samples' names draw two slices, so ranks that do
+    ///   not differ draw one.
+    /// - witness: `sample::tests::a_sample_keeps_every_class_and_every_change`
     fn rank(
         &self,
         key: &Head,

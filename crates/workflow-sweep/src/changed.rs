@@ -64,6 +64,11 @@ impl Head
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one wide change at two commits visits two parts, so a
+    ///   key fed nothing visits one part at both.
+    /// - witness: `sample::tests::a_wide_change_is_visited_at_the_size_a_part_per_commit`
     pub(crate) fn key(
         &self,
         hasher: &mut blake3::Hasher,
@@ -255,6 +260,11 @@ impl Changed
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change's names are compared with the sources it
+    ///   edits and adds, so an empty or an invented name shows.
+    /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
     #[inline]
     pub fn names(&self) -> impl Iterator<Item = &CorpusName>
     {
@@ -265,6 +275,11 @@ impl Changed
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Head::key`]: a commit read as the empty key
+    ///   visits one part at both commits.
+    /// - witness: `sample::tests::a_wide_change_is_visited_at_the_size_a_part_per_commit`
     pub(crate) const fn head(&self) -> &Head
     {
         &self.head
@@ -319,6 +334,11 @@ impl FromIterator<CorpusName> for Changed
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change collected from one source outside a sample
+    ///   puts it in, so a change collected empty leaves it out.
+    /// - witness: `sample::tests::a_sample_keeps_every_class_and_every_change`
     #[inline]
     fn from_iter<Names>(iter: Names) -> Self
     where
