@@ -209,6 +209,7 @@ use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
 use crate::protocol::PullsConfiguration;
 use crate::protocol::PullsDiagnostics;
+use crate::protocol::RUN;
 use crate::protocol::RangeParams;
 use crate::protocol::RangesParams;
 use crate::protocol::ReferenceContext;
@@ -311,6 +312,9 @@ use crate::rpc::success;
 use crate::rpc::tell;
 use crate::rpc::trace;
 use crate::rpc::unregister;
+use crate::run::Unran;
+use crate::run::run;
+use crate::run::runs;
 use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
@@ -540,6 +544,16 @@ impl Lent<'_>
     fn whole(&self) -> &DocumentSession
     {
         &self.0
+    }
+
+    /// The session, or the fault that kept its grammar from building, to
+    /// judge again.
+    ///
+    /// # Specification
+    /// trivial.
+    fn whole_mut(&mut self) -> &mut DocumentSession
+    {
+        &mut self.0
     }
 }
 
@@ -2998,7 +3012,7 @@ impl Server
 
     /// Run the command `params` names, answering request `id`:
     /// [`APPLY_FILL`] asks the client to apply the checked fill its
-    /// arguments name.
+    /// arguments name, and [`RUN`] runs the declaration its arguments name.
     ///
     /// # Specification
     /// - requires: nothing; any parameters are admissible input.
@@ -3006,20 +3020,23 @@ impl Server
     ///   still keeps, a `workspace/applyEdit` request carrying the fill's edit,
     ///   shaped as the client takes edits ([`WorkspaceEdit::shaped`]), under a
     ///   fresh numbered identifier, then the answer `null`; for one naming a
-    ///   fill the document does not keep, `ContentModified`; for any other
-    ///   command, or arguments that do not read, `InvalidParams`.
+    ///   fill the document does not keep, `ContentModified`; for [`RUN`], what
+    ///   [`Self::ran`] answers; for any other command, or arguments that do not
+    ///   read, `InvalidParams`.
     /// - fails: never; every refusal is an answer.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the lens's command run, run again after the
     ///   document's next edit, an unknown command and arguments of another
-    ///   shape, each asserted at its exact messages.
+    ///   shape, each asserted at its exact messages; a run lens's command run.
     /// - witness: `server::tests::a_lens_applies_its_one_checked_fill`
+    /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     #[spec(ensures: |ret| ret.flow == Flow::Continue
         && matches!(ret.messages.as_slice(),
             [Outgoing::Failure { .. }]
-            | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]))]
+            | [Outgoing::Request { .. }, Outgoing::Success { result: Answer::Nothing, .. }]
+            | [Outgoing::Notification { .. }, Outgoing::Success { result: Answer::Ran(_), .. }]))]
     fn execute(
         &mut self,
         workspace: &Workspace,
@@ -3027,25 +3044,33 @@ impl Server
         params: Value,
     ) -> Outcome
     {
-        let named = serde_json::from_value::<ExecuteCommandParams>(params)
-            .map_err(|error| error.to_string())
-            .and_then(|params| {
-                if params.command != APPLY_FILL {
-                    return Err(format!("the server runs no command `{}`", params.command));
-                }
-                match *params.arguments.as_slice() {
-                    [ref uri, ref range, Value::String(ref text)] => Ok((
-                        DocumentUri::deserialize(uri).map_err(|error| error.to_string())?,
-                        TextEdit {
-                            range: Range::deserialize(range).map_err(|error| error.to_string())?,
+        let asked = match serde_json::from_value::<ExecuteCommandParams>(params) {
+            Ok(asked) => asked,
+            Err(error) => {
+                return Outcome::say(failure(id, ErrorCode::INVALID_PARAMS, error.to_string()));
+            },
+        };
+        if asked.command == RUN {
+            return self.ran(workspace, id, &asked.arguments);
+        }
+        let named = if asked.command == APPLY_FILL {
+            match *asked.arguments.as_slice() {
+                [ref uri, ref range, Value::String(ref text)] => DocumentUri::deserialize(uri)
+                    .and_then(|uri| {
+                        Ok((uri, TextEdit {
+                            range: Range::deserialize(range)?,
                             new_text: text.clone(),
-                        },
-                    )),
-                    _ => Err(format!(
-                        "`{APPLY_FILL}` takes a document's URI, a range and the fill's text"
-                    )),
-                }
-            });
+                        }))
+                    })
+                    .map_err(|error| error.to_string()),
+                _ => Err(format!(
+                    "`{APPLY_FILL}` takes a document's URI, a range and the fill's text"
+                )),
+            }
+        }
+        else {
+            Err(format!("the server runs no command `{}`", asked.command))
+        };
         let (uri, fill) = match named {
             Ok(named) => named,
             Err(message) => {
@@ -3079,6 +3104,107 @@ impl Server
                 success(id, Answer::Nothing),
             ]),
             flow: Flow::Continue,
+        }
+    }
+
+    /// Run the declaration the [`RUN`] command's `arguments` name, answering
+    /// request `id`: show the line `gandr run` prints of the run, and answer
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: nothing; any arguments are admissible input.
+    /// - ensures: arguments other than a document's URI and a position are
+    ///   `InvalidParams`. A document this connection does not hold, and a
+    ///   position at which [`run`] finds nothing that runs, are
+    ///   `ContentModified`; a declaration [`run`] declines is `RequestFailed`
+    ///   carrying why. Otherwise a `window/showMessage` of the run's line, as
+    ///   [`run`] reads it, then the answer [`Answer::Ran`] carrying the line.
+    ///   The run reads the document's copy, judged over the closure its latest
+    ///   recheck laid out, else over the one [`lay`] lays out now.
+    /// - fails: never; every refusal is an answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value and a nullary computation run to their lines,
+    ///   a run reaching a hole shows a warning, an owed declaration fails, a
+    ///   position naming no run and arguments of another shape are refused,
+    ///   each at its exact messages.
+    /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
+    #[spec(ensures: |ret| ret.flow == Flow::Continue
+        && matches!(ret.messages.as_slice(),
+            [Outgoing::Failure { .. }]
+            | [Outgoing::Notification { .. }, Outgoing::Success { result: Answer::Ran(_), .. }]))]
+    fn ran(
+        &self,
+        workspace: &Workspace,
+        id: RequestId,
+        arguments: &[Value],
+    ) -> Outcome
+    {
+        let named = match *arguments {
+            [ref uri, ref position] => DocumentUri::deserialize(uri)
+                .and_then(|uri| Ok((uri, Position::deserialize(position)?)))
+                .map_err(|error| error.to_string()),
+            _ => Err(format!(
+                "`{RUN}` takes a document's URI and the position of a declaration's name"
+            )),
+        };
+        let (uri, position) = match named {
+            Ok(named) => named,
+            Err(message) => {
+                return Outcome::say(failure(id, ErrorCode::INVALID_PARAMS, message));
+            },
+        };
+        let Maybe::Present(document) = workspace.view(&uri, self.peer)
+        else {
+            return Outcome::say(failure(
+                id,
+                ErrorCode::CONTENT_MODIFIED,
+                String::from("the document is not open, so nothing in it runs"),
+            ));
+        };
+        let shadows = workspace.shadowing(self.peer);
+        let text = document.text.source();
+        let ran = match document.hovering(&uri, &shadows) {
+            Ok(hovering) => {
+                let over = |laid: &Maybe<Laid, laid::Absent>| {
+                    run(
+                        document.session().whole_mut(),
+                        (text, laid),
+                        hovering,
+                        position,
+                    )
+                };
+                document
+                    .text
+                    .laid
+                    .as_ref()
+                    .map_or_else(|| over(&lay(&uri, text, &shadows)), over)
+            },
+            Err(Unlent) => Err(Unran::Declined(String::from(
+                "gandr's grammar did not build, so nothing runs",
+            ))),
+        };
+        match ran {
+            Ok((kind, line)) => Outcome {
+                messages: Vec::from([
+                    tell(Told::Shown, MessageParams {
+                        kind,
+                        message: line.clone(),
+                    }),
+                    success(id, Answer::Ran(line)),
+                ]),
+                flow: Flow::Continue,
+            },
+            Err(Unran::Unnamed) => Outcome::say(failure(
+                id,
+                ErrorCode::CONTENT_MODIFIED,
+                String::from(
+                    "nothing that runs is named there: the document changed since the lens was \
+                     offered",
+                ),
+            )),
+            Err(Unran::Declined(why)) => Outcome::say(failure(id, ErrorCode::REQUEST_FAILED, why)),
         }
     }
 
@@ -5689,7 +5815,7 @@ impl Workspace
             && tokens.result_id.is_some() == matches!(window, Window::Whole)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), Window::Whole | Window::Within(_) => true },
         Answer::Initialize(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
@@ -5756,7 +5882,7 @@ impl Workspace
         Answer::Hints(ref hints) => self.documents.contains_key(uri)
             && (range.start < range.end || hints.is_empty()),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Inline(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Sources(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
@@ -5903,7 +6029,7 @@ impl Workspace
             list.items.len() <= held.view(peer).proposals.len().saturating_add(8))
             && list.items.iter().all(|item| item.range.start <= position && position <= item.range.end),
         Answer::Initialize(_) | Answer::Tokens(_) | Answer::Completions(_) | Answer::Resolved(_) | Answer::Signatures(_) | Answer::Symbols(_) | Answer::Folds(_) | Answer::Selections(_)
-            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_)
+            | Answer::Hover(_) | Answer::Links(_) | Answer::Locations(_) | Answer::Edits(_) | Answer::Lenses(_) | Answer::Lens(_) | Answer::Ran(_)
             | Answer::Actions(_) | Answer::Found(_) | Answer::Highlights(_) | Answer::Renaming(_) | Answer::Renamed(_)
             | Answer::Imports(_) | Answer::Mirrored(_) | Answer::Unchanged(_) | Answer::Deltas(_) | Answer::Content(_) | Answer::Hints(_)
             | Answer::Diagnosed(_) | Answer::Swept(_)
@@ -6987,17 +7113,20 @@ impl Workspace
 
     /// What a code-lens request for the copy of the document at `uri` that
     /// `peer` is answered from answers: the lens over each range a model's
-    /// kept proposals fill, and a references lens, unresolved, over each name
-    /// the document declares.
+    /// kept proposals fill, a references lens, unresolved, over each name the
+    /// document declares, and a run lens over each name of a declaration that
+    /// runs applied to nothing.
     ///
     /// # Specification
     /// - requires: nothing; an unknown URI is admitted.
     /// - ensures: Nothing for an unknown document; otherwise the lenses
     ///   [`lenses`] answers for its proposals, given whether the client
-    ///   `applies` edits, and one lens per range [`declared`] answers, carrying
-    ///   the URI and the range's start as its data and no command, in range
-    ///   order, a fill lens before a references lens over the same range. A
-    ///   document whose session holds no grammar declares nothing.
+    ///   `applies` edits, one lens per range [`declared`] answers, carrying the
+    ///   URI and the range's start as its data and no command, and one lens per
+    ///   range [`runs`] answers, titled `Run` and running [`RUN`] with the URI
+    ///   and the range's start, carrying no data; in range order, over the same
+    ///   range a fill lens, then a references lens, then a run lens. A document
+    ///   whose session holds no grammar declares nothing.
     /// - provides: the answer to `textDocument/codeLens`.
     /// - fails: never.
     /// - panics: none.
@@ -7005,13 +7134,18 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — a document declaring two names and a constructor
     ///   lists a lens over each, with no command until it is resolved; a kept
-    ///   fill still lists its own lens.
+    ///   fill still lists its own lens; a value and a nullary computation each
+    ///   list a run lens beside their references lens, and a function, a type
+    ///   and a family none.
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
+    /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
         || matches!(ret, Answer::Lenses(ref lenses) if lenses.is_sorted_by(|earlier, later| earlier.range <= later.range)
             && lenses.iter().all(|lens| lens.data.as_ref().is_none_or(|data|
-                &data.uri == uri && lens.command.is_none() && data.position == lens.range.start))))]
+                &data.uri == uri && lens.command.is_none() && data.position == lens.range.start))
+            && lenses.iter().all(|lens| lens.command.as_ref().is_none_or(|command|
+                command.name != RUN || (lens.data.is_none() && command.arguments.len() == 2_usize)))))]
     fn code_lenses(
         &self,
         uri: &DocumentUri,
@@ -7026,18 +7160,27 @@ impl Workspace
         };
         let mut found = lenses(uri, &document.proposals, applies);
         if let Ok(hovering) = document.hovering(uri, &shadows) {
-            found.extend(
-                declared(document.text.source(), hovering)
-                    .into_iter()
-                    .map(|range| CodeLens {
-                        range,
-                        command: None,
-                        data: Some(LensData {
-                            uri: uri.clone(),
-                            position: range.start,
-                        }),
-                    }),
-            );
+            let text = document.text.source();
+            found.extend(declared(text, hovering).into_iter().map(|range| CodeLens {
+                range,
+                command: None,
+                data: Some(LensData {
+                    uri: uri.clone(),
+                    position: range.start,
+                }),
+            }));
+            found.extend(runs(text, hovering).into_iter().map(|range| CodeLens {
+                range,
+                command: Some(Command {
+                    title: String::from("Run"),
+                    name: RUN,
+                    arguments: Vec::from([
+                        serde_json::to_value(uri).unwrap_or(Value::Null),
+                        serde_json::to_value(range.start).unwrap_or(Value::Null),
+                    ]),
+                }),
+                data: None,
+            }));
         }
         found.sort_by_key(|lens| lens.range);
         Answer::Lenses(found)
@@ -8806,7 +8949,7 @@ mod tests
                         "documentOnTypeFormattingProvider":{"firstTriggerCharacter":";"},
                         "codeLensProvider":{"resolveProvider":true},
                         "codeActionProvider":{"resolveProvider":true},
-                        "executeCommandProvider":{"commands":["gandr.applyFill"]},
+                        "executeCommandProvider":{"commands":["gandr.applyFill","gandr.run"]},
                         "workspaceSymbolProvider":{"resolveProvider":true},
                         "documentHighlightProvider":true,
                         "referencesProvider":true,
@@ -10227,10 +10370,20 @@ mod tests
         .pointer("/0/result")
         .cloned()
         .unwrap_or(Value::Null);
-        let lenses = listed.as_array().cloned().unwrap_or_default();
+        // A run lens names its command as it is listed; the references
+        // lenses are those that carry data to resolve.
+        let lenses: Vec<Value> = listed
+            .as_array()
+            .map(|all| {
+                all.iter()
+                    .filter(|lens| lens.get("data").is_some())
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
         assert!(
             lenses.iter().all(|lens| lens.get("command").is_none()),
-            "a listed lens carries no command until it is resolved: {listed}"
+            "a listed references lens carries no command until it is resolved: {listed}"
         );
         let mut resolve = |lens: &Value| {
             let request = serde_json::json!({"jsonrpc": "2.0", "id": 11_i32, "method": "codeLens/resolve",
@@ -16327,6 +16480,121 @@ mod tests
             .pointer("/0/error/code"),
             Some(&serde_json::json!(-32_602_i32)),
             "a command the server does not run is refused"
+        );
+    }
+
+    /// #1818: a run lens stands over each declaration that runs applied to
+    /// nothing — a value, a nullary computation, a computation that reaches a
+    /// hole — and none over a function, a type or a declaration owed its
+    /// body. Its command shows the line `gandr run` prints and answers it, a
+    /// run that stops short of a value as a warning; a position naming no run,
+    /// a document not open and arguments of another shape are refused.
+    #[test]
+    fn a_run_lens_runs_its_declaration_1818()
+    {
+        let mut server = Connected::default();
+        let _answered = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#),
+        );
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/run.gandr","languageId":"gandr","version":1,
+                     "text":"def answer = 42 ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { return n + n }\ndef filled : Type ;\ndef filled = Integer ;\ndef later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { become force later } ;\n"}}}"#,
+            ),
+        );
+        let at =
+            |line: u32, character: u32| serde_json::json!({"line": line, "character": character});
+        let listed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/codeLens","params":{"textDocument":{"uri":"file:///tmp/run.gandr"}}}"#,
+            ),
+        );
+        let runs: Vec<&Value> = listed
+            .pointer("/0/result")
+            .and_then(Value::as_array)
+            .map(|lenses| {
+                lenses
+                    .iter()
+                    .filter(|lens| {
+                        lens.pointer("/command/command") == Some(&serde_json::json!("gandr.run"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let lens = |line: u32, start: u32, end: u32| {
+            serde_json::json!({"range": {"start": at(line, start), "end": at(line, end)},
+                "command": {"title": "Run", "command": "gandr.run",
+                    "arguments": ["file:///tmp/run.gandr", at(line, start)]}})
+        };
+        assert_eq!(
+            runs,
+            [&lens(0, 4, 10), &lens(1, 4, 8), &lens(6, 4, 8)],
+            "a value, a nullary computation and a run reaching a hole each stand a run lens"
+        );
+        let mut execute = |id: u32, arguments: &Value| {
+            send(
+                &mut server,
+                Json(
+                    &serde_json::json!({"jsonrpc": "2.0", "id": id, "method": "workspace/executeCommand",
+                        "params": {"command": "gandr.run", "arguments": arguments}})
+                    .to_string(),
+                ),
+            )
+        };
+        let ran = |id: u32, kind: u8, line: &str| {
+            serde_json::json!([
+                {"jsonrpc": "2.0", "method": "window/showMessage", "params": {"type": kind, "message": line}},
+                {"jsonrpc": "2.0", "id": id, "result": line}
+            ])
+        };
+        assert_eq!(
+            execute(3, &serde_json::json!(["file:///tmp/run.gandr", at(0, 4)])),
+            ran(3, 3, "42"),
+            "a value shows itself"
+        );
+        assert_eq!(
+            execute(4, &serde_json::json!(["file:///tmp/run.gandr", at(1, 8)])),
+            ran(4, 3, "1"),
+            "a nullary computation runs, named from just past its name"
+        );
+        let blamed = execute(5, &serde_json::json!(["file:///tmp/run.gandr", at(6, 4)]));
+        assert_eq!(
+            blamed.pointer("/0/params/type"),
+            Some(&serde_json::json!(2_u8)),
+            "a run reaching a hole is a warning: {blamed}"
+        );
+        assert_eq!(
+            blamed.pointer("/0/params/message"),
+            blamed.pointer("/1/result"),
+            "the warning shows the line the command answers"
+        );
+        assert!(
+            blamed
+                .pointer("/1/result")
+                .and_then(Value::as_str)
+                .is_some_and(|line| line.contains("later")),
+            "the line names the hole the run reached: {blamed}"
+        );
+        assert_eq!(
+            execute(6, &serde_json::json!(["file:///tmp/run.gandr", at(2, 4)]))
+                .pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_801_i32)),
+            "a function stands no run"
+        );
+        assert_eq!(
+            execute(7, &serde_json::json!(["file:///tmp/other.gandr", at(0, 4)]))
+                .pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_801_i32)),
+            "a document not open runs nothing"
+        );
+        assert_eq!(
+            execute(8, &serde_json::json!(["file:///tmp/run.gandr"])).pointer("/0/error/code"),
+            Some(&serde_json::json!(-32_602_i32)),
+            "a position is wanted"
         );
     }
 
