@@ -1853,6 +1853,61 @@ fn a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398()
     }
 }
 
+/// #2043: a model the checker carries across to a theory its own includes is
+/// written as the reduct's call in the explicit form, `Monoid.Semigroup(m)`,
+/// and bare in the sugared form, where the checker applies the reduct; once
+/// written around the value, the call is not written again inside itself.
+#[test]
+fn a_reduct_the_checker_applies_is_written_in_the_explicit_form_2043()
+{
+    let names = [Name::from("Monoid.Semigroup"), Name::from("endoMonoid")];
+    let mut core = CoreArena::new();
+    let model = core.value_constant(ConstantIndex::from(1_usize));
+    let crossings = [(model, ConstantIndex::from(0_usize))];
+    let source = CoreSource::new(&core, &names).crossing(&crossings);
+    let uncrossed = CoreSource::new(&core, &names);
+    let page = PageWidth::from(80_u32);
+    for (source, form, expected) in [
+        (&source, Form::Explicit, "Monoid.Semigroup(endoMonoid)"),
+        (&source, Form::Sugared, "endoMonoid"),
+        (&uncrossed, Form::Explicit, "endoMonoid"),
+    ] {
+        let presented = present_value(source, CoreNode::Value(model), page, form.into())
+            .expect("the value lays out");
+        assert_eq!(presented.as_ref(), expected, "{form:?}");
+        assert_eq!(presented.fidelity(), Fidelity::Faithful, "{form:?}");
+    }
+}
+
+/// #2043: a written call of a reduct the checker would apply where it stands
+/// is written as its argument in the sugared form, and kept as written in the
+/// explicit form and wherever the source leaves the reduct to no checker.
+#[test]
+fn a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043()
+{
+    let names = [Name::from("Monoid.Semigroup"), Name::from("endoMonoid")];
+    let implied = [ConstantIndex::from(0_usize)];
+    let mut core = CoreArena::new();
+    let reduct = core.value_constant(ConstantIndex::from(0_usize));
+    let forced = core.computation_force(reduct);
+    let model = core.value_constant(ConstantIndex::from(1_usize));
+    let applied = core.computation_application(forced, model);
+    let call = core.value_nested(applied);
+    let source = CoreSource::new(&core, &names).implying(&implied);
+    let kept = CoreSource::new(&core, &names);
+    let page = PageWidth::from(80_u32);
+    for (source, form, expected) in [
+        (&source, Form::Sugared, "endoMonoid"),
+        (&source, Form::Explicit, "Monoid.Semigroup(endoMonoid)"),
+        (&kept, Form::Sugared, "Monoid.Semigroup(endoMonoid)"),
+    ] {
+        let presented = present_value(source, CoreNode::Value(call), page, form.into())
+            .expect("the value lays out");
+        assert_eq!(presented.as_ref(), expected, "{form:?}");
+        assert_eq!(presented.fidelity(), Fidelity::Faithful, "{form:?}");
+    }
+}
+
 /// #1441: a presentation lists each declaration's name it writes — an
 /// abstract type, a family, a declared value — at the bytes it wrote it, laid
 /// out at a page that breaks the type and on one line; a bound variable
