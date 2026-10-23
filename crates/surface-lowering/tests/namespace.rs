@@ -1708,6 +1708,90 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     );
 }
 
+/// #1993: a functor's argument names a module another source declares, read
+/// through an unqualified import as any module path is, and reaches that
+/// import; two imports declaring a module of the argument's name refuse the
+/// application, naming it.
+#[test]
+fn a_functor_argument_reads_an_imported_module_1993()
+{
+    let pbg = grammar();
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let (base, both) = ([on(0_usize)], [on(0_usize), on(1_usize)]);
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
+                 Times : Model(Mag) {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) \
+                 -> -F Integer { become a * b }\n}\nmodule Squaring(S : Model(Mag)) {\n  def \
+                 square(x : S.M) -> -F S.M { become S.mul(x, x) }\n}",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "module Times {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
+                 Integer { become a + b }\n}",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\nmodule TimesSquared = Squaring(Times) ;\ndef nine() \
+                 -> -F Integer { become TimesSquared.square(3) }",
+            ),
+            &base,
+        ),
+        (
+            SourceText::from(
+                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\nmodule EitherSquared = \
+                 Squaring(Times) ;",
+            ),
+            &both,
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let refused: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Refused(LoweringRefusal::ImportShadows { name, .. }) => Some((
+                String::from(declaration.name().as_ref()),
+                String::from(name.as_ref()),
+            )),
+            DeclarationOutcome::Refused(other) => Some((
+                String::from(declaration.name().as_ref()),
+                format!("{other:?}"),
+            )),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => None,
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        [(String::from("EitherSquared"), String::from("Times"))],
+        "the imported argument applies, and an argument two imports declare is refused by its \
+         name"
+    );
+    let imports: Vec<ByteSpan> = module
+        .imports()
+        .iter()
+        .map(ImportDeclaration::span)
+        .collect();
+    assert!(
+        imports
+            .first()
+            .is_some_and(|import| module.reached_imports().contains(import)),
+        "the argument reaches the import it is read through"
+    );
+}
+
 /// A rule derived in a theory another source declares is read under the
 /// theory's name from the deriving source: `T.r` resolves to the statement, as
 /// it does beside a theory of the same source.
