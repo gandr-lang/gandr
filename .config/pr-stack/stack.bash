@@ -48,10 +48,10 @@ stack_top() {
 }
 
 # The top a new pull request on branch `$1` stacks on, once no `pr:land` holds
-# it (#1983): a held top is about to be restacked and queued, so the reading
-# waits, every 15 seconds, for the hold to clear, and answers the top then,
-# queued or not. The hold lasts while the landing waits on the chain's
-# required checks; after 30 minutes the wait gives up, naming the top.
+# it (#1983): a held top is about to be queued, so the reading waits, every
+# 15 seconds, for the hold to clear, and answers the top then, queued or not.
+# The hold lasts while the landing waits on its prefix's required checks;
+# after 30 minutes the wait gives up, naming the top.
 await_top() {
   local top deadline=$((SECONDS + 1800))
   while :; do
@@ -279,26 +279,36 @@ carried_queued() {
   jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
 }
 
-# Link the stack `$1` on the server and queue it as one group; a stack of one
-# is a plain landing, queued by auto-merge once its checks pass. Every open
-# pull request on one of its branches outside it is retargeted to the trunk
-# first (`retarget_landing`). An atomic stack merge refuses a pull request
-# whose required checks are still expected, so each one's required checks are
-# waited on first (`wait_required`), and a red one stops the landing, naming
-# it. A restack gives
-# each head above the bottom two runs per workflow, one cancelled by the
-# other; a cancelled one the rollup reads is re-run (`rerun_twins`), at most
-# three times for a pull request, and its checks waited on again.
+# Queue the stack `$1`, bottom to top, up to and including pull request `$3`
+# (#1988), past the members of the JSON array `$2` already in the merge
+# queue. A stack of one is a plain landing, queued by auto-merge. A longer
+# stack is linked on the server, only its open members when part of it is
+# queued, and queued by GitHub's stack merge, which takes every member up to
+# and including `$3` atomically. Every open pull request on a branch the
+# landing deletes, outside it, is retargeted to the trunk first
+# (`retarget_landing`). The stack merge refuses a pull request whose required
+# checks are still expected, so each queued member's are waited on
+# (`wait_required`), and a red one stops the landing, naming it. A cancelled
+# run the rollup reads, left by a restack's twin runs, is re-run
+# (`rerun_twins`), at most three times for a pull request. Returns 3 when the
+# open members take no link above the queued ones: the stack is read again
+# once those merge.
 queue_stack() {
-  local stack=$1 numbers number reruns watched
-  mapfile -t numbers < <(jq -r '.[].number' <<< "$stack")
-  retarget_landing "$(jq -c 'map(.number)' <<< "$stack")"
-  if (( ${#numbers[@]} == 1 )); then
-    gh pr merge "${numbers[0]}" -R "$repo" --merge --auto
+  local stack=$1 queued=$2 upto=$3 open landing number reruns watched
+  open=$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")
+  mapfile -t landing < <(jq -r --argjson upto "$upto" '(map(.number) | index($upto)) as $end | .[: $end + 1][].number' <<< "$open")
+  retarget_landing "$(jq -cn '$ARGS.positional | map(tonumber)' --args "${landing[@]}")"
+  if [[ $(jq length <<< "$stack") == 1 ]]; then
+    gh pr merge "$upto" -R "$repo" --merge --auto
     return
   fi
-  stack_link "$stack"
-  for number in "${numbers[@]}"; do
+  if [[ "$queued" == '[]' ]]; then
+    stack_link "$stack"
+  elif ! stack_link "$open" 2> /dev/null; then
+    echo "the open pull requests above the queued #$(jq -r '.[-1]' <<< "$queued") take no link; they land once it merges" >&2
+    return 3
+  fi
+  for number in "${landing[@]}"; do
     reruns=0
     while :; do
       watched=0
@@ -315,5 +325,64 @@ queue_stack() {
       break
     done
   done
-  gh stack merge "${numbers[-1]}" --yes --merge
+  gh stack merge "$upto" --yes --merge
+}
+
+# Pull request `$1`'s head read against the trunk's required contexts `$2`
+# (`required.jq`): `green` when every one passed, `red` when one failed,
+# `pending` otherwise.
+required_state() {
+  gh pr view "$1" -R "$repo" --json statusCheckRollup --jq .statusCheckRollup \
+    | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq" \
+    | jq -r 'if .failed != [] then "red" elif .pending != [] then "pending" else "green" end'
+}
+
+# Queue the largest ready prefix of pull request `$1`'s stack (`prefix.jq`,
+# #1988). The members already queued are skipped; above them the members are
+# read bottom up, and every one green on the trunk's required contexts is
+# queued, up to the first red or pending one, which is named and where the
+# reading stops. The tail above it is the next stack, landed the moment its
+# own bottom goes green. `pr:land` runs this from any member, and `pr:watch`
+# the moment its pull request goes green. Prints one line on stderr, and
+# leaves its reading in `prefix_decision` (`prefix.jq`'s line),
+# `prefix_server` (the stack) and `prefix_queued` (its queued members).
+# Returns 0 when it queued a prefix or nothing was ready; 3 while a pull
+# request queued on its own carries the stack's commits (`carried_queued`),
+# or the open members take no link above the queued ones; `queue_stack`'s
+# failure otherwise.
+land_prefix() {
+  local server queued carried required number state states=() decision verdict upto stop status=0
+  server=$(server_stack "$1")
+  [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
+  queued=$(queued_of "$server")
+  carried=$(carried_queued "$server")
+  required=$(required_contexts)
+  for number in $(jq -r --argjson queued "$queued" '.[].number | select(IN($queued[]) | not)' <<< "$server"); do
+    state=$(required_state "$number" "$required")
+    states+=("$number" "$state")
+    [[ "$state" == green ]] || break
+  done
+  decision=$(jq -rn --argjson server "$server" --argjson queued "$queued" --argjson carried "$carried" \
+    --argjson states "$(jq -cn '$ARGS.positional as $p | [range(0; $p | length; 2) | {key: $p[.], value: $p[. + 1]}] | from_entries' --args "${states[@]}")" \
+    '{server: $server, queued: $queued, carried: $carried, states: $states}' | jq -r -f "$pr_stack_dir/prefix.jq")
+  prefix_decision=$decision prefix_server=$server prefix_queued=$queued
+  verdict= upto= stop= state=
+  IFS=$'\t' read -r verdict upto stop state <<< "$decision"
+  case "$verdict" in
+    wait)
+      echo "#$upto, queued on its own, carries this stack's commits; the stack lands once it merges" >&2
+      return 3
+      ;;
+    queued) echo "the stack is queued up to its top, #$(jq -r '.[-1].number' <<< "$server")" >&2 ;;
+    hold) echo "nothing lands: #$upto is $stop, and the stack lands from it once it is green" >&2 ;;
+    land)
+      hold_landing "$(jq -c --argjson queued "$queued" --argjson upto "$upto" \
+        '[.[].number | select(IN($queued[]) | not)] | .[: index($upto) + 1]' <<< "$server")"
+      queue_stack "$server" "$queued" "$upto" || status=$?
+      release_landing
+      (( status == 0 )) || return "$status"
+      echo "queued the stack up to #$upto${stop:+; #$stop above it is $state, and the stack lands from it once it is green}" >&2
+      ;;
+    *) echo "unexpected landing decision: $decision" >&2; return 2 ;;
+  esac
 }
