@@ -449,7 +449,11 @@ fn add_type_rules(
     // A qualified type reference `M.T`: a type component of the module the
     // operand names, read through the module namespace. The `.` is postfix,
     // left-associative so `Outer.Inner.T` chains, and binds tighter than
-    // application so `-F M.T` and `M.T -> C` need no parentheses.
+    // application so `-F M.T` and `M.T -> C` need no parentheses. One link
+    // may pass through a nested module named in lowercase, a model's nested
+    // model, `Sealed.inner.T`: the name and its `.` sit inside the link, so
+    // the link still ends at a type name and a session's continuation, a
+    // lowercase recursion variable after its `.`, never reads as one.
     //
     // A postfix `.` rather than a lead-tile path `T (. T)*` is what keeps a
     // session payload unambiguous. In `!Seat.Report. end` the send's open `!`
@@ -467,6 +471,10 @@ fn add_type_rules(
         Regex::seq([
             Regex::sort(ty),
             tile(TileLabel(".")),
+            Regex::optional(Regex::seq([
+                tile(TileLabel("type_variable")),
+                tile(TileLabel(".")),
+            ])),
             tile(TileLabel("type_identifier")),
         ]),
     ));

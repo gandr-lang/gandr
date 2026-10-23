@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x5c1702a1af26d170`
+- Grammar fingerprint: `0xa14e9c3347b3dc31`
 - Rules: 160 — 159 committed, 1 internal
-- Molds: 3132
+- Molds: 3134
 - Attributes: 14
 
 ## Reading a form
@@ -177,7 +177,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`at_type`](../corpus/ledger/syntax/at_type.gandr) | `TYPE at ‹identifier›` | `type.application` | `at_type` | admitted | Keyword, Label |
 | [`path_type`](../corpus/ledger/syntax/path_type.gandr) | `Path ( ⦅ Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆? , TYPE , TYPE ‖ TYPE , EXPRESSION , EXPRESSION ⦆ )` | `type.application` | `path_type` * | admitted | TypeBuiltin, Other, Operator, Number |
 | [`type_application`](../corpus/ledger/syntax/type_application.gandr) | `⦅ ‹type_identifier› ‖ ‹type_variable› ⦅ [ < ] ⦆? ⦆ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? )` | `type.application` | `type_application` | admitted | Type, TypeVariable, Other, Operator |
-| [`type_path`](../corpus/ledger/syntax/type_path.gandr) | `TYPE . ‹type_identifier›` | `type.path` | `type_path` * | admitted | Other, Type |
+| [`type_path`](../corpus/ledger/syntax/type_path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆? ‹type_identifier›` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged_type.gandr) | `TYPE [ ⦅ < ⦆? ‹identifier› ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized_type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope_type.gandr) | `#{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |

@@ -2,7 +2,9 @@
 // theory holds a model of `Answering` under the name `inner`, as
 // `module-members.gandr`'s record signature nests `inner : #{ answer: Integer }`.
 // A model answers it with a nested module ascribed `Model(Answering)`, and a
-// reader reaches the nested model's members through the outer one.
+// reader reaches the nested model's members through the outer one. A model
+// sealed at the outer theory seals the nested one too, and its sort is written
+// as a path through the nested model's name, `Sealed.inner.T` (#1311).
 
 /// The theory of `module-members.gandr`'s nested `#{ answer: Integer }`.
 theory Answering {
@@ -31,3 +33,30 @@ module Facts : Model(Faceted) {
 /// The nested answer, read through the outer model.
 @[ runs("41") ]
 def nested_answer() -> -F Integer { Facts.inner.answer }
+
+/// A theory with an abstract sort, the carrier a sealed model hides.
+theory Carrier {
+  sort T : Type;
+  oper zero : T;
+}
+
+/// The theory of a model that holds a `Carrier` model under `inner`.
+theory Outer {
+  oper inner : Model(Carrier);
+}
+
+/// A model sealed at `Outer`: the nested model's sort is an atom outside.
+module Sealed :> Model(Outer) {
+  /// The nested model, its carrier the integers inside the seal.
+  module inner : Model(Carrier) {
+    /// The carrier.
+    type T = Integer;
+    /// The point.
+    def zero = 0;
+  }
+}
+
+/// The nested point, at the nested sort written as a path through `inner`.
+@[ checks ]
+def kept : Sealed.inner.T ;
+def kept = Sealed.inner.zero ;

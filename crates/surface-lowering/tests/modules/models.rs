@@ -867,6 +867,47 @@ fn a_nested_model_is_a_module_ascribed_its_theory_1226()
     );
 }
 
+/// A sealed nested model's sort is written as a path through the nested
+/// model's name, `Sealed.inner.T`, and the nested model's point checks at it;
+/// a type the nested model does not export is an unknown member of it, named
+/// as the path spells the module.
+#[test]
+fn a_sealed_nested_model_s_sort_is_spelled_by_its_path_1311()
+{
+    let sealed = |reader: &str| {
+        format!(
+            "theory Carrier {{\n  sort T : Type;\n  oper zero : T;\n}}\ntheory Outer {{\n  oper \
+             inner : Model(Carrier);\n}}\nmodule Sealed :> Model(Outer) {{\n  module inner : \
+             Model(Carrier) {{ type T = Integer; def zero = 0; }}\n}}\n{reader}\n"
+        )
+    };
+
+    let kept = sealed("def kept : Sealed.inner.T ;\ndef kept = Sealed.inner.zero ;");
+    let mut lowered = lower(kept.as_str());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "the nested point checks at the nested sort's path: {judgements:?}"
+    );
+
+    let lost = sealed("def lost : Sealed.inner.U ;\ndef lost = Sealed.inner.zero ;");
+    let found = rows(&lower(lost.as_str()));
+    let unknown = Amounts::Refused(LoweringRefusal::UnknownMember {
+        span: span_of(lost.as_str(), "U", 0_usize),
+        module: name("inner"),
+        member: name("U"),
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, _, ref amounts)| path == "lost" && *amounts == unknown),
+        "a type the nested model does not export is an unknown member of it: {found:?}"
+    );
+}
+
 #[test]
 fn a_family_of_the_wrong_telescope_is_refused()
 {
