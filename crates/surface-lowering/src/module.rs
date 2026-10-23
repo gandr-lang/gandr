@@ -1848,6 +1848,48 @@ impl<'source> Collected<'source>
         })
     }
 
+    /// The module or instance `source`'s unqualified imports answer `name`
+    /// with, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], over the modules and instances
+    ///   each imported source declares at its top level; a functor's body is
+    ///   neither.
+    /// - provides: the import fallback of a functor argument's head.
+    /// - fails: [`Ambiguity`] for two imports declaring a module of one name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model one import declares applied as a functor's
+    ///   argument, and a name two imports declare, each answered exactly.
+    /// - witness: `tests::namespace::a_functor_argument_reads_an_imported_module_1993`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present((module, _))) => self.structures.get(module.0).is_some_and(|entry| matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))),
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_module(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(StructureIndex, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(source, |target| {
+            self.modules
+                .get(&(Container::TopLevel(target), name))
+                .copied()
+                .filter(|module| {
+                    self.structures.get(module.0).is_some_and(|entry| {
+                        matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
+                    })
+                })
+        })
+    }
+
     /// What `lookup` answers in the sources `source` imports unqualified.
     ///
     /// # Specification
