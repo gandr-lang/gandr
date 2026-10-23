@@ -428,7 +428,7 @@ enum Kind
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk(_)
+        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::RecordUpdate(..) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
@@ -490,6 +490,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Literal(_)
         | Former::Tuple(_)
         | Former::Record(_)
+        | Former::RecordUpdate(..)
         | Former::ListNil
         | Former::ListCons(..)
         | Former::Injection(..)
@@ -1018,27 +1019,29 @@ where
 /// - requires: nothing.
 /// - ensures: an n-ary former's components, answered by the source for `node`,
 ///   a recorded run's one value per payload its moves carry and none where they
-///   carry none, a record's and a record type's after their field labels and an
-///   injection's body after its summand; type children admit types and term
-///   children terms as the grammar places them; a dependent arrow's codomain, a
-///   dependent pair's second factor, a static abstraction's, a lambda's and a
-///   fixpoint's body, a bind's rest, a case's branches, a transport's motive, a
-///   return clause and a stack capture's body stand under one binder, a split's
-///   body under one per component, a data case's branch under one per field of
-///   its constructor, a fold's cell branch and a handler's operation clauses
-///   under two, a scope's subject under the capability's and a fork's child and
-///   parent each under one linear binder, a hold's scope and an access's body
-///   each under one linear binder; the computation a bind runs, the function an
-///   application applies, a computation where a value is read, an offer's arms
-///   and a fork's child admit computations where the body goes on, a body in
-///   braces one where it ends, a thunk's body below a value and a lambda's body
-///   there one whose type nothing states, and a bind's rest and the branches of
-///   a case what its own position admits; a data case's motive is a type under
-///   one binder where `written` writes it; a thunk's body is a child only where
-///   bodies are spelled; a family's arguments, a codata family's included,
-///   admit values their parameters state the type of, and a constructor's
-///   classifier is a child only where bodies are spelled and its position
-///   states no type; every leaf former has none.
+///   carry none, a record's and a record type's after their field labels, a
+///   record update's base and then the fields it writes after their labels, and
+///   an injection's body after its summand; type children admit types and term
+///   children terms as the grammar places them, an update's every slot a value;
+///   a dependent arrow's codomain, a dependent pair's second factor, a static
+///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
+///   branches, a transport's motive, a return clause and a stack capture's body
+///   stand under one binder, a split's body under one per component, a data
+///   case's branch under one per field of its constructor, a fold's cell branch
+///   and a handler's operation clauses under two, a scope's subject under the
+///   capability's and a fork's child and parent each under one linear binder, a
+///   hold's scope and an access's body each under one linear binder; the
+///   computation a bind runs, the function an application applies, a
+///   computation where a value is read, an offer's arms and a fork's child
+///   admit computations where the body goes on, a body in braces one where it
+///   ends, a thunk's body below a value and a lambda's body there one whose
+///   type nothing states, and a bind's rest and the branches of a case what its
+///   own position admits; a data case's motive is a type under one binder where
+///   `written` writes it; a thunk's body is a child only where bodies are
+///   spelled; a family's arguments, a codata family's included, admit values
+///   their parameters state the type of, and a constructor's classifier is a
+///   child only where bodies are spelled and its position states no type; every
+///   leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -1059,6 +1062,8 @@ where
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
     | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } | Former::Recorded { payloads: arity, .. } | Former::Dialogue { payloads: arity, .. } => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::RecordUpdate(_, arity) => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
@@ -1183,6 +1188,17 @@ where
         },
         Former::Record(arity) => {
             components(arity, Admits::Value, Binds::NONE, Some(Label::Assignment))
+        },
+        // The base, then the fields the update writes, each after its label.
+        Former::RecordUpdate(base, arity) => {
+            let mut slots = Vec::from([value(base)]);
+            slots.extend(components(
+                arity,
+                Admits::Value,
+                Binds::NONE,
+                Some(Label::Overwrite),
+            ));
+            slots
         },
         Former::StaticPi { domain, codomain } => {
             Vec::from([value_type(domain), value_type(codomain)])
@@ -2097,6 +2113,8 @@ enum Label
     Field,
     /// A record's field label: `.l = a`.
     Assignment,
+    /// A record update's field label: `l = a`.
+    Overwrite,
     /// The summand an injection enters: `.i = v`.
     Summand,
 }
@@ -2292,6 +2310,9 @@ enum Join
         /// it.
         entries: Entries,
     },
+    /// A record update over its base and this many labelled fields,
+    /// `#{b | l = a, …}`.
+    Update(Arity),
     /// An infix chain over this many operands, two or more.
     Infix
     {
@@ -4975,8 +4996,8 @@ impl Walk<'_, '_>
     }
 
     /// Pushes the label an entry of a braced former is written after: `l : `
-    /// before a record type's field, `.l = ` before a record's, `.i = ` before
-    /// an injection's body.
+    /// before a record type's field, `.l = ` before a record's, `l = ` before
+    /// a field a record update writes, `.i = ` before an injection's body.
     ///
     /// # Specification
     /// - requires: nothing; a source may answer no label.
@@ -4984,7 +5005,7 @@ impl Walk<'_, '_>
     ///   at `index`, or the summand `index` in decimal, then its separator; `?`
     ///   in place of a label the source does not answer, a line cannot hold or,
     ///   primed, ASCII cannot write, which makes the presentation approximate.
-    /// - provides: the labelled entries of records and injections.
+    /// - provides: the labelled entries of records, updates and injections.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
@@ -5029,7 +5050,7 @@ impl Walk<'_, '_>
     {
         let spelled = match label {
             Label::Summand => format!(".{} = ", usize::from(index)),
-            Label::Field | Label::Assignment => {
+            Label::Field | Label::Assignment | Label::Overwrite => {
                 let held = source.label(of, index);
                 let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
                 if let Some(reason) = unwritable(Name::from(text), self.spelling) {
@@ -5044,6 +5065,7 @@ impl Walk<'_, '_>
                 }
                 match label {
                     Label::Field => format!("{text} : "),
+                    Label::Overwrite => format!("{text} = "),
                     Label::Assignment | Label::Summand => format!(".{text} = "),
                 }
             },
@@ -5759,6 +5781,7 @@ impl Walk<'_, '_>
                 | Former::Literal(_)
                 | Former::Tuple(_)
                 | Former::Record(_)
+                | Former::RecordUpdate(..)
                 | Former::Injection(..)
                 | Former::Thunk(_)
                 | Former::Quote(_)
@@ -7251,6 +7274,10 @@ impl Walk<'_, '_>
                     entries: Entries::Labelled(Label::Assignment),
                 }))
             },
+            Former::RecordUpdate(_, arity) => Some(writes(
+                Production("telescope_expression"),
+                Join::Update(Arity(usize::from(arity))),
+            )),
             Former::ListCons(..) => Some(writes(
                 Production("call_expression"),
                 Join::Bracket(Bracket::ListCons),
@@ -9436,6 +9463,7 @@ impl Walk<'_, '_>
             | Former::Literal(_)
             | Former::Tuple(_)
             | Former::Record(_)
+            | Former::RecordUpdate(..)
             | Former::Injection(..)
             | Former::Thunk(_)
             | Former::Quote(_)
@@ -9532,6 +9560,10 @@ impl Walk<'_, '_>
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
+            Join::Update(Arity(count)) => {
+                let taken = count.checked_mul(2_usize)?;
+                taken.checked_add(1_usize)
+            },
             Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
@@ -9546,7 +9578,7 @@ impl Walk<'_, '_>
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -9627,6 +9659,31 @@ impl Walk<'_, '_>
                 let opener = self.leaf(brace.opener())?;
                 let mut items = Vec::from([opener]);
                 for (position, entry) in popped.rchunks(per_entry).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    items.extend(entry.iter().rev().map(|piece| piece.doc));
+                }
+                let inner = self.builder.concat_all(&items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            Join::Update(Arity(count)) => {
+                let taken = count
+                    .checked_mul(2_usize)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
+                }
+                let base = self.pop()?;
+                let opener = self.leaf(Brace::Hash.opener())?;
+                let bar = self.leaf(Glyphs(" |"))?;
+                let head = self.builder.concat_all(&[opener, base.doc, bar])?;
+                let mut items = Vec::from([self.space_or_break(head)?]);
+                for (position, entry) in popped.rchunks(2_usize).enumerate() {
                     if position > 0_usize {
                         let comma = self.leaf(Glyphs(","))?;
                         items.push(self.space_or_break(comma)?);

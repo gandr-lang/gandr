@@ -135,7 +135,7 @@ impl Source for ContentSource<'_>
             ContentNode::UnknownType | ContentNode::UnknownComputationType => reason == Unreadable::UnknownType,
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
-            ContentNode::BufferType | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
+            ContentNode::BufferType | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } => false,
         },
         (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
@@ -236,6 +236,7 @@ impl Source for ContentSource<'_>
                         | ContentNode::Returned(_)
                         | ContentNode::Nested(_)
                         | ContentNode::Run(_)
+                        | ContentNode::RecordUpdate(..)
                         | ContentNode::ElementTransport { .. }
                         | ContentNode::TelescopeTransport { .. }
                         | ContentNode::SessionRelated { .. }
@@ -606,6 +607,17 @@ impl Source for ContentSource<'_>
             ContentNode::Record(ref fields) if fields.is_empty() => Former::Unit,
             ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
             ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
+            ContentNode::RecordUpdate(base, overlay) => {
+                let written = if let Some(&ContentNode::Record(ref fields)) =
+                    self.nodes.get(usize::from(overlay))
+                {
+                    fields.len()
+                }
+                else {
+                    0_usize
+                };
+                Former::RecordUpdate(base, Arity::from(written))
+            },
             ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             ContentNode::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             ContentNode::List(element) => Former::List(element),
@@ -731,12 +743,12 @@ impl Source for ContentSource<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the index at `index` among a product's, a sum's, a tuple's or
-    ///   a lazy product's components, a record's or a record type's fields in
-    ///   label order, a session type's payloads in slot order, a family's
-    ///   arguments, a constructor's fields, a primitive's arguments, a case's
-    ///   or a data case's branches, a handler's clauses, an offer's arms or a
-    ///   recorded run's payloads in move order; none past them, for another
-    ///   node, or past the table.
+    ///   a lazy product's components, a record's or a record type's fields and
+    ///   the fields a record update writes in label order, a session type's
+    ///   payloads in slot order, a family's arguments, a constructor's fields,
+    ///   a primitive's arguments, a case's or a data case's branches, a
+    ///   handler's clauses, an offer's arms or a recorded run's payloads in
+    ///   move order; none past them, for another node, or past the table.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -783,6 +795,14 @@ impl Source for ContentSource<'_>
             ContentNode::Primitive(_, ref arguments) => arguments.get(at).copied(),
             ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.values().nth(at).copied()
+            },
+            ContentNode::RecordUpdate(_, overlay) => {
+                if let ContentNode::Record(ref fields) = *self.nodes.get(usize::from(overlay))? {
+                    fields.values().nth(at).copied()
+                }
+                else {
+                    None
+                }
             },
             ContentNode::SessionType(ref session) => session.payloads().get(at).copied(),
             ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
@@ -899,15 +919,15 @@ impl Source for ContentSource<'_>
         }
     }
 
-    /// The label of entry `index` of the record, the record type, the
-    /// handler or the offer at `node`.
+    /// The label of entry `index` of the record, the record update, the record
+    /// type, the handler or the offer at `node`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the label at `index` among a record's or a record type's
-    ///   fields and an offer's arms, in label order, and the operation a
-    ///   handler's clause answers; none past them, for another node, or past
-    ///   the table.
+    ///   fields, the fields a record update writes and an offer's arms, in
+    ///   label order, and the operation a handler's clause answers; none past
+    ///   them, for another node, or past the table.
     /// - provides: the printer's reading of a record's labels.
     /// - fails: never.
     /// - panics: none.
@@ -929,6 +949,14 @@ impl Source for ContentSource<'_>
         let label: &str = match *self.nodes.get(usize::from(node))? {
             ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
                 fields.keys().nth(at).map(AsRef::as_ref)
+            },
+            ContentNode::RecordUpdate(_, overlay) => {
+                if let ContentNode::Record(ref fields) = *self.nodes.get(usize::from(overlay))? {
+                    fields.keys().nth(at).map(AsRef::as_ref)
+                }
+                else {
+                    None
+                }
             },
             ContentNode::Handle { ref clauses, .. } | ContentNode::Scope { ref clauses, .. } => {
                 clauses.get(at).map(|clause| clause.operation.as_ref())

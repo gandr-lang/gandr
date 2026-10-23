@@ -1004,6 +1004,7 @@ impl CodeDefinitions
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -2297,7 +2298,11 @@ pub fn loose_reach(
                         ..
                     }
                     | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second) => {
+                    | Value::StaticApplication(first, second)
+                    | Value::RecordUpdate {
+                        base: first,
+                        overlay: second,
+                    } => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));
                         work.push((CoreNode::Term(TermNode::Value(second)), depth));
                     },

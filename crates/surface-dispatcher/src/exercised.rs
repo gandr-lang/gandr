@@ -909,7 +909,11 @@ fn formers(
                     | Value::ListCons(first, second)
                     | Value::Then(first, second)
                     | Value::FlowProduct(first, second)
-                    | Value::FunctionFlow(first, second)),
+                    | Value::FunctionFlow(first, second)
+                    | Value::RecordUpdate {
+                        base: first,
+                        overlay: second,
+                    }),
                 ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));

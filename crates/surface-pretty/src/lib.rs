@@ -64,13 +64,13 @@
 //! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
 //! type and a constant by name, and a decode as the code it reads; values are
 //! `unit`, literals with their canonical digits and escapes, `#{a, b, …}`,
-//! `#{.l = v, …}`, `+{.i = v}`, `here(a)`, `funext(f, g)`, `equiv(f, g)`,
-//! univalence at a stratum `ua[n, k](a, b, f, g)` with its two descriptions
-//! by name, the static abstraction `\a. v`, and a static application as its
-//! spine, `f(a, b)` for `f` applied to `a` and then to `b` (the type
-//! operators of `gandr-surface-grammar`). Every braced former is written
-//! between its delimiters at any arity from one, its labels in their declared
-//! order.
+//! `#{.l = v, …}`, a record update `#{b | l = v, …}`, `+{.i = v}`, `here(a)`,
+//! `funext(f, g)`, `equiv(f, g)`, univalence at a stratum
+//! `ua[n, k](a, b, f, g)` with its two descriptions by name, the static
+//! abstraction `\a. v`, and a static application as its spine, `f(a, b)` for
+//! `f` applied to `a` and then to `b` (the type operators of
+//! `gandr-surface-grammar`). Every braced former is written between its
+//! delimiters at any arity from one, its labels in their declared order.
 //!
 //! **Sugared** writes, besides, every sugar the grammar parses where the
 //! core's shape is exactly the one the sugar stands for: the product `A * B`
@@ -794,12 +794,13 @@ where
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the root written as [`present_type`] writes a type, a value's
 ///   formers spelled `unit`, as their literal, `#{a, b}`, `#{.l = v}` in label
-///   order and `+{.i = v}` at any summand, `here(a)`, `funext(f, g)`, `equiv(f,
-///   g)`, `ua[n, k](a, b, f, g)`, a constant by its name and the code of a type
-///   as the type; a thunk is written `<thunk>`, and a value [`DEPTH_LIMIT`]
-///   value formers deep is written `<deep>` inside the formers around it, each
-///   making the presentation approximate. Output has the same line-ending and
-///   width guarantees as [`present_type`].
+///   order, `#{b | l = v}` in label order, `+{.i = v}` at any summand,
+///   `here(a)`, `funext(f, g)`, `equiv(f, g)`, `ua[n, k](a, b, f, g)`, a
+///   constant by its name and the code of a type as the type; a thunk is
+///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
+///   written `<deep>` inside the formers around it, each making the
+///   presentation approximate. Output has the same line-ending and width
+///   guarantees as [`present_type`].
 /// - provides: the normal form a transcript line or a probe shows.
 /// - fails: as [`present_type`].
 /// - panics: none.

@@ -126,7 +126,7 @@ pub fn same_value(
             | Value::Constructor { tag, ref fields, .. } => ret != Agreement::Same
                 || matches!(*right, Value::Constructor { tag: other_tag, fields: ref other_fields, .. } if tag == other_tag && fields.len() == other_fields.len()),
             Value::Univalence(..) |
-            Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Ascribe { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
+            Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Ascribe { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },

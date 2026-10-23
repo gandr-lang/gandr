@@ -72,8 +72,6 @@ impl TrackingIssue
     pub const PACKAGES: Self = Self(1108);
     /// A number literal written with its type.
     pub const TYPED_NUMBER: Self = Self(1109);
-    /// A record update, `#{ e | l = v, … }`.
-    pub const RECORD_UPDATE: Self = Self(1110);
     /// An operator declaration.
     pub const OPERATOR_DECLARATION: Self = Self(1111);
     /// A thunk type's grade.

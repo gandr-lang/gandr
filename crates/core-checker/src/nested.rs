@@ -55,6 +55,13 @@
 //! decided pure and binds before its region as any other, so the second run
 //! and the kernel read the application.
 //!
+//! **A record update stands as a record.** The judgement synthesises an
+//! update's base and its overlay, each a record, and records the base's labels
+//! the overlay does not write; once the elaboration has bound every run, the
+//! update stands as the record holding `⟨b.k⟩` at each such label `k` beside
+//! the overlay's fields ([`NestedElaboration::updated`]). A base that runs is
+//! bound first, so each kept field reads its variable, and the base runs once.
+//!
 //! **What a type reads stays readable.** A pure run whose value a type after
 //! it reads — a dependent pair's first component under its second's type, a
 //! dependent function's argument under the types after it — stands as the
@@ -212,6 +219,61 @@ impl NestedElaboration
         self.carried = carried;
         self.crossings = crossings;
         self
+    }
+
+    /// This elaboration followed by the build of every record update `updates`
+    /// names: the built body, and the elaboration with the build's carried
+    /// pairs after its own.
+    ///
+    /// # Specification
+    /// - requires: `body` is what this elaboration rebuilt; `updates` is what
+    ///   the judgement recorded over the body [`cross`] read, and `crossed`
+    ///   what it carried, empty when nothing crossed.
+    /// - ensures: `body` with every named update, read through `crossed` and
+    ///   this elaboration's rebuild, standing as its record
+    ///   ([`gandr_core_term::build_updates`]), beside this elaboration with the
+    ///   build's carried pairs appended; `body` and this elaboration unchanged
+    ///   when `updates` is empty.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an update keeping one field of its base and writing
+    ///   another stands as the record of both.
+    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    #[spec(captures: own = self.carried.len(), ensures: |ret| ret.1.carried.len() >= own)]
+    #[must_use]
+    pub(crate) fn updated(
+        mut self,
+        arena: &mut CoreArena,
+        body: ValueId,
+        updates: &BTreeMap<ValueId, Vec<gandr_kernel_term::FieldLabel>>,
+        crossed: &[Carried],
+    ) -> (ValueId, Self)
+    {
+        if updates.is_empty() {
+            return (body, self);
+        }
+        let rebuilt = |pairs: &[Carried]| -> BTreeMap<ValueId, ValueId> {
+            pairs
+                .iter()
+                .filter_map(|&pair| match pair {
+                    Carried::Value(held, written) => Some((held, written)),
+                    Carried::Computation(..) | Carried::ValueType(..) | Carried::CompType(..) => {
+                        None
+                    },
+                })
+                .collect()
+        };
+        let (crossing, elaborating) = (rebuilt(crossed), rebuilt(&self.carried));
+        let read = updates
+            .iter()
+            .map(|(&at, kept)| {
+                let at = crossing.get(&at).copied().unwrap_or(at);
+                (elaborating.get(&at).copied().unwrap_or(at), kept.clone())
+            })
+            .collect();
+        let built = gandr_core_term::build_updates(arena, body, &read, &mut self.carried);
+        (built, self)
     }
 }
 

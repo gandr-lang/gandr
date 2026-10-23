@@ -3881,7 +3881,7 @@ proptest! {
                     );
                 },
                 | Value::Univalence(..)
-                | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_)
+                | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. }
                 | Value::Constructor { .. } | Value::Record(_)
                 | Value::Reify(_)
                 | Value::PathProduct(..)
@@ -4585,5 +4585,69 @@ fn each_former_refuses_a_classifier_of_another_shape_by_name()
         synthesise_comp(&mut context, third).map(|_| ()),
         Err(CheckRefusal::AbsentTupleComponent(third)),
         "a dependent pair has no third component"
+    );
+}
+
+/// A record update synthesises its base's record with each field its overlay
+/// writes at the overlay's type: a label the base lacks extends the record,
+/// one the base has at another type retypes it, and the base's other labels
+/// are kept and recorded as the update's. A base of another shape is refused
+/// at the base, wanting a record, before the overlay is read.
+#[test]
+fn a_record_update_extends_retypes_and_refuses_a_non_record_base()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let zero = arena.value_literal(integer_literal());
+    let word = arena.value_literal(text_literal());
+    let base = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), zero),
+        (label("b"), zero),
+    ]));
+    let overlay = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("b"), word),
+        (label("c"), zero),
+    ]));
+    let update = arena.value_record_update(base, overlay);
+    let of_integer = arena.value_record_update(zero, overlay);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let synthesised = synthesise_value(&mut context, update)
+        .map(|found| found.produced().id())
+        .expect("an update of a record synthesises");
+    let Some(&ValueType::Record(ref fields)) = context.arena().value_type(synthesised)
+    else {
+        panic!("an update synthesises a record type");
+    };
+    let fields = fields.clone();
+    let integer = context.atom(Atom::Integer).id();
+    let string = context.atom(Atom::String).id();
+    assert_eq!(
+        fields,
+        alloc::collections::BTreeMap::from([
+            (label("a"), integer),
+            (label("b"), string),
+            (label("c"), integer),
+        ]),
+        "`a` kept, `b` retyped to the string it is written as, `c` extending the record"
+    );
+    assert_eq!(
+        context.take_updates(),
+        alloc::collections::BTreeMap::from([(update, Vec::from([label("a")]))]),
+        "the base's label the overlay does not write is the update's kept label"
+    );
+    assert!(
+        matches!(
+            synthesise_value(&mut context, of_integer),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::Record,
+                ..
+            }) if at == zero
+        ),
+        "an integer base is refused at the base, wanting a record"
+    );
+    assert!(
+        context.take_updates().is_empty(),
+        "a refused update records no kept labels"
     );
 }

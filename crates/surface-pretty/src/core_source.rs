@@ -912,6 +912,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
         | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
         | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
+        | (Some(&Value::RecordUpdate { base, overlay }), Former::RecordUpdate(actual, arity)) => actual == CoreNode::Value(base)
+            && usize::from(arity) == match self.arena.value(overlay) { Some(&Value::Record(ref fields)) => fields.len(), _ => 0_usize },
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
         | (Some(&Value::Tuple(ref components)), Former::Unit) => components.is_empty(),
@@ -1086,6 +1088,15 @@ impl<'arena> CoreSource<'arena>
             },
             Value::Record(ref fields) if fields.is_empty() => Former::Unit,
             Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
+            Value::RecordUpdate { base, overlay } => {
+                let written = if let Some(&Value::Record(ref fields)) = self.arena.value(overlay) {
+                    fields.len()
+                }
+                else {
+                    0_usize
+                };
+                Former::RecordUpdate(CoreNode::Value(base), Arity::from(written))
+            },
             Value::Reify(_) => Former::Reify,
             Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
@@ -1942,12 +1953,13 @@ impl Source for CoreSource<'_>
     /// - ensures: of the node `node` restores to, the value type at `index`
     ///   among a held product's, sum's or record type's components and a
     ///   session type's payloads; the value at `index` among a held tuple's,
-    ///   record's or constructor's fields and a family's arguments, a codata
-    ///   family's included; the value at `index` among a primitive's arguments
-    ///   and the computation among a case's or a data case's branches, a
-    ///   handler's operation clauses and an offer's arms; a record's fields and
-    ///   an offer's arms in label order; none for an index past them, another
-    ///   former, another family or a missing handle.
+    ///   record's or constructor's fields, the fields a record update writes
+    ///   and a family's arguments, a codata family's included; the value at
+    ///   `index` among a primitive's arguments and the computation among a
+    ///   case's or a data case's branches, a handler's operation clauses and an
+    ///   offer's arms; a record's fields, an update's and an offer's arms in
+    ///   label order; none for an index past them, another former, another
+    ///   family or a missing handle.
     /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
@@ -1976,6 +1988,10 @@ impl Source for CoreSource<'_>
         | CoreNode::Value(id) => ret == match self.arena.value(id) {
             | Some(&Value::Tuple(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
             | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
+            | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
+                | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
+                | Some(_) | None => None,
+            },
             | Some(&Value::Constructor { ref fields, .. }) => fields.get(usize::from(index)).map(|&field| CoreNode::Value(field)),
             | Some(&Value::Recorded(ref moves)) => moves.iter()
                 .filter_map(|step| match step.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
@@ -2046,6 +2062,14 @@ impl Source for CoreSource<'_>
                     .map(|&component| CoreNode::Value(component)),
                 Value::Record(ref fields) => {
                     fields.values().nth(at).map(|&field| CoreNode::Value(field))
+                },
+                Value::RecordUpdate { overlay, .. } => {
+                    if let Value::Record(ref fields) = *self.arena.value(overlay)? {
+                        fields.values().nth(at).map(|&field| CoreNode::Value(field))
+                    }
+                    else {
+                        None
+                    }
                 },
                 Value::Constructor { ref fields, .. } => {
                     fields.get(at).map(|&field| CoreNode::Value(field))
@@ -2173,16 +2197,16 @@ impl Source for CoreSource<'_>
         }
     }
 
-    /// The label of entry `index` of the record, the record type, the
-    /// handler or the offer `node` names in the arena.
+    /// The label of entry `index` of the record, the record update, the record
+    /// type, the handler or the offer `node` names in the arena.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: of the node `node` restores to, the label at `index` among a
-    ///   held record's or record type's fields and an offer's arms, in label
-    ///   order, and the operation a handler's clause at `index` answers; none
-    ///   for an index past them, another former, another family or a missing
-    ///   handle.
+    ///   held record's or record type's fields, the fields a record update
+    ///   writes and an offer's arms, in label order, and the operation a
+    ///   handler's clause at `index` answers; none for an index past them,
+    ///   another former, another family or a missing handle.
     /// - provides: the printer's reading of a record's labels, a handler's
     ///   operations and an offer's labels.
     /// - fails: never.
@@ -2204,6 +2228,10 @@ impl Source for CoreSource<'_>
         },
         | CoreNode::Value(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value(id) {
             | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
+                | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+                | Some(_) | None => None,
+            },
             | Some(_) | None => None,
         },
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
@@ -2250,6 +2278,14 @@ impl Source for CoreSource<'_>
             },
             CoreNode::Value(id) => match *self.arena.value(id)? {
                 Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                Value::RecordUpdate { overlay, .. } => {
+                    if let Value::Record(ref fields) = *self.arena.value(overlay)? {
+                        fields.keys().nth(at).map(AsRef::as_ref)
+                    }
+                    else {
+                        None
+                    }
+                },
                 Value::Primitive { .. }
                 | Value::PathRefl(_)
                 | Value::PathProduct(..)

@@ -25,6 +25,7 @@
 //! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
 //! |dependent split|synthesise|the scrutinee synthesises `Σ (x : A). B`; the motive `C` forms under a binder of the Σ; the body checks against `C` at the pair of its two binders, `x : A` outermost; the split has `C` at the scrutinee|
 //! |tuple projection|synthesise|the tuple synthesises a product or a Σ; at a Σ the first projection has `A` and the second `B` at the first projection|
+//! |record update `#{b \| l = a, …}`|synthesise|the base synthesises a record, a computation written there running first and read at what it returns; the overlay's fields synthesise; the update has the base's record with each written label at its written type — a label the base lacks extends it, one at another type retypes it — and the base's other labels kept|
 //! |return|check against `F A`, or synthesise|checked, the value checks against `A`; synthesised, the value synthesises `A` and the return the pure returner of `A`|
 //!
 //! A bind and a pair are the formers of either mode, and so is a return. A
@@ -1904,6 +1905,21 @@ enum Frame
         /// The first flow's source and target codes.
         first: (ValueTypeId, ValueTypeId),
     },
+    /// Await a record update's base; its shape is read, and its overlay is
+    /// synthesised next.
+    UpdateBase
+    {
+        /// The update.
+        at: ValueId,
+    },
+    /// Await a record update's overlay, its base's type in hand.
+    UpdateOverlay
+    {
+        /// The update.
+        at: ValueId,
+        /// The base's type.
+        base: ValueTypeId,
+    },
     /// Await the flow a ride moves along; its motive then forms under a binder
     /// of the flow's carrier.
     RideFlow
@@ -2606,6 +2622,8 @@ impl Frame
             Self::ThenSecond { .. } => FrameRole::ThenSecond,
             Self::FlowProductFirst { .. } => FrameRole::FlowProductFirst,
             Self::FlowProductSecond { .. } => FrameRole::FlowProductSecond,
+            Self::UpdateBase { .. } => FrameRole::UpdateBase,
+            Self::UpdateOverlay { .. } => FrameRole::UpdateOverlay,
             Self::RideFlow { .. } => FrameRole::RideFlow,
             Self::RideMotive { .. } => FrameRole::RideMotive,
             Self::RideValue { .. } => FrameRole::RideValue,
@@ -2751,6 +2769,8 @@ impl Frame
             | Self::ThenSecond { .. }
             | Self::FlowProductFirst { .. }
             | Self::FlowProductSecond { .. }
+            | Self::UpdateBase { .. }
+            | Self::UpdateOverlay { .. }
             | Self::RideFlow { .. }
             | Self::RideMotive { .. }
             | Self::RideValue { .. }
@@ -3162,6 +3182,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ThenSecond { .. }
                 | Frame::FlowProductFirst { .. }
                 | Frame::FlowProductSecond { .. }
+                | Frame::UpdateBase { .. }
+                | Frame::UpdateOverlay { .. }
                 | Frame::RideFlow { .. }
                 | Frame::RideMotive { .. }
                 | Frame::RideValue { .. }
@@ -4696,6 +4718,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            // A computation written as the base runs, and the update reads
+            // the record it returns.
+            Value::RecordUpdate { base, .. } => {
+                self.wait(Frame::UpdateBase { at: term });
+                self.unsuspended(base)
+            },
             Value::SessionRelated { source, target, .. } => {
                 let universe = crate::flow::universe(self.context.arena_mut());
                 let owner = self.owner;
@@ -5173,6 +5201,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::PathRefl(_)
             | Value::Returned(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Ua { .. }
@@ -5445,6 +5474,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)
@@ -5484,9 +5514,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Read `value` where no thunk stands: a case's, a split's or a list
-    /// case's scrutinee, or the path an element transport follows. A
-    /// computation written there runs, and its type is the one it returns; any
-    /// other value synthesises.
+    /// case's scrutinee, the path an element transport follows, or a record
+    /// update's base. A computation written there runs, and its type is the
+    /// one it returns; any other value synthesises.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -8477,6 +8507,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     crate::product::flow_classifier(self.context.arena_mut(), first, second);
                 Ok(Step::Ascend(Produced::ValueType(product.into())))
             },
+            (Frame::UpdateBase { at }, Produced::ValueType(base)) => {
+                let base = base.settle(self.context.arena_mut());
+                self.update_base(at, base)
+            },
+            (Frame::UpdateOverlay { at, base }, Produced::ValueType(overlay)) => {
+                let overlay = overlay.settle(self.context.arena_mut());
+                self.native_update(at, base, overlay)
+            },
             (Frame::RideFlow { at, motive, .. }, Produced::ValueType(flow)) => {
                 let flow = flow.settle(self.context.arena_mut());
                 let (carrier, ..) =
@@ -9377,6 +9415,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ThenSecond { .. }
                 | Frame::FlowProductFirst { .. }
                 | Frame::FlowProductSecond { .. }
+                | Frame::UpdateBase { .. }
+                | Frame::UpdateOverlay { .. }
                 | Frame::RideFlow { .. }
                 | Frame::ForwardTranslator { .. }
                 | Frame::ArrowDomain { .. }

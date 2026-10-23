@@ -521,6 +521,7 @@ impl CoreArena
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
+                | Value::RecordUpdate { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Literal(_)
@@ -2956,6 +2957,21 @@ impl CoreArena
     ) -> ValueId
     {
         self.alloc_value(Value::Run(computation))
+    }
+
+    /// Mint the record update `#{ base | … }` laying `overlay`'s fields over
+    /// `base`'s.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record_update(
+        &mut self,
+        base: ValueId,
+        overlay: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::RecordUpdate { base, overlay })
     }
 
     /// Mint transport `tr(P, p, x)` along an element path, the motive under

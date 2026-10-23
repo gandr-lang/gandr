@@ -574,6 +574,7 @@ fn head(
         | Value::Returned(_)
         | Value::Nested(_)
         | Value::Run(_)
+        | Value::RecordUpdate { .. }
         | Value::Thunk(_)
         | Value::Ascribe { .. }
         | Value::Lift { .. }

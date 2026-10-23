@@ -113,6 +113,7 @@ use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
 
@@ -510,6 +511,9 @@ struct Engine<'arena>
     /// Each run a crossing minted beside the value it applies the reduct to,
     /// in minting order.
     crossed: Vec<(ValueId, ValueId)>,
+    /// The record updates a build turns into records, each with the labels
+    /// its base keeps.
+    updates: BTreeMap<ValueId, Vec<FieldLabel>>,
     /// The entries an environment substitution replaces free indices by,
     /// innermost first.
     environment: Vec<ValueId>,
@@ -554,6 +558,7 @@ impl<'arena> Engine<'arena>
             sites: BTreeMap::new(),
             crossings: BTreeMap::new(),
             crossed: Vec::new(),
+            updates: BTreeMap::new(),
             environment: Vec::new(),
             nesting: BTreeMap::new(),
             regions: BTreeMap::new(),
@@ -1097,18 +1102,22 @@ impl<'arena> Engine<'arena>
     }
 
     /// The mark a wrap puts around `node`'s rewritten form, if its sites name
-    /// it, or the thunk or returned value an elaboration stands a nested
-    /// computation as, if the checker decided it so.
+    /// it, the record a build stands a record update as, or the thunk or
+    /// returned value an elaboration stands a nested computation as, if the
+    /// checker decided it so.
     ///
     /// # Specification
     /// - requires: `rewritten` is `node`'s rewritten form, in its family.
-    /// - ensures: under a wrap, a fresh run of the reduct applied to
-    ///   `rewritten` when the crossings name `node`, and otherwise a fresh mark
-    ///   over `rewritten` when the sites name `node` and it is a term; under an
-    ///   elaboration, a fresh thunk over the computation of `rewritten` when
-    ///   `node` is a nested computation the checker decided to suspend, and a
-    ///   fresh returned value over it when the checker decided it stands as
-    ///   what it returns; `rewritten` itself otherwise.
+    /// - ensures: under a wrap, a fresh record when the updates name `node` and
+    ///   `rewritten` is an update of a record by a record — the overlay's
+    ///   fields beside `⟨b.k⟩` for each label `k` the base `b` keeps — then a
+    ///   fresh run of the reduct applied to `rewritten` when the crossings name
+    ///   `node`, and otherwise a fresh mark over `rewritten` when the sites
+    ///   name `node` and it is a term; under an elaboration, a fresh thunk over
+    ///   the computation of `rewritten` when `node` is a nested computation the
+    ///   checker decided to suspend, and a fresh returned value over it when
+    ///   the checker decided it stands as what it returns; `rewritten` itself
+    ///   otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1142,6 +1151,21 @@ impl<'arena> Engine<'arena>
         }
         if rewrite != Rewrite::Wrap {
             return rewritten;
+        }
+        if let (Node::Value(held), Node::Value(id)) = (node, rewritten)
+            && let Some(kept) = self.updates.get(&held)
+            && let Some(&Value::RecordUpdate { base, overlay }) = self.arena.value(id)
+            && let Some(&Value::Record(ref fields)) = self.arena.value(overlay)
+        {
+            let mut built = fields.clone();
+            for label in kept {
+                let projection = self
+                    .arena
+                    .computation_record_projection(base, label.clone());
+                let returned = self.arena.value_returned(projection);
+                built.insert(label.clone(), returned);
+            }
+            return Node::Value(self.arena.value_record(built));
         }
         if let (Node::Value(held), Node::Value(id)) = (node, rewritten)
             && let Some(crossing) = self.crossings.get(&held)
@@ -1719,7 +1743,7 @@ Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } | Value::RecordUpdate { .. } => 2,
 Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 }),
@@ -1861,7 +1885,11 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         backward: second,
                         ..
                     }
-                    | &Value::StaticApplication(first, second),
+                    | &Value::StaticApplication(first, second)
+                    | &Value::RecordUpdate {
+                        base: first,
+                        overlay: second,
+                    },
                 ) => {
                     self.tasks.push(open(Node::Value(second), depth));
                     self.tasks.push(open(Node::Value(first), depth));
@@ -2580,7 +2608,7 @@ Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) | Value::Web(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } | Value::RecordUpdate { .. } => 2,
 Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 })],
@@ -2722,6 +2750,17 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_run(rewritten)
+                }
+            },
+            Value::RecordUpdate { base, overlay } => {
+                let rewritten_overlay = Self::value(&mut self.results, overlay);
+                let rewritten_base = Self::value(&mut self.results, base);
+                if (rewritten_base, rewritten_overlay) == (base, overlay) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_record_update(rewritten_base, rewritten_overlay)
                 }
             },
             Value::Ascribe { value, ty } => {
@@ -5494,6 +5533,45 @@ pub fn cross_reducts(
     }
 }
 
+/// Build, within `subject`, each record update `updates` names as a record:
+/// the fields its base keeps beside its overlay's; report every node it
+/// rewrote.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`; each named update's base is a
+///   record carrying every label its list keeps, none of them its overlay's.
+/// - ensures: `subject` rebuilt with every named update `b with o`, its own
+///   children rebuilt first, standing as the record whose field at each kept
+///   label `k` is `⟨b.k⟩` and whose other fields are `o`'s, when `o` is a
+///   record; `subject` itself when `updates` names nothing it reaches;
+///   `carried` gains one pair per node the rebuild carried over.
+/// - provides: the body the second judgement reads, with no update left.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an update keeping one label and overlaying another, and
+///   an unnamed update beside it, separate the build from the identity.
+/// - witness: `rewrite::tests::an_update_builds_the_kept_fields_beside_the_overlay`
+#[spec(captures: held = carried.len(), ensures: carried.len() >= held)]
+#[inline]
+pub fn build_updates(
+    arena: &mut CoreArena,
+    subject: ValueId,
+    updates: &BTreeMap<ValueId, Vec<FieldLabel>>,
+    carried: &mut Vec<Carried>,
+) -> ValueId
+{
+    let mut engine = Engine::new(arena);
+    engine.updates = updates.clone();
+    let built = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Wrap);
+    report(&engine.memo, carried);
+    match built {
+        Node::Value(id) => id,
+        Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
+    }
+}
+
 /// A crossing the value bridge recorded at a value: the map and its carriers.
 ///
 /// The map is a reduct or a forgetting map; its carriers are what it takes
@@ -5702,6 +5780,10 @@ fn survey_value(
         | Value::FlowProduct(left, right)
         | Value::FunctionFlow(left, right)
         | Value::ListCons(left, right)
+        | Value::RecordUpdate {
+            base: left,
+            overlay: right,
+        }
         | Value::PathEquiv {
             forward: left,
             backward: right,

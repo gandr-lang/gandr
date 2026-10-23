@@ -303,6 +303,10 @@ pub enum FrameRole
     FlowProductFirst,
     /// A flow product waits on its second flow's type.
     FlowProductSecond,
+    /// A record update waits on its base's type.
+    UpdateBase,
+    /// A record update waits on its overlay's type, its base's in hand.
+    UpdateOverlay,
     /// A ride waits on the flow it moves along.
     RideFlow,
     /// A ride's motive is being formed under the flow's carrier.
@@ -469,6 +473,8 @@ impl fmt::Display for FrameRole
             Self::ThenSecond => "ThenSecond",
             Self::FlowProductFirst => "FlowProductFirst",
             Self::FlowProductSecond => "FlowProductSecond",
+            Self::UpdateBase => "UpdateBase",
+            Self::UpdateOverlay => "UpdateOverlay",
             Self::RideFlow => "RideFlow",
             Self::RideMotive => "RideMotive",
             Self::RideValue => "RideValue",

@@ -1152,7 +1152,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
@@ -1897,7 +1897,7 @@ impl<'run> Focusing<'run>
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret.is_err() || self.producers.len() == results.saturating_add(1),
             | Some(&Value::StaticLambda(_) | &Value::StaticApplication(..)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
-            | Some(&Value::Nested(_) | &Value::Run(_)) => ret == Err(FocusRefusal::Unelaborated(id)),
+            | Some(&Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. }) => ret == Err(FocusRefusal::Unelaborated(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -2123,6 +2123,7 @@ impl<'run> Focusing<'run>
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
+                    | Value::RecordUpdate { .. }
                     | Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Literal(_)
@@ -2154,7 +2155,9 @@ impl<'run> Focusing<'run>
             Value::Hole(_) | Value::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteValue(id));
             },
-            Value::Nested(_) | Value::Run(_) => return Err(FocusRefusal::Unelaborated(id)),
+            Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } => {
+                return Err(FocusRefusal::Unelaborated(id));
+            },
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);

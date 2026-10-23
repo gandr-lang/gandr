@@ -462,6 +462,10 @@ pub enum EvalFault
     /// A compound endpoint's computation reached a weak head that is neither
     /// a returner nor stuck, so it returns no value.
     ReturnedNonReturner,
+    /// A record update before elaboration: the checker replaces it by the
+    /// record it builds, so a certificate never holds one, and the machine
+    /// has no record term to read the built record's labels from.
+    RecordUpdate,
 }
 
 /// A definition chain with every body lowered into the core arena a run
@@ -4511,6 +4515,7 @@ fn step_value(
             });
             Ok(())
         },
+        Value::RecordUpdate { .. } => Err(EvalFault::RecordUpdate),
         Value::PathProduct(first, second) => {
             machine.tasks.push(Task::PathProduct(term));
             machine.tasks.push(Task::Value { term: second, env });

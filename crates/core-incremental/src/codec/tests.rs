@@ -208,6 +208,7 @@ fn every_node_former_round_trips_under_its_own_frame()
         ContentNode::Returned(a),
         ContentNode::Nested(a),
         ContentNode::Run(a),
+        ContentNode::RecordUpdate(a, b),
         ContentNode::ElementTransport {
             motive: a,
             path: b,

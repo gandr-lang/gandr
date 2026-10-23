@@ -380,6 +380,9 @@ pub struct CheckingContext<'arena>
     /// sorts to its theory's models, crossed by, by node, since the
     /// declaration under way began.
     crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
+    /// The labels each record update keeps of its base, by node, since the
+    /// declaration under way began.
+    updates: BTreeMap<ValueId, Vec<gandr_kernel_term::FieldLabel>>,
     /// The path endpoint pairs the judgement's type conversions related since
     /// the declaration under way began, by pair, with each derivation.
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
@@ -581,6 +584,8 @@ pub struct Checkpoint
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
     /// [`CheckingContext::crossings`].
     crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
+    /// [`CheckingContext::updates`].
+    updates: BTreeMap<ValueId, Vec<gandr_kernel_term::FieldLabel>>,
     /// [`CheckingContext::relating`].
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
     /// [`CheckingContext::relations`].
@@ -737,6 +742,7 @@ impl<'arena> CheckingContext<'arena>
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
             crossings: BTreeMap::new(),
+            updates: BTreeMap::new(),
             relating: BTreeMap::new(),
             relations: BTreeMap::new(),
             laws: BTreeMap::new(),
@@ -810,6 +816,7 @@ impl<'arena> CheckingContext<'arena>
             ref reflexivities,
             ref nesting,
             ref crossings,
+            ref updates,
             ref relating,
             ref relations,
             ref laws,
@@ -859,6 +866,7 @@ impl<'arena> CheckingContext<'arena>
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
             crossings: crossings.clone(),
+            updates: updates.clone(),
             relating: relating.clone(),
             relations: relations.clone(),
             laws: laws.clone(),
@@ -932,6 +940,7 @@ impl<'arena> CheckingContext<'arena>
             reflexivities,
             nesting,
             crossings,
+            updates,
             relating,
             relations,
             laws,
@@ -982,6 +991,7 @@ impl<'arena> CheckingContext<'arena>
             reflexivities,
             nesting,
             crossings,
+            updates,
             relating,
             relations,
             laws,
@@ -3093,6 +3103,45 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         core::mem::take(&mut self.crossings)
     }
 
+    /// Record that the record update `at` keeps its base's fields at `kept`,
+    /// its overlay standing at every other label the update has.
+    ///
+    /// # Specification
+    /// - requires: `kept` is the base's labels the overlay does not write.
+    /// - ensures: `at` keeps `kept`, replacing an earlier record.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an update that overlays one field of two keeps the
+    ///   other.
+    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    #[spec(captures: count = kept.len(), ensures: self.updates.get(&at).map(Vec::len) == Some(count))]
+    pub(crate) fn record_update(
+        &mut self,
+        at: ValueId,
+        kept: Vec<gandr_kernel_term::FieldLabel>,
+    )
+    {
+        self.updates.insert(at, kept);
+    }
+
+    /// Take every record update recorded since the last take, leaving none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the updates recorded since the last take, by node; none
+    ///   remain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`CheckingContext::record_update`].
+    /// - witness: `module::tests::a_record_update_builds_its_base_s_kept_fields_beside_its_overlay`
+    #[spec(ensures: self.updates.is_empty())]
+    pub(crate) fn take_updates(&mut self) -> BTreeMap<ValueId, Vec<gandr_kernel_term::FieldLabel>>
+    {
+        core::mem::take(&mut self.updates)
+    }
+
     /// Record the derivation the judgement related the path endpoints `left`
     /// and `right` by, where a type conversion met them.
     ///
@@ -3879,6 +3928,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)

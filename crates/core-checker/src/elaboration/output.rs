@@ -287,6 +287,7 @@ fn children(
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Literal(_)
@@ -573,6 +574,7 @@ fn rebuild(
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
+                | Value::RecordUpdate { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Literal(_)
