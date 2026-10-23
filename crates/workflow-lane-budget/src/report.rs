@@ -494,15 +494,18 @@ impl Report
     }
 }
 
-/// Writes `rows`, sampled over `window`, as the report's Markdown table: lane,
-/// class, median, budget, sample count and standing, the class `daily` for a
-/// row of the CI workflow's scheduled window and `nightly` for one of the
-/// nightly workflow's.
+/// Writes `rows`, sampled over `window` from `runs`, as the report's Markdown
+/// table collapsed under a one-line summary: lane, class, median, budget,
+/// sample count and standing, the class `daily` for a row of the CI workflow's
+/// scheduled window and `nightly` for one of the nightly workflow's, then the
+/// runs.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the header, then one line per row, in order, with an unmeasured
-///   median written as `—`.
+/// - ensures: a `<details>` block whose summary counts the lanes, states the
+///   table's verdict — over when any row is over, within otherwise — and counts
+///   the rows over and unmeasured; inside it the header, one line per row, in
+///   order, with an unmeasured median written as `—`, and the runs line.
 /// - provides: either table of the report.
 /// - fails: propagates the formatter's own write failure.
 /// - panics: none.
@@ -517,8 +520,19 @@ fn table(
     f: &mut fmt::Formatter<'_>,
     rows: &[Row],
     window: Window,
+    runs: &[RunId],
 ) -> fmt::Result
 {
+    let counted = |standing: Standing| rows.iter().filter(|row| row.standing() == standing).count();
+    let over = counted(Standing::Over);
+    let verdict = if over > 0 { "over" } else { "within" };
+    let lanes = if rows.len() == 1 { "lane" } else { "lanes" };
+    writeln!(
+        f,
+        "<details><summary>{} {lanes} — {verdict}: {over} over, {} unmeasured</summary>\n",
+        rows.len(),
+        counted(Standing::Unmeasured)
+    )?;
     writeln!(f, "| lane | class | median | budget | jobs | standing |")?;
     writeln!(f, "| --- | --- | ---: | ---: | ---: | --- |")?;
     for row in rows {
@@ -540,7 +554,7 @@ fn table(
             row.standing()
         )?;
     }
-    Ok(())
+    writeln!(f, "\nRuns: {}.\n\n</details>", listed(runs))
 }
 
 /// The runs a table sampled, as the line after it lists them.
@@ -563,9 +577,10 @@ fn listed(runs: &[RunId]) -> String
 
 impl fmt::Display for Report
 {
-    /// Writes the report as Markdown: a sentence naming the window, a table
-    /// of lane, class, median, budget, sample count and standing, and the
-    /// runs; then the same for each scheduled window given budgets.
+    /// Writes the report as Markdown: a sentence naming the window, then a
+    /// table of lane, class, median, budget, sample count and standing with
+    /// the runs, collapsed under its summary; then the same for each scheduled
+    /// window given budgets.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -595,8 +610,7 @@ impl fmt::Display for Report
              landing touched.\n",
             self.runs.len()
         )?;
-        table(f, &self.rows, Window::Landing)?;
-        writeln!(f, "\nRuns: {}.", listed(&self.runs))?;
+        table(f, &self.rows, Window::Landing, &self.runs)?;
         for scheduled in &self.scheduled {
             let held = match scheduled.window {
                 Window::Landing | Window::Scheduled => {
@@ -609,8 +623,7 @@ impl fmt::Display for Report
                 "\nMedian job time over the last {} scheduled runs {held}.\n",
                 scheduled.runs.len()
             )?;
-            table(f, &scheduled.rows, scheduled.window)?;
-            writeln!(f, "\nRuns: {}.", listed(&scheduled.runs))?;
+            table(f, &scheduled.rows, scheduled.window, &scheduled.runs)?;
         }
         Ok(())
     }
@@ -699,11 +712,12 @@ mod tests
             "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
              against the budgets in `nightly.yml`, each lane held by the cone its \
              landing touched.\n\n\
+             <details><summary>2 lanes — within: 0 over, 1 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | check Clippy wall | surface | 3m 20s | 5m 0s | 3 | within |\n\
              | test enforcing targets (macos-arm64) | surface | — | 15m 0s | 0 | unmeasured |\n\
-             \nRuns: 12, 11.\n"
+             \nRuns: 12, 11.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Within);
     }
@@ -738,11 +752,12 @@ mod tests
             "Median job time over the last 2 merge-queue and pull-request runs of `ci.yml`, \
              against the budgets in `nightly.yml`, each lane held by the cone its \
              landing touched.\n\n\
+             <details><summary>2 lanes — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | test enforcing targets (linux) | surface | 5m 0s | 6m 0s | 2 | within |\n\
              | test enforcing targets (linux) | deep | 8m 20s | 9m 0s | 2 | within |\n\
-             \nRuns: 12, 11.\n"
+             \nRuns: 12, 11.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Within);
     }
@@ -857,16 +872,18 @@ mod tests
             "Median job time over the last 1 merge-queue and pull-request runs of `ci.yml`, \
              against the budgets in `nightly.yml`, each lane held by the cone its \
              landing touched.\n\n\
+             <details><summary>1 lane — within: 0 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | check Clippy wall | surface | 3m 20s | 5m 0s | 1 | within |\n\
-             \nRuns: 12.\n\
+             \nRuns: 12.\n\n</details>\n\
              \nMedian job time over the last 2 scheduled runs of `ci.yml`, for the lanes \
              only the daily run holds.\n\n\
+             <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
              | lane | class | median | budget | jobs | standing |\n\
              | --- | --- | ---: | ---: | ---: | --- |\n\
              | mutate the night's crate (linux) | daily | 14m 10s | 14m 0s | 2 | **over** |\n\
-             \nRuns: 9, 8.\n"
+             \nRuns: 9, 8.\n\n</details>\n"
         );
         assert_eq!(report.standing(), Standing::Over);
     }
@@ -914,13 +931,14 @@ mod tests
         assert!(
             text.ends_with(
                 "| mutate the night's crate (linux) | daily | 13m 20s | 14m 0s | 1 | within |\n\
-                 \nRuns: 9.\n\
+                 \nRuns: 9.\n\n</details>\n\
                  \nMedian job time over the last 2 scheduled runs of `nightly.yml`, for its \
                  lanes.\n\n\
+                 <details><summary>1 lane — over: 1 over, 0 unmeasured</summary>\n\n\
                  | lane | class | median | budget | jobs | standing |\n\
                  | --- | --- | ---: | ---: | ---: | --- |\n\
                  | test every crate with every feature on | nightly | 4m 10s | 4m 0s | 2 | **over** |\n\
-                 \nRuns: 6, 5.\n"
+                 \nRuns: 6, 5.\n\n</details>\n"
             ),
             "{text}"
         );

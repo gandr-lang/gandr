@@ -371,17 +371,18 @@ printf '%s witnessed: %s mutants in %s groups, %s with a witness; caught %s, mis
 # change leaves alone contributes no mutant. Outcomes land in
 # `mutants.out/changed/<crate>` (or under `MUTANTS_OUTPUT`), and one report
 # covers them all, `report.md`. It gives each crate's count line and every
-# survivor by name with its verdict: `missed`, `unwitnessed` (no witness names
-# its function) or `timeout`. `survivors.txt` lists the same names, one per
-# line. The task exits 0 whatever survives; the report is the verdict. A
-# crate's directory stays from one run to the next, so a run restarted over
-# the same change resumes each crate's groups (`mutants:witnessed`).
+# survivor by name with its verdict, collapsed under a summary counting them:
+# `missed`, `unwitnessed` (no witness names its function) or `timeout`.
+# `survivors.txt` lists the same names, one per line. The task exits 0
+# whatever survives; the report is the verdict. A crate's directory stays
+# from one run to the next, so a run restarted over the same change resumes
+# each crate's groups (`mutants:witnessed`).
 #
 # The rustdoc JSON the listing reads is built once, for every crate.
 # `--until` bounds the run's wall time from the task's start, that build
 # included: each crate runs under what is left of it, and a crate the budget
 # never reaches runs nothing. The report names every mutant the budget left
-# untested, under its crate, and counts them in its last line;
+# untested, under its crate and collapsed, and counts them in its last line;
 # `unreached.txt` lists them. An untested mutant is not a survivor.
 # `--seed-target` passes through to each crate's lanes.
 ["mutants:changed"]
@@ -429,11 +430,16 @@ done
   printf '## Mutants of the change\n\n'
   printf 'Against `%s` · the lines the change adds in %s crate(s) with Rust sources changed.\n' "$(git rev-parse --short "$fork")" "${#crates[@]}"
 } > "$output/report.md"
-# Names the mutants `$1` the budget left untested in the report, and lists them.
+# Names the mutants `$1` the budget left untested in the report, collapsed
+# under a summary counting them, and lists them.
 untested() {
   [[ -s "$1" ]] || return 0
-  printf '\nNot reached within the %ss budget, so untested:\n\n' "$until"
+  local count noun=mutants
+  count=$(wc -l < "$1" | tr -d ' ')
+  (( count != 1 )) || noun=mutant
+  printf '\n<details><summary>%s %s not reached within the %ss budget — untested</summary>\n\n' "$count" "$noun" "$until"
   sed 's/^/- /' "$1"
+  printf '\n</details>\n'
   cat "$1" >> "$output/unreached.txt"
 }
 documented=false

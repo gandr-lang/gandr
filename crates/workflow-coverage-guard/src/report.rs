@@ -418,13 +418,16 @@ impl fmt::Display for Fate
 impl fmt::Display for Comparison
 {
     /// Writes the report as Markdown: the movement, the file counts, the
-    /// verdict, and one table row per crate that moved.
+    /// verdict, and one table row per crate that moved, collapsed under a
+    /// summary.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a sentence naming both coverages, both commits linked to
     ///   Codecov, the change and the threshold; a sentence naming both file
-    ///   counts; the verdict; the table, or a line saying no crate moved.
+    ///   counts; the verdict; the table inside a `<details>` block whose
+    ///   summary counts the crates that moved and repeats the verdict, or a
+    ///   line saying no crate moved.
     /// - provides: the job summary and the issue's body.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -474,6 +477,21 @@ impl fmt::Display for Comparison
         if self.rows.is_empty() {
             return writeln!(f, "No crate's coverage moved.");
         }
+        let verdict = match self.standing() {
+            Standing::Dropped => "dropped",
+            Standing::Steady => "steady",
+        };
+        let crates = if self.rows.len() == 1 {
+            "crate"
+        }
+        else {
+            "crates"
+        };
+        writeln!(
+            f,
+            "<details><summary>{} {crates} moved — {verdict}</summary>\n",
+            self.rows.len()
+        )?;
         writeln!(
             f,
             "| crate | before | after | change | missed before | missed after |"
@@ -491,7 +509,7 @@ impl fmt::Display for Comparison
                 MissedCell(row.after)
             )?;
         }
-        Ok(())
+        writeln!(f, "\n</details>")
     }
 }
 

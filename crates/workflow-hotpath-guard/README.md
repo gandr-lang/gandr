@@ -24,7 +24,7 @@ A commit's hotpath checks, filed on one issue per regressed function.
 
 A pull request that adds a bench workload lands it alone, before the change it measures. A report compares each row with its base's run, so a workload the base never ran reads its whole first run as a regression.
 
-The issue closes when no row is open and reopens on the next open row. The guard rewrites only the table's rows, so prose and hand-folded rows in the same columns stay as written. The [crate docs](src/lib.rs) record the decisions, the alternatives and the reversal.
+The issue closes when no row is open and reopens on the next open row. The table is collapsed under a summary counting its rows and the open ones; the guard rewrites only the rows and that summary, so prose and hand-folded rows in the same columns stay as written. The [crate docs](src/lib.rs) record the decisions, the alternatives and the reversal.
 
 ## Provided features
 

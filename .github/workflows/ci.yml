@@ -4,6 +4,8 @@
 # MUST parameterize differences; performance exceptions require measured evidence.
 # Share exceptional logic through actions; preserve parallelism, caches, and gates.
 # </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
 #
 # What this workflow guarantees the landing pipeline. A fix to any part keeps
 # every line below true; changing one is a decision for the owner, never a side

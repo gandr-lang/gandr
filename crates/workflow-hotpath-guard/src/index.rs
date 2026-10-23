@@ -2,10 +2,11 @@
 //!
 //! One table row per pull request (or bare commit) and benchmark: the
 //! commit, the series, the metric, the delta, the status and the report's
-//! links. The guard rewrites only the rows; the prose, the `## Lint`
-//! obligation (owed once per function, not per row) and anything a person
-//! wrote around the table stay as written, so a hand-folded row in the same
-//! columns is read like the guard's own.
+//! links. The table is written collapsed in a `<details>` block whose summary
+//! counts the rows and the open ones. The guard rewrites only the rows and
+//! that summary; the prose, the `## Lint` obligation (owed once per function,
+//! not per row) and anything a person wrote around the table stay as written,
+//! so a hand-folded row in the same columns is read like the guard's own.
 //!
 //! Each pull request (or bare commit) has one report comment on the issue,
 //! found by its marker (`<!-- hotpath: pr=<n> -->`) and linked from its
@@ -46,6 +47,13 @@ const HEADER: &str = "| pull request | commit | series | metric | delta | status
 
 /// The index table's alignment row.
 const SEPARATOR: &str = "| --- | --- | --- | --- | --- | --- | --- |";
+
+/// The opening of the collapsed block the index table stands in, before its
+/// summary.
+const DETAILS_OPEN: &str = "<details><summary>";
+
+/// The closing of the collapsed block the index table stands in.
+const DETAILS_CLOSE: &str = "</details>";
 
 /// The opening of a report cell's comment link.
 const COMMENT: &str = "[comment](";
@@ -336,14 +344,19 @@ pub enum Standing
 
 /// The index a function's issue body holds: the body before the table's
 /// rows, the rows, and the body after them.
+///
+/// The table is written collapsed in a `<details>` block whose summary counts
+/// the rows and the open ones.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Index
 {
-    /// The body's lines through the table's alignment row.
+    /// The body's lines through the table's alignment row, without the
+    /// collapsed block's opening.
     head: Vec<String>,
     /// The table's rows.
     rows: Vec<Row>,
-    /// The body's lines after the table.
+    /// The body's lines after the table, without the collapsed block's
+    /// closing.
     tail: Vec<String>,
 }
 
@@ -405,9 +418,12 @@ impl Index
     /// - ensures: the heading row is the first line opening with the first six
     ///   columns of [`HEADER`], whatever the seventh is named; the rows are the
     ///   lines starting `|` after it and the line after it, each split into its
-    ///   cells; the lines before and after them are kept verbatim. A body
-    ///   without a heading row keeps all of itself, its trailing blank lines
-    ///   dropped, and gains an `## Index` table after it.
+    ///   cells; the lines before and after them are kept verbatim, less the
+    ///   `<details><summary>` line and blank line just before the heading row
+    ///   and the blank line and `</details>` just after the rows, which the
+    ///   rendering writes afresh. A body without a heading row keeps all of
+    ///   itself, its trailing blank lines dropped, and gains an `## Index`
+    ///   table after it.
     /// - provides: the rows the run reads and rewrites; a hand-written row of
     ///   the same columns is a row like any other.
     /// - fails: never.
@@ -452,7 +468,14 @@ impl Index
             .position(|line| !line.trim_start().starts_with('|'))
             .map_or(lines.len(), |offset| first.saturating_add(offset));
         let mut lines = lines;
-        let tail = lines.split_off(end);
+        let mut tail = lines.split_off(end);
+        if tail.first().is_some_and(|blank| blank.trim().is_empty())
+            && tail
+                .get(1)
+                .is_some_and(|closing| closing.trim() == DETAILS_CLOSE)
+        {
+            tail.drain(.. 2);
+        }
         let rows = lines
             .split_off(first)
             .into_iter()
@@ -465,6 +488,16 @@ impl Index
                     .collect(),
             })
             .collect();
+        let opening = header.checked_sub(2).filter(|&at| {
+            matches!(
+                lines.get(at .. header),
+                Some([summary, blank])
+                    if summary.trim_start().starts_with(DETAILS_OPEN) && blank.trim().is_empty()
+            )
+        });
+        if let Some(at) = opening {
+            lines.drain(at .. header);
+        }
         Self {
             head: lines,
             rows,
@@ -648,31 +681,66 @@ impl Index
 
 impl fmt::Display for Index
 {
-    /// Writes the body: the lines before the rows, each row, and the lines
-    /// after them.
+    /// Writes the body: the lines before the table, the table collapsed in a
+    /// `<details>` block, and the lines after it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the head's lines before its heading row; a `<details>` line
+    ///   whose summary counts the rows and states the index's standing — the
+    ///   count of open rows when any is open, `settled` otherwise — then a
+    ///   blank line; the heading and alignment rows; each row; a blank line and
+    ///   `</details>`; then the tail.
+    /// - fails: propagates the formatter's own write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a hand-folded index written back unchanged; an empty
-    ///   write changes it.
+    /// - hypothesis: L3 — a hand-folded index written back collapsed, and the
+    ///   collapsed body read and written back unchanged; an empty write, a
+    ///   second block or a stale summary changes it.
     /// - witness: `index::tests::a_hand_folded_index_keeps_its_rows`
+    /// - witness: `index::tests::an_open_row_keeps_the_issue_open_and_an_accepted_one_settles`
     #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
+        let open = self
+            .rows
+            .iter()
+            .filter(|row| row.status() == Status::Open)
+            .count();
+        let standing = if open > 0 {
+            format!("{open} open")
+        }
+        else {
+            String::from("settled")
+        };
+        let regressions = if self.rows.len() == 1 {
+            "regression"
+        }
+        else {
+            "regressions"
+        };
+        let summary = format!(
+            "{DETAILS_OPEN}{} {regressions} — {standing}</summary>",
+            self.rows.len()
+        );
+        let split = self.head.len().saturating_sub(2);
+        let (prose, heading) = self.head.split_at(split);
         let rows = self
             .rows
             .iter()
             .map(|row| format!("| {} |", row.cells.join(" | ")));
-        let lines: Vec<String> = self
-            .head
+        let lines: Vec<String> = prose
             .iter()
             .cloned()
+            .chain([summary, String::new()])
+            .chain(heading.iter().cloned())
             .chain(rows)
+            .chain([String::new(), DETAILS_CLOSE.to_owned()])
             .chain(self.tail.iter().cloned())
             .collect();
         f.write_str(&lines.join("\n"))
@@ -791,11 +859,35 @@ mod tests
 Owed once for the function.
 ";
 
+    /// [`FOLDED`] as the guard writes it back: its table collapsed.
+    const COLLAPSED: &str = "The hotpath guard's regressions of `gandr_core_checker::module::decide`, folded by hand.
+
+## Index
+
+<details><summary>2 regressions — settled</summary>
+
+| pull request | commit | series | metric | delta | status | was |
+| --- | --- | --- | --- | --- | --- | --- |
+| #1490 | `a71172e2` | `gandr` | allocations avg | 879 → 917, +4.3 % | fixed — its revision took the keystroke 43.7 MB → 7.4 MB | #1493 |
+| #1496 | `e6f58bf9` | `gandr-timing` | wall avg | 179 → 235 µs, +31 % | runner shift — every function +25 to +31 % together | #1516 |
+
+</details>
+
+## Lint
+
+Owed once for the function.
+";
+
     #[test]
     fn a_hand_folded_index_keeps_its_rows()
     {
         let index = Index::read(&IssueBody(FOLDED.to_owned()));
-        assert_eq!(index.to_string(), FOLDED, "read and written back unchanged");
+        assert_eq!(index.to_string(), COLLAPSED, "written back collapsed");
+        assert_eq!(
+            Index::read(&IssueBody(COLLAPSED.to_owned())).to_string(),
+            COLLAPSED,
+            "a collapsed body is read and written back unchanged"
+        );
         assert_eq!(index.standing(), Standing::Settled);
         assert_eq!(
             index.standing_in(
@@ -807,8 +899,9 @@ Owed once for the function.
         let bare = Index::read(&IssueBody("A note.\n\n".to_owned())).to_string();
         assert_eq!(
             bare,
-            "A note.\n\n## Index\n\n| pull request | commit | series | metric | delta | status | \
-             report |\n| --- | --- | --- | --- | --- | --- | --- |\n"
+            "A note.\n\n## Index\n\n<details><summary>0 regressions — settled</summary>\n\n\
+             | pull request | commit | series | metric | delta | status | report |\n| --- | --- | \
+             --- | --- | --- | --- | --- |\n\n</details>\n"
         );
     }
 
@@ -822,8 +915,17 @@ Owed once for the function.
              records cost 31 allocations each | #1516 |\n| #1500 | `0a1b2c3d` | `gandr` | \
              allocations avg | 917 → 950, +3.6 % | open | #1520 |",
         );
-        let index = Index::read(&IssueBody(body.clone()));
-        assert_eq!(index.to_string(), body, "read and written back unchanged");
+        let index = Index::read(&IssueBody(body));
+        let written = index.to_string();
+        assert!(
+            written.contains("<details><summary>3 regressions — 1 open</summary>\n\n"),
+            "{written}"
+        );
+        assert_eq!(
+            Index::read(&IssueBody(written.clone())).to_string(),
+            written,
+            "read and written back unchanged"
+        );
         let standing = |subject: &str, series: &str| {
             index.standing_in(
                 &subject.parse::<Subject>().unwrap(),

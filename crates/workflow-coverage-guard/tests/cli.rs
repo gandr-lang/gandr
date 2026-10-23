@@ -33,12 +33,16 @@ The upload covers 3 files; the one before covered 3.
 
 **Dropped**: a fall over the threshold or fewer files. A second drop updates this issue.
 
+<details><summary>4 crates moved — dropped</summary>
+
 | crate | before | after | change | missed before | missed after |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | gone | 93.33 % | — | gone | 20 | — |
 | a | 95.00 % | 75.00 % | -20.00 | 20 | 100 |
 | b | 95.00 % | 96.66 % | +1.66 | 15 | 10 |
 | new | — | 96.33 % | new | — | 11 |
+
+</details>
 ";
 
 /// The report of the steady upload.
@@ -47,9 +51,13 @@ The upload covers 3 files; the one before covered 3.
 
 Steady: within the threshold, no file lost.
 
+<details><summary>1 crate moved — steady</summary>
+
 | crate | before | after | change | missed before | missed after |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | a | 95.00 % | 95.25 % | +0.25 | 20 | 19 |
+
+</details>
 ";
 
 /// A fresh scratch directory for the case `$name`, holding the fake `gh`'s log.
