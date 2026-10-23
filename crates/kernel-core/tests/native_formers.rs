@@ -20,6 +20,7 @@ use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
+use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Component;
@@ -28,6 +29,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::EquationCount;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FreeCell;
 use gandr_kernel_term::FreeCells;
@@ -415,19 +417,27 @@ fn an_indexed_constructor_stands_at_its_stated_index()
     let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
     let empty = arena.value_type_data(family, vec![code, zero]);
     let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
-    // `case Nil { Nil => return (); Cons(n, x, xs) => return x }`: each
-    // branch binds its own constructor's fields, `Cons`'s at an index `Nil`
+    // `case Nil { Nil => λe. return (); Cons(n, x, xs) => λe. return x }`:
+    // each branch binds its own constructor's fields, then the equation from
+    // its constructor's index to the scrutinee's, `Cons`'s at an index `Nil`
     // does not stand at, and `x` stands at the element the vector's parameter
     // names, not at its index.
     let motive = arena.comp_type_returner(unit);
     let answer = arena.value_unit();
-    let nil_branch = arena.computation_return(answer);
-    let element = arena.value_variable(DeBruijnIndex::from(1));
+    let nil_body = arena.computation_return(answer);
+    let nil_branch = arena.computation_lambda(nil_body);
+    let element = arena.value_variable(DeBruijnIndex::from(2));
     let cons_body = arena.computation_return(element);
-    let cons_branch = arena.computation_lambda(cons_body);
-    let cons_branch = arena.computation_lambda(cons_branch);
-    let cons_branch = arena.computation_lambda(cons_branch);
-    let case = arena.computation_data_case(nil, motive, vec![nil_branch, cons_branch]);
+    let mut cons_branch = cons_body;
+    for _binder in 0_usize .. 4 {
+        cons_branch = arena.computation_lambda(cons_branch);
+    }
+    let case = arena.computation_data_case_with_equations(
+        nil,
+        motive,
+        vec![nil_branch, cons_branch],
+        EquationCount::from(1_usize),
+    );
     let body = arena.value_thunk(case);
     let declared = arena.value_type_thunk(motive);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -435,6 +445,85 @@ fn an_indexed_constructor_stands_at_its_stated_index()
         environment.add_decl(declaration).map(|_admitted| ()),
         Ok(()),
         "a case on a vector checks each constructor's branch at its own fields"
+    );
+}
+
+#[test]
+fn an_indexed_case_prunes_a_constructor_at_an_apart_index()
+{
+    let mut environment = Environment::new();
+    let (nat, admitted) = vector(&mut environment, Stated::Successor);
+    let family = admitted.expect("a vector over its length").position();
+    // `case v { Nil => λe. case e {}; Cons(n, x, xs) => λe. return n }`:
+    // `Nil`'s branch owes `Path(Nat, Z, at)`, absurd exactly where `at` is a
+    // successor, and `Cons` at `v = Cons(Z, (), Nil)` answers its length field
+    // once the case supplies its equation, read back as `Z` when `answered`.
+    let at =
+        |environment: &mut Environment, (successor, equations): (bool, usize), answered: bool| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let unit = arena.value_type_unit();
+            let code = arena.value_quote(unit);
+            let length = arena.value_type_data(nat, vec![]);
+            let zero = arena.value_constructor(length, ConstructorTag::from(0), vec![]);
+            let one = arena.value_constructor(length, ConstructorTag::from(1), vec![zero]);
+            let empty = arena.value_type_data(family, vec![code, zero]);
+            let nil = arena.value_constructor(empty, ConstructorTag::from(0), vec![]);
+            let scrutinee = if successor {
+                let datatype = arena.value_type_data(family, vec![code, one]);
+                let element = arena.value_unit();
+                arena.value_constructor(datatype, ConstructorTag::from(1), vec![zero, element, nil])
+            }
+            else {
+                nil
+            };
+            let motive = arena.comp_type_returner(length);
+            let equation = arena.value_variable(DeBruijnIndex::from(0));
+            let absurd = arena.computation_data_case(equation, motive, vec![]);
+            let nil_branch = arena.computation_lambda(absurd);
+            let field = arena.value_variable(DeBruijnIndex::from(3));
+            let mut cons_branch = arena.computation_return(field);
+            for _binder in 0_usize .. 4 {
+                cons_branch = arena.computation_lambda(cons_branch);
+            }
+            let case = arena.computation_data_case_with_equations(
+                scrutinee,
+                motive,
+                vec![nil_branch, cons_branch],
+                EquationCount::from(equations),
+            );
+            let (declared, body) = if answered {
+                let returned = arena.value_returned(case);
+                (
+                    arena.value_type_path(length, returned, zero),
+                    arena.value_here(zero),
+                )
+            }
+            else {
+                (arena.value_type_thunk(motive), arena.value_thunk(case))
+            };
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration).map(|_admitted| ())
+        };
+    assert_eq!(
+        at(&mut environment, (true, 1), false),
+        Ok(()),
+        "a vector one long prunes `Nil`"
+    );
+    assert_eq!(
+        at(&mut environment, (true, 1), true),
+        Ok(()),
+        "`Cons`'s branch answers its length field once its equation is supplied"
+    );
+    assert_eq!(
+        at(&mut environment, (false, 1), false),
+        Err(KernelError::NotApart(Apartness::Agree)),
+        "a vector at zero stands where `Nil` does: its branch is no absurdity"
+    );
+    assert_eq!(
+        at(&mut environment, (true, 0), false),
+        Err(KernelError::NonExhaustiveDataCase),
+        "a branch over an indexed family binds one equation per index"
     );
 }
 

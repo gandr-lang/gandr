@@ -1251,6 +1251,11 @@ enum Test
     },
     /// The hole that decides whether the first surviving row matches.
     Stuck(HoleId),
+    /// A branch whose constructor no row admits, at a family of one index:
+    /// the case of no branches on its equation, the innermost binder, which
+    /// the checker admits when the constructor's index is apart from the
+    /// scrutinee's.
+    Absurd,
     /// Switch on the native data value at `level`: one child per
     /// constructor, with the constructor's arity.
     Data
@@ -1265,6 +1270,9 @@ enum Test
         /// The data declaration whose constructors the branches are, by
         /// which a printer names them.
         eliminated: Maybe<ConstantIndex, eliminated::Absent>,
+        /// The equations each branch binds past its fields, one per index of
+        /// the family; its child stands under both.
+        equations: usize,
         /// Each constructor's arity and child.
         branches: Vec<(usize, TestAt)>,
     },
@@ -1708,6 +1716,32 @@ impl Compiling
             rows,
         });
 
+        slot
+    }
+
+    /// Allocate a node the compiler fills now, with no matrix behind it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the new node's position, after every earlier node, holding
+    ///   `test`; no matrix queued.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pruned branch's node follows its switch's.
+    /// - witness: `lower::native::tests::a_constructor_no_row_admits_at_one_index_is_pruned`
+    #[spec(
+        captures: before = (self.tests.len(), self.work.len()),
+        ensures: |ret| ret == TestAt(before.0) && self.tests.len() == before.0.saturating_add(1) && self.work.len() == before.1,
+    )]
+    fn place(
+        &mut self,
+        test: Test,
+    ) -> TestAt
+    {
+        let slot = TestAt(self.tests.len());
+        self.tests.push(test);
         slot
     }
 }
@@ -3434,6 +3468,7 @@ impl<'source> Lowerer<'_, 'source>
                     Maybe::Present(family) => Maybe::Present(family),
                     Maybe::Absent(_) => Maybe::Absent(eliminated::Absent::Armless),
                 },
+                equations: 0,
                 branches: Vec::new(),
             }]),
             loops: Vec::new(),
@@ -5046,6 +5081,16 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(eliminated::Absent::Unslotted),
             |(constant, _)| Maybe::Present(constant),
         );
+        // Each branch at an indexed family binds one equation per index past
+        // its fields: the stated index's path to the scrutinee's.
+        let equations = match form {
+            Generators::Written(position) => self
+                .collected
+                .data
+                .get(position)
+                .map_or(0, |written| written.indices.len()),
+            Generators::Presentation | Generators::Words(_) => 0,
+        };
         let mut branches = Vec::with_capacity(arities.len());
         let mut fresh: Vec<TreeLevel> = Vec::new();
         for (tag, &arity) in arities.iter().enumerate() {
@@ -5085,13 +5130,20 @@ impl<'source> Lowerer<'_, 'source>
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
             }
+            // A constructor no row admits at a family of one index is pruned:
+            // its branch eliminates its one equation, which the checker admits
+            // only when the constructor cannot stand at the scrutinee's index.
+            if specialised.is_empty() && equations == 1 {
+                branches.push((arity, tree.place(Test::Absurd)));
+                continue;
+            }
             fresh.clear();
             fresh.extend(
                 (0 .. arity)
                     .map(|field| TreeLevel(item.depth.0.saturating_add(field).saturating_add(1))),
             );
             let child = tree.queue(
-                Depth(item.depth.0.saturating_add(arity)),
+                Depth(item.depth.0.saturating_add(arity).saturating_add(equations)),
                 splice(&item.levels, switch.column, &fresh),
                 specialised,
             );
@@ -5103,6 +5155,7 @@ impl<'source> Lowerer<'_, 'source>
             depth: item.depth,
             family,
             eliminated,
+            equations,
             branches,
         })
     }
@@ -6835,11 +6888,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   minted or absent.
     /// - ensures: the tree, every node minted descending: a data case over the
     ///   scrutinised level with the motive [`tracked_motives`] reads, each
-    ///   branch a lambda per field; a sum case for a boolean; an integer
-    ///   comparison bound and cased on; a hole for a stuck node; and a leaf as
-    ///   its arm's body with each variable replaced by the level that settled
-    ///   it and the case's context carried under the tree's binders, the
-    ///   scrutinee's variable read at the root's constructor where
+    ///   branch a lambda per field and then one per index equation, a pruned
+    ///   branch the case of no branches on its equation; a sum case for a
+    ///   boolean; an integer comparison bound and cased on; a hole for a stuck
+    ///   node; and a leaf as its arm's body with each variable replaced by the
+    ///   level that settled it and the case's context carried under the tree's
+    ///   binders, the scrutinee's variable read at the root's constructor where
     ///   [`refinements`] refines it. Level zero is the scrutinee itself,
     ///   carried under the binders above its use, so no binding of it is
     ///   minted. The root carries the written origin, a leaf's copy of its
@@ -7077,6 +7131,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Test::Pending
                 | Test::Stuck(_)
+                | Test::Absurd
                 | Test::Leaf { .. }
                 | Test::Boolean { .. }
                 | Test::Integer { .. }
@@ -7164,7 +7219,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
                     pending.push(child);
                 },
-                Some(&(Test::Pending | Test::Stuck(_))) | None => {},
+                Some(&(Test::Pending | Test::Stuck(_) | Test::Absurd)) | None => {},
             }
         }
         let variable = named?;
@@ -7205,11 +7260,13 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        // A presented type is never indexed, so its case takes no equation.
         let Some(&gandr_core_term::Computation::DataCase {
             scrutinee,
             motive,
             ref branches,
             arities: ref constructors,
+            ..
         }) = sink.arena.computation(root)
         else {
             return unminted;
@@ -7353,10 +7410,12 @@ struct Refined
 ///   leaf of it at a constructor (#616). A data case's branches answer its
 ///   motive at the constructor over their fields when the motive reads its
 ///   binder and the bare family classifies the constructor, and its answer
-///   under their fields otherwise; a dependent split's child answers its motive
-///   at the pair of its two components; every other node passes its answer to
-///   its children under the binders it opens. Nodes other than data cases and
-///   dependent splits answer nothing.
+///   under their fields otherwise, past their index equations either way; a
+///   pruned branch's case of no branches answers that answer under one binder
+///   more, reading none of it; a dependent split's child answers its motive at
+///   the pair of its two components; every other node passes its answer to its
+///   children under the binders it opens. Nodes other than data cases, pruned
+///   branches and dependent splits answer nothing.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -7395,10 +7454,20 @@ fn tracked_motives(
         };
         match *test {
             Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            // The case of no branches on the equation answers the branch's
+            // own answer, reading none of its binder.
+            Test::Absurd => {
+                if let Some(slot) = motives.get_mut(position) {
+                    *slot = Maybe::Present(
+                        gandr_core_term::shift_comp_type(arena, here, Binders::ONE).settle(arena),
+                    );
+                }
+            },
             Test::Data {
                 level,
                 depth,
                 family,
+                equations,
                 ref branches,
                 ..
             } => {
@@ -7441,6 +7510,14 @@ fn tracked_motives(
                             gandr_core_term::shift_comp_type(arena, here, binders(arity))
                                 .settle(arena)
                         },
+                    };
+                    // The child stands past the branch's equations too.
+                    let answer = if equations == 0 {
+                        answer
+                    }
+                    else {
+                        gandr_core_term::shift_comp_type(arena, answer, binders(equations))
+                            .settle(arena)
                     };
                     answers.push((at, answer));
                 }
@@ -7588,7 +7665,7 @@ fn refinements(
             }
         };
         match *test {
-            Test::Pending | Test::Stuck(_) | Test::Leaf { .. } => {},
+            Test::Pending | Test::Stuck(_) | Test::Absurd | Test::Leaf { .. } => {},
             Test::Data { ref branches, .. } => {
                 for &(_arity, at) in branches {
                     mark(at);
@@ -7780,6 +7857,19 @@ fn mint_test(
     match *test {
         Test::Pending => Maybe::Absent(lowered::Absent::Unminted),
         Test::Stuck(hole) => Maybe::Present(sink.arena.computation_hole(hole)),
+        Test::Absurd => {
+            let Maybe::Present(motive) = read
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let equation = variable(sink.arena, Depth::default());
+            Maybe::Present(sink.arena.computation_data_case(
+                equation,
+                motive,
+                Vec::new(),
+                Vec::new(),
+            ))
+        },
         Test::Leaf {
             arm,
             depth,
@@ -7836,6 +7926,7 @@ fn mint_test(
             level,
             depth,
             eliminated,
+            equations,
             ref branches,
             ..
         } => {
@@ -7851,15 +7942,18 @@ fn mint_test(
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
-                for _field in 0 .. arity {
+                for _binder in 0 .. arity.saturating_add(equations) {
                     branch = sink.arena.computation_lambda(branch);
                 }
                 lowered_branches.push(branch);
             }
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-            let case =
-                sink.arena
-                    .computation_data_case(scrutinee, motive, lowered_branches, arities);
+            let case = sink.arena.computation_data_case_with_equations(
+                scrutinee,
+                motive,
+                (lowered_branches, arities),
+                gandr_kernel_term::EquationCount::from(equations),
+            );
             if let Maybe::Present(family) = eliminated {
                 sink.origins.record_elimination(case, family);
             }

@@ -1067,6 +1067,7 @@ fn canonical(
                                 motive,
                                 ref branches,
                                 ref arities,
+                                equations,
                             } => Computation::DataCase {
                                 scrutinee: value(scrutinee),
                                 motive,
@@ -1075,6 +1076,7 @@ fn canonical(
                                     .map(|branch| computation(*branch))
                                     .collect(),
                                 arities: arities.clone(),
+                                equations,
                             },
                             Computation::RecordProjection(record, ref label) => {
                                 Computation::RecordProjection(value(record), label.clone())
@@ -2296,6 +2298,7 @@ impl Kernel
                         scrutinee,
                         motive,
                         ref branches,
+                        equations,
                         ..
                     } => {
                         let scrutinee = value(self, scrutinee);
@@ -2304,8 +2307,9 @@ impl Kernel
                             .iter()
                             .map(|branch| computation(self, *branch))
                             .collect();
-                        self.arena
-                            .computation_data_case(scrutinee, motive, branches)
+                        self.arena.computation_data_case_with_equations(
+                            scrutinee, motive, branches, equations,
+                        )
                     },
                     Computation::RecordProjection(record, ref label) => {
                         let record = value(self, record);

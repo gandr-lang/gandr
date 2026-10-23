@@ -364,6 +364,7 @@ impl Erasure<'_, '_>
                         ref scrutinee,
                         ref motive,
                         ref branches,
+                        equations,
                         ..
                     } => {
                         let scrutinee = value(*scrutinee)?;
@@ -373,7 +374,9 @@ impl Erasure<'_, '_>
                             .copied()
                             .map(computation)
                             .collect::<Result<_, _>>()?;
-                        target.computation_data_case(scrutinee, motive, branches)
+                        target.computation_data_case_with_equations(
+                            scrutinee, motive, branches, equations,
+                        )
                     },
                     Computation::RecordProjection(ref record, ref label) => {
                         target.computation_record_projection(value(*record)?, label.clone())

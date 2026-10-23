@@ -2711,8 +2711,17 @@ fn decode_entry(
                 Family::Value,
             )
         },
-        tags::NODE_C_DATA_CASE => {
+        tags::NODE_C_DATA_CASE | tags::NODE_C_INDEXED_DATA_CASE => {
             let count = usize::from(reader.read_usize()?);
+            // An indexed case's equation count follows its branch count; a
+            // count of none re-encodes as the plain case and is refused as
+            // non-canonical.
+            let equations = if tag == tags::NODE_C_INDEXED_DATA_CASE {
+                crate::EquationCount::from(usize::from(reader.read_usize()?))
+            }
+            else {
+                crate::EquationCount::NONE
+            };
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let motive = read_comp_type(reader, table, this, &mut children)?;
             let mut branches = Vec::new();
@@ -2721,9 +2730,9 @@ fn decode_entry(
             }
             (
                 DecodedNode::Computation(
-                    table
-                        .arena
-                        .computation_data_case(scrutinee, motive, branches),
+                    table.arena.computation_data_case_with_equations(
+                        scrutinee, motive, branches, equations,
+                    ),
                 ),
                 Family::Computation,
             )

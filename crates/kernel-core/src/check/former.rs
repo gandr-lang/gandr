@@ -566,6 +566,54 @@ pub(super) fn constructor(
     Ok((datatype, goals))
 }
 
+/// A constructor's stated result index with the family's parameters
+/// instantiated beneath its `fields` binders, which it keeps.
+///
+/// # Specification
+/// - requires: `stated` is scoped under the family's `parameters`, then the
+///   constructor's `fields` binders; `datatype` is the family's application.
+/// - ensures: the same value under the ambient context and the `fields`
+///   binders, each parameter replaced by its argument carried under them.
+/// - fails: a parameter telescope longer than the application's arguments, or
+///   one exceeding the representable binder space.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `DataArgumentArity` for an unrepresentable parameter telescope.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Cons`'s `S(n)` keeps its length field while its element
+///   parameter is instantiated.
+/// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+#[spec(ensures: |ret| (parameters.0 != 0 || ret == Ok(stated))
+    && ret.as_ref().map_or(true, |id| arena.value(*id).is_some() || arena.value(stated).is_none()))]
+fn stated_beneath(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    (stated, datatype): (ValueId, ValueTypeId),
+    parameters: ParameterPrefix,
+    fields: BinderDepth,
+) -> Result<ValueId, KernelError>
+{
+    let (table, memo) = session.rewrite_parts();
+    let mut result = stated;
+    for index in (0 .. parameters.0).rev() {
+        let argument = match arena.value_type(datatype) {
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
+                .get(index)
+                .copied()
+                .ok_or(KernelError::DataArgumentArity)?,
+            _ => return Err(KernelError::ArenaFault),
+        };
+        let depth = BinderDepth::from(
+            u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,
+        );
+        let argument = rewrite::shift_value(arena, table, memo, argument, BinderDepth::NONE, depth);
+        result = rewrite::substitute_value_at(arena, table, memo, (result, argument), fields);
+    }
+    Ok(result)
+}
+
 /// A constructor's stated result index at its application: the parameters
 /// instantiated beneath its field binders, then each field at the value the
 /// constructor gives it.
@@ -600,22 +648,8 @@ fn result_index(
     };
     let fields =
         BinderDepth::from(u32::try_from(count).map_err(|_cause| KernelError::ConstructorArity)?);
+    let mut result = stated_beneath(arena, session, (stated, datatype), parameters, fields)?;
     let (table, memo) = session.rewrite_parts();
-    let mut result = stated;
-    for index in (0 .. parameters.0).rev() {
-        let argument = match arena.value_type(datatype) {
-            Some(&ValueType::Data { ref arguments, .. }) => arguments
-                .get(index)
-                .copied()
-                .ok_or(KernelError::DataArgumentArity)?,
-            _ => return Err(KernelError::ArenaFault),
-        };
-        let depth = BinderDepth::from(
-            u32::try_from(index).map_err(|_cause| KernelError::DataArgumentArity)?,
-        );
-        let argument = rewrite::shift_value(arena, table, memo, argument, BinderDepth::NONE, depth);
-        result = rewrite::substitute_value_at(arena, table, memo, (result, argument), fields);
-    }
     for before in (0 .. count).rev() {
         let field = match arena.value(value) {
             Some(&Value::Constructor { ref fields, .. }) => {
@@ -634,40 +668,54 @@ fn result_index(
 
 /// Build one branch classifier by substituting its constructor into the motive.
 ///
-/// Branches are ordinary functions over their constructor fields. The motive
-/// alone has an implicit binder; syntax walkers need no declaration lookup.
+/// Branches are ordinary functions over their constructor fields, then, over
+/// an indexed family, over one equation per index: a path in the index's type
+/// from the index the constructor states to the scrutinee's. The motive alone
+/// has an implicit binder; syntax walkers need no declaration lookup.
 ///
 /// # Specification
 /// - requires: field types are scoped under the declaration parameter telescope
 ///   and their constructor's fields before them; `parameters` counts that
 ///   telescope, which for an indexed family is fewer than the classifier's
-///   arguments.
+///   arguments; `indices` is the family's index telescope, each scoped under
+///   the parameters and the indices before it, and `stated` the constructor's
+///   result index per index, each scoped under the parameters and its fields.
 /// - ensures: the result binds fields in declaration order, each at its type
-///   instantiated at the classifier's parameters alone, and checks the motive
-///   at the corresponding constructor, not merely at the original scrutinee.
-/// - fails: field count exceeds the representable binder space.
+///   instantiated at the classifier's parameters alone, then the equation
+///   `Path(I, stated, s)` per index `I` in order, `s` the classifier's argument
+///   at that index and `I` instantiated at the classifier's parameters and its
+///   indices before it; and checks the motive at the corresponding constructor,
+///   not merely at the original scrutinee.
+/// - fails: field count exceeds the representable binder space, or a stated
+///   index or classifier argument is missing.
 /// - panics: none.
 /// The executable postcondition requires a live computation classifier.
 ///
 /// # Errors
-/// Returns `ConstructorArity` when the telescope cannot be represented.
+/// Returns `ConstructorArity` when the telescope cannot be represented,
+/// `IndexedSignature` for a missing stated index and `DataArgumentArity` for a
+/// missing classifier argument.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a dependent motive rejects a branch at a wrong index; a
-///   vector's element field stands at the element type, not at its index.
+///   vector's element field stands at the element type, not at its index; a
+///   branch at a vector's empty constructor binds the path from zero to the
+///   scrutinee's length.
 /// - witness: `tests::native_formers::data_case_checks_coverage_and_motive`
 /// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
+/// - witness: `tests::native_formers::an_indexed_case_prunes_a_constructor_at_an_apart_index`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| arena.comp_type(*id).is_some()))]
 pub(super) fn branch_type(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    datatype: ValueTypeId,
-    tag: ConstructorTag,
+    (datatype, tag): (ValueTypeId, ConstructorTag),
     (fields, parameters): (&[ValueTypeId], ParameterPrefix),
+    (indices, stated): (&[ValueTypeId], &[ValueId]),
     motive: CompTypeId,
 ) -> Result<CompTypeId, KernelError>
 {
     let count = u32::try_from(fields.len()).map_err(|_cause| KernelError::ConstructorArity)?;
+    let equations = u32::try_from(indices.len()).map_err(|_cause| KernelError::ConstructorArity)?;
     let (table, memo) = session.rewrite_parts();
     let shifted_datatype = rewrite::shift_value_type(
         arena,
@@ -690,7 +738,81 @@ pub(super) fn branch_type(
         BinderDepth::from(1_u32),
         BinderDepth::from(count),
     );
-    let mut result = rewrite::substitute_comp_type(arena, table, memo, shifted, constructor);
+    let instantiated = rewrite::substitute_comp_type(arena, table, memo, shifted, constructor);
+    // The equations bind after the fields, so the motive stands under them.
+    let mut result = rewrite::shift_comp_type(
+        arena,
+        table,
+        memo,
+        instantiated,
+        BinderDepth::NONE,
+        BinderDepth::from(equations),
+    );
+    for (position, &index) in indices.iter().enumerate().rev() {
+        let before = u32::try_from(position).map_err(|_cause| KernelError::ConstructorArity)?;
+        let under = count
+            .checked_add(before)
+            .ok_or(KernelError::ConstructorArity)?;
+        let prefix = parameters
+            .0
+            .checked_add(position)
+            .ok_or(KernelError::DataArgumentArity)?;
+        // The index's type names the parameters and the indices before it,
+        // instantiated at the classifier's, then carried under the fields and
+        // the equations before it.
+        let carrier = field_type(
+            arena,
+            session,
+            (index, datatype),
+            ParameterPrefix(prefix),
+            BinderDepth::NONE,
+        )?;
+        let own = stated
+            .get(position)
+            .copied()
+            .ok_or(KernelError::IndexedSignature)?;
+        let own = stated_beneath(
+            arena,
+            session,
+            (own, datatype),
+            parameters,
+            BinderDepth::from(count),
+        )?;
+        let scrutinised = match arena.value_type(datatype) {
+            Some(&ValueType::Data { ref arguments, .. }) => arguments
+                .get(prefix)
+                .copied()
+                .ok_or(KernelError::DataArgumentArity)?,
+            _ => return Err(KernelError::ArenaFault),
+        };
+        let (table, memo) = session.rewrite_parts();
+        let carrier = rewrite::shift_value_type(
+            arena,
+            table,
+            memo,
+            carrier,
+            BinderDepth::NONE,
+            BinderDepth::from(under),
+        );
+        let left = rewrite::shift_value(
+            arena,
+            table,
+            memo,
+            own,
+            BinderDepth::NONE,
+            BinderDepth::from(before),
+        );
+        let right = rewrite::shift_value(
+            arena,
+            table,
+            memo,
+            scrutinised,
+            BinderDepth::NONE,
+            BinderDepth::from(under),
+        );
+        let equation = arena.value_type_path(carrier, left, right);
+        result = arena.comp_type_pi(equation, result);
+    }
     for (index, &field) in fields.iter().enumerate().rev() {
         let earlier = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
@@ -763,13 +885,14 @@ pub(super) fn case(
     (datatype, opened, own): Scrutinised,
 ) -> Result<(CompTypeId, Vec<Goal>, Looped, Vec<super::recursion::Read>), KernelError>
 {
-    let (scrutinee, written, count) =
+    let (scrutinee, written, count, equations) =
         match arena.computation(case).ok_or(KernelError::ArenaFault)? {
             &Computation::DataCase {
                 ref scrutinee,
                 ref motive,
                 ref branches,
-            } => (*scrutinee, *motive, branches.len()),
+                equations,
+            } => (*scrutinee, *motive, branches.len(), equations),
             &Computation::RecordProjection(..)
             | &Computation::TupleProjection(..)
             | &Computation::Lambda(_)
@@ -845,6 +968,10 @@ pub(super) fn case(
     else {
         return Err(KernelError::NonExhaustiveDataCase);
     };
+    // Every branch over an indexed family binds one equation per index.
+    if usize::from(equations) != signature.indices.len() {
+        return Err(KernelError::NonExhaustiveDataCase);
+    }
     let mut goals = Vec::with_capacity(count);
     let mut reads = Vec::new();
     // A mutual block's families share the stage the case opened.
@@ -854,12 +981,13 @@ pub(super) fn case(
     };
     for (index, fields) in signature.constructors.iter().enumerate() {
         let tag = ConstructorTag::from(index);
+        let stated = signature.results.get(index).map_or(&[][..], Vec::as_slice);
         let expected = branch_type(
             arena,
             session,
-            datatype,
-            tag,
+            (datatype, tag),
             (fields, ParameterPrefix(signature.parameters.len())),
+            (signature.indices, stated),
             motive,
         )?;
         let expected = match opened {
@@ -958,6 +1086,7 @@ pub(super) fn absurd(
             scrutinee,
             motive,
             ref branches,
+            ..
         } => {
             if !branches.is_empty() {
                 return Ok(Maybe::Absent(absurd::Absent::Branched));

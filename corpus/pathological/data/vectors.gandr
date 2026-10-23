@@ -1,6 +1,6 @@
 // What the vectors refuse: a vector at a length its constructor does not
 // state, and a family stating an element where its length goes. What a case
-// on a vector refuses is `vector-cases.gandr`.
+// on a vector cannot leave out is `vector-head.gandr`.
 
 // The naturals the lengths count in.
 import "../../model/data/data-base.gandr" ;

@@ -451,6 +451,8 @@ pub enum ContentNode
         branches: Vec<NodeIndex>,
         /// Each constructor's field count, in constructor order.
         arities: Vec<gandr_kernel_term::FieldCount>,
+        /// The equations each branch takes past its fields, one per index.
+        equations: gandr_kernel_term::EquationCount,
     },
     /// A projection returning the selected record field.
     RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
@@ -4060,6 +4062,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 motive,
                 ref branches,
                 ref arities,
+                equations,
             } => ContentNode::DataCase {
                 scrutinee: self.discover(ArenaNode::Value(scrutinee)),
                 motive: self.discover(ArenaNode::CompType(motive)),
@@ -4068,6 +4071,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .map(|&branch| self.discover(ArenaNode::Computation(branch)))
                     .collect(),
                 arities: arities.clone(),
+                equations,
             },
             Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
                 self.discover(ArenaNode::Value(record)),
@@ -4644,11 +4648,13 @@ where
             motive,
             ref branches,
             ref arities,
+            equations,
         } => ContentNode::DataCase {
             scrutinee: image(scrutinee),
             motive: image(motive),
             branches: branches.iter().map(|&branch| image(branch)).collect(),
             arities: arities.clone(),
+            equations,
         },
         ContentNode::RecordProjection(record, ref label) => {
             ContentNode::RecordProjection(image(record), label.clone())

@@ -323,11 +323,13 @@ impl Source for ContentSource<'_>
                 scrutinee,
                 motive,
                 ref branches,
+                equations,
                 ..
             } => Former::DataCase {
                 scrutinee,
                 motive,
                 arity: Arity::from(branches.len()),
+                equations: Arity::from(usize::from(equations)),
             },
             ContentNode::RecordProjection(record, ref label) => {
                 Former::RecordProjection(record, Name::from(label.as_ref()))

@@ -3458,6 +3458,7 @@ where
             motive,
             ref branches,
             ref arities,
+            equations,
         }) => ContentNode::DataCase {
             scrutinee: child(Root::Value(scrutinee)),
             motive: child(Root::CompType(motive)),
@@ -3466,6 +3467,7 @@ where
                 .map(|&branch| child(Root::Computation(branch)))
                 .collect(),
             arities: arities.clone(),
+            equations,
         },
         Some(&Computation::RecordProjection(record, ref label)) => {
             ContentNode::RecordProjection(child(Root::Value(record)), label.clone())

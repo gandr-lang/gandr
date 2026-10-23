@@ -1622,14 +1622,16 @@ fn converge(
                             scrutinee: a,
                             motive: c,
                             branches: ref xs,
+                            equations: one_equations,
                         },
                         &Computation::DataCase {
                             scrutinee: b,
                             motive: d,
                             branches: ref ys,
+                            equations: other_equations,
                         },
                     ) => {
-                        if xs.len() != ys.len() {
+                        if xs.len() != ys.len() || one_equations != other_equations {
                             return Convertibility::Distinct;
                         }
                         stack.push(ConversionGoal::Value(a, b));

@@ -2,8 +2,8 @@
 // family checks each arm at its own constructor's fields, as a case on a
 // family with no indices does (Dybjer, _Inductive families_,
 // doi:10.1007/BF01211308). An arm whose constructor cannot stand at the
-// scrutinee's index is still written; leaving it out is in the pathological
-// twin.
+// scrutinee's index may still be written, as `oneLength` does; leaving it
+// out is `vector-head.gandr`.
 
 // The naturals the lengths count in.
 import "./data-base.gandr" ;

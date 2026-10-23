@@ -539,8 +539,12 @@ pub enum Computation
         scrutinee: ValueId,
         /// Result classifier under the scrutinee binder.
         motive: CompTypeId,
-        /// One branch per constructor, each binding its fields in order.
+        /// One branch per constructor, each binding its fields in order, then
+        /// one equation per index of the family.
         branches: alloc::vec::Vec<ComputationId>,
+        /// How many equations each branch binds after its fields: the
+        /// family's index count, none for a family indexed by nothing.
+        equations: EquationCount,
     },
     /// Return one named field of a structural record.
     RecordProjection(ValueId, crate::FieldLabel),
@@ -1197,6 +1201,44 @@ impl From<Component> for usize
     fn from(component: Component) -> Self
     {
         component.0
+    }
+}
+
+/// How many index equations a branch of a case over an indexed family binds
+/// after its constructor's fields: one per index of the family.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EquationCount(usize);
+
+impl EquationCount
+{
+    /// No equation: a case over a family indexed by nothing.
+    pub const NONE: Self = Self(0);
+}
+
+impl From<usize> for EquationCount
+{
+    /// Preserve the equation count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<EquationCount> for usize
+{
+    /// Read the equation count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: EquationCount) -> Self
+    {
+        count.0
     }
 }
 

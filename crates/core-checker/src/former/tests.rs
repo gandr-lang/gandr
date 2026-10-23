@@ -53,6 +53,75 @@ fn a_branch_binds_a_field_only_where_its_result_names_it()
     );
 }
 
+/// A family indexed by the unit type whose one constructor `Mark(u)` stands
+/// at its field: the branch at `Mark` binds `u`, then `Path(Unit, u, ())`
+/// from that stated index to the scrutinee's, and the closed result. The
+/// field is a Π because the equation names it; the equation an arrow
+/// because the result names neither.
+#[test]
+fn an_indexed_branch_binds_its_equations_after_its_fields()
+{
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let field = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let marked = ConstantIndex::from(0_usize);
+    let signature = Arc::new(
+        DataSignature::new(vec![], vec![vec![unit_type]], kind)
+            .indexed(vec![unit_type], vec![vec![field]]),
+    );
+    let unit = arena.value_unit();
+    let datatype = arena.value_type_data(marked, vec![unit]);
+    let closed = arena.comp_type_returner(integer);
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context
+        .adopt_data(marked, signature)
+        .expect("the marked family forms");
+    let branch = branch_type(
+        &mut context,
+        datatype,
+        ConstructorTag::from(0_usize),
+        closed,
+    )
+    .expect("the indexed branch forms");
+    let arena = context.arena();
+    let Some(&CompType::Pi {
+        domain,
+        codomain: rest,
+    }) = arena.comp_type(branch)
+    else {
+        panic!("the field binds the equation that names it");
+    };
+    assert_eq!(domain, unit_type, "the field reads at its declared type");
+    let Some(&CompType::Arrow {
+        domain: equation,
+        codomain,
+    }) = arena.comp_type(rest)
+    else {
+        panic!("the equation binds a result that names it not");
+    };
+    assert_eq!(codomain, closed, "the result is the closed motive");
+    let Some(&ValueType::Path {
+        carrier,
+        left,
+        right,
+    }) = arena.value_type(equation)
+    else {
+        panic!("the equation is a path: {:?}", arena.value_type(equation));
+    };
+    assert_eq!(carrier, unit_type, "the equation is at the index's type");
+    assert_eq!(right, unit, "the equation ends at the scrutinee's index");
+    assert_eq!(
+        arena.value(left),
+        Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        }),
+        "the equation starts at the index the constructor states, its field"
+    );
+}
+
 /// A field stands below its declaration's universe: a box of types at the
 /// smallest universe is refused at the field, and the same box one
 /// universe up forms.

@@ -1323,6 +1323,7 @@ fn covers_preserve_every_binding_former()
                 motive: index(2_usize),
                 branches: vec![index(3_usize)],
                 arities: [1_usize].map(gandr_kernel_term::FieldCount::from).to_vec(),
+                equations: gandr_kernel_term::EquationCount::NONE,
             },
             both,
         ),

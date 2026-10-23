@@ -1451,6 +1451,9 @@ enum Task
     /// Push a domain value the machine already holds onto the value stack:
     /// the operand a re-applied spine's application frame consumes.
     Supply(DomainValueId),
+    /// Replace the value on top of the stack by reflexivity at it: the
+    /// equation a case over an indexed family supplies its selected branch.
+    Reflexive,
     /// Sequence into an already-captured continuation once the bound
     /// computation has a weak head: a spine's bind, re-applied.
     BindClosure(CompClosureId),
@@ -3462,6 +3465,9 @@ fn run(
                     Some(DomainComp::Return { value, .. }) if Some(*value) == entry_value),
             Task::Supply(value) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() == entry_values.saturating_add(1_usize) && machine.values.last() == Some(&value),
+            Task::Reflexive => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values
+                && matches!(machine.values.last().and_then(|id| domain.value(*id)), Some(&DomainValue::Here { point, .. }) if Some(point) == entry_value),
             Task::Remember(pending) => machine.tasks.len() == entry_tasks && machine.values.len() == entry_values
                 && machine.comps.len() == entry_comps && machine.sharing.pending.get(pending.0).is_none_or(Option::is_none),
             Task::Arm(entry) => machine.comps.len() == entry_comps
@@ -4196,6 +4202,13 @@ fn step(
         Task::Case { term, env } => step_case(core, domain, machine, term, env),
         Task::Supply(value) => {
             machine.values.push(value);
+            Ok(())
+        },
+        Task::Reflexive => {
+            let point = machine.pop_value()?;
+            machine
+                .values
+                .push(domain.value_here(point, TermFace::Reduced));
             Ok(())
         },
         Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
@@ -8538,7 +8551,9 @@ fn step_recorded(
 /// # Specification
 /// - requires: the scrutinee is the top value operand.
 /// - ensures: a constructor selects exactly its ordinal and supplies fields in
-///   order; a neutral retains the whole case and its ambient capture.
+///   order, then, over an indexed family, reflexivity at each of the indices
+///   its classifier states; a neutral retains the whole case and its ambient
+///   capture.
 /// - fails: a missing branch, a non-constructor or malformed machine state.
 /// - panics: none.
 ///
@@ -8550,6 +8565,7 @@ fn step_recorded(
 ///   distinguish selection.
 /// - witness: `eval::tests::native_records_and_cases_compute`
 /// - witness: `eval::tests::native_cases_reapply_when_head_unfolds`
+/// - witness: `eval::tests::an_indexed_case_supplies_its_equations`
 #[spec(ensures: |ret| ret != Err(EvalFault::OutOfFuel))]
 fn step_data_case(
     core: &CoreArena,
@@ -8563,7 +8579,11 @@ fn step_data_case(
     else {
         return Err(EvalFault::DanglingTerm);
     };
-    let Computation::DataCase { ref branches, .. } = *matched_native_node
+    let Computation::DataCase {
+        ref branches,
+        equations,
+        ..
+    } = *matched_native_node
     else {
         return Err(EvalFault::DanglingTerm);
     };
@@ -8572,10 +8592,47 @@ fn step_data_case(
         .value(scrutinee)
         .ok_or(EvalFault::Domain(DomainFault::Dangling))?
     {
-        DomainValue::Constructor { tag, fields, .. } => {
+        DomainValue::Constructor {
+            datatype,
+            tag,
+            fields,
+            ..
+        } => {
             let branch = *branches
                 .get(usize::from(tag))
                 .ok_or(EvalFault::UnknownConstructor { tag })?;
+            // The equations follow the fields: each is reflexivity at an index
+            // the constructor's classifier states after its parameters.
+            let count = usize::from(equations);
+            if count != 0 {
+                let closure = domain
+                    .value_closure(datatype)
+                    .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                let crate::ValueBody::ValueType(classifier) = closure.body()
+                else {
+                    return Err(EvalFault::MachineInvariant);
+                };
+                let captured = closure.environment().clone();
+                let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
+                    core.value_type(classifier)
+                else {
+                    return Err(EvalFault::MachineInvariant);
+                };
+                let first = arguments
+                    .len()
+                    .checked_sub(count)
+                    .ok_or(EvalFault::MachineInvariant)?;
+                let points = arguments.get(first ..).ok_or(EvalFault::MachineInvariant)?;
+                let at = machine.hold_env(captured);
+                for &point in points.iter().rev() {
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Reflexive);
+                    machine.tasks.push(Task::Value {
+                        term: point,
+                        env: at,
+                    });
+                }
+            }
             for field in domain
                 .fields(fields)
                 .map_err(EvalFault::Domain)?

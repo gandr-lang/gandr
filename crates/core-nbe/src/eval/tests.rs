@@ -2447,6 +2447,64 @@ fn native_records_and_cases_compute()
     );
 }
 
+/// A case over an indexed family hands its selected branch the constructor's
+/// fields, then reflexivity at each index the constructor's classifier
+/// states: `case C(left) : D(()) { λx. λe. return e }` returns `here(())`, the
+/// equation at the constructor's own index rather than its field.
+#[test]
+fn an_indexed_case_supplies_its_equations()
+{
+    use gandr_core_term::ConstructorTag;
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let left = core.value_injection(Side::Left.into(), unit);
+    let equation = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(equation);
+    let over_equation = core.computation_lambda(returned);
+    let branch = core.computation_lambda(over_equation);
+    let unit_type = core.value_type_unit();
+    let motive = core.comp_type_returner(unit_type);
+    let datatype = core.value_type_data(ConstantIndex::from(2_usize), Vec::from([unit]));
+    let constructor =
+        core.value_constructor(datatype, ConstructorTag::from(0_usize), Vec::from([left]));
+    let cased = core.computation_data_case_with_equations(
+        constructor,
+        motive,
+        (
+            Vec::from([branch]),
+            Vec::from([gandr_kernel_term::FieldCount::from(1_usize)]),
+        ),
+        gandr_kernel_term::EquationCount::from(1_usize),
+    );
+    let (chain, environment) = nothing_unfolds();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), cased).unwrap();
+    let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+    else {
+        panic!("the branch returns its equation");
+    };
+    let normal = readback_value(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        value,
+    )
+    .unwrap();
+    let Some(&Value::Here(point)) = core.value(normal)
+    else {
+        panic!("the equation is reflexivity: {:?}", core.value(normal));
+    };
+    assert!(
+        core.value(point)
+            .and_then(Value::components)
+            .is_some_and(<[_]>::is_empty),
+        "reflexivity stands at the constructor's index, not at its field"
+    );
+}
+
 /// Each component of a three-component tuple projects to itself; a
 /// component past the last, a tuple projection of a record and a record
 /// projection of a tuple each refuse by name.

@@ -942,13 +942,16 @@ enum Task
     /// the cut of the scrutinee against the match of the list's nil and cell.
     ListCase,
     /// Pop the branches' thunks and the scrutinee's producer, and mint the
-    /// cut of the scrutinee against the nominal match.
+    /// cut of the scrutinee against the nominal match; at an indexed family,
+    /// the continuation first applies each branch to its equations.
     DataCase
     {
         /// The number of branches.
         branches: NodeCount,
         /// Each constructor's field count, in tag order.
         arities: alloc::boxed::Box<[gandr_kernel_term::FieldCount]>,
+        /// The equations each branch takes past its fields.
+        equations: gandr_kernel_term::EquationCount,
         /// The continuation every branch returns to.
         continuation: ConsumerId,
     },
@@ -1367,6 +1370,7 @@ impl<'run> Focusing<'run>
             Task::DataCase {
                 branches,
                 arities,
+                equations,
                 continuation,
             } => {
                 let scrutinee = self.pop_producer()?;
@@ -1377,10 +1381,26 @@ impl<'run> Focusing<'run>
                     .ok_or(FocusRefusal::TranslationInvariant)?;
                 let thunks: alloc::boxed::Box<[ProducerId]> =
                     self.producers.drain(start ..).collect();
+                // A branch at an indexed family takes one equation per index
+                // past its fields. Its index stands at the constructor's, so
+                // each is reflexivity, run as its two identity maps.
+                let mut then = continuation;
+                for _equation in 0 .. usize::from(equations) {
+                    let identity = self.combinator(Combinator::Identity)?;
+                    self.constructor(ConstructorTag::Tuple(ProducerArity::from(2_usize)), &[
+                        identity, identity,
+                    ])?;
+                    let reflexivity = self.pop_producer()?;
+                    then = self.arena.mint_consumer(ConsumerNode::Destructor {
+                        tag: DestructorTag::Apply,
+                        producers: alloc::boxed::Box::from([reflexivity]),
+                        consumers: alloc::boxed::Box::from([then]),
+                    })?;
+                }
                 let matcher = self.arena.mint_consumer(ConsumerNode::DataCase {
                     branches: thunks,
                     arities,
-                    then: continuation,
+                    then,
                 })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
@@ -2079,11 +2099,13 @@ impl<'run> Focusing<'run>
                 scrutinee,
                 ref branches,
                 ref arities,
+                equations,
                 ..
             } => {
                 self.tasks.push(Task::DataCase {
                     branches: NodeCount::from(branches.len()),
                     arities: alloc::boxed::Box::from(arities.as_slice()),
+                    equations,
                     continuation,
                 });
                 self.tasks.push(Task::Value(scrutinee));

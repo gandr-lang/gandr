@@ -3184,6 +3184,7 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                 motive,
                 ref branches,
                 ref arities,
+                equations,
             } => {
                 let mut changed = None;
                 for (index, original) in branches.iter().enumerate().rev() {
@@ -3203,11 +3204,11 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                     id
                 }
                 else {
-                    self.arena.computation_data_case(
+                    self.arena.computation_data_case_with_equations(
                         rewritten_scrutinee,
                         rewritten_motive,
-                        changed.unwrap_or_else(|| branches.clone()),
-                        arities.clone(),
+                        (changed.unwrap_or_else(|| branches.clone()), arities.clone()),
+                        equations,
                     )
                 }
             },

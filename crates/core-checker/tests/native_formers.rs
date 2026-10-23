@@ -2470,18 +2470,36 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     let overstated = arena.value_constructor(at_two, first, vec![zero, none]);
     let answer = arena.comp_type_returner(nat);
     let returned = arena.computation_return(zero);
+    // Each branch binds, past its fields, its equation at the one index.
+    let bare = arena.computation_lambda(returned);
     let inner = arena.computation_lambda(returned);
-    let both = arena.computation_lambda(inner);
-    let case = arena.computation_data_case(
+    let middle = arena.computation_lambda(inner);
+    let both = arena.computation_lambda(middle);
+    let arities = [0_usize, 2]
+        .map(gandr_kernel_term::FieldCount::from)
+        .to_vec();
+    let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
+    let case = arena.computation_data_case_with_equations(
         more,
         answer,
-        vec![returned, both],
-        [0_usize, 2]
-            .map(gandr_kernel_term::FieldCount::from)
-            .to_vec(),
+        (vec![bare, both], arities.clone()),
+        one_equation,
     );
     let cased = arena.value_thunk(case);
     let thunked = arena.value_type_thunk(answer);
+    // The same case with `None` pruned: its equation runs from `Z` to the
+    // scrutinee's `S(Z)`, apart, so its branch is the case of no branches on
+    // it.
+    let equation = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let absurd = arena.computation_data_case(equation, answer, vec![], vec![]);
+    let pruned_branch = arena.computation_lambda(absurd);
+    let pruned = arena.computation_data_case_with_equations(
+        more,
+        answer,
+        (vec![pruned_branch, both], arities),
+        one_equation,
+    );
+    let pruned = arena.value_thunk(pruned);
     // `Pairs (a : Type) : Nat -> Nat -> Type { Mk : Pairs(a, Z, Z); }`: a
     // parameter before two indices.
     let paired = ConstantIndex::from(5_usize);
@@ -2503,6 +2521,7 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         definition(ConstantIndex::from(4_usize), thunked, cased),
         pairs,
         definition(ConstantIndex::from(6_usize), at_zeros, made),
+        definition(ConstantIndex::from(7_usize), thunked, pruned),
     ];
     let (report, crossed) = run(&mut arena, &declarations);
     assert_eq!(report.judged()[1].verdict(), Verdict::Data);
@@ -2549,6 +2568,16 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         matches!(crossed.readmitted()[6].outcome(), Outcome::Defined { .. }),
         "and the kernel admits it there: {:?}",
         crossed.readmitted()[6].outcome()
+    );
+    assert!(
+        matches!(report.judged()[7].verdict(), Verdict::Checked { .. }),
+        "a case on a count one high prunes `None`, whose index is apart: {:?}",
+        report.judged()[7].verdict()
+    );
+    assert!(
+        matches!(crossed.readmitted()[7].outcome(), Outcome::Defined { .. }),
+        "and the kernel admits the pruned case: {:?}",
+        crossed.readmitted()[7].outcome()
     );
     let family = gandr_kernel_term::StructuredName::from(vec![
         gandr_kernel_term::NameSegment::from_text(String::from("Count")).unwrap(),

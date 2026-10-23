@@ -1100,18 +1100,23 @@ pub fn stated_at(
 /// Form the ordinary branch function's classifier.
 ///
 /// Only the motive has an implicit scrutinee binder. Branches abstract their
-/// fields explicitly with ordinary lambdas, in declaration order. A field
+/// fields explicitly with ordinary lambdas, in declaration order. At an indexed
+/// family each branch then binds one equation per index, in index order: a
+/// path from the index its constructor states, read at the branch's fields,
+/// to the index the scrutinee stands at. A binder — a field or an equation —
 /// binds the rest of the telescope only when the rest names it: the
-/// classifier is the Π over that field, and the plain arrow over every other,
+/// classifier is the Π over that binder, and the plain arrow over every other,
 /// as the lowering reads a written `(x : A) -> C` whose `C` does not name `x`.
 /// One type has one node, so the classifier a hover prints reads back to it.
 ///
 /// # Specification
 /// - requires: the datatype and motive have formed and `tag` belongs to it.
-/// - ensures: the result is a telescope over the constructor's fields ending in
-///   the motive applied to the corresponding constructor, with ambient indices
-///   preserved; each field's former is a Π when the telescope after it names
-///   its binder and a plain arrow, the rest strengthened past the binder,
+/// - ensures: the result is a telescope over the constructor's fields, then one
+///   equation per index of the family, ending in the motive applied to the
+///   corresponding constructor; the equation at index `j` is `Path(I_j,
+///   stated_j, scrutinee_j)`, `I_j` the index's classifier at the scrutinee's
+///   earlier indices; each binder's former is a Π when the telescope after it
+///   names it and a plain arrow, the rest strengthened past the binder,
 ///   otherwise.
 /// - fails: a malformed application or an unrepresentable binder count.
 /// - panics: none.
@@ -1122,9 +1127,12 @@ pub fn stated_at(
 /// # Adequacy
 /// - hypothesis: L3 — dependent results and unequal fields separate motive
 ///   substitution, binder shifting and field order; a result naming its field
-///   and one naming none separate the Π from the plain arrow.
+///   and one naming none separate the Π from the plain arrow; `Cons` at `Vec(a,
+///   n)` owes `Path(Nat, S(m), n)` past its fields, and `Nil` `Path(Nat, Z,
+///   n)`.
 /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 /// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
+/// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().comp_type(id).is_some()) == ret.is_ok())]
 pub fn branch_type(
     context: &mut CheckingContext<'_>,
@@ -1162,19 +1170,137 @@ pub fn branch_type(
     .settle(context.arena_mut());
     let mut result =
         gandr_core_term::instantiate_comp_type(context.arena_mut(), shifted, constructor);
+    let equations = equations(
+        context,
+        (datatype, &signature),
+        (shifted_type, constructor),
+        tag,
+    )?;
+    if !equations.is_empty() {
+        let owed =
+            u32::try_from(equations.len()).map_err(|_cause| CheckRefusal::MachineInvariant)?;
+        result = gandr_core_term::shift_comp_type(context.arena_mut(), result, Binders::from(owed))
+            .settle(context.arena_mut());
+    }
+    for &equation in equations.iter().rev() {
+        result = bound(context, equation, result);
+    }
     for (index, &field) in fields.iter().enumerate().rev() {
         let earlier =
             Binders::from(u32::try_from(index).map_err(|_cause| CheckRefusal::MachineInvariant)?);
         let domain = field_type(context, datatype, field, earlier)?;
-        result = match gandr_core_term::strengthen_comp_type(context.arena_mut(), result) {
-            Maybe::Present(closed) => {
-                let closed = closed.settle(context.arena_mut());
-                context.arena_mut().comp_type_arrow(domain, closed)
-            },
-            Maybe::Absent(_) => context.arena_mut().comp_type_pi(domain, result),
-        };
+        result = bound(context, domain, result);
     }
     Ok(result)
+}
+
+/// The equations a branch at an indexed family binds past its constructor's
+/// fields, the `j`th scoped under the fields and the `j` equations before it.
+///
+/// # Specification
+/// - requires: `beneath` is `datatype` carried past the constructor's fields,
+///   and `constructor` the constructor tagged `tag` at `beneath` holding those
+///   fields' binders.
+/// - ensures: none for a family with no index; otherwise one path type per
+///   index, from the constructor's stated index to the scrutinee's.
+/// - fails: as [`stated_at`] and [`instantiate`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a vector's two branches each bind one equation, from the
+///   length their constructor states to the scrutinee's.
+/// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`
+/// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.len() == signature.indices().len()))]
+fn equations(
+    context: &mut CheckingContext<'_>,
+    (datatype, signature): (ValueTypeId, &DataSignature),
+    (beneath, constructor): (ValueTypeId, ValueId),
+    tag: ConstructorTag,
+) -> Result<Vec<ValueTypeId>, CheckRefusal>
+{
+    if signature.indices().is_empty() {
+        return Ok(Vec::new());
+    }
+    let fields = signature
+        .constructors()
+        .get(usize::from(tag))
+        .map_or(0, Vec::len);
+    let stated = stated_at(context, (beneath, constructor), tag)?;
+    let parameters = signature.parameters().len();
+    let mut equations = Vec::with_capacity(signature.indices().len());
+    for (position, &index) in signature.indices().iter().enumerate() {
+        let argument = parameters
+            .checked_add(position)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let below = fields
+            .checked_add(position)
+            .and_then(|below| u32::try_from(below).ok())
+            .map(Binders::from)
+            .ok_or(CheckRefusal::MachineInvariant)?;
+        let earlier = Binders::from(
+            u32::try_from(position).map_err(|_cause| CheckRefusal::MachineInvariant)?,
+        );
+        let carrier = instantiate(
+            context,
+            datatype,
+            index,
+            gandr_core_term::BinderDepth::from(argument),
+        )?;
+        let carrier = gandr_core_term::shift_value_type(context.arena_mut(), carrier, below)
+            .settle(context.arena_mut());
+        let (Some(&left), Some(&right)) = (
+            data_arguments(context, stated).get(argument),
+            data_arguments(context, datatype).get(argument),
+        )
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let left = gandr_core_term::shift_value(context.arena_mut(), left, earlier)
+            .settle(context.arena_mut());
+        let right = gandr_core_term::shift_value(context.arena_mut(), right, below)
+            .settle(context.arena_mut());
+        equations.push(context.arena_mut().value_type_path(carrier, left, right));
+    }
+    Ok(equations)
+}
+
+/// The arguments of a nominal application, and none of anything else.
+///
+/// # Specification
+/// trivial.
+fn data_arguments<'arena>(
+    context: &'arena CheckingContext<'_>,
+    application: ValueTypeId,
+) -> &'arena [ValueId]
+{
+    match context.arena().value_type(application) {
+        Some(&ValueType::Data { ref arguments, .. }) => arguments,
+        _ => &[],
+    }
+}
+
+/// `domain` bound over `result`: the plain arrow when `result` does not name
+/// the binder, strengthened past it, and the Π otherwise.
+///
+/// # Specification
+/// trivial.
+fn bound(
+    context: &mut CheckingContext<'_>,
+    domain: ValueTypeId,
+    result: CompTypeId,
+) -> CompTypeId
+{
+    match gandr_core_term::strengthen_comp_type(context.arena_mut(), result) {
+        Maybe::Present(closed) => {
+            let closed = closed.settle(context.arena_mut());
+            context.arena_mut().comp_type_arrow(domain, closed)
+        },
+        Maybe::Absent(_) => context.arena_mut().comp_type_pi(domain, result),
+    }
 }
 
 #[cfg(test)]

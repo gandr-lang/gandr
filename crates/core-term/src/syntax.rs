@@ -826,12 +826,17 @@ pub enum Computation
         scrutinee: ValueId,
         /// Result type under one intuitionistic scrutinee binder.
         motive: CompTypeId,
-        /// One ordinary function over the constructor's fields per tag.
+        /// One ordinary function over the constructor's fields per tag, then
+        /// over one equation per index of the family.
         branches: Vec<ComputationId>,
         /// Each constructor's field count, in tag order: how many of its
         /// branch's curried parameters take fields. A loop arm after the
         /// constructors' branches has none.
         arities: Vec<FieldCount>,
+        /// How many index equations each constructor's branch binds after its
+        /// fields: the family's index count, none for a family indexed by
+        /// nothing.
+        equations: gandr_kernel_term::EquationCount,
     },
     /// Select a named field, returning it in the computation fragment.
     RecordProjection(ValueId, FieldLabel),
@@ -2745,14 +2750,19 @@ fn equal_syntax(
                             motive: am,
                             branches: ref ab,
                             arities: ref arities_a,
+                            equations: equations_a,
                         },
                         &Computation::DataCase {
                             scrutinee: b,
                             motive: bm,
                             branches: ref bb,
                             arities: ref arities_b,
+                            equations: equations_b,
                         },
-                    ) if ab.len() == bb.len() && arities_a == arities_b => {
+                    ) if ab.len() == bb.len()
+                        && arities_a == arities_b
+                        && equations_a == equations_b =>
+                    {
                         pending.extend([V(a, b), CT(am, bm)]);
                         pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
                     },

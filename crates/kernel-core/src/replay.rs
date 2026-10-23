@@ -5413,11 +5413,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 Some(&Computation::DataCase {
                     motive,
                     ref branches,
+                    equations,
                     ..
                 }) => {
-                    break self
-                        .arena
-                        .computation_data_case(body, motive, branches.clone());
+                    break self.arena.computation_data_case_with_equations(
+                        body,
+                        motive,
+                        branches.clone(),
+                        equations,
+                    );
                 },
                 Some(&Computation::SigmaSplit {
                     motive,
@@ -5764,10 +5768,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         Some(&Computation::DataCase {
                             scrutinee,
                             ref branches,
+                            equations,
                             ..
                         }) => match self.arena.value(scrutinee) {
                             Some(&Value::Constructor {
-                                tag, ref fields, ..
+                                datatype,
+                                tag,
+                                ref fields,
                             }) => {
                                 let branch =
                                     *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
@@ -5786,6 +5793,25 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     };
                                     let field = *fields.get(position).ok_or_else(unreadable)?;
                                     focus = self.arena.computation_application(focus, field);
+                                }
+                                // Each index equation is reflexivity at the
+                                // constructor's own index, which its datatype
+                                // states after the parameters.
+                                let Some(&ValueType::Data { ref arguments, .. }) =
+                                    self.arena.value_type(datatype)
+                                else {
+                                    return Err(unreadable());
+                                };
+                                let first = arguments
+                                    .len()
+                                    .checked_sub(usize::from(equations))
+                                    .ok_or_else(unreadable)?;
+                                let points =
+                                    arguments.get(first ..).ok_or_else(unreadable)?.to_vec();
+                                for point in points {
+                                    self.charge()?;
+                                    let reflexive = self.arena.value_here(point);
+                                    focus = self.arena.computation_application(focus, reflexive);
                                 }
                                 progress = Progress::Reduced;
                             },
@@ -6590,10 +6616,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             Some(&Computation::DataCase {
                 motive,
                 ref branches,
+                equations,
                 ..
             }) => {
                 let branches = branches.clone();
-                self.arena.computation_data_case(bound, motive, branches)
+                self.arena
+                    .computation_data_case_with_equations(bound, motive, branches, equations)
             },
             Some(&Computation::SigmaSplit { motive, body, .. }) => {
                 self.arena.computation_sigma_split(bound, motive, body)
