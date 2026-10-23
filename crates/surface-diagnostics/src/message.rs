@@ -722,8 +722,8 @@ fn checked(
         },
         CheckRefusal::FunextUnsupported { .. } => f.write_str(
             "`funext` needs two closed pure functions between types built from units, \
-             integers, strings, pairs and two-way sums; an argument may itself be a \
-             function between such types",
+             integers, strings, pairs, two-way sums and data types that do not hold \
+             themselves; an argument may itself be a function between such types",
         ),
         CheckRefusal::PointwiseDistinct { .. } => f.write_str(
             "`funext` needs both functions to agree at every input: return the same value, \

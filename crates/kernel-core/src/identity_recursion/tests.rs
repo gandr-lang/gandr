@@ -1,12 +1,17 @@
 //! Semantic witnesses for the closed-code identity and relation experiment.
 
 use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StringLiteral;
@@ -20,6 +25,8 @@ use super::Domain;
 use super::Fiber;
 use super::Index;
 use super::Inhabitation;
+use super::Interfaces;
+use super::Interpretation;
 use super::Mode;
 use super::Relation;
 use super::RelationError;
@@ -215,6 +222,154 @@ fn neutral_fibres_do_not_decide_equality()
         let sums = relation(&arena, mode, sum_code);
         let fiber = sums.fiber(&mut arena, &[sum], y, y).expect("neutral sum");
         assert!(matches!(fiber.get(fiber.root()), Ok(Fiber::Suspended(..))));
+    }
+}
+
+/// A shape of a circle (one string) and a rectangle (two), admitted at
+/// position zero, and the naturals, holding themselves, at position one.
+///
+/// # Specification
+/// trivial.
+pub(super) fn shapes() -> crate::env::Environment
+{
+    let mut environment = crate::env::Environment::new();
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let text = staging.arena().value_type_base(BaseType::String);
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        Vec::new(),
+        vec![vec![text], vec![text, text]],
+        kind,
+    );
+    let _shape = environment.add_decl(staged).expect("the shape admits");
+    let mut staging = environment.stage();
+    let kind = staging
+        .arena()
+        .value_type_universe(GroundSort::Value, Level::zero());
+    let own = staging
+        .arena()
+        .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        Vec::new(),
+        vec![Vec::new(), vec![own]],
+        kind,
+    );
+    let _naturals = environment.add_decl(staged).expect("the naturals admit");
+    environment
+}
+
+/// Identity at a data type relates two values constructor by constructor:
+/// two circles by their radii, two rectangles by their sides paired, a circle
+/// and a rectangle by nothing, and a variable suspends; a bridge relates two
+/// rectangles the same way. The naturals, which hold themselves, and a shape
+/// outside the admission log have no identity the fold computes.
+#[test]
+fn a_data_type_relates_its_constructors_fieldwise()
+{
+    let environment = shapes();
+    let entries = environment.entries();
+    let mut arena = environment.arena().clone();
+    let scalars = scalars(&mut arena);
+    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let code = arena.value_quote(shape);
+    let Interpretation::Elements(relation) = interpret(
+        &arena,
+        Interfaces::of(entries),
+        Mode::Identity,
+        Domain::Elements(code),
+    )
+    .expect("a shape's identity")
+    else {
+        panic!("a shape's elements");
+    };
+    let (first, second) = (scalars.first, scalars.second);
+    let circle = |arena: &mut TermArena, radius| {
+        arena.value_constructor(shape, ConstructorTag::from(0_usize), vec![radius])
+    };
+    let rectangle = |arena: &mut TermArena, width, height| {
+        arena.value_constructor(shape, ConstructorTag::from(1_usize), vec![width, height])
+    };
+    let round = circle(&mut arena, first);
+    let other_round = circle(&mut arena, second);
+    let tall = rectangle(&mut arena, first, second);
+    let wide = rectangle(&mut arena, first, first);
+
+    let root = |fiber: &super::Fibers| fiber.get(fiber.root()).expect("a root fibre");
+    let fiber = relation
+        .evaluate(&arena, round, round)
+        .expect("two circles");
+    assert_eq!(root(&fiber), Fiber::Unit, "one radius");
+    let fiber = relation
+        .evaluate(&arena, round, other_round)
+        .expect("two circles");
+    assert_eq!(root(&fiber), Fiber::Empty, "two radii");
+    let fiber = relation
+        .evaluate(&arena, tall, wide)
+        .expect("two rectangles");
+    let Fiber::Product(width, height) = root(&fiber)
+    else {
+        panic!("a rectangle's sides relate as a pair");
+    };
+    assert_eq!(
+        (
+            fiber.get(width).expect("a width"),
+            fiber.get(height).expect("a height")
+        ),
+        (Fiber::Unit, Fiber::Empty),
+        "the widths agree and the heights do not"
+    );
+    let fiber = relation
+        .evaluate(&arena, round, tall)
+        .expect("a circle and a rectangle");
+    assert_eq!(root(&fiber), Fiber::Empty, "two constructors");
+    let neutral = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let fiber = relation
+        .evaluate(&arena, neutral, round)
+        .expect("a variable shape");
+    assert!(matches!(fiber.get(fiber.root()), Ok(Fiber::Suspended(..))));
+    let Interpretation::Elements(bridges) = interpret(
+        &arena,
+        Interfaces::of(entries),
+        Mode::Bridge,
+        Domain::Elements(code),
+    )
+    .expect("a shape's bridges")
+    else {
+        panic!("a shape's elements");
+    };
+    let fiber = bridges
+        .evaluate(&arena, tall, wide)
+        .expect("two rectangles");
+    let Fiber::Product(width, height) = root(&fiber)
+    else {
+        panic!("a rectangle's sides bridge as a pair");
+    };
+    assert_eq!(
+        (
+            fiber.get(width).expect("a width"),
+            fiber.get(height).expect("a height")
+        ),
+        (Fiber::Unit, Fiber::Empty),
+        "a bridge relates the sides as identity does"
+    );
+
+    let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    for (root, log) in [
+        (naturals, Interfaces::of(entries)),
+        (shape, Interfaces::NONE),
+    ] {
+        let code = arena.value_quote(root);
+        assert!(
+            matches!(
+                interpret(&arena, log, Mode::Identity, Domain::Elements(code)),
+                Err(RelationError::UnsupportedType(_))
+            ),
+            "a type holding itself, or one outside the log"
+        );
     }
 }
 

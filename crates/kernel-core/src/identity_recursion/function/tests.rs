@@ -23,6 +23,8 @@ use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
@@ -45,6 +47,8 @@ use crate::conv::Convertibility;
 use crate::conv::equal_values;
 use crate::identity_recursion::Domain;
 use crate::identity_recursion::Fiber;
+use crate::identity_recursion::Interfaces;
+use crate::identity_recursion::Interpretation;
 use crate::identity_recursion::Transport;
 use crate::identity_recursion::interpret;
 use crate::path_universe::Dialogue;
@@ -1035,6 +1039,81 @@ fn symbolic_coverage_keeps_base_variables_independent()
             ReplayBudget::DEFAULT,
         )
         .expect("generic Base refl");
+}
+
+/// A function from shapes covers its domain as the shape's constructors in
+/// tag order, each over its own fields' variables with the first field
+/// outermost; a circle's proof is its radius's, a rectangle's the pair of its
+/// sides'.
+#[test]
+fn a_data_domain_covers_as_its_constructors()
+{
+    let environment = crate::identity_recursion::tests::shapes();
+    let entries = environment.entries();
+    let mut arena = environment.arena().clone();
+    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returned = arena.comp_type_returner(shape);
+    let arrow = arena.comp_type_arrow(shape, returned);
+    let thunk = arena.value_type_thunk(arrow);
+    let code = arena.value_quote(thunk);
+    let Interpretation::Elements(family) = interpret(
+        &arena,
+        Interfaces::of(entries),
+        Mode::Identity,
+        Domain::Elements(code),
+    )
+    .expect("a function of shapes")
+    else {
+        panic!("a function's elements");
+    };
+    let patterns = family
+        .related_patterns(&mut arena, ReplayBudget::DEFAULT)
+        .expect("a shape covers");
+    let [ref circle, ref rectangle] = *patterns.as_slice()
+    else {
+        panic!("one pattern per constructor");
+    };
+    for (pattern, tag, variables) in [(circle, 0_usize, vec![0_u32]), (rectangle, 1, vec![1, 0])] {
+        assert_eq!(
+            pattern.left, pattern.right,
+            "a discrete premise is eliminated"
+        );
+        let Some(&Value::Constructor {
+            datatype,
+            tag: found,
+            ref fields,
+        }) = arena.value(pattern.left)
+        else {
+            panic!("a constructor pattern");
+        };
+        assert_eq!((datatype, found), (shape, ConstructorTag::from(tag)));
+        let indices = fields
+            .iter()
+            .map(|&field| match arena.value(field) {
+                Some(&Value::Variable(index)) => u32::from(index),
+                _ => panic!("a field of base type is a variable"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(indices, variables, "the first field outermost");
+        assert!(
+            pattern.context.len() == variables.len()
+                && pattern.context.iter().all(|&ty| matches!(
+                    arena.value_type(ty),
+                    Some(&ValueType::Base(BaseType::String))
+                )),
+            "one string binder per field"
+        );
+    }
+    let is_unit = |proof: ValueId| arena.value(proof).and_then(Value::components) == Some(&[]);
+    assert!(is_unit(circle.proof), "a radius's proof is the unit");
+    let Some(&[width, height]) = arena.value(rectangle.proof).and_then(Value::components)
+    else {
+        panic!("the sides' proofs paired");
+    };
+    assert!(
+        is_unit(width) && is_unit(height),
+        "each side's proof is the unit"
+    );
 }
 
 /// The thunk type `U(T → F R)` of a function from `T` returning `R`.

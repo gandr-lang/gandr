@@ -308,6 +308,101 @@ fn an_atom_covers_as_one_variable_and_a_dependent_or_bare_thunk_as_nothing()
     }
 }
 
+/// A shape of a circle and a rectangle over integers covers a function's
+/// domain as its two constructors in tag order, each over fresh variables at
+/// its fields with the first field outermost and no function coordinate, and
+/// is first order; the naturals, holding themselves, are neither covered nor
+/// first order.
+#[test]
+fn a_data_domain_covers_as_its_constructors()
+{
+    use alloc::sync::Arc;
+
+    use gandr_core_term::DataSignature;
+    use gandr_core_term::Sort;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::GroundSort;
+
+    use super::outside;
+
+    let mut arena = CoreArena::new();
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let shapes = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::from([integer]), Vec::from([integer, integer])]),
+        kind,
+    ));
+    let own = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let naturals = Arc::new(DataSignature::new(
+        Vec::new(),
+        Vec::from([Vec::new(), Vec::from([own])]),
+        kind,
+    ));
+    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let natural = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (position, signature) in [shapes, naturals].into_iter().enumerate() {
+        context
+            .adopt_data(ConstantIndex::from(position), signature)
+            .expect("the signature forms");
+    }
+
+    let Ok(Maybe::Present(patterns)) = super::coverage(&mut context, shape)
+    else {
+        panic!("a shape covers");
+    };
+    let read = patterns
+        .iter()
+        .map(|pattern| {
+            assert!(
+                pattern.left == pattern.right && pattern.coordinates.is_empty(),
+                "no function coordinate parts the sides"
+            );
+            let Some(&Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            }) = context.arena().value(pattern.left)
+            else {
+                panic!("a constructor pattern");
+            };
+            let indices = fields
+                .iter()
+                .map(|&field| match context.arena().value(field) {
+                    Some(&Value::Variable { index, .. }) => u32::from(index),
+                    _ => panic!("an integer field is a fresh variable"),
+                })
+                .collect::<Vec<_>>();
+            (datatype, tag, pattern.binders, indices)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        Vec::from([
+            (shape, ConstructorTag::from(0_usize), 1, Vec::from([0])),
+            (shape, ConstructorTag::from(1_usize), 2, Vec::from([1, 0])),
+        ]),
+        "one pattern per constructor, in tag order, the first field outermost"
+    );
+    assert_eq!(
+        super::first_order(&mut context, shape),
+        Ok(Maybe::Present(shape))
+    );
+    assert_eq!(
+        super::coverage(&mut context, natural),
+        Ok(Maybe::Absent(outside::Absent::Former)),
+        "a data type holding itself is covered by nothing"
+    );
+    assert_eq!(
+        super::first_order(&mut context, natural),
+        Ok(Maybe::Absent(outside::Absent::Former)),
+        "a data type holding itself is not first order"
+    );
+}
+
 #[test]
 fn pointwise_equal_functions_relate_by_computation()
 {

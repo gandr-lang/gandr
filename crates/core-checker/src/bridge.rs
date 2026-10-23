@@ -5388,15 +5388,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         Ok(Step::Descend(child))
     }
 
-    /// Queue the normal forms the function extensionality `at` records, so
-    /// each crosses on the machine's own stack before its evaluation is
-    /// assembled.
+    /// Queue the normal forms the function extensionality `at` records, and
+    /// the data types its returned constructors name, so each crosses on the
+    /// machine's own stack before its evaluation is assembled.
     ///
     /// # Specification
     /// - requires: the judgement accepted `at` as a function extensionality.
-    /// - ensures: `at` is open; every application step's two normal forms are
-    ///   visited, in step order and left before right, before [`Self::funext`]
-    ///   assembles the evaluation; a record of returns alone assembles at once.
+    /// - ensures: `at` is open; every application step's two normal forms, and
+    ///   every data type a returned constructor names that has not crossed, are
+    ///   visited before [`Self::funext`] assembles the evaluation; a record of
+    ///   returns naming no uncrossed data type assembles at once.
     /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded
     ///   nothing at `at`; as [`Self::funext`] when it assembles at once.
     /// - panics: none.
@@ -5424,17 +5425,49 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         };
         self.memo().values.insert(at, Image::Open);
         self.frames.push(Frame::FunextBuild(at));
+        let mut datatypes = BTreeSet::new();
         for step in record.steps().iter().rev() {
-            if let FunextStep::Apply {
-                ref left,
-                ref right,
-                ..
-            } = *step
-            {
-                self.frames.extend(
-                    [right.normal(), left.normal()]
-                        .map(|normal| Frame::NativeNext(CoreNode::Term(TermNode::Value(normal)))),
-                );
+            match *step {
+                FunextStep::Apply {
+                    ref left,
+                    ref right,
+                    ..
+                } => {
+                    self.frames.extend(
+                        [right.normal(), left.normal()].map(|normal| {
+                            Frame::NativeNext(CoreNode::Term(TermNode::Value(normal)))
+                        }),
+                    );
+                },
+                FunextStep::Return {
+                    ref left,
+                    ref right,
+                } => {
+                    let mut pending = Vec::from([left.returned(), right.returned()]);
+                    while let Some(node) = pending.pop() {
+                        match self.arena.value(node) {
+                            Some(&Value::Constructor {
+                                datatype,
+                                ref fields,
+                                ..
+                            }) => {
+                                datatypes.insert(datatype);
+                                pending.extend(fields.iter().copied());
+                            },
+                            Some(&Value::Tuple(ref parts)) => pending.extend(parts.iter().copied()),
+                            Some(&(Value::Injection(_, body) | Value::Mark { body, .. })) => {
+                                pending.push(body);
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+            }
+        }
+        for datatype in datatypes {
+            if !self.reached().value_types.contains_key(&datatype) {
+                self.frames
+                    .push(Frame::NativeNext(CoreNode::Type(TypeNode::Value(datatype))));
             }
         }
         match self.frames.pop() {
@@ -5594,10 +5627,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///
     /// # Specification
     /// - requires: `value` is a normal form of a type built from the unit type,
-    ///   the base atoms and binary sums and products.
-    /// - ensures: the image, with tuples, injections, intuitionistic variables,
-    ///   literals and constants rebuilt as they stand and marks read through;
-    ///   the evidence as [`Self::funext`] states it.
+    ///   the base atoms, binary sums and products and data types, each data
+    ///   type a constructor names already crossed.
+    /// - ensures: the image, with tuples, injections, constructors,
+    ///   intuitionistic variables, literals and constants rebuilt as they stand
+    ///   and marks read through; the evidence as [`Self::funext`] states it, a
+    ///   constructor's the right-nested pair of its fields', the unit value for
+    ///   a constructor without fields.
     /// - fails: [`Refusal::Hole`] at a hole; [`Refusal::MachineInvariant`] at
     ///   any other former; a constant's own refusal.
     /// - panics: none.
@@ -5616,6 +5652,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
     /// - witness: `bridge::tests::a_funext_returning_a_literal_crosses_with_the_literal`
     /// - witness: `bridge::tests::a_funext_returning_a_pair_or_a_constant_crosses_with_it`
+    /// - witness: `bridge::tests::a_funext_returning_a_constructor_crosses_with_it`
     #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|(image, evidence)| target.value(image).is_some() && target.value(evidence).is_some()))]
     fn returned(
         &mut self,
@@ -5633,6 +5670,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Pair,
             /// Inject the image on top.
             Inject(Summand),
+            /// Apply the constructor of this data type and tag to this many
+            /// images on top, the last field on top.
+            Construct(
+                gandr_kernel_term::ValueTypeId,
+                gandr_kernel_term::ConstructorTag,
+                usize,
+            ),
         }
         let mut tasks = Vec::from([Task::Visit(value)]);
         let mut built: Vec<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId)> = Vec::new();
@@ -5660,6 +5704,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         },
                         Value::Mark { body, .. } => {
                             tasks.push(Task::Visit(body));
+                            continue;
+                        },
+                        Value::Constructor {
+                            datatype,
+                            tag,
+                            ref fields,
+                        } => {
+                            let Some(&Image::Erased(image)) =
+                                self.reached().value_types.get(&datatype)
+                            else {
+                                return Err(Refusal::MachineInvariant);
+                            };
+                            tasks.push(Task::Construct(image, tag, fields.len()));
+                            tasks.extend(fields.iter().rev().copied().map(Task::Visit));
                             continue;
                         },
                         Value::Variable {
@@ -5713,7 +5771,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::QuoteComputation(_)
                         | Value::StaticLambda(_)
                         | Value::StaticApplication(..)
-                        | Value::Constructor { .. }
                         | Value::Record(_)
                         | Value::Reify(_) => return Err(Refusal::MachineInvariant),
                     };
@@ -5735,6 +5792,20 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         return Err(Refusal::MachineInvariant);
                     };
                     built.push((target.value_injection(summand, payload), evidence));
+                },
+                Task::Construct(datatype, tag, arity) => {
+                    let start = built
+                        .len()
+                        .checked_sub(arity)
+                        .ok_or(Refusal::MachineInvariant)?;
+                    let parts = built.get(start ..).ok_or(Refusal::MachineInvariant)?;
+                    let evidence = parts.iter().rev().fold(None, |rest, &(_, field)| {
+                        Some(rest.map_or(field, |rest| target.value_tuple(&[field, rest])))
+                    });
+                    let evidence = evidence.unwrap_or_else(|| target.value_unit());
+                    let images = parts.iter().map(|&(image, _)| image).collect();
+                    built.truncate(start);
+                    built.push((target.value_constructor(datatype, tag, images), evidence));
                 },
             }
         }

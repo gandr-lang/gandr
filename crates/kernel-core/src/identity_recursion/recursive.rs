@@ -408,6 +408,7 @@ impl Relation
             | Clause::Product(..)
             | Clause::Sum(..)
             | Clause::Function(..)
+            | Clause::Data(_)
             | Clause::CaseLeft(..)
             | Clause::CaseRight(..) => Err(RelationError::Classifier),
         }
