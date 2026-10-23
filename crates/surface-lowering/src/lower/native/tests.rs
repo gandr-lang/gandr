@@ -2279,6 +2279,40 @@ fn a_refused_callee_classifies_no_argument_2126()
     );
 }
 
+/// #2127: a constructor written as an argument of a descent `f[<](…)` took no
+/// classifier, since the head names the recursion's own binder rather than a
+/// declaration, so `onto[<](rest, Cons(x, acc))` was refused as unannotated
+/// where `onto(rest, Cons(x, acc))` checked. The declaration whose recursion
+/// the head names classifies it by its parameter, a leading parameter the
+/// descent passes unchanged counted in its place.
+#[test]
+fn a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127()
+{
+    let mut arena = CoreArena::new();
+    let source = "data List(a : Type) : Type { Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }\n\
+         def rec onto(xs : List(Integer), acc : List(Integer)) -> -F List(Integer) {\n\
+           case xs { Nil => return acc, Cons(x, rest) => become onto[<](rest, Cons(x, acc)) }\n\
+         }\n\
+         def rec padded(k : Integer, xs : List(Integer), acc : List(Integer)) -> -F List(Integer) {\n\
+           case xs { Nil => return acc, Cons(x, rest) => become padded[<](k, rest, Cons(k, acc)) }\n\
+         }\n\
+         def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> -F List(a) {\n\
+           case xs { Nil => return acc, Cons(x, rest) => become reverseOnto[<](a, rest, Cons(x, acc)) }\n\
+         }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    for name in ["onto", "padded", "reverseOnto"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// #1171: a constructor written in a field typed by another family took no
 /// classifier from the field, so `Inline(Some(3))` was refused as
 /// unannotated where `Inline((Some(3) : Maybe(Integer)))` checked. The field's

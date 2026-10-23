@@ -9554,10 +9554,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   position and each argument as a value, all in its own frame, and is
     ///   planned as the head applied to the arguments left to right; a call
     ///   whose head is an instantiation, a recursive call, records every
-    ///   argument for the head's claim to check and reads and applies those
-    ///   from the staged parameter's on, the ones its fixpoint takes; a call of
-    ///   no arguments is its head, whose force [`Self::mint_at`] marks as the
-    ///   call the source wrote.
+    ///   argument for the head's claim to check, reads each as a value so a
+    ///   later parameter's type can name a leading one, and applies those from
+    ///   the staged parameter's on, the ones its fixpoint takes; a call of no
+    ///   arguments is its head, whose force [`Self::mint_at`] marks as the call
+    ///   the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -9706,11 +9707,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if applied.start == applied.end {
             let _first = self.nullary.insert(head.node, site.at.node);
         }
-        if !descends {
-            self.parameters_classify(site, frame, head, applied)?;
-        }
+        // A descent writes every argument, the leading ones it leaves out of
+        // its application among them, so its parameters pair with all of
+        // them, and each is read: a type a later parameter takes from a
+        // leading one names it as written.
+        self.parameters_classify(site, frame, head, written)?;
         self.read(head.node, Reading::Head(frame));
-        for position in applied.start .. applied.end {
+        for position in written.start .. written.end {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }

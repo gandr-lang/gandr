@@ -46,6 +46,18 @@ def rec fib(n : Nat) -> -F Nat {
   }
 }
 
+/// A list reversed onto an accumulator, the element type passed unchanged:
+/// the accumulator each call grows is a constructor written bare, its type
+/// read off the parameter it fills, the element type standing for itself
+/// (#2127).
+@[ checks ]
+def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> -F List(a) {
+  case xs {
+    Nil => acc,
+    Cons(x, rest) => become reverseOnto[<](a, rest, Cons(x, acc))
+  }
+}
+
 /// Four.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def four : Nat ;
@@ -65,3 +77,8 @@ def halved = half(four) ;
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def fibbed : () => Nat ;
 def fibbed = fib(four) ;
+
+/// Two and three reversed: three, then two.
+@[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Nil))") ]
+def reversed : () => List(Nat) ;
+def reversed = reverseOnto(Nat, Cons(two, Cons(three, Nil)), Nil) ;
