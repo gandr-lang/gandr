@@ -114,6 +114,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a named kind has no former.
+    pub mod former {
+        /// The kind is none the dispatch table lists.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No rule of the built-in grammar realises the kind, so the
+            /// table, which lists every kind it realises, holds none for it.
+            Unrealised,
+        }
+    }
+}
+
 /// The name a diagnostic writes a form as: a named kind of the grammar, or a
 /// form the grammar folds into one and records as an adaptation.
 #[repr(transparent)]
@@ -999,12 +1012,15 @@ impl Former
     ];
 }
 
-/// The named kinds the lowering reads, with the former each is read as.
+/// Every named kind the built-in grammar realises, with the former each is
+/// read as.
 ///
 /// # Specification
 /// - requires: nothing; named kinds are compared by exact spelling.
-/// - ensures: each admitted kind has one former; absent kinds dispatch to
-///   Unadmitted through `former_of`.
+/// - ensures: each kind a rule of the built-in grammar realises has one former:
+///   a reading the lowering builds, or [`Former::Reserved`] or
+///   [`Former::Unadmitted`] for one it declines. No kind falls through to a
+///   default.
 /// - provides: the grammar-to-lowering dispatch table.
 /// - fails: does not certify positional admission of a dispatched form.
 /// - panics: none.
@@ -1013,12 +1029,13 @@ impl Former
 ///
 /// # Adequacy
 /// - hypothesis: L3 — exact kind/former pairs and declined kinds separate the
-///   dispatch outcomes; grammar realisation checks that every current table key
-///   names a built-in rule.
+///   dispatch outcomes; grammar realisation checks that the table's keys are
+///   exactly the kinds the built-in grammar's rules realise, so a kind the
+///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 85_usize] = [
+pub const FORMERS: [(&str, Former); 131_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1104,6 +1121,53 @@ pub const FORMERS: [(&str, Former); 85_usize] = [
     ("migrate_expression", Former::World),
     ("world_declaration", Former::WorldDeclaration),
     ("dup_expression", Former::Reserved),
+    // Realised by the grammar, declined by the lowering.
+    ("as_pattern", Former::Unadmitted),
+    ("bind_expression", Former::Unadmitted),
+    ("character", Former::Unadmitted),
+    ("circuit_declaration", Former::Unadmitted),
+    ("co_expression", Former::Unadmitted),
+    ("codata_declaration", Former::Unadmitted),
+    ("command_substitution", Former::Unadmitted),
+    ("cons_pattern", Former::Unadmitted),
+    ("constructor_pattern", Former::Unadmitted),
+    ("derive_declaration", Former::Unadmitted),
+    ("double_quoted_string", Former::Unadmitted),
+    ("drop_expression", Former::Unadmitted),
+    ("environment_assignment", Former::Unadmitted),
+    ("extern_block", Former::Unadmitted),
+    ("file_descriptor", Former::Unadmitted),
+    ("forall_type", Former::Unadmitted),
+    ("glob_expression", Former::Unadmitted),
+    ("host_escape", Former::Unadmitted),
+    ("if_expression", Former::Unadmitted),
+    ("intersection_type", Former::Unadmitted),
+    ("labelled_sum_pattern", Former::Unadmitted),
+    ("list_operator", Former::Unadmitted),
+    ("list_pattern", Former::Unadmitted),
+    ("literal_pattern", Former::Unadmitted),
+    ("manifest_sort", Former::Unadmitted),
+    ("operator_declaration", Former::Unadmitted),
+    ("or_pattern", Former::Unadmitted),
+    ("pack_expression", Former::Unadmitted),
+    ("package_type", Former::Unadmitted),
+    ("pipeline", Former::Unadmitted),
+    ("redirection_operator", Former::Unadmitted),
+    ("representable_universe_type", Former::Unadmitted),
+    ("rest_pattern", Former::Unadmitted),
+    ("shell_block", Former::Unadmitted),
+    ("shell_word", Former::Unadmitted),
+    ("single_quoted_string", Former::Unadmitted),
+    ("subshell", Former::Unadmitted),
+    ("telescope_pattern", Former::Unadmitted),
+    ("theory_declaration", Former::Unadmitted),
+    ("tuple_pattern", Former::Unadmitted),
+    ("typed_number", Former::Unadmitted),
+    ("union_type", Former::Unadmitted),
+    ("unknown_type", Former::Unadmitted),
+    ("variable_expansion", Former::Unadmitted),
+    ("variable_name", Former::Unadmitted),
+    ("wildcard", Former::Unadmitted),
 ];
 
 /// The former a form of named kind `kind` is read as.
@@ -1112,8 +1176,8 @@ pub const FORMERS: [(&str, Former); 85_usize] = [
 /// - requires: nothing — every kind, one the grammar does not realise included,
 ///   is admissible input.
 /// - ensures: exactly the former the dispatch table pairs with `kind`'s
-///   spelling, and [`Former::Unadmitted`] for every kind the table does not
-///   hold.
+///   spelling; absent, [`former::Absent::Unrealised`], for a kind the table
+///   does not hold, which no rule of the built-in grammar realises.
 /// - provides: the one dispatch the lowering takes on a form, so a kind outside
 ///   the fragment is declined by the same rule wherever it stands.
 /// - fails: never.
@@ -1121,30 +1185,29 @@ pub const FORMERS: [(&str, Former); 85_usize] = [
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the table is a finite class, enumerated exhaustively with
-///   each row's exact former asserted, separated from the miss arm by kinds the
-///   grammar realises and the fragment declines, each asserted unadmitted;
-///   every row's kind is asserted to be a kind the built-in grammar realises,
-///   so a renamed grammar kind breaks the table rather than silently declining
-///   the form.
+///   each row's exact former asserted, separated from the miss arm by a kind
+///   the grammar does not realise, asserted absent; the table's keys are
+///   asserted to be exactly the kinds the built-in grammar realises, so a
+///   renamed or added grammar kind breaks the table rather than silently
+///   declining the form.
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 #[spec(
     ensures: |ret| match ret {
-        | Former::Unadmitted => FORMERS.iter().all(|&(entry, _)| entry != kind.0),
-        | former => FORMERS
+        | Maybe::Absent(former::Absent::Unrealised) => FORMERS.iter().all(|&(entry, _)| entry != kind.0),
+        | Maybe::Present(former) => FORMERS
             .iter()
             .any(|&(entry, held)| entry == kind.0 && held == former),
     },
 )]
 #[inline]
-#[must_use]
-pub fn former_of(kind: NamedKind<'_>) -> Former
+pub fn former_of(kind: NamedKind<'_>) -> Maybe<Former, former::Absent>
 {
     FORMERS
         .into_iter()
         .find_map(|(entry, former)| (entry == kind.0).then_some(former))
-        .unwrap_or(Former::Unadmitted)
+        .map_or(Maybe::Absent(former::Absent::Unrealised), Maybe::Present)
 }
 
 /// What the parser inserted where the source fell short of the grammar.
@@ -1327,12 +1390,14 @@ pub enum Shape
 ///   for, and layout and documentation as [`Shape::Layout`].
 /// - provides: the one total reading of a node label every pass dispatches on.
 /// - fails: [`LoweringRefusal::UnknownMold`] when the mold is absent from the
-///   supplied table, including malformed hand-built labels. A recorded grammar
-///   fingerprint alone does not validate a mold.
+///   supplied table, including malformed hand-built labels, or names a kind the
+///   dispatch table holds no former for, which no rule of the built-in grammar
+///   realises. A recorded grammar fingerprint alone does not validate a mold.
 /// - panics: none.
 ///
 /// # Errors
-/// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+/// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold or whose
+/// kind has no former.
 ///
 /// # Clause cost
 /// - bound: reads the node's label, resolves its mold by index in the grammar's
@@ -1361,9 +1426,13 @@ pub enum Shape
                     mold,
                 })
             },
-            |kind| {
-                matches!(ret, Ok(Shape::Form { name, former })
-    if name.0 == kind.0 && former == former_of(kind))
+            |kind| match former_of(kind) {
+                Maybe::Present(former) => matches!(ret, Ok(Shape::Form { name, former: read })
+    if name.0 == kind.0 && read == former),
+                Maybe::Absent(_) => ret == Err(LoweringRefusal::UnknownMold {
+                    span: node.span(),
+                    mold,
+                }),
             },
         ),
     },
@@ -1378,10 +1447,17 @@ pub fn shape_of<'source>(
         NodeLabel::Wald => Ok(Shape::Root),
         NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
             let kind = named_kind(pbg, node, mold)?;
+            let Maybe::Present(former) = former_of(kind)
+            else {
+                return Err(LoweringRefusal::UnknownMold {
+                    span: node.span(),
+                    mold,
+                });
+            };
 
             Ok(Shape::Form {
                 name: FormName::from(kind),
-                former: former_of(kind),
+                former,
             })
         },
         NodeLabel::Grout { shape, .. } => Ok(Shape::Repair(Repair::Grout(shape))),
@@ -3334,11 +3410,18 @@ mod tests
     #[test]
     fn a_kind_outside_the_table_is_unadmitted()
     {
-        for kind in ["and_expression", "acquire_statement", "no_such_kind"] {
+        for kind in ["if_expression", "shell_block", "union_type"] {
             assert_eq!(
                 former_of(NamedKind(kind)),
-                Former::Unadmitted,
-                "the kind `{kind}` is outside the fragment"
+                Maybe::Present(Former::Unadmitted),
+                "the kind `{kind}` is realised by the grammar and outside the fragment"
+            );
+        }
+        for kind in ["and_expression", "no_such_kind"] {
+            assert_eq!(
+                former_of(NamedKind(kind)),
+                Maybe::Absent(super::former::Absent::Unrealised),
+                "no rule of the built-in grammar realises `{kind}`, so it has no former"
             );
         }
     }
@@ -3360,6 +3443,13 @@ mod tests
             assert!(
                 pbg.rules().iter().any(|rule| rule.provenance == kind),
                 "the dispatched kind `{kind}` is realised by a rule of the built-in grammar"
+            );
+        }
+        for rule in pbg.rules() {
+            let provenance: &str = rule.provenance;
+            assert!(
+                FORMERS.iter().any(|&(kind, _former)| kind == provenance),
+                "the kind `{provenance}` a rule realises has a former in the table"
             );
         }
     }
