@@ -165,6 +165,8 @@ enum Leaf
     String,
     /// The character atom.
     Character,
+    /// The 64-bit floating-point atom.
+    Float64,
     /// A rigid list tail, at this list type.
     Tail(ValueTypeId),
     /// The translator's own image of a cell's tail, at the target: the leaf a
@@ -493,7 +495,8 @@ fn first_order(
             ValueTypeView::Unit
             | ValueTypeView::Integer
             | ValueTypeView::String
-            | ValueTypeView::Character => {},
+            | ValueTypeView::Character
+            | ValueTypeView::Float64 => {},
             ValueTypeView::Sum(parts) if !parts.is_empty() => {
                 pending.extend(parts.iter().copied().map(Walk::Visit));
             },
@@ -602,6 +605,7 @@ fn leaves(
             ValueTypeView::Integer => (Leaf::Integer, value),
             ValueTypeView::String => (Leaf::String, value),
             ValueTypeView::Character => (Leaf::Character, value),
+            ValueTypeView::Float64 => (Leaf::Float64, value),
             ValueTypeView::Unit => continue,
             ValueTypeView::List(element) => match context.arena().value(value) {
                 Some(&Value::ListNil) => continue,
@@ -750,6 +754,7 @@ fn natural(
             ValueTypeView::Integer => Leaf::Integer,
             ValueTypeView::String => Leaf::String,
             ValueTypeView::Character => Leaf::Character,
+            ValueTypeView::Float64 => Leaf::Float64,
             ValueTypeView::List(element) => match context.arena().value(value) {
                 Some(&Value::ListNil) => continue,
                 Some(&Value::ListCons(first, tail)) => {

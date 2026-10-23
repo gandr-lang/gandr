@@ -200,6 +200,7 @@ pub fn component(
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Character
+                | ValueTypeView::Float64
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -231,6 +232,7 @@ pub fn component(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -358,6 +360,7 @@ pub fn flow_component(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

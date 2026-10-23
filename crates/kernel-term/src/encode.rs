@@ -1919,8 +1919,8 @@ fn encode_level(
 ///   to obtain.
 /// - ensures: appends the kind tag, then the payload each kind owes — a sign
 ///   tag and digits for an integer, text for a string, a sign tag with integral
-///   and fractional digits for a numeric, and the scalar's UTF-8 text for a
-///   character.
+///   and fractional digits for a numeric, the scalar's UTF-8 text for a
+///   character, and the bit pattern as a varint for a floating-point literal.
 /// - provides: the literal's byte image; since the payload is canonical, two
 ///   literals agree on bytes exactly when they denote the same value.
 /// - panics: none.
@@ -1952,7 +1952,8 @@ fn encode_level(
         bytes.get(start).copied() == Some(u8::from(tags::LITERAL_CHARACTER))
             && bytes.get(start.saturating_add(1)).copied().map(usize::from) == Some(text.len())
             && bytes.len() == start.saturating_add(2).saturating_add(text.len())
-            && bytes.ends_with(text.as_bytes()) } } },
+            && bytes.ends_with(text.as_bytes()) }, Literal::Float64(float) => bytes.get(start).copied() == Some(u8::from(tags::LITERAL_FLOAT64))
+            && bytes.len() == start.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub(u64::from(float).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) } },
 )]
 fn encode_literal(
     out: &mut EncodedArtifact,
@@ -1983,6 +1984,10 @@ fn encode_literal(
             out.put_tag(tags::LITERAL_CHARACTER);
             let content = character.to_text();
             encode_text(out, ArtifactText::from(content.as_str()));
+        },
+        Literal::Float64(float) => {
+            out.put_tag(tags::LITERAL_FLOAT64);
+            out.put_uvarint(WireU64::from(u64::from(float)));
         },
     }
 }
@@ -2059,7 +2064,7 @@ fn encode_text(
 /// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
 /// - witness: `encode::tests::levels_and_interfaces_match_literal_wire_fixtures`
 #[spec(
-    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER },
+    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER, BaseType::Float64 => tags::BASE_FLOAT64 },
 )]
 #[inline]
 fn base_type_tag(base: BaseType) -> WireTag
@@ -2069,6 +2074,7 @@ fn base_type_tag(base: BaseType) -> WireTag
         BaseType::String => tags::BASE_STRING,
         BaseType::Numeric => tags::BASE_NUMERIC,
         BaseType::Character => tags::BASE_CHARACTER,
+        BaseType::Float64 => tags::BASE_FLOAT64,
     }
 }
 

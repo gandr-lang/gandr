@@ -15,7 +15,7 @@ def identity(x: Integer) -> -F Integer {
   x
 }
 
-/// A number at a stated width; the lowering admits no typed number yet
+/// A number at a stated width; the lowering admits no width but `f64` yet
 /// (#1109).
 @[ refuses("OutOfFragment.typed_number") ]
 def wide = 1u32;

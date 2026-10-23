@@ -404,6 +404,7 @@ pub fn authorise(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

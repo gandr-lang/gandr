@@ -901,6 +901,7 @@ pub fn decode_bridge(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Lift { .. }
@@ -1324,6 +1325,7 @@ fn convert(
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Character, ValueTypeView::Character)
+                    | (ValueTypeView::Float64, ValueTypeView::Float64)
                     | (ValueTypeView::Unit, ValueTypeView::Unit)
                     | (ValueTypeView::Buffer, ValueTypeView::Buffer)
                     | (ValueTypeView::Web, ValueTypeView::Web) => true,
@@ -1558,6 +1560,7 @@ fn convert(
                         | ValueTypeView::Integer
                         | ValueTypeView::String
                         | ValueTypeView::Character
+                        | ValueTypeView::Float64
                         | ValueTypeView::Unit
                         | ValueTypeView::Thunk(_)
                         | ValueTypeView::Universe { .. }
@@ -2070,6 +2073,7 @@ fn value_head(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -2184,6 +2188,7 @@ fn relocated_values(
         | (ValueTypeView::Integer, ValueTypeView::Integer)
         | (ValueTypeView::String, ValueTypeView::String)
         | (ValueTypeView::Character, ValueTypeView::Character)
+        | (ValueTypeView::Float64, ValueTypeView::Float64)
         | (ValueTypeView::Unit, ValueTypeView::Unit) => Read::Pushed,
         (
             ValueTypeView::Universe {
@@ -2325,6 +2330,7 @@ fn relocated_values(
             | ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Character
+            | ValueTypeView::Float64
             | ValueTypeView::Unit
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }

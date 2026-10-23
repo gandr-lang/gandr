@@ -35,6 +35,7 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-theory-sites.workspace = true
+libm.workspace = true
 num-bigint.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true

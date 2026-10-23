@@ -177,6 +177,8 @@ pub enum ValueTypeView<'arena>
     String,
     /// The character atom.
     Character,
+    /// The 64-bit floating-point atom.
+    Float64,
     /// The unit type, the product of no components.
     Unit,
     /// The thunk type `U C` of the computation type held.
@@ -367,6 +369,7 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
     | Ok(ValueTypeView::Character) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Character))),
+    | Ok(ValueTypeView::Float64) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Float64))),
     | Ok(ValueTypeView::Unit) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
@@ -446,6 +449,7 @@ pub fn value_type_view(
         ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         ValueType::Base(BaseType::Character) => Ok(ValueTypeView::Character),
+        ValueType::Base(BaseType::Float64) => Ok(ValueTypeView::Float64),
         ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         ValueType::Product(ref parts) if parts.is_empty() => Ok(ValueTypeView::Unit),

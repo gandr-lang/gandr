@@ -441,6 +441,7 @@ pub fn level_of(
                 ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Character
+                | ValueTypeView::Float64
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)

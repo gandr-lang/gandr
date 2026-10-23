@@ -1242,7 +1242,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ),
     ("theory_declaration", Former::Unadmitted(Unbuilt::Theory)),
     ("tuple_pattern", Former::Unadmitted(Unbuilt::TuplePattern)),
-    ("typed_number", Former::Unadmitted(Unbuilt::TypedNumber)),
+    ("typed_number", Former::Number),
     ("union_type", Former::Unadmitted(Unbuilt::Union)),
     ("unknown_type", Former::Unadmitted(Unbuilt::UnknownType)),
     (

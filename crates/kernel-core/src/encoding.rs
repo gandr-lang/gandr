@@ -2647,6 +2647,7 @@ const fn base_tag(base: BaseType) -> WireTag
         BaseType::String => gandr_kernel_term::BASE_STRING,
         BaseType::Numeric => gandr_kernel_term::BASE_NUMERIC,
         BaseType::Character => gandr_kernel_term::BASE_CHARACTER,
+        BaseType::Float64 => gandr_kernel_term::BASE_FLOAT64,
     }
 }
 
@@ -2675,7 +2676,8 @@ const fn sign_tag(sign: Sign) -> WireTag
 ///   non-negative zero included.
 /// - ensures: writes the literal's kind tag, then its sign where it has one,
 ///   then each text component length-prefixed, so two literals whose components
-///   merely concatenate alike take different images.
+///   merely concatenate alike take different images; a floating-point literal
+///   writes its bit pattern as one word.
 /// - provides: the literal payload of a value record, which is where two
 ///   spellings of one number would otherwise become two content ids.
 /// - fails: never.
@@ -2703,6 +2705,7 @@ const fn sign_tag(sign: Sign) -> WireTag
             && record.0.ends_with(numeric.fraction().as_ref().as_bytes()),
         Literal::Character(ref character) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_CHARACTER))
             && record.0.ends_with(character.to_text().as_bytes()),
+        Literal::Float64(_) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_FLOAT64)),
     }
 )]
 fn put_literal(
@@ -2729,6 +2732,10 @@ fn put_literal(
         Literal::Character(ref character) => {
             record.put_tag(gandr_kernel_term::LITERAL_CHARACTER);
             record.put_text(EncodedText(character.to_text().as_str()));
+        },
+        Literal::Float64(float) => {
+            record.put_tag(gandr_kernel_term::LITERAL_FLOAT64);
+            record.put_word(EncodedWord(u64::from(float)));
         },
     }
 }

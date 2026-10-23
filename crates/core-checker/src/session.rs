@@ -366,6 +366,7 @@ pub(crate) fn session_at(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -430,6 +431,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -467,6 +469,7 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
+        | ValueTypeView::Float64
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

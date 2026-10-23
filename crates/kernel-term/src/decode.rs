@@ -49,6 +49,7 @@ use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::base::BaseType;
 use crate::base::CharacterLiteral;
+use crate::base::Float64Literal;
 use crate::base::FractionDigits;
 use crate::base::IntegerLiteral;
 use crate::base::Literal;
@@ -4445,7 +4446,7 @@ fn build_variable_atom(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
         reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(8) => ret.as_ref() == Ok(&BaseType::Float64), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
 )]
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
@@ -4456,6 +4457,7 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
         tags::BASE_STRING => Ok(BaseType::String),
         tags::BASE_NUMERIC => Ok(BaseType::Numeric),
         tags::BASE_CHARACTER => Ok(BaseType::Character),
+        tags::BASE_FLOAT64 => Ok(BaseType::Float64),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
@@ -4592,7 +4594,7 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
         else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Character(ref value) => { let text = value.to_text();
         kind == Some(3)
             && reader.position.0 == start.0.saturating_add(2).saturating_add(text.len())
-            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) } } }),
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8) } }),
 )]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
@@ -4624,6 +4626,12 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
                     site: MalformedSite::LiteralPayload,
                 })?;
             Ok(Literal::Character(character))
+        },
+        tags::LITERAL_FLOAT64 => {
+            let bits = reader.read_uvarint()?;
+            Ok(Literal::Float64(Float64Literal::from(f64::from_bits(
+                u64::from(bits),
+            ))))
         },
         other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
@@ -4953,6 +4961,7 @@ mod tests
                 1 => Ok(super::BaseType::String),
                 2 => Ok(super::BaseType::Numeric),
                 3 => Ok(super::BaseType::Character),
+                8 => Ok(super::BaseType::Float64),
                 _ => Err(unknown(super::TagSite::BaseType)),
             };
             assert_eq!(super::decode_base_type(&mut reader), base);
@@ -5005,7 +5014,18 @@ mod tests
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
-            if byte > 3 {
+            if byte == 8 {
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                assert_eq!(
+                    super::decode_literal(&mut reader),
+                    Ok(super::Literal::Float64(super::Float64Literal::from(
+                        f64::from_bits(0x55_u64)
+                    ))),
+                    "the floating-point kind reads its bit pattern"
+                );
+                assert_eq!(reader.position.0, 2);
+            }
+            if byte > 3 && byte != 8 {
                 let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
                 assert_eq!(
                     super::decode_literal(&mut reader),

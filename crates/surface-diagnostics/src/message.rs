@@ -186,7 +186,8 @@ impl fmt::Display for Indefinite
 /// # Specification
 /// - requires: nothing.
 /// - ensures: writes one message per variant, the form a malformed or
-///   unadmitted form names spoken in words; propagates a write failure.
+///   unadmitted form names spoken in words, and the ascription a number with a
+///   fraction needs where it states no type; propagates a write failure.
 /// - provides: the lowering half of [`Plain`].
 /// - fails: if the formatter rejects a write.
 /// - panics: none.
@@ -271,6 +272,10 @@ fn lowered(
                 FragmentBoundary::Indexed => write!(
                     f,
                     "the {spoken} reads a family at an index, which the fragment does not read here"
+                ),
+                FragmentBoundary::Unannotated if form == FormName::NUMBER => f.write_str(
+                    "a number with a fraction states no type of its own; write the type, as \
+                     `(0.5 : f64)` or `0.5f64`",
                 ),
                 FragmentBoundary::Unannotated => write!(f, "the {spoken} needs a type annotation"),
                 FragmentBoundary::NonUniform => f.write_str(

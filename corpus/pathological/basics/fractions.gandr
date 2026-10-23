@@ -1,0 +1,24 @@
+// A number with a fraction states no type of its own: with neither the `f64`
+// suffix nor an annotation it is refused, naming the ascription it needs,
+// and no default type is chosen for it. A width other than `f64` is not
+// admitted yet (#1109).
+
+/// A bare fraction.
+@[ refuses("OutOfFragment.Unannotated") ]
+def low = 0.2;
+
+/// A fraction in an exponent's form, bare as well.
+@[ refuses("OutOfFragment.Unannotated") ]
+def small = 1e-3;
+
+/// A number at a width the lowering does not admit yet.
+@[ refuses("OutOfFragment.typed_number") ]
+def single = 0.5f32;
+
+/// The annotated fraction checks.
+@[ checks ]
+def stated = (0.2 : f64);
+
+/// The run target is the annotated fraction.
+@[ runs("0.2f64") ]
+stated

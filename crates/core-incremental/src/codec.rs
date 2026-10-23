@@ -97,6 +97,7 @@ use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
 use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
@@ -1129,7 +1130,8 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 ///
 /// # Specification
 /// - ensures: encoding succeeds exactly when every decimal or text byte length
-///   fits a word.
+///   fits a word; a floating-point literal writes its bit pattern as eight
+///   bytes, little-endian.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer, text, numeric and character values in the finite
@@ -1148,7 +1150,7 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
                 u64::try_from(numeric.integer_part().as_ref().len()).is_ok()
                     && u64::try_from(numeric.fraction().as_ref().len()).is_ok()
             },
-            | Literal::Character(_) => true,
+            | Literal::Character(_) | Literal::Float64(_) => true,
         } {
             Ok(())
         }
@@ -1184,6 +1186,10 @@ where
             writer.tag(Tag(3));
             writer.bytes(Bytes(character.to_text().as_bytes()))?;
         },
+        Literal::Float64(float) => {
+            writer.tag(Tag(8));
+            writer.bytes(Bytes(u64::from(float).to_le_bytes().as_slice()))?;
+        },
     }
     Ok(())
 }
@@ -1211,6 +1217,7 @@ where
                     | Literal::Text(_) => 1,
                     | Literal::Numeric(_) => 2,
                     | Literal::Character(_) => 3,
+                    | Literal::Float64(_) => 8,
                 })
                 && reader.cursor > before
         },
@@ -1248,6 +1255,13 @@ fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
             let character =
                 CharacterLiteral::try_from(text).map_err(|_not_one| CodecError::Corrupt)?;
             Ok(Literal::Character(character))
+        },
+        8 => {
+            let bytes = reader.bytes()?;
+            let bits: [u8; 8] = bytes.0.try_into().map_err(|_width| CodecError::Corrupt)?;
+            Ok(Literal::Float64(Float64Literal::from(f64::from_bits(
+                u64::from_le_bytes(bits),
+            ))))
         },
         _ => Err(CodecError::Corrupt),
     }
@@ -2114,6 +2128,7 @@ where
                 BaseType::String => Tag(1),
                 BaseType::Numeric => Tag(2),
                 BaseType::Character => Tag(3),
+                BaseType::Float64 => Tag(8),
             });
         },
         ContentNode::Product(ref parts) => {
@@ -4272,6 +4287,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 1 => BaseType::String,
                 2 => BaseType::Numeric,
                 3 => BaseType::Character,
+                8 => BaseType::Float64,
                 _ => return Err(CodecError::Corrupt),
             })
         },

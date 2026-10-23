@@ -17,6 +17,9 @@
 //! | Boolean logic | `and`, `or`, `bool.not` | Boolean operands and result |
 //! | Text | `string.append` | String operands and result |
 //! | Integer combinators | `prim.id`, `prim.const` | Integer operands and result |
+//! | Floating-point arithmetic | `float64.add`, `float64.sub`, `float64.mul`, `float64.div`, `float64.neg`, `float64.exp` | Float64 operands and result |
+//! | Floating-point comparison | `float64.eq`, `float64.ne`, `float64.lt`, `float64.le`, `float64.gt`, `float64.ge` | Float64 operands, boolean result |
+//! | Conversion | `float64.from_integer`, `float64.round` | Integer to Float64, Float64 to Integer |
 //!
 //! Booleans are `Unit + Unit`, with the left injection true. Division truncates
 //! toward zero; remainder has the dividend's sign. Division and remainder by
@@ -24,6 +27,23 @@
 //! classifier errors stay distinct. Integer arithmetic preserves the literal
 //! vocabulary's unbounded magnitude, including values wider than a machine
 //! integer.
+//!
+//! Floating-point rows are IEEE 754 binary64 under round-to-nearest, ties to
+//! even: division by zero is an infinity or a NaN, not an error, and the
+//! comparisons are IEEE's, so a NaN equals nothing, itself included.
+//! `float64.from_integer` rounds the exact integer to the nearest binary64
+//! value; `float64.round` rounds to the nearest integer, ties to even, and
+//! refuses an infinity or a NaN as [`PrimitiveError::NotFinite`]. Every result
+//! NaN is the one canonical NaN the literal holds.
+//!
+//! **Choice.** `libm`, with defaults off, supplies `exp` and the rounding: its
+//! soft implementation runs alike on every platform, so a run's floating-point
+//! answer is the same wherever it runs, and it works in `no_std`. The host's
+//! `f64::exp` calls the platform's C library, whose last bit differs across
+//! platforms, and `no_std` lacks it; a hand-written series would be a second,
+//! unmaintained math library. Revisit if a correctly rounded `exp` is needed
+//! (the `core-math` family) or if `libm` loses its maintenance in the Rust
+//! project.
 //!
 //! **Choice.** `num-bigint`, with defaults off, supplies exact arithmetic in
 //! `no_std + alloc`. The maintained pure-Rust implementation avoids
@@ -68,6 +88,7 @@
 //! exported axiom, reference remapping and audit.
 
 use alloc::string::String;
+use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Add as _;
 use core::ops::Mul as _;
@@ -78,6 +99,7 @@ use core::ops::Sub as _;
 use anodized::spec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -145,6 +167,8 @@ pub enum PrimitiveType
     Boolean,
     /// A string of Unicode scalar values.
     Text,
+    /// An IEEE 754 binary64 floating-point number.
+    Float64,
 }
 
 impl PrimitiveType
@@ -167,6 +191,7 @@ impl PrimitiveType
                 arena.value_type_sum(&[unit, unit])
             },
             Self::Text => arena.value_type_base(BaseType::String),
+            Self::Float64 => arena.value_type_base(BaseType::Float64),
         }
     }
 }
@@ -221,6 +246,12 @@ enum Operation
     Not,
     /// The first string followed by the second.
     Append,
+    /// The natural exponential.
+    Exp,
+    /// An integer converted to the nearest floating-point number.
+    FromInteger,
+    /// A floating-point number rounded to the nearest integer, ties to even.
+    Round,
 }
 
 /// A table-owned native primitive. Callers cannot manufacture a mismatched row.
@@ -372,6 +403,104 @@ pub const PRELUDE: &[Primitive] = &[
         result: PrimitiveType::Text,
         operation: Operation::Append,
     }),
+    Primitive(&Definition {
+        name: "float64.add",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Add,
+    }),
+    Primitive(&Definition {
+        name: "float64.sub",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Sub,
+    }),
+    Primitive(&Definition {
+        name: "float64.mul",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Mul,
+    }),
+    Primitive(&Definition {
+        name: "float64.div",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Div,
+    }),
+    Primitive(&Definition {
+        name: "float64.neg",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Neg,
+    }),
+    Primitive(&Definition {
+        name: "float64.exp",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Exp,
+    }),
+    Primitive(&Definition {
+        name: "float64.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "float64.ne",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ne,
+    }),
+    Primitive(&Definition {
+        name: "float64.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "float64.le",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Le,
+    }),
+    Primitive(&Definition {
+        name: "float64.gt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Gt,
+    }),
+    Primitive(&Definition {
+        name: "float64.ge",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ge,
+    }),
+    Primitive(&Definition {
+        name: "float64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Float64,
+        operation: Operation::FromInteger,
+    }),
+    Primitive(&Definition {
+        name: "float64.round",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Integer,
+        operation: Operation::Round,
+    }),
 ];
 
 /// A native scalar supplied to or returned from the table evaluator.
@@ -384,6 +513,8 @@ pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
     Boolean(Side),
     /// A string.
     Text(Text),
+    /// An IEEE 754 binary64 number, its NaN canonical.
+    Float64(Float64Literal),
 }
 
 /// Why a native evaluation cannot produce its result.
@@ -398,6 +529,9 @@ pub enum PrimitiveError
     DivisionByZero,
     /// A numeric conversion violated canonical decimal representation.
     InvalidInteger,
+    /// A floating-point number with no integer nearest it: an infinity or a
+    /// NaN.
+    NotFinite,
 }
 
 impl fmt::Display for PrimitiveError
@@ -417,6 +551,7 @@ impl fmt::Display for PrimitiveError
             Self::ArgumentType => "native primitive argument type mismatch",
             Self::DivisionByZero => "native integer division by zero",
             Self::InvalidInteger => "invalid native integer representation",
+            Self::NotFinite => "native floating-point number is not finite",
         })
     }
 }
@@ -539,14 +674,18 @@ impl Primitive
     /// - requires: nothing; unchecked callers receive typed refusals.
     /// - ensures: exact integer arithmetic; division truncates toward zero,
     ///   remainder has the dividend's sign; booleans use left for true; an
-    ///   append is the first string's characters followed by the second's.
+    ///   append is the first string's characters followed by the second's;
+    ///   floating-point rows are IEEE 754 binary64, ties to even, with `exp`
+    ///   from `libm` and every NaN canonical.
     /// - fails: arity before argument classifiers, then zero division; invalid
-    ///   decimal conversion is named separately.
+    ///   decimal conversion is named separately; a floating-point number with
+    ///   no nearest integer is not finite.
     /// - panics: none.
     ///
     /// # Errors
     /// [`PrimitiveError`] preserves argument, arity, division and
-    /// representation failures.
+    /// representation failures, and a floating-point number rounded to an
+    /// integer that is not finite.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
@@ -555,6 +694,7 @@ impl Primitive
     /// - witness: `primitive::tests::exact_arithmetic_and_errors`
     /// - witness: `primitive::tests::comparisons_and_booleans`
     /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
+    /// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
     #[inline]
     pub fn evaluate(
@@ -578,6 +718,7 @@ impl Primitive
                 Scalar::Integer(integer) => Scalar::Integer(integer.clone()),
                 Scalar::Boolean(side) => Scalar::Boolean(side),
                 Scalar::Text(text) => Scalar::Text(text.clone()),
+                Scalar::Float64(float) => Scalar::Float64(float),
             });
         }
         // Only `string.append` takes text, the classifiers say: a text
@@ -592,6 +733,16 @@ impl Primitive
             appended.push_str(left);
             appended.push_str(right);
             return Ok(Scalar::Text(StringLiteral::new(appended)));
+        }
+        if let Scalar::Float64(left) = *first {
+            return float64(self.0.operation, left, arguments);
+        }
+        if self.0.operation == Operation::FromInteger {
+            let integer = first.integer()?;
+            let value = alloc::format!("{integer}")
+                .parse::<f64>()
+                .map_err(|_invalid_decimal| PrimitiveError::InvalidInteger)?;
+            return Ok(Scalar::Float64(Float64Literal::from(value)));
         }
         if let Scalar::Boolean(left) = *first {
             let right = match arguments.get(1) {
@@ -615,7 +766,10 @@ impl Primitive
                 | Operation::Le
                 | Operation::Gt
                 | Operation::Ge
-                | Operation::Append => return Err(PrimitiveError::ArgumentType),
+                | Operation::Append
+                | Operation::Exp
+                | Operation::FromInteger
+                | Operation::Round => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -657,7 +811,10 @@ impl Primitive
             | Operation::And
             | Operation::Or
             | Operation::Not
-            | Operation::Append => {
+            | Operation::Append
+            | Operation::Exp
+            | Operation::FromInteger
+            | Operation::Round => {
                 return Err(PrimitiveError::ArgumentType);
             },
         };
@@ -715,6 +872,7 @@ impl<Integer, Text> Scalar<Integer, Text>
             Self::Integer(_) => PrimitiveType::Integer,
             Self::Boolean(_) => PrimitiveType::Boolean,
             Self::Text(_) => PrimitiveType::Text,
+            Self::Float64(_) => PrimitiveType::Float64,
         }
     }
 }
@@ -773,6 +931,7 @@ impl Scalar
             Self::Integer(ref value) => Scalar::Integer(value),
             Self::Boolean(side) => Scalar::Boolean(side),
             Self::Text(ref text) => Scalar::Text(text),
+            Self::Float64(float) => Scalar::Float64(float),
         }
     }
 
@@ -794,6 +953,7 @@ impl Scalar
                 arena.value_injection(side.into(), unit)
             },
             Self::Text(text) => arena.value_literal(Literal::Text(text)),
+            Self::Float64(float) => arena.value_literal(Literal::Float64(float)),
         }
     }
 }
@@ -824,6 +984,111 @@ fn scalar(value: &BigInt) -> Result<Scalar, PrimitiveError>
     let magnitude = Magnitude::from_decimal_text(value.magnitude().to_str_radix(10))
         .ok_or(PrimitiveError::InvalidInteger)?;
     Ok(Scalar::Integer(IntegerLiteral::new(sign, magnitude)))
+}
+
+/// Evaluate a floating-point row whose first operand is `left` and whose
+/// operands are `arguments`.
+///
+/// # Specification
+/// - requires: `operation` belongs to a row whose first classifier is
+///   [`PrimitiveType::Float64`].
+/// - ensures: IEEE 754 binary64 arithmetic and comparison, round to nearest,
+///   ties to even; `exp` is `libm`'s; a rounding is the nearest integer, ties
+///   to even; every NaN result is the canonical NaN.
+/// - fails: [`PrimitiveError::NotFinite`] when rounding an infinity or a NaN;
+///   [`PrimitiveError::ArgumentType`] for a second operand that is no
+///   floating-point number, or an operation no floating-point row names.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::NotFinite`] or [`PrimitiveError::ArgumentType`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — sums, quotients by zero, a NaN compared with itself,
+///   `exp` at zero and at one (`libm`'s double, pinned by its bits), ties
+///   rounded to even and an infinity rounded each meet their answer or named
+///   refusal.
+/// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(PrimitiveError::NotFinite | PrimitiveError::ArgumentType | PrimitiveError::InvalidInteger)))]
+fn float64(
+    operation: Operation,
+    left: Float64Literal,
+    arguments: &[Scalar<&IntegerLiteral, &StringLiteral>],
+) -> Result<Scalar, PrimitiveError>
+{
+    let left = f64::from(left);
+    let float = |value: f64| Ok(Scalar::Float64(Float64Literal::from(value)));
+    match operation {
+        Operation::Neg => return float(-left),
+        Operation::Exp => return float(libm::exp(left)),
+        Operation::Round => {
+            if !left.is_finite() {
+                return Err(PrimitiveError::NotFinite);
+            }
+            let rounded = libm::rint(left);
+            let sign = if rounded < 0.0_f64 {
+                Sign::Negative
+            }
+            else {
+                Sign::NonNegative
+            };
+            let magnitude =
+                Magnitude::from_decimal_text(alloc::format!("{:.0}", libm::fabs(rounded)))
+                    .ok_or(PrimitiveError::InvalidInteger)?;
+            return Ok(Scalar::Integer(IntegerLiteral::new(sign, magnitude)));
+        },
+        Operation::First
+        | Operation::Add
+        | Operation::Sub
+        | Operation::Mul
+        | Operation::Div
+        | Operation::Mod
+        | Operation::Eq
+        | Operation::Ne
+        | Operation::Lt
+        | Operation::Le
+        | Operation::Gt
+        | Operation::Ge
+        | Operation::And
+        | Operation::Or
+        | Operation::Not
+        | Operation::Append
+        | Operation::FromInteger => {},
+    }
+    let Some(&Scalar::Float64(right)) = arguments.get(1)
+    else {
+        return Err(PrimitiveError::ArgumentType);
+    };
+    let right = f64::from(right);
+    let answer = match operation {
+        Operation::Add => return float(left + right),
+        Operation::Sub => return float(left - right),
+        Operation::Mul => return float(left * right),
+        Operation::Div => return float(left / right),
+        // IEEE equality: the zeros are equal, and a NaN equals nothing.
+        Operation::Eq => left.partial_cmp(&right) == Some(Ordering::Equal),
+        Operation::Ne => left.partial_cmp(&right) != Some(Ordering::Equal),
+        Operation::Lt => left < right,
+        Operation::Le => left <= right,
+        Operation::Gt => left > right,
+        Operation::Ge => left >= right,
+        Operation::First
+        | Operation::Mod
+        | Operation::Neg
+        | Operation::And
+        | Operation::Or
+        | Operation::Not
+        | Operation::Append
+        | Operation::Exp
+        | Operation::FromInteger
+        | Operation::Round => return Err(PrimitiveError::ArgumentType),
+    };
+    Ok(Scalar::Boolean(if answer {
+        Side::Left
+    }
+    else {
+        Side::Right
+    }))
 }
 
 #[cfg(test)]

@@ -560,6 +560,7 @@ impl Machine<'_, '_>
             | ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Character
+            | ValueTypeView::Float64
             | ValueTypeView::Unit
             | ValueTypeView::Product(_)
             | ValueTypeView::Sigma { .. }

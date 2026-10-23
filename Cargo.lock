@@ -684,6 +684,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-theory-levitation",
  "gandr-theory-sites",
+ "libm",
  "num-bigint",
  "quenchant-anodized",
  "quenchant-arith",
