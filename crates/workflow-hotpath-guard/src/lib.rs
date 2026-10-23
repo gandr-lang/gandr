@@ -33,8 +33,9 @@
 //! function's history.
 //!
 //! **The body is the index; each pull request has one comment.** One row per
-//! pull request and benchmark, rewritten in place; everything around the
-//! table stays as written. A pull request's report is one comment, marked
+//! pull request and benchmark, rewritten in place and collapsed under a
+//! summary counting the rows and the open ones; everything around the table
+//! stays as written. A pull request's report is one comment, marked
 //! `<!-- hotpath: pr=<n> -->`, that every later run of it edits, so the
 //! comments count pull requests, never runs ([`index`]); appending one per
 //! run put 36 comments on one issue in one stack's restacks.

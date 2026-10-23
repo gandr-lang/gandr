@@ -18,15 +18,16 @@
 
 use std::process::Command;
 
-/// The report over runs 3 and 2 with Clippy's budget `BUDGET` and
-/// standing `STANDING`.
+/// The report over runs 3 and 2 with Clippy's budget `BUDGET`, standing
+/// `STANDING` and the table's summary `SUMMARY`.
 const REPORT: &str = "Median job time over the last 2 merge-queue and pull-request runs of \
                           `ci.yml`, against the budgets in `nightly.yml`, each lane held by the \
                           cone its landing touched.\n\n\
+                          <details><summary>SUMMARY</summary>\n\n\
                           | lane | class | median | budget | jobs | standing |\n\
                           | --- | --- | ---: | ---: | ---: | --- |\n\
                           | check Clippy wall | surface | 3m 20s | BUDGET | 2 | STANDING |\n\
-                          \nRuns: 3, 2.\n";
+                          \nRuns: 3, 2.\n\n</details>\n";
 
 /// A fresh scratch directory for the case `$name`, for the fake's log and body.
 macro_rules! scratch {
@@ -93,7 +94,8 @@ fn an_over_budget_lane_opens_the_issue()
     assert!(output.status.success());
     let report = REPORT
         .replace("BUDGET", "2m 30s")
-        .replace("STANDING", "**over**");
+        .replace("STANDING", "**over**")
+        .replace("SUMMARY", "1 lane — over: 1 over, 0 unmeasured");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         format!("{report}\nOpened https://example.invalid/issues/7.\n")
@@ -259,7 +261,7 @@ fn a_daily_lane_is_sampled_over_the_scheduled_runs()
     // each table reads only its own window.
     assert!(
         stdout.contains(
-            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n"
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n\n</details>\n"
         ),
         "{stdout}"
     );
@@ -272,7 +274,7 @@ fn a_daily_lane_is_sampled_over_the_scheduled_runs()
     );
     assert!(
         stdout.contains(
-            "| mutate the night's crate (linux) | daily | 1m 20s | 1m 15s | 2 | **over** |\n\nRuns: 9, 8.\n"
+            "| mutate the night's crate (linux) | daily | 1m 20s | 1m 15s | 2 | **over** |\n\nRuns: 9, 8.\n\n</details>\n"
         ),
         "{stdout}"
     );
@@ -315,16 +317,17 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     // reads its own window, the nightly one after the daily one.
     assert!(
         stdout.contains(
-            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n"
+            "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nRuns: 3, 2.\n\n</details>\n"
         ),
         "{stdout}"
     );
     assert!(
         stdout.ends_with(
-            "\nRuns: 9, 8.\n\nMedian job time over the last 2 scheduled runs of `nightly.yml`, \
-             for its lanes.\n\n| lane | class | median | budget | jobs | standing |\n| --- | --- \
-             | ---: | ---: | ---: | --- |\n| check Clippy wall | nightly | 8m 20s | 9m 10s | 2 | \
-             within |\n\nRuns: 6, 5.\n"
+            "\nRuns: 9, 8.\n\n</details>\n\nMedian job time over the last 2 scheduled runs of \
+             `nightly.yml`, for its lanes.\n\n<details><summary>1 lane — within: 0 over, 0 \
+             unmeasured</summary>\n\n| lane | class | median | budget | jobs | standing |\n| --- \
+             | --- | ---: | ---: | ---: | --- |\n| check Clippy wall | nightly | 8m 20s | 9m 10s | \
+             2 | within |\n\nRuns: 6, 5.\n\n</details>\n"
         ),
         "{stdout}"
     );

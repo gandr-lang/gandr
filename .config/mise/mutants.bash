@@ -39,17 +39,21 @@ hold_mutants_lock() {
 mutants_scope=("$(cd "${BASH_SOURCE[0]%/*}" && pwd)/scope" -p MemoryMax=16G -p MemorySwapMax=0 -p OOMPolicy=continue)
 
 # The survivors of one witnessed run (`mutants:witnessed`'s outcome directory
-# `$1`) as a Markdown table: each missed mutant with its verdict, `missed` or
-# `unwitnessed` (no witness names its function), then each one timed out.
-# Returns 1 and prints nothing when none survives.
+# `$1`) as a Markdown table collapsed under a summary counting them: each
+# missed mutant with its verdict, `missed` or `unwitnessed` (no witness names
+# its function), then each one timed out. Returns 1 and prints nothing when
+# none survives.
 mutants_survivors() {
-  local out=$1 name verdict
+  local out=$1 name verdict count noun=survivors
   [[ -s "$out/missed.txt" || -s "$out/timeout.txt" ]] || return 1
-  printf '\n| mutant | verdict |\n| --- | --- |\n'
+  count=$(cat "$out/missed.txt" "$out/timeout.txt" | wc -l | tr -d ' ')
+  (( count != 1 )) || noun=survivor
+  printf '\n<details><summary>%s %s — alive</summary>\n\n| mutant | verdict |\n| --- | --- |\n' "$count" "$noun"
   while IFS= read -r name; do
     verdict=missed
     ! grep -Fxq -- "$name" "$out/unwitnessed.txt" || verdict=unwitnessed
     printf '| `%s` | %s |\n' "$name" "$verdict"
   done < "$out/missed.txt"
   while IFS= read -r name; do printf '| `%s` | timeout |\n' "$name"; done < "$out/timeout.txt"
+  printf '\n</details>\n'
 }

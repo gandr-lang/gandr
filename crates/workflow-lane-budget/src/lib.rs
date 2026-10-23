@@ -7,7 +7,8 @@
 //! - [`cone`] names the cone a landing touched: deep when it reaches the kernel
 //!   or core stack, surface otherwise.
 //! - [`report`] summarises each budgeted lane by the lower median of its
-//!   successful jobs, per cone, and renders the Markdown table.
+//!   successful jobs, per cone, and renders the Markdown table collapsed under
+//!   a summary of its lanes and its verdict.
 //! - [`github`] samples the runs and jobs through `gh` and keeps the one issue
 //!   in step with the report.
 //!

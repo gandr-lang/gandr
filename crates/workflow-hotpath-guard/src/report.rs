@@ -675,10 +675,11 @@ impl fmt::Display for Report
     /// - ensures: a sentence naming the pull request, its branch and the commit
     ///   (or the commit alone); for a pull request, a sentence naming each
     ///   failed benchmark its body accepts no growth on, the missing verdict,
-    ///   or saying it accepts them all; then one `##` section per failed check
-    ///   linking its run with its wall-time line and each metric's sites as a
-    ///   list; a report without a failure writes one sentence saying no check
-    ///   failed.
+    ///   missing verdict, or saying it accepts them all; then one `##` section
+    ///   per failed check linking its run with its wall-time line and each
+    ///   metric's sites as a list collapsed in a `<details>` block, its summary
+    ///   naming the metric and counting the sites; a report without a failure
+    ///   writes one sentence saying no check failed.
     /// - provides: the comment the guard appends and the job summary prints.
     /// - fails: propagates the formatter's own write failure.
     /// - panics: none.
@@ -751,10 +752,22 @@ impl fmt::Display for Report
                 Maybe::Absent(_) => writeln!(f, "[The run]({}).", failure.run)?,
             }
             for section in &failure.sections {
-                writeln!(f, "\n**{}**\n", section.metric)?;
+                let sites = if section.sites.len() == 1 {
+                    "site"
+                }
+                else {
+                    "sites"
+                };
+                writeln!(
+                    f,
+                    "\n<details><summary>{} — {} {sites} regressed</summary>\n",
+                    section.metric,
+                    section.sites.len()
+                )?;
                 for site in &section.sites {
                     writeln!(f, "- {}", site.line)?;
                 }
+                writeln!(f, "\n</details>")?;
             }
         }
         Ok(())

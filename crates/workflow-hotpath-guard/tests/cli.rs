@@ -78,26 +78,33 @@ Its body carries no settled `hotpath: accepted — <benchmark> …` verdict for 
 
 [The run](https://github.com/gandr-lang/gandr/runs/119144034179). Wall time `401.60 ms → 510.60 ms` **+27%**
 
-**Functions · allocations**
+<details><summary>Functions · allocations — 2 sites regressed</summary>
 
 - [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `1444 → 2558` **+77%**, total `452181 → 813738` **+80%**
 - [`lsp keystroke`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/surface-driver/benches/hotpath.rs#L177): avg `59331 → 61258` **+3.2%**, total **+3.2%**
+
+</details>
 
 ## `hotpath / gandr-timing`
 
 [The run](https://github.com/gandr-lang/gandr/runs/119144057632). Wall time `401.84 ms → 510.08 ms` **+27%**
 
-**Functions · timing**
+<details><summary>Functions · timing — 1 site regressed</summary>
 
 - [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `284.34 µs → 411.59 µs` **+45%**
+
+</details>
 ";
 
-/// The body of `decide`'s issue before its rows.
+/// The body of `decide`'s issue before its table.
 const DECIDE_HEAD: &str = "The hotpath guard's regressions of `gandr_core_checker::module::decide` (`crates/core-checker`), as the `hotpath / <series>` checks measure it: this body is the index, one row per pull request and series; each pull request's report is one comment below, edited by its later runs. The guard rewrites the rows and keeps the rest of this body as written.
 
 ## Index
 
-| pull request | commit | series | metric | delta | status | report |
+";
+
+/// The index table's heading and alignment rows.
+const HEADING: &str = "| pull request | commit | series | metric | delta | status | report |
 | --- | --- | --- | --- | --- | --- | --- |
 ";
 
@@ -115,11 +122,22 @@ The guard closes this issue when every row is `fixed`, `accepted` or `runner shi
 /// The commit cell of [`HEAD`].
 const COMMIT: &str = "[`914a768`](https://github.com/gandr-lang/gandr/commit/914a768fb32501be92e5cb4d28ce6613dfa01022)";
 
-/// `decide`'s issue body holding `$rows`, each a row's line.
+/// `decide`'s issue body holding `$rows`, each a row's line, collapsed under
+/// the summary counting them and their open rows.
 macro_rules! index {
     ($($row:expr),* $(,)?) => {{
         let rows: Vec<String> = vec![$($row.to_string()),*];
-        format!("{DECIDE_HEAD}{}{TAIL}", rows.iter().map(|row| format!("{row}\n")).collect::<String>())
+        let open = rows
+            .iter()
+            .filter(|row| row.split(" | ").nth(5).is_some_and(|status| status.starts_with("open")))
+            .count();
+        let standing = if open > 0 { format!("{open} open") } else { String::from("settled") };
+        let regressions = if rows.len() == 1 { "regression" } else { "regressions" };
+        format!(
+            "{DECIDE_HEAD}<details><summary>{} {regressions} — {standing}</summary>\n\n{HEADING}{}\n</details>\n{TAIL}",
+            rows.len(),
+            rows.iter().map(|row| format!("{row}\n")).collect::<String>()
+        )
     }};
 }
 
