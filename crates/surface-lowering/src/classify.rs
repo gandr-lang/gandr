@@ -229,6 +229,7 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
+            | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
@@ -292,6 +293,7 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
+            | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
@@ -691,7 +693,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 66_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 67_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -965,6 +967,11 @@ mod tests
                 span: empty,
                 first: empty,
             },
+            LoweringRefusal::PartialField {
+                span: empty,
+                field: SurfaceName::from("start"),
+                constructor: SurfaceName::from("Dot"),
+            },
         ]
     }
 
@@ -1034,6 +1041,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

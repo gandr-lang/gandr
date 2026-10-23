@@ -2397,6 +2397,9 @@ enum Plan
     /// type stated nowhere: projected at the label, for the checker to read
     /// off the record type the value synthesises.
     Field(NodeIndex, FieldLabel),
+    /// The field a label names of the data value the name at the node is,
+    /// read as the case returning it from each constructor.
+    Projected(native::ProjectedIndex),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
     ValueFunction(Stretch, NodeIndex),
@@ -3210,6 +3213,8 @@ struct Lowerer<'run, 'source>
     trailing: BTreeSet<NodeIndex>,
     /// The matches, each compiled to its decision tree.
     cases: Vec<native::CaseForm>,
+    /// The fields read off data values by name, each the case returning it.
+    projected: Vec<native::Projected>,
     /// The position each lowered data declaration's signature takes, by its
     /// position in the collection's data list.
     signatures: BTreeMap<usize, DataIndex>,
@@ -4744,6 +4749,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             stated_tails: BTreeSet::new(),
             trailing: BTreeSet::new(),
             cases: Vec::new(),
+            projected: Vec::new(),
             signatures: BTreeMap::new(),
             worded: BTreeMap::new(),
             word_types: BTreeMap::new(),
@@ -10069,31 +10075,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   name whose written type is a thunked lazy record over labels observes
     ///   the entry its label names; a selection off a name whose written type
     ///   is a type over labels projects the entry its label names, as
-    ///   [`Self::selection`] reads it; a selection off a value no written type
-    ///   states, a chain of selections ending at a binder's or a declaration's
-    ///   name not capitalised, projects the field its label names of the record
-    ///   the value is, as [`Self::field`] reads it. A chain of selections whose
-    ///   head is a capitalised name is a path: inside a functor whose parameter
-    ///   the head names, a one-link path is that parameter's value component,
-    ///   as [`Self::parameter_value`] reads it; otherwise it is resolved
-    ///   through the outermost scope at the depth that binds it: a path ending
-    ///   at an exported value component stands as that member's constant when
-    ///   the member is declared strictly before the declaration the path is
-    ///   written in, its last segment kept as a written name resolved to that
-    ///   declaration, and a path ending at a type component stands as its
-    ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
-    ///   an explicit loop, and its links are left unread.
+    ///   [`Self::selection`] reads it; a selection off a name whose written
+    ///   type is a data family without indices reads the field its label names
+    ///   off every constructor, as [`Self::data_field`] reads it; a selection
+    ///   off a value no written type states, a chain of selections ending at a
+    ///   binder's or a declaration's name not capitalised, projects the field
+    ///   its label names of the record the value is, as [`Self::field`] reads
+    ///   it. A chain of selections whose head is a capitalised name is a path:
+    ///   inside a functor whose parameter the head names, a one-link path is
+    ///   that parameter's value component, as [`Self::parameter_value`] reads
+    ///   it; otherwise it is resolved through the outermost scope at the depth
+    ///   that binds it: a path ending at an exported value component stands as
+    ///   that member's constant when the member is declared strictly before the
+    ///   declaration the path is written in, its last segment kept as a written
+    ///   name resolved to that declaration, and a path ending at a type
+    ///   component stands as its stated type, as [`Self::module_type`] reads
+    ///   it. The chain is walked by an explicit loop, and its links are left
+    ///   unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
-    ///   or a parameter does not export; the forward-member refusal for a
-    ///   member declared at or after the referring declaration;
+    ///   or a parameter does not export; [`LoweringRefusal::PartialField`] for
+    ///   a data field some constructor does not declare; the forward-member
+    ///   refusal for a member declared at or after the referring declaration;
     ///   [`LoweringRefusal::ProjectionFromApplication`] for a chain whose head
     ///   is an application of a functor; the wrong-sort refusal for a path
     ///   ending at a module, which is not a value; the wrong-sort refusal
     ///   outside value position; and the unadmitted refusal for a selection no
     ///   module governs and no value heads: a builtin namespace's member, or a
-    ///   field of a name whose written type is no record.
+    ///   field of a name whose written type is neither a record nor a data
+    ///   family without indices.
     /// - panics: none.
     ///
     /// # Errors
@@ -10113,6 +10124,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    /// - witness: `lower::native::tests::a_data_field_some_constructor_lacks_is_refused_1106`
     /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
@@ -10120,7 +10133,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
                 )
         },
     )]
@@ -10139,6 +10152,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if self.selection(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
+        if self.data_field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         let (head, selected) = Self::link(site, &pieces.pieces, site.at.span)?;
@@ -13021,25 +13037,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the first of those types written after it, so an instance's manifest
     ///   type is minted before a type naming it; every function result a
     ///   synthesised `cong` reads its codomain off, then every answer type a
-    ///   match reads its motive from, is minted next, the same way, so a `cong`
-    ///   in a type and a match deeper than its function's result find that
-    ///   result minted, and every application not yet renamed is renamed. Every
-    ///   other planned node is then minted, with its children already minted
-    ///   because the level-order layout puts them at strictly higher positions;
-    ///   every minted node gets an origin naming the syntax node that produced
-    ///   it, terms and types alike, while an adopted child keeps its own. A
-    ///   node whose position bridges its sort has the bridge minted over its
-    ///   own core node, with the same syntax node's origin marked as inserted.
-    ///   A node under a declaration that refused is not minted, and neither is
-    ///   any node above it, unless it lies inside an attribute payload or is a
-    ///   type a module signature states for it: the side table files a payload
-    ///   whatever its declaration's outcome, so an expectation about a refused
-    ///   declaration stays readable, and a signature's type is the signature's
-    ///   text, which answers for itself. The record type an enclosing signature
-    ///   states a nested module at is minted as a root. Last, the body of every
-    ///   witness of a member whose member and own type are unrefused is minted
-    ///   as that member's constant, its origin the form that stated the second
-    ///   type.
+    ///   match reads its motive from, then every stated type and declared field
+    ///   type a data field read with no answer takes its type from, is minted
+    ///   next, the same way, so a `cong` in a type, and a match or a field read
+    ///   deeper than the types it reads, find those types minted, and every
+    ///   application not yet renamed is renamed. Every other planned node is
+    ///   then minted, with its children already minted because the level-order
+    ///   layout puts them at strictly higher positions; every minted node gets
+    ///   an origin naming the syntax node that produced it, terms and types
+    ///   alike, while an adopted child keeps its own. A node whose position
+    ///   bridges its sort has the bridge minted over its own core node, with
+    ///   the same syntax node's origin marked as inserted. A node under a
+    ///   declaration that refused is not minted, and neither is any node above
+    ///   it, unless it lies inside an attribute payload or is a type a module
+    ///   signature states for it: the side table files a payload whatever its
+    ///   declaration's outcome, so an expectation about a refused declaration
+    ///   stays readable, and a signature's type is the signature's text, which
+    ///   answers for itself. The record type an enclosing signature states a
+    ///   nested module at is minted as a root. Last, the body of every witness
+    ///   of a member whose member and own type are unrefused is minted as that
+    ///   member's constant, its origin the form that stated the second type.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -13055,6 +13072,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -13176,6 +13194,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | native::Classifier::Parameter(_)
                     | native::Classifier::Inserted => None,
                 }),
+        );
+        // A field read off a data value by its name, where its position
+        // states no answer, reads its type off the value's stated type and the
+        // field's declaration.
+        manifests.extend(
+            self.projected
+                .iter()
+                .filter_map(native::Projected::typed_by)
+                .filter(|&(subject, ..)| owns(&subject))
+                .flat_map(|(_, stated, declared)| [stated, declared]),
         );
         manifests.reverse();
         let mut subtree: Vec<NodeIndex> = Vec::new();
@@ -13811,7 +13839,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Constructor(_)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -14102,6 +14130,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_computation(id, origin);
                 Lowered::Computation(id)
             }),
+            Plan::Projected(projected) => self.mint_projected(projected, sink, origin),
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             Plan::Loop(body) => self.mint_loop(body, sink, origin),
             Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
@@ -15253,6 +15282,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Observe(..)
             | Plan::Select(..)
             | Plan::Field(..)
+            | Plan::Projected(_)
             | Plan::Block(_)
             | Plan::Loop(_)
             | Plan::While(..)

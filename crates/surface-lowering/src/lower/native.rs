@@ -626,6 +626,18 @@ struct VariableAt(usize);
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct CaseIndex(usize);
 
+/// A field read off a data value by name, by its position in the lowering's
+/// store of them.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct ProjectedIndex(usize);
+
+/// Whether a written type spells one of the names a constructor binds before
+/// the field it types.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Spelled(bool);
+
 /// Whether a recursive call claims descent.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1463,6 +1475,120 @@ pub(super) struct CaseForm
     /// Each constructor arm's variables, in the order its leaves settle
     /// them.
     variables: Vec<Vec<Placed>>,
+}
+
+/// A field read off a data value by its name, `e.l`: the case over `e` whose
+/// branch for each constructor returns that constructor's field `l`.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `branches` holds, per constructor in tag order, its field count
+///   and the position of its field `l`, which is below that count; the subject
+///   is read as a value under `frame`.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::data_field`].
+/// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Projected
+{
+    /// The data value's syntax node, a name.
+    subject: NodeIndex,
+    /// The frame the projection is read under.
+    frame: Frame,
+    /// The family the case eliminates.
+    family: ConstantIndex,
+    /// Per constructor, its field count and the position of the field read.
+    branches: Vec<(usize, usize)>,
+    /// Where the type the projection returns is read from.
+    typed: Typed,
+}
+
+/// Where the type a field projection returns is read from.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: an answer is the projection's position's; a field names its first
+///   constructor's field, whose type names no field before it.
+/// - executable: none — the coordinates hold no tree to check them against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::data_field`].
+/// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Typed
+{
+    /// The answer the projection's position states.
+    Answered(Answer),
+    /// The field's declared type, with the family's parameters replaced by the
+    /// arguments of the type the subject is stated at.
+    Field
+    {
+        /// The subject's stated type's syntax node.
+        stated: NodeIndex,
+        /// The field's declared type's syntax node.
+        declared: NodeIndex,
+        /// How many fields come before it in its constructor.
+        earlier: usize,
+        /// How many parameters the family takes.
+        parameters: usize,
+    },
+}
+
+impl Projected
+{
+    /// The nodes a projection typed by its field reads its type off: its
+    /// subject, the subject's stated type and the field's declared type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when the projection is typed by its field,
+    ///   with the subject first.
+    /// - provides: the types the mint sweep lowers before the projection.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field read in an operand, where no answer is
+    ///   stated, is typed by its declaration.
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[spec(ensures: |ret| ret.is_some() == matches!(self.typed, Typed::Field { .. }))]
+    pub(super) const fn typed_by(&self) -> Option<(NodeIndex, NodeIndex, NodeIndex)>
+    {
+        match self.typed {
+            Typed::Field {
+                stated, declared, ..
+            } => Some((self.subject, stated, declared)),
+            Typed::Answered(_) => None,
+        }
+    }
+}
+
+/// What a value's written type names, as a match reads its scrutinee's.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a family's `form` is its position among the collected data forms.
+/// - executable: none — the coordinates hold no collection to check them
+///   against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::stated_data`].
+/// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stated
+{
+    /// A path type, whose switch the checker decides.
+    Path,
+    /// A data family, bare or applied.
+    Family
+    {
+        /// The family's declaration.
+        constant: ConstantIndex,
+        /// The family's position among the collected data forms.
+        form: usize,
+    },
 }
 
 /// One loop arm of a match, `loop => e`.
@@ -3808,11 +3934,6 @@ impl<'source> Lowerer<'_, 'source>
     /// # Errors
     /// As `fails`.
     ///
-    /// # Termination
-    /// Every round reads one form and descends only into the type its
-    /// parentheses hold, a strict subtree, spending one step of the
-    /// allowance.
-    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::empty_case`].
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
@@ -3823,6 +3944,67 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
         stated: Maybe<NodeIndex, binder_type::Absent>,
     ) -> Result<Maybe<Maybe<ConstantIndex, bare::Absent>, switched::Absent>, LoweringRefusal<'source>>
+    {
+        let (constant, form) = match self.stated_data(frame, stated)? {
+            Maybe::Present(Stated::Family { constant, form }) => (constant, form),
+            Maybe::Present(Stated::Path) => {
+                return Ok(Maybe::Present(Maybe::Absent(bare::Absent::Parameterised)));
+            },
+            Maybe::Absent(reason) => return Ok(Maybe::Absent(reason)),
+        };
+        let Some(written) = self.collected.data.get(form)
+        else {
+            return Ok(Maybe::Absent(switched::Absent::Otherwise));
+        };
+        if !written.generators.is_empty() {
+            return Err(LoweringRefusal::NonExhaustiveMatch { span: site.at.span });
+        }
+
+        Ok(Maybe::Present(if written.parameters.is_empty() {
+            Maybe::Present(constant)
+        }
+        else {
+            Maybe::Absent(bare::Absent::Parameterised)
+        }))
+    }
+
+    /// What the written type `stated` of a value read under `frame` names, as
+    /// a match reads its scrutinee's: a path type, or a data family.
+    ///
+    /// # Specification
+    /// - requires: `stated` is a written type, as [`Self::scrutinee_type`]
+    ///   reads it.
+    /// - ensures: read through parentheses, a path type answers
+    ///   [`Stated::Path`]; a type head, bare or applied, naming a data
+    ///   declaration answers that declaration and its position among the
+    ///   collected data forms. Any other stated type answers
+    ///   [`switched::Absent::Otherwise`], and an unstated one
+    ///   [`switched::Absent::Untyped`].
+    /// - fails: the head's own resolution refusals; the allowance, one step per
+    ///   form read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// Every round reads one form and descends only into the type its
+    /// parentheses hold, a strict subtree, spending one step of the
+    /// allowance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::empty_case`] and [`Self::data_field`].
+    /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |stated| match *stated {
+        Maybe::Present(Stated::Family { form, .. }) => form < self.collected.data.len(),
+        Maybe::Present(Stated::Path) | Maybe::Absent(_) => true,
+    }))]
+    fn stated_data(
+        &mut self,
+        frame: Frame,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Maybe<Stated, switched::Absent>, LoweringRefusal<'source>>
     {
         let otherwise = Ok(Maybe::Absent(switched::Absent::Otherwise));
         let Maybe::Present(mut at) = stated
@@ -3874,7 +4056,7 @@ impl<'source> Lowerer<'_, 'source>
         self.scratch = scratch;
         let head = match read? {
             Some(Maybe::Present(head)) => head,
-            Some(Maybe::Absent(path)) => return Ok(Maybe::Present(Maybe::Absent(path))),
+            Some(Maybe::Absent(_)) => return Ok(Maybe::Present(Stated::Path)),
             None => return otherwise,
         };
         let named = Site {
@@ -3899,20 +4081,193 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return otherwise;
         };
-        let Some(written) = self.collected.data.get(form)
-        else {
+        if form >= self.collected.data.len() {
             return otherwise;
-        };
-        if !written.generators.is_empty() {
-            return Err(LoweringRefusal::NonExhaustiveMatch { span: site.at.span });
         }
 
-        Ok(Maybe::Present(if written.parameters.is_empty() {
-            Maybe::Present(constant)
+        Ok(Maybe::Present(Stated::Family { constant, form }))
+    }
+
+    /// Classify a selection `e.l` as the field `l` of the data value `e` is:
+    /// the case over `e` whose branch for each constructor returns that
+    /// constructor's field `l`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a name whose
+    ///   written type, read as [`Self::stated_data`] reads a scrutinee's, is a
+    ///   data family indexed by nothing: the name read as a value under the
+    ///   form's frame, and per constructor its field count and the position of
+    ///   its field named `l`. The type the projection returns is the answer its
+    ///   position states when it states one, and otherwise the declared type of
+    ///   the first constructor's field `l`, read at the arguments the written
+    ///   type gives the family's parameters. Nothing is planned for any other
+    ///   selection, so a record, a module path and an observation are read as
+    ///   before.
+    /// - fails: [`LoweringRefusal::PartialField`] at the member when a
+    ///   constructor names no field `l`, naming the first such; the unannotated
+    ///   refusal when the position states no answer and no field gives one: the
+    ///   family declares no constructor, or the first constructor's field `l`
+    ///   is typed by a field before it; the wrong-sort refusal where no
+    ///   computation is read; the name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field of a family of one constructor, typed by its
+    ///   position and by its declaration; a field every constructor of a sum
+    ///   names at its own position; a field of a parameterised family read at
+    ///   the written arguments; a field one constructor lacks; a field typed by
+    ///   the field before it, with and without an answer.
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    /// - witness: `lower::native::tests::a_data_field_some_constructor_lacks_is_refused_1106`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Projected(_))))]
+    pub(super) fn data_field(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let unplanned = Ok(arity::Planned(false));
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return unplanned;
+        };
+        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
+            return unplanned;
+        }
+        let frame = site.reading.frame();
+        let written = self.scrutinee_type(frame, target)?;
+        let Maybe::Present(stated) = written
+        else {
+            return unplanned;
+        };
+        let Maybe::Present(Stated::Family { constant, form }) = self.stated_data(frame, written)?
+        else {
+            return unplanned;
+        };
+        let Some(data) = self.collected.data.get(form)
+        else {
+            return unplanned;
+        };
+        if !data.indices.is_empty() {
+            return unplanned;
+        }
+        let field = self.name_at(selected);
+        let mut branches = Vec::with_capacity(data.generators.len());
+        for generator in &data.generators {
+            let Some(position) = generator.fields.iter().position(|written| {
+                matches!(written.named, Maybe::Present(named) if self.name_at(named) == field)
+            })
+            else {
+                return Err(LoweringRefusal::PartialField {
+                    span: selected.span,
+                    field,
+                    constructor: self.name_at(generator.named),
+                });
+            };
+            branches.push((generator.fields.len(), position));
+        }
+        let typed = if let Some(&answer) = self.answers.get(&site.at.node) {
+            Typed::Answered(answer)
         }
         else {
-            Maybe::Absent(bare::Absent::Parameterised)
-        }))
+            let (Some(generator), Some(&(_, position))) =
+                (data.generators.first(), branches.first())
+            else {
+                return Err(site.out(FragmentBoundary::Unannotated));
+            };
+            let earlier: Vec<SurfaceName<'source>> = generator
+                .fields
+                .iter()
+                .take(position)
+                .filter_map(|before| match before.named {
+                    Maybe::Present(named) => Some(self.name_at(named)),
+                    Maybe::Absent(_) => None,
+                })
+                .collect();
+            let Some(declared) = generator.fields.get(position).map(|at| at.ty.node)
+            else {
+                return Err(site.out(FragmentBoundary::Unannotated));
+            };
+            if self.spells_any(declared, &earlier) == Spelled(true) {
+                return Err(site.out(FragmentBoundary::Unannotated));
+            }
+            Typed::Field {
+                stated,
+                declared,
+                earlier: position,
+                parameters: data.parameters.len(),
+            }
+        };
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        let index = ProjectedIndex(self.projected.len());
+        self.projected.push(Projected {
+            subject: target.node,
+            frame,
+            family: constant,
+            branches,
+            typed,
+        });
+        self.plan(site, Plan::Projected(index));
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Whether some leaf of the syntax under `node` spells one of `names`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: spelled exactly when a node under `node`, `node` itself
+    ///   included, has no child and covers the bytes of a name in `names`;
+    ///   unspelled when `names` is empty.
+    /// - provides: a conservative reading of whether a written type names a
+    ///   binder: a name bound inside the type and spelled alike counts too.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — restating it walks the subtree again.
+    ///
+    /// # Termination
+    /// Each round pops one node and pushes its children, which sit strictly
+    /// above it in the tree's layout, so the walk visits each node of the
+    /// finite subtree once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field typed by the field before it, and one typed
+    ///   by a closed type, separate the two answers.
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `names` holds the fields before one constructor's field"
+        )
+    )]
+    fn spells_any(
+        &self,
+        node: NodeIndex,
+        names: &[SurfaceName<'source>],
+    ) -> Spelled
+    {
+        if names.is_empty() {
+            return Spelled(false);
+        }
+        let mut pending = Vec::from([node]);
+        while let Some(at) = pending.pop() {
+            let mut children = self.tree.children(at).peekable();
+            if children.peek().is_none()
+                && self.tree.fragment(at).is_some_and(|spelled| {
+                    names.iter().any(|name| name.as_ref() == spelled.as_ref())
+                })
+            {
+                return Spelled(true);
+            }
+            pending.extend(children);
+        }
+        Spelled(false)
     }
 
     /// The alternatives of the arm pattern `pattern`: its or-pattern's
@@ -7845,6 +8200,168 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         shift(arena, carried, Binders::NONE, lift)
+    }
+
+    /// Mint the field read off a data value at `projected`: the data case over
+    /// the value whose branch for each constructor returns its field.
+    ///
+    /// # Specification
+    /// - requires: the subject, and the answer or the stated type and the
+    ///   field's declared type the projection is typed by, are already minted
+    ///   or absent.
+    /// - ensures: a data case over the subject's value whose motive returns the
+    ///   projection's type under one binder more, reading none of it, and whose
+    ///   branch for each constructor binds its fields and returns the one read;
+    ///   the type is the answer carried from its frame to the projection's, or
+    ///   the field's declared type lowered out from under the fields before it
+    ///   with the family's parameters replaced by the arguments of the
+    ///   subject's stated type carried to the projection's frame. The case
+    ///   carries the written origin and records the family it eliminates; every
+    ///   other node minted the inserted match origin, a copy that of the node
+    ///   it copies. Nothing when a node it reads did not lower, the stated type
+    ///   is no application of a family to at least its parameters, or the
+    ///   field's type names a field before it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::data_field`].
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(Lowered::Computation(id)) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
+    pub(super) fn mint_projected(
+        &self,
+        projected: ProjectedIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.projected.get(projected.0)
+        else {
+            return unminted;
+        };
+        let Maybe::Present(scrutinee) = self.value_at(form.subject)
+        else {
+            return unminted;
+        };
+        let lift = |from: Frame| {
+            let gap = self
+                .scope
+                .telescope_binders(form.frame)
+                .count()
+                .saturating_sub(self.scope.telescope_binders(from).count());
+            Binders::from(u32::try_from(gap).unwrap_or(u32::MAX))
+        };
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let answered = match form.typed {
+            Typed::Answered(answer) => {
+                let Maybe::Present(written) = self.answered_type(answer, sink)
+                else {
+                    return unminted;
+                };
+                self.relocate(
+                    sink.arena,
+                    written,
+                    answer.frame,
+                    Telescope::Signature,
+                    lift(answer.frame),
+                    Some(&mut copies),
+                )
+            },
+            Typed::Field {
+                stated,
+                declared,
+                earlier,
+                parameters,
+            } => {
+                let (Maybe::Present(applied), Maybe::Present(declared)) =
+                    (self.value_type_at(stated), self.value_type_at(declared))
+                else {
+                    return unminted;
+                };
+                let at = self.reading(stated).frame();
+                let wrapped = sink.arena.comp_type_returner(applied);
+                let carried = self.relocate(
+                    sink.arena,
+                    wrapped,
+                    at,
+                    Telescope::Signature,
+                    lift(at),
+                    Some(&mut copies),
+                );
+                let Some(&CompType::Returner {
+                    result: applied, ..
+                }) = sink.arena.comp_type(carried)
+                else {
+                    return unminted;
+                };
+                let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
+                    sink.arena.value_type(applied)
+                else {
+                    return unminted;
+                };
+                let mut environment: Vec<ValueId> =
+                    arguments.iter().take(parameters).copied().collect();
+                if environment.len() != parameters {
+                    return unminted;
+                }
+                // The innermost binder is the last parameter.
+                environment.reverse();
+                let past = Binders::from(u32::try_from(earlier).unwrap_or(u32::MAX));
+                let Maybe::Present(lowered) =
+                    gandr_core_term::strengthen_value_type(sink.arena, declared, past)
+                else {
+                    return unminted;
+                };
+                let declared = lowered.settle(sink.arena);
+                let code = sink.arena.value_quote(declared);
+                let substituted = gandr_core_term::substitute_environment_traced(
+                    sink.arena,
+                    TermId::Value(code),
+                    &environment,
+                    &mut copies,
+                );
+                let TermId::Value(substituted) = substituted
+                else {
+                    return unminted;
+                };
+                let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+                else {
+                    return unminted;
+                };
+                sink.arena.comp_type_returner(ty)
+            },
+        };
+        let motive =
+            gandr_core_term::shift_comp_type(sink.arena, answered, Binders::ONE).settle(sink.arena);
+        let mut branches = Vec::with_capacity(form.branches.len());
+        let mut arities = Vec::with_capacity(form.branches.len());
+        for &(arity, position) in &form.branches {
+            let read = variable(
+                sink.arena,
+                Depth(arity.saturating_sub(position).saturating_sub(1)),
+            );
+            let mut branch = sink.arena.computation_return(read);
+            for _field in 0 .. arity {
+                branch = sink.arena.computation_lambda(branch);
+            }
+            branches.push(branch);
+            arities.push(gandr_kernel_term::FieldCount::from(arity));
+        }
+        let case = sink
+            .arena
+            .computation_data_case(scrutinee, motive, branches, arities);
+        sink.origins.record_elimination(case, form.family);
+        record_copied_since(
+            sink,
+            mark,
+            origin.inserted(Insertion::Match),
+            Maybe::Present((case, origin)),
+            &copies,
+        );
+
+        Maybe::Present(Lowered::Computation(case))
     }
 
     /// Mint the match at `case`: its scrutinee bound once over its decision

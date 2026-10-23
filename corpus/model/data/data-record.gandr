@@ -1,6 +1,6 @@
 // A data type with one constructor of several fields: a record, read by a
-// match that binds each field by position (Martin-Löf, _Intuitionistic Type
-// Theory_, Bibliopolis, 1984).
+// match that binds each field by position, or by a field's name (Martin-Löf,
+// _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 /// A colour as its three channels.
 @[ checks ]
@@ -14,4 +14,18 @@ def green_channel() -> -F Integer {
   case (RGB(10, 20, 30) : Color3) {
     RGB(r, g, b) => g
   }
+}
+
+/// The blue channel of a colour, read by the field's name: the match above,
+/// its one arm returning the field.
+@[ checks ]
+def blue_channel(color : Color3) -> -F Integer {
+  color.b
+}
+
+/// Whether a colour's red channel exceeds its green, each read by name where
+/// no answer is stated, so typed by the field's declaration.
+@[ checks ]
+def reddish(color : Color3) -> -F Bool {
+  color.r > color.g
 }

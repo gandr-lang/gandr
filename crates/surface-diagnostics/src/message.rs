@@ -424,6 +424,13 @@ fn lowered(
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
+        LoweringRefusal::PartialField {
+            field, constructor, ..
+        } => write!(
+            f,
+            "the constructor `{constructor}` declares no field `{field}`, so `{field}` is not \
+             read off every value of the type"
+        ),
         LoweringRefusal::NotAFunctor { name, .. } => {
             write!(f, "`{name}` is not a functor declared before this binding")
         },
@@ -1412,6 +1419,11 @@ mod tests
                 span,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::PartialField {
+                span,
+                field: name,
+                constructor: name,
             },
             LoweringRefusal::NotAFunctor { span, name },
             LoweringRefusal::ProjectionFromApplication {
