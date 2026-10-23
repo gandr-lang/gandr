@@ -787,8 +787,8 @@ impl Token
 /// meaning: `:` is only ever followed by a type or a signature, and neither can
 /// begin with `>`, so no existing byte sequence re-munches.
 const MULTI_PUNCT: &[&str] = &[
-    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-", "=>",
-    "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::",
+    "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>", "==",
+    "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>", "::",
 ];
 
 /// UTF-8 bytes for U+00A0 NO-BREAK SPACE.
@@ -1867,13 +1867,12 @@ fn unicode_blank_len(
     None
 }
 
-/// Scan a lexeme led by `/`: `//` line comment, `/* */` block comment, or the
-/// `/\` intersection operator.
+/// Scan a lexeme led by `/`: `//` line comment or `/* */` block comment.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; line and nested block comments are layout;
-///   intersection is punctuation and a lone slash is unknown.
+/// - ensures: scanning advances; line and nested block comments are layout; a
+///   lone slash is unknown.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1881,9 +1880,9 @@ fn unicode_blank_len(
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
 ///   and failure to advance change a row; line and nested block comments are
-///   layout; intersection is punctuation and a lone slash is unknown.
+///   layout; a lone slash is unknown, a backslash after it included.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Unknown)))]
 fn scan_slash(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1895,7 +1894,6 @@ fn scan_slash(
             scan_line_comment_from(bytes, pos.advance(ByteWidth::TWO)),
         ),
         Some(b'*') => ScanResult::new(Lexeme::Space, scan_block_comment(bytes, pos)),
-        Some(b'\\') => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO)),
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
@@ -3107,9 +3105,9 @@ mod tests
             );
         }
         for operator in [
-            "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "/\\", "~>", "->", "<-",
-            "=>", "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[",
-            ":>", "::",
+            "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "<~>", "~~>", "~>", "->", "<-", "=>",
+            "==", "!=", "<=", ">=", "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+            "::",
         ] {
             assert_eq!(
                 super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)
@@ -3205,7 +3203,7 @@ mod tests
                 ("//a\nx", Lexeme::Space, 3),
                 ("/*a/*b*/c*/x", Lexeme::Space, 11),
                 ("/*", Lexeme::Space, 2),
-                ("/\\x", Lexeme::Punct, 2),
+                ("/\\x", Lexeme::Unknown, 1),
                 ("/", Lexeme::Unknown, 1),
             ]),
             (super::scan_hash, &[
@@ -3870,13 +3868,6 @@ mod tests
                 &label(SourceFragment::from("<="))
             ),
             vec![(Lexeme::Punct, "<=".to_owned())]
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from("/\\"),
-                &label(SourceFragment::from("/\\"))
-            ),
-            vec![(Lexeme::Punct, "/\\".to_owned())]
         );
         assert_eq!(
             tiles(

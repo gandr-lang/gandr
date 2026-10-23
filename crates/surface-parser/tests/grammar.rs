@@ -36,8 +36,6 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn 
         ),
         ("three-member union", "def f : A | B | C;"),
         ("four-member union", "def f : A | B | C | D;"),
-        ("three-member intersection", r"def f : A /\ B /\ C;"),
-        ("four-member intersection", r"def f : A /\ B /\ C /\ D;"),
         ("three-member value function space", "def f : A => B => C;"),
         ("mixed arrows", "def f : A => +U (B -> -F C) => D;"),
     ];
@@ -75,12 +73,8 @@ fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Box<dyn Error>>
 fn mixed_set_type_operators_require_parentheses() -> Result<(), Box<dyn Error>>
 {
     let cases = [
-        ("union before intersection", r"def f : A | B /\ C;"),
-        ("intersection before union", r"def f : A /\ B | C;"),
         ("union before lazy product", "def f : A | B & C;"),
         ("lazy product before union", "def f : A & B | C;"),
-        ("intersection before lazy product", r"def f : A /\ B & C;"),
-        ("lazy product before intersection", r"def f : A & B /\ C;"),
     ];
     for (case, source) in cases {
         let result = parse(built(), SourceText::from(source))?;

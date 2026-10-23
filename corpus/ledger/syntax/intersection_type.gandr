@@ -1,4 +1,0 @@
-/// `intersection_type`: an intersection type.
-/// The checker does not reach this form yet; #1056 tracks it.
-@[ refuses("OutOfFragment.intersection_type") ]
-def both : Integer /\ String ;

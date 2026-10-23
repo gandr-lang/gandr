@@ -157,20 +157,20 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 const KEYWORDS: &[&str] = &[
     "+U", "-F", "abort", "access", "acquire", "as", "at", "become", "bind", "break", "case",
     "close", "co", "codata", "continue", "data", "def", "derive", "drop", "dup", "else", "end",
-    "ext", "extern", "feed", "fn", "for", "forall", "force", "fork", "from", "glob", "handle",
-    "hold", "if", "import", "in", "include", "infix", "infixl", "infixr", "is", "leta", "loop",
-    "migrate", "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack",
-    "package", "pi+", "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return",
-    "rule", "run", "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type",
-    "type(", "unit", "unpack", "unwind", "val", "where", "while", "with", "world",
+    "ext", "extern", "feed", "fn", "for", "force", "fork", "from", "glob", "handle", "hold", "if",
+    "import", "in", "include", "infix", "infixl", "infixr", "is", "leta", "loop", "migrate",
+    "mobile", "module", "mu", "node", "obs", "offer", "on", "op", "oper", "pack", "package", "pi+",
+    "postfix", "prefix", "pure", "rec", "recv", "release", "resume", "return", "rule", "run",
+    "select", "send", "shape", "sort", "tail", "then", "theory", "thunk", "type", "type(", "unit",
+    "unpack", "unwind", "val", "where", "while", "with", "world",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the
 /// shell's separator label included.
 const OPERATORS: &[&str] = &[
-    "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", "/\\", ":>", "<", "<&", "<-",
-    "<->", "<=", "<=>", "<>", "==", "==>", "=>", ">", ">&", ">=", ">>", "\\", "newline", "|", "|&",
-    "||", "~>", "⇝", "∷", "≃", "≅",
+    "!=", "#", "&", "&&", "*", "+", "++", "-", "-->", "->", "..", ":>", "<", "<&", "<-", "<->",
+    "<=", "<=>", "<>", "==", "==>", "=>", ">", ">&", ">=", ">>", "\\", "newline", "|", "|&", "||",
+    "~>", "⇝", "∷", "≃", "≅",
 ];
 
 /// The primitive type spellings, and the universes.

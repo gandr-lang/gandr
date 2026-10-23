@@ -53,7 +53,6 @@ const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
     ("type.product", Assoc::Right),
     ("type.sum", Assoc::Right),
     ("type.union", Assoc::Right),
-    ("type.intersection", Assoc::Right),
     ("type.lazy_product", Assoc::Right),
     ("type.arrow", Assoc::Right),
     ("expression.cons", Assoc::Right),
@@ -78,10 +77,8 @@ const EXPECTED_PRECEDENCE_EDGES: &[(&str, &str)] = &[
     ("type.application", "type.product"),
     ("type.product", "type.sum"),
     ("type.sum", "type.union"),
-    ("type.sum", "type.intersection"),
     ("type.sum", "type.lazy_product"),
     ("type.union", "type.equivalence"),
-    ("type.intersection", "type.equivalence"),
     ("type.lazy_product", "type.equivalence"),
     ("expression.cons", "expression.cmp"),
     ("pattern.cons", "pattern.as"),
@@ -334,7 +331,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
         PrecName("type.product"),
         PrecName("type.sum"),
     ]);
-    for middle in ["type.union", "type.intersection", "type.lazy_product"] {
+    for middle in ["type.union", "type.lazy_product"] {
         assert_chain(dag, &[
             PrecName("type.sum"),
             PrecName(middle),
@@ -354,9 +351,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
         ("expression.pure", "pattern.or"),
         ("expression.atom", "type.arrow"),
         ("pattern.atom", "type.atom"),
-        ("type.union", "type.intersection"),
         ("type.union", "type.lazy_product"),
-        ("type.intersection", "type.lazy_product"),
     ] {
         assert_incomparable(dag, PrecName(left), PrecName(right));
     }
@@ -368,8 +363,8 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
     let committed: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS.iter().copied().collect();
-    assert_eq!(124, TREE_SITTER_NAMED_KINDS.len());
-    assert_eq!(124, committed.len(), "named kinds are unique");
+    assert_eq!(122, TREE_SITTER_NAMED_KINDS.len());
+    assert_eq!(122, committed.len(), "named kinds are unique");
 
     let pbg_only: BTreeSet<&str> = PBG_ONLY_KINDS.iter().copied().collect();
     assert_eq!(
