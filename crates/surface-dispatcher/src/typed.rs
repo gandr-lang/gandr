@@ -1322,7 +1322,7 @@ impl TypeTable
     ///   nowhere inside it while a term after it does; both halves of a
     ///   declaration find its type.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
-    /// - witness: `tests::corpus::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
+    /// - witness: `tests::corpus::sweeps::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
     /// - witness: `typed::tests::a_run_binder_answers_at_what_its_computation_returns_298`
