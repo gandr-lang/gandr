@@ -1214,6 +1214,10 @@ where
                     pending.push((AnyNode::Value(forward), reach));
                     pending.push((AnyNode::Value(backward), reach));
                 },
+                Some(&Value::Ascribe { value, ty }) => {
+                    pending.push((AnyNode::Value(value), reach));
+                    pending.push((AnyNode::ValueType(ty), reach));
+                },
                 Some(&Value::Tuple(ref components)) => {
                     pending.extend(
                         components

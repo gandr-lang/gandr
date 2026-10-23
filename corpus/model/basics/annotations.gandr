@@ -1,7 +1,10 @@
 // An annotation `(e : T)` states the type a value is read at: the whole
 // value of a definition no signature types is declared at `T`, and a value a
 // body returns is returned at `-F T`, whether the `return` is written or the
-// tail takes it (#1107).
+// tail takes it (#1107). Anywhere else a value is read — a pair's component,
+// a scrutinee, an argument, an application's head, the value beside a
+// written signature — the value is ascribed `T` where it stands, and a tuple
+// a bind runs is ascribed the product its pattern is annotated with (#1543).
 
 /// Three, declared an integer by its annotation alone.
 @[ checks ]
@@ -22,4 +25,51 @@ def ran() -> -F Integer {
 @[ checks ]
 def tailed(n: Integer) -> -F Integer {
   (n + 1 : Integer)
+}
+
+/// A pair whose first component alone is annotated: the component is
+/// ascribed `Integer` inside the pair.
+@[ runs("(3, 1)") ]
+def pair = ((3 : Integer), 1);
+
+/// An annotation beside the signature it agrees with.
+@[ checks ]
+def signed : Integer;
+def signed = (3 : Integer);
+
+/// A scrutinee annotated with the sum it is matched at.
+@[ checks ]
+def chosen(b : Bool) -> -F Integer {
+  case (b : Bool) {
+    true => 1,
+    false => 2
+  }
+}
+
+/// A component of a pair a bind runs, annotated where the kernel synthesises
+/// the pair's type.
+@[ runs("2") ]
+def bound() -> -F Integer {
+  run (b, n) <- pure ((true : Bool), 2);
+  n
+}
+
+/// An integer doubled, the function the annotated argument is passed to.
+@[ checks ]
+def doubled(n : Integer) -> -F Integer { n + n }
+
+/// An argument annotated with the parameter's type.
+@[ runs("6") ]
+def called() -> -F Integer { doubled((3 : Integer)) }
+
+/// The function an application forces, annotated with its type at the head.
+@[ runs("6") ]
+def headed() -> -F Integer { (doubled : Integer => Integer)(3) }
+
+/// A pair a bind runs, its two names bound under the product the pattern is
+/// annotated with.
+@[ runs("1") ]
+def split() -> -F Integer {
+  run (y, z) : Integer * Integer <- pure (1, 2);
+  y
 }

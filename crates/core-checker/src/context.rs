@@ -3559,23 +3559,26 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// The code `code` reduces to at its head: [`Self::unfold`] taken until
-    /// it gives nothing.
+    /// it gives nothing, an ascription read as the value it ascribes.
     ///
     /// # Specification
     /// - requires: as [`Self::unfold`].
     /// - ensures: `code` itself when no step fires at its head, otherwise the
-    ///   last reduct of the chain of certified steps; the result resolves in
-    ///   the arena. That no step fires at the result is not restated
-    ///   executably: deciding it is another step, which mints into the arena.
+    ///   last reduct of the chain of certified steps and ascriptions passed;
+    ///   the result resolves in the arena. An ascription passed takes no
+    ///   certificate: the bridge crosses its value alone, so the kernel never
+    ///   meets it. That no step fires at the result is not restated executably:
+    ///   deciding it is another step, which mints into the arena.
     /// - fails: as [`Self::unfold`].
     /// - panics: none.
     ///
     /// # Termination
-    /// - reason: the `loop` below takes one certified step per turn, not
-    ///   recursion.
+    /// - reason: the `loop` below takes one certified step or passes one
+    ///   ascription per turn, not recursion.
     /// - measure: the static normal form's distance: each step reduces a δ- or
     ///   β-redex of a well-formed code, and the judgement's step allowance
-    ///   bounds every certificate's evaluation.
+    ///   bounds every certificate's evaluation; an ascription's value is minted
+    ///   before it, so passing one descends the arena.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — separated by a rigid head, a chain of two constants,
@@ -3590,6 +3593,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     {
         let mut head = code;
         loop {
+            if let Some(&Value::Ascribe { value, .. }) = self.arena.value(head) {
+                head = value;
+                continue;
+            }
             match self.unfold(head)? {
                 Maybe::Present(reduct) => head = reduct,
                 Maybe::Absent(_) => return Ok(head),
@@ -3707,6 +3714,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Literal(_)
             | Value::Injection(..)
             | Value::Thunk(_)
+            | Value::Ascribe { .. }
             | Value::Lift { .. }
             | Value::StaticLambda(_)
             | Value::StaticApplication(..)

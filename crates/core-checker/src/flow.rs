@@ -1171,6 +1171,7 @@ pub fn covariant(
                 | Value::ListNil
                 | Value::ListCons(..)
                 | Value::Thunk(_)
+                | Value::Ascribe { .. }
                 | Value::Lift { .. }
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)

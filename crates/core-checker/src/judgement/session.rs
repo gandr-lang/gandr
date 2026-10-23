@@ -794,6 +794,7 @@ impl Machine<'_, '_>
                     | Value::Injection(..)
                     | Value::ListNil
                     | Value::ListCons(..)
+                    | Value::Ascribe { .. }
                     | Value::Lift { .. }
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)

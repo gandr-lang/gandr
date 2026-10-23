@@ -2930,14 +2930,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   constructor's classifier, and adopts the constructor; an annotation
     ///   over an injection does the same, the injection reading its summand's
     ///   label among the sum `T` states; both keep no ascription, `T` already
-    ///   their classifier. An annotation over any other value is admitted where
-    ///   an ascription carries it: the whole value of a definition no signature
-    ///   types, which `T` signs; the whole operand of a `return`; and a tail,
-    ///   where a path through a body ends, a value there that takes the
-    ///   `return` its polarity names, recorded with `T` for the mint to ascribe
-    ///   that return at. At a subject's result it reads a constructor only.
-    /// - fails: the unadmitted annotation refusal for any other annotation; the
-    ///   hole's and the tiles' own faults.
+    ///   their classifier. An annotation over any other value is carried by the
+    ///   ascription its position already makes where there is one: the whole
+    ///   value of a definition no signature types, which `T` signs; the whole
+    ///   operand of a `return`; and a tail, where a path through a body ends, a
+    ///   value there that takes the `return` its polarity names, recorded with
+    ///   `T` for the mint to ascribe that return at. Anywhere else it is
+    ///   planned as a value ascription of the value at `T`: at a value
+    ///   position, at a subject's result or a tested position, which take the
+    ///   `return` they insert, and at an application's head, which forces it.
+    /// - fails: a wrong-sort refusal at a statement, as for any value standing
+    ///   there; the unadmitted annotation refusal at a position that reads a
+    ///   type or nothing; the hole's and the tiles' own faults.
     /// - panics: none.
     ///
     /// # Errors
@@ -2945,15 +2949,17 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an annotated parameterised constructor lowers over
-    ///   the annotation's type, at a value position and at a tail, and an
-    ///   annotated name is refused, except where an ascription carries it.
+    ///   the annotation's type, at a value position and at a tail; an annotated
+    ///   name beside a definition's signature, inside a pair and at a head is
+    ///   ascribed; an annotation at a statement is refused.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
-    /// - witness: `lower::native::tests::an_annotation_at_a_statement_is_unadmitted`
+    /// - witness: `lower::native::tests::an_annotation_at_a_statement_is_of_the_wrong_sort`
     /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Transparent(_))))]
+    /// - witness: `lower::native::tests::an_annotation_no_form_carries_is_a_value_ascription_1543`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))]
     pub(super) fn annotated(
         &mut self,
         site: Site,
@@ -2971,19 +2977,14 @@ impl<'source> Lowerer<'_, 'source>
         };
         let (frame, tail) = match site.reading {
             Reading::Value(frame) => (frame, false),
-            Reading::Computation(_)
-                if self.exits.contains(&site.at.node) || self.results.contains(&site.at.node) =>
-            {
-                (
-                    self.require(site, Produced::Value)?,
-                    self.exits.contains(&site.at.node),
-                )
-            },
+            Reading::Computation(_) => (
+                self.require(site, Produced::Value)?,
+                self.exits.contains(&site.at.node),
+            ),
+            Reading::Head(_) => (self.require(site, Produced::Value)?, false),
             Reading::Unread
             | Reading::ValueType(_)
             | Reading::CompType(_)
-            | Reading::Computation(_)
-            | Reading::Head(_)
             | Reading::Result(_)
             | Reading::Function => return Err(declined),
         };
@@ -2991,9 +2992,7 @@ impl<'source> Lowerer<'_, 'source>
         let returned = self.ascribed.contains_key(&site.at.node);
         let classified = matches!(self.form_at(inner)?, Some((_, Former::Injection)))
             || matches!(self.applied_constructor(site, inner)?, Maybe::Present(_));
-        if !classified && !signs && !returned && !tail {
-            return Err(declined);
-        }
+        let carried = classified || signs || returned || tail;
         if classified {
             let _held = self.ascribed.remove(&site.at.node);
         }
@@ -3007,7 +3006,12 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.read(inner.node, Reading::Value(frame));
         let _first = self.classifiers.insert(inner.node, classifier.node);
-        self.plan(site, Plan::Transparent(inner.node));
+        if carried {
+            self.plan(site, Plan::Transparent(inner.node));
+        }
+        else {
+            self.plan(site, Plan::Ascribed(inner.node, classifier.node));
+        }
 
         Ok(())
     }

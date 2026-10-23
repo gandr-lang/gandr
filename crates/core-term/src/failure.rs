@@ -148,9 +148,6 @@ impl TrackingIssue
     pub const NESTED_OPERATION: Self = Self(1510);
     /// A circuit rule rewriting two redexes at once.
     pub const PARALLEL_REDEXES: Self = Self(1511);
-    /// An annotation, `(e : T)`, read as a value where no ascription carries
-    /// it.
-    pub const ANNOTATION_VALUE: Self = Self(1543);
     /// A declaration with effects or control, which the pure kernel does not
     /// replay.
     pub const KERNEL_EFFECTS: Self = Self(1624);

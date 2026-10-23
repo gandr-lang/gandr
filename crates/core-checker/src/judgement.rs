@@ -4346,8 +4346,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   at its point `a`; a compound endpoint awaits its computation's type,
     ///   which must be a pure returner `F A`, and has `A`; a written run awaits
     ///   its computation's type, which must be a returner `F^e A`, records the
-    ///   run and has `A`. A leaf ascends with the frames as found; every other
-    ///   rule descends above a new frame.
+    ///   run and has `A`; an ascription `(v : A)` awaits `A`'s formation,
+    ///   checks `v` against it and has `A`. A leaf ascends with the frames as
+    ///   found; every other rule descends above a new frame.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk, a static lambda
     ///   and a computation written where a value is read, which the expected
     ///   type decides; [`CheckRefusal::UnboundIndex`] for a variable past its
@@ -4391,6 +4392,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::ListNil | Value::ListCons(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::List(term),
             }),
+            Value::Ascribe { value, ty } => {
+                self.wait(Frame::NativeYield(Produced::ValueType(Relocated::from(ty))));
+                self.wait(Frame::NativeNext(Goal::Value {
+                    term: value,
+                    direction: Direction::Check(ty),
+                }));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(ty))))
+            },
             Value::Primitive { primitive, .. } => {
                 let computation = primitive.declared_type(self.context.arena_mut());
                 let classifier = self.context.arena_mut().value_type_thunk(computation);
@@ -5110,7 +5119,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::SessionRelated { .. }
             | Value::Then(..)
             | Value::FlowProduct(..)
-            | Value::Forward(_) => {
+            | Value::Forward(_)
+            | Value::Ascribe { .. } => {
                 self.wait(Frame::ValueBridge {
                     at: term,
                     expected: entered,
@@ -5327,6 +5337,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Literal(_)
             | Value::Injection(..)
             | Value::Thunk(_)
+            | Value::Ascribe { .. }
             | Value::Lift { .. }
             | Value::Quote(_)
             | Value::QuoteComputation(_)

@@ -1697,7 +1697,7 @@ Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } => 2,
 Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 }),
@@ -1803,6 +1803,10 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(backward), depth));
                     self.tasks.push(open(Node::Value(forward), depth));
                     self.tasks.push(open(Node::ValueType(path_type), depth));
+                },
+                Some(&Value::Ascribe { value, ty }) => {
+                    self.tasks.push(open(Node::ValueType(ty), depth));
+                    self.tasks.push(open(Node::Value(value), depth));
                 },
                 Some(
                     &Value::PathRefl(body)
@@ -2536,7 +2540,7 @@ Value::Record(ref fields) => fields.len(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) => 2,
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } => 2,
 Value::PathEquiv { .. } | Value::SessionRelated { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Mark { .. } => 1,
 })],
@@ -2678,6 +2682,16 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_run(rewritten)
+                }
+            },
+            Value::Ascribe { value, ty } => {
+                let rewritten_ty = Self::value_type(&mut self.results, ty);
+                let rewritten_value = Self::value(&mut self.results, value);
+                if (rewritten_value, rewritten_ty) == (value, ty) {
+                    id
+                }
+                else {
+                    self.arena.value_ascribe(rewritten_value, rewritten_ty)
                 }
             },
             Value::PathProduct(first, second) => {
@@ -5513,6 +5527,7 @@ fn survey_value(
         | Value::Forward(inner)
         | Value::Injection(_, inner)
         | Value::Lift { body: inner, .. }
+        | Value::Ascribe { value: inner, .. }
         | Value::Mark { body: inner, .. } => next.push(Position::Value(inner, region)),
         Value::PathProduct(left, right)
         | Value::Funext(left, right)

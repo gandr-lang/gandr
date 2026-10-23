@@ -925,7 +925,10 @@ fn formers(
                     | Value::Here(injected)
                     | Value::Stay(injected)
                     | Value::Forward(injected)
-                    | Value::Injection(_, injected)),
+                    | Value::Injection(_, injected)
+                    | Value::Ascribe {
+                        value: injected, ..
+                    }),
                 ) => {
                     worklist.push(Node::Value(injected));
                 },

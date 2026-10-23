@@ -1972,7 +1972,7 @@ Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
 &(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
 Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
-Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
+Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. } | Value::Ascribe { .. })) => true,
 })]
 fn references(
     core: &CoreArena,
@@ -2052,7 +2052,8 @@ fn references(
                     | Value::Forward(inner)
                     | Value::Injection(_, inner)
                     | Value::Lift { body: inner, .. }
-                    | Value::Mark { body: inner, .. }),
+                    | Value::Mark { body: inner, .. }
+                    | Value::Ascribe { value: inner, .. }),
                 ) => {
                     pending.push(Node::Value(inner));
                 },

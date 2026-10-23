@@ -1752,6 +1752,18 @@ enum StatementBinding
         /// The value type `A` written, read in the statement's own frame.
         annotation: NodeIndex,
     },
+    /// `run (x, y, …) : A <- c ;` ascribes `c` the returner `-F A`, as
+    /// [`Self::Typed`] does, and splits the tuple it returns, as
+    /// [`Self::Split`] does.
+    TypedSplit
+    {
+        /// The tuple's arity.
+        arity: gandr_core_term::ComponentCount,
+        /// The tuple pattern's own node.
+        pattern: NodeIndex,
+        /// The value type `A` written, read in the statement's own frame.
+        annotation: NodeIndex,
+    },
     /// `fork (c : S) t as d ;` runs `t`, under `c`'s linear binder, beside
     /// the rest of the block, under `d`'s: the fork's protocol `S` and its
     /// child `t`.
@@ -2339,6 +2351,9 @@ enum Plan
     DependentArrow(Stretch, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
+    /// The value at the first node, ascribed the value type at the second:
+    /// `(e : T)` where no other form carries `T`.
+    Ascribed(NodeIndex, NodeIndex),
     /// A thunk over its block.
     Thunk(Block),
     /// A returner over its value.
@@ -7536,15 +7551,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list is read as a pair;
-    ///   `(C… : T)` over a constructor standing as a value reads `T` as a value
-    ///   type under the same frame, records it as the constructor's classifier
-    ///   and adopts the constructor.
+    ///   `(e : T)` is read as [`Self::annotated`] reads it, adopting a
+    ///   constructor or an injection that takes `T` as its classifier, or the
+    ///   value an ascription its position makes carries, and otherwise planned
+    ///   as a value ascription.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
-    /// - fails: yields the pair's own refusal, the unadmitted refusal for an
-    ///   annotation over anything but a constructor standing as a value, the
-    ///   empty-list refusal for `()`, which is never the unit, and the
-    ///   extra-operand refusal for a juxtaposition.
+    /// - fails: yields the pair's own refusal, the annotation's refusal as
+    ///   [`Self::annotated`] states it, the empty-list refusal for `()`, which
+    ///   is never the unit, and the extra-operand refusal for a juxtaposition.
     /// - panics: none.
     ///
     /// # Errors
@@ -7553,17 +7568,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — grouping preserves its operand while a
     ///   comma-separated tuple plans one tuple rather than treating the commas
-    ///   as grouping.
+    ///   as grouping, and an annotation no form carries plans its ascription.
     /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::native::tests::an_annotation_no_form_carries_is_a_value_ascription_1543`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Tuple(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Tuple(_) | Plan::Ascribed(..)))
                 )
         },
     )]
@@ -8848,16 +8864,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   statement's name over `frame`, which the rest of the block reads
     ///   under, is returned. A tuple pattern `(x, y, …)` binds the returned
     ///   tuple under a nameless binder and each component's name over it, in
-    ///   order, and the statement is recorded as that split. A name annotated
-    ///   `x : A` reads `A` in `frame` and binds the name over it, and the
-    ///   statement is recorded as the bind of `c` ascribed `-F A`. A name
+    ///   order, and the statement is recorded as that split. A name or a tuple
+    ///   pattern annotated `: A` reads `A` in `frame` and binds over it, and
+    ///   the statement is recorded as the bind of `c` ascribed `-F A`. A name
     ///   written with no type is recorded with `frame` and `c`, which
     ///   [`Self::ran_type`] reads its type off.
     /// - provides: the one statement the fragment reads.
-    /// - fails: yields the unadmitted refusal for an annotated tuple pattern
-    ///   and for a binder pattern other than a name, a wildcard or a tuple of
-    ///   those, and a fault naming the bind statement for a hole or a tile out
-    ///   of shape.
+    /// - fails: yields the unadmitted refusal for a binder pattern other than a
+    ///   name, a wildcard or a tuple of those, and a fault naming the bind
+    ///   statement for a hole or a tile out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -8867,11 +8882,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — each run statement reads its bound computation in the
     ///   previous frame and introduces its names only for subsequent
     ///   computations; a two-component tuple binds both names in order, so a
-    ///   swapped binding reads the other component; an annotated name checks
-    ///   the bound computation against its type before binding it.
+    ///   swapped binding reads the other component; an annotated name or tuple
+    ///   checks the bound computation against its type before binding.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_tuple_binder_splits_the_returned_tuple_in_order`
     /// - witness: `lower::tests::a_typed_bind_ascribes_its_computation`
+    /// - witness: `lower::tests::a_typed_tuple_binder_ascribes_and_splits_1543`
     #[spec(
         captures: before = self.statements.len(),
         ensures: |ret| match ret {
@@ -8879,7 +8895,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.statements.len() == before.saturating_add(1_usize)
                     && self.statements.last().is_some_and(|last| {
                         last.origin == run.node
-                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. })
+                            && matches!(last.binding, StatementBinding::Named(_) | StatementBinding::Placed(_) | StatementBinding::Split { .. } | StatementBinding::Typed { .. } | StatementBinding::TypedSplit { .. })
                             && self.reading(last.bound) == Reading::Computation(frame)
                     })
             },
@@ -8900,8 +8916,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             reading: Reading::Computation(frame),
         };
         let binder = statement.one(cursor.operands())?;
-        let annotation = if let Maybe::Present(colon) = cursor.tile(TileName::COLON) {
-            Some((colon, statement.one(cursor.operands())?))
+        let annotation = if let Maybe::Present(_colon) = cursor.tile(TileName::COLON) {
+            Some(statement.one(cursor.operands())?)
         }
         else {
             None
@@ -8910,14 +8926,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let bound = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         if let Maybe::Present(components) = self.tuple_binders(statement, binder)? {
-            if let Some((colon, _)) = annotation {
-                return Err(LoweringRefusal::OutOfFragment {
-                    span: colon.span,
-                    form: FormName::ANNOTATION,
-                    sort: FragmentSort::Computation,
-                    boundary: FragmentBoundary::Unadmitted(Unbuilt::Annotation),
-                });
-            }
             let mut names = Vec::with_capacity(components.len());
             for &component in &components {
                 let name = self.binder_name(statement, component)?;
@@ -8925,13 +8933,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 names.push((name, component.span));
             }
             self.read(bound.node, Reading::Computation(frame));
+            let arity = gandr_core_term::ComponentCount::from(names.len());
+            let binding = annotation.map_or_else(
+                || StatementBinding::Split {
+                    arity,
+                    pattern: binder.node,
+                },
+                |annotation| {
+                    self.read(annotation.node, Reading::ValueType(frame));
+                    StatementBinding::TypedSplit {
+                        arity,
+                        pattern: binder.node,
+                        annotation: annotation.node,
+                    }
+                },
+            );
             self.statements.push(Statement {
                 origin: run.node,
                 bound: bound.node,
-                binding: StatementBinding::Split {
-                    arity: gandr_core_term::ComponentCount::from(names.len()),
-                    pattern: binder.node,
-                },
+                binding,
                 rest: exits::Rest::Bound,
             });
             let mut inner = self.scope.extend(
@@ -8948,7 +8968,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let name = self.binder_name(statement, binder)?;
         self.note_binder(binder, name)?;
-        if let Some((_, annotation)) = annotation {
+        if let Some(annotation) = annotation {
             self.read(bound.node, Reading::Computation(frame));
             self.read(annotation.node, Reading::ValueType(frame));
             self.statements.push(Statement {
@@ -13282,6 +13302,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::FlowProduct(..)
                 | Plan::Recorded(_)
                 | Plan::Constructor(_)
+                | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
                 | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
@@ -13617,6 +13638,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::ListCons(..)
             | Plan::Transport(..)
             | Plan::Return(_)
+            | Plan::Ascribed(..)
             | Plan::Force(_)
             | Plan::Run(_)
             | Plan::Lambda(..) => self.mint_over(plan, sink, origin),
@@ -14421,7 +14443,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
             | Maybe::Present(Lowered::Value(id)) => {
-                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..))
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_) | Plan::Run(_) | Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListNil | Plan::ListCons(..) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Ascribed(..))
                     && sink.origins.value(id) == Maybe::Present(origin)
             },
             | Maybe::Present(Lowered::Computation(id)) => {
@@ -14554,6 +14576,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_computation(id, origin);
                 self.ascribed_return(id, classifier, sink, origin)
                     .map(|ascribed| sink.computation(ascribed, origin))
+            }),
+            Plan::Ascribed(value, classifier) => self.value_at(value).and_then(|ascribed| {
+                self.value_type_at(classifier).map(|written| {
+                    let frame = self.reading(classifier).frame();
+                    let ty = self.relocate_value_type(
+                        written,
+                        frame,
+                        Telescope::Signature,
+                        sink,
+                        origin,
+                    );
+                    let id = sink.arena.value_ascribe(ascribed, ty);
+                    sink.value(id, origin)
+                })
             }),
             Plan::Force(value) => self.value_at(value).map(|forced| {
                 let id = sink.arena.computation_force(forced);
@@ -14955,7 +14991,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | StatementBinding::Held { .. }
                 | StatementBinding::Opened { .. } => None,
                 StatementBinding::Discarded => Some(gandr_core_term::ComponentCount::default()),
-                StatementBinding::Split { arity, .. } => Some(arity),
+                StatementBinding::Split { arity, .. }
+                | StatementBinding::TypedSplit { arity, .. } => Some(arity),
             };
             if let Some(arity) = split {
                 let tuple = sink
@@ -14984,7 +15021,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 chain = placed;
             }
             let bound = match statement.binding {
-                StatementBinding::Typed { annotation, .. } => {
+                StatementBinding::Typed { annotation, .. }
+                | StatementBinding::TypedSplit { annotation, .. } => {
                     let Maybe::Present(written) = self.value_type_at(annotation)
                     else {
                         return Maybe::Absent(lowered::Absent::Unminted);
@@ -15033,6 +15071,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | StatementBinding::Typed { name: written, .. }
             | StatementBinding::Split {
                 pattern: written, ..
+            }
+            | StatementBinding::TypedSplit {
+                pattern: written, ..
             } = statement.binding
                 && let Maybe::Present(written) = self.origin_at(written)
             {
@@ -15070,7 +15111,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         | StatementBinding::Forked { protocol, child } => (ret == Maybe::Present(())) == (matches!(self.value_type_at(protocol), Maybe::Present(_)) && matches!(self.computation_at(child), Maybe::Present(_))),
         | StatementBinding::Received { .. } => ret == Maybe::Present(()),
         | StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => (ret == Maybe::Present(())) == matches!(self.value_at(value), Maybe::Present(_)),
-        | StatementBinding::Typed { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
+        | StatementBinding::Typed { annotation, .. } | StatementBinding::TypedSplit { annotation, .. } => (ret == Maybe::Present(())) == (matches!(self.computation_at(statement.bound), Maybe::Present(_)) && matches!(self.value_type_at(annotation), Maybe::Present(_))),
         | _ => (ret == Maybe::Present(())) == matches!(self.computation_at(statement.bound), Maybe::Present(_)),
     })]
     fn statement_parts(
@@ -15087,7 +15128,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             StatementBinding::Held { value, .. } | StatementBinding::Opened { value, .. } => {
                 self.value_at(value).map(|_value| ())
             },
-            StatementBinding::Typed { annotation, .. } => self
+            StatementBinding::Typed { annotation, .. }
+            | StatementBinding::TypedSplit { annotation, .. } => self
                 .computation_at(statement.bound)
                 .and_then(|_bound| self.value_type_at(annotation))
                 .map(|_annotation| ()),
@@ -21488,6 +21530,41 @@ mod tests
         );
     }
 
+    /// A tuple pattern written with a type ascribes its bound computation the
+    /// pure returner of that type, then splits the tuple it returns into one
+    /// name per component (#1543).
+    #[test]
+    fn a_typed_tuple_binder_ascribes_and_splits_1543()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a = thunk { run (y, z) : Integer * Integer <- pure (1, 2) ; return y } ;",
+            ),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(bound, rest)) = arena.computation(suspended)
+        else {
+            panic!("the statement binds over the rest of the block");
+        };
+        let Some(&Computation::Ascribe { ty, .. }) = arena.computation(bound)
+        else {
+            panic!("the bound computation is ascribed");
+        };
+        assert!(
+            matches!(arena.comp_type(ty), Some(&CompType::Returner { result, .. }) if matches!(arena.value_type(result), Some(ValueType::Product(components)) if components.len() == 2_usize)),
+            "the ascription returns the written product"
+        );
+        assert!(
+            matches!(arena.computation(rest), Some(&Computation::Split { scrutinee, arity, .. }) if arity == gandr_core_term::ComponentCount::from(2_usize) && arena.value(scrutinee) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })),
+            "the rest splits the bound tuple into its two names"
+        );
+    }
+
     #[test]
     fn a_block_standing_as_a_computation_binds_its_statements()
     {
@@ -22850,26 +22927,6 @@ mod tests
                     FormName::VAL_STATEMENT,
                     FragmentSort::Computation,
                     Unbuilt::Val,
-                ),
-            ),
-            (
-                "def a = thunk { run (y, z) : Integer <- pure (1, 2); return y } ;",
-                unadmitted(
-                    27_usize,
-                    28_usize,
-                    FormName::ANNOTATION,
-                    FragmentSort::Computation,
-                    Unbuilt::Annotation,
-                ),
-            ),
-            (
-                "def a = ((3 : Integer), 1) ;",
-                unadmitted(
-                    9_usize,
-                    22_usize,
-                    FormName::ANNOTATION,
-                    FragmentSort::Value,
-                    Unbuilt::Annotation,
                 ),
             ),
         ];

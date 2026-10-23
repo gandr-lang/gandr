@@ -1762,6 +1762,7 @@ fn convert(
                                         | Value::Literal(_)
                                         | Value::Injection(..)
                                         | Value::Thunk(_)
+                                        | Value::Ascribe { .. }
                                         | Value::Lift { .. }
                                         | Value::Quote(_)
                                         | Value::QuoteComputation(_)

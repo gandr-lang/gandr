@@ -196,6 +196,10 @@ impl CoreArena
                 self.value_into(&mut union, first, at);
                 self.value_into(&mut union, second, at);
             },
+            Value::Ascribe { value, ty } => {
+                self.value_into(&mut union, value, at);
+                self.value_type_into(&mut union, ty, at);
+            },
             Value::PathEquiv {
                 path_type,
                 forward,

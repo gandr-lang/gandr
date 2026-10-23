@@ -1084,7 +1084,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
@@ -1928,6 +1928,12 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(translator));
                 return Ok(());
             },
+            // An ascription runs as the value it ascribes: its type is the
+            // checker's, and the translation reads none.
+            Value::Ascribe { value, .. } => {
+                self.tasks.push(Task::Value(value));
+                return Ok(());
+            },
             Value::Stay(_)
             | Value::SessionRelated {
                 relation: gandr_core_term::session::SessionRelation::Subtyping,
@@ -1968,6 +1974,7 @@ impl<'run> Focusing<'run>
                     | Value::ListNil
                     | Value::ListCons(..)
                     | Value::Thunk(_)
+                    | Value::Ascribe { .. }
                     | Value::Lift { .. }
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)

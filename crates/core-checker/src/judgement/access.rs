@@ -691,7 +691,8 @@ impl Machine<'_, '_>
     /// - ensures: nothing changes.
     /// - fails: [`CheckRefusal::Access`] naming [`AccessDefect::HeldShared`] at
     ///   `value` unless it is a constructor, a literal, a tuple, an injection,
-    ///   a record or a list: any other value may have another holder.
+    ///   a record or a list, or an ascription of one: any other value may have
+    ///   another holder.
     /// - panics: none.
     /// - executable: none — the clause is the case analysis the body is.
     ///
@@ -707,7 +708,14 @@ impl Machine<'_, '_>
         value: ValueId,
     ) -> Result<(), CheckRefusal>
     {
-        match self.context.arena().value(value) {
+        let mut made = value;
+        while let Some(&Value::Ascribe {
+            value: ascribed, ..
+        }) = self.context.arena().value(made)
+        {
+            made = ascribed;
+        }
+        match self.context.arena().value(made) {
             Some(
                 &(Value::Constructor { .. }
                 | Value::Literal { .. }
@@ -740,6 +748,7 @@ impl Machine<'_, '_>
                 | Value::Variable { .. }
                 | Value::Constant { .. }
                 | Value::Thunk { .. }
+                | Value::Ascribe { .. }
                 | Value::Lift { .. }
                 | Value::Quote { .. }
                 | Value::QuoteComputation { .. }

@@ -2454,25 +2454,25 @@ fn a_declaration_naming_a_refused_one_is_a_note()
 #[test]
 fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 {
-    let url = "https://github.com/gandr-lang/gandr/issues/1543";
-    let annotated = only(
-        Path::new("annotated.gandr"),
-        SourceText::from("def annotated = ((3 : Integer), 1) ;\n"),
+    let url = "https://github.com/gandr-lang/gandr/issues/1109";
+    let wide = only(
+        Path::new("wide.gandr"),
+        SourceText::from("def wide = 1u32 ;\n"),
     );
     assert_eq!(
-        annotated.detail.class,
-        Class::Refusal(FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE))
+        wide.detail.class,
+        Class::Refusal(FailureClass::Unimplemented(TrackingIssue::TYPED_NUMBER))
     );
     assert_eq!(
-        annotated.tracked(),
-        Maybe::Present(format!("tracked by #1543 <{url}>")),
+        wide.tracked(),
+        Maybe::Present(format!("tracked by #1109 <{url}>")),
         "the terminal and the editor close with the issue and its address"
     );
     let image: serde_json::Value =
-        serde_json::from_str(&annotated.json()).expect("the JSON image parses");
+        serde_json::from_str(&wide.json()).expect("the JSON image parses");
     assert_eq!(
         image["tracking"],
-        serde_json::json!({"issue": "#1543", "url": url})
+        serde_json::json!({"issue": "#1109", "url": url})
     );
     let malformed = only(Path::new("force.gandr"), SourceText::from(FORCE));
     assert_eq!(

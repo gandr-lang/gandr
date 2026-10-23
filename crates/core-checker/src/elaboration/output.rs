@@ -260,7 +260,10 @@ fn children(
                     push(TermNode::Value(component));
                 }
             },
-            Value::Injection(_, body) | Value::StaticLambda(body) | Value::Lift { body, .. } => {
+            Value::Injection(_, body)
+            | Value::StaticLambda(body)
+            | Value::Lift { body, .. }
+            | Value::Ascribe { value: body, .. } => {
                 push(TermNode::Value(body));
             },
             Value::Primitive { .. }
@@ -534,6 +537,13 @@ fn rebuild(
                     let target = target.clone();
                     let body = value(emitted)?;
                     (body != original).then(|| arena.value_lift(target, body))
+                },
+                Value::Ascribe {
+                    value: original,
+                    ty,
+                } => {
+                    let body = value(emitted)?;
+                    (body != original).then(|| arena.value_ascribe(body, ty))
                 },
                 Value::Tuple(ref components) => {
                     let original = components.to_vec();

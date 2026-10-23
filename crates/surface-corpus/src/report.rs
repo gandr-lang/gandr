@@ -1567,7 +1567,7 @@ def plain_hole : Integer ;
         let source = SourceText::from(
             r#"def helper = 3 ;
 @[ owes(2) ] def owed : Integer ;
-@[ refuses("OutOfFragment.annotation_expression") ] def annotated = ((3 : Integer), 1) ;
+@[ refuses("OutOfFragment.typed_number") ] def wide = 1u32 ;
 @[ checks ] def wrong : Integer ; def wrong = "text" ;"#,
         );
         let tally = settled(CorpusRoot::Fixture, source).tally();
@@ -1578,7 +1578,7 @@ def plain_hole : Integer ;
                 usize::from(tally.declarations().unsettled())
             ),
             (2_usize, 2_usize),
-            "the helper and the refused annotation settle; the owed and the wrong do not"
+            "the helper and the refused typed number settle; the owed and the wrong do not"
         );
         assert_eq!(
             (
@@ -1601,7 +1601,7 @@ def plain_hole : Integer ;
         assert_eq!(
             [
                 FailureClass::UserAbsence,
-                FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE),
+                FailureClass::Unimplemented(TrackingIssue::TYPED_NUMBER),
                 FailureClass::MalformedSource,
                 FailureClass::EngineFault,
             ]
@@ -1622,7 +1622,7 @@ def plain_hole : Integer ;
         let other = settled(
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment.annotation_expression") ] def b = ((3 : Integer), 1) ;"#,
+                r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment.typed_number") ] def b = 1u32 ;"#,
             ),
         )
         .tally();
@@ -1653,7 +1653,7 @@ def plain_hole : Integer ;
                 usize::from(
                     total
                         .refusals()
-                        .count(FailureClass::Unimplemented(TrackingIssue::ANNOTATION_VALUE))
+                        .count(FailureClass::Unimplemented(TrackingIssue::TYPED_NUMBER))
                 ),
             ),
             (1_usize, 1_usize),

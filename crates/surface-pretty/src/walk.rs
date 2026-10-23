@@ -431,7 +431,7 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. }),
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Annotated { .. }),
     | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
@@ -512,6 +512,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Run(_)
         | Former::Constructor { .. }
         | Former::Recorded { .. }
+        | Former::Annotated { .. }
         | Former::Returned(_) => Kind::Value,
         Former::Return(_)
         | Former::Bind(..)
@@ -1461,6 +1462,10 @@ where
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
+        Former::Annotated {
+            value: annotated,
+            ty,
+        } => Vec::from([value(annotated), value_type(ty)]),
         // An offer's arm and a fork's child end in a computation the surface
         // reads only as one, `retire => pure unit`: no exit is elided there.
         Former::Offer { arms, .. } => components(
@@ -5622,6 +5627,7 @@ impl Walk<'_, '_>
                 | Former::Shift(_)
                 | Former::Lazy(..)
                 | Former::Ascription { .. }
+                | Former::Annotated { .. }
                 | Former::Project(..)
                 | Former::Send { .. }
                 | Former::Receive { .. }
@@ -6629,6 +6635,7 @@ impl Walk<'_, '_>
             | Former::Reset(_)
             | Former::Shift(_)
             | Former::Lazy(..)
+            | Former::Annotated { .. }
             | Former::Then(..)
             | Former::Project(..)
             | Former::Send { .. }
@@ -9109,6 +9116,16 @@ impl Walk<'_, '_>
                 else {
                     writes(Production("parenthesized_expression"), Binding::Atom)
                 }
+            },
+            // `(v : T)`, the annotation the source wrote.
+            Former::Annotated { .. } => {
+                let _ = parts
+                    .text("(")
+                    .piece(Binding::Arrow)
+                    .text(" : ")
+                    .piece(Binding::Arrow)
+                    .text(")");
+                writes(Production("parenthesized_expression"), Binding::Atom)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
