@@ -132,7 +132,8 @@ impl Query
 /// symbol [`Reading::symbols`] reads off it, named, kinded and ranged as the
 /// symbol is, its container the name of the symbol holding it; a symbol with
 /// the holder, name and kind of one before it — a definition after its
-/// signature — left out.
+/// signature — left out, and so is a root form that declares nothing, which
+/// names nothing.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -146,7 +147,8 @@ impl Query
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a family's constructors and a theory's members with their
-///   holder, and a declaration written as a signature and a definition once.
+///   holder, a declaration written as a signature and a definition once, and a
+///   run target writing a member's name not among the names.
 /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
 #[must_use]
 pub fn declared(text: SourceText<'_>) -> Vec<Declared>
@@ -154,7 +156,10 @@ pub fn declared(text: SourceText<'_>) -> Vec<Declared>
     let symbols = Reading::of(text).symbols().0;
     let mut written: BTreeSet<(Option<&str>, &str, SymbolKind)> = BTreeSet::new();
     let mut names = Vec::with_capacity(symbols.len());
-    for symbol in &symbols {
+    for symbol in symbols
+        .iter()
+        .filter(|symbol| symbol.kind != SymbolKind::EVENT)
+    {
         let container = symbol
             .holder
             .and_then(|holder| symbols.get(holder))

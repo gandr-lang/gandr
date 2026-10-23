@@ -27,6 +27,16 @@
 //!   `Deprecated` when one of those blocks, or one an attributed module member
 //!   writes before its keyword, names the `deprecated` attribute. An attribute
 //!   block is a form with no such tile, so it is no symbol.
+//! - **Root forms that declare nothing.** A form written at the root that names
+//!   nothing and writes no declaration — a source's run target, or a stray the
+//!   lowering refuses — is an `Event` symbol, named by what it writes up to its
+//!   first own `{` (then `{ … }`), or all of it without a final `;`, its layout
+//!   collapsed. Its range is its form's, widened over the attribute blocks
+//!   before it and the lone `;` after it, which the lowering files with it; its
+//!   selection range is the form's own. A run of attribute blocks that no form
+//!   follows is one such symbol. An import, which a hover answers as the
+//!   import, is none. The engine keys the run target's slot and each stray's by
+//!   the form, so a hover reads their type or refusal as a declaration's.
 //! - **Members.** A `theory` block, a `data` declaration and a `codata`
 //!   declaration write their members among their own tiles, not as forms, so
 //!   each `;`-ended run between the form's braces is read as a member nested
@@ -83,8 +93,12 @@ const ATTRIBUTE_BLOCK: &str = "attribute_block";
 /// The opening of a block comment.
 const BLOCK_COMMENT: &str = "/*";
 
-/// What declares a symbol: a form of its own, or a member written among the
-/// tiles of the form holding it.
+/// The rule of an import, which a hover answers as the import and which is
+/// no symbol.
+const IMPORT: &str = "import_declaration";
+
+/// What declares a symbol: a form of its own, a member written among the
+/// tiles of the form holding it, or a root form that declares nothing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Declarer
 {
@@ -94,6 +108,9 @@ pub enum Declarer
     /// declaration at the node declares it, written among that form's own
     /// tiles over the span.
     Member(NodeIndex, ByteSpan),
+    /// The root form at the node declares nothing: a source's run target, or
+    /// a stray.
+    Root(NodeIndex),
 }
 
 /// The declarations of `tree`, each beside what declares it and holding the
@@ -114,14 +131,20 @@ pub enum Declarer
 ///   data declaration, a codata declaration or a signature. A signature, data
 ///   declaration or codata declaration holds one symbol per member written
 ///   between its own braces, as [`members`] reads them, none of them
-///   deprecated. Symbols are in source order, each after the declaration
-///   holding it, which it names by position; a top-level one names none. Each
-///   is beside the form that declares it, or the form whose member it is.
+///   deprecated. Every other form or tile at the root that is no import and
+///   writes no such form, as [`rooted`] reads them, is one symbol of the kind
+///   [`SymbolKind::EVENT`], named by [`root_name`], its range the bytes
+///   [`rooted`] gives it, its selection range the form's own, deprecated
+///   exactly when an attribute block before it names the `deprecated`
+///   attribute, and beside [`Declarer::Root`] of it. Symbols are in source
+///   order, each after the declaration holding it, which it names by position;
+///   a top-level one names none. Each is beside the form that declares it, or
+///   the form whose member it is.
 /// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
-/// - intension: one walk of the tree with an explicit stack, and one more of a
-///   container's own children.
+/// - intension: one walk of the tree with an explicit stack, one more of a
+///   container's own children, and one of each root form that declares nothing.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a function, a value, a data declaration with its
@@ -131,10 +154,14 @@ pub enum Declarer
 ///   at the exact symbol tree. Taking a declaration's range from its name or
 ///   its form alone, dropping a nested member, reversing source order or
 ///   reading an attribute name as the declared one changes it; a hover finds
-///   each declaration's documentation under its own form.
+///   each declaration's documentation under its own form. A run target with its
+///   attribute block and its `;`, a stray and a trailing attribute block are
+///   asserted at their exact symbols, and an import and a `rec` group writing
+///   declarations at none.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
 /// - witness: `outline::tests::a_deprecated_declaration_is_tagged`
 /// - witness: `outline::tests::a_theory_holds_its_members`
+/// - witness: `outline::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
     !found.1.name.is_empty() && found.1.holder.is_none_or(|holder| holder < position)))]
@@ -147,23 +174,31 @@ pub fn declarations(
 {
     // A depth-first walk in source order meets each declaration after the
     // one holding it.
+    let roots = rooted(grammar, roles, tree, index);
     let mut found: Vec<(Declarer, DocumentSymbol)> = Vec::new();
     let mut pending: Vec<(NodeIndex, Option<usize>, Option<Decorated>)> =
         Vec::from([(tree.root(), None, None)]);
     while let Some((at, holder, decorated)) = pending.pop() {
-        let holder =
-            declared(grammar, roles, tree, index, at, decorated).map_or(holder, |symbol| {
-                let container = matches!(
-                    symbol.kind,
-                    SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT
-                );
-                found.push((Declarer::Form(at), DocumentSymbol { holder, ..symbol }));
-                let held = found.len().saturating_sub(1);
-                if container {
-                    members(roles, tree, index, at, &mut found);
-                }
-                Some(held)
-            });
+        let holder = if let Some(symbol) = declared(grammar, roles, tree, index, at, decorated) {
+            let container = matches!(
+                symbol.kind,
+                SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT
+            );
+            found.push((Declarer::Form(at), DocumentSymbol { holder, ..symbol }));
+            let held = found.len().saturating_sub(1);
+            if container {
+                members(roles, tree, index, at, &mut found);
+            }
+            Some(held)
+        }
+        else {
+            if let Some(&covered) = roots.get(&at)
+                && let Some(symbol) = root_symbol(tree, index, at, covered)
+            {
+                found.push((Declarer::Root(at), symbol));
+            }
+            holder
+        };
         let first = pending.len();
         // The attribute blocks standing before a form decorate it, layout
         // between them included.
@@ -205,6 +240,201 @@ pub fn declarations(
         }
     }
     found
+}
+
+/// What the symbol of a root form that declares nothing covers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Rooted
+{
+    /// From the first attribute block before the form, or the form's start,
+    /// to the lone `;` after it, or the form's end.
+    span: ByteSpan,
+    /// Whether an attribute block before the form names the `deprecated`
+    /// attribute.
+    deprecated: bool,
+}
+
+/// The root forms of `tree` that declare nothing, each by its node, with
+/// what its symbol covers.
+///
+/// # Specification
+/// - requires: `tree` was parsed under `grammar`, and `index` built over its
+///   text.
+/// - ensures: one entry per child of the root that is a form or a tile, is no
+///   attribute block and no import, and holds no form [`declared`] names,
+///   counted by [`declares`]; except a `;` written alone right after such a
+///   child, layout between them, which widens that child's entry instead, as
+///   the lowering files it with the child. An entry covers the attribute blocks
+///   written directly before its child, the child and that `;`, and is
+///   deprecated when one of those blocks names the `deprecated` attribute. A
+///   run of attribute blocks that no form follows is one entry, by its first
+///   block, covering the run.
+/// - provides: the root forms [`declarations`] gives an `Event` symbol.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one pass over the root's children and one walk of each child
+///   that is a candidate.
+/// - executable: none — the clause would walk the tree again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`declarations`]'s root forms.
+/// - witness: `outline::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
+fn rooted(
+    grammar: &Pbg,
+    roles: &RoleTable,
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+) -> BTreeMap<NodeIndex, Rooted>
+{
+    let mut rooted: BTreeMap<NodeIndex, Rooted> = BTreeMap::new();
+    // The attribute blocks waiting for the form they decorate, by the first,
+    // and the entry a lone `;` would end.
+    let mut blocks: Option<(NodeIndex, Rooted)> = None;
+    let mut ended: Option<NodeIndex> = None;
+    for child in tree.children(tree.root()) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let span = node.span();
+        let rule = match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+                grammar.rule_of(mold).ok().map(|rule| rule.name().0)
+            },
+            NodeLabel::Wald | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+                blocks = None;
+                ended = None;
+                continue;
+            },
+        };
+        if matches!(node.label(), NodeLabel::Meld(_)) && rule == Some(ATTRIBUTE_BLOCK) {
+            let Deprecated(deprecated) = names_deprecated(tree, child);
+            let block = Rooted { span, deprecated };
+            blocks = Some(blocks.map_or((child, block), |(first, run)| {
+                (first, Rooted {
+                    span: run.span.join(span),
+                    deprecated: run.deprecated || deprecated,
+                })
+            }));
+            ended = None;
+            continue;
+        }
+        if blocks.is_none()
+            && matches!(node.label(), NodeLabel::Tile(_))
+            && tree.fragment(child).map(<&str>::from) == Some(";")
+            && let Some(entry) = ended.take().and_then(|at| rooted.get_mut(&at))
+        {
+            entry.span = entry.span.join(span);
+            continue;
+        }
+        let decorated = blocks.take().map(|(_, run)| run);
+        ended = None;
+        if rule == Some(IMPORT) || declares(grammar, roles, tree, index, child).0 {
+            continue;
+        }
+        rooted.insert(child, Rooted {
+            span: decorated.map_or(span, |run| run.span.join(span)),
+            deprecated: decorated.is_some_and(|run| run.deprecated),
+        });
+        ended = Some(child);
+    }
+    if let Some((first, run)) = blocks {
+        rooted.insert(first, run);
+    }
+    rooted
+}
+
+/// Whether a subtree holds a form [`declared`] names.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Declares(bool);
+
+/// Whether the subtree at `at` holds a form [`declared`] names, `at` itself
+/// among them.
+///
+/// # Specification
+/// trivial.
+fn declares(
+    grammar: &Pbg,
+    roles: &RoleTable,
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+    at: NodeIndex,
+) -> Declares
+{
+    let mut pending = Vec::from([at]);
+    while let Some(next) = pending.pop() {
+        if declared(grammar, roles, tree, index, next, None).is_some() {
+            return Declares(true);
+        }
+        pending.extend(tree.children(next));
+    }
+    Declares(false)
+}
+
+/// The symbol of the root form at `at` that declares nothing, covering what
+/// `rooted` says; none when it writes nothing to name it by.
+///
+/// # Specification
+/// trivial.
+fn root_symbol(
+    tree: &SyntaxTree<'_>,
+    index: &LineIndex<'_>,
+    at: NodeIndex,
+    rooted: Rooted,
+) -> Option<DocumentSymbol>
+{
+    Some(DocumentSymbol {
+        name: root_name(tree, at)?,
+        kind: SymbolKind::EVENT,
+        range: range_of(index, rooted.span)?,
+        selection_range: range_of(index, tree.node(at)?.span())?,
+        detail: None,
+        holder: None,
+        deprecated: rooted.deprecated,
+    })
+}
+
+/// The name of the root form at `at`: what it writes up to its first own
+/// `{`, then `{ … }`, or all it writes without a final `;` when it opens no
+/// brace, its layout collapsed; none when that is empty.
+///
+/// # Specification
+/// trivial.
+fn root_name(
+    tree: &SyntaxTree<'_>,
+    at: NodeIndex,
+) -> Option<String>
+{
+    let span = tree.node(at)?.span();
+    let brace = tree.children(at).find_map(|child| {
+        let node = tree.node(child)?;
+        (matches!(node.label(), NodeLabel::Tile(_))
+            && tree.fragment(child).map(<&str>::from) == Some("{"))
+        .then(|| node.span().start())
+    });
+    let written = <&str>::from(
+        tree.source()
+            .fragment(ByteSpan::new(span.start(), brace.unwrap_or_else(|| span.end())).ok()?)
+            .ok()?,
+    );
+    let written = written.trim_end();
+    let mut name = String::new();
+    laid_out(
+        SourceFragment::from(written.strip_suffix(';').unwrap_or(written)),
+        &mut name,
+    );
+    if brace.is_some() {
+        if !name.is_empty() {
+            name.push(' ');
+        }
+        name.push_str("{ … }");
+    }
+    (!name.is_empty()).then_some(name)
 }
 
 /// The attribute blocks standing before a form: the bytes they cover, and
@@ -1044,6 +1274,38 @@ mod tests
     fn chain(selection: &SelectionRange) -> Vec<String>
     {
         selection.ranges.iter().copied().map(spelled).collect()
+    }
+
+    /// A root form that declares nothing is an `Event` symbol named by what it
+    /// writes: the run target over its attribute block and its `;`, a stray,
+    /// and a run of attribute blocks no form follows; an import and a `rec`
+    /// group writing a declaration are none (#2073).
+    #[test]
+    fn a_root_form_that_declares_nothing_is_a_symbol_2073()
+    {
+        let targeted = "def a = 1 ;\n@[ deprecated ]\nthunk {\n  return a\n} ;\n";
+        let answered = Reading::of(SourceText::from(targeted)).symbols();
+        assert_eq!(outline(&answered), [
+            "a 12 0:0-0:11 at 0:4-0:5",
+            "thunk { … } 24 1:0-4:3 at 2:0-4:1",
+        ]);
+        assert_eq!(
+            answered
+                .0
+                .iter()
+                .map(|symbol| symbol.deprecated)
+                .collect::<Vec<_>>(),
+            [false, true],
+            "the block before the run target marks it"
+        );
+        let strays =
+            "import \"./a.gandr\" ;\n1 ;\nrec {\n  def b = 2 ;\n}\nb ;\n@[ checks ]\n@[ checks ]\n";
+        assert_eq!(outline(&Reading::of(SourceText::from(strays)).symbols()), [
+            "1 24 1:0-1:3 at 1:0-1:1",
+            "b 12 3:2-3:13 at 3:6-3:7",
+            "b 24 5:0-5:3 at 5:0-5:1",
+            "@[checks] 24 6:0-7:11 at 6:0-6:11",
+        ]);
     }
 
     #[test]

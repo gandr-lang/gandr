@@ -81,8 +81,6 @@ impl TrackingIssue
     pub const UNFILED: Self = Self(1207);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
-    /// A hover over a source's run target, which the outline gives no symbol.
-    pub const RUN_TARGET_HOVER: Self = Self(2073);
     /// An extern block, binding a library's functions: native interop's
     /// first rung.
     pub const EXTERN_BLOCK: Self = Self(327);

@@ -9322,7 +9322,7 @@ mod tests
             (
                 "fifth.gandr",
                 "theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                 Ints {\n  def twice = 2 ;\n}\n",
+                 Ints {\n  def twice = 2 ;\n}\nInts.twice\n",
             ),
         ];
         for (file, text) in opened {
@@ -9427,7 +9427,7 @@ mod tests
         assert_eq!(
             held(&search(&mut server, "twi")),
             [(String::from("twice"), 12_u64, Some(String::from("Ints")))],
-            "a module's member, held by its module"
+            "a module's member, held by its module; the run target writing it names nothing"
         );
         assert_eq!(
             held(&search(&mut server, "nou")),

@@ -124,6 +124,9 @@ pub enum Written
     /// The form holding it, among its own tiles: a member of a `theory`
     /// block, a `data` declaration or a `codata` declaration.
     Member,
+    /// A root form of its own that declares nothing: a source's run target,
+    /// or a stray.
+    Root,
 }
 
 /// One tile of a read text: its bytes, the rule it is a tile of, the form it
@@ -351,7 +354,7 @@ impl Reading
             .iter()
             .filter_map(|&(declarer, _)| match declarer {
                 Declarer::Member(form, span) => Some((form, span)),
-                Declarer::Form(_) => None,
+                Declarer::Form(_) | Declarer::Root(_) => None,
             })
             .collect();
         let mut readout = Readout {
@@ -359,7 +362,7 @@ impl Reading
             declarations: declared
                 .into_iter()
                 .map(|(declarer, symbol)| match declarer {
-                    Declarer::Form(at) => Declaration {
+                    Declarer::Form(at) | Declarer::Root(at) => Declaration {
                         key: tree.key(at),
                         head: head(&tree, &index, at, &symbol),
                         members: match symbol.kind {
@@ -369,7 +372,10 @@ impl Reading
                             _ => Vec::new(),
                         },
                         symbol,
-                        written: Written::Form,
+                        written: match declarer {
+                            Declarer::Root(_) => Written::Root,
+                            Declarer::Form(_) | Declarer::Member(..) => Written::Form,
+                        },
                     },
                     Declarer::Member(..) => Declaration {
                         key: None,
