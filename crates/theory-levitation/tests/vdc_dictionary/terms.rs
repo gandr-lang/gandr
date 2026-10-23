@@ -230,6 +230,7 @@ where
                 TermView::Abs { atom, args } => {
                     schedule(&mut work, Application::Abs, atom.clone(), args);
                 },
+                TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
             },
             Rebuild::Assemble {
                 application,
@@ -405,7 +406,7 @@ fn match_node(
 #[spec(ensures: |ref found| *found == position.iter().try_fold(term.to_node(), |node, index| {
     match node.view() {
         | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } | TermView::Abs { mut args, .. } => args.nth(usize::from(*index)),
-        | TermView::Var(_) => None,
+        | TermView::Var(_) | TermView::Atom(_) => None,
     }
 }).map_or(Maybe::Absent(position::Absent::OffTerm), Maybe::Present))]
 pub fn subterm_at<'term>(
@@ -421,7 +422,7 @@ pub fn subterm_at<'term>(
             | TermView::Results { mut args }
             | TermView::Inst { mut args, .. }
             | TermView::Abs { mut args, .. } => args.nth(usize::from(index)),
-            TermView::Var(_) => None,
+            TermView::Var(_) | TermView::Atom(_) => None,
         };
         let Some(next) = next
         else {
@@ -477,7 +478,9 @@ pub fn replace_at(
             TermView::Results { args } => (Application::Results, Name::from(""), args),
             TermView::Inst { name, args } => (Application::Inst, name.clone(), args),
             TermView::Abs { atom, args } => (Application::Abs, atom.clone(), args),
-            TermView::Var(_) => return Maybe::Absent(position::Absent::OffTerm),
+            TermView::Var(_) | TermView::Atom(_) => {
+                return Maybe::Absent(position::Absent::OffTerm);
+            },
         };
         let args: Vec<TermNode<'_>> = args.collect();
         let Some(&child) = args.get(usize::from(index))

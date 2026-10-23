@@ -1,0 +1,49 @@
+// An atom named inside the abstraction that binds it (Fernández and Gabbay,
+// _Nominal rewriting_, I&C 2007, § 2; Pitts, _Nominal Sets_, CUP 2013, § 4).
+// Inside `bind a . t` the name `a` is the atom `a`, and outside it a variable.
+// Admission re-mints an atom with the abstraction that binds it, so a rule
+// naming the channel its restriction abstracts is one rule whatever the atom
+// is called: matching, the critical pairs and the kernel's replay read an
+// occurrence by the number of abstractions between it and its binder. Where
+// a port takes an atom, a term can name one, and a freshness condition there
+// is not decided yet (#1900): `pathological/desc/atom-occurrence.gandr`.
+
+/// A send on a restricted channel, which no process outside the restriction
+/// can receive: the process never moves, so it is the inert one. The checker
+/// orients the law and the kernel replays the verdict; a restriction naming
+/// its channel `b` normalizes by the law written over `a`.
+@[ normalizes("nu(bind b . out(b, nil)) ~> nil") ]
+theory Unheard {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule unheard : nu(bind a . out(a, p)) ==> nil();
+}
+
+/// The law below a second restriction, sending on the outer channel: the
+/// occurrence counts past one abstraction to its binder and the law's counts
+/// past none, so the law does not apply; the normal form names each atom by
+/// its depth.
+@[ normalizes("nu(bind a . nu(bind b . out(a, nil))) ~> nu(bind a0 . nu(bind a1 . out(a0, nil)))") ]
+theory Overheard {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule unheard : nu(bind a . out(a, p)) ==> nil();
+}
+
+/// An inner restriction of the outer one's name shadows it: the channel sent
+/// on is the inner one, and the law applies below the outer restriction.
+@[ normalizes("nu(bind a . nu(bind a . out(a, nil))) ~> nu(bind a0 . nil)") ]
+theory Shadowed {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule unheard : nu(bind a . out(a, p)) ==> nil();
+}

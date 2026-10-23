@@ -279,7 +279,8 @@ impl Flat
                 TermView::Ctor { .. }
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
-                | TermView::Abs { .. } => return None,
+                | TermView::Abs { .. }
+                | TermView::Atom(_) => return None,
             }
         }
         Some(Self(nodes))

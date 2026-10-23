@@ -1360,7 +1360,7 @@ fn inverts<G>(
                                     )
                                 })
                         }
-                        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } => false,
+                        TermView::Var(_) | TermView::Ctor { .. } | TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) => false,
                     })
             }
             _ => false,
@@ -1673,7 +1673,7 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
     let mut mentioned = false;
     while let Some(term) = pending.pop() {
         match term.view() {
-            TermView::Var(_) => {}
+            TermView::Var(_) | TermView::Atom(_) => {}
             TermView::Ctor { args, .. } | TermView::Results { args } | TermView::Inst { args, .. } | TermView::Abs { args, .. } => pending.extend(args),
             TermView::Op { name, args } => {
                 mentioned |= declined.contains(&name);
@@ -1696,7 +1696,7 @@ fn declined_operation(
     let mut stack: Vec<TermNode<'_>> = alloc::vec![face.lhs.to_node(), face.rhs.to_node()];
     while let Some(node) = stack.pop() {
         match node.view() {
-            TermView::Var(_) => {},
+            TermView::Var(_) | TermView::Atom(_) => {},
             TermView::Op { name, args } => {
                 if declined.contains(&name) {
                     return Err(ElaborateError::UnrepresentableOperation);
@@ -2254,7 +2254,9 @@ fn elaborate_result(
                 ConsPat::operation(Sym::from(DELIVER), components, conts),
             ))
         },
-        TermView::Inst { .. } | TermView::Abs { .. } => Err(ElaborateError::UnsupportedShape),
+        TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) => {
+            Err(ElaborateError::UnsupportedShape)
+        },
         TermView::Var(_) | TermView::Ctor { .. } => match <[ConsPat; 1]>::try_from(conts) {
             Ok([cont]) => elaborate_value(term, cont, polarity, opers),
             Err(_) => Err(mismatch(ContinuationCount::ONE)),
@@ -2332,7 +2334,10 @@ fn elaborate_value(
                 }
                 return operation_cut(name, args, alloc::vec![cont], polarity);
             },
-            TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } => {
+            TermView::Results { .. }
+            | TermView::Inst { .. }
+            | TermView::Abs { .. }
+            | TermView::Atom(_) => {
                 return Err(ElaborateError::UnsupportedShape);
             },
             TermView::Ctor { name, args } => {
@@ -2411,7 +2416,7 @@ fn elaborate_value(
             match source.view() {
                 TermView::Var(_) => {}
                 TermView::Ctor { args, .. } => pending.extend(args),
-                TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } => operation = true,
+                TermView::Op { .. } | TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) => operation = true,
             }
         }
         operation
@@ -2454,7 +2459,8 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
             TermView::Op { .. }
             | TermView::Results { .. }
             | TermView::Inst { .. }
-            | TermView::Abs { .. } => {
+            | TermView::Abs { .. }
+            | TermView::Atom(_) => {
                 return Err(ElaborateError::UnsupportedShape);
             },
             TermView::Ctor { name, mut args } => match args.next() {

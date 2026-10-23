@@ -500,7 +500,7 @@ fn read_rule(
                     OperationNode::Results(gandr_kernel_term::FieldCount::from(arguments.len()))
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
-                TermView::Abs { .. } => return Err(RouteFault::Pattern),
+                TermView::Abs { .. } | TermView::Atom(_) => return Err(RouteFault::Pattern),
             };
             side.push(read);
             pending.extend(arguments.iter().rev().copied());
@@ -634,7 +634,8 @@ fn switch<'face>(
                     TermView::Op { .. }
                     | TermView::Results { .. }
                     | TermView::Inst { .. }
-                    | TermView::Abs { .. },
+                    | TermView::Abs { .. }
+                    | TermView::Atom(_),
                 ) => {
                     return Err(RouteFault::Pattern);
                 },
@@ -738,7 +739,8 @@ fn leaf(
                 | TermView::Op { .. }
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
-                | TermView::Abs { .. },
+                | TermView::Abs { .. }
+                | TermView::Atom(_),
             ) => {
                 return Err(RouteFault::Pattern);
             },
@@ -805,7 +807,7 @@ fn steps(
             Visit::Enter(node, rooted) => {
                 stack.push(Visit::Exit(node, rooted));
                 let arguments: Vec<TermNode<'_>> = match node.view() {
-                    TermView::Var(_) => Vec::new(),
+                    TermView::Var(_) | TermView::Atom(_) => Vec::new(),
                     TermView::Ctor { args, .. }
                     | TermView::Op { args, .. }
                     | TermView::Results { args }
@@ -870,7 +872,7 @@ fn steps(
                     planned.push(Step::Deliver(Width(args.len())));
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
-                TermView::Abs { .. } => return Err(RouteFault::Pattern),
+                TermView::Abs { .. } | TermView::Atom(_) => return Err(RouteFault::Pattern),
             },
         }
     }

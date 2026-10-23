@@ -233,32 +233,32 @@ impl Reader<'_, '_>
     ///   variable of the rule's left side, read on its right — is that
     ///   variable's instantiation; a parenthesized term is its one component,
     ///   and a parenthesized list of several is a results tuple of them in
-    ///   order; `bind a . t` is the abstraction of the atom `a` over `t`; a
+    ///   order; `bind a . t` is the abstraction of the atom `a` over `t`, the
+    ///   name `a` inside it that atom's occurrence and outside it a variable; a
     ///   variable spelled in a type hole, as a pinned rewrite endpoint is, is a
     ///   variable. The written term holds one node per node of the term, in
     ///   pre-order, each at its own bytes and an application or an abstraction
     ///   with its head's or its atom's.
     /// - fails: forms outside names, applications, parenthesized lists and
-    ///   abstractions are located; a name an enclosing abstraction binds is
-    ///   located as [`DescriptionFault::AtomOccurrence`].
+    ///   abstractions are located.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `Malformed` for an unreadable term and `AtomOccurrence` for an
-    /// atom named inside its abstraction.
+    /// Returns `Malformed` for an unreadable term.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — constructor-wrapped operation calls distinguish head
     ///   category and child order; a two-component tuple and a parenthesized
     ///   variable distinguish a results tuple from grouping and a swapped
     ///   component; an atom named inside and beside its abstraction separate
-    ///   the abstraction's scope from the term after it.
+    ///   the abstraction's scope from the term after it: the occurrence inside,
+    ///   a variable beside.
     /// - witness: `description::tests::operations_and_rules_preserve_their_boundaries`
     /// - witness: `description::tests::a_parenthesized_result_list_reads_as_a_results_tuple`
     /// - witness: `description::theory::tests::a_pinned_rewrite_endpoint_reads_as_a_variable`
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
     /// - witness: `description::theory::tests::an_applied_left_variable_reads_as_its_instantiation`
-    /// - witness: `description::theory::tests::a_rule_term_abstracts_an_atom_and_names_none`
+    /// - witness: `description::theory::tests::a_rule_term_names_an_atom_inside_its_abstraction`
     #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
     pub(super) fn free_term(
         &self,
@@ -285,12 +285,11 @@ impl Reader<'_, '_>
                             "identifier" | "type_variable" => {
                                 let name = self.text(at).0;
                                 if atoms.contains_key(name) {
-                                    return Err(DescriptionDiagnostic {
-                                        span: at.span,
-                                        fault: DescriptionFault::AtomOccurrence,
-                                    });
+                                    terms.push(FreeTerm::atom(name));
                                 }
-                                terms.push(FreeTerm::var(name));
+                                else {
+                                    terms.push(FreeTerm::var(name));
+                                }
                                 written.nodes.push(leaf(at.span));
                             },
                             "constructor" => {

@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-six constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-seven constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -95,6 +95,7 @@
 //! | 23 | `Abstracted` | as `Bound`, its atom binders before its binders |
 //! | 24 | `Abs` | an atom's name, its body as a chain of one argument |
 //! | 25 | `Fresh` | an atom's name, a metavariable's name, the rest of the rules |
+//! | 26 | `Occ` | an atom's name, named inside an abstraction of it |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -160,12 +161,16 @@
 //!
 //! A rule term writes `bind a . t` as an argument at such a port: an `Abs`
 //! node with the atom's name and its body as a chain of one argument, kept as
-//! written, as a rule's variables are. Matching, the critical pairs and the
-//! kernel's reading compare abstractions without their atom, at any depth, and
-//! read one back naming the canonical atom of its depth
+//! written, as a rule's variables are. Inside the body, the atom named at a
+//! port of its atom sort is an `Occ` node with the atom's name. Matching, the
+//! critical pairs and the kernel's reading compare abstractions without their
+//! atom, at any depth, and an occurrence by how many abstractions stand
+//! between it and the one binding it; a term reads back naming the canonical
+//! atom of each abstraction's depth, its occurrences renamed with it
 //! ([`FreeTerm::canonical_atoms`]), so a rule that renames an abstraction's
 //! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
-//! no port abstracts as many atoms.
+//! no port abstracts as many atoms, and an occurrence at a port of another
+//! sort than the atom its abstraction binds.
 //!
 //! # The shape parameter
 //!
@@ -313,7 +318,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 26] = [
+pub const THEORY_CONSTRUCTORS: [&str; 27] = [
     "Presents",
     "End",
     "Sort",
@@ -340,11 +345,12 @@ pub const THEORY_CONSTRUCTORS: [&str; 26] = [
     "Abstracted",
     "Abs",
     "Fresh",
+    "Occ",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 26] = [
+const CONSTRUCTORS: [(&str, usize, usize); 27] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -371,6 +377,7 @@ const CONSTRUCTORS: [(&str, usize, usize); 26] = [
     (THEORY_CONSTRUCTORS[23], 2, 4),
     (THEORY_CONSTRUCTORS[24], 1, 1),
     (THEORY_CONSTRUCTORS[25], 2, 1),
+    (THEORY_CONSTRUCTORS[26], 1, 0),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -431,6 +438,8 @@ enum Tag
     /// A freshness condition on the rule before it, and the rest of the
     /// rules.
     Fresh,
+    /// An atom named inside an abstraction of it.
+    Occ,
 }
 
 impl Tag
@@ -475,11 +484,12 @@ impl Tag
             Self::Abstracted => 23,
             Self::Abs => 24,
             Self::Fresh => 25,
+            Self::Occ => 26,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-six constructors.
+/// The description of `Theory`, one data sort of twenty-seven constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -489,11 +499,11 @@ impl Tag
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
 ///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom`,
-///   `Abstracted` and `Abs` in that order, each at the result sort `Theory`; a
-///   constructor's `String` fields carry `grade` and come first, three for
-///   `Derived`, two for `Port`, `Bound`, `Shape`, `Face`, `Rank` and
-///   `Abstracted` and one for every other constructor that names something, and
-///   its remaining fields are `Theory`.
+///   `Abstracted`, `Abs`, `Fresh` and `Occ` in that order, each at the result
+///   sort `Theory`; a constructor's `String` fields carry `grade` and come
+///   first, three for `Derived`, two for `Port`, `Bound`, `Shape`, `Face`,
+///   `Rank`, `Abstracted` and `Fresh` and one for every other constructor that
+///   names something, and its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1634,8 +1644,9 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - ensures: a variable is `Var`, an operation application `App`, a
 ///   constructor application `Con`, a results tuple `Tuple`, a metavariable's
-///   instantiation `Inst` and an atom's abstraction `Abs`, each application
-///   over the argument chain of its arguments in order.
+///   instantiation `Inst`, an atom's abstraction `Abs` and an atom named inside
+///   one `Occ`, each application over the argument chain of its arguments in
+///   order.
 /// - panics: none.
 /// - executable: none — the coding is observed by reading it back, which the
 ///   round trip of [`TheoryValue::decode`] does.
@@ -1644,6 +1655,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+/// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
 fn term(root: TermNode<'_>) -> DescValue
 {
     let mut pending = vec![Build::Visit(root)];
@@ -1654,6 +1666,10 @@ fn term(root: TermNode<'_>) -> DescValue
                 let (tag, head, args) = match node.view() {
                     TermView::Var(name) => {
                         built.push(value(Tag::Var, vec![leaf(name)]));
+                        continue;
+                    },
+                    TermView::Atom(name) => {
+                        built.push(value(Tag::Occ, vec![leaf(name)]));
                         continue;
                     },
                     TermView::Op { name, args } => (Tag::App, Maybe::Present(name), args),
@@ -2277,10 +2293,10 @@ enum Read<'value>
 /// The free term the value at `root` codes.
 ///
 /// # Specification
-/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple`, `Inst` and
-///   `Abs` read back to a variable, an operation application, a constructor
-///   application, a results tuple, a metavariable's instantiation and an atom's
-///   abstraction.
+/// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple`, `Inst`,
+///   `Abs` and `Occ` read back to a variable, an operation application, a
+///   constructor application, a results tuple, a metavariable's instantiation,
+///   an atom's abstraction and an atom named inside one.
 /// - fails: [`TheoryFault::Misplaced`] for any other constructor, and for an
 ///   `Abs` whose chain is not one body; as [`expect`], [`text`] and
 ///   [`argument_nodes`] beneath.
@@ -2296,6 +2312,7 @@ enum Read<'value>
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 /// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
 fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
 {
     let mut pending = vec![Read::Visit(root)];
@@ -2307,6 +2324,12 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     let [name] = expect::<1>(node, Tag::Var)?;
                     let name = text(name)?;
                     read.push(FreeTerm::var(name));
+                    continue;
+                }
+                else if node.ctor == Tag::Occ.constructor() {
+                    let [name] = expect::<1>(node, Tag::Occ)?;
+                    let name = text(name)?;
+                    read.push(FreeTerm::atom(name));
                     continue;
                 }
                 else if node.ctor == Tag::App.constructor() {

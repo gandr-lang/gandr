@@ -267,6 +267,7 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ]),
         ("Abs", vec!["String", "Theory"]),
         ("Fresh", vec!["String", "String", "Theory"]),
+        ("Occ", vec!["String"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1418,5 +1419,54 @@ fn a_freshness_condition_follows_its_rule()
         .decode(),
         Err(TheoryFault::Misplaced(Tag::Fresh.constructor())),
         "a condition follows the rule it is stated on"
+    );
+}
+
+#[test]
+fn an_atom_occurrence_takes_its_own_tag()
+{
+    let sends = |channel: FreeTerm| {
+        let mut body = port("p", "Proc", []);
+        body.abstractions.push(binder("a", "Name"));
+        let proc = |name: &str, inputs: Vec<TheoryPort>| TheoryOperation {
+            name: Name::from(name),
+            kind: OperationKind::Operation,
+            inputs,
+            outputs: vec![port("", "Proc", [])],
+        };
+        TheoryParts {
+            sorts: vec![
+                sort("Name", Representability::Atom),
+                sort("Proc", Representability::Ordinary),
+            ],
+            operations: vec![
+                proc("nil", Vec::new()),
+                proc("nu", vec![body]),
+                proc("out", vec![port("c", "Name", []), port("p", "Proc", [])]),
+            ],
+            rules: vec![TheoryRule {
+                name: Name::from("unheard"),
+                left: FreeTerm::op("nu", [FreeTerm::abs(
+                    "a",
+                    FreeTerm::op("out", [channel, FreeTerm::op("nil", [])]),
+                )]),
+                right: FreeTerm::op("nil", []),
+                fresh: Vec::new(),
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let parts = sends(FreeTerm::atom("a"));
+    let value = TheoryValue::encode(&parts);
+    assert_eq!(value.decode(), Ok(parts), "a rule's occurrence reads back");
+    assert_eq!(
+        Tag::Occ.constructor(),
+        ConstructorTag::from(26_usize),
+        "appended, so a presentation naming no atom keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&sends(FreeTerm::var("a"))),
+        value,
+        "an occurrence is not the variable of its name"
     );
 }

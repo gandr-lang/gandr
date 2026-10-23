@@ -1510,6 +1510,18 @@ fn ill_formed(
             "{one} stands under an abstraction of {other} on one side of the rule and outside it \
              on the other, so an instance naming {other} would be captured or escape"
         ),
+        WfKind::MisplacedAtom => write!(
+            f,
+            "a rule names the atom {one} under no abstraction of it, or where no port of its sort \
+             stands; an atom is named only inside `bind {one} . t`, at a port of the sort it \
+             abstracts"
+        ),
+        WfKind::UndecidedCondition => write!(
+            f,
+            "the rule holds only of an instance of {one} that does not name the atom it \
+             crosses, and the operation {other} takes an atom, so a term can name one: no \
+             rewriting step decides that condition yet"
+        ),
     }
 }
 
@@ -2531,6 +2543,8 @@ mod tests
                 crate::WfKind::NonAtomAbstraction,
                 crate::WfKind::UnknownFreshness,
                 crate::WfKind::Capture,
+                crate::WfKind::MisplacedAtom,
+                crate::WfKind::UndecidedCondition,
             ]
             .map(|kind| ill_formed(kind, named)),
         );

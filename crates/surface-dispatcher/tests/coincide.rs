@@ -476,7 +476,10 @@ fn term_diagram(term: &FreeTerm) -> Option<Wiring>
                     },
                     TermView::Ctor { name, args } => (name, GeneratorSort::Value, args),
                     TermView::Op { name, args } => (name, GeneratorSort::Operation, args),
-                    TermView::Results { .. } | TermView::Inst { .. } | TermView::Abs { .. } => {
+                    TermView::Results { .. }
+                    | TermView::Inst { .. }
+                    | TermView::Abs { .. }
+                    | TermView::Atom(_) => {
                         return None;
                     },
                 };

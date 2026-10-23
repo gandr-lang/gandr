@@ -536,7 +536,7 @@ fn second_leaf(
                 }
                 seen = true;
             },
-            TermView::Var(_) => {},
+            TermView::Var(_) | TermView::Atom(_) => {},
             TermView::Ctor { args, .. }
             | TermView::Op { args, .. }
             | TermView::Results { args }

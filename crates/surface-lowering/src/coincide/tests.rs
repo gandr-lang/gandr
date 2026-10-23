@@ -1106,4 +1106,44 @@ def later = 7;"#,
             NormalFormFault::Incoherent.to_string()
         );
     });
+    let restriction = SourceText::from(
+        r#"theory Unheard {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule unheard : nu(bind a . out(a, p)) ==> nil();
+}"#,
+    );
+    lowered(restriction, |module| {
+        let [ref theory, ..] = *module.declarations()
+        else {
+            panic!("the theory")
+        };
+        for (call, reached) in [
+            ("nu(bind b . out(b, nil))", Ok("nil")),
+            (
+                "nu(bind a . nu(bind b . out(a, nil)))",
+                Ok("nu(bind a0 . nu(bind a1 . out(a0, nil)))"),
+            ),
+            (
+                "nu(bind b . out(c, nil))",
+                Err(NormalFormFault::UnknownSymbol),
+            ),
+            (
+                "out(b, nu(bind b . nil))",
+                Err(NormalFormFault::UnknownSymbol),
+            ),
+            ("nu(bind b . out(b, nil)", Err(NormalFormFault::Unread)),
+        ] {
+            assert_eq!(
+                module
+                    .normal_form(theory, CallText::from(call))
+                    .map(|reached| reached.spelling()),
+                reached.map(String::from),
+                "{call}: a name is the atom an enclosing abstraction binds, and only there"
+            );
+        }
+    });
 }

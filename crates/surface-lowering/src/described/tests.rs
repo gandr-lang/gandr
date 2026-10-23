@@ -717,6 +717,38 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
     );
 }
 
+/// An atom named inside the abstraction that binds it answers at the sort of
+/// the port it stands at, the atom sort its abstraction abstracts.
+#[test]
+fn an_occurrence_answers_at_its_port()
+{
+    let source = SourceText::from(
+        "theory Unheard {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nil : () --> Proc;\n  \
+         oper out : (c : Name, p : Proc) --> Proc;\n  oper nu : (p : bind (a : Name) . Proc) \
+         --> Proc;\n  rule unheard : nu(bind a . out(a, p)) ==> nil();\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let [binder, occurrence] = ["bind a .", "out(a,"]
+        .map(|around| code(entry(&types, span(around, "a"), DescribedRole::Name)));
+    assert!(occurrence.is_some(), "the occurrence answers");
+    assert_eq!(
+        occurrence, binder,
+        "at the atom sort its abstraction abstracts"
+    );
+    assert_ne!(
+        occurrence,
+        code(entry(&types, span(", p)", "p"), DescribedRole::Term)),
+        "not at the process sort beside it"
+    );
+}
+
 /// Substitution rebuilds every node kind a rule term holds and replaces
 /// only the variables the map names, keeping the rest and every atom.
 #[test]
