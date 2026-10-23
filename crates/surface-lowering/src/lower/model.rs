@@ -1531,7 +1531,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `at` stands on the right of a `with` of the manifest type
-    ///   `site`; `scratch` is free to overwrite.
+    ///   `site`, or in the bracket of the forgetting form `site`; `scratch` is
+    ///   free to overwrite.
     /// - ensures: the binding's sort name and its one type operand.
     /// - fails: an extra operand at an operand that is no binding, a misplaced
     ///   tile where the sort's name or `=` is missing, and the hole's own
@@ -2383,7 +2384,11 @@ impl<'source> Lowerer<'_, 'source>
                 Site { at: module, ..site }.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))
             );
         };
-        let theory = self.stated_theory(Site { at: stated, ..site })?;
+        let at_stated = Site { at: stated, ..site };
+        let theory = self.stated_theory(
+            at_stated,
+            at_stated.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel)),
+        )?;
         let name = self.name_at(module);
         let Some(outermost) = self.collected.structures.iter().rposition(|structure| {
             structure.name.as_ref() == name.as_ref()
@@ -2467,28 +2472,30 @@ impl<'source> Lowerer<'_, 'source>
         Ok(())
     }
 
-    /// The theory's name `S` the type `Model(S)` written at `site` names.
+    /// The theory's name `S` the type `Model(S)` written at `site` names, or
+    /// the refusal `refused` the form gives any other type.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the operand's tile, when the type is the application of the
     ///   head `Model` to one capitalised name.
-    /// - fails: any other type, out of the fragment; an unknown mold.
+    /// - fails: any other type, as `refused`; an unknown mold.
     /// - panics: none.
     ///
     /// # Errors
     /// The form's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - hypothesis: L3 — as [`Self::pack_model`] and [`Self::forget_model`].
     /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |theory| theory.span.start() >= site.at.span.start() && theory.span.end() <= site.at.span.end()))]
     fn stated_theory(
         &self,
         site: Site,
+        refused: LoweringRefusal<'source>,
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
-        let refused = site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel));
         let Some((_, Former::TypeApplication)) = self.form_at(site.at)?
         else {
             return Err(refused);

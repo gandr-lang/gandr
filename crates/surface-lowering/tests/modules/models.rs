@@ -300,6 +300,114 @@ fn a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_213
     );
 }
 
+/// The forgetting map written out is the map the checker inserts (#2130):
+/// `forget[sort B = Unit, sort A = Integer](m) at Model(Pairing)` calls the
+/// pairing's map at the carriers in the order the signature states its sorts,
+/// whichever order they are written in, so it checks where the inserted map
+/// does and shares its slot. A written map whose model fixes no sort takes the
+/// slot it names, so the checker, not the lowering, refuses the model at it.
+#[test]
+fn a_written_forgetting_map_takes_the_slot_it_names_2130()
+{
+    let source = "theory Pairing {\n  sort A : Type;\n  sort B : Type;\n  oper left : A;\n  oper \
+                  right : B;\n}\ntheory Counter {\n  sort C : Type;\n  oper zero : C;\n}\ndef \
+                  any(m : Model(Pairing)) -> -F Model(Pairing) { return m }\ndef inserted(m : \
+                  Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Model(Pairing) \
+                  {\n  become any(m)\n}\ndef written(m : Model(Pairing) with sort A = Integer \
+                  with sort B = Unit) -> -F Model(Pairing) {\n  become forget[sort B = Unit, \
+                  sort A = Integer](m) at Model(Pairing)\n}\ndef unfixed(m : Model(Counter)) \
+                  -> -F Model(Counter) {\n  become forget[sort C = Integer](m) at \
+                  Model(Counter)\n}\n";
+    let mut lowered = lower(source);
+    let forgets: Vec<String> = rows(&lowered)
+        .into_iter()
+        .filter(|&(_, role, _)| role == Role::Derived)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        forgets,
+        ["Pairing", "Counter"],
+        "the written pairing's map shares the inserted one's slot; the written counter's map \
+         takes its own"
+    );
+    let written = super::declaration(&lowered, "written", Role::Declared).constant();
+    let unfixed = super::declaration(&lowered, "unfixed", Role::Declared).constant();
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(constant, judgement)| if constant == unfixed {
+                judgement == Judgement::Mismatched
+            }
+            else {
+                matches!(
+                    judgement,
+                    Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+                )
+            })
+            && judgements.contains(&(written, Judgement::Checked)),
+        "the written map checks at the carriers in signature order, and a model fixing no sort \
+         is mismatched at the map the form names: {judgements:?}"
+    );
+}
+
+/// A written forgetting map names its theory's own sorts at its theory's
+/// models (#2130): a sort the theory does not have is an unknown member of
+/// it, a bracket entry that is no binding `sort C = A` is an extra operand,
+/// and a type after `at` that is no `Model(T)` puts the `at` out of place.
+#[test]
+fn a_written_forgetting_map_names_only_its_theory_s_sorts_2130()
+{
+    let source = "theory Counter {\n  sort C : Type;\n  oper zero : C;\n}\ndef stray(m : \
+                  Model(Counter) with sort C = Integer) -> -F Model(Counter) {\n  become \
+                  forget[sort D = Integer](m) at Model(Counter)\n}\ndef unbound(m : \
+                  Model(Counter) with sort C = Integer) -> -F Model(Counter) {\n  become \
+                  forget[Integer](m) at Model(Counter)\n}\ndef nowhere(m : Model(Counter) with \
+                  sort C = Integer) -> -F Model(Counter) {\n  become forget[sort C = \
+                  Integer](m) at Integer\n}\n";
+    let found = rows(&lower(source));
+    let unknown = Amounts::Refused(LoweringRefusal::UnknownMember {
+        span: span_of(source, "D", 0_usize),
+        module: name("Counter"),
+        member: name("D"),
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, role, ref amounts)| path == "stray"
+                && role == Role::Declared
+                && *amounts == unknown),
+        "a sort the counter does not have is an unknown member of it: {found:?}"
+    );
+    let extra = Amounts::Refused(LoweringRefusal::MalformedForm {
+        span: span_of(source, "Integer", 3_usize),
+        form: FormName::from(NamedKind("forget_model_expression")),
+        fault: FormFault::ExtraOperand,
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, role, ref amounts)| path == "unbound"
+                && role == Role::Declared
+                && *amounts == extra),
+        "a carrier written without the sort it fixes is an extra operand of the bracket: \
+         {found:?}"
+    );
+    let misplaced = Amounts::Refused(LoweringRefusal::MalformedForm {
+        span: span_of(source, "at", 2_usize),
+        form: FormName::from(NamedKind("forget_model_expression")),
+        fault: FormFault::MisplacedTile,
+    });
+    assert!(
+        found
+            .iter()
+            .any(|&(ref path, role, ref amounts)| path == "nowhere"
+                && role == Role::Declared
+                && *amounts == misplaced),
+        "a map onto a type that is no model type has its `at` out of place: {found:?}"
+    );
+}
+
 /// A model binder's sorts read as types (#2131). `a.C` for `a :
 /// Model(Counter)` is the carrier `a`'s record holds: a second counter fixing
 /// its carrier to `a.C` steps a count of `a`, as any counter steps its own

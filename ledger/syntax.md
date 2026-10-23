@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xab78e2c24d968f98`
-- Rules: 161 — 160 committed, 1 internal
-- Molds: 3128
+- Grammar fingerprint: `0x06087f8d61b5b345`
+- Rules: 162 — 161 committed, 1 internal
+- Molds: 3136
 - Attributes: 14
 
 ## Reading a form
@@ -62,7 +62,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 84 rules
+## `expression` — 85 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -150,6 +150,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`subshell`](../corpus/ledger/syntax/subshell.gandr) | `[ ⦅ EXPRESSION ⦆? ]` | `expression.atom` | `subshell` | admitted | Other |
 | [`file_descriptor`](../corpus/ledger/syntax/file_descriptor.gandr) | `‹file_descriptor›` | `expression.atom` | `file_descriptor` | admitted | Number |
 | [`redirection_operator`](../corpus/ledger/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
+| [`forget_model_expression`](../corpus/ledger/syntax/forget_model_expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
 ## `type` — 40 rules
 

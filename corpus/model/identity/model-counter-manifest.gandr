@@ -10,6 +10,8 @@
 // field it is (#2132). A model type may fix a sort to another model's carrier,
 // `with sort C = a.C`, the two then sharing it (#2131), and so may one fixing
 // another of its sorts, reading a sort the other leaves a field (#2158).
+// An ascription `(m : Model(Counter))` states the crossing, and the explicit
+// twin writes the map out (#2130).
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -25,6 +27,11 @@ def upManifest = #{.zero = Up.zero, .incr = Up.incr, .read = Up.read} ;
 /// forgetting map at the counts.
 @[ runs("1") ]
 def observedManifest() -> -F Integer { become observe(upManifest) }
+
+/// The manifest counter stated at the counter's models: the ascription is
+/// the crossing, and the checker applies the map at it.
+@[ runs("1") ]
+def observedAscribed() -> -F Integer { become observe((upManifest : Model(Counter))) }
 
 /// The manifest counter carried along negation.
 @[ checks ]

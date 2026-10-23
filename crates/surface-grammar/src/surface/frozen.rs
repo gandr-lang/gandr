@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0xe371_97f3_fb64_d97a),
+    rules: RulesDigest(0x3149_dcd0_0004_c63b),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -25,7 +25,7 @@ pub(super) static BUILT_IN: FrozenTable = FrozenTable {
 
 /// Each mold: label, context, rule, closing class, membership bits, successors, least interchangeable mold.
 #[rustfmt::skip]
-static MOLDS: [FrozenMold; 3128] = [
+static MOLDS: [FrozenMold; 3136] = [
     FrozenMold("def", 0, 0, None, 1, &[1, 91], 0),
     FrozenMold("rec", 1, 0, Some(ClosingClass::Brace), 0, &[2], 1),
     FrozenMold("identifier", 2, 0, Some(ClosingClass::Brace), 0, &[3], 2),
@@ -3154,11 +3154,19 @@ static MOLDS: [FrozenMold; 3128] = [
     FrozenMold("<=>", 3125, 160, None, 0, &[3126], 3122),
     FrozenMold("in", 3126, 160, None, 0, &[3127], 3126),
     FrozenMold("type_identifier", 3127, 160, None, 6, &[], 3127),
+    FrozenMold("forget", 3128, 161, None, 1, &[3129], 3128),
+    FrozenMold("[", 3129, 161, None, 0, &[3130, 3131, 3132], 3129),
+    FrozenMold(",", 3130, 161, None, 0, &[3130, 3131, 3132], 3130),
+    FrozenMold(",", 3131, 161, None, 0, &[3132], 3131),
+    FrozenMold("]", 3132, 161, None, 0, &[3133], 3132),
+    FrozenMold("(", 3133, 161, None, 0, &[3134], 3133),
+    FrozenMold(")", 3134, 161, None, 0, &[3135], 3134),
+    FrozenMold("at", 3135, 161, None, 10, &[], 3135),
 ];
 
 /// Each context: whether a hole faces it left, then right; its step lists, left then right.
 #[rustfmt::skip]
-static CONTEXTS: [FrozenContext; 3128] = [
+static CONTEXTS: [FrozenContext; 3136] = [
     FrozenContext(false, false, 0, 1),
     FrozenContext(false, false, 2, 3),
     FrozenContext(false, false, 4, 5),
@@ -6287,11 +6295,19 @@ static CONTEXTS: [FrozenContext; 3128] = [
     FrozenContext(true, true, 22, 22),
     FrozenContext(true, false, 22, 57),
     FrozenContext(false, false, 182, 0),
+    FrozenContext(false, false, 0, 35),
+    FrozenContext(false, true, 288, 11),
+    FrozenContext(true, true, 11, 11),
+    FrozenContext(true, false, 11, 36),
+    FrozenContext(true, false, 73, 5),
+    FrozenContext(false, true, 36, 22),
+    FrozenContext(true, false, 22, 221),
+    FrozenContext(false, true, 14, 11),
 ];
 
 /// The distinct step lists, in the order the contexts first cross them.
 #[rustfmt::skip]
-static STEPS: [&[StepSym]; 288] = [
+static STEPS: [&[StepSym]; 289] = [
     &[],
     &[StepSym::Tile("identifier"), StepSym::Tile("rec")],
     &[StepSym::Tile("def")],
@@ -6580,4 +6596,5 @@ static STEPS: [&[StepSym]; 288] = [
     &[StepSym::Tile("oper"), StepSym::Tile("rule")],
     &[StepSym::Tile("-->"), StepSym::Tile("<->"), StepSym::Tile("<=>"), StepSym::Tile("==>"), StepSym::Tile("{")],
     &[StepSym::Tile("derive")],
+    &[StepSym::Tile("forget")],
 ];

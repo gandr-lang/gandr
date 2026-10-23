@@ -1,0 +1,12 @@
+/// `forget_model_expression`: a model whose sort is manifest, read as a model
+/// of its theory by the forgetting map written out.
+@[ checks ]
+theory Pointed {
+  sort P : Type;
+  oper point : P;
+}
+@[ checks ]
+def zero : Model(Pointed) with sort P = Integer ;
+def zero = #{.point = 0} ;
+@[ checks ]
+def forgotten() -> -F Model(Pointed) { become forget[sort P = Integer](zero) at Model(Pointed) }
