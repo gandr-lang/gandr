@@ -1,0 +1,11 @@
+// A program guards on its environment: it reads a variable and chooses its
+// exit code by whether the variable is set. The lowering admits no member
+// selection on a host module yet (#1106).
+
+/// The guard: a variable no environment sets reads as the empty string, so
+/// it answers the exit code `3` (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
+def exit_by_environment() -> -F Integer {
+  run missing <- env.get("GANDR_CORPUS_UNSET_VARIABLE_ZZQ");
+  if string.eq(missing, "") { 3 } else { 7 }
+}

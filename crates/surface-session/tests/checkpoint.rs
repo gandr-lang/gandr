@@ -356,7 +356,7 @@ fn a_store_holding_nothing_reopens_fresh()
         other.into_session().into_store(),
         InMemoryBlockStore::default(),
         backend(),
-        SourceText::from("pure 1"),
+        SourceText::from("@[ checks ]"),
     )
     .expect("reopens");
     assert_eq!(

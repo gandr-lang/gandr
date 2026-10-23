@@ -36,7 +36,6 @@ def chained() -> -F Integer {
   become inc(inc(o))
 }
 
-/// The run target calls `twice`; the lowering reads no final expression as a
-/// run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target calls `twice`.
+@[ runs("42") ]
 twice(40)

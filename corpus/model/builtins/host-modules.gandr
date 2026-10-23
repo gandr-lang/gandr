@@ -1,0 +1,26 @@
+// The host modules `fs`, `path` and `env` reach the file system, paths and
+// the environment from a block. The lowering admits no member selection on a
+// module yet (#1106).
+
+/// A file written, read back, globbed and stated in a fresh directory, beside
+/// the working directory, the tracked files and the search path (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
+{
+  run dir <- fs.tempdir();
+  run nested <- path.join(dir, "nested");
+  fs.mkdir(nested);
+  run file <- path.join(nested, "greeting.txt");
+  fs.write(file, "hello from gandr");
+  run content <- fs.read(file);
+  run matches <- fs.glob(path.join(nested, "*.txt"));
+  run stat <- fs.stat(file);
+  run cwd <- fs.cwd();
+  run tracked <- fs.ls_files(".");
+  run path_entries <- env.path();
+  pure #{
+    content = content,
+    name = path.basename(file),
+    ext = path.extension(file),
+    kind = stat.kind
+  }
+}

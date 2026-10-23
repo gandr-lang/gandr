@@ -19,7 +19,7 @@ module Ordered : #{ third: Integer, first: Integer, second: Integer } {
   def third = second + 1;
 }
 
-/// The run target gathers the three in a record; the lowering reads no final
-/// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target gathers the three in a record: it checks, each member typed
+/// by the signature, though the second and third are refused above.
+@[ checks ]
 #{a = Ordered.first, b = Ordered.second, c = Ordered.third}

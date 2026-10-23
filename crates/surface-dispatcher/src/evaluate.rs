@@ -4,14 +4,15 @@
 //!
 //! # A program is its declarations
 //!
-//! The fragment has no top-level expression, so a program is the module's
-//! declarations, each a constant the machine unfolds on demand. An accepted
+//! A program is the module's declarations, each a constant the machine
+//! unfolds on demand, the source's run target among them. An accepted
 //! declaration's elaborated body is focused once, when the program is built; a
 //! declaration owed its body, refused, or whose body does not focus is carried
 //! as itself, the machine's opaque constant. `gandr run` runs the program's
-//! entry, the `main` its source declares at the top level, and the last name
-//! the source declares when it declares none; the session and the corpus run
-//! any accepted declaration by its admission position.
+//! entry, the `main` its source declares at the top level; a source that
+//! declares none runs its run target, or the last name it declares when it
+//! writes none. The session and the corpus run any accepted declaration by its
+//! admission position.
 //!
 //! # Running a declaration
 //!
@@ -110,12 +111,12 @@
 //! runs, so a run never starts that would meet a declaration the machine cannot
 //! carry.
 //!
-//! **The run target is the last name declared.** The fragment has no top-level
-//! expression, so the target is the declaration at the highest admission
-//! position, and a source declaring no name is `Ran::NoProgram`. The
-//! alternative, a distinguished name such as `main`, is a convention the
-//! language does not state. The choice reverses when the modules linker lowers
-//! a final unnamed expression: that expression becomes the target.
+//! **The run target is the source's final expression.** An expression written
+//! as a source's last root form is lowered as the body of a thunk and admitted
+//! after every name the source declares, so it holds the highest admission
+//! position. A source that writes no final expression runs the last name it
+//! declares, and a source declaring no name and writing no expression is
+//! `Ran::NoProgram`.
 //!
 //! # Native universe-path boundaries
 //!
@@ -964,21 +965,25 @@ impl<'source> Program<'source>
         self.spelling = spelling;
     }
 
-    /// The declaration `gandr run` runs: the last name the source declares.
+    /// The declaration `gandr run` runs: the source's run target, or the last
+    /// name the source declares when it writes none.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the highest admission position of the program, which is the
-    ///   name the source declared last for the first time.
-    /// - provides: the run target of a source with no top-level expression.
+    ///   source's run target, admitted after every name, when it writes one,
+    ///   and otherwise the name the source declared last for the first time.
+    /// - provides: the declaration a source runs.
     /// - fails: [`run_target::Absent::NoDeclaration`] when the source declares
-    ///   no name.
+    ///   no name and writes no run target.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source of several names, a later declaration of an
-    ///   earlier name among them, and a source of none.
+    ///   earlier name among them, a source of none, and a final expression
+    ///   after a name and after a later declaration of an earlier name.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    /// - witness: `evaluate::tests::a_final_expression_is_the_run_target_1105`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(last) => self.declarations.last_key_value().is_some_and(|(&held, _)| held == last),
         Maybe::Absent(run_target::Absent::NoDeclaration) => self.declarations.is_empty(),
@@ -2841,6 +2846,42 @@ def bad : Integer ; def bad = "text" ;"#,
             "empty input admits no declaration"
         );
     }
+
+    /// #1105: a source's final expression is its run target, admitted after
+    /// every name it declares, and what the source runs: a value written
+    /// there is returned, a call is run.
+    #[test]
+    fn a_final_expression_is_the_run_target_1105()
+    {
+        let mut redeclared = program(
+            r#"def x : Integer ; def y = 1 ; def x = 2 ;
+x"#,
+        );
+        let after = ConstantIndex::from(2_usize);
+        assert_eq!(
+            redeclared.target(),
+            Maybe::Present(after),
+            "the target follows every name, a later declaration of an earlier one included"
+        );
+        assert_eq!(
+            redeclared.evaluate(after).to_string(),
+            "2",
+            "a value target is returned"
+        );
+        let mut called = program(
+            r#"def answer = 42 ;
+def same(a : Type, x : a) -> -F a { return x }
+same(Integer, answer)"#,
+        );
+        assert_eq!(called.target(), Maybe::Present(after));
+        let evaluation = called.evaluate(after);
+        assert!(
+            matches!(evaluation, Evaluation::Value(_)),
+            "a call target runs to a value: {evaluation}"
+        );
+        assert_eq!(evaluation.to_string(), "42", "the call's value");
+    }
+
     #[test]
     fn terminal_classification_preserves_declaration_identity()
     {

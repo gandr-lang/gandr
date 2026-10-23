@@ -1,0 +1,9 @@
+// A shell block's exit code steers a conditional. The lowering admits no
+// shell block yet (#1057).
+
+/// `test -d` on the host, its exit code read by an `if` (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+{
+  run probe <- #!{ test -d /tmp; };
+  if probe.exit_code == 0 -> -F String { pure "present" } else { pure "absent" }
+}

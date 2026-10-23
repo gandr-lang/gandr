@@ -1,0 +1,21 @@
+// Double quotes inside a shell block keep their words together and expand the
+// parameters they hold, each block read as written. Every block but the last
+// stands before another root form, a stray refused where it stands; the last
+// is the run target, which the lowering admits no shell block for yet (#1057).
+
+/// A double-quoted argument with a space, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ echo "hello world"; }
+
+/// Escapes inside double quotes, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ printf "col1\tcol2\n"; }
+
+/// Parameters, bare and braced, expanded inside double quotes, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ echo "home is $HOME and user is ${USER}"; }
+
+/// A parameter inside a double-quoted argument beside a single-quoted format,
+/// the run target (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+#!{ printf '%s\n' "value $x"; }

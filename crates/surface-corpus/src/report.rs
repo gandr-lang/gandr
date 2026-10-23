@@ -1397,7 +1397,7 @@ mod tests
                 .count(FailureClass::Unimplemented(TrackingIssue::PROJECTION)),
             other
                 .refusals()
-                .count(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET)),
+                .count(FailureClass::Unimplemented(TrackingIssue::RECORD_UPDATE)),
             "an unimplemented refusal is counted whatever issue it names"
         );
         total.absorb(&other);
@@ -1426,7 +1426,7 @@ mod tests
         assert_eq!(
             [
                 FailureClass::UserAbsence,
-                FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
+                FailureClass::Unimplemented(TrackingIssue::PROJECTION),
                 FailureClass::MalformedSource,
                 FailureClass::EngineFault
             ]
@@ -1537,7 +1537,7 @@ def plain_hole : Integer ;
         assert!(rendered.contains(&tally.seal().to_string()));
         for class in [
             FailureClass::UserAbsence,
-            FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
+            FailureClass::Unimplemented(TrackingIssue::PROJECTION),
             FailureClass::MalformedSource,
             FailureClass::EngineFault,
         ] {

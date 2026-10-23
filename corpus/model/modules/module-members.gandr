@@ -37,6 +37,7 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
 @[ refuses("NotSynthesisable") ]
 def after = Facts.total + 1;
 
-/// The run target gathers both in a record (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target gathers both in a record; `after` is refused above, so it
+/// names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 #{after = after, total = Facts.total}

@@ -1604,9 +1604,10 @@ impl RefusalName
     }
 }
 
-/// The tag the run target is qualified by: a form of the wrong sort where a
-/// declaration is read.
-const RUN_TARGET: Tag = Tag("WrongSort.declaration");
+/// The tag a stray is qualified by: a form of the wrong sort where a
+/// declaration is read, an expression at the root that is not the source's
+/// run target.
+const STRAY: Tag = Tag("WrongSort.declaration");
 
 /// Every former the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 24_usize] = [
@@ -1715,7 +1716,7 @@ fn crossed() -> [FragmentBoundary; 15_usize]
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each crossed boundary's tag, in order, then the run target, then
+/// - ensures: each crossed boundary's tag, in order, then the stray's, then
 ///   each former's tag.
 /// - panics: none.
 ///
@@ -1724,13 +1725,13 @@ fn crossed() -> [FragmentBoundary; 15_usize]
 ///   name, and every closed name is among them; a lost tag is a name no payload
 ///   spells.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-#[spec(ensures: |ret| ret.len() == crossed().len().saturating_add(1).saturating_add(FORMERS.len()) && ret.get(crossed().len()) == Some(&RUN_TARGET))]
+#[spec(ensures: |ret| ret.len() == crossed().len().saturating_add(1).saturating_add(FORMERS.len()) && ret.get(crossed().len()) == Some(&STRAY))]
 fn readings() -> Vec<Tag>
 {
     crossed()
         .into_iter()
         .map(boundary_tag)
-        .chain([RUN_TARGET])
+        .chain([STRAY])
         .chain(FORMERS.into_iter().map(former_tag))
         .collect()
 }
@@ -1739,8 +1740,8 @@ fn readings() -> Vec<Tag>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an unbuilt feature is the feature; the run target [`RUN_TARGET`];
-///   a crossing the boundary's tag.
+/// - ensures: an unbuilt feature is the feature; a stray [`STRAY`]; a crossing
+///   the boundary's tag.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1749,14 +1750,14 @@ fn readings() -> Vec<Tag>
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 #[spec(ensures: |ret| match feature {
     | FragmentFeature::Unbuilt(unbuilt) => ret == Qualifier::Unbuilt(unbuilt),
-    | FragmentFeature::RunTarget => ret == Qualifier::Named(RUN_TARGET),
+    | FragmentFeature::Stray => ret == Qualifier::Named(STRAY),
     | FragmentFeature::Crossed(boundary) => ret == Qualifier::Named(boundary_tag(boundary)),
 })]
 fn fragment(feature: FragmentFeature) -> Qualifier
 {
     match feature {
         FragmentFeature::Unbuilt(unbuilt) => Qualifier::Unbuilt(unbuilt),
-        FragmentFeature::RunTarget => Qualifier::Named(RUN_TARGET),
+        FragmentFeature::Stray => Qualifier::Named(STRAY),
         FragmentFeature::Crossed(boundary) => Qualifier::Named(boundary_tag(boundary)),
     }
 }
@@ -2861,8 +2862,8 @@ mod tests
         use super::MEMBER_FAULTS;
         use super::MODEL_FAULTS;
         use super::Qualifier;
-        use super::RUN_TARGET;
         use super::Refusal;
+        use super::STRAY;
         use super::boundary_tag;
         use super::crossed;
         use super::former_tag;
@@ -2921,7 +2922,7 @@ mod tests
                 crossed()
                     .into_iter()
                     .map(boundary_tag)
-                    .chain([RUN_TARGET])
+                    .chain([STRAY])
                     .map(|tag| RefusalName::OutOfFragment(Qualifier::Named(tag))),
             );
         for name in families {

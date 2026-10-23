@@ -1,7 +1,5 @@
 // Two data types with one shape stay distinct under a type former: a list of
-// `Celsius` is no list of `Fahrenheit`. The mismatch is written again as the
-// run target, which the lowering reads no final expression as yet (#1105), so
-// that refusal stands in front of the mismatch.
+// `Celsius` is no list of `Fahrenheit`, in a definition or as the run target.
 
 /// A temperature in Celsius.
 @[ checks ]
@@ -20,6 +18,7 @@ data Fahrenheit : Type {
 @[ refuses("TypeMismatch") ]
 def listed = ([Cel(20)] : List(Fahrenheit)) ;
 
-/// A list of one Celsius value, annotated as Fahrenheit (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The same list as the run target, judged as a declaration is before anything
+/// runs it.
+@[ refuses("TypeMismatch") ]
 ([Cel(20)] : List(Fahrenheit))

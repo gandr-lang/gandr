@@ -1,0 +1,7 @@
+// A shell block runs one command per statement, with no control operator
+// between commands. The lowering admits no shell block yet (#1057), so that
+// refusal stands in front of this one.
+
+/// `&&` between two commands (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+#!{ true && false; }

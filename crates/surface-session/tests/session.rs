@@ -486,10 +486,10 @@ fn failed_submission_retains_latest_synthesis()
     let before: Vec<SynthesisEvent> = before.collect();
     let before_snapshot = session.snapshot().items().to_vec();
     let before_lowerings = usize::from(session.lowerings());
-    let refused = submit(&mut session, "pure 40");
+    let refused = submit(&mut session, "@[ checks ]");
     assert!(
         matches!(refused.composed(), Composed::Refused(_)),
-        "a top-level expression refuses the revision as a whole"
+        "a revision that declares nothing is refused as a whole"
     );
     assert_eq!(
         refused.resumed(),
@@ -560,7 +560,7 @@ fn a_judged_revision_reports_before_its_admission()
     );
     let _superseded = judging.judge(text).expect("judges again");
     let refused = judging
-        .judge(gandr_surface_syntax::SourceText::from("pure 3"))
+        .judge(gandr_surface_syntax::SourceText::from("@[ checks ]"))
         .expect("judges");
     assert_eq!(
         refused.kernel(),
@@ -843,7 +843,7 @@ def broken = 1 ;"#,
         rejected.evaluate(broken),
         Maybe::Absent(evaluation::Absent::Unaccepted)
     ));
-    let mut whole = submit(&mut held, r#"pure 42"#);
+    let mut whole = submit(&mut held, r#"@[ checks ]"#);
     assert!(matches!(
         whole.evaluate(ConstantIndex::from(0_usize)),
         Maybe::Absent(evaluation::Absent::Unaccepted)

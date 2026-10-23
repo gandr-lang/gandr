@@ -7,6 +7,7 @@
 def bad : package [ T ] Integer;
 def bad = pure 1;
 
-/// The run target returns it (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns it; it is refused above, so it names a
+/// declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 bad

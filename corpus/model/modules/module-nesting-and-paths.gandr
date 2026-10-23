@@ -38,7 +38,7 @@ def note = Config.limits.hard.detail.note;
 @[ checks ]
 def soft_limit = Config.limits.soft;
 
-/// The run target gathers the three in a record; the lowering reads no
-/// final expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target gathers the three in a record, spelled by its labels in
+/// order.
+@[ runs("#{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
 #{hard = hard_limit, soft = soft_limit, note = note}

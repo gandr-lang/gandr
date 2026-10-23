@@ -25,7 +25,7 @@ module Metrics : #{ type Ratio = Integer, base: Integer, double: Integer, scale:
 @[ refuses("NotSynthesisable") ]
 def visible = Metrics.base + Metrics.double + Metrics.scale;
 
-/// The run target returns the sum in a record; the lowering reads no final
-/// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns the sum in a record; `visible` is refused above,
+/// so it names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 #{visible = visible}

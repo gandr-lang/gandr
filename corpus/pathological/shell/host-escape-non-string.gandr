@@ -1,0 +1,7 @@
+// A host escape `$( … )` hands a command a string; an integer there is no
+// argument. The lowering admits no shell block yet (#1057), so that refusal
+// stands in front of this one.
+
+/// An integer in a host escape (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+#!{ printf '%s' $(1); }
