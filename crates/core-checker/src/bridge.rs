@@ -76,20 +76,22 @@
 //! with its seal open, and answers [`Outcome::Data`]: it is nominal, and no
 //! axiom stands at its position. Its atom then erases to the kernel atom at
 //! the position the declaration took, through the same position map as a
-//! constant. Once the module position its extent reaches has been processed,
-//! the bridge closes the seal in the kernel, so the kernel reads the atom
-//! through to its representation for exactly the declarations the judgement
-//! did, and the export records the extent the kernel drew. An atom whose
-//! abstract type did not cross has no kernel position and is refused by name,
-//! never minted at a guessed one: withheld, as any nominal head that did not
-//! cross, when its abstract type was itself withheld — refused by the
-//! judgement, or naming a declaration that did not cross, such as a refused
-//! law — and refused as a former the kernel lacks otherwise. The alternatives
-//! were an axiom per atom, which puts an assumption in the audit for every
-//! sealed component, and a sealed outcome of its own, which every consumer of
-//! the outcome would have to learn while carrying the same receipt and audit;
-//! the choice reverses if an atom ever needs a receipt a data declaration does
-//! not have.
+//! constant. The bridge closes the seal in the kernel once the module
+//! position its extent reaches has been processed, or, when the judgement
+//! skipped that position — a type alias or a session type the checker keeps
+//! on its side crosses nothing — before the first declaration past it
+//! crosses. So the kernel reads the atom through to its representation for
+//! exactly the declarations the judgement did, and the export records the
+//! extent the kernel drew. An atom whose abstract type did not cross has no
+//! kernel position and is refused by name, never minted at a guessed one:
+//! withheld, as any nominal head that did not cross, when its abstract type
+//! was itself withheld — refused by the judgement, or naming a declaration
+//! that did not cross, such as a refused law — and refused as a former the
+//! kernel lacks otherwise. The alternatives were an axiom per atom, which
+//! puts an assumption in the audit for every sealed component, and a sealed
+//! outcome of its own, which every consumer of the outcome would have to
+//! learn while carrying the same receipt and audit; the choice reverses if an
+//! atom ever needs a receipt a data declaration does not have.
 //!
 //! # A lift the judgement recorded is written where it stands
 //!
@@ -1984,6 +1986,17 @@ where
             continue;
         }
         let constant = judged.constant();
+        // The positions between the last judged declaration and this one
+        // were skipped and cross nothing, so a seal ending among them closes
+        // before this declaration crosses.
+        if let Some(skipped) = usize::from(constant).checked_sub(1) {
+            close_seals(
+                &mut environment,
+                &mut positions,
+                &mut readmitted,
+                ConstantIndex::from(skipped),
+            );
+        }
         // A data declaration whose fields name later declarations leads the
         // mutual block they reach, which crosses whole.
         let block = block_offers(
