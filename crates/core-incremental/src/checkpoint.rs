@@ -2733,6 +2733,20 @@ struct AdoptionInput<'input, 'base>
     value_changed: &'input BTreeSet<Reference>,
 }
 
+/// How an adopted item's type takes its seat.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Seat
+{
+    /// A type the recalled verdict's judgement formed, seated without forming
+    /// it again.
+    Judged(ValueTypeId),
+    /// A type formed here, or the reason the item supplies none.
+    Formed(Maybe<FormedValueType, signature_table::Absent>),
+}
+
 /// Adopt the recalled checkpoint when it still answers.
 ///
 /// # Specification
@@ -2742,10 +2756,13 @@ struct AdoptionInput<'input, 'base>
 ///   type position meets the value-changed set, the body is no accepted
 ///   univalence statement, path product or equivalence and the type seats, the
 ///   item is admitted with its seated type and the checkpoint's support, typing
-///   and answer are returned; otherwise the context is unchanged.
+///   and answer are returned; otherwise the context is unchanged. A type the
+///   recalled verdict checked or synthesised under is seated as its judgement
+///   formed it; any other signature is formed again.
 /// - provides: the reason the checkpoint does not answer: `Opaque`, `Outdated`,
 ///   `ValueRead`, `Derived` or `Unseated`, checked in that order.
 /// - panics: none.
+/// - economy: a checked or synthesised verdict's type takes no formation walk.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — changed support, an ascription reading a changed value
@@ -2929,20 +2946,29 @@ fn adopt(
     if matches!(*checkpoint.typing(), Typing::Data) {
         return Maybe::Absent(recall::Absent::Unseated);
     }
-    let seat: Maybe<FormedValueType, signature_table::Absent>;
+    let signed = || {
+        input
+            .item
+            .content
+            .signature_type()
+            .map_or(Answer::Untyped, Answer::Typed)
+    };
+    let seat: Seat;
     let answer: Answer;
     match (signature, checkpoint.typing()) {
+        // A verdict that checked or synthesised its body formed its signature
+        // first, under the support that still holds.
+        (Maybe::Present(signature), &(Typing::Checked { .. } | Typing::Synthesised { .. })) => {
+            seat = Seat::Judged(signature);
+            answer = signed();
+        },
         (Maybe::Present(signature), _) => {
             if let Ok(formed) = form_value_type(context, signature) {
-                seat = Maybe::Present(formed);
-                answer = input
-                    .item
-                    .content
-                    .signature_type()
-                    .map_or(Answer::Untyped, Answer::Typed);
+                seat = Seat::Formed(Maybe::Present(formed));
+                answer = signed();
             }
             else {
-                seat = Maybe::Absent(signature_table::Absent::Untyped);
+                seat = Seat::Formed(Maybe::Absent(signature_table::Absent::Untyped));
                 answer = Answer::Untyped;
             }
         },
@@ -2951,11 +2977,7 @@ fn adopt(
             else {
                 return Maybe::Absent(recall::Absent::Unseated);
             };
-            let Ok(formed) = form_value_type(context, minted)
-            else {
-                return Maybe::Absent(recall::Absent::Unseated);
-            };
-            seat = Maybe::Present(formed);
+            seat = Seat::Judged(minted);
             answer = Answer::Typed(produced.clone());
         },
         // An unsigned declaration that waits supplied a type no checkpoint
@@ -2965,7 +2987,7 @@ fn adopt(
             Maybe::Absent(_),
             &(Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_)),
         ) => {
-            seat = Maybe::Absent(signature_table::Absent::Untyped);
+            seat = Seat::Formed(Maybe::Absent(signature_table::Absent::Untyped));
             answer = Answer::Untyped;
         },
     }
@@ -2980,10 +3002,12 @@ fn adopt(
         (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Absent(_))
         | (&(Typing::Data | Typing::Refused(_)), _) => Maybe::Absent(unfolding::Absent::Rigid),
     };
-    if context
-        .adopt(input.declaration.constant(), seat, unfolds)
-        .is_err()
-    {
+    let constant = input.declaration.constant();
+    let seated = match seat {
+        Seat::Judged(declared) => context.adopt_formed(constant, declared, unfolds),
+        Seat::Formed(supplied) => context.adopt(constant, supplied, unfolds),
+    };
+    if seated.is_err() {
         return Maybe::Absent(recall::Absent::Unseated);
     }
     Maybe::Present((

@@ -202,6 +202,25 @@ fn downstream_error_surfaces()
     );
 }
 
+/// The over-adoption twin of a handed-on signature (#2102): `three`'s
+/// signature decodes `code`, whose value changes while its type does not, so
+/// `three`'s content and every answer it consulted stand. Only the value it
+/// read changed, and a seat handed on from the base would check `3` at
+/// `Integer`; the gate requires the fresh checker's refusal at `String`.
+#[test]
+fn a_signature_decoding_a_changed_code_is_judged_again_2102()
+{
+    let adoptions = gate(
+        "def code : Type ;\ndef code = Integer ;\ndef three : code ;\ndef three = 3 ;",
+        "def code : Type ;\ndef code = String ;\ndef three : code ;\ndef three = 3 ;",
+    );
+    assert_eq!(
+        adoptions,
+        vec![Adoption::Judged, Adoption::Judged],
+        "the reader of the changed code's value is judged, not adopted"
+    );
+}
+
 #[test]
 fn deletion_matches_from_scratch()
 {

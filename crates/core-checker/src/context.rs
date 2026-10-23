@@ -2307,6 +2307,44 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         Ok(())
     }
 
+    /// [`Self::adopt`] of a verdict whose judgement formed `declared`: the
+    /// type is seated as that judgement formed it, without forming it again.
+    ///
+    /// # Specification
+    /// - requires: `declared` is a type the reused verdict's judgement formed,
+    ///   read in this context from the same content and under the same
+    ///   consulted answers and unfoldings, so forming it here answers as it
+    ///   answered there; the caller vouches for both, as for [`Self::adopt`].
+    /// - ensures: as [`Self::adopt`] with `declared` supplied as formed.
+    /// - fails: as [`Self::adopt`].
+    /// - panics: none.
+    /// - economy: no formation walk; the reused verdict's own formation is the
+    ///   claim.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::AdmissionOrder`] — as [`Self::adopt`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type seated as formed is the answer a later
+    ///   declaration reads, and the adopted body is the unfolding a later
+    ///   decode of it reads, as for [`Self::adopt`].
+    /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
+    #[spec(ensures: |ret| ret.is_err() || self.signature(constant) == Maybe::Present(FormedValueType::derived(declared)))]
+    #[inline]
+    pub fn adopt_formed(
+        &mut self,
+        constant: ConstantIndex,
+        declared: ValueTypeId,
+        unfolds: Maybe<ValueId, unfolding::Absent>,
+    ) -> Result<(), CheckRefusal>
+    {
+        self.adopt(
+            constant,
+            Maybe::Present(FormedValueType::derived(declared)),
+            unfolds,
+        )
+    }
+
     /// The type the declaration at `constant` supplied, as the judgement reads
     /// it: logged when a supported judgement runs.
     ///
