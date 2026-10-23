@@ -967,8 +967,10 @@ jobs:
   # Clippy writes check metadata, which a restored test build does not hold,
   # so the lane keeps its own state: main's newest, restored by prefix on the
   # toolchain pin alone, and Cargo's fingerprints decide what a change
-  # re-checks. A landing's push lints main again, prunes the state to the
-  # units that run used and saves it in place of the state it supersedes.
+  # re-checks. The merge group prunes the state to the units its run used and
+  # uploads it, and main's push promotes it (`promote-cargo-clippy-crate`)
+  # rather than linting the tested commit again (#2045); a push no queue run
+  # tested lints, prunes and saves the state itself.
   # Both passes cover the workspace: the plain expansion keeps each predicate
   # as `(true || predicate)` with no panic, which is code the enforcing pass
   # never lints. The plain pass is also the plain graph's compile check over
@@ -976,7 +978,7 @@ jobs:
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.run-id == '') }}
     runs-on: *linux
     # A landing's push deletes the Clippy state it superseded.
     permissions:
@@ -984,8 +986,11 @@ jobs:
       packages: read
       actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-clippy-crate
     steps:
       - *git-checkout
+      - *identify-build-state
       - *install-policy-tools
       - *setup-rust
       - name: restore the Clippy state
@@ -995,7 +1000,7 @@ jobs:
           path: &clippy-state |
             target/debug
             target/enforcing/debug
-          key: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
+          key: &clippy-state-key clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
       - name: lint every target
         id: clippy-plain
@@ -1005,16 +1010,25 @@ jobs:
         run: mise run check:clippy-enforcing
       - name: prune the Clippy state to this run's units
         id: prune-clippy-state
-        if: ${{ steps.clippy-plain.outcome == 'success' && steps.clippy-enforcing.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        if: ${{ steps.clippy-plain.outcome == 'success' && steps.clippy-enforcing.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' && steps.clippy-state-restore.outputs.cache-hit != 'true') }}
         run: mise run ci:prune-clippy
+      # The queue's state, handed to main's push as an artifact: a cache a
+      # queue ref saves is visible to that ref alone.
+      - name: archive the Clippy state
+        id: build-state-archive
+        if: ${{ github.event_name == 'merge_group' && steps.prune-clippy-state.outcome == 'success' }}
+        shell: bash
+        run: tar -cf - target/debug target/enforcing/debug | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
+      - *upload-build-state
       - name: save the Clippy state
         id: save-clippy-state
-        if: ${{ env.ACT != 'true' && steps.prune-clippy-state.outcome == 'success' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
+        if: ${{ env.ACT != 'true' && github.event_name != 'merge_group' && steps.prune-clippy-state.outcome == 'success' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
         uses: *cache-save
         with:
           path: *clippy-state
           key: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
-      - name: delete superseded Clippy state
+      - &delete-superseded-clippy-state
+        name: delete superseded Clippy state
         if: ${{ github.event_name == 'push' && steps.save-clippy-state.outcome == 'success' }}
         continue-on-error: true
         env:
@@ -1719,3 +1733,37 @@ jobs:
         run: mise run ci:delete-superseded policy-state-v "$CI_STATE_KEY"
       - *save-gate-binary
       - *save-dylint-drivers
+
+  # The landing's Clippy state, from the queue run that linted this exact
+  # commit, saved as main's in place of the state it supersedes (#2045).
+  promote-cargo-clippy-crate:
+    name: promote the Clippy state
+    needs: *promote-needs
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.prepare.outputs.artifacts || '[]'), ' '), 'build-state-cargo-clippy-crate--') }}
+    runs-on: *linux
+    permissions: *promote-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-clippy-crate
+    steps:
+      - *git-checkout
+      - *identify-build-state
+      - *install-policy-tools
+      - name: look up the Clippy state
+        id: clippy-state-restore
+        uses: *cache-restore
+        with:
+          path: *clippy-state
+          key: *clippy-state-key
+          lookup-only: true
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: save the Clippy state
+        id: save-clippy-state
+        if: ${{ env.ACT != 'true' && env.CI_BUILD_STATE_FOUND == 'true' && steps.clippy-state-restore.outputs.cache-hit != 'true' }}
+        uses: *cache-save
+        with:
+          path: *clippy-state
+          key: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
+      - *delete-superseded-clippy-state
