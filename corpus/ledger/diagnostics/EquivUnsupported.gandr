@@ -1,0 +1,15 @@
+/// `EquivUnsupported`: a universe equivalence over a data type that recurs, which the rule does not decide.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+def same(n : Nat) -> -F Nat {
+  n
+}
+
+@[ refuses("EquivUnsupported") ]
+def recursive : Path(Type, Nat, Nat) ;
+def recursive = equiv(same, same) ;

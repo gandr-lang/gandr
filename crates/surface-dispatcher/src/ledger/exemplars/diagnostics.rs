@@ -97,6 +97,12 @@ const READMISSION: Reason = Reason(
      engine fault, never a verdict",
 );
 
+/// Why no source reaches a refusal of a stated entry against the host's: only
+/// a host entry bounds one.
+const HOST_ENTRY: Reason = Reason(
+    "raised only under a host entry, `gandr check --entry`, and a fixture is settled under none",
+);
+
 /// A tracker issue, by number.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -118,7 +124,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 72_usize] = [
+const OWED: [(&str, Owed); 68_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -222,24 +228,32 @@ const OWED: [(&str, Owed); 72_usize] = [
     ("NonExhaustiveDataCase", Owed::Unwritten(CHECKER)),
     ("AbsentTupleComponent", Owed::Unwritten(CHECKER)),
     ("PathCode", Owed::Unwritten(CHECKER)),
-    ("EquivUnsupported", Owed::Unwritten(CHECKER)),
     ("TranslatorStuck", Owed::Unwritten(CHECKER)),
-    ("CapabilityUngranted", Owed::Unwritten(CHECKER)),
+    (
+        "CapabilityUngranted",
+        Owed::Unreachable(Reason(
+            "raised only under a host grant, `gandr check --grant`, and a fixture is settled \
+             under none",
+        )),
+    ),
     ("SessionCodeExpected", Owed::Unwritten(CHECKER)),
     ("RideUnsupported", Owed::Unwritten(CHECKER)),
     ("BudgetExceeded", Owed::Unwritten(CHECKER)),
-    ("DependentBind", Owed::Unwritten(CHECKER)),
     ("Undecided", Owed::Unwritten(CHECKER)),
-    ("FamilyArity", Owed::Unwritten(CHECKER)),
-    ("FamilyArgumentClassifier", Owed::Unwritten(CHECKER)),
     ("EffectSignatureConflict", Owed::Unwritten(CHECKER)),
     ("UnknownOperation", Owed::Unwritten(CHECKER)),
     ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
     ("DependentStack", Owed::Unwritten(CHECKER)),
     ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
-    ("CodataArity", Owed::Unwritten(CHECKER)),
-    ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
-    ("EntryUngranted", Owed::Unwritten(CHECKER)),
+    (
+        "CodataArity",
+        Owed::Unreachable(Reason(
+            "the lowering applies a codata family only at the count of parameters it declares, \
+             and names the family itself at its parameters",
+        )),
+    ),
+    ("HostWorldUndeclared", Owed::Unreachable(HOST_ENTRY)),
+    ("EntryUngranted", Owed::Unreachable(HOST_ENTRY)),
     (
         "OutOfFragment.ValueLift",
         Owed::Unreachable(Reason(
