@@ -350,7 +350,7 @@ fn an_annotation_at_a_statement_is_unadmitted()
             outcome_of(&module, "f".into()),
             DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
                 span,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Annotation),
                 ..
             }) if usize::from(span.start()) == start
                 && usize::from(span.end()) == start.saturating_add(written.len())
@@ -372,7 +372,7 @@ fn a_constructor_is_no_value_inside_its_own_family()
             outcome_of(&module, "T".into()),
             DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
                 span,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::UnknownConstructor),
                 ..
             }) if usize::from(span.start()) == start && usize::from(span.end()) == start.saturating_add(1)
         ),
@@ -1338,7 +1338,11 @@ fn a_productive_call_is_the_whole_arm_of_a_copattern_block()
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("both")),
-            LoweringRefusal::OutOfFragment { form, boundary: FragmentBoundary::Reserved, .. }
+            LoweringRefusal::OutOfFragment {
+                form,
+                boundary: FragmentBoundary::Reserved(crate::Unbuilt::RecursiveClaim),
+                ..
+            }
                 if form == FormName::INSTANTIATION
         ),
         "combined claims are reserved"
@@ -1761,7 +1765,7 @@ fn a_parameterized_constructor_needs_its_classifier()
         refusal_of(&module, SurfaceName::from("three")),
         LoweringRefusal::OutOfFragment {
             form: FormName::ANNOTATION,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Annotation),
             ..
         }
     ));
@@ -2604,7 +2608,7 @@ fn patterns_outside_the_fragment_are_declined_by_name()
     assert!(matches!(
         refusal_of(&module, SurfaceName::from("text")),
         LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
             ..
         }
     ));
@@ -2620,7 +2624,7 @@ fn patterns_outside_the_fragment_are_declined_by_name()
         refusal_of(&module, SurfaceName::from("bound")),
         LoweringRefusal::OutOfFragment {
             form: FormName::OR_PATTERN,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::OrPattern),
             ..
         }
     ));
@@ -2679,7 +2683,7 @@ fn a_match_of_no_arms_eliminates_the_empty_sum()
         refusal_of(&module, SurfaceName::from("stated")),
         LoweringRefusal::OutOfFragment {
             form: FormName::CASE,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::EmptyCase),
             ..
         }
     ));
@@ -4081,7 +4085,7 @@ fn a_cell_between_terms_is_a_loop_or_refused_by_name()
             matches!(refusal, LoweringRefusal::OutOfFragment {
                 form: FormName::CELL_MEMBER,
                 sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::CellMember),
                 ..
             }),
             "`{name}` is declined by the cell member's name: {refusal:?}"
@@ -4112,7 +4116,7 @@ fn only_back_inverts_a_letter()
             outcome_of(&module, "bad".into()),
             DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
                 span,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::InfixForm),
                 ..
             }) if usize::from(span.start()) == start
                 && usize::from(span.end()) == start.saturating_add(written.len())

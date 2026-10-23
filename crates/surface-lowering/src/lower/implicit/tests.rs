@@ -336,7 +336,7 @@ fn a_standing_supply_takes_only_leading_implicits()
         matches!(
             refusal_of(&module, SurfaceName::from("standing")),
             LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::PartialSupply),
                 ..
             }
         ),

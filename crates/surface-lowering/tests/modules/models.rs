@@ -867,7 +867,7 @@ fn a_pack_of_a_sealed_sort_is_refused()
         span: span_of(source.as_str(), "pack Open at Model(Counter)", 0_usize),
         form: FormName::from(NamedKind("pack_model_expression")),
         sort: FragmentSort::Value,
-        boundary: FragmentBoundary::Unadmitted,
+        boundary: FragmentBoundary::Unadmitted(gandr_surface_lowering::Unbuilt::PackModel),
     });
     assert!(
         found

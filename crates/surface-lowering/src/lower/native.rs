@@ -395,6 +395,7 @@ use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -2684,7 +2685,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let Maybe::Present(constructor) = self.written_letter(site, letter)?
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::InfixForm)));
         };
         if let Generators::Words(words) = constructor.form {
             self.lettered.push((letter.span, words));
@@ -2960,7 +2961,10 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let declined = site.folded(FormName::ANNOTATION, FragmentBoundary::Unadmitted);
+        let declined = site.folded(
+            FormName::ANNOTATION,
+            FragmentBoundary::Unadmitted(Unbuilt::Annotation),
+        );
         let Run::One(inner) = run
         else {
             return Err(declined);
@@ -3289,7 +3293,7 @@ impl<'source> Lowerer<'_, 'source>
                 span: with.span,
                 form: FormName::CASE_WITH_VIEW,
                 sort: site.reading.sort(),
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::CaseView),
             });
         }
         let written = match cursor.tile(TileName::ARROW) {
@@ -3373,7 +3377,7 @@ impl<'source> Lowerer<'_, 'source>
                         span: pattern.span,
                         form: FormName::OR_PATTERN,
                         sort: site.reading.sort(),
-                        boundary: FragmentBoundary::Unadmitted,
+                        boundary: FragmentBoundary::Unadmitted(Unbuilt::OrPattern),
                     });
                 }
                 bound = named;
@@ -3527,7 +3531,7 @@ impl<'source> Lowerer<'_, 'source>
                     span: stated.span,
                     form: FormName::CASE,
                     sort: site.reading.sort(),
-                    boundary: FragmentBoundary::Unadmitted,
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyCase),
                 });
             }
             self.read(scrutinee.node, Reading::Value(frame));
@@ -4185,7 +4189,7 @@ impl<'source> Lowerer<'_, 'source>
             // A loop's name in a pattern names the loop, never a variable; a
             // loop is matched only as an arm's whole pattern.
             if let Maybe::Present(_) = self.loop_named(site, at)? {
-                return Err(here.out(FragmentBoundary::Unadmitted));
+                return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::LoopPattern)));
             }
             if let Maybe::Present(stated) = queued.stated {
                 let _first = self.pattern_stated.insert(at.node, stated);
@@ -4219,7 +4223,7 @@ impl<'source> Lowerer<'_, 'source>
                 Some(&Piece::Tile { label, .. }) if label == TileName::FALSE => {
                     Ok(Matcher::Boolean(false))
                 },
-                _ => Err(here.out(FragmentBoundary::Unadmitted)),
+                _ => Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::LiteralPattern))),
             };
         }
         if name == FormName::CONSTRUCTOR_PATTERN {
@@ -4269,7 +4273,7 @@ impl<'source> Lowerer<'_, 'source>
             return self.injected(here, queued, key, payload, patterns, work);
         }
 
-        Err(here.out(FragmentBoundary::Unadmitted))
+        Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
     }
 
     /// The shape of the constructor pattern at `here`, the constructor
@@ -4381,7 +4385,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
             if self.text_at(head).as_ref() != super::identity::BACK {
-                return Err(here.out(FragmentBoundary::Unadmitted));
+                return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::ConsPattern)));
             }
             patterns
                 .spelled
@@ -8873,7 +8877,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
         let resident = site.one(cursor.operands())?;
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
-            return Err(site.out(FragmentBoundary::Reserved));
+            return Err(site.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
         }
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
         exhausted(site, &cursor)?;
@@ -8894,7 +8898,7 @@ impl<'source> Lowerer<'_, 'source>
                 at: resident,
                 ..site
             };
-            return Err(claim.out(FragmentBoundary::Reserved));
+            return Err(claim.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
         };
         let named = self.tree.node(head.node).is_some_and(|node| {
             matches!(
@@ -8906,7 +8910,7 @@ impl<'source> Lowerer<'_, 'source>
             )
         });
         if !named {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         }
         let name = self.name_at(head);
         let descent = self.descents.get(&site.at.node).copied();
@@ -8946,18 +8950,18 @@ impl<'source> Lowerer<'_, 'source>
                     .get(usize::from(owner))
                     .map(|slot| slot.name)
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
                 };
                 let Maybe::Present(bound) = self.scope.resolve(frame, own, &mut self.fuel)?
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
                 };
                 (bound, Maybe::Present(called))
             },
         };
         let Some(&recursion) = self.recursions.get(&bound.binder)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         };
         if claim == Claim::Productive {
             // A productive self-call is the whole arm of a copattern block,
@@ -8966,7 +8970,7 @@ impl<'source> Lowerer<'_, 'source>
             // unfolds only under an observation of its result.
             let Some(descent) = descent
             else {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
             };
             if !self.cocased.contains(&descent.call.at.node) {
                 return Err(LoweringRefusal::UnguardedCorecursion {
@@ -8975,7 +8979,7 @@ impl<'source> Lowerer<'_, 'source>
                 });
             }
             if let Maybe::Present(_) = summand {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
             }
             self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
             self.plan(site, Plan::Variable(bound.index, bound.binder));
@@ -8993,7 +8997,9 @@ impl<'source> Lowerer<'_, 'source>
                     return Err(descent.call.out(FragmentBoundary::NonUniform));
                 }
                 if stretch(&self.parameters, recursion.parameters).len() != 1 {
-                    return Err(descent.call.out(FragmentBoundary::Unadmitted));
+                    return Err(descent
+                        .call
+                        .out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
                 }
                 let _previous = self.injected.insert(site.at.node, summand);
                 self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
@@ -9003,7 +9009,9 @@ impl<'source> Lowerer<'_, 'source>
             },
             // Unapplied, a joint member's claim would be the joint's thunk, at
             // the sum of the block's domains rather than the member's own.
-            (None, Maybe::Present(_)) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            (None, Maybe::Present(_)) => {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
+            },
             (None, Maybe::Absent(_)) => {},
         }
         if let Some(held) = self.recursions.get_mut(&bound.binder) {
@@ -9741,11 +9749,11 @@ impl<'source> Lowerer<'_, 'source>
         };
         let Maybe::Present(bound) = self.scope.resolve(from, name, &mut self.fuel)?
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         };
         let Some(&recursion) = self.recursions.get(&bound.binder)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         };
         self.claim(site, bound.binder)?;
         self.uniform_descent(from, recursion, site, written)?;

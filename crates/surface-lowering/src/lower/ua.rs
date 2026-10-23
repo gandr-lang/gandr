@@ -74,6 +74,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Origin;
 use crate::resolve::OperandCount;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -227,7 +228,7 @@ impl<'source> Lowerer<'_, 'source>
             Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
                 Ok(Count::from(value))
             },
-            Ok(_) | Err(_) => Err(written.out(FragmentBoundary::Unadmitted)),
+            Ok(_) | Err(_) => Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaCount))),
         }
     }
 
@@ -333,7 +334,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let Some(node) = self.tree.node(operand)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         };
         let at = Placed::of(operand, node);
         let written = Site { at, ..site };
@@ -342,7 +343,7 @@ impl<'source> Lowerer<'_, 'source>
             ..
         } = shape_of(self.pbg, node)?
         else {
-            return Err(written.out(FragmentBoundary::Unadmitted));
+            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         };
         let name = self.name_at(at);
         let local = self
@@ -399,7 +400,7 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .any(|diagnostic| inside(diagnostic.span));
         if refused {
-            return Err(written.out(FragmentBoundary::Unadmitted));
+            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         }
         Description::read(&entry.description).map_err(|unread| {
             written.out(match unread {
@@ -408,7 +409,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Unread::Parameters
                 | Unread::Constructors
                 | Unread::Rules
-                | Unread::Leg { .. } => FragmentBoundary::Unadmitted,
+                | Unread::Leg { .. } => FragmentBoundary::Unadmitted(Unbuilt::UaDescription),
             })
         })
     }

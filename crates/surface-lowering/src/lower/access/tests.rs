@@ -364,7 +364,7 @@ def early_by_hand(n : Nat) -> -F Integer {
             ),
             form: FormName::HOLD_STATEMENT,
             sort: FragmentSort::Computation,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::JoinedHold),
         },
         "the rest an exit continues would sit under the held slot"
     );

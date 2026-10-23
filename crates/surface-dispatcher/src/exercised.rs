@@ -718,7 +718,7 @@ fn is_whole_unsigned_body(
         let selected = match refusal {
             LoweringRefusal::UnresolvedName { .. } => Some(Row::UndefinedTermName),
             LoweringRefusal::UnresolvedTypeHead { .. } => Some(Row::UndefinedTypeHead),
-            LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. }
+            LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved(_), .. }
             | LoweringRefusal::UndescribedMember { fault: MemberFault::Reversible, .. } => Some(Row::ReservedForm),
             LoweringRefusal::UndescribedMember { .. } |
             LoweringRefusal::IllFormedDescription { .. } |
@@ -738,7 +738,7 @@ fn lowering_row(
         LoweringRefusal::UnresolvedName { .. } => rows.mark(Row::UndefinedTermName),
         LoweringRefusal::UnresolvedTypeHead { .. } => rows.mark(Row::UndefinedTypeHead),
         LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Reserved,
+            boundary: FragmentBoundary::Reserved(_),
             ..
         }
         | LoweringRefusal::UndescribedMember {
@@ -747,7 +747,8 @@ fn lowering_row(
         } => rows.mark(Row::ReservedForm),
         LoweringRefusal::OutOfFragment {
             boundary:
-                FragmentBoundary::Unadmitted
+                FragmentBoundary::Unadmitted(_)
+                | FragmentBoundary::Misplaced
                 | FragmentBoundary::WrongSort
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed

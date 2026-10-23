@@ -11,22 +11,23 @@
 //! The classes are `gandr-core-term`'s, shared with every other producer of
 //! refusals in the core pipeline; the classifier below is this crate's own.
 //! It is an exhaustive, wildcard-free match over the variants that reads a
-//! refusal's kind — its variant, and for a form out of the fragment the form,
-//! the sort its position demanded and the boundary it crossed, for an
-//! unstated model component the fault — and never a span or a name: two
+//! refusal's kind — its variant, and for a form out of the fragment the sort
+//! its position demanded and the boundary it crossed, with the feature a
+//! reserved or unadmitted form carries, for an unstated model component the
+//! fault — and never a span or a name: two
 //! refusals of one kind classify alike, and a refusal added without a class
 //! does not compile.
 //!
 //! # A form out of the fragment names its issue by what it is
 //!
-//! A form the fragment reserves or does not admit names the issue tracking
-//! that form, read off the form and the sort its position demands: an
-//! instantiation is a recursive call's claim where a computation is read and a
-//! partial supply where a value is. A form no issue of its own tracks yet names
-//! the epic that files one once a source reaches it; the refusal still carries
-//! the form, so the feature stays named. The universe of representable sorts
-//! classifies a theory's sort member only, so read anywhere else it is
-//! misplaced, malformed source. A form of the wrong sort where a declaration
+//! A form the fragment reserves or does not admit names the issue tracking the
+//! [`Unbuilt`] feature its refusing site names: an instantiation is a
+//! recursive call's claim at one site and a partial supply at another. A
+//! feature no issue of its own tracks yet names the epic that files one once a
+//! source reaches it; the refusal still carries the feature, so it stays
+//! named. The universe of representable sorts classifies a theory's sort
+//! member only, so read anywhere else it is misplaced, malformed source. A
+//! form of the wrong sort where a declaration
 //! is read is an expression at a module's root, which is a run target,
 //! unimplemented, except the operator declaration, which names its own issue; a
 //! form of the wrong sort anywhere else is misplaced and malformed source. An
@@ -38,11 +39,11 @@
 //! protocol recursing before any action, a lent or ended name that is no linear
 //! slot — is a boundary the language draws, and malformed source.
 //!
-//! A refusal's name in a fixture's `refuses` expectation is keyed by the same
-//! reading, [`FragmentFeature`]: the form, with the sort where the sort decides
-//! the issue; the run target; or the boundary, without the operand count an
-//! arity offers. One name then covers one feature, and the witness checks that
-//! every form, sort and boundary one feature names classifies alike.
+//! A refusal's name in a fixture's `refuses` expectation is keyed by
+//! [`FragmentFeature`]: the unbuilt feature; the run target; or the boundary,
+//! without the operand count an arity offers. One name then covers one
+//! feature, and the witness checks that every feature, sort and boundary one
+//! name covers classifies alike.
 //! **Choice.** The name carries the key as a qualifier on the one refusal,
 //! `OutOfFragment.projection_expression`; the alternative, a refusal variant
 //! per feature, multiplied the vocabulary for a distinction the qualifier
@@ -90,6 +91,7 @@ use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
 use crate::model::ModelFault;
+use crate::unbuilt::Unbuilt;
 
 impl LoweringRefusal<'_>
 {
@@ -100,17 +102,17 @@ impl LoweringRefusal<'_>
     /// - ensures: the class is a function of the refusal's kind — the variant,
     ///   a form out of the fragment's form, sort and boundary, an unstated
     ///   component's or an undescribed member's fault — and never of a span or
-    ///   a name. A form reserved or unadmitted, but for the universe of
-    ///   representable sorts out of its sort member, an indexed reading, an
-    ///   action on no endpoint, a form of the wrong sort where a declaration is
-    ///   read, a graded bridge, an unread ascription, an implicit telescope out
-    ///   of shape, a model component that relates a many-out operation's
-    ///   results, states a circuit rule or binds a variable, and a member the
+    ///   a name. A form reserved or unadmitted, an indexed reading, an action
+    ///   on no endpoint, a form of the wrong sort where a declaration is read,
+    ///   a graded bridge, an unread ascription, an implicit telescope out of
+    ///   shape, a model component that relates a many-out operation's results,
+    ///   states a circuit rule or binds a variable, and a member the
     ///   description route or its cell layer has not built a reading for are
     ///   unimplemented, each naming its issue; the exhausted allowance, the
     ///   grammar mismatch, the unknown mold, an undecided coincidence check, an
     ///   unminted declaration and a circuit redex off its own boundary are
-    ///   engine faults; every other refusal is malformed source.
+    ///   engine faults; every other refusal, a misplaced form among them, is
+    ///   malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -128,17 +130,11 @@ impl LoweringRefusal<'_>
     #[spec(
         ensures: |ret| match *self {
             | Self::OutOfFragment {
-                boundary: FragmentBoundary::Reserved | FragmentBoundary::Unadmitted,
-                form,
+                boundary: FragmentBoundary::Reserved(feature) | FragmentBoundary::Unadmitted(feature),
                 ..
-            } if form == FormName::REPRESENTABLE_UNIVERSE_TYPE => {
-                matches!(ret, FailureClass::MalformedSource)
-            },
+            } => ret == FailureClass::Unimplemented(feature.tracking()),
             | Self::OutOfFragment {
-                boundary: FragmentBoundary::Reserved
-                    | FragmentBoundary::Unadmitted
-                    | FragmentBoundary::Indexed
-                    | FragmentBoundary::Endpoint,
+                boundary: FragmentBoundary::Indexed | FragmentBoundary::Endpoint,
                 ..
             }
             | Self::OutOfFragment {
@@ -346,14 +342,12 @@ impl LoweringRefusal<'_>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a reserved or unadmitted form names the issue [`tracked_form`]
-///   answers, but the universe of representable sorts, which classifies a
-///   theory's sort member only and is misplaced anywhere the lowering reads it,
-///   is malformed source; a form of the wrong sort where a declaration is read
-///   names the operator declaration's issue for an operator declaration and the
-///   run target's for every other; an indexed reading names the indexed
-///   family's, an action on no endpoint delegation's; every other boundary is
-///   malformed source.
+/// - ensures: a reserved or unadmitted form names the issue tracking the
+///   feature it carries; a misplaced form is malformed source; a form of the
+///   wrong sort where a declaration is read names the operator declaration's
+///   issue for an operator declaration and the run target's for every other; an
+///   indexed reading names the indexed family's, an action on no endpoint
+///   delegation's; every other boundary is malformed source.
 /// - provides: the lowering classifier's arm for `OutOfFragment`.
 /// - fails: never.
 /// - panics: none.
@@ -364,8 +358,7 @@ impl LoweringRefusal<'_>
 /// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
-        == ((matches!(boundary, FragmentBoundary::Reserved | FragmentBoundary::Unadmitted)
-            && form != FormName::REPRESENTABLE_UNIVERSE_TYPE)
+        == (matches!(boundary, FragmentBoundary::Reserved(_) | FragmentBoundary::Unadmitted(_))
             || matches!(boundary, FragmentBoundary::Indexed | FragmentBoundary::Endpoint)
             || (boundary == FragmentBoundary::WrongSort && sort == FragmentSort::Declaration))
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
@@ -378,17 +371,12 @@ fn out_of_fragment(
 ) -> FailureClass
 {
     match boundary {
-        FragmentBoundary::Reserved | FragmentBoundary::Unadmitted
-            if form == FormName::REPRESENTABLE_UNIVERSE_TYPE =>
-        {
-            FailureClass::MalformedSource
-        },
-        FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => {
-            FailureClass::Unimplemented(tracked_form(form, sort))
+        FragmentBoundary::Reserved(feature) | FragmentBoundary::Unadmitted(feature) => {
+            FailureClass::Unimplemented(feature.tracking())
         },
         FragmentBoundary::WrongSort => match sort {
             FragmentSort::Declaration if form == FormName::OPERATOR_DECLARATION => {
-                FailureClass::Unimplemented(TrackingIssue::OPERATOR_DECLARATION)
+                FailureClass::Unimplemented(Unbuilt::OperatorDeclaration.tracking())
             },
             FragmentSort::Declaration => FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
             FragmentSort::Module
@@ -401,7 +389,8 @@ fn out_of_fragment(
         },
         FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
         FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
-        FragmentBoundary::Arity(_)
+        FragmentBoundary::Misplaced
+        | FragmentBoundary::Arity(_)
         | FragmentBoundary::Unannotated
         | FragmentBoundary::NonUniform
         | FragmentBoundary::ForeignClaim
@@ -425,23 +414,19 @@ fn out_of_fragment(
 /// - panics: none.
 /// - executable: none — this data type has no call boundary;
 ///   [`FragmentFeature::of`] carries the predicate, and the witness checks the
-///   ensures clause over every form, sort and boundary.
+///   ensures clause over every feature, form, sort and boundary.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — every form the lowering spells, at every sort and
-///   boundary, against every other of its feature: a feature covering two
-///   classes or two issues is found.
+/// - hypothesis: L2 — every feature, and every form the lowering spells, at
+///   every sort and boundary, against every other of its key: a key covering
+///   two classes or two issues is found.
 /// - witness: `classify::tests::one_feature_names_one_class`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentFeature
 {
-    /// A form named by itself: one the fragment reserves or does not admit
-    /// and that one issue tracks at every sort, and the operator declaration
-    /// wherever it stands.
-    Form(FormName),
-    /// A form the fragment reserves or does not admit and whose issue the
-    /// sort its position demands decides: an instantiation, a grade.
-    FormAt(FormName, FragmentSort),
+    /// The feature a reserved or unadmitted form carries, and the operator
+    /// declaration's wherever it stands.
+    Unbuilt(Unbuilt),
     /// A form of the wrong sort where a declaration is read: an expression
     /// at a module's root, a run target.
     RunTarget,
@@ -457,10 +442,10 @@ impl FragmentFeature
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a reserved or unadmitted form is its form, with the sort
-    ///   where the sort decides its issue; an operator declaration of the wrong
-    ///   sort where a declaration is read is its form, and any other form so is
-    ///   the run target; every other crossing is its boundary.
+    /// - ensures: a reserved or unadmitted form is the feature it carries; an
+    ///   operator declaration of the wrong sort where a declaration is read is
+    ///   the operator declaration's feature, and any other form so is the run
+    ///   target; every other crossing is its boundary.
     /// - provides: the qualifier a refusal name of `OutOfFragment` carries.
     /// - fails: never.
     /// - panics: none.
@@ -468,12 +453,12 @@ impl FragmentFeature
     /// # Adequacy
     /// - hypothesis: L2 — as [`FragmentFeature`].
     /// - witness: `classify::tests::one_feature_names_one_class`
-    /// - witness: `classify::tests::only_an_instantiation_and_a_grade_name_their_sort`
     #[spec(ensures: |ret| match boundary {
-        | FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => matches!(ret,
-            Self::Form(named) | Self::FormAt(named, _) if named == form),
+        | FragmentBoundary::Reserved(feature) | FragmentBoundary::Unadmitted(feature) => {
+            ret == Self::Unbuilt(feature)
+        },
         | FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => matches!(ret,
-            Self::RunTarget) || matches!(ret, Self::Form(named) if named == form),
+            Self::RunTarget | Self::Unbuilt(Unbuilt::OperatorDeclaration)),
         | _ => ret == Self::Crossed(boundary),
     })]
     #[inline]
@@ -485,21 +470,19 @@ impl FragmentFeature
     ) -> Self
     {
         match boundary {
-            FragmentBoundary::Reserved | FragmentBoundary::Unadmitted
-                if form == FormName::INSTANTIATION || form == FormName::GRADE =>
-            {
-                Self::FormAt(form, sort)
+            FragmentBoundary::Reserved(feature) | FragmentBoundary::Unadmitted(feature) => {
+                Self::Unbuilt(feature)
             },
-            FragmentBoundary::Reserved | FragmentBoundary::Unadmitted => Self::Form(form),
             FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => {
                 if form == FormName::OPERATOR_DECLARATION {
-                    Self::Form(form)
+                    Self::Unbuilt(Unbuilt::OperatorDeclaration)
                 }
                 else {
                     Self::RunTarget
                 }
             },
             FragmentBoundary::WrongSort
+            | FragmentBoundary::Misplaced
             | FragmentBoundary::Arity(_)
             | FragmentBoundary::Indexed
             | FragmentBoundary::Unannotated
@@ -514,71 +497,6 @@ impl FragmentFeature
             | FragmentBoundary::Held
             | FragmentBoundary::View => Self::Crossed(boundary),
         }
-    }
-}
-
-/// The issue tracking a form the fragment reserves or does not admit.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: a form an open issue tracks names that issue — a grade where a
-///   declaration is read, the field grade's, and an instantiation, a recursive
-///   call's claim where a computation is read and a partial supply where a
-///   value is; every other form names [`TrackingIssue::UNFILED`], the epic that
-///   files an issue for a feature once a source reaches it.
-/// - provides: the issue of a reserved or unadmitted form.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the table is the specification; a predicate would
-///   restate it row by row.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the census's tracked forms and an untracked one are
-///   pinned to their issues, the grade and the parameter at the sort that names
-///   an issue and at one that does not.
-/// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
-#[must_use]
-fn tracked_form(
-    form: FormName,
-    sort: FragmentSort,
-) -> TrackingIssue
-{
-    match form {
-        FormName::PROJECTION => TrackingIssue::PROJECTION,
-        FormName::INDEX => TrackingIssue::INDEX,
-        FormName::PACK
-        | FormName::PACK_MODEL
-        | FormName::PACKAGE_TYPE
-        | FormName::UNPACK_STATEMENT => TrackingIssue::PACKAGES,
-        FormName::ANNOTATION => TrackingIssue::ANNOTATION_VALUE,
-        FormName::RECORD_UPDATE => TrackingIssue::RECORD_UPDATE,
-        FormName::TYPED_NUMBER => TrackingIssue::TYPED_NUMBER,
-        FormName::SHELL_BLOCK => TrackingIssue::SHELL_BLOCK,
-        FormName::GRADE if matches!(sort, FragmentSort::Declaration) => TrackingIssue::FIELD_GRADE,
-        FormName::AS_PATTERN | FormName::LIST_PATTERN | FormName::REST_PATTERN => {
-            TrackingIssue::PATTERNS
-        },
-        FormName::CHARACTER => TrackingIssue::CHARACTER,
-        FormName::CO_BUNDLE => TrackingIssue::CO_BUNDLE,
-        FormName::DROP => TrackingIssue::DROP,
-        FormName::FORALL_TYPE => TrackingIssue::FORALL,
-        FormName::UNION_TYPE | FormName::INTERSECTION_TYPE => TrackingIssue::UNION_INTERSECTION,
-        FormName::OPERATOR_DECLARATION => TrackingIssue::OPERATOR_DECLARATION,
-        FormName::INSTANTIATION if matches!(sort, FragmentSort::Computation) => {
-            TrackingIssue::RECURSIVE_CLAIM
-        },
-        FormName::INSTANTIATION if matches!(sort, FragmentSort::Value) => {
-            TrackingIssue::PARTIAL_SUPPLY
-        },
-        FormName::FORK_STATEMENT | FormName::HOLD_STATEMENT => TrackingIssue::JOINED_SCOPE,
-        FormName::FORK_SHARED_STATEMENT
-        | FormName::DUP
-        | FormName::ACQUIRE_STATEMENT
-        | FormName::RELEASE_STATEMENT => TrackingIssue::SHARED_SESSIONS,
-        FormName::STAGED_TYPE => TrackingIssue::PLACED_STAGE,
-        FormName::UNKNOWN_TYPE => TrackingIssue::UNKNOWN_TYPE,
-        FormName::CASE_WITH_VIEW => TrackingIssue::CASE_VIEW,
-        _ => TrackingIssue::UNFILED,
     }
 }
 
@@ -741,6 +659,7 @@ mod tests
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
+    use crate::unbuilt::Unbuilt;
 
     /// The whole refusal vocabulary, one inhabitant each, spans left empty.
     ///
@@ -797,7 +716,7 @@ mod tests
                 span: empty,
                 form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Reserved,
+                boundary: FragmentBoundary::Reserved(Unbuilt::Val),
             },
             LoweringRefusal::MalformedLiteral {
                 span: empty,
@@ -1128,79 +1047,79 @@ mod tests
             (
                 "projection_expression",
                 FragmentSort::Computation,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::Projection),
                 FailureClass::Unimplemented(TrackingIssue::PROJECTION),
             ),
             (
                 "index_expression",
                 FragmentSort::Computation,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::Index),
                 FailureClass::Unimplemented(TrackingIssue::INDEX),
             ),
             (
                 "unpack_statement",
                 FragmentSort::Computation,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::Unpack),
                 FailureClass::Unimplemented(TrackingIssue::PACKAGES),
             ),
             (
                 "grade",
                 FragmentSort::Declaration,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::FieldGrade),
                 FailureClass::Unimplemented(TrackingIssue::FIELD_GRADE),
             ),
             (
                 "def_value",
                 FragmentSort::Declaration,
-                FragmentBoundary::Reserved,
+                FragmentBoundary::Reserved(Unbuilt::Val),
                 FailureClass::Unimplemented(TrackingIssue::UNFILED),
             ),
             (
                 "instantiation_expression",
                 FragmentSort::Computation,
-                FragmentBoundary::Reserved,
+                FragmentBoundary::Reserved(Unbuilt::RecursiveClaim),
                 FailureClass::Unimplemented(TrackingIssue::RECURSIVE_CLAIM),
             ),
             (
                 "instantiation_expression",
                 FragmentSort::Value,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::PartialSupply),
                 FailureClass::Unimplemented(TrackingIssue::PARTIAL_SUPPLY),
             ),
             (
                 "fork_statement",
                 FragmentSort::Computation,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::JoinedFork),
                 FailureClass::Unimplemented(TrackingIssue::JOINED_SCOPE),
             ),
             (
                 "dup_expression",
                 FragmentSort::Value,
-                FragmentBoundary::Reserved,
+                FragmentBoundary::Reserved(Unbuilt::Dup),
                 FailureClass::Unimplemented(TrackingIssue::SHARED_SESSIONS),
             ),
             (
                 "staged_type",
                 FragmentSort::ValueType,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::StagedType),
                 FailureClass::Unimplemented(TrackingIssue::PLACED_STAGE),
             ),
             (
                 "unknown_type",
                 FragmentSort::ValueType,
-                FragmentBoundary::Reserved,
+                FragmentBoundary::Reserved(Unbuilt::UnknownType),
                 FailureClass::Unimplemented(TrackingIssue::UNKNOWN_TYPE),
             ),
             (
                 "case_with_view",
                 FragmentSort::Computation,
-                FragmentBoundary::Reserved,
+                FragmentBoundary::Reserved(Unbuilt::CaseView),
                 FailureClass::Unimplemented(TrackingIssue::CASE_VIEW),
             ),
             (
                 "representable_universe_type",
                 FragmentSort::ValueType,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Misplaced,
                 FailureClass::MalformedSource,
             ),
             (
@@ -1242,13 +1161,13 @@ mod tests
             (
                 "grade",
                 FragmentSort::CompType,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::ThunkGrade),
                 FailureClass::Unimplemented(TrackingIssue::UNFILED),
             ),
             (
                 "parameter",
                 FragmentSort::Declaration,
-                FragmentBoundary::Unadmitted,
+                FragmentBoundary::Unadmitted(Unbuilt::TypeParameter),
                 FailureClass::Unimplemented(TrackingIssue::UNFILED),
             ),
         ];
@@ -1289,30 +1208,32 @@ mod tests
         );
     }
 
-    /// Only an instantiation and a grade carry the sort their position
-    /// demands into the feature: any other form out of the fragment is named
-    /// by the form alone, whatever sort it is read as.
+    /// Where a declaration is read, an operator declaration is keyed by its
+    /// own feature, the key its unadmitted reading carries, and any other form
+    /// by the run target.
     #[test]
-    fn only_an_instantiation_and_a_grade_name_their_sort()
+    fn a_declaration_position_keys_an_operator_declaration_apart()
     {
         use super::FragmentFeature;
 
-        for boundary in [FragmentBoundary::Reserved, FragmentBoundary::Unadmitted] {
-            for sort in [FragmentSort::Value, FragmentSort::ValueType] {
-                for form in [FormName::INSTANTIATION, FormName::GRADE] {
-                    assert_eq!(
-                        FragmentFeature::of(form, sort, boundary),
-                        FragmentFeature::FormAt(form, sort),
-                        "{form:?} read as {sort} names its sort"
-                    );
-                }
-                assert_eq!(
-                    FragmentFeature::of(FormName::HOLD_STATEMENT, sort, boundary),
-                    FragmentFeature::Form(FormName::HOLD_STATEMENT),
-                    "another form read as {sort} is named by the form alone"
-                );
-            }
-        }
+        assert_eq!(
+            FragmentFeature::of(
+                FormName::OPERATOR_DECLARATION,
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort
+            ),
+            FragmentFeature::Unbuilt(Unbuilt::OperatorDeclaration),
+            "an operator declaration where a declaration is read is its own feature"
+        );
+        assert_eq!(
+            FragmentFeature::of(
+                FormName::HOLD_STATEMENT,
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort
+            ),
+            FragmentFeature::RunTarget,
+            "any other form where a declaration is read is the run target"
+        );
     }
 
     /// Every form the grammar names, at every sort and boundary: the forms
@@ -1339,9 +1260,8 @@ mod tests
             FragmentSort::Pattern,
             FragmentSort::Continuation,
         ];
-        let boundaries = [
-            FragmentBoundary::Reserved,
-            FragmentBoundary::Unadmitted,
+        let crossings = [
+            FragmentBoundary::Misplaced,
             FragmentBoundary::WrongSort,
             FragmentBoundary::Arity(OperandCount::from(0_usize)),
             FragmentBoundary::Arity(OperandCount::from(2_usize)),
@@ -1358,11 +1278,21 @@ mod tests
             FragmentBoundary::Held,
             FragmentBoundary::View,
         ];
+        let boundaries: alloc::vec::Vec<FragmentBoundary> = Unbuilt::ALL
+            .iter()
+            .flat_map(|&feature| {
+                [
+                    FragmentBoundary::Reserved(feature),
+                    FragmentBoundary::Unadmitted(feature),
+                ]
+            })
+            .chain(crossings)
+            .collect();
         let mut classes: BTreeMap<FragmentFeature, FailureClass> = BTreeMap::new();
         for &kind in TREE_SITTER_NAMED_KINDS.iter().chain(PBG_ONLY_KINDS) {
             let form = FormName::from(NamedKind(kind));
             for sort in sorts {
-                for boundary in boundaries {
+                for &boundary in &boundaries {
                     let class = LoweringRefusal::OutOfFragment {
                         span: empty,
                         form,

@@ -1437,7 +1437,9 @@ fn a_user_module_selection_is_governed_and_a_free_target_still_projects()
                     span: span_of(source, "free.field", 0_usize),
                     form: FormName::from(NamedKind("projection_expression")),
                     sort: FragmentSort::Value,
-                    boundary: FragmentBoundary::Unadmitted,
+                    boundary: FragmentBoundary::Unadmitted(
+                        gandr_surface_lowering::Unbuilt::Projection
+                    ),
                 })
             ),
         ],

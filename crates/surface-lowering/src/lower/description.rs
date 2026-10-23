@@ -77,6 +77,7 @@ use crate::module::Half;
 use crate::module::Operand;
 use crate::module::SlotIndex;
 use crate::resolve::Frame;
+use crate::unbuilt::Unbuilt;
 
 /// Whether the native data reading owns a described declaration.
 #[repr(transparent)]
@@ -452,7 +453,7 @@ impl<'source> Lowerer<'_, 'source>
                             span: block.span,
                             form: name,
                             sort: FragmentSort::Declaration,
-                            boundary: FragmentBoundary::Unadmitted,
+                            boundary: FragmentBoundary::Unadmitted(Unbuilt::Presentation),
                         });
                     }
                 },

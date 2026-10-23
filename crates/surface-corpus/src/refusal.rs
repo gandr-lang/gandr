@@ -35,9 +35,9 @@
 //!
 //! Three variants each cover several features, so their name carries the
 //! one it refuses after a dot: a form out of the fragment the feature its
-//! producer classifies it by — `OutOfFragment.projection_expression`, a form
-//! at the sort that decides its issue as
-//! `OutOfFragment.instantiation_expression.computation`, the run target as
+//! producer classifies it by — an unbuilt feature by its spelling
+//! (`OutOfFragment.projection_expression`,
+//! `OutOfFragment.instantiation_expression.computation`), the run target as
 //! `OutOfFragment.WrongSort.declaration`, another boundary by its name
 //! (`OutOfFragment.Arity`, without the operand count), a checker former by
 //! its name (`OutOfFragment.Stage`) — and an unstated model component and an
@@ -45,7 +45,7 @@
 //! lowering's key is `FragmentFeature`, whose witness checks that one key
 //! classifies alike, so a name covers one feature and one issue. A payload
 //! is still read byte for byte: a qualifier no refusal carries — a misspelt
-//! form, a sort that decides nothing, the bare variant — names nothing.
+//! feature, the bare variant — names nothing.
 //! **Choice.** The qualifier on the one refusal; the alternative, a variant
 //! per feature, multiplied the vocabulary for the distinction the qualifier
 //! makes. **Reversal.** A feature whose refusals need their own payload or
@@ -89,15 +89,11 @@ use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
-use gandr_surface_grammar::NamedKind;
-use gandr_surface_grammar::PBG_ONLY_KINDS;
-use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
-use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
-use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
+use gandr_surface_lowering::Unbuilt;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::model::ModelFault;
 use gandr_surface_syntax::ByteSpan;
@@ -275,11 +271,9 @@ impl fmt::Display for Tag
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Qualifier
 {
-    /// A form out of the fragment named by itself: `projection_expression`.
-    Form(FormName),
-    /// A form out of the fragment at the sort that decides its issue:
-    /// `instantiation_expression.value`.
-    FormAt(FormName, Tag),
+    /// A form out of the fragment named by the unbuilt feature it carries:
+    /// `projection_expression`, `instantiation_expression.value`.
+    Unbuilt(Unbuilt),
     /// A named reading: a boundary, the run target, or a checker former.
     Named(Tag),
 }
@@ -290,17 +284,15 @@ impl fmt::Display for Qualifier
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a form as the grammar names it, a form at a sort as the form,
-    ///   a dot and the sort's tag, a named reading as its tag; propagates a
-    ///   destination failure.
+    /// - ensures: an unbuilt feature as its spelling, a named reading as its
+    ///   tag; propagates a destination failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no written text; the witness
     ///   reads each print back as the name it spells.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each qualifier's print is the spelling a producer
-    ///   mints for it, the form, the form at a sort and the named readings
-    ///   among them.
+    ///   mints for it, the unbuilt features and the named readings among them.
     /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
     #[inline]
     fn fmt(
@@ -309,8 +301,7 @@ impl fmt::Display for Qualifier
     ) -> fmt::Result
     {
         match *self {
-            Self::Form(form) => f.write_str(form.as_ref()),
-            Self::FormAt(form, sort) => write!(f, "{}.{sort}", form.as_ref()),
+            Self::Unbuilt(feature) => fmt::Display::fmt(&feature.spelling(), f),
             Self::Named(tag) => fmt::Display::fmt(&tag, f),
         }
     }
@@ -1538,10 +1529,9 @@ impl RefusalName
     /// - requires: nothing — any text is admissible input.
     /// - ensures: the name whose spelling equals the literal's content byte for
     ///   byte; no case folding, trimming or prefix match. A qualified name is
-    ///   read only with a qualifier some refusal carries: a form the grammar
-    ///   names, at a sort only where the sort decides its issue; a boundary
-    ///   other than reserved and unadmitted; the run target; a checker former;
-    ///   a model component's or a member's fault.
+    ///   read only with a qualifier some refusal carries: an unbuilt feature's
+    ///   spelling; a boundary other than reserved and unadmitted; the run
+    ///   target; a checker former; a model component's or a member's fault.
     /// - provides: the reading of a `refuses` payload.
     /// - fails: never; text naming nothing is the [`refusal_name::Absent`]
     ///   absence, which the expectation reader turns into a fixture failure.
@@ -1578,37 +1568,10 @@ impl RefusalName
                 "OutOfFragment" => tagged(&readings())
                     .map(Qualifier::Named)
                     .or_else(|| {
-                        let (form, at) = rest
-                            .split_once('.')
-                            .map_or((rest, None), |(form, at)| (form, Some(at)));
-                        let form = TREE_SITTER_NAMED_KINDS
-                            .iter()
-                            .chain(PBG_ONLY_KINDS)
-                            .find(|&&kind| kind == form)
-                            .map(|&kind| FormName::from(NamedKind(kind)))?;
-                        at.map_or_else(
-                            || {
-                                (FragmentFeature::of(
-                                    form,
-                                    FragmentSort::Value,
-                                    FragmentBoundary::Unadmitted,
-                                ) == FragmentFeature::Form(form))
-                                .then_some(Qualifier::Form(form))
-                            },
-                            |at| {
-                                SORTS
-                                    .into_iter()
-                                    .find(|&sort| {
-                                        sort_tag(sort).0 == at
-                                            && FragmentFeature::of(
-                                                form,
-                                                sort,
-                                                FragmentBoundary::Unadmitted,
-                                            ) == FragmentFeature::FormAt(form, sort)
-                                    })
-                                    .map(|sort| Qualifier::FormAt(form, sort_tag(sort)))
-                            },
-                        )
+                        Unbuilt::ALL
+                            .into_iter()
+                            .find(|feature| feature.spelling().as_ref() == rest)
+                            .map(Qualifier::Unbuilt)
                     })
                     .map(Self::OutOfFragment),
                 "UnstatedComponent" => {
@@ -1629,18 +1592,6 @@ impl RefusalName
 /// The tag the run target is qualified by: a form of the wrong sort where a
 /// declaration is read.
 const RUN_TARGET: Tag = Tag("WrongSort.declaration");
-
-/// Every sort a form out of the fragment is read at.
-const SORTS: [FragmentSort; 8_usize] = [
-    FragmentSort::Module,
-    FragmentSort::Declaration,
-    FragmentSort::ValueType,
-    FragmentSort::CompType,
-    FragmentSort::Value,
-    FragmentSort::Computation,
-    FragmentSort::Pattern,
-    FragmentSort::Continuation,
-];
 
 /// Every former the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 24_usize] = [
@@ -1707,8 +1658,8 @@ const MEMBER_FAULTS: [MemberFault; 18_usize] = [
 ];
 
 /// Every boundary a form out of the fragment crosses and is named by: every
-/// boundary but reserved and unadmitted, which name the form instead, an
-/// arity standing for every operand count.
+/// boundary but reserved and unadmitted, which name the feature they carry
+/// instead, an arity standing for every operand count.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1722,9 +1673,10 @@ const MEMBER_FAULTS: [MemberFault; 18_usize] = [
 /// - hypothesis: L3 — a crossed boundary named by no other producer, the
 ///   endpoint's, is minted and read back only through this list.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-fn crossed() -> [FragmentBoundary; 14_usize]
+fn crossed() -> [FragmentBoundary; 15_usize]
 {
     [
+        FragmentBoundary::Misplaced,
         FragmentBoundary::WrongSort,
         FragmentBoundary::Arity(OperandCount::from(0_usize)),
         FragmentBoundary::Indexed,
@@ -1772,8 +1724,8 @@ fn readings() -> Vec<Tag>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a form is the form; a form at a sort the form and the sort's tag;
-///   the run target [`RUN_TARGET`]; a crossing the boundary's tag.
+/// - ensures: an unbuilt feature is the feature; the run target [`RUN_TARGET`];
+///   a crossing the boundary's tag.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1781,16 +1733,14 @@ fn readings() -> Vec<Tag>
 ///   reaches reads back as the name it spells.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
 #[spec(ensures: |ret| match feature {
-    | FragmentFeature::Form(form) => ret == Qualifier::Form(form),
-    | FragmentFeature::FormAt(form, sort) => ret == Qualifier::FormAt(form, sort_tag(sort)),
+    | FragmentFeature::Unbuilt(unbuilt) => ret == Qualifier::Unbuilt(unbuilt),
     | FragmentFeature::RunTarget => ret == Qualifier::Named(RUN_TARGET),
     | FragmentFeature::Crossed(boundary) => ret == Qualifier::Named(boundary_tag(boundary)),
 })]
 fn fragment(feature: FragmentFeature) -> Qualifier
 {
     match feature {
-        FragmentFeature::Form(form) => Qualifier::Form(form),
-        FragmentFeature::FormAt(form, sort) => Qualifier::FormAt(form, sort_tag(sort)),
+        FragmentFeature::Unbuilt(unbuilt) => Qualifier::Unbuilt(unbuilt),
         FragmentFeature::RunTarget => Qualifier::Named(RUN_TARGET),
         FragmentFeature::Crossed(boundary) => Qualifier::Named(boundary_tag(boundary)),
     }
@@ -1813,8 +1763,9 @@ fn fragment(feature: FragmentFeature) -> Qualifier
 const fn boundary_tag(boundary: FragmentBoundary) -> Tag
 {
     Tag(match boundary {
-        FragmentBoundary::Reserved => "Reserved",
-        FragmentBoundary::Unadmitted => "Unadmitted",
+        FragmentBoundary::Reserved(_) => "Reserved",
+        FragmentBoundary::Unadmitted(_) => "Unadmitted",
+        FragmentBoundary::Misplaced => "Misplaced",
         FragmentBoundary::WrongSort => "WrongSort",
         FragmentBoundary::Arity(_) => "Arity",
         FragmentBoundary::Indexed => "Indexed",
@@ -1829,33 +1780,6 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
         FragmentBoundary::NonContractive => "NonContractive",
         FragmentBoundary::Held => "Held",
         FragmentBoundary::View => "View",
-    })
-}
-
-/// The tag a sort is named by, snake case as a form is.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the sort's name in snake case.
-/// - panics: none.
-/// - executable: none — the tag is the sort's spelling, which a predicate would
-///   restate; the witness reads each minted name back.
-///
-/// # Adequacy
-/// - hypothesis: L3 — `OutOfFragment.instantiation_expression.value` is minted
-///   with the value sort's tag.
-/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-const fn sort_tag(sort: FragmentSort) -> Tag
-{
-    Tag(match sort {
-        FragmentSort::Module => "module",
-        FragmentSort::Declaration => "declaration",
-        FragmentSort::ValueType => "value_type",
-        FragmentSort::CompType => "comp_type",
-        FragmentSort::Value => "value",
-        FragmentSort::Computation => "computation",
-        FragmentSort::Pattern => "pattern",
-        FragmentSort::Continuation => "continuation",
     })
 }
 
@@ -2903,8 +2827,10 @@ mod tests
         use gandr_surface_grammar::TREE_SITTER_NAMED_KINDS;
         use gandr_surface_lowering::FormName;
         use gandr_surface_lowering::FragmentBoundary;
+        use gandr_surface_lowering::FragmentSort;
         use gandr_surface_lowering::LoweringRefusal;
         use gandr_surface_lowering::OperandCount;
+        use gandr_surface_lowering::Unbuilt;
 
         use super::FORMERS;
         use super::MEMBER_FAULTS;
@@ -2912,7 +2838,6 @@ mod tests
         use super::Qualifier;
         use super::RUN_TARGET;
         use super::Refusal;
-        use super::SORTS;
         use super::boundary_tag;
         use super::crossed;
         use super::former_tag;
@@ -2920,27 +2845,44 @@ mod tests
         use super::model_tag;
 
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
-        let boundaries = [
-            FragmentBoundary::Reserved,
-            FragmentBoundary::Unadmitted,
-            FragmentBoundary::Arity(OperandCount::from(3_usize)),
-        ]
-        .into_iter()
-        .chain(crossed());
-        let mut minted: alloc::vec::Vec<RefusalName> = alloc::vec::Vec::new();
-        for boundary in boundaries {
+        let sorts = [
+            FragmentSort::Module,
+            FragmentSort::Declaration,
+            FragmentSort::ValueType,
+            FragmentSort::CompType,
+            FragmentSort::Value,
+            FragmentSort::Computation,
+            FragmentSort::Pattern,
+            FragmentSort::Continuation,
+        ];
+        let mint = |form: FormName, sort: FragmentSort, boundary: FragmentBoundary| {
+            Refusal::Lowering(LoweringRefusal::OutOfFragment {
+                span: empty,
+                form,
+                sort,
+                boundary,
+            })
+            .name()
+        };
+        let mut minted: alloc::collections::BTreeSet<RefusalName> =
+            alloc::collections::BTreeSet::new();
+        for boundary in
+            core::iter::once(FragmentBoundary::Arity(OperandCount::from(3_usize))).chain(crossed())
+        {
             for &kind in TREE_SITTER_NAMED_KINDS.iter().chain(PBG_ONLY_KINDS) {
-                for sort in SORTS {
-                    minted.push(
-                        Refusal::Lowering(LoweringRefusal::OutOfFragment {
-                            span: empty,
-                            form: FormName::from(NamedKind(kind)),
-                            sort,
-                            boundary,
-                        })
-                        .name(),
-                    );
+                for sort in sorts {
+                    let _fresh =
+                        minted.insert(mint(FormName::from(NamedKind(kind)), sort, boundary));
                 }
+            }
+        }
+        for feature in Unbuilt::ALL {
+            for boundary in [
+                FragmentBoundary::Reserved(feature),
+                FragmentBoundary::Unadmitted(feature),
+            ] {
+                let _fresh =
+                    minted.insert(mint(FormName::INSTANTIATION, FragmentSort::Value, boundary));
             }
         }
         let closed: alloc::collections::BTreeSet<RefusalName> =
@@ -2980,6 +2922,7 @@ mod tests
             "OutOfFragment.operator_declaration",
             "OutOfFragment.WrongSort.declaration",
             "OutOfFragment.WrongSort",
+            "OutOfFragment.Misplaced",
             "OutOfFragment.Arity",
             "OutOfFragment.Endpoint",
             "OutOfFragment.Perform",

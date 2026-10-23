@@ -87,6 +87,7 @@ use crate::module::TelescopeEntry;
 use crate::module::merged;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -538,7 +539,7 @@ impl<'source> Lowerer<'_, 'source>
                 at: resident,
                 ..site
             }
-            .out(FragmentBoundary::Reserved);
+            .out(FragmentBoundary::Reserved(Unbuilt::CombinedSupply));
             let [
                 Piece::Tile { label, at: written },
                 Piece::Tile { label: equals, .. },
@@ -586,7 +587,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         if !staged.is_empty() {
             if matches!(used, Use::Standing) {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::PartialSupply)));
             }
             let caller = match self.collected.owner_of(site.at.node) {
                 Maybe::Present(owner) => self
@@ -598,7 +599,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let Some(caller) = caller
             else {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnownedSupply)));
             };
             let _first = self.planned_supplies.insert(inner.node, (caller, staged));
         }
@@ -665,7 +666,7 @@ impl<'source> Lowerer<'_, 'source>
                 .skip(leading)
                 .any(|entry| entry.plicity == Plicity::Implicit)
             {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::PartialSupply)));
             }
             let _frame = self.require(site, Produced::Computation)?;
         }

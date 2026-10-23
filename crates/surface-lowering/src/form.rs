@@ -73,6 +73,7 @@ use quenchant_shape::shape::Maybe;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::resolve::OperandCount;
+use crate::unbuilt::Unbuilt;
 
 quenchant_shape::reason_enum! {
     /// Why a cursor over a form's pieces yields no tile.
@@ -122,6 +123,24 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No rule of the built-in grammar realises the kind, so the
             /// table, which lists every kind it realises, holds none for it.
+            Unrealised,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the dispatch table declines a form by no feature.
+    pub mod declined {
+        /// The form's kind has no declined row.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The table reads the kind as a former the lowering builds.
+            Read,
+            /// The kind is admitted at one position only, misplaced
+            /// elsewhere rather than unbuilt.
+            Misplaced,
+            /// No rule of the built-in grammar realises the kind: a form the
+            /// grammar folds into another, or no kind at all.
             Unrealised,
         }
     }
@@ -914,20 +933,26 @@ pub enum Former
     /// The world declaration `world w ;`: a top-level item naming a world,
     /// with no body and no type.
     WorldDeclaration,
-    /// A form parsed so it is declined by name until the engine has it:
-    /// `dup`, which waits on shared sessions.
-    Reserved,
-    /// Every other kind: a form the fragment does not admit.
-    Unadmitted,
+    /// A form parsed so it is declined by name until the engine has it, at
+    /// the feature it stops at: `dup`, which waits on shared sessions.
+    Reserved(Unbuilt),
+    /// A form the fragment does not admit, at the feature it stops at.
+    Unadmitted(Unbuilt),
+    /// A form admitted at one position only, read where the dispatch reads
+    /// forms: the universe of representable sorts, which classifies a
+    /// theory's sort member.
+    Misplaced,
 }
 
 impl Former
 {
-    /// Every former represented by the dispatch vocabulary.
+    /// Every former represented by the dispatch vocabulary, a declined one at
+    /// one feature.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each dispatch former occurs once, including Unadmitted.
+    /// - ensures: each dispatch former occurs once, a declined one at one
+    ///   representative feature.
     /// - provides: the complete current dispatch-result inventory.
     /// - fails: never duplicates a classification.
     /// - panics: none.
@@ -935,11 +960,11 @@ impl Former
     ///   items; `former_of` checks the dispatch relation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the inventory is pairwise distinct and equals the set
-    ///   of successful table outcomes plus the miss outcome. The evidence is
-    ///   bounded to the current closed enum and table.
+    /// - hypothesis: L3 — the inventory is pairwise distinct and covers every
+    ///   table outcome's variant. The evidence is bounded to the current closed
+    ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 69_usize] = [
+    pub const ALL: [Self; 70_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1007,8 +1032,9 @@ impl Former
         Self::Access,
         Self::World,
         Self::WorldDeclaration,
-        Self::Reserved,
-        Self::Unadmitted,
+        Self::Reserved(Unbuilt::Dup),
+        Self::Unadmitted(Unbuilt::If),
+        Self::Misplaced,
     ];
 }
 
@@ -1018,9 +1044,10 @@ impl Former
 /// # Specification
 /// - requires: nothing; named kinds are compared by exact spelling.
 /// - ensures: each kind a rule of the built-in grammar realises has one former:
-///   a reading the lowering builds, or [`Former::Reserved`] or
-///   [`Former::Unadmitted`] for one it declines. No kind falls through to a
-///   default.
+///   a reading the lowering builds; [`Former::Reserved`] or
+///   [`Former::Unadmitted`] at the feature it declines the kind by; or
+///   [`Former::Misplaced`] for the one kind admitted at a single position. No
+///   kind falls through to a default.
 /// - provides: the grammar-to-lowering dispatch table.
 /// - fails: does not certify positional admission of a dispatched form.
 /// - panics: none.
@@ -1120,54 +1147,93 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("hold_expression", Former::World),
     ("migrate_expression", Former::World),
     ("world_declaration", Former::WorldDeclaration),
-    ("dup_expression", Former::Reserved),
+    ("dup_expression", Former::Reserved(Unbuilt::Dup)),
     // Realised by the grammar, declined by the lowering.
-    ("as_pattern", Former::Unadmitted),
-    ("bind_expression", Former::Unadmitted),
-    ("character", Former::Unadmitted),
-    ("circuit_declaration", Former::Unadmitted),
-    ("co_expression", Former::Unadmitted),
-    ("codata_declaration", Former::Unadmitted),
-    ("command_substitution", Former::Unadmitted),
-    ("cons_pattern", Former::Unadmitted),
-    ("constructor_pattern", Former::Unadmitted),
-    ("derive_declaration", Former::Unadmitted),
-    ("double_quoted_string", Former::Unadmitted),
-    ("drop_expression", Former::Unadmitted),
-    ("environment_assignment", Former::Unadmitted),
-    ("extern_block", Former::Unadmitted),
-    ("file_descriptor", Former::Unadmitted),
-    ("forall_type", Former::Unadmitted),
-    ("glob_expression", Former::Unadmitted),
-    ("host_escape", Former::Unadmitted),
-    ("if_expression", Former::Unadmitted),
-    ("intersection_type", Former::Unadmitted),
-    ("labelled_sum_pattern", Former::Unadmitted),
-    ("list_operator", Former::Unadmitted),
-    ("list_pattern", Former::Unadmitted),
-    ("literal_pattern", Former::Unadmitted),
-    ("manifest_sort", Former::Unadmitted),
-    ("operator_declaration", Former::Unadmitted),
-    ("or_pattern", Former::Unadmitted),
-    ("pack_expression", Former::Unadmitted),
-    ("package_type", Former::Unadmitted),
-    ("pipeline", Former::Unadmitted),
-    ("redirection_operator", Former::Unadmitted),
-    ("representable_universe_type", Former::Unadmitted),
-    ("rest_pattern", Former::Unadmitted),
-    ("shell_block", Former::Unadmitted),
-    ("shell_word", Former::Unadmitted),
-    ("single_quoted_string", Former::Unadmitted),
-    ("subshell", Former::Unadmitted),
-    ("telescope_pattern", Former::Unadmitted),
-    ("theory_declaration", Former::Unadmitted),
-    ("tuple_pattern", Former::Unadmitted),
-    ("typed_number", Former::Unadmitted),
-    ("union_type", Former::Unadmitted),
-    ("unknown_type", Former::Unadmitted),
-    ("variable_expansion", Former::Unadmitted),
-    ("variable_name", Former::Unadmitted),
-    ("wildcard", Former::Unadmitted),
+    ("as_pattern", Former::Unadmitted(Unbuilt::AsPattern)),
+    ("bind_expression", Former::Unadmitted(Unbuilt::Bind)),
+    ("character", Former::Unadmitted(Unbuilt::Character)),
+    ("circuit_declaration", Former::Unadmitted(Unbuilt::Circuit)),
+    ("co_expression", Former::Unadmitted(Unbuilt::CoBundle)),
+    ("codata_declaration", Former::Unadmitted(Unbuilt::Codata)),
+    (
+        "command_substitution",
+        Former::Unadmitted(Unbuilt::CommandSubstitution),
+    ),
+    ("cons_pattern", Former::Unadmitted(Unbuilt::ConsPattern)),
+    (
+        "constructor_pattern",
+        Former::Unadmitted(Unbuilt::ConstructorPattern),
+    ),
+    ("derive_declaration", Former::Unadmitted(Unbuilt::Derive)),
+    (
+        "double_quoted_string",
+        Former::Unadmitted(Unbuilt::DoubleQuotedString),
+    ),
+    ("drop_expression", Former::Unadmitted(Unbuilt::Drop)),
+    (
+        "environment_assignment",
+        Former::Unadmitted(Unbuilt::EnvironmentAssignment),
+    ),
+    ("extern_block", Former::Unadmitted(Unbuilt::ExternBlock)),
+    (
+        "file_descriptor",
+        Former::Unadmitted(Unbuilt::FileDescriptor),
+    ),
+    ("forall_type", Former::Unadmitted(Unbuilt::Forall)),
+    ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
+    ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
+    ("if_expression", Former::Unadmitted(Unbuilt::If)),
+    (
+        "intersection_type",
+        Former::Unadmitted(Unbuilt::Intersection),
+    ),
+    (
+        "labelled_sum_pattern",
+        Former::Unadmitted(Unbuilt::LabelledSumPattern),
+    ),
+    ("list_operator", Former::Unadmitted(Unbuilt::ListOperator)),
+    ("list_pattern", Former::Unadmitted(Unbuilt::ListPattern)),
+    (
+        "literal_pattern",
+        Former::Unadmitted(Unbuilt::LiteralPattern),
+    ),
+    ("manifest_sort", Former::Unadmitted(Unbuilt::ManifestSort)),
+    (
+        "operator_declaration",
+        Former::Unadmitted(Unbuilt::OperatorDeclaration),
+    ),
+    ("or_pattern", Former::Unadmitted(Unbuilt::OrPattern)),
+    ("pack_expression", Former::Unadmitted(Unbuilt::Pack)),
+    ("package_type", Former::Unadmitted(Unbuilt::PackageType)),
+    ("pipeline", Former::Unadmitted(Unbuilt::Pipeline)),
+    (
+        "redirection_operator",
+        Former::Unadmitted(Unbuilt::RedirectionOperator),
+    ),
+    ("representable_universe_type", Former::Misplaced),
+    ("rest_pattern", Former::Unadmitted(Unbuilt::RestPattern)),
+    ("shell_block", Former::Unadmitted(Unbuilt::ShellBlock)),
+    ("shell_word", Former::Unadmitted(Unbuilt::ShellWord)),
+    (
+        "single_quoted_string",
+        Former::Unadmitted(Unbuilt::SingleQuotedString),
+    ),
+    ("subshell", Former::Unadmitted(Unbuilt::Subshell)),
+    (
+        "telescope_pattern",
+        Former::Unadmitted(Unbuilt::TelescopePattern),
+    ),
+    ("theory_declaration", Former::Unadmitted(Unbuilt::Theory)),
+    ("tuple_pattern", Former::Unadmitted(Unbuilt::TuplePattern)),
+    ("typed_number", Former::Unadmitted(Unbuilt::TypedNumber)),
+    ("union_type", Former::Unadmitted(Unbuilt::Union)),
+    ("unknown_type", Former::Unadmitted(Unbuilt::UnknownType)),
+    (
+        "variable_expansion",
+        Former::Unadmitted(Unbuilt::VariableExpansion),
+    ),
+    ("variable_name", Former::Unadmitted(Unbuilt::VariableName)),
+    ("wildcard", Former::Unadmitted(Unbuilt::Wildcard)),
 ];
 
 /// The former a form of named kind `kind` is read as.
@@ -1208,6 +1274,48 @@ pub fn former_of(kind: NamedKind<'_>) -> Maybe<Former, former::Absent>
         .into_iter()
         .find_map(|(entry, former)| (entry == kind.0).then_some(former))
         .map_or(Maybe::Absent(former::Absent::Unrealised), Maybe::Present)
+}
+
+/// The feature the dispatch table declines a form named `name` by.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the feature of `name`'s row where the table reserves or does not
+///   admit its kind; absent, by the reason, where it reads the kind, misplaces
+///   it, or holds no row for it.
+/// - provides: the feature a site refusing whichever form it meets names it by,
+///   the one the dispatch refuses the same form by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declined kind, a read one, the misplaced one and a
+///   folded form name each outcome.
+/// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
+#[spec(
+    ensures: |ret| match former_of(NamedKind(name.0)) {
+        | Maybe::Present(Former::Reserved(feature) | Former::Unadmitted(feature)) => {
+            ret == Maybe::Present(feature)
+        },
+        | Maybe::Present(Former::Misplaced) => ret == Maybe::Absent(declined::Absent::Misplaced),
+        | Maybe::Present(_) => ret == Maybe::Absent(declined::Absent::Read),
+        | Maybe::Absent(_) => ret == Maybe::Absent(declined::Absent::Unrealised),
+    },
+)]
+#[inline]
+pub fn declined_feature(name: FormName) -> Maybe<Unbuilt, declined::Absent>
+{
+    let Maybe::Present(former) = former_of(NamedKind(name.0))
+    else {
+        return Maybe::Absent(declined::Absent::Unrealised);
+    };
+    if let Former::Reserved(feature) | Former::Unadmitted(feature) = former {
+        return Maybe::Present(feature);
+    }
+    if former == Former::Misplaced {
+        return Maybe::Absent(declined::Absent::Misplaced);
+    }
+    Maybe::Absent(declined::Absent::Read)
 }
 
 /// What the parser inserted where the source fell short of the grammar.
@@ -3095,6 +3203,7 @@ mod tests
     use crate::fixture::repaired;
     use crate::fixture::span;
     use crate::resolve::OperandCount;
+    use crate::unbuilt::Unbuilt;
 
     /// One piece as a test reads it: a tile by its label, or an operand, each
     /// with the bytes it covers.
@@ -3410,11 +3519,20 @@ mod tests
     #[test]
     fn a_kind_outside_the_table_is_unadmitted()
     {
-        for kind in ["if_expression", "shell_block", "union_type"] {
+        for (kind, feature) in [
+            ("if_expression", Unbuilt::If),
+            ("shell_block", Unbuilt::ShellBlock),
+            ("union_type", Unbuilt::Union),
+        ] {
             assert_eq!(
                 former_of(NamedKind(kind)),
-                Maybe::Present(Former::Unadmitted),
+                Maybe::Present(Former::Unadmitted(feature)),
                 "the kind `{kind}` is realised by the grammar and outside the fragment"
+            );
+            assert_eq!(
+                super::declined_feature(FormName::from(NamedKind(kind))),
+                Maybe::Present(feature),
+                "the table declines `{kind}` by its own feature"
             );
         }
         for kind in ["and_expression", "no_such_kind"] {
@@ -3422,6 +3540,20 @@ mod tests
                 former_of(NamedKind(kind)),
                 Maybe::Absent(super::former::Absent::Unrealised),
                 "no rule of the built-in grammar realises `{kind}`, so it has no former"
+            );
+        }
+        for (kind, reason) in [
+            ("identifier", super::declined::Absent::Read),
+            (
+                "representable_universe_type",
+                super::declined::Absent::Misplaced,
+            ),
+            ("no_such_kind", super::declined::Absent::Unrealised),
+        ] {
+            assert_eq!(
+                super::declined_feature(FormName::from(NamedKind(kind))),
+                Maybe::Absent(reason),
+                "the table declines `{kind}` by no feature"
             );
         }
     }

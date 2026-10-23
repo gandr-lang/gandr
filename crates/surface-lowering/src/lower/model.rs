@@ -119,6 +119,7 @@ use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::type_atom;
+use crate::unbuilt::Unbuilt;
 
 /// Why a derived type could not be minted.
 ///
@@ -1433,7 +1434,7 @@ impl<'source> Lowerer<'_, 'source>
         exhausted(site, &cursor)?;
         let Some(node) = self.tree.node(applied.node)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ManifestModel)));
         };
         let Shape::Form {
             former: Former::TypeApplication,
@@ -1493,7 +1494,7 @@ impl<'source> Lowerer<'_, 'source>
         loop {
             let Some(node) = self.tree.node(link.node)
             else {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ManifestModel)));
             };
             let Shape::Form {
                 former: Former::ManifestType,
@@ -1606,7 +1607,7 @@ impl<'source> Lowerer<'_, 'source>
         let frame = self.require(site, Produced::ValueType)?;
         let Some(node) = self.tree.node(theory)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
         let named = Placed::of(theory, node);
         let written = Site { at: named, ..site };
@@ -1615,13 +1616,13 @@ impl<'source> Lowerer<'_, 'source>
             ..
         } = shape_of(self.pbg, node)?
         else {
-            return Err(written.out(FragmentBoundary::Unadmitted));
+            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
         let module = self.name_at(named);
         let mut theories = self.bundled(written, (site.at.span.start(), module))?;
         let Some(outermost) = theories.first_mut()
         else {
-            return Err(written.out(FragmentBoundary::Unadmitted));
+            return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };
         let mut fixed = Vec::with_capacity(manifests.len());
         for (place, &(sort, defined)) in manifests.iter().enumerate() {
@@ -1824,7 +1825,7 @@ impl<'source> Lowerer<'_, 'source>
             let (position, presentation) = self.collected.presented_theory(at, span, name)?;
             let Ok(signature) = crate::model::derive(presentation)
             else {
-                return Err(written.out(FragmentBoundary::Unadmitted));
+                return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             };
             let start = self
                 .collected
@@ -1877,11 +1878,11 @@ impl<'source> Lowerer<'_, 'source>
                 .find(|slot| slot.name.as_ref() == theory.as_ref())
                 .map(|slot| slot.name)
             else {
-                return Err(written.out(FragmentBoundary::Unadmitted));
+                return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             };
             let (slot, start, signature) = read(start, name)?;
             if frames.iter().any(|frame| frame.slot == slot) {
-                return Err(written.out(FragmentBoundary::Unadmitted));
+                return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
             }
             let place = theories.len();
             if let Some(parent) = theories.get_mut(parent) {
@@ -2028,7 +2029,9 @@ impl<'source> Lowerer<'_, 'source>
         super::exhausted(site, &cursor)?;
         let Ok(Some((_, Former::Constructor | Former::TypeHead))) = self.form_at(module)
         else {
-            return Err(Site { at: module, ..site }.out(FragmentBoundary::Unadmitted));
+            return Err(
+                Site { at: module, ..site }.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))
+            );
         };
         let theory = self.stated_theory(Site { at: stated, ..site })?;
         let name = self.name_at(module);
@@ -2078,7 +2081,9 @@ impl<'source> Lowerer<'_, 'source>
                                 TypeMeaning::Manifest(_) | TypeMeaning::Instantiated { .. },
                             ) => {},
                             Maybe::Present(TypeMeaning::Sealed | TypeMeaning::Family(_)) => {
-                                return Err(site.out(FragmentBoundary::Unadmitted));
+                                return Err(
+                                    site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel))
+                                );
                             },
                             Maybe::Absent(_) => return Err(unknown),
                         }
@@ -2133,7 +2138,7 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Placed, LoweringRefusal<'source>>
     {
-        let refused = site.out(FragmentBoundary::Unadmitted);
+        let refused = site.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel));
         let Some((_, Former::TypeApplication)) = self.form_at(site.at)?
         else {
             return Err(refused);

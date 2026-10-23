@@ -92,6 +92,7 @@ use crate::module::SlotIndex;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::resolve::TypeAtom;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -396,7 +397,7 @@ impl<'source> Lowerer<'_, 'source>
                     at: written,
                     ..site
                 }
-                .out(FragmentBoundary::Reserved));
+                .out(FragmentBoundary::Reserved(Unbuilt::StageResident)));
                 break;
             };
             let stage_name = self.name_at(at);
@@ -470,7 +471,7 @@ impl<'source> Lowerer<'_, 'source>
                         span: placed.span,
                         form,
                         sort: FragmentSort::ValueType,
-                        boundary: FragmentBoundary::Unadmitted,
+                        boundary: FragmentBoundary::Unadmitted(Unbuilt::StagedType),
                     });
                 }
                 let below = scratch.pieces.iter().any(|piece| {
@@ -574,7 +575,7 @@ impl<'source> Lowerer<'_, 'source>
         exhausted(site, &cursor)?;
         let Some(&stage) = self.stage_marks.get(&site.at.node)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StagedType)));
         };
         self.read(base.node, site.reading);
         self.plan(site, Plan::Staged(base.node, stage));

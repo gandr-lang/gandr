@@ -342,7 +342,7 @@ fn a_view_method_answering_no_place_is_refused()
         matches!(
             refusal_of(&module, SurfaceName::from("bare")),
             LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::Index),
                 ..
             }
         ),

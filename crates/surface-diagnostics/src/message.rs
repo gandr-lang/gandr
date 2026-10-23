@@ -254,10 +254,14 @@ fn lowered(
             let spoken = Spoken(form);
             let indefinite = Indefinite(form);
             match boundary {
-                FragmentBoundary::Reserved => {
+                FragmentBoundary::Reserved(_) => {
                     write!(f, "the {spoken} is reserved, and not available yet")
                 },
-                FragmentBoundary::Unadmitted => write!(f, "the {spoken} is not supported yet"),
+                FragmentBoundary::Unadmitted(_) => write!(f, "the {spoken} is not supported yet"),
+                FragmentBoundary::Misplaced => write!(
+                    f,
+                    "the {spoken} classifies a theory's sort member, and stands nowhere else"
+                ),
                 FragmentBoundary::WrongSort => {
                     write!(f, "{indefinite} cannot stand where {sort} is expected")
                 },

@@ -200,7 +200,7 @@ fn a_statement_the_syntax_cannot_read_is_refused()
     ));
     assert!(
         matches!(typed, LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::UaCount),
             ..
         }) && spans(&typed) == quenchant_shape::shape::Maybe::Present((6_usize, 13_usize)),
         "a resident not written in digits alone is refused where it stands: {typed:?}"
@@ -264,7 +264,7 @@ fn a_description_outside_the_stratum_is_refused_at_its_name()
         let refused = outcome_of(&module, "opposite".into());
         let DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
             span,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::UaDescription),
             ..
         }) = refused
         else {

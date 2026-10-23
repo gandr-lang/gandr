@@ -808,7 +808,8 @@ enum Standing
             | Former::Binary
             | Former::Unary
             | Former::World
-            | Former::Unadmitted
+            | Former::Unadmitted(_)
+            | Former::Misplaced
     ),
     | Some(Ok(_) | Err(_)) | None => ret == RunOperand::Grouped,
 })]
@@ -830,7 +831,8 @@ fn operand_of(
         | Former::Binary
         | Former::Unary
         | Former::World
-        | Former::Unadmitted => RunOperand::Grouped,
+        | Former::Unadmitted(_)
+        | Former::Misplaced => RunOperand::Grouped,
         Former::Name
         | Former::Constructor
         | Former::Hole
@@ -892,7 +894,7 @@ fn operand_of(
         | Former::Offer
         | Former::Access
         | Former::WorldDeclaration
-        | Former::Reserved => RunOperand::Tight,
+        | Former::Reserved(_) => RunOperand::Tight,
     }
 }
 

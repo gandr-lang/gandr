@@ -2851,7 +2851,7 @@ pub fn collect_source<'source>(
         let child = piece.placed();
         let follows_stray = core::mem::replace(&mut after_stray, false);
         let former = collector.root_former(child)?;
-        if former == Former::AttributeBlock {
+        if former == Maybe::Present(Former::AttributeBlock) {
             decorations.push(child);
             continue;
         }
@@ -2863,19 +2863,19 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        if former == Former::WorldDeclaration {
+        if former == Maybe::Present(Former::WorldDeclaration) {
             collector.world(child, &decorations)?;
             decorations.clear();
             continue;
         }
-        if former == Former::Data {
+        if former == Maybe::Present(Former::Data) {
             collector.data(child, &decorations)?;
             collector.hold_described_refusals(child);
             collector.route_operations(child);
             decorations.clear();
             continue;
         }
-        if former == Former::Declaration {
+        if former == Maybe::Present(Former::Declaration) {
             if let Some(refusal) = strayed(collector.declaration(child, &decorations))? {
                 strays.push(Stray::of(child, refusal, core::mem::take(&mut decorations)));
                 after_stray = true;
@@ -2883,7 +2883,7 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        if former == Former::Mutual {
+        if former == Maybe::Present(Former::Mutual) {
             if let Some(&block) = decorations.first()
                 && let Some(refusal) = strayed(collector.module_child(block))?
             {
@@ -2893,7 +2893,7 @@ pub fn collect_source<'source>(
             decorations.clear();
             continue;
         }
-        if former == Former::Module
+        if former == Maybe::Present(Former::Module)
             && let Some(&block) = decorations.first()
         {
             collector.decorated_module(child, block, &decorations)?;
@@ -3594,85 +3594,89 @@ impl<'source> Collector<'_, 'source>
             };
             self.fuel.spend()?;
             match self.root_former(member)? {
-                Former::AttributeBlock => decorations.push(member),
-                Former::Data => {
+                Maybe::Present(Former::AttributeBlock) => decorations.push(member),
+                Maybe::Present(Former::Data) => {
                     self.data(member, &decorations)?;
                     self.hold_described_refusals(member);
                     self.route_operations(member);
                     decorations.clear();
                 },
-                Former::Declaration => {
+                Maybe::Present(Former::Declaration) => {
                     self.declaration(member, &decorations)?;
                     decorations.clear();
                 },
-                Former::Name
-                | Former::Constructor
-                | Former::Hole
-                | Former::Number
-                | Former::Text
-                | Former::TypeQuote
-                | Former::Parenthesized
-                | Former::Unit
-                | Former::Boolean
-                | Former::Thunk
-                | Former::Lambda
-                | Former::Block
-                | Former::Return
-                | Former::Exit
-                | Former::Become
-                | Former::Loop
-                | Former::While
-                | Former::For
-                | Former::Break
-                | Former::Continue
-                | Former::Force
-                | Former::Run
-                | Former::Call
-                | Former::Case
-                | Former::Telescope
-                | Former::List
-                | Former::PackModel
-                | Former::Injection
-                | Former::LazyRecord
-                | Former::Binary
-                | Former::Unary
-                | Former::Projection
-                | Former::TypeHead
-                | Former::TypePath
-                | Former::Universe
-                | Former::TypeApplication
-                | Former::ThunkType
-                | Former::ReturnerType
-                | Former::ArrowType
-                | Former::ProductType
-                | Former::SumType
-                | Former::LazyProductType
-                | Former::TelescopeType
-                | Former::LabelledSumType
-                | Former::LazyRecordType
-                | Former::ValueFunctionType
-                | Former::StaticAbstraction
-                | Former::ParenthesizedType
-                | Former::PathType
-                | Former::RelationType
-                | Former::ManifestType
-                | Former::CapabilityType
-                | Former::AtType
-                | Former::StagedType
-                | Former::ModedType
-                | Former::Scope
-                | Former::Import
-                | Former::Module
-                | Former::Mutual
-                | Former::Instantiation
-                | Former::SessionType
-                | Former::Action
-                | Former::Offer
-                | Former::Access
-                | Former::World
-                | Former::WorldDeclaration
-                | Former::Reserved
-                | Former::Unadmitted => {
+                Maybe::Present(
+                    Former::Name
+                    | Former::Constructor
+                    | Former::Hole
+                    | Former::Number
+                    | Former::Text
+                    | Former::TypeQuote
+                    | Former::Parenthesized
+                    | Former::Unit
+                    | Former::Boolean
+                    | Former::Thunk
+                    | Former::Lambda
+                    | Former::Block
+                    | Former::Return
+                    | Former::Exit
+                    | Former::Become
+                    | Former::Loop
+                    | Former::While
+                    | Former::For
+                    | Former::Break
+                    | Former::Continue
+                    | Former::Force
+                    | Former::Run
+                    | Former::Call
+                    | Former::Case
+                    | Former::Telescope
+                    | Former::List
+                    | Former::PackModel
+                    | Former::Injection
+                    | Former::LazyRecord
+                    | Former::Binary
+                    | Former::Unary
+                    | Former::Projection
+                    | Former::TypeHead
+                    | Former::TypePath
+                    | Former::Universe
+                    | Former::TypeApplication
+                    | Former::ThunkType
+                    | Former::ReturnerType
+                    | Former::ArrowType
+                    | Former::ProductType
+                    | Former::SumType
+                    | Former::LazyProductType
+                    | Former::TelescopeType
+                    | Former::LabelledSumType
+                    | Former::LazyRecordType
+                    | Former::ValueFunctionType
+                    | Former::StaticAbstraction
+                    | Former::ParenthesizedType
+                    | Former::PathType
+                    | Former::RelationType
+                    | Former::ManifestType
+                    | Former::CapabilityType
+                    | Former::AtType
+                    | Former::StagedType
+                    | Former::ModedType
+                    | Former::Scope
+                    | Former::Import
+                    | Former::Module
+                    | Former::Mutual
+                    | Former::Instantiation
+                    | Former::SessionType
+                    | Former::Action
+                    | Former::Offer
+                    | Former::Access
+                    | Former::World
+                    | Former::WorldDeclaration
+                    | Former::Reserved(_)
+                    | Former::Unadmitted(_)
+                    | Former::Misplaced,
+                )
+                | Maybe::Absent(_) => {
                     let Some(node) = self.tree.node(member.node)
                     else {
                         continue;
@@ -4605,7 +4609,10 @@ impl<'source> Collector<'_, 'source>
                 && let Some(mode) = receiver_of(
                     &header,
                     |tile| self.name_of(tile),
-                    |operand| self.root_former(operand).ok(),
+                    |operand| match self.root_former(operand) {
+                        Ok(Maybe::Present(former)) => Some(former),
+                        Ok(Maybe::Absent(_)) | Err(_) => None,
+                    },
                 )
             {
                 let _first = self.collected.receivers.insert(slot, mode);
