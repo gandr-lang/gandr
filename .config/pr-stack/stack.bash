@@ -118,13 +118,40 @@ stack_of() {
     --jq '.data.repository.pullRequest.stack.number // "null"'
 }
 
+# The members of the server stack pull request `$1` belongs to, bottom to
+# top, as a JSON array of `{number, state}`; empty when it belongs to none.
+stack_entries() {
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { entries(first: 100) { nodes { pullRequest { number state } } } } } } }' \
+    --jq '[.data.repository.pullRequest.stack.entries.nodes[]?.pullRequest]'
+}
+
 # Link the open chain `$1` on the server (`link.jq`): into the stack a member
 # already belongs to, by that stack's number, so the stack's merged members
-# stay below the open ones (#1275); otherwise as a new stack.
+# stay below the open ones (#1275); otherwise as a new stack. GitHub keeps a
+# member closed unmerged as well, and refuses every later link onto its
+# stack (#2094), so such a stack is unstacked first: GitHub leaves its queued
+# and auto-merge members stacked, and drops the rest, the closed one among
+# them. The stack's number is read again from a member it kept, if any, and
+# the open members it dropped are linked again with the chain.
 stack_link() {
-  local number stacks=() args
+  local number stack entries kept stacks=() args
   for number in $(jq -r '.[].number' <<< "$1"); do
-    stacks+=("$(stack_of "$number")")
+    stack=$(stack_of "$number")
+    if [[ $stack != null ]]; then
+      entries=$(stack_entries "$number")
+      if [[ $(jq 'any(.[]; .state == "CLOSED")' <<< "$entries") == true ]]; then
+        # It exits nonzero (5) whenever it leaves a queued member stacked;
+        # a stack it failed to clear fails the link below, which says so.
+        gh stack unstack "$stack" < /dev/null > /dev/null 2>&1 || :
+        stack=null
+        for kept in $(jq -r '.[] | select(.state == "OPEN") | .number' <<< "$entries"); do
+          stack=$(stack_of "$kept")
+          [[ $stack == null ]] || break
+        done
+      fi
+    fi
+    stacks+=("$stack")
   done
   mapfile -t args < <(jq -cn --argjson chain "$(jq -c 'map(.number)' <<< "$1")" \
     '{chain: $chain, stacks: ($ARGS.positional | map(fromjson))}' --args "${stacks[@]}" | jq -r -f "$pr_stack_dir/link.jq")
