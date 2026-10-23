@@ -2009,6 +2009,10 @@ impl TypeTable
                 (Some(held), _) => held,
                 (None, None) => continue,
             };
+            // A reduct or a forgetting map is derived from its theory's block
+            // and has no form of its own: the block's key is the theory's, so a
+            // derived declaration never displaces what another placed there.
+            let derived = declaration.role() == Role::Derived;
             for key in [
                 declaration.signature(),
                 declaration.definition(),
@@ -2017,7 +2021,12 @@ impl TypeTable
                 if let Maybe::Present(key) = key
                     && key.source() == own_source
                 {
-                    let _replaced = declared.insert(key.form(), held.clone());
+                    if derived {
+                        let _kept = declared.entry(key.form()).or_insert_with(|| held.clone());
+                    }
+                    else {
+                        let _replaced = declared.insert(key.form(), held.clone());
+                    }
                 }
             }
         }

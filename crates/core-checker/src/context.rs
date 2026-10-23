@@ -356,10 +356,11 @@ pub struct CheckingContext<'arena>
     /// How the judgement decided each computation written where a value is
     /// read, by node, since the declaration under way began.
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
-    /// The reduct each value the value bridge carried from a model of a
-    /// theory to a model of one it includes crossed by, by node, since the
+    /// The crossing each value the value bridge carried from a model of a
+    /// theory to a model of one it includes, or from a model with manifest
+    /// sorts to its theory's models, crossed by, by node, since the
     /// declaration under way began.
-    crossings: BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>,
+    crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
     /// The path endpoint pairs the judgement's type conversions related since
     /// the declaration under way began, by pair, with each derivation.
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
@@ -560,7 +561,7 @@ pub struct Checkpoint
     /// [`CheckingContext::nesting`].
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
     /// [`CheckingContext::crossings`].
-    crossings: BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>,
+    crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
     /// [`CheckingContext::relating`].
     relating: BTreeMap<(ValueId, ValueId), crate::code::EndpointRelation>,
     /// [`CheckingContext::relations`].
@@ -1297,15 +1298,16 @@ impl<'arena> CheckingContext<'arena>
         self.pattern_holes.extend(holes.iter().copied());
     }
 
-    /// Read `reducts` as the reducts the module mints, so the value bridge
-    /// crosses by one where a model of a theory stands at a model of a theory
-    /// it includes.
+    /// Read `reducts` as maps between models the module mints, so the value
+    /// bridge crosses by one where a model of a theory stands at a model of a
+    /// theory it includes, or a model with manifest sorts at its theory's
+    /// models.
     ///
     /// # Specification
     /// - ensures: every later value bridge between two types apart crosses by
-    ///   the first of the kept reducts, in position order, whose signature
-    ///   carries the one to the other, and records it at the value it crossed;
-    ///   each reduct is kept once, however often it is read.
+    ///   the first of the kept maps, in position order, whose signature carries
+    ///   the one to the other at the carriers it solves, and records it at the
+    ///   value it crossed; each map is kept once, however often it is read.
     /// - panics: none.
     /// - executable: none — the kept reducts are the receiver's own, which a
     ///   predicate would search again.
@@ -2612,7 +2614,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Specification
     /// trivial.
-    fn intuitionistic_scope(&self) -> Result<gandr_core_term::Binders, CheckRefusal>
+    pub(crate) fn intuitionistic_scope(&self) -> Result<gandr_core_term::Binders, CheckRefusal>
     {
         u32::try_from(usize::from(self.depth(Zone::Intuitionistic)))
             .map(gandr_core_term::Binders::from)
@@ -3018,25 +3020,26 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         core::mem::take(&mut self.nesting)
     }
 
-    /// Record that the value bridge carried the value `at` by `reduct`.
+    /// Record that the value bridge carried the value `at` by `crossing`.
     ///
     /// # Specification
-    /// - requires: `reduct` is a kept reduct whose signature carries the type
-    ///   `at` synthesised to the type it was checked against.
-    /// - ensures: `at` crosses by `reduct`, replacing an earlier record.
+    /// - requires: `crossing` names a kept map whose signature, at the
+    ///   crossing's carriers, carries the type `at` synthesised to the type it
+    ///   was checked against.
+    /// - ensures: `at` crosses by `crossing`, replacing an earlier record.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
     /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
-    #[spec(ensures: self.crossings.get(&at) == Some(&reduct))]
+    #[spec(captures: kept = crossing.clone(), ensures: self.crossings.get(&at) == Some(&kept))]
     pub(crate) fn record_crossing(
         &mut self,
         at: ValueId,
-        reduct: gandr_kernel_term::ConstantIndex,
+        crossing: gandr_core_term::Crossing,
     )
     {
-        self.crossings.insert(at, reduct);
+        self.crossings.insert(at, crossing);
     }
 
     /// Take every crossing recorded since the last take, leaving none.
@@ -3051,7 +3054,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — as [`CheckingContext::keep_reducts`].
     /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
     #[spec(ensures: self.crossings.is_empty())]
-    pub(crate) fn take_crossings(&mut self) -> BTreeMap<ValueId, gandr_kernel_term::ConstantIndex>
+    pub(crate) fn take_crossings(&mut self) -> BTreeMap<ValueId, gandr_core_term::Crossing>
     {
         core::mem::take(&mut self.crossings)
     }

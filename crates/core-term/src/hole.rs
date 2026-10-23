@@ -209,6 +209,39 @@ impl HoleId
         Some(Self(Self::NOMINATED | index.0))
     }
 
+    /// The name of the `index`th hole a checker nominates for a carrier a
+    /// crossing solves: the omitted implicits' quarter's first name plus
+    /// `index`. [`Self::nominated`] counts down from the quarter's last name,
+    /// so the two meet only past a quarter's worth of names between them; a
+    /// crossing's hole is declared to a solver of its own and never stands in
+    /// a body.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a nominated name for each `index` below a quarter's size,
+    ///   distinct indices naming distinct holes and `index` naming the hole
+    ///   [`Self::nominated`] names for the quarter's last index less `index`;
+    ///   `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first index names the quarter's first name, and
+    ///   the index past the quarter is refused.
+    /// - witness: `hole::tests::a_crossing_hole_counts_up_from_the_quarter_nominated_counts_down`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Some(hole) => matches!(hole.origin(), HoleOrigin::Nominated) && hole.0 == (Self::OMITTED | index.0),
+        None => index.0 >= Self::QUARTER,
+    })]
+    pub const fn crossing(index: NominationIndex) -> Option<Self>
+    {
+        if index.0 >= Self::QUARTER {
+            return None;
+        }
+        Some(Self(Self::OMITTED | index.0))
+    }
+
     /// Where this hole comes from: nominated for an omitted implicit in the
     /// upper half's upper quarter, for a wildcard in its lower quarter, and
     /// written below the half.

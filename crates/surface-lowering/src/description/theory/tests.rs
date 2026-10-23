@@ -1144,7 +1144,13 @@ fn a_theory_block_defines_its_presentation()
     )
     .unwrap();
     assert_eq!(module.descriptions().diagnostics, []);
-    let [ref code, ref nat, ref pointed] = *module.declarations()
+    // Each theory's forgetting map is derived from its block beside it.
+    let declared: alloc::vec::Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == crate::Role::Declared)
+        .collect();
+    let [code, nat, pointed] = *declared.as_slice()
     else {
         panic!(
             "`Theory` once, then each theory: {:?}",
@@ -1256,7 +1262,12 @@ fn a_rule_bearing_theory_defines_its_presentation_with_its_laws()
         crate::namespace::Recognition::default(),
     )
     .unwrap();
-    let [ref code, ref circle, ref cat] = *module.declarations()
+    let declared: alloc::vec::Vec<_> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.role() == crate::Role::Declared)
+        .collect();
+    let [code, circle, cat] = *declared.as_slice()
     else {
         panic!(
             "`Theory` once, then each theory: {:?}",

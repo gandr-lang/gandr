@@ -100,7 +100,6 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Unenclosed;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::Purity;
-use gandr_kernel_term::ConstantIndex;
 
 /// How the judgement decided a computation written where a value is read.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -127,8 +126,9 @@ pub struct NestedElaboration
     carried: Vec<Carried>,
     /// Each run beside the bind minted for it, in minting order.
     binds: Vec<(ValueId, ComputationId)>,
-    /// Each value the value bridge carried by a reduct, with the reduct.
-    crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// Each value the value bridge carried by a map between models, with the
+    /// crossing.
+    crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
 }
 
 impl NestedElaboration
@@ -173,14 +173,15 @@ impl NestedElaboration
         &self.binds
     }
 
-    /// Each value the value bridge carried by a reduct, by node, with the
-    /// reduct the elaboration applied to it.
+    /// Each value the value bridge carried by a map between models, by node,
+    /// with the crossing the elaboration applied to it: the map and its
+    /// carriers.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn crossings(&self) -> &BTreeMap<ValueId, ConstantIndex>
+    pub const fn crossings(&self) -> &BTreeMap<ValueId, gandr_core_term::Crossing>
     {
         &self.crossings
     }
@@ -203,7 +204,7 @@ impl NestedElaboration
     #[must_use]
     pub(crate) fn after_crossing(
         mut self,
-        crossings: BTreeMap<ValueId, ConstantIndex>,
+        crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
         mut carried: Vec<Carried>,
     ) -> Self
     {
@@ -271,8 +272,9 @@ pub fn elaborate(
     }))
 }
 
-/// Rebuild `body` with the reduct `crossings` gives each value it names
-/// applied to that value as a run, and read `decisions` over the rebuilt body.
+/// Rebuild `body` with the map `crossings` gives each value it names applied
+/// to its carriers and that value as a run, and read `decisions` over the
+/// rebuilt body.
 ///
 /// # Specification
 /// - requires: `body` is live in `arena`; `crossings` and `decisions` are what
@@ -283,7 +285,7 @@ pub fn elaborate(
 ///   `body`, nothing carried and `decisions` unchanged when `crossings` names
 ///   nothing it reaches.
 /// - provides: the body and decisions [`elaborate`] reads where the value
-///   bridge crossed by a reduct.
+///   bridge crossed by a map between models.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -295,7 +297,7 @@ pub fn elaborate(
 pub fn cross(
     arena: &mut CoreArena,
     body: ValueId,
-    crossings: &BTreeMap<ValueId, ConstantIndex>,
+    crossings: &BTreeMap<ValueId, gandr_core_term::Crossing>,
     decisions: &BTreeMap<ValueId, Nesting>,
 ) -> (ValueId, Vec<Carried>, BTreeMap<ValueId, Nesting>)
 {

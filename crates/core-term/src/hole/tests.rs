@@ -71,6 +71,31 @@ fn a_nominated_hole_shares_no_name_with_a_written_one()
 }
 
 #[test]
+fn a_crossing_hole_counts_up_from_the_quarter_nominated_counts_down()
+{
+    let crossing = |index: u32| HoleId::crossing(NominationIndex::from(index));
+    let first = crossing(0).expect("the first index is named");
+    assert_eq!(u32::from(first), 3 << 30_u32, "the quarter's first name");
+    assert_eq!(first.origin(), HoleOrigin::Nominated);
+    assert_eq!(
+        crossing(1).map(u32::from),
+        Some((3 << 30_u32) + 1),
+        "the next index counts up"
+    );
+    assert_ne!(
+        crossing(0),
+        HoleId::nominated(NominationIndex::from(0)),
+        "the first crossing and the first omitted implicit are two holes"
+    );
+    assert_eq!(
+        crossing(0),
+        HoleId::nominated(NominationIndex::from((1 << 30_u32) - 1)),
+        "the two meet only at the quarter's far end"
+    );
+    assert_eq!(crossing(1 << 30_u32), None, "the quarter has no more names");
+}
+
+#[test]
 fn the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not()
 {
     let mut arena = CoreArena::new();

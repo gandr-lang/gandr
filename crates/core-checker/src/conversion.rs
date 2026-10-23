@@ -528,11 +528,13 @@ where
         return Ok(());
     }
     // A model of a theory stands at a model of one it includes by the reduct
-    // between them, which the elaboration applies where the bridge crossed.
+    // between them, and a model whose sorts are manifest at its theory's
+    // models by the theory's forgetting map at the carriers its sorts are
+    // fixed to; the elaboration applies the map where the bridge crossed.
     if agreement == Agreement::Apart
-        && let Maybe::Present(reduct) = crossing(context, found, wanted)?
+        && let Maybe::Present(crossing) = crossing(context, found, wanted)?
     {
-        context.record_crossing(at, reduct);
+        context.record_crossing(at, crossing);
         return Ok(());
     }
     let forged = agreement == Agreement::Apart
@@ -566,43 +568,59 @@ where
     }
 }
 
-/// The first kept reduct whose signature carries the type `found` to the type
-/// `wanted`.
+/// The first kept map between models whose signature carries the type `found`
+/// to the type `wanted`, with the carriers it takes before the value.
 ///
 /// # Specification
 /// - requires: both types are formed, in the context's arena.
-/// - ensures: the first reduct the context keeps whose signature is a thunk of
-///   an arrow `A → F B` with `found` converting to `A` and `B` to `wanted`;
-///   nothing when no kept reduct's does.
+/// - ensures: the first map the context keeps whose signature is a thunk of
+///   `Π(x₁ : U₁) … Π(xₙ : Uₙ). A → F B`, `n` possibly none, with carriers `c₁ …
+///   cₙ` at which `found` converts to `A[c/x]` and `B[c/x]` to `wanted`; the
+///   carriers are those [`carriers`] solves from `found` against `A`, none for
+///   a map that quantifies over none; nothing when no kept map's does.
 /// - fails: the refusals [`convert`] yields, and a view's of a signature.
 /// - panics: none.
-/// - executable: none — the kept reducts and their signatures are the
-///   context's, which a predicate would search and convert again.
+/// - executable: none — the kept maps and their signatures are the context's,
+///   which a predicate would search and convert again.
 ///
 /// # Errors
 /// As the fails clause.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a monoid's model at a semigroup's crosses by the monoid's
-///   reduct, and at an unrelated theory's by none.
+///   reduct, and at an unrelated theory's by none; a counter whose carrier is
+///   manifest crosses at the counters by the forgetting map at that carrier.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
 fn crossing(
     context: &mut CheckingContext<'_>,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
-) -> Result<Maybe<gandr_kernel_term::ConstantIndex, ()>, CheckRefusal>
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
 {
     let mut next = 0_usize;
-    while let Some(&reduct) = context.reducts().get(next) {
+    while let Some(&map) = context.reducts().get(next) {
         next = next.saturating_add(1);
-        let Maybe::Present(signature) = context.signature(reduct)
+        let Maybe::Present(signature) = context.signature(map)
         else {
             continue;
         };
-        let ValueTypeView::Thunk(arrow) = value_type_view(context.arena(), signature.id())?
+        let ValueTypeView::Thunk(chain) = value_type_view(context.arena(), signature.id())?
         else {
             continue;
         };
+        let carriers = match carriers(context, found, chain)? {
+            Maybe::Present(carriers) => carriers,
+            Maybe::Absent(()) => continue,
+        };
+        let mut arrow = chain;
+        for &carrier in &carriers {
+            let CompTypeView::Pi { codomain, .. } = comp_type_view(context.arena(), arrow)?
+            else {
+                break;
+            };
+            arrow = gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, carrier);
+        }
         let CompTypeView::Arrow { domain, codomain } = comp_type_view(context.arena(), arrow)?
         else {
             continue;
@@ -618,11 +636,105 @@ fn crossing(
                 Pairing::Assignable(Relocated::from(result), Relocated::from(wanted)),
             )? == Agreement::Convertible
         {
-            return Ok(Maybe::Present(reduct));
+            return Ok(Maybe::Present(gandr_core_term::Crossing {
+                by: map,
+                carriers,
+            }));
         }
     }
 
     Ok(Maybe::Absent(()))
+}
+
+/// The carriers a map's signature `chain` takes before the value it crosses
+/// `found` by: one per leading `Π`, each the solution the solver binds a
+/// metavariable standing for it to, from `found` against the arrow's domain.
+///
+/// # Specification
+/// - requires: `chain` is the computation type a kept map's signature thunks,
+///   closed; `found` is formed in the context's arena.
+/// - ensures: no carriers when `chain` opens with no `Π`; otherwise one
+///   metavariable per leading `Π`, declared over the context's intuitionistic
+///   binders and named by [`gandr_core_term::hole::HoleId::crossing`] in order,
+///   `chain` instantiated at them, and the domain of the arrow below posed
+///   against `found` settled: the solutions, outermost first, when the solver
+///   refutes nothing and binds every one, what it postpones left to the
+///   conversion [`crossing`] confirms by; nothing otherwise. The metavariables
+///   are the call's own and stand in no body.
+/// - fails: a view's refusal of `chain`; the context's refusal of a depth no
+///   binder count holds.
+/// - panics: none.
+/// - executable: none — the solutions are the solver's, which a predicate would
+///   pose again; [`crossing`] confirms them by conversion.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`crossing`].
+/// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
+fn carriers(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    chain: CompTypeId,
+) -> Result<Maybe<Vec<ValueId>, ()>, CheckRefusal>
+{
+    if !matches!(
+        comp_type_view(context.arena(), chain)?,
+        CompTypeView::Pi { .. }
+    ) {
+        return Ok(Maybe::Present(Vec::new()));
+    }
+    let scope = context.intuitionistic_scope()?;
+    let mut metas = gandr_core_unify::Metas::new();
+    let mut declared = Vec::new();
+    let mut arrow = chain;
+    let mut place = 0_u32;
+    while let CompTypeView::Pi { codomain, .. } = comp_type_view(context.arena(), arrow)? {
+        let Some(hole) = gandr_core_term::hole::HoleId::crossing(
+            gandr_core_term::hole::NominationIndex::from(place),
+        )
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        let Maybe::Present(meta) = metas.declare(hole, scope)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        declared.push(meta);
+        let standing = context.arena_mut().value_hole(hole);
+        arrow = gandr_core_term::instantiate_comp_type(context.arena_mut(), codomain, standing);
+        place = place.saturating_add(1);
+    }
+    let CompTypeView::Arrow { domain, .. } = comp_type_view(context.arena(), arrow)?
+    else {
+        return Ok(Maybe::Absent(()));
+    };
+    let found = found.settle(context.arena_mut());
+    let equation = gandr_core_unify::Equation::new(
+        scope,
+        gandr_core_unify::Side::ValueType(domain),
+        gandr_core_unify::Side::ValueType(found),
+    );
+    // A former the fragment does not decompose, a law's `Path` among them,
+    // waits rather than binds; what waits is the confirming conversion's to
+    // decide, so only a refutation stops the carriers here.
+    if matches!(
+        gandr_core_unify::solve(context.arena_mut(), &mut metas, &[equation]),
+        gandr_core_unify::Verdict::Refuted(_)
+    ) {
+        return Ok(Maybe::Absent(()));
+    }
+    let mut solved = Vec::with_capacity(declared.len());
+    for meta in declared {
+        let Maybe::Present(solution) = metas.solution(meta)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        solved.push(solution);
+    }
+
+    Ok(Maybe::Present(solved))
 }
 
 /// Cross the computation bridge: the type `at` synthesised against the type it

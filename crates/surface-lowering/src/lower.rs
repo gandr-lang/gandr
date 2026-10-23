@@ -4069,6 +4069,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_operations(sink);
         self.mint_derived_rules(sink);
         self.mint_reducts(sink);
+        self.mint_forgets(sink);
         self.mint_instances(sink);
         self.refuse_misshapen_entries(sink);
         self.refused_declarations();
@@ -4257,6 +4258,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .filter(|entry| matches!(entry.refusal, Maybe::Absent(_)))
             .map(|entry| entry.constant)
             .collect();
+        // The forgetting maps the checker may insert where a model whose
+        // unindexed sorts are manifest stands at its theory's models.
+        let forgets: Vec<ConstantIndex> = self
+            .collected
+            .forgets
+            .keys()
+            .filter_map(|&slot| self.collected.slots.get(usize::from(slot)))
+            .filter(|entry| matches!(entry.refusal, Maybe::Absent(_)))
+            .map(|entry| entry.constant)
+            .collect();
         let Self {
             collected,
             recognition,
@@ -4360,7 +4371,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_stage_bounds(stage_bounds)
         .with_supplies(supplies)
         .with_qualified(qualified)
-        .with_reducts(reducts))
+        .with_reducts(reducts)
+        .with_forgets(forgets))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
