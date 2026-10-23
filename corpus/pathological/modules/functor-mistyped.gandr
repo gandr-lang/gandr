@@ -1,0 +1,27 @@
+// The refusal beside `../../model/modules/functor-pair.gandr`: an argument
+// component at another type than its parameter states is refused at the
+// witness that checks it. The attribute before the application states the
+// expectation of that witness; the witnesses that check keep the default
+// (#1274).
+
+// The counter functor and its seed.
+import "../../model/modules/functor-pair.gandr" ;
+
+/// A counter whose zero is an integer rather than its own abstract type.
+module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } {
+  type T = Integer;
+  /// The counter's zero, sealed as an integer.
+  @[ checks ]
+  def zero = 0;
+  /// One step on.
+  @[ checks ]
+  def next(n : T) -> -F T { become n + 1 }
+  /// The count read as an integer.
+  @[ checks ]
+  def read(n : T) -> -F Integer { n }
+}
+
+/// The functor applied to that counter, refused at the witness for `zero`:
+/// the parameter states a `T`, and `Integral` seals its zero at `Integer`.
+@[ refuses("TypeMismatch") ]
+module Mistyped = MkCounter(Integral) ;

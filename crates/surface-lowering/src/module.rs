@@ -8268,6 +8268,10 @@ pub struct DeclarationParts<'source>
     /// while it was collected, when no half is written there: a half written
     /// a second time, or a form refused before it wrote one.
     pub refused_form: Maybe<UnitKey, declaration_half::Absent>,
+    /// The unit key of the form that introduced the name, which the
+    /// attributes written before it are filed under: a name an application or
+    /// a module's header binds writes no half, and reads its expectation there.
+    pub introduced: UnitKey,
     /// Where each of the name's halves is written.
     pub halves: Halves,
     /// What the name's declarations amount to.
@@ -8430,6 +8434,19 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn refused_form(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
         self.parts.refused_form
+    }
+
+    /// The unit key of the form that introduced the name, which the
+    /// attributes written before it are filed under: a name an application or
+    /// a module's header binds writes no half, and reads its expectation there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn introduced(&self) -> UnitKey
+    {
+        self.parts.introduced
     }
 
     /// Where each of the name's halves is written: a name declared in two

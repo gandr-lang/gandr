@@ -1,0 +1,24 @@
+// The refusal beside `../../model/modules/functor-pair.gandr`: an argument
+// that does not export a component its parameter states is refused at the
+// application's binding. The attribute before the application states the
+// expectation of the name it binds (#1274).
+
+// The counter functor and its seed.
+import "../../model/modules/functor-pair.gandr" ;
+
+/// A counter with no reader: it exports three of the four components
+/// `MkCounter`'s parameter states.
+module Unread :> #{ type T, zero : T, next : T => T } {
+  type T = Integer;
+  /// The counter's zero.
+  @[ checks ]
+  def zero = 0;
+  /// One step on.
+  @[ checks ]
+  def next(n : T) -> -F T { become n + 1 }
+}
+
+/// The functor applied to the counter with no reader, refused at its
+/// binding: `Unread` exports no `read`.
+@[ refuses("UnknownMember") ]
+module Unreadable = MkCounter(Unread) ;
