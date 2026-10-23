@@ -544,11 +544,6 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
-    /// A declaration holding a `run` statement the sugared form writes at
-    /// its read, which the printer prints as its bind (#1416) — as written,
-    /// or only as the printer spells it: a tail `become` it writes bare
-    /// makes the last statement such a run (#1460).
-    Linear,
 }
 
 impl fmt::Display for Held
@@ -565,7 +560,6 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::Linear => "#1416, a linear run the printer prints as its bind",
         })
     }
 }
@@ -873,24 +867,6 @@ fn read(
         }
         forms.sort_by_key(|span| span.start());
         let name = format!("{}", declaration.name());
-        // A `run` statement the sugared form writes at its read lowers
-        // otherwise than the bind the printer prints it as.
-        let linear = module.linear_runs().iter().any(|run| {
-            let (Some(start), Some(end)) = (
-                usize::from(run.bound.start()).checked_sub(base),
-                usize::from(run.bound.end()).checked_sub(base),
-            )
-            else {
-                return false;
-            };
-            forms
-                .iter()
-                .any(|form| usize::from(form.start()) <= start && end <= usize::from(form.end()))
-        });
-        if linear {
-            let _previous = read.held.insert(name, Held::Linear);
-            continue;
-        }
         let node = (declared_type, body);
         match (
             spelt(&source, Name::from(name.as_str()), node, Form::Sugared),
@@ -966,9 +942,9 @@ fn substituted(
 
 /// The declarations of `variant`, a source standing at `written`'s path,
 /// that the printer spells in `form` as `printed` spells them: those whose
-/// printing reads back to itself, and beside them each of `printed` the
-/// reading of `variant` holds out, by why — a printing the parity cannot
-/// hold as written, as a linear run printed as its bind (#1460).
+/// printing reads back to itself, beside them each of `printed` the reading
+/// of `variant` holds out, by why — a printing the parity cannot hold as
+/// written — and every declaration the printer spells whole in `variant`.
 ///
 /// # Specification
 /// trivial.
@@ -977,11 +953,11 @@ fn reading_back(
     variant: Written<'_>,
     printed: &[&Printed],
     form: Form,
-) -> (BTreeSet<String>, BTreeMap<String, Held>)
+) -> (BTreeSet<String>, BTreeMap<String, Held>, Vec<Printed>)
 {
     let Some(again) = read(grammar, variant)
     else {
-        return (BTreeSet::new(), BTreeMap::new());
+        return (BTreeSet::new(), BTreeMap::new(), Vec::new());
     };
     let reads = printed
         .iter()
@@ -1001,13 +977,15 @@ fn reading_back(
                 .map(|&held| (declaration.name.clone(), held))
         })
         .collect();
-    (reads, held)
+    (reads, held, again.printed)
 }
 
 /// The declarations of `printed` whose sugared and explicit spellings,
-/// substituted into `written` together, lower to different core: the two
+/// substituted into `written` together, mean different programs: the two
 /// lowerings share one arena and are compared as the formatter's meaning
-/// check compares them.
+/// check compares them, by the lowered core and, where that parts, by the
+/// bodies the checker elaborates — a call written at its read and the `run`
+/// statement binding it lower apart and elaborate alike (#1416).
 ///
 /// # Specification
 /// trivial.
@@ -1040,6 +1018,7 @@ fn apart(
     };
     let mut arena = CoreArena::new();
     let mut modules = Vec::new();
+    let mut lowerings = Vec::new();
     for (parsed, &(_, ref unit, base)) in parsed.iter().zip(&laid) {
         let Ok(module) = lower_unit(
             grammar,
@@ -1071,11 +1050,15 @@ fn apart(
             })
             .collect();
         modules.push(completed);
+        lowerings.push((module, base));
     }
     let &[ref sugared, ref explicit] = modules.as_slice()
     else {
         return parted;
     };
+    // The bodies the checker elaborates for each spelling's declarations, by
+    // name, read once a lowering parts.
+    let mut elaborated: Option<Vec<BTreeMap<String, ValueId>>> = None;
     for declaration in printed {
         let same = match (
             sugared.get(&declaration.name),
@@ -1083,7 +1066,46 @@ fn apart(
         ) {
             (Some(&(left_type, left)), Some(&(right_type, right))) => {
                 equal_type_syntax(&arena, left_type, right_type) == CertificateEquality::Equal
-                    && equal_certificate_syntax(&arena, left, right) == CertificateEquality::Equal
+                    && (equal_certificate_syntax(&arena, left, right) == CertificateEquality::Equal
+                        || {
+                            let bodies = elaborated.get_or_insert_with(|| {
+                                lowerings
+                                    .iter()
+                                    .map(|&(ref module, base)| {
+                                        let bodies = gandr_surface_format::Elaborate::definitions(
+                                            &gandr_surface_dispatcher::Elaborating,
+                                            &mut arena,
+                                            module,
+                                        );
+                                        module
+                                            .declarations()
+                                            .iter()
+                                            .zip(bodies)
+                                            .filter(|&(declaration, _)| {
+                                                declaration.span().start() >= base
+                                            })
+                                            .filter_map(|(declaration, body)| {
+                                                Some((format!("{}", declaration.name()), body?))
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            });
+                            match (
+                                bodies
+                                    .first()
+                                    .and_then(|bodies| bodies.get(&declaration.name)),
+                                bodies
+                                    .get(1)
+                                    .and_then(|bodies| bodies.get(&declaration.name)),
+                            ) {
+                                (Some(&left), Some(&right)) => {
+                                    equal_certificate_syntax(&arena, left, right)
+                                        == CertificateEquality::Equal
+                                },
+                                _ => false,
+                            }
+                        })
             },
             _ => false,
         };
@@ -1215,9 +1237,11 @@ fn bodies(
     let all: Vec<&Printed> = read.printed.iter().collect();
     let mut back: Option<BTreeSet<String>> = None;
     let mut held_again: BTreeMap<String, Held> = BTreeMap::new();
+    // Each variant's own printings, by the form substituted into it.
+    let mut reprinted: Vec<(Form, Vec<Printed>)> = Vec::new();
     for form in [Form::Sugared, Form::Explicit] {
         let variant = substituted(written.text, &all, form);
-        let (reads, held) = reading_back(
+        let (reads, held, again) = reading_back(
             grammar,
             Written {
                 path: written.path,
@@ -1229,6 +1253,7 @@ fn bodies(
         for (declaration, why) in held {
             let _first = held_again.entry(declaration).or_insert(why);
         }
+        reprinted.push((form, again));
         back = Some(match back {
             Some(before) => before.intersection(&reads).cloned().collect(),
             None => reads,
@@ -1267,6 +1292,16 @@ fn bodies(
         return found;
     }
     let pinned = pinned(grammar, written.text);
+    // Each variant's printings by name, by the form substituted into it.
+    let again_in = |form: Form| -> BTreeMap<&str, &Printed> {
+        reprinted
+            .iter()
+            .filter(|&&(substituted, _)| substituted == form)
+            .flat_map(|&(_, ref again)| again.iter())
+            .map(|back| (back.name.as_str(), back))
+            .collect()
+    };
+    let (sugared_again, explicit_again) = (again_in(Form::Sugared), again_in(Form::Explicit));
     let forms = [
         (
             Form::Explicit,
@@ -1330,13 +1365,24 @@ fn bodies(
         let definitions = defined(grammar, SourceText::from(out.as_str()));
         let recursions = recursed(grammar, SourceText::from(out.as_str()));
         for declaration in &held {
+            // The printer's spelling of the core the variant lowers to: a
+            // call the sugared form writes at its read lowers to a nested
+            // call, not the bind it elaborates to, and the explicit form
+            // keeps it so (#1416).
+            let reread = match from {
+                Form::Sugared => &sugared_again,
+                Form::Explicit => &explicit_again,
+            }
+            .get(declaration.name.as_str())
+            .copied()
+            .unwrap_or(declaration);
             let want = |spelled: &Spellings| {
                 Some(tokens(SourceFragment::from(spelled.of(expected).as_str())))
             };
             let shown = |tokens: Option<Vec<String>>| {
                 tokens.map_or_else(|| String::from("(none)"), |tokens| tokens.join(" "))
             };
-            let compared = match declaration.shape {
+            let compared = match reread.shape {
                 Shape::Halves { ref ty, ref body } => {
                     let (want_type, want_body) = (want(ty), want(body));
                     let (got_type, got_body) = (

@@ -30,7 +30,7 @@ module SetoidCat : Model(CatShape) {
   def ident(t : Type, x : t) -> -F t { x }
 
   /// Composition of two functions, applied.
-  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { run g <- d(f) ; e(g) } } } } } }") ]
+  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
   def compose(
     t : Type,
     u : Type,

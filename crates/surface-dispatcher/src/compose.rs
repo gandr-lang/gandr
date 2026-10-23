@@ -5744,7 +5744,7 @@ def h = 1 ;"#,
                 &source,
                 CoreNode::Computation(arm),
                 PageWidth::from(100_u32),
-                Form::Sugared.into(),
+                Form::Explicit.into(),
             )
             .expect("the arm lays out");
             assert_eq!(
