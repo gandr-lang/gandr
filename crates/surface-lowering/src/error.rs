@@ -982,6 +982,19 @@ pub enum LoweringRefusal<'source>
         member: SurfaceName<'source>,
     },
 
+    /// A field read off a data value by its name, `e.l`, where a constructor
+    /// of the value's family declares no field of that name: the value it
+    /// builds has none to read.
+    PartialField
+    {
+        /// The bytes of the field's name.
+        span: ByteSpan,
+        /// The field's name.
+        field: SurfaceName<'source>,
+        /// The first constructor declaring no such field.
+        constructor: SurfaceName<'source>,
+    },
+
     /// A module binding `module A = F(X) ;` whose `F` names no functor
     /// declared before it.
     NotAFunctor
@@ -1697,6 +1710,13 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
+            Self::PartialField {
+                field, constructor, ..
+            } => write!(
+                f,
+                "the constructor `{constructor}` declares no field `{field}`, so a value it \
+                 builds has no `{field}` to read"
+            ),
             Self::NotAFunctor { name, .. } => write!(
                 f,
                 "`{name}` is applied as a functor, and no functor `{name}` is declared before \
@@ -1974,6 +1994,7 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::UnknownMember { span, .. }
+            | Self::PartialField { span, .. }
             | Self::NotAFunctor { span, .. }
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
@@ -2078,7 +2099,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 65_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 66_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2369,6 +2390,11 @@ mod tests
                 span: s(121_usize, 122_usize),
                 first: s(0_usize, 1_usize),
             },
+            LoweringRefusal::PartialField {
+                span: s(123_usize, 124_usize),
+                field: SurfaceName::from("start"),
+                constructor: SurfaceName::from("Dot"),
+            },
         ]
     }
 
@@ -2445,6 +2471,7 @@ mod tests
             s(117_usize, 118_usize),
             s(119_usize, 120_usize),
             s(121_usize, 122_usize),
+            s(123_usize, 124_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

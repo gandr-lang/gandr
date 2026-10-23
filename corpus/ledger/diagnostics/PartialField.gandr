@@ -1,0 +1,10 @@
+/// `PartialField`: a field read by name off a value some constructor of whose type declares no such field.
+data Shape : Type {
+  Dot : (tag : Integer) --> Shape;
+  Line : (start : Integer, tag : Integer) --> Shape;
+}
+
+@[ refuses("PartialField") ]
+def startOf(shape : Shape) -> -F Integer {
+  shape.start
+}

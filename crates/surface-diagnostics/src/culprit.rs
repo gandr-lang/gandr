@@ -195,6 +195,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
+        LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
         LoweringRefusal::ProjectionFromApplication { .. } => {
             "an application read before it is bound"
@@ -588,6 +589,7 @@ mod tests
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
+            LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
             LoweringRefusal::ProjectionFromApplication { .. } => {
                 "an application read before it is bound"
@@ -845,6 +847,11 @@ mod tests
                 span: at,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::PartialField {
+                span: at,
+                field: name,
+                constructor: name,
             },
             LoweringRefusal::NotAFunctor { span: at, name },
             LoweringRefusal::ProjectionFromApplication {

@@ -4699,3 +4699,144 @@ fn a_loop_arm_follows_the_constructors_branches()
         "each loop of one point takes its own arm, the point's branch first"
     );
 }
+
+/// #1106: a field read off a data value by its name is the data case over the
+/// value whose branch for each constructor binds its fields and returns that
+/// constructor's field, typed by its position's answer or, where the position
+/// states none, by the field's declaration at the family's written arguments.
+#[test]
+fn a_data_field_is_the_case_returning_it_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Band : Type { Bounds : (low : Integer, high : Integer) --> Band; }\n\
+             data Shape : Type { Dot : (tag : Integer) --> Shape; Line : (start : Integer, tag : Integer) --> Shape; }\n\
+             data Twin(a : Type) : Type { Both : (first : a, second : a) --> Twin(a); }\n\
+             def lowOf(band : Band) -> -F Integer { band.low }\n\
+             def above(band : Band) -> -F Bool { band.high >= 1 }\n\
+             def tagOf(shape : Shape) -> -F Integer { shape.tag }\n\
+             def secondAbove(twin : Twin(Integer)) -> -F Bool { twin.second >= 1 }\n",
+        ),
+        &mut arena,
+    );
+    // Each branch's field count and the index, under its lambdas, of the
+    // variable it returns; and the type the motive returns. A field read as a
+    // primitive's operand is the computation nested in that operand.
+    let switch = |name: &str| {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let mut roots = Vec::from([tail]);
+        if let Some(&Computation::Primitive { ref arguments, .. }) = arena.computation(tail) {
+            roots.extend(
+                arguments
+                    .iter()
+                    .filter_map(|&operand| match arena.value(operand) {
+                        Some(&Value::Nested(nested)) => Some(nested),
+                        _ => None,
+                    }),
+            );
+        }
+        let Some(&Computation::DataCase {
+            motive,
+            ref branches,
+            ..
+        }) = roots
+            .into_iter()
+            .flat_map(|root| reachable(&arena, root))
+            .find_map(|at| {
+                arena
+                    .computation(at)
+                    .filter(|held| matches!(held, Computation::DataCase { .. }))
+            })
+        else {
+            panic!("`{name}` reads its field by a data case");
+        };
+        let read: Vec<(usize, u32)> = branches
+            .iter()
+            .map(|&branch| {
+                let (mut at, mut arity) = (branch, 0_usize);
+                while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+                    (at, arity) = (body, arity.saturating_add(1));
+                }
+                let Some(&Computation::Return(value)) = arena.computation(at)
+                else {
+                    panic!("`{name}`'s branch returns its field");
+                };
+                let Some(&Value::Variable { index, .. }) = arena.value(value)
+                else {
+                    panic!("`{name}`'s branch returns a field binder");
+                };
+                (arity, u32::from(index))
+            })
+            .collect();
+        let Some(&gandr_core_term::CompType::Returner { result, .. }) = arena.comp_type(motive)
+        else {
+            panic!("`{name}`'s motive returns the field's type");
+        };
+        (read, arena.value_type(result).cloned())
+    };
+    let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));
+    assert_eq!(
+        switch("lowOf"),
+        (Vec::from([(2_usize, 1_u32)]), integer.clone()),
+        "the first of two fields, typed by the function's result"
+    );
+    assert_eq!(
+        switch("above"),
+        (Vec::from([(2_usize, 0_u32)]), integer.clone()),
+        "the second of two fields in an operand, typed by its declaration"
+    );
+    assert_eq!(
+        switch("tagOf"),
+        (
+            Vec::from([(1_usize, 0_u32), (2_usize, 0_u32)]),
+            integer.clone()
+        ),
+        "a field each constructor declares at its own position"
+    );
+    assert_eq!(
+        switch("secondAbove"),
+        (Vec::from([(2_usize, 0_u32)]), integer),
+        "a parameter's field read at the argument the written type gives it"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// #1106: a field some constructor of the value's family declares none of is
+/// refused at the field, naming that constructor; a field whose type names a
+/// field before it is refused as unannotated where its position states no
+/// answer.
+#[test]
+fn a_data_field_some_constructor_lacks_is_refused_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Shape : Type { Dot : (tag : Integer) --> Shape; Line : (start : Integer, tag : Integer) --> Shape; }\n\
+             data Packed : Type[+, 1] { Pack : (a : Type, xs : List(a)) --> Packed; }\n\
+             def startOf(shape : Shape) -> -F Integer { shape.start }\n\
+             def sizeOf(packed : Packed) -> -F Integer { run xs <- packed.xs ; return 0 }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("startOf")),
+            LoweringRefusal::PartialField { field, constructor, .. }
+                if field.as_ref() == "start" && constructor.as_ref() == "Dot"
+        ),
+        "{:?}",
+        refusal_of(&module, SurfaceName::from("startOf"))
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("sizeOf")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            }
+        ),
+        "{:?}",
+        refusal_of(&module, SurfaceName::from("sizeOf"))
+    );
+}
