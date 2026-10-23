@@ -24,9 +24,12 @@ path = "tests/lib.rs"
 # and re-shares its goals through the kernel's check-memo seam.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled in this no_std library. The specification
-# combinators bound what a clause reads of the overlay's task stacks.
+# combinators bound what a clause reads of the overlay's task stacks. A
+# dialogue's decomposition evaluates to the web the session crate reads off
+# its moves.
 [dependencies]
 anodized.workspace = true
+gandr-core-session.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true

@@ -2327,18 +2327,20 @@ fn plan_values(
             DomainValue::Recorded {
                 source: left_source,
                 fields: left_fields,
+                reading: left_reading,
                 ..
             },
             DomainValue::Recorded {
                 source: right_source,
                 fields: right_fields,
+                reading: right_reading,
                 ..
             },
         ) => match crate::conv::recorded_payloads(
             core,
             domain,
-            (left_source, left_fields),
-            (right_source, right_fields),
+            (left_source, left_fields, left_reading),
+            (right_source, right_fields, right_reading),
         )? {
             None => Plan::Leaf(Settled::NotConvertible),
             Some(pairs) if pairs.is_empty() => Plan::Leaf(Settled::Convertible),

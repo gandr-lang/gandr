@@ -636,6 +636,7 @@ dependencies = [
 name = "gandr-core-nbe"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-session",
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",

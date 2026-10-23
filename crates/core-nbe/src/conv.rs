@@ -77,6 +77,7 @@
 //! case-progress gating and speculation, are not built.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -84,6 +85,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::session::WebPiece;
 use gandr_kernel_check_memo::MemoError;
 use gandr_kernel_term::Literal;
 
@@ -101,6 +103,7 @@ use crate::domain::DomainComp;
 use crate::domain::DomainValue;
 use crate::domain::Elimination;
 use crate::domain::NeutralHead;
+use crate::domain::Reading;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::eval::EvalFault;
@@ -1013,19 +1016,21 @@ impl<'run> Walk<'run>
                 DomainValue::Recorded {
                     source: left_source,
                     fields: left_fields,
+                    reading: left_reading,
                     ..
                 },
                 DomainValue::Recorded {
                     source: right_source,
                     fields: right_fields,
+                    reading: right_reading,
                     ..
                 },
             ) => {
                 let Some(pairs) = recorded_payloads(
                     self.core,
                     self.domain,
-                    (left_source, left_fields),
-                    (right_source, right_fields),
+                    (left_source, left_fields, left_reading),
+                    (right_source, right_fields, right_reading),
                 )?
                 else {
                     return Ok(Local::Disagree);
@@ -2001,18 +2006,21 @@ pub type PayloadPairs = Vec<(DomainValueId, DomainValueId)>;
 /// A recorded run's moves compare in order. A dialogue's compare endpoint by
 /// endpoint, each endpoint's moves in its own order, so two logs that
 /// interleave the same moves differently are one dialogue. Two webs agree
-/// exactly when they are the same decomposition.
+/// exactly when they are the same decomposition, whether written as one or
+/// read off a dialogue.
 ///
 /// # Specification
 /// - requires: each source is the recording its span's payloads were evaluated
-///   from.
+///   from, read as its reading says.
 /// - ensures: the payloads of each move of one recording paired with the
 ///   payloads of the move it compares with, when every such move takes the same
-///   action with the same label at the same endpoint; `None` when an action, a
-///   label or a move count differs.
+///   action with the same label at the same endpoint; no pair for two equal
+///   webs; `None` when an action, a label, a move count or a web's pieces
+///   differ.
 /// - fails: [`ConversionFault::MachineInvariant`] for a source that is no
-///   recording or whose payload count differs from its span's; domain faults
-///   for dangling spans.
+///   recording, whose payload count differs from its span's, or a web compared
+///   with a recording that is none; [`ConversionFault::Evaluation`] for a
+///   decomposition with no web; domain faults for dangling spans.
 /// - panics: none.
 /// - executable: none — the pairing is the projection itself; a predicate
 ///   restating it would project both recordings again.
@@ -2022,14 +2030,16 @@ pub type PayloadPairs = Vec<(DomainValueId, DomainValueId)>;
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two runs that differ only in a payload compare it, two
-///   that differ in a label disagree, and two logs of one dialogue agree.
+///   that differ in a label disagree, two logs of one dialogue agree, and so do
+///   their decompositions.
 /// - witness: `identity::tests::a_recorded_run_keeps_its_choices_and_moves_its_payloads`
 /// - witness: `identity::tests::a_dialogue_and_its_web_read_back_as_written`
+/// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
 pub fn recorded_payloads(
     core: &CoreArena,
     domain: &DomainArena,
-    (left, left_fields): (ValueId, crate::arena::FieldSpan),
-    (right, right_fields): (ValueId, crate::arena::FieldSpan),
+    (left, left_fields, left_reading): (ValueId, crate::arena::FieldSpan, Reading),
+    (right, right_fields, right_reading): (ValueId, crate::arena::FieldSpan, Reading),
 ) -> Result<Option<PayloadPairs>, ConversionFault>
 {
     use gandr_core_term::session::RecordedMove;
@@ -2043,10 +2053,10 @@ pub fn recorded_payloads(
     else {
         return Err(ConversionFault::MachineInvariant);
     };
-    if let (&gandr_core_term::Value::Web(ref one), &gandr_core_term::Value::Web(ref other)) =
-        (one, other)
-    {
-        return Ok((one == other).then(Vec::new));
+    match (web(one, left_reading)?, web(other, right_reading)?) {
+        (Some(one), Some(other)) => return Ok((one == other).then(Vec::new)),
+        (Some(_), None) | (None, Some(_)) => return Err(ConversionFault::MachineInvariant),
+        (None, None) => {},
     }
     let (Some(one), Some(other)) = (
         projected(one, left_fields)?,
@@ -2081,6 +2091,48 @@ pub fn recorded_payloads(
         }
     }
     Ok(Some(pairs))
+}
+
+/// A recording's web, when it is one: a written web's pieces, or those of the
+/// dialogue a decomposition reads.
+///
+/// # Specification
+/// - ensures: the pieces of a written web or of a decomposed dialogue; `None`
+///   for any other written recording.
+/// - fails: [`ConversionFault::MachineInvariant`] for a decomposition whose
+///   source is no dialogue; [`ConversionFault::Evaluation`] carrying
+///   [`EvalFault::Decomposition`] for a dialogue whose order closes a cycle.
+/// - panics: none.
+/// - executable: none — the clause would decompose the web again.
+///
+/// # Errors
+/// A `ConversionFault`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`recorded_payloads`].
+/// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
+fn web(
+    value: &Value,
+    reading: Reading,
+) -> Result<Option<Arc<[WebPiece]>>, ConversionFault>
+{
+    match reading {
+        Reading::Written => Ok(if let Value::Web(ref pieces) = *value {
+            Some(Arc::clone(pieces))
+        }
+        else {
+            None
+        }),
+        Reading::Decomposed => {
+            let Value::Dialogue(ref moves) = *value
+            else {
+                return Err(ConversionFault::MachineInvariant);
+            };
+            crate::eval::decomposition(moves)
+                .map(Some)
+                .map_err(ConversionFault::Evaluation)
+        },
+    }
 }
 
 /// A recording's moves, each with the endpoint that made it and the payload

@@ -57,6 +57,12 @@ def commuted = here(retiring) ;
 @[ runs("series(event(right, 0), event(left, 0), event(left, 1), parallel(event(left, 2), event(right, 1)), event(right, 2), event(right, 3), parallel(series(event(left, 3), event(left, 4)), event(right, 4)))") ]
 def retiringWeb() -> -F Web { become decompose(retiring) }
 
+/// The two logs decompose to one web: a web is read off the dialogue it
+/// decomposes, so the path between the logs' webs is reflexivity too.
+@[ checks ]
+def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) ;
+def sameWeb = here(decompose(retiring)) ;
+
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice.
 @[ checks ]
