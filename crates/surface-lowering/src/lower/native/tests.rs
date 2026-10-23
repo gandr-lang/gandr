@@ -970,6 +970,33 @@ fn claims_under_cases_on_two_parameters_are_refused_by_name()
     );
 }
 
+/// #2135: a claim under a match on the staged parameter descends on it,
+/// however many matches on other parameters stand between: `paired` walks
+/// `xs` and consumes `ys` alongside it, its first call under `case ys`
+/// passing `ys` back unchanged, so it stages `xs`, and its second call,
+/// under the same match, descends on `xs` as the first does.
+#[test]
+fn a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec paired(xs : Nat, ys : Nat) -> -F Nat {{ case xs {{ Zero => return Zero, Succ(p) => case ys {{ Zero => paired[<](p, ys), Succ(q) => paired[<](p, q) }} }} }}\n\
+         def rec walked(xs : Nat, ys : Nat) -> -F Nat {{ case xs {{ Zero => return ys, Succ(p) => case p {{ Zero => walked[<](p, ys), Succ(r) => case ys {{ Zero => return Zero, Succ(q) => walked[<](r, q) }} }} }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["paired", "walked"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
+            outcome_of(&module, name)
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn an_unapplied_claim_lowers_to_the_self_binder()
 {
