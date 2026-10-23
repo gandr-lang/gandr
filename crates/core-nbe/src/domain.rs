@@ -151,6 +151,19 @@ pub enum TermFace
     Reduced,
 }
 
+/// How a domain recording reads its source.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Reading
+{
+    /// The recording the source is, as written.
+    Written,
+    /// The causal web of the dialogue the source is, read off its moves.
+    Decomposed,
+}
+
 /// The term face of a domain computation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompTermFace
@@ -629,15 +642,19 @@ pub enum DomainValue
         /// The retained or reduced source face.
         face: TermFace,
     },
-    /// A recorded run; its moves and labels remain in the source arena.
+    /// A recording: a recorded run, a dialogue or a web, its moves and labels
+    /// remaining in the source arena, or the web a dialogue decomposes into.
     Recorded
     {
-        /// The source run providing the moves and their labels.
+        /// The source recording providing the moves and their labels.
         source: ValueId,
-        /// Evaluated payloads of the source's sends and receives, in order.
+        /// Evaluated payloads of the source's sends and receives, in order;
+        /// none for a decomposition, whose web reads no payload.
         fields: crate::arena::FieldSpan,
         /// The retained or reduced source face.
         face: TermFace,
+        /// Whether the value is the source as written or its web.
+        reading: Reading,
     },
     /// A closed reflexivity or equivalence certificate, kept as raw syntax.
     /// Translator programs are not normalized by certificate conversion.

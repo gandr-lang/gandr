@@ -126,9 +126,12 @@
 //!
 //! Conversion refuses all eight runtime-control formers with
 //! `EvalFault::RuntimeControl(ControlFormer)`, every session action with
-//! `EvalFault::SessionAction`, every memory form with `EvalFault::MemoryForm`,
-//! every world form with `EvalFault::WorldForm` and a dialogue's
-//! decomposition with `EvalFault::Decomposition`; it never invokes a host.
+//! `EvalFault::SessionAction`, every memory form with `EvalFault::MemoryForm`
+//! and every world form with `EvalFault::WorldForm`; it never invokes a host.
+//! A dialogue literal's decomposition, or that of a definition naming one,
+//! evaluates to the dialogue read as its causal web, which conversion compares
+//! and readback spells piece by piece; a decomposition of anything else
+//! refuses with `EvalFault::Decomposition`.
 //! Stack/With type codes still compare and read back structurally with
 //! captured scope and effect-operation types intact.
 //!
@@ -261,9 +264,12 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_session::DialogueWeb;
+use gandr_core_session::Facing;
 use gandr_core_term::CompType;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
@@ -281,6 +287,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::WebPiece;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
@@ -304,6 +312,7 @@ use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
 use crate::domain::Projector;
+use crate::domain::Reading;
 use crate::domain::Suspended;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
@@ -372,8 +381,9 @@ pub enum EvalFault
     /// A world form holds, opens or migrates between worlds; it runs where
     /// the host binds its worlds, never in the certificate normalizer.
     WorldForm,
-    /// A decomposition reads a dialogue's causal web; the host computes it,
-    /// never the certificate normalizer.
+    /// A decomposition met no dialogue literal and no definition naming one
+    /// — a rigid neutral or another recording — or a dialogue whose web has
+    /// no decomposition, its order closing a cycle.
     Decomposition,
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
@@ -1480,6 +1490,8 @@ enum Task
     },
     /// Run the thunk the value on the stack holds, or get stuck on it.
     Force,
+    /// Return the causal web of the dialogue on the stack.
+    Decompose,
     /// Apply the weak head on the stack to the value on the stack.
     Apply,
     /// Apply the operator beneath the top of the value stack to the argument
@@ -3374,6 +3386,10 @@ fn run(
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Split { .. } | Task::SplitClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure { .. } | Task::ListFold { .. } | Task::ListCase { .. }
             | Task::PathTransport(_) | Task::OperandTransport { .. } | Task::Ride(_) | Task::OperandRide { .. } | Task::TelescopeTransport(_) => machine.tasks.len() >= entry_tasks,
+            Task::Decompose => machine.values.len() == entry_values.saturating_sub(1_usize)
+                && ((machine.tasks.len() == entry_tasks
+                    && machine.comps.len() == entry_comps.saturating_add(1_usize))
+                    || (machine.tasks.len() > entry_tasks && machine.comps.len() == entry_comps)),
             Task::Flow { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && machine.values.len() <= entry_values
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)), Some(DomainValue::Flow { .. })),
@@ -4249,6 +4265,7 @@ fn step(
             Ok(())
         },
         Task::Force => step_force(domain, machine),
+        Task::Decompose => step_decompose(core, domain, machine),
         Task::Apply => step_apply(core, domain, machine),
         Task::StaticApply => step_static_apply(core, domain, machine),
         Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
@@ -4755,7 +4772,14 @@ fn step_comp(
         Computation::Session(_) => Err(EvalFault::SessionAction),
         Computation::Memory(_) => Err(EvalFault::MemoryForm),
         Computation::World(_) => Err(EvalFault::WorldForm),
-        Computation::Decompose(_) => Err(EvalFault::Decomposition),
+        Computation::Decompose(dialogue) => {
+            machine.tasks.push(Task::Decompose);
+            machine.tasks.push(Task::Value {
+                term: dialogue,
+                env,
+            });
+            Ok(())
+        },
         Computation::Exercise { .. } => Err(EvalFault::RuntimeControl(
             gandr_core_term::control::ControlFormer::Exercise,
         )),
@@ -7622,7 +7646,7 @@ fn move_payloads(
             }
             let fields = domain.hold_fields(payloads);
             let moved_run = domain
-                .value_recorded(run, fields, TermFace::Reduced)
+                .value_recorded(run, fields, TermFace::Reduced, Reading::Written)
                 .map_err(EvalFault::Domain)?;
             machine
                 .comps
@@ -8820,10 +8844,165 @@ fn step_recorded(
     }
     let fields = domain.hold_fields(machine.values.drain(start ..));
     let value = domain
-        .value_recorded(term, fields, composite_face(kept, term))
+        .value_recorded(term, fields, composite_face(kept, term), Reading::Written)
         .map_err(EvalFault::Domain)?;
     machine.values.push(value);
     Ok(())
+}
+
+/// Return the causal web of the dialogue on the stack.
+///
+/// # Specification
+/// - requires: nothing; a missing operand is admissible and refused.
+/// - ensures: a dialogue literal returns its own source read as its web,
+///   carrying no payload; the pieces are computed by [`decomposition`] where
+///   conversion or readback reads them. A dialogue a manifest definition names
+///   is decomposed as the literal its body evaluates to, by
+///   [`decompose_through_head`].
+/// - fails: [`EvalFault::MachineInvariant`] for a missing operand,
+///   [`EvalFault::Domain`] for a missing node, and [`EvalFault::Decomposition`]
+///   for an operand that is no dialogue literal and no definition's.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a literal decomposes, a definition's dialogue decomposes
+///   through its body, and a parameter refuses.
+/// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
+/// - witness: `identity::tests::a_named_dialogue_decomposes_through_its_definition`
+#[spec(
+    captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ret.is_err()
+        || (machine.values.len() == entry_values.saturating_sub(1_usize)
+            && ((machine.comps.len() == entry_comps.saturating_add(1_usize)
+                && machine.tasks.len() == entry_tasks)
+                || (machine.comps.len() == entry_comps && machine.tasks.len() > entry_tasks))),
+)]
+fn step_decompose(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+) -> Result<(), EvalFault>
+{
+    let dialogue = machine.pop_value()?;
+    let Some(node) = domain.value(dialogue)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    if let DomainValue::Neutral { neutral, .. } = *node {
+        return decompose_through_head(domain, machine, neutral);
+    }
+    let DomainValue::Recorded {
+        source,
+        reading: Reading::Written,
+        ..
+    } = *node
+    else {
+        return Err(EvalFault::Decomposition);
+    };
+    let Some(&Value::Dialogue(_)) = core.value(source)
+    else {
+        return Err(EvalFault::Decomposition);
+    };
+    let fields = domain.hold_fields(core::iter::empty());
+    let web = domain
+        .value_recorded(source, fields, TermFace::Reduced, Reading::Decomposed)
+        .map_err(EvalFault::Domain)?;
+    machine
+        .comps
+        .push(domain.comp_return(web, CompTermFace::Reduced));
+    Ok(())
+}
+
+/// Decompose a dialogue a definition names: queue the decomposition again,
+/// the neutral's spine, and the head's body beneath them.
+///
+/// # Specification
+/// - requires: nothing; a dangling neutral is refused.
+/// - ensures: for a head whose value body is here — forced already, or lowered
+///   in this run's chain — the decomposition, the spine and the body queued,
+///   the body to run first, so the dialogue decomposes as the literal it
+///   unfolds to. A value neutral's spine holds static applications alone, so
+///   the re-applied spine leaves a value for the decomposition to take.
+/// - provides: a reflexivity whose endpoints decompose a named dialogue; the
+///   held stance leaves a whole endpoint at its definition, but an operand the
+///   decomposition must read is run through it, as a case's scrutinee is.
+/// - fails: [`EvalFault::Decomposition`] for a rigid head, a head lowered
+///   nowhere in the chain, or a computation body; [`EvalFault::Domain`] for a
+///   dangling neutral.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition naming a dialogue decomposes to the web of
+///   its literal, and a parameter still refuses.
+/// - witness: `identity::tests::a_named_dialogue_decomposes_through_its_definition`
+#[spec(
+    captures: entry_tasks = machine.tasks.len(),
+    ensures: |ret| ret.is_err() || machine.tasks.len() > entry_tasks,
+)]
+fn decompose_through_head(
+    domain: &DomainArena,
+    machine: &mut Machine<'_>,
+    neutral: NeutralId,
+) -> Result<(), EvalFault>
+{
+    let held = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let head = match held.unfolding() {
+        Unfolding::Forced(Glued::Value(body)) => Task::Supply(body),
+        Unfolding::Unforced(entry) => {
+            let &term = machine
+                .definitions
+                .bodies()
+                .get(&entry)
+                .ok_or(EvalFault::Decomposition)?;
+            Task::Value {
+                term,
+                env: Machine::root_env(),
+            }
+        },
+        Unfolding::Rigid | Unfolding::Forced(Glued::Computation(_)) => {
+            return Err(EvalFault::Decomposition);
+        },
+    };
+    machine.tasks.push(Task::Decompose);
+    let _answer = push_eliminations(machine, held.spine());
+    machine.tasks.push(head);
+    Ok(())
+}
+
+/// The causal web of a dialogue, piece by piece.
+///
+/// # Specification
+/// - ensures: the pieces [`DialogueWeb::decompose`] reads off the moves'
+///   endpoints and directions in log order, so two interleavings of one play
+///   give the same pieces.
+/// - fails: [`EvalFault::Decomposition`] for a web whose order closes a cycle,
+///   which no admitted dialogue's does.
+/// - panics: none.
+/// - executable: none — the clause would decompose the web again.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two interleavings of one play give one web.
+/// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
+pub fn decomposition(moves: &[DialogueMove]) -> Result<Arc<[WebPiece]>, EvalFault>
+{
+    DialogueWeb::of(
+        moves
+            .iter()
+            .map(|turn| (turn.endpoint, Facing::of(&turn.movement))),
+    )
+    .decompose()
+    .map_err(|_cyclic| EvalFault::Decomposition)
 }
 
 /// Select a nominal branch, or suspend the complete case on a neutral head.

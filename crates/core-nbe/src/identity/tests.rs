@@ -48,6 +48,7 @@ use crate::domain::DomainComp;
 use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::eval::Definitions;
+use crate::eval::EvalFault;
 use crate::eval::Evaluation;
 use crate::eval::Fuel;
 use crate::eval::LoweredChain;
@@ -1304,6 +1305,184 @@ fn a_dialogue_and_its_web_read_back_as_written()
             MachineVerdict::NotConvertible,
         ],
         "the closes commute; a payload, an endpoint or a web's event that differs does not"
+    );
+}
+
+#[test]
+fn a_decomposition_converts_with_the_web_it_reads_back_as()
+{
+    // `!Bool. end` against its dual, as above. A dialogue decomposes to the
+    // web its moves give: the logs that close in either order to one web, and
+    // a dialogue that hears another payload to that web too, since a web reads
+    // no payload. Two queued sends leave another web, and only a dialogue
+    // decomposes.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let (left, right) = (Endpoint::Left, Endpoint::Right);
+    let dialogue = |core: &mut CoreArena, moves: &[(Endpoint, RecordedMove)]| {
+        let moves: Vec<DialogueMove> = moves
+            .iter()
+            .map(|&(endpoint, ref movement)| DialogueMove {
+                endpoint,
+                movement: movement.clone(),
+            })
+            .collect();
+        core.value_dialogue(Arc::from(moves))
+    };
+    let exchange = |sent: ValueId, heard: ValueId, closes: [Endpoint; 2]| {
+        [
+            (left, RecordedMove::Sent(sent)),
+            (right, RecordedMove::Received(heard)),
+            (closes[0], RecordedMove::Closed),
+            (closes[1], RecordedMove::Closed),
+        ]
+    };
+    let one = dialogue(&mut core, &exchange(truth, truth, [left, right]));
+    let commuted = dialogue(&mut core, &exchange(truth, truth, [right, left]));
+    let misheard = dialogue(&mut core, &exchange(truth, falsity, [left, right]));
+    let queued = dialogue(&mut core, &[
+        (left, RecordedMove::Sent(truth)),
+        (left, RecordedMove::Sent(truth)),
+        (right, RecordedMove::Received(truth)),
+        (right, RecordedMove::Received(truth)),
+        (left, RecordedMove::Closed),
+        (right, RecordedMove::Closed),
+    ]);
+    let event = |endpoint, index| WebPiece::Event { endpoint, index };
+    let web = core.value_web(Arc::from([
+        WebPiece::Series(2),
+        event(left, 0),
+        WebPiece::Parallel(2),
+        event(left, 1),
+        WebPiece::Series(2),
+        event(right, 0),
+        event(right, 1),
+    ]));
+    let returned = core.computation_return(web);
+    let [one, commuted, misheard, queued] =
+        [one, commuted, misheard, queued].map(|dialogue| core.computation_decompose(dialogue));
+    for decomposed in [one, commuted, misheard] {
+        assert_eq!(
+            normalises_to(&mut core, decomposed, returned),
+            CertificateEquality::Equal,
+            "a dialogue's decomposition reads back as its web"
+        );
+    }
+
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    let [one, commuted, misheard, queued, returned] = [one, commuted, misheard, queued, returned]
+        .map(|computation| {
+            eval_computation(&core, &mut domain, definitions, ample(), computation)
+                .expect("a dialogue's decomposition evaluates")
+        });
+    let mut decided = |one, other| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::computations(one, other),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(
+        [
+            decided(one, commuted),
+            decided(one, misheard),
+            decided(one, returned),
+            decided(one, queued),
+        ],
+        [
+            MachineVerdict::Convertible,
+            MachineVerdict::Convertible,
+            MachineVerdict::Convertible,
+            MachineVerdict::NotConvertible,
+        ],
+        "interleavings and payloads leave one web, the written one; queued sends leave another"
+    );
+
+    let run = core.value_recorded(Arc::from([RecordedMove::Closed]));
+    let [of_run, of_web] = [run, web].map(|recording| core.computation_decompose(recording));
+    for refused in [of_run, of_web] {
+        assert_eq!(
+            eval_computation(&core, &mut domain, definitions, ample(), refused).err(),
+            Some(EvalFault::Decomposition),
+            "only a dialogue decomposes"
+        );
+    }
+}
+
+#[test]
+fn a_named_dialogue_decomposes_through_its_definition()
+{
+    // def named = <one exchange> ; `decompose(named)` against `decompose` of the
+    // literal, under the held stance the checker compares endpoints in. The
+    // definition stays unforced, and the decomposition reads its operand through
+    // the body; with no body to read, the head is rigid and refuses.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let truth = core.value_injection(Side::Left.into(), unit);
+    let (left, right) = (Endpoint::Left, Endpoint::Right);
+    let moves = [
+        (left, RecordedMove::Sent(truth)),
+        (right, RecordedMove::Received(truth)),
+        (left, RecordedMove::Closed),
+        (right, RecordedMove::Closed),
+    ]
+    .map(|(endpoint, movement)| DialogueMove { endpoint, movement });
+    let literal = core.value_dialogue(Arc::from(moves));
+    let named = core.value_constant(ConstantIndex::from(0_usize));
+    let [of_named, of_literal] =
+        [named, literal].map(|dialogue| core.computation_decompose(dialogue));
+    let mut chain = gandr_core_term::DefinitionChain::new();
+    chain
+        .define(
+            ConstantIndex::from(0_usize),
+            gandr_kernel_term::GlobalIndex::from(0_u32),
+            gandr_core_term::Transparency::Manifest,
+            &[],
+        )
+        .expect("one definition enters an empty chain");
+    let Ok(chain) =
+        LoweredChain::lower(chain, |_entry| Ok::<_, core::convert::Infallible>(literal));
+    let environment = DefinitionalEnvironment::new();
+    let held = Definitions::new(&chain, &environment, environment.root())
+        .reading_endpoints(crate::Endpoints::Hold);
+    let mut domain = DomainArena::new();
+    let [of_named_value, of_literal_value] = [of_named, of_literal].map(|computation| {
+        eval_computation(&core, &mut domain, held, ample(), computation)
+            .expect("a dialogue a definition names decomposes")
+    });
+    let verdict = decide::<NullSink, NullMemo>(
+        &core,
+        &mut domain,
+        held,
+        MachineSettings::default(),
+        Problem::computations(of_named_value, of_literal_value),
+        &mut NullSink,
+    )
+    .expect("the machine answers")
+    .verdict();
+    assert_eq!(
+        verdict,
+        MachineVerdict::Convertible,
+        "the named dialogue decomposes to its literal's web"
+    );
+
+    let empty = LoweredChain::new();
+    let rigid = Definitions::new(&empty, &environment, environment.root());
+    let mut domain = DomainArena::new();
+    assert_eq!(
+        eval_computation(&core, &mut domain, rigid, ample(), of_named).err(),
+        Some(EvalFault::Decomposition),
+        "a head with no body here refuses as a parameter does"
     );
 }
 

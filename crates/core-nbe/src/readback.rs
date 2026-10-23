@@ -154,6 +154,7 @@ use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
+use crate::domain::Reading;
 use crate::domain::Suspended;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
@@ -3734,7 +3735,25 @@ fn step_value(
             }
             Ok(())
         },
-        DomainValue::Recorded { source, fields, .. } => {
+        DomainValue::Recorded {
+            source,
+            reading: Reading::Decomposed,
+            ..
+        } => {
+            let Some(&Value::Dialogue(ref moves)) = core.value(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let pieces = crate::eval::decomposition(moves).map_err(ReadbackFault::Eval)?;
+            machine.values.push(core.value_web(pieces));
+            Ok(())
+        },
+        DomainValue::Recorded {
+            source,
+            fields,
+            reading: Reading::Written,
+            ..
+        } => {
             let fields = domain.fields(fields).map_err(ReadbackFault::Domain)?;
             if core
                 .value(source)

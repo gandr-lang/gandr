@@ -321,6 +321,7 @@ path = "crates/core-sequent"
 # dialogue's causal web and its decomposition come from it.
 # consumers:
 # - core-checker
+# - core-nbe
 # - runtime-emitter
 [workspace.dependencies.gandr-core-session]
 path = "crates/core-session"

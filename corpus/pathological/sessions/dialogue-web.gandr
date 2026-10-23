@@ -17,6 +17,12 @@ module Ask {
 def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) ;
 def apart = here(retiring) ;
 
+/// Their webs differ as well: one is series-parallel and the other leaves a
+/// prime node (#2078).
+@[ refuses("EndpointMismatch") ]
+def apartWebs : Path(Web, decompose(retiring), decompose(handedOff)) ;
+def apartWebs = here(decompose(retiring)) ;
+
 /// A receipt that hears other than was sent has no send to match it
 /// (#1214).
 @[ refuses("DialogueUnmatched") ]

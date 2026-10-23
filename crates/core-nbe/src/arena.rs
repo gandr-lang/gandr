@@ -99,6 +99,7 @@ use crate::domain::LevelEntry;
 use crate::domain::LiftTarget;
 use crate::domain::Neutral;
 use crate::domain::NeutralHead;
+use crate::domain::Reading;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::guard::Guard;
@@ -1840,15 +1841,15 @@ impl DomainArena
         ))
     }
 
-    /// Retain a recorded run with a guard over its evaluated payloads.
+    /// Retain a recording with a guard over its evaluated payloads.
     ///
     /// The moves and their labels are compared by decomposition; leaving them
     /// out of the guard can only make that early refutation inconclusive.
     ///
     /// # Specification
-    /// - requires: the source run supplies the moves, one payload per send and
-    ///   receive, in move order.
-    /// - ensures: success retains the exact source, span and face.
+    /// - requires: the source recording supplies the moves, one payload per
+    ///   send and receive, in move order; a decomposition carries none.
+    /// - ensures: success retains the exact source, span, face and reading.
     /// - fails: a dangling field span.
     /// - panics: none.
     ///
@@ -1857,15 +1858,17 @@ impl DomainArena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a recorded run reads back with its moves and its
-    ///   payloads in order.
+    ///   payloads in order, and a dialogue's decomposition as its web.
     /// - witness: `identity::tests::a_recorded_run_moves_its_payloads_along_a_universe_path`
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Recorded {source,fields,face})))]
+    /// - witness: `identity::tests::a_decomposition_converts_with_the_web_it_reads_back_as`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Recorded {source,fields,face,reading})))]
     #[inline]
     pub fn value_recorded(
         &mut self,
         source: ValueId,
         fields: FieldSpan,
         face: TermFace,
+        reading: Reading,
     ) -> Result<DomainValueId, DomainFault>
     {
         let values = self.fields(fields)?;
@@ -1879,6 +1882,7 @@ impl DomainArena
                 source,
                 fields,
                 face,
+                reading,
             },
             guard,
         ))
