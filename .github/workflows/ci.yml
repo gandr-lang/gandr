@@ -44,8 +44,9 @@ on:
   # queue run. Successful builds publish state even when a later test fails.
   # Main promotes only the exact landing's state; cached state never
   # substitutes for running a gate. A commit pushed to main without the
-  # queue has no queue run to promote: its push runs the Linux test lanes,
-  # which test it and cache their state as main's, so the next queue run
+  # queue has no queue run to promote: its push runs every lane the queue
+  # runs on Linux, the recovery sweep and the formatting included (#2084),
+  # and the test lanes cache their state as main's, so the next queue run
   # builds over it rather than over the last queued landing. macOS is
   # tested daily and on dispatch, never on a push or in the queue: no
   # landing waits for it (#702, #1177).
@@ -394,7 +395,13 @@ jobs:
   #   queue always checks its complete merge result; a Rust-only pull request
   #   or queue entry does not pay for the extension lane; a change to the
   #   parser, its grammar or its syntax tree reaches every recovery record
-  #   (#1434). A push and the daily run gate nothing and read none;
+  #   (#1434). The daily run gates nothing and reads none; nor does a push
+  #   whose head a merge group built and tested, as a queue landing's is;
+  # - `unbuilt`: a push to main whose head no merge group built (#2084), a
+  #   chain pushed by hand. No run has tested its tree, so it runs every
+  #   lane a merge group runs, the recovery sweep, the extension, the
+  #   compiler policy and the formatting among them, and red main is red
+  #   on its own run;
   # - `stacked`: a pull request whose base is not the trunk, a stack member
   #   (#2045). Its run is the lint, Clippy and formatting; the merge group
   #   tests its tree, and the reports run on the stack's bottom;
@@ -428,8 +435,9 @@ jobs:
       actions: read
     outputs:
       rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
-      extension: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
-      parser: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      extension: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      parser: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      unbuilt: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' }}
       stacked: ${{ github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch }}
       rebased: ${{ steps.rebased.outputs.rebased == 'true' }}
       image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
@@ -591,7 +599,7 @@ jobs:
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: *rust-needs
-    if: &test-lane ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.run-id == '') }}
+    if: &test-lane ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
@@ -994,7 +1002,7 @@ jobs:
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' || github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.run-id == '') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     # A landing's push deletes the Clippy state it superseded.
     permissions:
@@ -1062,7 +1070,7 @@ jobs:
   cargo-dylint-crate:
     name: check quenchant compiler policy
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1603,11 +1611,12 @@ jobs:
 
   # Formatting and workflow security lint share the treefmt pass. It runs
   # over a failed image build and fails pulling the missing image (`ci-image`),
-  # and skips GitHub's rebase of an unchanged change (`rebased`, #2070).
+  # skips GitHub's rebase of an unchanged change (`rebased`, #2070), and runs
+  # on a push only when no merge group built its head (`unbuilt`, #2084).
   format-gate:
     name: check formatting and lint gates (treefmt)
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -1663,13 +1672,14 @@ jobs:
             fi
           done
 
-  # Light lane: pull requests, the merge group, and dispatch. The changes
-  # filter keeps a Rust-only diff off this job. The image carries Node and
-  # aube; the bare-runner fallback installs the same pins.
+  # Light lane: pull requests, the merge group, dispatch and a push no merge
+  # group built. The changes filter keeps a Rust-only diff off this job. The
+  # image carries Node and aube; the bare-runner fallback installs the same
+  # pins.
   extension-gate:
     name: check the VS Code extension
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.extension == 'true' && github.event_name != 'push' }}
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.extension == 'true' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
