@@ -746,7 +746,7 @@ fn a_record_update_is_declined_by_name()
             span: at(source, "#{r | n = 2}", 0_usize),
             form: FormName::RECORD_UPDATE,
             sort: FragmentSort::Value,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::RecordUpdate),
         },
         "the update parses and is declined by its own name"
     );

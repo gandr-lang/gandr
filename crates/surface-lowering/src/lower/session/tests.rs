@@ -706,7 +706,7 @@ fn an_offer_arm_is_one_label()
             span: spelled_within(source, SourceText::from("{ 7 =>"), SourceText::from("7")),
             form: FormName::from(NamedKind("literal_pattern")),
             sort: FragmentSort::Pattern,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
         },
         "an arm's pattern is a label"
     );
@@ -723,24 +723,27 @@ fn sharing_is_reserved_by_name()
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
-    for (name, written, keyword, form) in [
+    for (name, written, keyword, form, feature) in [
         (
             "shared",
             "fork !(c",
             "fork",
             FormName::FORK_SHARED_STATEMENT,
+            crate::Unbuilt::SharedFork,
         ),
         (
             "acquired",
             "acquire(n)",
             "acquire",
             FormName::ACQUIRE_STATEMENT,
+            crate::Unbuilt::Acquire,
         ),
         (
             "released",
             "release(n)",
             "release",
             FormName::RELEASE_STATEMENT,
+            crate::Unbuilt::Release,
         ),
     ] {
         assert_eq!(
@@ -749,7 +752,7 @@ fn sharing_is_reserved_by_name()
                 span: spelled_within(source, SourceText::from(written), SourceText::from(keyword)),
                 form,
                 sort: FragmentSort::Computation,
-                boundary: FragmentBoundary::Reserved,
+                boundary: FragmentBoundary::Reserved(feature),
             },
             "`{name}`: a shared session's statement is reserved by its name"
         );
@@ -757,7 +760,12 @@ fn sharing_is_reserved_by_name()
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("duplicated")),
-            LoweringRefusal::OutOfFragment { span, form, boundary: FragmentBoundary::Reserved, .. }
+            LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                boundary: FragmentBoundary::Reserved(crate::Unbuilt::Dup),
+                ..
+            }
                 if form == FormName::from(NamedKind("dup_expression"))
                     && span == spelled_within(source, SourceText::from("; dup(d) ;"), SourceText::from("dup(d)"))
         ),
@@ -790,7 +798,7 @@ fn a_fork_an_exit_would_continue_is_declined()
             ),
             form: FormName::FORK_STATEMENT,
             sort: FragmentSort::Computation,
-            boundary: FragmentBoundary::Unadmitted,
+            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::JoinedFork),
         },
         "the rest an exit continues would sit under the fork's parent end"
     );

@@ -123,6 +123,7 @@ use crate::resolve::CandidateCount;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 quenchant_shape::reason_enum! {
     /// Why a refusal names no span of the source.
@@ -251,10 +252,16 @@ impl fmt::Display for FragmentSort
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
-    /// The form is reserved: parsed so it can be declined by name.
-    Reserved,
-    /// The form is parsed by the grammar and has no reading in the fragment.
-    Unadmitted,
+    /// The form is reserved: parsed so it can be declined by name, at the
+    /// feature it stops at.
+    Reserved(Unbuilt),
+    /// The form is parsed by the grammar and has no reading in the fragment
+    /// for the feature it stops at.
+    Unadmitted(Unbuilt),
+    /// The form is admitted at one position only and written at another:
+    /// the universe of representable sorts, which classifies a theory's sort
+    /// member, read anywhere else.
+    Misplaced,
     /// The form is a former of the fragment, but not of the sort its position
     /// demands.
     WrongSort,
@@ -328,8 +335,11 @@ impl fmt::Display for FragmentBoundary
     ) -> fmt::Result
     {
         match *self {
-            Self::Reserved => f.write_str("is reserved and declined"),
-            Self::Unadmitted => f.write_str("is not admitted by the fragment"),
+            Self::Reserved(_) => f.write_str("is reserved and declined"),
+            Self::Unadmitted(_) => f.write_str("is not admitted by the fragment"),
+            Self::Misplaced => {
+                f.write_str("is admitted only where it classifies a theory's sort member")
+            },
             Self::WrongSort => f.write_str("is not a former of this sort"),
             Self::Arity(operands) => write!(f, "does not take {operands} operands"),
             Self::Indexed => {
@@ -1994,6 +2004,7 @@ mod tests
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
+    use crate::unbuilt::Unbuilt;
 
     /// One inhabitant of every variant, each with its own rejected span.
     ///
@@ -2049,7 +2060,7 @@ mod tests
                 span: s(9_usize, 10_usize),
                 form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Reserved,
+                boundary: FragmentBoundary::Reserved(Unbuilt::UnknownType),
             },
             LoweringRefusal::MalformedLiteral {
                 span: s(11_usize, 12_usize),
@@ -2516,8 +2527,9 @@ mod tests
             &FormFault::MisplacedTile,
         ]));
         assert_apart(&render(&[
-            &FragmentBoundary::Reserved,
-            &FragmentBoundary::Unadmitted,
+            &FragmentBoundary::Reserved(Unbuilt::Dup),
+            &FragmentBoundary::Unadmitted(Unbuilt::Dup),
+            &FragmentBoundary::Misplaced,
             &FragmentBoundary::WrongSort,
             &FragmentBoundary::Arity(OperandCount::from(2_usize)),
             &FragmentBoundary::Indexed,

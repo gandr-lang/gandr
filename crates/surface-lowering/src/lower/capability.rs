@@ -197,6 +197,7 @@ use crate::resolve::Frame;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -249,7 +250,7 @@ pub(super) enum Stated
 fn host<'source>(site: Site) -> Result<HostSignatures, LoweringRefusal<'source>>
 {
     HostSignatures::new(&mut CoreArena::new())
-        .map_err(|_conflict| site.out(FragmentBoundary::Unadmitted))
+        .map_err(|_conflict| site.out(FragmentBoundary::Unadmitted(Unbuilt::CapabilityHost)))
 }
 
 /// What the reply of an operation is to the scope handling it.

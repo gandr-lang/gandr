@@ -581,8 +581,9 @@ impl<'source> Lowerer<'_, 'source>
             | Former::Instantiation
             | Former::SessionType
             | Former::Action
-            | Former::Reserved
-            | Former::Unadmitted => (Leaves::Sometimes, broken),
+            | Former::Reserved(_)
+            | Former::Unadmitted(_)
+            | Former::Misplaced => (Leaves::Sometimes, broken),
         }
     }
 

@@ -578,6 +578,7 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::declined_feature;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::import::ImportBinding;
@@ -654,6 +655,7 @@ use crate::resolve::binder_site;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
@@ -1282,7 +1284,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1353,8 +1355,9 @@ fn ending(former: Former) -> Ending
         | Former::Access
         | Former::World
         | Former::WorldDeclaration
-        | Former::Reserved
-        | Former::Unadmitted => Ending::Inferred,
+        | Former::Reserved(_)
+        | Former::Unadmitted(_)
+        | Former::Misplaced => Ending::Inferred,
     }
 }
 
@@ -1378,7 +1381,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved | Former::Unadmitted => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1490,9 +1493,10 @@ fn iterating(former: Former) -> Ending
                     | Former::Module
                     | Former::Data
                     | Former::Mutual
-                    | Former::Reserved
+                    | Former::Reserved(_)
                     | Former::WorldDeclaration
-                    | Former::Unadmitted,
+                    | Former::Unadmitted(_)
+                    | Former::Misplaced,
                 Family::Neither
             )
         )
@@ -1569,9 +1573,10 @@ const fn family_of(former: Former) -> Family
         | Former::Module
         | Former::Data
         | Former::Mutual
-        | Former::Reserved
+        | Former::Reserved(_)
         | Former::WorldDeclaration
-        | Former::Unadmitted => Family::Neither,
+        | Former::Unadmitted(_)
+        | Former::Misplaced => Family::Neither,
     }
 }
 
@@ -5892,11 +5897,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             name,
             reading,
         };
-        if former == Former::Unadmitted {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+        if let Former::Unadmitted(feature) = former {
+            return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         }
-        if former == Former::Reserved {
-            return Err(site.out(FragmentBoundary::Reserved));
+        if let Former::Reserved(feature) = former {
+            return Err(site.out(FragmentBoundary::Reserved(feature)));
+        }
+        if former == Former::Misplaced {
+            return Err(site.out(FragmentBoundary::Misplaced));
         }
         let mut pieces = core::mem::take(&mut self.pieces);
         // A value standing inside a type reads its own operands inside it too.
@@ -6114,9 +6122,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Import
             | Former::Data
             | Former::Mutual
-            | Former::Reserved
+            | Former::Reserved(_)
             | Former::WorldDeclaration
-            | Former::Unadmitted => Err(site.out(FragmentBoundary::WrongSort)),
+            | Former::Unadmitted(_)
+            | Former::Misplaced => Err(site.out(FragmentBoundary::WrongSort)),
         }
     }
 
@@ -6921,7 +6930,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
                 Plan::Universe(Universe::FUSS_FREE)
             },
-            Maybe::Absent(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Maybe::Absent(_) => {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnknownConstructor)));
+            },
         };
         let _frame = self.require(site, Produced::ValueType)?;
         self.plan(site, quoted);
@@ -7214,7 +7225,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         if fractional(text).0 {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Fractional)));
         }
 
         Err(LoweringRefusal::MalformedLiteral {
@@ -7334,7 +7345,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .iter()
             .find(|row| row.name().as_ref() == "string.append")
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Interpolation)));
         };
         let start = self.segments.len();
         let mut run = String::new();
@@ -7867,7 +7878,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let frame = self.require(site, Produced::Value)?;
         let _keyword = cursor.tile(TileName::THUNK);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
-            return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+            return Err(site.folded(
+                FormName::GRADE,
+                FragmentBoundary::Unadmitted(Unbuilt::ThunkGrade),
+            ));
         }
         let body = self.block(site, &mut cursor, frame)?;
         let answer = match self.thunked.get(&site.at.node) {
@@ -7931,7 +7945,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let frame = self.require(site, Produced::Computation)?;
         let _keyword = cursor.tile(TileName::FN);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
-            return Err(site.folded(FormName::TYPE_ABSTRACTION, FragmentBoundary::Unadmitted));
+            return Err(site.folded(
+                FormName::TYPE_ABSTRACTION,
+                FragmentBoundary::Unadmitted(Unbuilt::TypeAbstraction),
+            ));
         }
         let (binder, declared) = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
@@ -8276,7 +8293,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         name: FormName::PARAMETER,
                         ..function
                     };
-                    return Err(parameter.out(FragmentBoundary::Unadmitted));
+                    return Err(parameter.out(FragmentBoundary::Unadmitted(Unbuilt::TypeParameter)));
                 },
                 Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
@@ -8654,7 +8671,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 FormName::FORK_STATEMENT
                             },
                             sort: FragmentSort::Computation,
-                            boundary: FragmentBoundary::Unadmitted,
+                            boundary: FragmentBoundary::Unadmitted(if label == TileName::HOLD {
+                                Unbuilt::JoinedHold
+                            }
+                            else {
+                                Unbuilt::JoinedFork
+                            }),
                         });
                     }
                     else if label == TileName::HOLD {
@@ -8748,7 +8770,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     span: colon.span,
                     form: FormName::ANNOTATION,
                     sort: FragmentSort::Computation,
-                    boundary: FragmentBoundary::Unadmitted,
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::Annotation),
                 });
             }
             let mut names = Vec::with_capacity(components.len());
@@ -8962,7 +8984,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 span: binder.span,
                 form: name,
                 sort: FragmentSort::Pattern,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(unread_pattern(name)),
             }),
             Shape::Repair(repair) => Err(statement.fault(binder.span, FormFault::Repaired(repair))),
             Shape::Root | Shape::Layout => {
@@ -9465,7 +9487,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     _ => false,
                 })
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            let feature = if let Arguments::Unary(_) = arguments {
+                Unbuilt::PrefixOperator
+            }
+            else {
+                Unbuilt::InfixForm
+            };
+            return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         };
         for argument in arguments.iter() {
             self.read(*argument, Reading::Value(frame));
@@ -9587,7 +9615,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.fuel.spend()?;
             let Some(node) = self.tree.node(target.node)
             else {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
             };
             match shape_of(self.pbg, node)? {
                 Shape::Form {
@@ -9611,10 +9639,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     ..
                 } => {
                     self.refuse_applied(target, &mut chain)?;
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
                 Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
             }
         };
@@ -9642,14 +9670,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             PathResolution::Complete(Recognized::ModuleType) => {
                 let Some(&(_, member)) = links.first()
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
                 self.module_type(site, &path, member)
             },
             PathResolution::Complete(Recognized::ModuleComponent) => {
                 let Some(&exported) = self.exported.get(&path)
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
                 self.select(site, exported)?;
                 if let Some(&(_, member)) = links.first()
@@ -9671,7 +9699,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .checked_sub(usize::from(depth))
                     .and_then(|link| links.get(link))
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
                 Err(LoweringRefusal::UnknownMember {
                     span: selected.span,
@@ -9680,7 +9708,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             },
             PathResolution::Complete(_) | PathResolution::Ungoverned => {
-                Err(site.out(FragmentBoundary::Unadmitted))
+                Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)))
             },
         }
     }
@@ -9780,7 +9808,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::functors::a_type_member_never_reads_its_parameter_s_value`
     #[spec(
         ensures: |ret| match self.collected.slots.get(usize::from(target)) {
-            | None => ret == Err(site.out(FragmentBoundary::Unadmitted)),
+            | None => ret == Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection))),
             | Some(entry) => {
                 if matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if target >= own)
                 {
@@ -9806,7 +9834,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let Some(entry) = self.collected.slots.get(usize::from(target))
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
         };
         let (constant, name, declared) = (entry.constant, entry.name, entry.named.span);
         if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
@@ -9989,7 +10017,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             TypeMeaning::Sealed | TypeMeaning::Instantiated { .. } => {
                 let Some(atom) = self.collected.slots.get(usize::from(stated.held))
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StatedType)));
                 };
                 if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
                     && own <= stated.held
@@ -10256,7 +10284,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.fuel.spend()?;
             let Some(node) = self.tree.node(target.node)
             else {
-                return Err(site.out(FragmentBoundary::Unadmitted));
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
             };
             match shape_of(self.pbg, node)? {
                 Shape::Form {
@@ -10280,10 +10308,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     ..
                 } => {
                     self.refuse_applied(target, &mut chain)?;
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
                 Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 },
             }
         };
@@ -10313,7 +10341,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .checked_sub(usize::from(depth))
                     .and_then(|link| links.get(link))
                 else {
-                    return Err(site.out(FragmentBoundary::Unadmitted));
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
                 Err(LoweringRefusal::UnknownMember {
                     span: selected.span,
@@ -10362,7 +10390,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let Some(&stated) = self.exported_types.get(path)
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
         };
         if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
             && own <= stated.held
@@ -10574,7 +10602,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         at: numeral,
                         ..site
                     };
-                    return Err(level.out(FragmentBoundary::Unadmitted));
+                    return Err(level.out(FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel)));
                 };
                 LevelConstant::from(level)
             },
@@ -11436,7 +11464,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     return self.effectful(site, row, argument.node);
                 },
                 TypeFormer::List | TypeFormer::Run | TypeFormer::Prefix => {
-                    return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+                    return Err(site.folded(
+                        FormName::GRADE,
+                        FragmentBoundary::Unadmitted(Unbuilt::TypeGrade),
+                    ));
                 },
             }
         }
@@ -16778,10 +16809,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of an application is the declaration its renaming minted, unminted
     ///   when its template refused or its argument's type did not lower; a
     ///   module's own slot is [`Self::own_outcome`], except that one
-    ///   [`Self::own_outcome`] leaves absent while it holds a half that lowers
-    ///   to a core term — any but a top-level `oper`'s, or a witness of a
-    ///   member refused where it was written — is refused
-    ///   [`LoweringRefusal::Unminted`] at the declaration, by its name.
+    ///   [`Self::own_outcome`] leaves absent is refused by the expectation its
+    ///   type member states unread, when it states one, and otherwise, while it
+    ///   holds a half that lowers to a core term — any but a top-level
+    ///   `oper`'s, or a witness of a member refused where it was written — is
+    ///   refused [`LoweringRefusal::Unminted`] at the declaration, by its name;
+    ///   and a witness refused as the member it represents is, yields nothing,
+    ///   so the member's refusal is reported once.
     /// - provides: the per-slot row [`Self::assemble`] files, so a declaration
     ///   the lowering collected either lowers or is refused by name, never
     ///   dropped from the module.
@@ -16792,21 +16826,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a functor's body yields no declaration and each of
     ///   two applications yields its own; a function whose two halves the mint
     ///   left unminted, with no refusal filed, is refused by name rather than
-    ///   dropped silently.
+    ///   dropped silently; a type member's expectation states its refusal and
+    ///   is refused when the member yields nothing.
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
             | Stratum::Module => match self.own_outcome(position, slot) {
+                | Maybe::Absent(_) if let Some(&refusal) = self.collected.unread_expectations.get(&position) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | Maybe::Absent(_) if self.lowers_a_half(slot) == Owed::Owed => ret == Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                     span: slot.introduced_by.span,
                     name: slot.name,
                 })),
+                | Maybe::Present(DeclarationOutcome::Refused(refusal)) if self.represented_refusal(position) == Some(refusal) => ret == Maybe::Absent(lowered::Absent::Unminted),
                 | own => ret == own,
             },
             | Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
                 | Maybe::Present(DeclarationOutcome::Refused(refusal)) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
+                | Maybe::Absent(_) if let Some(&refusal) = self.collected.unread_expectations.get(&position) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | _ => ret == Maybe::Absent(lowered::Absent::Templated),
             },
             | Stratum::Instance(_) => ret == self.instantiated.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
@@ -16820,14 +16859,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         match self.collected.stratum_of(slot.container) {
             Stratum::Module => match self.own_outcome(position, slot) {
-                Maybe::Absent(reason) => match self.lowers_a_half(slot) {
-                    Owed::Owed => {
-                        Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
-                            span: slot.introduced_by.span,
-                            name: slot.name,
-                        }))
-                    },
-                    Owed::Nothing => Maybe::Absent(reason),
+                Maybe::Absent(reason) => {
+                    if let Some(&refusal) = self.collected.unread_expectations.get(&position) {
+                        return Maybe::Present(DeclarationOutcome::Refused(refusal));
+                    }
+                    match self.lowers_a_half(slot) {
+                        Owed::Owed => {
+                            Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
+                                span: slot.introduced_by.span,
+                                name: slot.name,
+                            }))
+                        },
+                        Owed::Nothing => Maybe::Absent(reason),
+                    }
+                },
+                Maybe::Present(DeclarationOutcome::Refused(refusal))
+                    if self.represented_refusal(position) == Some(refusal) =>
+                {
+                    Maybe::Absent(lowered::Absent::Unminted)
                 },
                 Maybe::Present(outcome) => Maybe::Present(outcome),
             },
@@ -16835,13 +16884,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
                     Maybe::Present(DeclarationOutcome::Refused(refusal))
                 },
-                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Templated),
+                Maybe::Absent(_) => match self.collected.unread_expectations.get(&position) {
+                    Some(&refusal) => Maybe::Present(DeclarationOutcome::Refused(refusal)),
+                    None => Maybe::Absent(lowered::Absent::Templated),
+                },
+                Maybe::Present(_) => Maybe::Absent(lowered::Absent::Templated),
             },
             Stratum::Instance(_) => self
                 .instantiated
                 .get(&position)
                 .copied()
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+        }
+    }
+
+    /// The refusal of the type member the witness at `position` checks, when
+    /// it is a transparent component's witness and that member is refused;
+    /// the atom an opaque ascription seals carries its member's refusal on to
+    /// the declarations that read it, so it keeps it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn represented_refusal(
+        &self,
+        position: SlotIndex,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        if self.collected.slots.get(usize::from(position))?.role != Role::Witness {
+            return None;
+        }
+        let held = match self.collected.abstracts.get(&position)?.representation {
+            Maybe::Present(represented) => represented.held,
+            Maybe::Absent(_) => return None,
+        };
+        match self.collected.slots.get(usize::from(held))?.refusal {
+            Maybe::Present((_at, refusal)) => Some(refusal),
+            Maybe::Absent(_) => None,
         }
     }
 
@@ -18026,22 +18104,22 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 4_usize] = [
     (
         TileName::VAL,
         FormName::VAL_STATEMENT,
-        FragmentBoundary::Unadmitted,
+        FragmentBoundary::Unadmitted(Unbuilt::Val),
     ),
     (
         TileName::UNPACK,
         FormName::UNPACK_STATEMENT,
-        FragmentBoundary::Unadmitted,
+        FragmentBoundary::Unadmitted(Unbuilt::Unpack),
     ),
     (
         TileName::ACQUIRE,
         FormName::ACQUIRE_STATEMENT,
-        FragmentBoundary::Reserved,
+        FragmentBoundary::Reserved(Unbuilt::Acquire),
     ),
     (
         TileName::RELEASE,
         FormName::RELEASE_STATEMENT,
-        FragmentBoundary::Reserved,
+        FragmentBoundary::Reserved(Unbuilt::Release),
     ),
 ];
 
@@ -18072,7 +18150,10 @@ const UNREAD_STATEMENTS: [(TileName, FormName, FragmentBoundary); 4_usize] = [
     },
     ensures: |ret| {
         ret == if shared {
-            Maybe::Present((FormName::FORK_SHARED_STATEMENT, FragmentBoundary::Reserved))
+            Maybe::Present((
+                FormName::FORK_SHARED_STATEMENT,
+                FragmentBoundary::Reserved(Unbuilt::SharedFork),
+            ))
         }
         else if label == TileName::FORK || label == TileName::RUN || label == TileName::RECV || label == TileName::HOLD || label == TileName::LETA {
             Maybe::Absent(statement::Absent::Read)
@@ -18097,9 +18178,10 @@ fn statement_form(
         let mut ahead = cursor.clone();
         let _fork = ahead.read();
         return match ahead.at(TileName::BANG) {
-            Maybe::Present(_) => {
-                Maybe::Present((FormName::FORK_SHARED_STATEMENT, FragmentBoundary::Reserved))
-            },
+            Maybe::Present(_) => Maybe::Present((
+                FormName::FORK_SHARED_STATEMENT,
+                FragmentBoundary::Reserved(Unbuilt::SharedFork),
+            )),
             Maybe::Absent(_) => Maybe::Absent(statement::Absent::Read),
         };
     }
@@ -18118,6 +18200,34 @@ fn statement_form(
             Maybe::Absent(statement::Absent::NotAKeyword),
             |&(_keyword, form, boundary)| Maybe::Present((form, boundary)),
         )
+}
+
+/// The feature a form named `name`, written where a pattern is read and taken
+/// by no pattern reading, is refused by.
+///
+/// # Specification
+/// - requires: `name` names a form no pattern reading at its position takes.
+/// - ensures: the feature the dispatch table declines `name` by where it
+///   declines it, [`Unbuilt::UnreadPattern`] for every other form.
+/// - provides: the one feature every pattern position refuses an unread form
+///   by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list pattern, declined by its own row, a lambda, which
+///   the dispatch reads, and a misplaced form, standing as patterns.
+/// - witness: `lower::tests::an_unread_pattern_names_its_feature`
+#[spec(ensures: |ret| match declined_feature(name) {
+    | Maybe::Present(feature) => ret == feature,
+    | Maybe::Absent(_) => ret == Unbuilt::UnreadPattern,
+})]
+fn unread_pattern(name: FormName) -> Unbuilt
+{
+    match declined_feature(name) {
+        Maybe::Present(feature) => feature,
+        Maybe::Absent(_) => Unbuilt::UnreadPattern,
+    }
 }
 
 /// Read a parenthesised, comma-separated argument list into `written`.
@@ -18640,8 +18750,9 @@ pub fn parse_literal(
         | Former::Access
         | Former::World
         | Former::WorldDeclaration
-        | Former::Reserved
-        | Former::Unadmitted => return Maybe::Absent(literal::Absent::NotALiteral),
+        | Former::Reserved(_)
+        | Former::Unadmitted(_)
+        | Former::Misplaced => return Maybe::Absent(literal::Absent::NotALiteral),
     };
 
     found.map_or(Maybe::Absent(literal::Absent::Malformed), Maybe::Present)
@@ -18974,6 +19085,7 @@ mod tests
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
+    use crate::unbuilt::Unbuilt;
     use crate::unit::Unit;
 
     /// The module the parser and the lowering make of `source`, which both
@@ -22562,14 +22674,15 @@ mod tests
     fn forms_outside_the_fragment_are_unadmitted()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let unadmitted = |start: usize, end: usize, form: FormName, sort: FragmentSort| {
-            LoweringRefusal::OutOfFragment {
-                span: at(start, end),
-                form,
-                sort,
-                boundary: FragmentBoundary::Unadmitted,
-            }
-        };
+        let unadmitted =
+            |start: usize, end: usize, form: FormName, sort: FragmentSort, feature: Unbuilt| {
+                LoweringRefusal::OutOfFragment {
+                    span: at(start, end),
+                    form,
+                    sort,
+                    boundary: FragmentBoundary::Unadmitted(feature),
+                }
+            };
         let rows = [
             (
                 "def a = 1.5 ;",
@@ -22578,6 +22691,7 @@ mod tests
                     11_usize,
                     FormName::from(NamedKind("number")),
                     FragmentSort::Value,
+                    Unbuilt::Fractional,
                 ),
             ),
             (
@@ -22587,6 +22701,7 @@ mod tests
                     19_usize,
                     FormName::VAL_STATEMENT,
                     FragmentSort::Computation,
+                    Unbuilt::Val,
                 ),
             ),
             (
@@ -22596,6 +22711,7 @@ mod tests
                     28_usize,
                     FormName::ANNOTATION,
                     FragmentSort::Computation,
+                    Unbuilt::Annotation,
                 ),
             ),
             (
@@ -22605,11 +22721,18 @@ mod tests
                     7_usize,
                     FormName::PARAMETER,
                     FragmentSort::Declaration,
+                    Unbuilt::TypeParameter,
                 ),
             ),
             (
                 "def a = ((3 : Integer), 1) ;",
-                unadmitted(9_usize, 22_usize, FormName::ANNOTATION, FragmentSort::Value),
+                unadmitted(
+                    9_usize,
+                    22_usize,
+                    FormName::ANNOTATION,
+                    FragmentSort::Value,
+                    Unbuilt::Annotation,
+                ),
             ),
         ];
         for (source, expected) in rows {
@@ -23985,9 +24108,42 @@ mod tests
                 span: at(8_usize, 11_usize),
                 form: FormName::from(NamedKind("constructor")),
                 sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::UnknownConstructor),
             },
             "only `Type` is a universe; another unanswered capital is no form the fragment has"
+        );
+    }
+
+    /// A pattern the table declines is refused by the feature its row
+    /// carries; a form the table reads that stands where a pattern is read is
+    /// refused as an unread pattern.
+    #[test]
+    fn an_unread_pattern_names_its_feature()
+    {
+        let source = "def f(n : Integer) -> -F Integer { case n { [a] => return 0 } }";
+        let refused = refusal(SourceText::from(source));
+        assert!(
+            matches!(refused, LoweringRefusal::OutOfFragment {
+                form,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::ListPattern),
+                ..
+            } if form == FormName::from(NamedKind("list_pattern"))),
+            "a list pattern is declined by its own feature: {refused:?}"
+        );
+        assert_eq!(
+            super::unread_pattern(FormName::from(NamedKind("list_pattern"))),
+            Unbuilt::ListPattern,
+            "a declined row's feature names the pattern"
+        );
+        assert_eq!(
+            super::unread_pattern(FormName::from(NamedKind("lambda_expression"))),
+            Unbuilt::UnreadPattern,
+            "a form the table reads names no feature of its own as a pattern"
+        );
+        assert_eq!(
+            super::unread_pattern(FormName::from(NamedKind("representable_universe_type"))),
+            Unbuilt::UnreadPattern,
+            "nor does a form the table admits elsewhere"
         );
     }
 
@@ -24036,7 +24192,7 @@ mod tests
                 span: at(16_usize, 39_usize),
                 form: FormName::from(NamedKind("universe_type")),
                 sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel),
             },
             "the refusal stands at the level, not the whole universe"
         );

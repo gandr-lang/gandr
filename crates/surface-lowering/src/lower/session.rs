@@ -138,6 +138,7 @@ use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -466,8 +467,9 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Access
                 | Former::World
                 | Former::WorldDeclaration
-                | Former::Reserved
-                | Former::Unadmitted => written,
+                | Former::Reserved(_)
+                | Former::Unadmitted(_)
+                | Former::Misplaced => written,
             };
             let here = Site {
                 at,
@@ -578,8 +580,9 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Access
                         | Former::World
                         | Former::WorldDeclaration
-                        | Former::Reserved
-                        | Former::Unadmitted => self.choice(here, former, cursor, &mut draft)?,
+                        | Former::Reserved(_)
+                        | Former::Unadmitted(_)
+                        | Former::Misplaced => self.choice(here, former, cursor, &mut draft)?,
                     }
                 },
                 Former::Name
@@ -646,8 +649,9 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Access
                 | Former::World
                 | Former::WorldDeclaration
-                | Former::Reserved
-                | Former::Unadmitted => return Err(continuation),
+                | Former::Reserved(_)
+                | Former::Unadmitted(_)
+                | Former::Misplaced => return Err(continuation),
             };
             draft.fill(state, node);
         }
@@ -669,7 +673,9 @@ impl<'source> Lowerer<'_, 'source>
                 let name = self.form_at(at)?.map_or(site.name, |(name, _former)| name);
                 return Err(Site { at, name, ..site }.out(FragmentBoundary::NonContractive));
             },
-            Err(_malformed) => return Err(site.out(FragmentBoundary::Unadmitted)),
+            Err(_malformed) => {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::SessionProtocol)));
+            },
         };
         self.plan(
             site,
@@ -873,15 +879,13 @@ impl<'source> Lowerer<'_, 'source>
         operand: Placed,
     ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
     {
-        let (name, former) = self
-            .form_at(operand)?
-            .unwrap_or((FormName::IDENTIFIER, Former::Unadmitted));
+        let formed = self.form_at(operand)?;
         let subject = Site {
             at: operand,
-            name,
+            name: formed.map_or(FormName::IDENTIFIER, |(name, _former)| name),
             reading: Reading::Value(frame),
         };
-        if former != Former::Name {
+        if !matches!(formed, Some((_, Former::Name))) {
             return Err(subject.out(FragmentBoundary::Endpoint));
         }
         let spelled = self.name_at(operand);
@@ -1039,7 +1043,7 @@ impl<'source> Lowerer<'_, 'source>
                     span: pattern.span,
                     form: named,
                     sort: FragmentSort::Pattern,
-                    boundary: FragmentBoundary::Unadmitted,
+                    boundary: FragmentBoundary::Unadmitted(super::unread_pattern(named)),
                 });
             }
             let label = self.name_at(pattern);

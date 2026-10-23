@@ -326,8 +326,6 @@
 568 Keyword module_declaration mobile L[#{] R[type]
 569 Keyword module_declaration type L[mobile] R[type_identifier]
 570 Type module_declaration type_identifier L[type] R[, }]
-574 Keyword module_declaration type L[,] R[type_identifier]
-575 Type module_declaration type_identifier L[type] R[( , : = }]
 576 Other module_declaration ( L[type_identifier] R[type_variable]
 577 TypeVariable module_declaration type_variable L[(] R[) , :]
 578 Other module_declaration : L[type_variable] R[<type>]

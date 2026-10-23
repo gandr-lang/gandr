@@ -117,6 +117,7 @@ use crate::operation::RouteTable;
 use crate::operation::Width;
 use crate::operation::plan_operation;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 quenchant_shape::reason_enum! {
     /// Why a data declaration states no universe.
@@ -385,12 +386,14 @@ pub struct Constructor
 
 impl<'source> Collector<'_, 'source>
 {
-    /// The former of the root child `child`; a child that is no form reads as
-    /// [`Former::Unadmitted`].
+    /// The former of the root child `child`; nothing for a child that is no
+    /// form.
     ///
     /// # Specification
     /// - requires: `child` is a written child of the root.
-    /// - ensures: a form's former as the dispatch table reads it.
+    /// - ensures: a form's former as the dispatch table reads it;
+    ///   [`root::Absent::Unformed`] for a child that is the root, a repair,
+    ///   layout, or no node of the tree.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold.
     /// - panics: none.
@@ -402,19 +405,19 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — a data declaration, an attribute block and a
     ///   definition each reach their own reading.
     /// - witness: `lower::native::tests::an_attribute_block_decorates_the_data_declaration_after_it`
-    #[spec(ensures: |ret| ret.is_err() || self.tree.node(child.node).is_some() || ret == Ok(Former::Unadmitted))]
+    #[spec(ensures: |ret| ret.is_err() || self.tree.node(child.node).is_some() || ret == Ok(Maybe::Absent(root::Absent::Unformed)))]
     pub(super) fn root_former(
         &self,
         child: Placed,
-    ) -> Result<Former, LoweringRefusal<'source>>
+    ) -> Result<Maybe<Former, root::Absent>, LoweringRefusal<'source>>
     {
         let Some(node) = self.tree.node(child.node)
         else {
-            return Ok(Former::Unadmitted);
+            return Ok(Maybe::Absent(root::Absent::Unformed));
         };
         Ok(match shape_of(self.pbg, node)? {
-            Shape::Form { former, .. } => former,
-            Shape::Root | Shape::Repair(_) | Shape::Layout => Former::Unadmitted,
+            Shape::Form { former, .. } => Maybe::Present(former),
+            Shape::Root | Shape::Repair(_) | Shape::Layout => Maybe::Absent(root::Absent::Unformed),
         })
     }
 
@@ -1018,7 +1021,11 @@ impl<'source> Collector<'_, 'source>
         let mut cells = Vec::with_capacity(written.len());
         for (index, cell) in written.iter().enumerate() {
             if !parameters.is_empty() {
-                return Err(declined(cell.named, FormName::CELL_MEMBER));
+                return Err(declined(
+                    cell.named,
+                    FormName::CELL_MEMBER,
+                    Unbuilt::CellMember,
+                ));
             }
             let name = self.name_of(cell.named);
             let earlier = written
@@ -1042,7 +1049,9 @@ impl<'source> Collector<'_, 'source>
             let side = |at: Placed| -> Result<ClosedTerm, LoweringRefusal<'source>> {
                 match closed_term(self.pbg, self.tree, at, &tag_of)? {
                     Maybe::Present(term) => Ok(term),
-                    Maybe::Absent(_) => Err(declined(at, FormName::CELL_MEMBER)),
+                    Maybe::Absent(_) => {
+                        Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember))
+                    },
                 }
             };
             let (source, target) = (side(cell.source)?, side(cell.target)?);
@@ -1099,7 +1108,11 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<GeneratorForm, LoweringRefusal<'source>>
     {
         if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
-            return Err(declined(named, FormName::CONSTRUCTOR_BLOCK_MEMBER));
+            return Err(declined(
+                named,
+                FormName::CONSTRUCTOR_BLOCK_MEMBER,
+                Unbuilt::ConstructorBlockMember,
+            ));
         }
         let mut fields = Vec::new();
         let result = if let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN) {
@@ -1116,7 +1129,7 @@ impl<'source> Collector<'_, 'source>
                     }
                 }
                 else if let Maybe::Present(Piece::Tile { at, .. }) = cursor.peek() {
-                    return Err(declined(at, FormName::GRADE));
+                    return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
                 }
                 let ty = one_in(FormName::DATA_GENERATOR, cursor.operands())?;
                 fields.push(FieldForm { named, ty });
@@ -1153,7 +1166,11 @@ impl<'source> Collector<'_, 'source>
             }
         };
         if let Maybe::Present(attributes) = cursor.tile(TileName::ATTRIBUTES) {
-            return Err(declined(attributes, FormName::ATTRIBUTE));
+            return Err(declined(
+                attributes,
+                FormName::ATTRIBUTE,
+                Unbuilt::GeneratorAttribute,
+            ));
         }
         let indices = self.uniform(result, (parameters, kinds))?;
 
@@ -1592,7 +1609,7 @@ fn cell<'source>(
             return Err(LoweringRefusal::DirectedCell { span: at.span });
         },
         (label, at) if label == TileName::REWRITE || label == TileName::REVERSIBLE => {
-            return Err(declined(at, FormName::CELL_MEMBER));
+            return Err(declined(at, FormName::CELL_MEMBER, Unbuilt::CellMember));
         },
         (_, at) => return Err(misplaced_in(FormName::CELL_MEMBER, at.span)),
     }
@@ -1749,19 +1766,34 @@ where
     }))
 }
 
-/// The refusal a member the fragment does not read earns, by its own name.
+/// The refusal a member the fragment does not read earns, by its own name
+/// and at the feature it stops at.
 ///
 /// # Specification
 /// trivial.
 const fn declined<'source>(
     at: Placed,
     form: FormName,
+    feature: Unbuilt,
 ) -> LoweringRefusal<'source>
 {
     LoweringRefusal::OutOfFragment {
         span: at.span,
         form,
         sort: FragmentSort::Declaration,
-        boundary: FragmentBoundary::Unadmitted,
+        boundary: FragmentBoundary::Unadmitted(feature),
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a root child has no former.
+    pub mod root {
+        /// The child is no form.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The child is the root, a repair, layout, or no node of the
+            /// tree.
+            Unformed,
+        }
     }
 }

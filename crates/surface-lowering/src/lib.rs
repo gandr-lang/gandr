@@ -371,6 +371,7 @@ pub mod namespace;
 mod operation;
 mod origin;
 mod resolve;
+pub mod unbuilt;
 mod unit;
 
 pub use gandr_theory_levitation::WfKind;
@@ -499,6 +500,7 @@ pub use crate::resolve::TypeFormer;
 pub use crate::resolve::binder_site;
 pub use crate::resolve::type_atom;
 pub use crate::resolve::type_former;
+pub use crate::unbuilt::Unbuilt;
 pub use crate::unit::ImportTarget;
 pub use crate::unit::PathImportOrdinal;
 pub use crate::unit::SourceIndex;

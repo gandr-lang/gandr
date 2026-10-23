@@ -120,6 +120,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
 use crate::resolve::binder_site;
+use crate::unbuilt::Unbuilt;
 use crate::unit::ImportTarget;
 use crate::unit::SourceIndex;
 
@@ -697,7 +698,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let Some(entry) = self.collected.slots.get(usize::from(slot))
         else {
-            return Err(site.out(FragmentBoundary::Unadmitted));
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::MethodCall)));
         };
         let (constant, declared) = (entry.constant, entry.named.span);
         if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
@@ -967,7 +968,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         match self.view_places.get(&site.at.node) {
             Some(&place) => self.view_place(site, cursor, place),
-            None => Err(site.out(FragmentBoundary::Unadmitted)),
+            None => Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Index))),
         }
     }
 

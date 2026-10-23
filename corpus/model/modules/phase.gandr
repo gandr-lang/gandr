@@ -4,8 +4,8 @@
 // part, ordered static below dynamic. A member reads only members at or
 // below its own phase, so a type reads types and static data, and a value
 // reads both. A type member reading a module's or a parameter's value is
-// refused by name at the value (`PhaseDependence`), which no fixture can
-// state until a type member can carry its own refusal (#1087).
+// refused by name at the value (`PhaseDependence`), stated beside it in
+// `../../pathological/modules/phase.gandr`.
 
 /// A sign, closed data whose constructors are static.
 data Sign : Type {

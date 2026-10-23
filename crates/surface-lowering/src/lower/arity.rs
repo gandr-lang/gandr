@@ -198,6 +198,7 @@ use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
 use crate::resolve::binder_type;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 mod tests;
@@ -778,7 +779,10 @@ impl<'source> Lowerer<'_, 'source>
                 }
             };
             if let Maybe::Present(_) = cursor.at(TileName::BAR) {
-                return Err(site.folded(FormName::RECORD_UPDATE, FragmentBoundary::Unadmitted));
+                return Err(site.folded(
+                    FormName::RECORD_UPDATE,
+                    FragmentBoundary::Unadmitted(Unbuilt::RecordUpdate),
+                ));
             }
             entries.push(entry);
             separated(site, cursor, TileName::BRACE_CLOSE)?;
@@ -1226,8 +1230,9 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Access
                 | Former::World
                 | Former::WorldDeclaration
-                | Former::Reserved
-                | Former::Unadmitted => return Ok(TypeZone::Ordinary),
+                | Former::Reserved(_)
+                | Former::Unadmitted(_)
+                | Former::Misplaced => return Ok(TypeZone::Ordinary),
             };
             read_pieces(self.pbg, self.tree, next.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
@@ -2546,7 +2551,7 @@ impl<'source> Lowerer<'_, 'source>
         let index = match self.text_at(position).as_ref() {
             "0" => 0_usize,
             "1" => 1_usize,
-            _ => return Err(site.out(FragmentBoundary::Unadmitted)),
+            _ => return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection))),
         };
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));

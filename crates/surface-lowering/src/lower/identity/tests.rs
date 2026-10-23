@@ -1684,10 +1684,10 @@ fn a_move_out_of_shape_is_refused()
     assert_eq!(
         ["skipped", "bare", "twice", "called", "named"].map(boundary),
         [
-            Some(FragmentBoundary::Unadmitted),
-            Some(FragmentBoundary::Unadmitted),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::RecordedMove)),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::RecordedMove)),
             Some(FragmentBoundary::Arity(OperandCount::from(2_usize))),
-            Some(FragmentBoundary::Unadmitted),
+            Some(FragmentBoundary::Unadmitted(crate::Unbuilt::RecordedMove)),
             Some(FragmentBoundary::Unannotated),
         ],
         "an unknown move, a bare send, a send of two, a label that is a call and a named motive"

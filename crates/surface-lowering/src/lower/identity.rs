@@ -298,6 +298,7 @@ use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::TypeFormer;
 use crate::resolve::type_former;
+use crate::unbuilt::Unbuilt;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -1996,7 +1997,7 @@ impl<'source> Lowerer<'_, 'source>
         movement: NodeIndex,
     ) -> Result<RecordedMove<NodeIndex>, LoweringRefusal<'source>>
     {
-        let unadmitted = site.out(FragmentBoundary::Unadmitted);
+        let unadmitted = site.out(FragmentBoundary::Unadmitted(Unbuilt::RecordedMove));
         let Some(node) = self.tree.node(movement)
         else {
             return Err(unadmitted);
@@ -3115,8 +3116,9 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Access
                 | Former::World
                 | Former::WorldDeclaration
-                | Former::Reserved
-                | Former::Unadmitted => return Err(unannotated),
+                | Former::Reserved(_)
+                | Former::Unadmitted(_)
+                | Former::Misplaced => return Err(unannotated),
             };
             let mut scratch = core::mem::take(&mut self.scratch);
             let read = read_pieces(self.pbg, self.tree, position, &mut scratch);

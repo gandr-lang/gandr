@@ -147,8 +147,9 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
         LoweringRefusal::UnexportedName { .. } => "declared without a definition",
         LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
-            FragmentBoundary::Reserved => "a reserved form",
-            FragmentBoundary::Unadmitted => "a form the fragment does not admit",
+            FragmentBoundary::Reserved(_) => "a reserved form",
+            FragmentBoundary::Unadmitted(_) => "a form the fragment does not admit",
+            FragmentBoundary::Misplaced => "a form admitted only as a theory's sort member",
             FragmentBoundary::WrongSort => "a form of another sort than this position takes",
             FragmentBoundary::Arity(_) => "the wrong number of operands",
             FragmentBoundary::Indexed => "a family applied to an index",
@@ -459,6 +460,7 @@ mod tests
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_lowering::TelescopeFault;
     use gandr_surface_lowering::TileName;
+    use gandr_surface_lowering::Unbuilt;
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -529,8 +531,9 @@ mod tests
             LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
             LoweringRefusal::UnexportedName { .. } => "declared without a definition",
             LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
-                FragmentBoundary::Reserved => "a reserved form",
-                FragmentBoundary::Unadmitted => "a form the fragment does not admit",
+                FragmentBoundary::Reserved(_) => "a reserved form",
+                FragmentBoundary::Unadmitted(_) => "a form the fragment does not admit",
+                FragmentBoundary::Misplaced => "a form admitted only as a theory's sort member",
                 FragmentBoundary::WrongSort => "a form of another sort than this position takes",
                 FragmentBoundary::Arity(_) => "the wrong number of operands",
                 FragmentBoundary::Indexed => "a family applied to an index",
@@ -679,13 +682,19 @@ mod tests
                 span: at,
                 form: FormName::DECLARATION,
                 sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Reserved,
+                boundary: FragmentBoundary::Reserved(Unbuilt::Dup),
             },
             LoweringRefusal::OutOfFragment {
                 span: at,
                 form: FormName::DECLARATION,
                 sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::Projection),
+            },
+            LoweringRefusal::OutOfFragment {
+                span: at,
+                form: FormName::DECLARATION,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Misplaced,
             },
             LoweringRefusal::OutOfFragment {
                 span: at,

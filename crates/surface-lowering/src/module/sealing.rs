@@ -1011,21 +1011,25 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// Refuse every attribute a type member still holds once every module is
-    /// matched: no component's check read it, so it states nothing.
+    /// Record every type member still holding attributes once every module
+    /// is matched: no component's check read them, so they state the verdict
+    /// of the declaration the member yields.
     ///
     /// # Specification
     /// - requires: every module is closed.
-    /// - ensures: each type member left holding attributes holds none, and its
-    ///   module is refused with a misplaced tile at the first of them, as an
-    ///   attribute block before a form that declares nothing is.
-    /// - provides: the refusal of an expectation with no verdict to state.
-    /// - fails: never; a fault is filed rather than raised.
+    /// - ensures: each type member left holding attributes keeps them, to be
+    ///   filed under its form, and is recorded in
+    ///   [`super::Collected::unread_expectations`] with a misplaced tile of its
+    ///   module at the first.
+    /// - provides: the expectation of a type member whose own type refuses, and
+    ///   the refusal of one stating an expectation with no verdict to state, by
+    ///   the lowering's outcome.
+    /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an attributed member with no component reading it
-    ///   refuses its module, and one a component reads does not.
+    /// - hypothesis: L3 — an attributed member with no component reading it is
+    ///   recorded, and one a component reads is not.
     /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1036,36 +1040,27 @@ impl<'source> Collector<'_, 'source>
     )]
     #[spec(
         ensures: |_| self.collected.structures.iter().flat_map(|entry| entry.type_members.iter()).all(|member| {
-            self.collected.slots.get(member.held.0).is_none_or(|slot| slot.attributes.is_empty())
+            self.collected.slots.get(member.held.0).and_then(|slot| slot.attributes.first()).is_none_or(|written| {
+                self.collected.unread_expectations.get(&member.held) == Some(&misplaced_in(FormName::MODULE, written.span))
+            })
         }),
     )]
     pub(super) fn stray_expectations(&mut self)
     {
-        let members: Vec<(StructureIndex, SlotIndex)> = self
+        let unread: Vec<(SlotIndex, LoweringRefusal<'source>)> = self
             .collected
             .structures
             .iter()
-            .enumerate()
-            .flat_map(|(index, entry)| {
-                entry
-                    .type_members
-                    .iter()
-                    .map(move |member| (StructureIndex(index), member.held))
+            .flat_map(|entry| entry.type_members.iter().map(|member| member.held))
+            .filter_map(|held| {
+                self.collected
+                    .slots
+                    .get(held.0)
+                    .and_then(|member| member.attributes.first())
+                    .map(|written| (held, misplaced_in(FormName::MODULE, written.span)))
             })
             .collect();
-        for (structure, held) in members {
-            let Some(member) = self.collected.slots.get_mut(held.0)
-            else {
-                continue;
-            };
-            let Some(first) = member.attributes.first().map(|written| written.span)
-            else {
-                continue;
-            };
-            member.attributes.clear();
-            let form = member.introduced_by;
-            self.fault_at(structure, form, misplaced_in(FormName::MODULE, first));
-        }
+        self.collected.unread_expectations.extend(unread);
     }
 }
 

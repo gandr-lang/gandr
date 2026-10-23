@@ -1781,7 +1781,7 @@ fn admission(
         .filter(|&refusal| names_the_kind(refusal))
     {
         if matches!(refusal, LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Reserved,
+            boundary: FragmentBoundary::Reserved(_),
             ..
         }) {
             return Ok(Admission::Reserved);

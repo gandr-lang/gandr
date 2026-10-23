@@ -109,6 +109,7 @@ use crate::model::Presentation;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::unbuilt::Unbuilt;
 
 /// A model signature read off its `Model(S)`: the components the module
 /// states, the signature derived from `S`, and the `S` tile beside the slot of
@@ -566,7 +567,7 @@ impl<'source> Collector<'_, 'source>
                 span: theory.span,
                 form: FormName::MODULE,
                 sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::Unadmitted,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::ModelSignature),
             });
         };
         let derived: BTreeMap<SurfaceName<'source>, _> = model
@@ -1267,8 +1268,9 @@ pub fn spine_domains<'source>(
             | Former::Access
             | Former::World
             | Former::WorldDeclaration
-            | Former::Reserved
-            | Former::Unadmitted => return Ok(domains),
+            | Former::Reserved(_)
+            | Former::Unadmitted(_)
+            | Former::Misplaced => return Ok(domains),
         };
     }
 }

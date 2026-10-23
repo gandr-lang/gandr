@@ -231,7 +231,7 @@ fn a_stage_outside_a_signature_leaves_the_fragment()
             matches!(
                 refusal_of(&module, SurfaceName::from(name)),
                 LoweringRefusal::OutOfFragment {
-                    boundary: FragmentBoundary::Unadmitted,
+                    boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::StagedType),
                     ..
                 }
             ),

@@ -3,14 +3,14 @@
 //!
 //! # One exemplar per closed name
 //!
-//! Every name a `refuses` payload can spell without naming a form
+//! Every name a `refuses` payload can spell without naming an unbuilt feature
 //! (`RefusalName::closed`: the vocabulary, each `OutOfFragment` name a
 //! boundary, the run target or a checker former qualifies, each model
 //! component's fault and each member's) has an exemplar,
 //! `diagnostics/<name>.gandr`, or a row of [`OWED`]. So have the two
 //! boundaries no name carries, `OutOfFragment.Reserved` and
-//! `OutOfFragment.Unadmitted`: a form past either is named by the form, so
-//! their exemplars are named for the boundary.
+//! `OutOfFragment.Unadmitted`: a form past either is named by the feature it
+//! carries, so their exemplars are named for the boundary.
 //!
 //! An exemplar opens with a `///` comment naming its subject in backticks and
 //! holds a declaration stating `refuses` with the subject's name, beside the
@@ -277,8 +277,18 @@ enum Subject
 {
     /// A name no form qualifies.
     Named(RefusalName),
-    /// A boundary whose refusals are named by their form.
-    Boundary(FragmentBoundary),
+    /// A boundary whose refusals are named by the feature they carry.
+    Boundary(Declined),
+}
+
+/// A boundary whose refusals are named by the feature they carry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Declined
+{
+    /// [`FragmentBoundary::Reserved`].
+    Reserved,
+    /// [`FragmentBoundary::Unadmitted`].
+    Unadmitted,
 }
 
 impl Subject
@@ -304,8 +314,8 @@ impl Subject
             .into_iter()
             .map(Self::Named)
             .chain([
-                Self::Boundary(FragmentBoundary::Reserved),
-                Self::Boundary(FragmentBoundary::Unadmitted),
+                Self::Boundary(Declined::Reserved),
+                Self::Boundary(Declined::Unadmitted),
             ])
             .collect()
     }
@@ -329,8 +339,8 @@ impl Subject
     {
         match self {
             Self::Named(name) => name.spelling().to_string(),
-            Self::Boundary(FragmentBoundary::Reserved) => String::from("OutOfFragment.Reserved"),
-            Self::Boundary(_) => String::from("OutOfFragment.Unadmitted"),
+            Self::Boundary(Declined::Reserved) => String::from("OutOfFragment.Reserved"),
+            Self::Boundary(Declined::Unadmitted) => String::from("OutOfFragment.Unadmitted"),
         }
     }
 }
@@ -501,9 +511,20 @@ fn refused(
                 )
             }),
         Subject::Boundary(wanted) => matches!(
-            declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment { boundary, .. })
-                if boundary == wanted
+            (wanted, declaration.outcome()),
+            (
+                Declined::Reserved,
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Reserved(_),
+                    ..
+                })
+            ) | (
+                Declined::Unadmitted,
+                DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                    boundary: FragmentBoundary::Unadmitted(_),
+                    ..
+                })
+            )
         ),
     }
         });

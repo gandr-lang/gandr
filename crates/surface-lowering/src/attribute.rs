@@ -1109,8 +1109,9 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Access
         | Former::World
         | Former::WorldDeclaration
-        | Former::Reserved
-        | Former::Unadmitted => PayloadForm::OtherValue,
+        | Former::Reserved(_)
+        | Former::Unadmitted(_)
+        | Former::Misplaced => PayloadForm::OtherValue,
     }
 }
 
