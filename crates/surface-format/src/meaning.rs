@@ -9,6 +9,7 @@
 //! index in both, and the core's syntactic equality, which never reads an
 //! allocation's position, compares what each declaration lowered to.
 
+use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -22,6 +23,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_comp_type_syntax;
 use gandr_core_term::equal_type_syntax;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -53,7 +55,8 @@ pub enum Agreement
 }
 
 /// The checker's half of the meaning check: the body it elaborates for each
-/// declaration of a lowered module.
+/// declaration of a lowered module, and where it carried a model to a model
+/// of a theory its own includes by a reduct.
 ///
 /// Two spellings of one program can lower to different cores and still be
 /// one program once the checker elaborates them: a nested call and the `run`
@@ -67,23 +70,37 @@ pub enum Agreement
 /// - requires: nothing.
 /// - ensures: an implementation answers, for each declaration of `module`
 ///   lowered into `arena`, in the module's order, the body the checker
-///   elaborates for it, minting into `arena`, or none where it defines none.
+///   elaborates for it, minting into `arena`, or none where it defines none;
+///   and each value of `module`'s lowering the checker applied a reduct to,
+///   with that reduct's constant.
 /// - provides: the elaborated half of [`crate::format_beside`]'s meaning check.
 /// - fails: not applicable to the trait itself.
 /// - panics: not applicable to the trait itself.
 pub trait Elaborate
 {
-    /// The body the checker elaborates for each declaration of `module`,
-    /// lowered into `arena`, in the module's order; none for a declaration it
-    /// defines nothing for. The trait's clauses are this method's.
+    /// What the checker elaborates for `module`, lowered into `arena`. The
+    /// trait's clauses are this method's.
     ///
     /// # Specification
     /// trivial.
-    fn definitions(
+    fn elaborate(
         &self,
         arena: &mut CoreArena,
         module: &LoweredModule<'_>,
-    ) -> Vec<Option<ValueId>>;
+    ) -> Elaboration;
+}
+
+/// What a checker elaborates for one lowered module.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Elaboration
+{
+    /// The body for each declaration, in the module's order; none for one it
+    /// defines nothing for.
+    pub definitions: Vec<Option<ValueId>>,
+    /// Each value of the module's lowering standing where a model of a theory
+    /// its own model's theory includes is asked, with the reduct the checker
+    /// applies there.
+    pub crossings: BTreeMap<ValueId, ConstantIndex>,
 }
 
 /// The bodies a checker elaborated for two lowerings of one source, each in

@@ -4,13 +4,14 @@
 //! by name, and the corpus formatted into either form — a sample on every
 //! pull request, every source under the `sweeps` profile.
 
+use alloc::collections::BTreeMap;
 use core::cell::Cell;
 
 use expect_test::expect;
 use gandr_core_term::CoreArena;
-use gandr_core_term::ValueId;
 use gandr_surface_format::Beside;
 use gandr_surface_format::Elaborate;
+use gandr_surface_format::Elaboration;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
@@ -1069,26 +1070,29 @@ struct Oracle
 impl Elaborate for Oracle
 {
     /// Every declaration's body as [`Answer`] says, for the source asked
-    /// first and the rewritten text after it.
+    /// first and the rewritten text after it, and no crossing.
     ///
     /// # Specification
     /// trivial.
-    fn definitions(
+    fn elaborate(
         &self,
         arena: &mut CoreArena,
         module: &LoweredModule<'_>,
-    ) -> Vec<Option<ValueId>>
+    ) -> Elaboration
     {
         let asked = self.asked.get();
         self.asked.set(asked.saturating_add(1));
-        module
-            .declarations()
-            .iter()
-            .map(|_| match (self.answer, asked) {
-                (Answer::Alike, _) | (Answer::Apart, 0) => Some(arena.value_unit()),
-                (Answer::Apart | Answer::Refused, _) => None,
-            })
-            .collect()
+        Elaboration {
+            definitions: module
+                .declarations()
+                .iter()
+                .map(|_| match (self.answer, asked) {
+                    (Answer::Alike, _) | (Answer::Apart, 0) => Some(arena.value_unit()),
+                    (Answer::Apart | Answer::Refused, _) => None,
+                })
+                .collect(),
+            crossings: BTreeMap::new(),
+        }
     }
 }
 
@@ -1319,6 +1323,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "short-alias",
             "linear-run",
             "inserted-thunk",
+            "inserted-reduct",
             "function-form",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
