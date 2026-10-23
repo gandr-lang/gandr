@@ -92,8 +92,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The parameter is written as its name alone.
             Unwritten,
-            /// The type names a parameter written before it, which an argument
-            /// replaces only where the call is read.
+            /// The type names an entry of the implicit telescope, which no
+            /// argument written in the parentheses supplies.
             Dependent,
         }
     }
@@ -134,6 +134,28 @@ pub struct TelescopeEntry<'source>
     pub declared: Maybe<Placed, unstated::Absent>,
     /// Where it is written.
     pub plicity: Plicity,
+}
+
+/// One explicit parameter of a function written with a parameter list, as a
+/// call's arguments read it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `binder` is the tile the source writes the parameter's name at,
+///   and `declared` the type written for it, unless it is written bare or its
+///   type names an entry of the implicit telescope.
+/// - executable: none — a record of written tiles.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Collector::explicit_parameters`].
+/// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExplicitParameter
+{
+    /// The tile the parameter's name is written at.
+    pub binder: Placed,
+    /// The type it is written with, read under the parameters before it.
+    pub declared: Maybe<Placed, unclosed::Absent>,
 }
 
 /// A parameter's position among a telescope's parameters as they are
@@ -501,19 +523,20 @@ impl<'source> Collector<'_, 'source>
         ))
     }
 
-    /// The written type of each explicit parameter of the function whose
-    /// header `header` stands just past the name of, in written order, when
-    /// the type names no parameter of the function.
+    /// Each explicit parameter of the function whose header `header` stands
+    /// just past the name of, in written order, with its written type when
+    /// the type names no entry of the implicit telescope.
     ///
     /// # Specification
     /// - requires: `header` stands just past a declaration's name.
     /// - ensures: past an implicit telescope `[ … ]` when one is written, one
-    ///   entry per parameter of the parenthesised list: `x : T` its `T`, or
-    ///   [`unclosed::Absent::Dependent`] when `T` names an entry of the
-    ///   telescope or a parameter before `x`; a bare `x`
-    ///   [`unclosed::Absent::Unwritten`]; a receiver's mode word skipped. None
-    ///   when no parameter list follows, or one is out of shape. `header` is
-    ///   left where it was.
+    ///   entry per parameter of the parenthesised list, at its name's tile: `x
+    ///   : T` its `T`, or [`unclosed::Absent::Dependent`] when `T` names an
+    ///   entry of the telescope; a bare `x` [`unclosed::Absent::Unwritten`]; a
+    ///   receiver's mode word skipped. None when no parameter list follows, or
+    ///   one is out of shape. `header` is left where it was. A type naming a
+    ///   parameter before its own is kept: the arguments written for those
+    ///   replace them where the call is read.
     /// - provides: [`super::Collected::parameters`], the type each argument of
     ///   a call checks against.
     /// - fails: never: a type whose pieces do not read counts as naming one.
@@ -523,13 +546,13 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor argument takes its classifier from the
-    ///   parameter at its place; one at a parameter whose type names the one
-    ///   before it takes none.
+    ///   parameter at its place, closed or naming the one before it.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
     pub(super) fn explicit_parameters(
         &self,
         header: &Cursor<'_>,
-    ) -> Vec<Maybe<Placed, unclosed::Absent>>
+    ) -> Vec<ExplicitParameter>
     {
         let mut cursor = header.clone();
         let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
@@ -568,8 +591,10 @@ impl<'source> Collector<'_, 'source>
                 },
                 Maybe::Absent(_) => Maybe::Absent(unclosed::Absent::Unwritten),
             };
-            parameters.push(declared);
-            let _fresh = bound.insert(self.name_of(written));
+            parameters.push(ExplicitParameter {
+                binder: written,
+                declared,
+            });
             let _comma = cursor.tile(TileName::COMMA);
         }
         if let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {

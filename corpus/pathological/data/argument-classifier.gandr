@@ -1,7 +1,7 @@
 // A constructor passed as an argument is checked at the type of the
 // parameter it is passed to: a list of strings is no list of integers, and
-// the checker, not the lowering, refuses it (#1833). A parameter whose type
-// names the one before it classifies nothing yet (#1876).
+// the checker, not the lowering, refuses it (#1833), where the parameter's
+// type is written closed or reads the argument before it (#1876).
 
 /// A list of any type.
 @[ checks ]
@@ -36,8 +36,8 @@ def rec size(a : Type, xs : List(a)) -> -F Integer {
   }
 }
 
-/// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
-/// reads the argument before it, and it still needs a stated type (#1876).
-@[ refuses("OutOfFragment.Unannotated") ]
-def one : () => Integer ;
-def one = thunk { become size(Integer, Cons(1, Nil)) } ;
+/// A list of strings passed where `xs : List(a)` takes it at `a = Integer`:
+/// its type reads the argument before it, and the checker refuses the
+/// strings (#1876).
+@[ refuses("TypeMismatch") ]
+def mistypedAt() -> -F Integer { become size(Integer, Cons("no", Nil)) }

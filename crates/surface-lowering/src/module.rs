@@ -1415,11 +1415,11 @@ pub struct Collected<'source>
     /// which the function's lowering raises.
     pub plicities:
         BTreeMap<SlotIndex, Result<Vec<TelescopeEntry<'source>>, LoweringRefusal<'source>>>,
-    /// The written type of each explicit parameter of each function written
-    /// with a parameter list, by its slot, in written order, when the type
-    /// names no parameter of the function: what each argument of a call
-    /// naming the function checks against.
-    pub parameters: BTreeMap<SlotIndex, Vec<Maybe<Placed, plicity::unclosed::Absent>>>,
+    /// Each explicit parameter of each function written with a parameter
+    /// list, by its slot, in written order, with its written type when the
+    /// type names no entry of the implicit telescope: what each argument of a
+    /// call naming the function checks against.
+    pub parameters: BTreeMap<SlotIndex, Vec<plicity::ExplicitParameter>>,
     /// The stage binders of each function quantified over stages, by its
     /// slot: each binder's name in written order, its position the ordinal of
     /// the stage the checker mints for it.
