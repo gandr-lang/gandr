@@ -4,15 +4,15 @@
 //! # Type operators: the static abstraction and the value function space
 //!
 //! A type operator is written `\A. T`: the backslash, one binder — a type name
-//! or a type variable — a dot and the body, which runs as far right as a
-//! `forall`'s does, so `\T. \A. \B. T(A) * B` nests three binders. The labeler
-//! reads a backslash in code as one tile; escape sequences stay inside strings
-//! and characters, where their scanners read them. Applying an operator reuses
-//! `type_application`, `T(A, B)`, whose head is a type name or a type variable:
-//! a declaration is named by a lowercase identifier, which molds as a type
-//! variable in type position, so an operator declared by `def` applies as
-//! `raw_rel_monad(T, A, B)`. Admitting the variable head added one mold and
-//! moved the fingerprint from `0x8feb_efc4_2bd0_36d1`.
+//! or a type variable — a dot and the body, which runs as far right as the
+//! arrow's group lets it, so `\T. \A. \B. T(A) * B` nests three binders. The
+//! labeler reads a backslash in code as one tile; escape sequences stay inside
+//! strings and characters, where their scanners read them. Applying an
+//! operator reuses `type_application`, `T(A, B)`, whose head is a type name or
+//! a type variable: a declaration is named by a lowercase identifier, which
+//! molds as a type variable in type position, so an operator declared by `def`
+//! applies as `raw_rel_monad(T, A, B)`. Admitting the variable head added one
+//! mold and moved the fingerprint from `0x8feb_efc4_2bd0_36d1`.
 //!
 //! - Alternatives: a keyword lead such as `fn` at the type sort, which ties
 //!   with the term lambda wherever a definition's body stands, where a

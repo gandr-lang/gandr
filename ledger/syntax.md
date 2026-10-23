@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x06087f8d61b5b345`
-- Rules: 162 — 161 committed, 1 internal
-- Molds: 3136
+- Grammar fingerprint: `0x5c1702a1af26d170`
+- Rules: 160 — 159 committed, 1 internal
+- Molds: 3132
 - Attributes: 14
 
 ## Reading a form
@@ -152,17 +152,15 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget_model_expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 40 rules
+## `type` — 38 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
-| [`forall_type`](../corpus/ledger/syntax/forall_type.gandr) | `forall ⦅ ‹type_variable› ⦆* . TYPE` | `type.arrow` | `forall_type` | unadmitted | Keyword, TypeVariable, Other |
 | [`package_type`](../corpus/ledger/syntax/package_type.gandr) | `package [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `package_type` * | unadmitted | Keyword, Other, Type |
 | [`function_type`](../corpus/ledger/syntax/function_type.gandr) | `TYPE -> TYPE` | `type.arrow` | `function_type` | admitted | Operator |
 | [`value_function_type`](../corpus/ledger/syntax/value_function_type.gandr) | `TYPE => TYPE` | `type.arrow` | `value_function_type` * | admitted | Operator |
 | [`static_abstraction`](../corpus/ledger/syntax/static_abstraction.gandr) | `\ ⦅ ‹type_identifier› ‖ ‹type_variable› ⦆ . TYPE` | `type.arrow` | `static_abstraction` * | admitted | Operator, Type, TypeVariable, Other |
 | [`union_type`](../corpus/ledger/syntax/union_type.gandr) | `TYPE \| TYPE` | `type.union` | `union_type` | unadmitted | Operator |
-| [`intersection_type`](../corpus/ledger/syntax/intersection_type.gandr) | `TYPE /\ TYPE` | `type.intersection` | `intersection_type` | unadmitted | Operator |
 | [`lazy_product_type`](../corpus/ledger/syntax/lazy_product_type.gandr) | `TYPE & TYPE` | `type.lazy_product` | `lazy_product_type` | admitted | Operator |
 | [`equivalence_type`](../corpus/ledger/syntax/equivalence_type.gandr) | `TYPE ≃ TYPE` or `TYPE <~> TYPE` | `type.equivalence` | `equivalence_type` * | admitted | Operator |
 | [`isomorphism_type`](../corpus/ledger/syntax/isomorphism_type.gandr) | `TYPE ≅ TYPE` or `Iso(TYPE, TYPE)` | `type.equivalence` | `isomorphism_type` * | admitted | Operator |

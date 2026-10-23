@@ -56,10 +56,8 @@ impl TrackingIssue
     pub const UNIVALENCE: Self = Self(312);
     /// A universe equivalence over a list whose round trip reads the tail.
     pub const LIST_TAIL: Self = Self(524);
-    /// A `forall` type.
-    pub const FORALL: Self = Self(1055);
-    /// A union or an intersection type.
-    pub const UNION_INTERSECTION: Self = Self(1056);
+    /// A union type.
+    pub const UNION: Self = Self(1056);
     /// The shell block, `#!{ … }`.
     pub const SHELL_BLOCK: Self = Self(1057);
     /// A projection, `e.1` or `e.field`, where the fragment reads none.

@@ -116,12 +116,8 @@ pub enum Unbuilt
     ListPattern,
     /// The rest pattern `..p`.
     RestPattern,
-    /// The type `forall a. T`.
-    Forall,
     /// The union type `A | B`.
     Union,
-    /// The intersection type `A /\ B`.
-    Intersection,
     /// The operator declaration `op infixl 6 "spelling" ;`.
     OperatorDeclaration,
     /// A recursive call's claim the lowering does not read: two claims at once,
@@ -279,7 +275,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 86_usize] = [
+    pub const ALL: [Self; 84_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -294,9 +290,7 @@ impl Unbuilt
         Self::AsPattern,
         Self::ListPattern,
         Self::RestPattern,
-        Self::Forall,
         Self::Union,
-        Self::Intersection,
         Self::OperatorDeclaration,
         Self::RecursiveClaim,
         Self::PartialSupply,
@@ -404,9 +398,7 @@ impl Unbuilt
             Self::AsPattern => "as_pattern",
             Self::ListPattern => "list_pattern",
             Self::RestPattern => "rest_pattern",
-            Self::Forall => "forall_type",
             Self::Union => "union_type",
-            Self::Intersection => "intersection_type",
             Self::OperatorDeclaration => "operator_declaration",
             Self::RecursiveClaim => "instantiation_expression.computation",
             Self::PartialSupply => "instantiation_expression.value",
@@ -509,8 +501,7 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
-            Self::Forall => TrackingIssue::FORALL,
-            Self::Union | Self::Intersection => TrackingIssue::UNION_INTERSECTION,
+            Self::Union => TrackingIssue::UNION,
             Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
             Self::PartialSupply => TrackingIssue::PARTIAL_SUPPLY,

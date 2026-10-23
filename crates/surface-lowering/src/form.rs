@@ -172,7 +172,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 71_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -237,9 +237,7 @@ impl FormName
         Self::CHARACTER,
         Self::CO_BUNDLE,
         Self::DROP,
-        Self::FORALL_TYPE,
         Self::UNION_TYPE,
-        Self::INTERSECTION_TYPE,
         Self::OPERATOR_DECLARATION,
         Self::DUP,
         Self::STAGED_TYPE,
@@ -400,12 +398,8 @@ impl FormName
     pub const CO_BUNDLE: Self = Self("co_expression");
     /// The endpoint drop `drop(e)`.
     pub const DROP: Self = Self("drop_expression");
-    /// The type `forall a. T`.
-    pub const FORALL_TYPE: Self = Self("forall_type");
     /// The union type `A | B`.
     pub const UNION_TYPE: Self = Self("union_type");
-    /// The intersection type `A /\ B`.
-    pub const INTERSECTION_TYPE: Self = Self("intersection_type");
     /// The operator declaration `op infixl 6 "spelling" ;`.
     pub const OPERATOR_DECLARATION: Self = Self("operator_declaration");
     /// The extern block `extern "c" from "library" { … }`.
@@ -1094,7 +1088,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 132_usize] = [
+pub const FORMERS: [(&str, Former); 130_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1213,14 +1207,9 @@ pub const FORMERS: [(&str, Former); 132_usize] = [
         "file_descriptor",
         Former::Unadmitted(Unbuilt::FileDescriptor),
     ),
-    ("forall_type", Former::Unadmitted(Unbuilt::Forall)),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
     ("if_expression", Former::If),
-    (
-        "intersection_type",
-        Former::Unadmitted(Unbuilt::Intersection),
-    ),
     (
         "labelled_sum_pattern",
         Former::Unadmitted(Unbuilt::LabelledSumPattern),

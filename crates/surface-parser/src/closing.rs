@@ -1211,10 +1211,8 @@ mod tests
                 vec![hole(Sort::Expression), tile(";"), tile("}")],
             ),
             ("def f = \"abc", LeadingSlot::Occupied, vec![tile("\"")]),
-            ("def g : forall a .", LeadingSlot::Empty, vec![hole(
-                Sort::Type,
-            )]),
-            ("def g : forall a .", LeadingSlot::Occupied, vec![]),
+            ("def g : \\A.", LeadingSlot::Empty, vec![hole(Sort::Type)]),
+            ("def g : \\A.", LeadingSlot::Occupied, vec![]),
         ] {
             let at = frontier(&pbg, SourceText::from(source));
             assert_eq!(
@@ -1319,10 +1317,8 @@ mod tests
                 2,
                 vec!["}", "<Pattern@{> => <Expression@=>> }"],
             ),
-            ("def g : forall a .", LeadingSlot::Empty, 1, vec![
-                "<Type@.>",
-            ]),
-            ("def g : forall a .", LeadingSlot::Occupied, 1, vec![""]),
+            ("def g : \\A.", LeadingSlot::Empty, 1, vec!["<Type@.>"]),
+            ("def g : \\A.", LeadingSlot::Occupied, 1, vec![""]),
             // An expression already stands in the body, so no statement
             // follows the `{` before a separator does.
             ("def x = thunk { 1", LeadingSlot::Occupied, 2, vec![

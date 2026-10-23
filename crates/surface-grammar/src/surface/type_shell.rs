@@ -69,7 +69,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 54 && rules.iter().take(40).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(40).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 52 && rules.iter().take(38).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(38).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "package_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -98,7 +98,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 40 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 38 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "package_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -111,22 +111,10 @@ fn add_type_rules(
     let type_product = precs.prec(PrecName("type.product"))?;
     let type_sum = precs.prec(PrecName("type.sum"))?;
     let type_union = precs.prec(PrecName("type.union"))?;
-    let type_intersection = precs.prec(PrecName("type.intersection"))?;
     let type_lazy_product = precs.prec(PrecName("type.lazy_product"))?;
     let type_equivalence = precs.prec(PrecName("type.equivalence"))?;
     let type_arrow = precs.prec(PrecName("type.arrow"))?;
 
-    rules.push(rule(
-        RuleName("forall_type"),
-        ty,
-        type_arrow,
-        Regex::seq([
-            tile(TileLabel("forall")),
-            Regex::repeat(tile(TileLabel("type_variable"))),
-            tile(TileLabel(".")),
-            Regex::sort(ty),
-        ]),
-    ));
     // The first-class module package type `package [ T , U ] PAYLOAD`. The
     // bracketed list binds the signature's abstract type components over the
     // payload, which is the thunked module returner `+U[r] (-F …)`.
@@ -168,7 +156,7 @@ fn add_type_rules(
     ));
     // The static abstraction `\A. T`, a type operator's body over its one
     // binder; a binder is a type name or a type variable, and the body runs as
-    // far right as `forall`'s does.
+    // far right as the arrow's group lets it.
     rules.push(rule(
         RuleName("static_abstraction"),
         ty,
@@ -188,12 +176,6 @@ fn add_type_rules(
         ty,
         type_union,
         TileLabel("|"),
-    ));
-    rules.push(binary_infix_rule(
-        RuleName("intersection_type"),
-        ty,
-        type_intersection,
-        TileLabel("/\\"),
     ));
     rules.push(binary_infix_rule(
         RuleName("lazy_product_type"),

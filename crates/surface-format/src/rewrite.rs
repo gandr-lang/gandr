@@ -547,10 +547,8 @@ impl Band
             "binary_expression.then"
             | "function_type"
             | "value_function_type"
-            | "forall_type"
             | "static_abstraction"
             | "union_type"
-            | "intersection_type"
             | "equivalence_type"
             | "isomorphism_type"
             | "universe_flow_type"
@@ -2755,7 +2753,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 32] = [
+const RULES: [MoldName; 30] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2771,10 +2769,8 @@ const RULES: [MoldName; 32] = [
     MoldName("at_type"),
     MoldName("function_type"),
     MoldName("value_function_type"),
-    MoldName("forall_type"),
     MoldName("static_abstraction"),
     MoldName("union_type"),
-    MoldName("intersection_type"),
     MoldName("equivalence_type"),
     MoldName("isomorphism_type"),
     MoldName("universe_flow_type"),

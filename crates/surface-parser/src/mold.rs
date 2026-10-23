@@ -903,9 +903,9 @@ const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
-    "forall", "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break",
-    "continue", "with", "import", "module", "theory", "oper", "handle", "access", "unwind",
-    "resume", "abort", "world", "mobile", "inf",
+    "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
+    "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
+    "world", "mobile", "inf",
 ];
 
 /// The keywords that open a block's statements: one that no open form

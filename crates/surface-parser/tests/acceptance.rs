@@ -1164,13 +1164,13 @@ fn a_missing_brace_stands_past_the_body_it_closes_1391() -> Result<(), Box<dyn E
 #[test]
 fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn Error>>
 {
-    // The set surface is split into pairwise-incomparable
-    // union, intersection, and lazy-product groups. A mixed set chain such as
-    // `A /\ B | C` therefore requires explicit parentheses. The current
-    // recovery path's exact repair class and span are incidental; the stable
-    // contract is non-clean parsing with a committed tree.
+    // The set surface is split into pairwise-incomparable union and
+    // lazy-product groups. A mixed set chain such as `A & B | C` therefore
+    // requires explicit parentheses. The current recovery path's exact repair
+    // class and span are incidental; the stable contract is non-clean parsing
+    // with a committed tree.
     let pbg = built();
-    let result = parse(pbg, SourceText::from("def t : A /\\ B | C;"))?;
+    let result = parse(pbg, SourceText::from("def t : A & B | C;"))?;
     assert!(
         !bool::from(result.is_clean()),
         "mixed set operators require a disambiguating obligation"
