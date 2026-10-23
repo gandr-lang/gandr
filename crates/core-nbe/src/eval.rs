@@ -3374,6 +3374,9 @@ fn run(
             Task::Body { body: crate::closure::CompBody::TransportFunction { .. }, .. } => machine.values.len() == entry_values
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
                 && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Lambda { .. })),
+            Task::Body { body: crate::closure::CompBody::TransportSuspended { suspension, .. }, .. } => machine.values.len() == entry_values
+                && machine.comps.len() == entry_comps
+                && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::Force, Task::Supply(held)]) if held == suspension),
             Task::Body { body: crate::closure::CompBody::TransportArgument { argument, result, .. }, .. } => {
                 let binds = 1_usize.saturating_add(usize::from(result.is_some()));
                 machine.tasks.get(entry_tasks..entry_tasks.saturating_add(binds)).is_some_and(|pushed| pushed.iter().all(|task| matches!(task, Task::BindClosure(_))))
@@ -3397,7 +3400,7 @@ fn run(
                 && matches!(machine.tasks.get(entry_tasks..), Some(&[Task::BindClosure(_), Task::Ride(held)]) if held == motive),
             Task::Body { body: crate::closure::CompBody::Components { mover, .. }, .. } => (machine.values.len() == entry_values
                 && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
-                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. }) if domain.value(value).and_then(|held| domain.components(held)).is_some()))
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. }) if matches!(domain.value(value), Some(&(DomainValue::Tuple { .. } | DomainValue::Record { .. })))))
                 || (machine.comps.len() == entry_comps && machine.values.len() == entry_values.saturating_add(2)
                     && matches!((mover, machine.tasks.get(entry_tasks..)), (crate::closure::Mover::Ride, Some(&[Task::BindClosure(_), Task::Ride(_)])) | (crate::closure::Mover::Transport, Some(&[Task::BindClosure(_), Task::PathTransport(_)])))),
             Task::Body { body: crate::closure::CompBody::Payloads { .. }, .. } => (machine.values.len() == entry_values
@@ -3578,6 +3581,27 @@ fn step(
                 .push(domain.comp_lambda(applied, CompTermFace::Reduced));
             Ok(())
         },
+        // The thunk a suspension transport along a universe path moves a
+        // suspension to, forced: `b ← force f; tr(B, p, b)`, the suspension
+        // run and its result moved forward in its own motive.
+        Task::Body {
+            body:
+                crate::closure::CompBody::TransportSuspended {
+                    result,
+                    path,
+                    suspension,
+                },
+            ..
+        } => {
+            let onward = domain.native_continuation(crate::closure::CompBody::TransportAlong {
+                motive: result,
+                path,
+            });
+            machine.tasks.push(Task::BindClosure(onward));
+            machine.tasks.push(Task::Force);
+            machine.tasks.push(Task::Supply(suspension));
+            Ok(())
+        },
         Task::Body { body, env } => {
             let bound = machine
                 .env(env)?
@@ -3586,7 +3610,8 @@ fn step(
             match body {
                 crate::closure::CompBody::Source(_)
                 | crate::closure::CompBody::RideFunction { .. }
-                | crate::closure::CompBody::TransportFunction { .. } => {
+                | crate::closure::CompBody::TransportFunction { .. }
+                | crate::closure::CompBody::TransportSuspended { .. } => {
                     Err(EvalFault::MachineInvariant)
                 },
                 crate::closure::CompBody::Pair(first) => {
@@ -5995,16 +6020,17 @@ fn step_transport(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity, a constant motive, a stuck path in a product
-///   motive over a tuple, a stuck path in a sum motive over an injection, a
-///   stuck path in the singleton over reflexivity, a stuck path in a motive
-///   reading its binder, and a canonical path over a stuck operand each reach
-///   their own arm; dropping the reflexivity or the constant rule, reordering
-///   components, losing the summand, computing a family whose left endpoint
-///   moves or losing the transport a stuck operand waits on changes the
-///   read-back term.
+///   motive over a tuple and in a record motive over a record, a stuck path in
+///   a sum motive over an injection, a stuck path in the singleton over
+///   reflexivity, a stuck path in a motive reading its binder, and a canonical
+///   path over a stuck operand each reach their own arm; dropping the
+///   reflexivity or the constant rule, reordering components or labels, losing
+///   the summand, computing a family whose left endpoint moves or losing the
+///   transport a stuck operand waits on changes the read-back term.
 /// - witness: `identity::tests::transport_along_here_is_the_identity`
 /// - witness: `identity::tests::transport_in_a_constant_motive_returns_the_operand`
 /// - witness: `identity::tests::transport_through_a_product_is_componentwise`
+/// - witness: `identity::tests::transport_through_a_record_is_fieldwise`
 /// - witness: `identity::tests::transport_through_a_sum_keeps_the_summand`
 /// - witness: `identity::tests::transport_in_the_singleton_returns_the_path`
 /// - witness: `identity::tests::transport_along_a_stuck_path_is_stuck`
@@ -6017,6 +6043,7 @@ fn step_transport(
 /// - witness: `identity::tests::a_function_moves_along_univalence_by_its_maps`
 /// - witness: `identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 /// - witness: `identity::tests::a_function_with_a_constant_argument_moves_its_result_only`
+/// - witness: `identity::tests::a_suspension_moves_its_result_along_an_equivalence`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err()
@@ -6064,6 +6091,23 @@ fn step_path_transport(
     ) {
         (Some(&ValueType::Product(ref components)), DomainValue::Tuple { fields, .. }) => {
             if domain.fields(fields).map_err(EvalFault::Domain)?.len() == components.len() {
+                return move_components(
+                    core,
+                    domain,
+                    machine,
+                    Componentwise {
+                        mover: Mover::Transport,
+                        motive,
+                        along: path,
+                        source: value,
+                    },
+                    (Environment::new(), ComponentCount::from(0_usize)),
+                );
+            }
+        },
+        (Some(&ValueType::Record(ref parts)), DomainValue::Record { source, .. }) => {
+            if matches!(core.value(source), Some(&Value::Record(ref fields)) if fields.keys().eq(parts.keys()))
+            {
                 return move_components(
                     core,
                     domain,
@@ -6171,16 +6215,32 @@ fn step_path_transport(
         },
         // A function motive `y. U(A(y) → F B(y))` along a universe path
         // moves the function to the thunk that moves its argument back along
-        // the path, applies the function and moves its result forward.
+        // the path, applies the function and moves its result forward; a
+        // suspension motive `y. U(F B(y))` moves the suspension to the thunk
+        // that runs it and moves its result forward.
         (Some(&ValueType::Thunk(function_type)), _) => {
             if let Some((argument, result)) =
-                function_parts(core, domain, (function_type, environment), carried)?
+                function_parts(core, domain, (function_type, environment.clone()), carried)?
             {
                 let body = domain.native_continuation(CompBody::TransportFunction {
                     argument,
                     result,
                     path,
                     function: value,
+                });
+                let thunk = domain.value_thunk(body, TermFace::Reduced);
+                machine
+                    .comps
+                    .push(domain.comp_return(thunk, CompTermFace::Reduced));
+                return Ok(());
+            }
+            if let Some(result) =
+                suspension_part(core, domain, (function_type, environment), carried)?
+            {
+                let body = domain.native_continuation(CompBody::TransportSuspended {
+                    result,
+                    path,
+                    suspension: value,
                 });
                 let thunk = domain.value_thunk(body, TermFace::Reduced);
                 machine
@@ -6569,6 +6629,75 @@ fn function_parts(
         },
     };
     Ok(Some((argument, result)))
+}
+
+/// The result motive a suspension transport along a universe path moves the
+/// suspension's result through.
+///
+/// # Specification
+/// - requires: as [`function_parts`].
+/// - ensures: for `U(F B)` whose returner performs no effect, along `ua(e)`,
+///   `equiv(f, g)` or a held transport, `B` closed over `environment` when it
+///   reads the binder; `None` for any other type, returner or path, or a `B`
+///   that reads no binder.
+/// - provides: the suspension row's guard and the motive its reduct reads.
+/// - fails: [`EvalFault::DanglingTerm`] for a type naming no core node.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a suspension carried along an equivalence runs and its
+///   result moves forward by the forward map, where a neutral path keeps the
+///   transport as it was; leaving the result unmoved changes the run.
+/// - witness: `identity::tests::a_suspension_moves_its_result_along_an_equivalence`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |part| part.is_none()
+    || matches!(core.comp_type(function_type), Some(&CompType::Returner { .. }))))]
+fn suspension_part(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    (function_type, environment): (gandr_core_term::CompTypeId, Environment),
+    carried: DomainValue,
+) -> Result<Option<crate::arena::ValueClosureId>, EvalFault>
+{
+    let Some(&CompType::Returner {
+        result,
+        ref effects,
+    }) = core.comp_type(function_type)
+    else {
+        return Ok(None);
+    };
+    // The result moves forward as the value the run returns, which only a
+    // returner that performs nothing hands over without running.
+    if effects.signatures().next().is_some() {
+        return Ok(None);
+    }
+    let moves = matches!(
+        carried,
+        DomainValue::Univalence { .. } | DomainValue::HeldTransport { .. }
+    ) || matches!(
+        carried,
+        DomainValue::PathCertificate { certificate, .. } if matches!(
+            core.value(certificate),
+            Some(&(Value::PathEquiv { .. } | Value::Equiv(..)))
+        )
+    );
+    if !moves {
+        return Ok(None);
+    }
+    let free = |fault| match fault {
+        crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
+        crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
+    };
+    Ok(
+        match crate::identity::binder_read(core, result).map_err(free)? {
+            crate::free::Membership::Absent => None,
+            crate::free::Membership::Held => {
+                Some(domain.value_closure_node(crate::ValueBody::ValueType(result), environment))
+            },
+        },
+    )
 }
 
 /// How a held transport's family reads: `back`'s reversed singleton or
@@ -6989,24 +7118,26 @@ struct Componentwise
     source: DomainValueId,
 }
 
-/// Move the next component of a tuple in its own part of the product motive,
-/// or return the tuple of every moved component.
+/// Move the next component of a tuple or a record in its own part of the
+/// product or record motive, or return the tuple or the record of every moved
+/// component.
 ///
 /// # Specification
-/// - requires: `moving_tuple.motive` closes a product motive whose arity is
-///   `moving_tuple.source`'s; `count` components have moved, their results
-///   bound in `bound`, the latest innermost.
+/// - requires: `moving_tuple.motive` closes a product or record motive whose
+///   arity is `moving_tuple.source`'s, a record's in label order; `count`
+///   components have moved, their results bound in `bound`, the latest
+///   innermost.
 /// - ensures: with a component left, the move of the next component in its part
 ///   along `moving_tuple.along`, under a continuation over `bound` that moves
 ///   the rest; with none left, the return of the tuple of `bound`'s values in
-///   component order. This is the kernel's `x₀ ← step(P₀, p, v₀); …; return
-///   (x₀, …)`, so a component stuck on a definition holds every component after
-///   it.
-/// - provides: the product row of transport and ride.
+///   component order, or of the record of them under the source's labels. This
+///   is the kernel's `x₀ ← step(P₀, p, v₀); …; return (x₀, …)`, so a component
+///   stuck on a definition holds every component after it.
+/// - provides: the product and record rows of transport and ride.
 /// - fails: [`EvalFault::MachineInvariant`] for a motive closure holding no
-///   product, a source that is no tuple, an arity mismatch or a binding `bound`
-///   lacks; [`EvalFault::DanglingTerm`] for a motive naming no core node;
-///   domain faults for dangling nodes.
+///   product or record, a source that is no tuple or record, an arity mismatch
+///   or a binding `bound` lacks; [`EvalFault::DanglingTerm`] for a motive
+///   naming no core node; domain faults for dangling nodes.
 /// - panics: none.
 ///
 /// # Errors
@@ -7046,12 +7177,23 @@ fn move_components(
     };
     let environment = closure.environment().clone();
     let family = core.value_type(family).ok_or(EvalFault::DanglingTerm)?;
-    let ValueType::Product(ref parts) = *family
+    let moved = usize::from(count);
+    let part = if let ValueType::Product(ref parts) = *family {
+        parts.get(moved).copied()
+    }
+    else if let ValueType::Record(ref parts) = *family {
+        parts.values().nth(moved).copied()
+    }
     else {
         return Err(EvalFault::MachineInvariant);
     };
-    let moved = usize::from(count);
-    let DomainValue::Tuple { fields, .. } = *domain.value(moving_tuple.source).ok_or(dangling)?
+    let source = *domain.value(moving_tuple.source).ok_or(dangling)?;
+    let (fields, labelled) = if let DomainValue::Tuple { fields, .. } = source {
+        (fields, None)
+    }
+    else if let DomainValue::Record { source, fields, .. } = source {
+        (fields, Some(source))
+    }
     else {
         return Err(EvalFault::MachineInvariant);
     };
@@ -7060,8 +7202,8 @@ fn move_components(
         .map_err(EvalFault::Domain)?
         .get(moved)
         .copied();
-    match (parts.get(moved), field) {
-        (Some(&part), Some(field)) => {
+    match (part, field) {
+        (Some(part), Some(field)) => {
             let part = domain.value_closure_node(crate::ValueBody::ValueType(part), environment);
             let next = moved
                 .checked_add(1_usize)
@@ -7091,10 +7233,18 @@ fn move_components(
                     .ok_or(EvalFault::MachineInvariant)?;
                 components.push(component);
             }
-            let tuple = domain.value_tuple(components, TermFace::Reduced);
+            let returned = match labelled {
+                None => domain.value_tuple(components, TermFace::Reduced),
+                Some(labels) => {
+                    let fields = domain.hold_fields(components);
+                    domain
+                        .value_record(labels, fields, TermFace::Reduced)
+                        .map_err(EvalFault::Domain)?
+                },
+            };
             machine
                 .comps
-                .push(domain.comp_return(tuple, CompTermFace::Reduced));
+                .push(domain.comp_return(returned, CompTermFace::Reduced));
             Ok(())
         },
         (Some(_), None) | (None, Some(_)) => Err(EvalFault::MachineInvariant),

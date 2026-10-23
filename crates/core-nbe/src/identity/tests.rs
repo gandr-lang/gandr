@@ -490,6 +490,57 @@ fn transport_through_a_product_is_componentwise()
 }
 
 #[test]
+fn transport_through_a_record_is_fieldwise()
+{
+    let mut core = CoreArena::new();
+    let five = literal(&mut core, Word::Five);
+    let here = core.value_here(five);
+    let diagonal = diagonal(&mut core);
+    let unit = core.value_type_unit();
+    let [moving, kept] = ["moving", "kept"]
+        .map(|label| gandr_core_term::FieldLabel::from(alloc::string::String::from(label)));
+    let motive = core.value_type_record(alloc::collections::BTreeMap::from([
+        (moving.clone(), diagonal),
+        (kept.clone(), unit),
+    ]));
+    let path = stuck(&mut core, ConstantIndex::from(0_usize));
+    let empty = core.value_unit();
+    let operand = core.value_record(alloc::collections::BTreeMap::from([
+        (moving.clone(), here),
+        (kept.clone(), empty),
+    ]));
+    let transported = core.computation_path_transport(motive, path, operand);
+
+    // Fields move in label order, `kept` before `moving`: `kept` never reads
+    // the binder and returns the empty tuple, then `moving`'s transport is
+    // stuck on the path and the record waits under its bind.
+    let first = core.computation_path_transport(diagonal, path, here);
+    let moved = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let record = core.value_record(alloc::collections::BTreeMap::from([
+        (moving.clone(), moved),
+        (kept.clone(), empty),
+    ]));
+    let returned = core.computation_return(record);
+    let expected = core.computation_bind(first, returned);
+    assert_eq!(
+        normalises_to(&mut core, transported, expected),
+        CertificateEquality::Equal,
+        "each field is transported in its own motive and the labels are kept"
+    );
+    let crossed = core.value_record(alloc::collections::BTreeMap::from([
+        (moving, empty),
+        (kept, moved),
+    ]));
+    let crossed = core.computation_return(crossed);
+    let crossed = core.computation_bind(first, crossed);
+    assert_eq!(
+        normalises_to(&mut core, transported, crossed),
+        CertificateEquality::Different,
+        "a moved field stays under its own label"
+    );
+}
+
+#[test]
 fn transport_through_a_sum_keeps_the_summand()
 {
     let mut core = CoreArena::new();
@@ -1199,6 +1250,37 @@ fn a_function_moves_along_an_equivalence_by_its_maps()
         normalises_to(&mut core, run, moved),
         CertificateEquality::Equal,
         "the argument moves back by the backward map and the result forward"
+    );
+    assert_eq!(
+        normalises_to(&mut core, run, kept),
+        CertificateEquality::Different
+    );
+}
+
+#[test]
+fn a_suspension_moves_its_result_along_an_equivalence()
+{
+    // In `y. U(F El(y))` along `equiv(not, id)`, the suspension `thunk(return
+    // truth)` moves to one that runs and negates: forced, it returns
+    // `falsity`. Leaving the result unmoved would return `truth`.
+    let mut core = CoreArena::new();
+    let [forward, backward] = [Map::Not, Map::Same].map(|map| boolean_map(&mut core, map));
+    let path = core.value_equiv(forward, backward);
+    let (_, _, decode) = universe_parts(&mut core);
+    let returner = core.comp_type_returner(decode);
+    let motive = core.value_type_thunk(returner);
+    let [truth, falsity] = booleans(&mut core);
+    let given = core.computation_return(truth);
+    let suspension = core.value_thunk(given);
+    let transported = core.computation_path_transport(motive, path, suspension);
+    let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let forced = core.computation_force(bound);
+    let run = core.computation_bind(transported, forced);
+    let [kept, moved] = [truth, falsity].map(|value| core.computation_return(value));
+    assert_eq!(
+        normalises_to(&mut core, run, moved),
+        CertificateEquality::Equal,
+        "the suspension runs and its result moves forward"
     );
     assert_eq!(
         normalises_to(&mut core, run, kept),

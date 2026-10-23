@@ -2691,8 +2691,8 @@ fn univalence(core: &mut CoreArena) -> ValueId
 
 /// A transport along `ua(e)` runs as the motive's action on `e`'s forward
 /// map: the map at the decode, the value kept where the motive never reads
-/// its binder, and product, sum and list motives constructorwise; along
-/// `here` it runs as the identity.
+/// its binder, and product, record, sum and list motives constructorwise;
+/// along `here` it runs as the identity.
 #[test]
 fn transports_run_by_the_motives_action()
 {
@@ -2729,6 +2729,24 @@ fn transports_run_by_the_motives_action()
         evaluated(&mut core, moved),
         returned(&mut core, image),
         "a product motive acts componentwise"
+    );
+
+    let [moving, kept] = ["moving", "kept"].map(|label| FieldLabel::from(String::from(label)));
+    let record = core.value_type_record(BTreeMap::from([
+        (moving.clone(), identity),
+        (kept.clone(), integer_type),
+    ]));
+    let fields = core.value_record(BTreeMap::from([
+        (moving.clone(), five),
+        (kept.clone(), six),
+    ]));
+    let moved = core.computation_path_transport(record, path, fields);
+    let left = core.value_tuple(&[five, unit]);
+    let image = core.value_record(BTreeMap::from([(moving, left), (kept, six)]));
+    assert_eq!(
+        evaluated(&mut core, moved),
+        returned(&mut core, image),
+        "a record motive acts fieldwise and keeps its labels"
     );
 
     let sum = core.value_type_sum(&[unit_type, identity]);
@@ -2975,7 +2993,7 @@ fn native_paths_run_as_their_maps()
 
 /// A function transported along `ua(e)` runs its argument back by the
 /// record's left inverse, then itself, then its result forward by the
-/// record's map.
+/// record's map; a suspension, forced, runs and its result moves forward.
 #[test]
 fn a_function_runs_along_a_path_by_its_maps()
 {
@@ -3000,6 +3018,20 @@ fn a_function_runs_along_a_path_by_its_maps()
         evaluated(&mut core, ran),
         returned(&mut core, image),
         "the argument moves back, the function runs, the result moves forward"
+    );
+
+    let suspension = core.value_type_thunk(returner);
+    let given = core.computation_return(five);
+    let suspended = core.value_thunk(given);
+    let moved = core.computation_path_transport(suspension, path, suspended);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced = core.computation_force(bound);
+    let ran = core.computation_bind(moved, forced);
+    let image = core.value_tuple(&[five, unit]);
+    assert_eq!(
+        evaluated(&mut core, ran),
+        returned(&mut core, image),
+        "the suspension runs and its result moves forward"
     );
 }
 

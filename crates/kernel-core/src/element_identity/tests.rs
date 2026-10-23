@@ -1673,6 +1673,33 @@ fn transport_computes_through_the_fold_clauses()
         KernelVerdict::Convertible
     );
 
+    // A record transports fieldwise in label order and keeps its labels.
+    let [moving, kept] = ["moving", "kept"]
+        .map(|label| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(label)));
+    let record = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (moving.clone(), element),
+        (kept.clone(), boolean.ty),
+    ]));
+    let fields = arena.value_record(alloc::collections::BTreeMap::from([
+        (moving.clone(), boolean.truth),
+        (kept.clone(), boolean.falsity),
+    ]));
+    let record_step = arena.computation_path_transport(record, path, fields);
+    let returned_fields = arena.computation_return(fields);
+    assert_eq!(
+        computes(&mut arena, record_step, returned_fields),
+        KernelVerdict::Convertible
+    );
+    let crossed = arena.value_record(alloc::collections::BTreeMap::from([
+        (moving, boolean.falsity),
+        (kept, boolean.truth),
+    ]));
+    let returned_crossed = arena.computation_return(crossed);
+    assert_ne!(
+        computes(&mut arena, record_step, returned_crossed),
+        KernelVerdict::Convertible
+    );
+
     // A sum transports within the injected summand.
     let sum = arena.value_type_sum(&[element, unit_type]);
     let injected = arena.value_injection(Side::Left.into(), boolean.falsity);
@@ -3341,6 +3368,17 @@ fn a_function_moves_along_an_equivalence_by_its_maps()
     let applied = arena.computation_application(forced, truth);
     let run = arena.computation_bind(transported, applied);
     let [kept, moved] = [truth, falsity].map(|value| arena.computation_return(value));
+    assert_eq!(computes(&mut arena, run, moved), KernelVerdict::Convertible);
+    assert_ne!(computes(&mut arena, run, kept), KernelVerdict::Convertible);
+
+    // In `y. U(F El(y))` the suspension `thunk(return truth)` moves to one
+    // that runs and negates: forced, it returns `falsity`.
+    let suspension = arena.value_type_thunk(returner);
+    let given = arena.computation_return(truth);
+    let suspended = arena.value_thunk(given);
+    let transported = arena.computation_path_transport(suspension, path, suspended);
+    let forced = arena.computation_force(binder);
+    let run = arena.computation_bind(transported, forced);
     assert_eq!(computes(&mut arena, run, moved), KernelVerdict::Convertible);
     assert_ne!(computes(&mut arena, run, kept), KernelVerdict::Convertible);
 }

@@ -151,6 +151,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ProducerArity;
 use crate::focus::FocusRefusal;
+use crate::il::Selector;
 
 /// A closed program an identity's image applies to its parts.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -402,6 +403,8 @@ enum Row<'core>
     Decode,
     /// A product: each component moves by its own action.
     Product(&'core [ValueTypeId]),
+    /// A record: each field moves by its own action, in label order.
+    Record(&'core BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>),
     /// A sum: the payload moves under its summand.
     Sum(&'core [ValueTypeId]),
     /// A list: each element moves, in order.
@@ -419,6 +422,9 @@ enum Row<'core>
         /// The result's type `B`.
         result: ValueTypeId,
     },
+    /// A suspension `U(F B)` whose returner performs no effect: forced, it
+    /// runs and its result moves forward.
+    Suspended(ValueTypeId),
     /// A path between types whose moving endpoints are the binder and whose
     /// other parts read no binder: the moved path's maps compose with the
     /// image's on the ends that move.
@@ -584,7 +590,7 @@ fn run_session(
 /// - ensures: for a flow, the module table's ride rows in their order, any
 ///   other part unchanged; for a path, [`Row::Unchanged`] for a part that never
 ///   reads its binder, then the decode of the binder, a non-empty product, a
-///   sum, a list and a run of a quoted session with no recursion.
+///   record, a sum, a list and a run of a quoted session with no recursion.
 /// - provides: the one reading the focusing's refusal and the combinator's
 ///   build share.
 /// - fails: [`Unread::Dangling`] for a part naming no value type;
@@ -598,8 +604,9 @@ fn run_session(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — rides and transports at the decode, through a product, a
-///   sum and a list, and at a constant part run to the kernel rows' values; a
-///   transport in a path family is refused by its head.
+///   sum and a list, transports through a record, and at a constant part run to
+///   the kernel rows' values; a transport in a path family is refused by its
+///   head.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
@@ -621,15 +628,21 @@ fn row(
     Ok(match *read {
         ValueType::Element { code, .. } if moving(code) => Row::Decode,
         ValueType::Product(ref parts) if !parts.is_empty() => Row::Product(parts),
+        ValueType::Record(ref fields) if family == Family::Path => Row::Record(fields),
         ValueType::Sum(ref parts) => Row::Sum(parts),
         ValueType::List(element) => Row::List(element),
         ValueType::Flow { target, .. } if family == Family::Flow && moving(target) => {
             Row::Singleton
         },
         ValueType::Thunk(function) if family == Family::Path => {
-            match function_row(core, function) {
-                Some((argument, result)) => Row::Function { argument, result },
-                None => return Err(Unread::Head(head(read))),
+            if let Some((argument, result)) = function_row(core, function) {
+                Row::Function { argument, result }
+            }
+            else if let Some(result) = pure_result(core, function) {
+                Row::Suspended(result)
+            }
+            else {
+                return Err(Unread::Head(head(read)));
             }
         },
         ValueType::Path {
@@ -699,18 +712,41 @@ fn function_row(
     else {
         return None;
     };
+    Some((domain, pure_result(core, codomain)?))
+}
+
+/// The result type of `returner` when it is a returner that performs no
+/// effect.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some(B)` exactly for `F B` whose effect row is empty; `None` for
+///   any other computation type, or an effectful returner, whose run a
+///   transport cannot hand on as the value it returns.
+/// - provides: the guard the function row's result and the suspension row
+///   share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a function and a suspension carried along a path run as
+///   the kernel's rows compute them; admitting an effectful returner changes
+///   which transports focus.
+/// - witness: `tests::run::a_function_runs_along_a_path_by_its_maps`
+#[spec(ensures: |ret| ret.is_none_or(|result| matches!(core.comp_type(returner), Some(&CompType::Returner { result: held, .. }) if held == result)))]
+fn pure_result(
+    core: &CoreArena,
+    returner: CompTypeId,
+) -> Option<ValueTypeId>
+{
     let &CompType::Returner {
         result,
         ref effects,
-    } = core.comp_type(codomain)?
+    } = core.comp_type(returner)?
     else {
         return None;
     };
-    effects
-        .signatures()
-        .next()
-        .is_none()
-        .then_some((domain, result))
+    effects.signatures().next().is_none().then_some(result)
 }
 
 /// The row of the path motive part `node`, `Path(carrier, left, right)`,
@@ -812,9 +848,11 @@ pub fn readable(
     while let Some(node) = pending.pop() {
         match row(core, node, Family::Path)? {
             Row::Product(parts) | Row::Sum(parts) => pending.extend(parts.iter().rev()),
+            Row::Record(fields) => pending.extend(fields.values().rev()),
             Row::Run(session) => pending.extend(session.payloads().iter().rev()),
             Row::List(element) => pending.push(element),
             Row::Function { argument, result } => pending.extend([result, argument]),
+            Row::Suspended(result) => pending.push(result),
             Row::Unchanged | Row::Decode | Row::Singleton | Row::Ends(_) => {},
         }
     }
@@ -1180,10 +1218,14 @@ fn action(
             Row::Product(parts) | Row::Sum(parts) => {
                 pending.extend(parts.iter().map(|&part| (part, false)));
             },
+            Row::Record(fields) => {
+                pending.extend(fields.values().map(|&part| (part, false)));
+            },
             Row::List(element) => pending.push((element, false)),
             Row::Function { argument, result } => {
                 pending.extend([(result, false), (argument, false)]);
             },
+            Row::Suspended(result) => pending.push((result, false)),
             Row::Run(session) => {
                 pending.extend(session.payloads().iter().map(|&payload| (payload, false)));
             },
@@ -1209,8 +1251,8 @@ fn action(
 /// and the moved value `v` (index 0), its parts' actions already in `built`.
 ///
 /// # Specification
-/// - requires: every product, sum or list part of `node` has its action in
-///   `built`.
+/// - requires: every product, record, sum or list part of `node` has its action
+///   in `built`.
 /// - ensures: the row of the module tables `node` falls under for `family`.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for a part without an
 ///   action, an annotation that does not import, or an index overflow.
@@ -1255,54 +1297,21 @@ fn action_body(
             Family::Path => forward_body(scratch),
         }),
         Row::Product(parts) => {
-            // Binders from the outermost: t, v, then x_i and y_i for each
-            // component in order.
-            let count = parts.len();
-            let depth = count
-                .checked_mul(2)
-                .and_then(|pairs| pairs.checked_add(2))
-                .ok_or(FocusRefusal::TranslationInvariant)?;
-            // The index of the binder at `position` from the outermost, read
-            // at `depth` binders.
-            let index_at = |depth: usize, position: usize| {
-                depth
-                    .checked_sub(1)
-                    .and_then(|outermost| outermost.checked_sub(position))
-                    .and_then(|distance| u32::try_from(distance).ok())
-                    .map(DeBruijnIndex::from)
-                    .ok_or(FocusRefusal::TranslationInvariant)
-            };
-            let mut components = Vec::with_capacity(count);
-            for position in 0 .. count {
-                let entry = position
-                    .checked_mul(2)
-                    .and_then(|offset| offset.checked_add(3))
-                    .ok_or(FocusRefusal::TranslationInvariant)?;
-                components.push(variable(scratch, index_at(depth, entry)?));
+            let mut fields = Vec::with_capacity(parts.len());
+            for (position, &part) in parts.iter().enumerate() {
+                fields.push((
+                    Selector::Component(gandr_kernel_term::Component::from(position)),
+                    part_action(part)?,
+                ));
             }
-            let tuple = scratch.value_tuple(&components);
-            let mut body = scratch.computation_return(tuple);
-            for (position, &part) in parts.iter().enumerate().rev() {
-                let action = part_action(part)?;
-                let entry = position
-                    .checked_mul(2)
-                    .and_then(|offset| offset.checked_add(2))
-                    .ok_or(FocusRefusal::TranslationInvariant)?;
-                let inside = entry
-                    .checked_add(1)
-                    .ok_or(FocusRefusal::TranslationInvariant)?;
-                let held = variable(scratch, index_at(inside, 0)?);
-                let component = variable(scratch, DeBruijnIndex::from(0_u32));
-                let step = applied(scratch, action, (held, component));
-                body = scratch.computation_bind(step, body);
-                let whole = variable(scratch, index_at(entry, 1)?);
-                let projected = scratch.computation_tuple_projection(
-                    whole,
-                    gandr_kernel_term::Component::from(position),
-                );
-                body = scratch.computation_bind(projected, body);
+            fieldwise(scratch, &fields)
+        },
+        Row::Record(parts) => {
+            let mut fields = Vec::with_capacity(parts.len());
+            for (label, &part) in parts {
+                fields.push((Selector::Label(label.clone()), part_action(part)?));
             }
-            Ok(body)
+            fieldwise(scratch, &fields)
         },
         Row::Sum(parts) => {
             // Each branch binds its payload: z = 0, v = 1, t = 2.
@@ -1364,6 +1373,7 @@ fn action_body(
             scratch,
             (part_action(argument)?, part_action(result)?),
         )),
+        Row::Suspended(result) => Ok(suspended_action(scratch, part_action(result)?)),
         Row::Ends(moving) => Ok(ends_action(scratch, moving)),
         Row::Run(session) => {
             let complete = shapes(session)?;
@@ -1383,6 +1393,103 @@ fn action_body(
             Ok(placeholder)
         },
     }
+}
+
+/// `M_P` at a product or a record, under the image `t` and the moved value
+/// `v`: each field projected from `v` and moved by its own action under `t`,
+/// in order, and the moved fields returned in the same former.
+///
+/// # Specification
+/// - requires: `fields` holds one selector and one closed action per field,
+///   every selector a component or every one a label.
+/// - ensures: `x₀ ← v.s₀; y₀ ← a₀ t x₀; …; return (y₀, …)` for components and
+///   `return #{s₀ = y₀, …}` for labels, binders from the outermost `t`, `v`,
+///   then `xᵢ` and `yᵢ` per field.
+/// - fails: [`FocusRefusal::TranslationInvariant`] for an index overflow or a
+///   label among components.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a product motive and a record motive each move every
+///   field by its own action and keep their former and their order.
+/// - witness: `tests::run::transports_run_by_the_motives_action`
+#[spec(ensures: |ret| match ret {
+    | Ok(id) => scratch.computation(id).is_some(),
+    | Err(_) => true,
+})]
+fn fieldwise(
+    scratch: &mut CoreArena,
+    fields: &[(Selector, ValueId)],
+) -> Result<ComputationId, FocusRefusal>
+{
+    let count = fields.len();
+    let depth = count
+        .checked_mul(2)
+        .and_then(|pairs| pairs.checked_add(2))
+        .ok_or(FocusRefusal::TranslationInvariant)?;
+    // The index of the binder at `position` from the outermost, read at
+    // `depth` binders.
+    let index_at = |depth: usize, position: usize| {
+        depth
+            .checked_sub(1)
+            .and_then(|outermost| outermost.checked_sub(position))
+            .and_then(|distance| u32::try_from(distance).ok())
+            .map(DeBruijnIndex::from)
+            .ok_or(FocusRefusal::TranslationInvariant)
+    };
+    let mut moved = Vec::with_capacity(count);
+    for position in 0 .. count {
+        let entry = position
+            .checked_mul(2)
+            .and_then(|offset| offset.checked_add(3))
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        moved.push(variable(scratch, index_at(depth, entry)?));
+    }
+    let assembled = if fields
+        .iter()
+        .all(|&(ref selector, _)| matches!(*selector, Selector::Component(_)))
+    {
+        scratch.value_tuple(&moved)
+    }
+    else {
+        let mut record = BTreeMap::new();
+        for (&(ref selector, _), &value) in fields.iter().zip(&moved) {
+            let Selector::Label(ref label) = *selector
+            else {
+                return Err(FocusRefusal::TranslationInvariant);
+            };
+            let _fresh = record.insert(label.clone(), value);
+        }
+        scratch.value_record(record)
+    };
+    let mut body = scratch.computation_return(assembled);
+    for (position, &(ref selector, action)) in fields.iter().enumerate().rev() {
+        let entry = position
+            .checked_mul(2)
+            .and_then(|offset| offset.checked_add(2))
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let inside = entry
+            .checked_add(1)
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let held = variable(scratch, index_at(inside, 0)?);
+        let field = variable(scratch, DeBruijnIndex::from(0_u32));
+        let step = applied(scratch, action, (held, field));
+        body = scratch.computation_bind(step, body);
+        let whole = variable(scratch, index_at(entry, 1)?);
+        let projected = match *selector {
+            Selector::Component(component) => {
+                scratch.computation_tuple_projection(whole, component)
+            },
+            Selector::Label(ref label) => {
+                scratch.computation_record_projection(whole, label.clone())
+            },
+        };
+        body = scratch.computation_bind(projected, body);
+    }
+    Ok(body)
 }
 
 /// One complete run a session admits: its moves, and the payload type of each
@@ -1565,6 +1672,39 @@ fn run_arm(
         body = scratch.computation_bind(step, body);
     }
     Ok(body)
+}
+
+/// `return thunk(y ← force v; force(M_B) t y)` under the image `t` (index 1)
+/// and the moved suspension `v` (index 0): the suspension row, with `M_B` the
+/// result's action.
+///
+/// # Specification
+/// - requires: `result` is a closed action in `scratch`.
+/// - ensures: forced, the suspension runs and its result moves forward.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a suspension carried along a path runs to the kernel's
+///   `thunk(tr(B, p, ⟨force v⟩))`; returning it unforced, or its result
+///   unmoved, would not.
+/// - witness: `tests::run::a_function_runs_along_a_path_by_its_maps`
+#[spec(ensures: |ret| scratch.computation(ret).is_some())]
+fn suspended_action(
+    scratch: &mut CoreArena,
+    result: ValueId,
+) -> ComputationId
+{
+    // Inside the thunk, as outside it: v = 0, t = 1.
+    let suspension = variable(scratch, DeBruijnIndex::from(0_u32));
+    let forced = scratch.computation_force(suspension);
+    // Under y: y = 0, v = 1, t = 2.
+    let image = variable(scratch, DeBruijnIndex::from(2_u32));
+    let produced = variable(scratch, DeBruijnIndex::from(0_u32));
+    let moved_forward = applied(scratch, result, (image, produced));
+    let body = scratch.computation_bind(forced, moved_forward);
+    let suspended = scratch.value_thunk(body);
+    scratch.computation_return(suspended)
 }
 
 /// `return thunk(λa. s ← (g ← t.1; f ← t.0; return (g, f)); x ← force(M_A)

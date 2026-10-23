@@ -500,6 +500,18 @@ pub enum CompBody
         /// The function transported.
         function: DomainValueId,
     },
+    /// The body of the thunk a suspension transport along a universe path
+    /// moves the suspension to: `b ← force f; tr(B, p, b)`.
+    TransportSuspended
+    {
+        /// The result's motive, `y. B(y)`, closed over the motive's
+        /// environment.
+        result: crate::arena::ValueClosureId,
+        /// The universe path transported along.
+        path: DomainValueId,
+        /// The suspension transported.
+        suspension: DomainValueId,
+    },
     /// Transport the bound value along `path` in `motive`: the continuation
     /// `b. tr(B, p, b)` a transported function's result binds into.
     TransportAlong

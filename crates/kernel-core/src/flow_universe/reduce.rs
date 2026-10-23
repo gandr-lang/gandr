@@ -15,6 +15,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::element_identity::BinderUse;
 use crate::element_identity::Family;
+use crate::element_identity::Former;
 use crate::element_identity::Mover;
 use crate::element_identity::Telescope;
 use crate::element_identity::binder_use;
@@ -167,6 +168,7 @@ where
                 Mover::Ride,
                 (&parts, &components),
                 flow,
+                Former::Tuple,
             )?))
         },
         ValueType::Sum(parts) => {
