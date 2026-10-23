@@ -2720,9 +2720,10 @@ mod tests
 
     /// Inside a declaration the lowering refused, a tile answers what the
     /// lowering kept — a constructor's use the line declaring it, a keyword
-    /// and a use left unresolved their rule — followed by the declaration's
-    /// hover with its refusal; a tile of a source refused as a whole answers
-    /// its rule and that refusal. None names a tracking issue.
+    /// its rule, and a parameter's use inside the refused call its binder
+    /// (#1265) — followed by the declaration's hover with its refusal; a tile
+    /// of a source refused as a whole answers its rule and that refusal. None
+    /// names a tracking issue.
     #[test]
     fn a_refused_declaration_hovers_what_the_lowering_kept_1201()
     {
@@ -2745,9 +2746,12 @@ mod tests
                 format!("```gandr\nreturn\n```\n\nA tile of `return_expression`.\n\n{refused}"),
             ),
             (
-                "a use the refusal left unresolved",
+                "a parameter's use inside the refused call",
                 (5, 14),
-                format!("```gandr\nx\n```\n\nA tile of `identifier.expression`.\n\n{refused}"),
+                format!(
+                    "```gandr\ndef bad(x : Nat) -> -F Nat {{\n```\n\nA binder, written at line \
+                     5.\n\n{refused}"
+                ),
             ),
         ];
         for (position, (line, character), expected) in rows {

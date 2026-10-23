@@ -4041,6 +4041,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_operations(sink);
         self.mint_derived_rules(sink);
         self.mint_instances(sink);
+        self.refused_declarations();
 
         self.end_source();
         Ok(())
@@ -6235,6 +6236,141 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.scratch = scratch;
+    }
+
+    /// Keep the uses of every declaration of the current source that the
+    /// lowering refused, through [`Self::refused_uses`] over each half it
+    /// writes.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: [`Self::refused_uses`] over the signature and the definition
+    ///   of each refused slot of the current source.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each walk carries its own predicates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::refused_uses`].
+    /// - witness: `tests::scopes::a_use_inside_a_refused_form_keeps_its_referent_1265`
+    fn refused_declarations(&mut self)
+    {
+        let halves: Vec<NodeIndex> = self
+            .collected
+            .slots
+            .iter()
+            .skip(self.current.slots)
+            .filter(|slot| matches!(slot.refusal, Maybe::Present(_)))
+            .flat_map(|slot| [slot.signature, slot.definition])
+            .filter_map(|half| match half {
+                Maybe::Present(half) => Some(half.declaration.node),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        for declaration in halves {
+            self.refused_uses(declaration);
+        }
+    }
+
+    /// Keep what each name written as a value inside the refused declaration
+    /// at `declaration`, and left unread by its refusal, refers to: each such
+    /// use resolves under the frame of the innermost form around it that the
+    /// lowering read.
+    ///
+    /// # Specification
+    /// - requires: the declaration at `declaration` is refused.
+    /// - ensures: each unread name written as an expression under
+    ///   `declaration`, whose spelling no unread name written in another
+    ///   position under it binds, and that resolves under the frame of its
+    ///   innermost read enclosing form, keeps its resolution at its span; the
+    ///   readings and the owners are unchanged.
+    /// - provides: the uses of a refused declaration for an editor's hover, its
+    ///   definitions, references and renames.
+    /// - fails: never; a name that does not resolve is passed over.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter and a forked endpoint used inside a
+    ///   refused `drop`, and a parameter used inside a block refused for its
+    ///   joins, each keep their binder.
+    /// - witness: `tests::scopes::a_use_inside_a_refused_form_keeps_its_referent_1265`
+    #[spec(
+        captures: before = (self.readings.len(), self.collected.owner.len()),
+        ensures: |_| self.readings.len() == before.0 && self.collected.owner.len() == before.1,
+    )]
+    fn refused_uses(
+        &mut self,
+        declaration: NodeIndex,
+    )
+    {
+        // economy: the walk runs only over a refused declaration, so an
+        // admitted tree never pays for it.
+        let mut forms = alloc::vec![(declaration, Frame::Outermost)];
+        let mut used: Vec<(Placed, Frame)> = Vec::new();
+        let mut bound: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        while let Some((at, around)) = forms.pop() {
+            let reading = self.reading(at);
+            let frame = if reading == Reading::Unread {
+                around
+            }
+            else {
+                reading.frame()
+            };
+            for child in self.tree.children(at) {
+                if let Some(NodeLabel::Meld(_) | NodeLabel::Tile(_)) =
+                    self.tree.node(child).map(gandr_surface_syntax::Node::label)
+                {
+                    forms.push((child, frame));
+                }
+            }
+            let Some(node) = self.tree.node(at)
+            else {
+                continue;
+            };
+            let named = matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Name,
+                    ..
+                })
+            );
+            if !named || reading != Reading::Unread {
+                continue;
+            }
+            let placed = Placed::of(at, node);
+            let expression = match node.label() {
+                NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => self
+                    .pbg
+                    .mold(mold)
+                    .is_ok_and(|def| def.sort == gandr_surface_grammar::Sort::Expression),
+                NodeLabel::Wald
+                | NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc => false,
+            };
+            if expression {
+                used.push((placed, frame));
+            }
+            else {
+                bound.insert(self.name_at(placed));
+            }
+        }
+        for (placed, frame) in used {
+            let name = self.name_at(placed);
+            if bound.contains(&name) {
+                continue;
+            }
+            let site = Site {
+                at: placed,
+                name: FormName::DECLARATION,
+                reading: Reading::Value(frame),
+            };
+            if let Ok(Maybe::Present(resolved)) = self.resolve_name(site, frame, name) {
+                self.resolved(placed.span, resolved);
+            }
+        }
     }
 
     /// The binder frame of a form whose position demands `produced`, with the
