@@ -424,6 +424,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Run
                 | Former::Call
                 | Former::Case
+                | Former::If
                 | Former::Telescope
                 | Former::List
                 | Former::PackModel
@@ -537,6 +538,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::Run
                         | Former::Call
                         | Former::Case
+                        | Former::If
                         | Former::Telescope
                         | Former::List
                         | Former::PackModel
@@ -609,6 +611,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Run
                 | Former::Call
                 | Former::Case
+                | Former::If
                 | Former::Telescope
                 | Former::List
                 | Former::PackModel

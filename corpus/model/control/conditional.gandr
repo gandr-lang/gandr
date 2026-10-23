@@ -1,0 +1,46 @@
+// A conditional, `if c { t } else { e }`: the case of its condition over the
+// two booleans, the true branch first. The condition is a computation the
+// case binds, as `while` binds its own, and each branch is a block whose last
+// computation is the conditional's answer. The derived form is the usual
+// one: `if` as the eliminator of the booleans (Levy, "Call-By-Push-Value",
+// Springer 2003, § 2.3, where the case of a sum is a computation).
+
+/// A conditional over a boolean value: the true branch runs.
+@[ runs("1") ]
+def pick() -> -F Integer {
+  if true { 1 } else { 2 }
+}
+
+/// A conditional over a comparison, which is a computation: the case binds
+/// its result, and the false branch runs.
+@[ runs("20") ]
+def above() -> -F Integer {
+  if 3 < 2 { 10 } else { 20 }
+}
+
+/// A conditional that states its answer: each branch's last computation is
+/// read at it.
+@[ runs("7") ]
+def statedAnswer() -> -F Integer {
+  if false -> -F Integer { 5 } else { 7 }
+}
+
+/// An `else if` tests its own condition in the false branch of the first.
+@[ checks ]
+def sign(n : Integer) -> -F Integer {
+  if n < 0 { 0 } else if n < 1 { 1 } else { 2 }
+}
+
+/// The middle case of `sign`: its first condition fails and its second holds.
+@[ runs("1") ]
+def zero() -> -F Integer {
+  sign(0)
+}
+
+/// A conditional whose true branch returns from the function, written as a
+/// statement: the false branch passes on to the rest of the block.
+@[ runs("9") ]
+def early() -> -F Integer {
+  if 1 < 0 { return 4 } else { pure unit };
+  9
+}

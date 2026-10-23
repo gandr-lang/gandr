@@ -852,6 +852,7 @@ fn operand_of(
         | Former::Continue
         | Former::Call
         | Former::Case
+        | Former::If
         | Former::Scope
         | Former::Telescope
         | Former::List
