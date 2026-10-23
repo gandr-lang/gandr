@@ -14,10 +14,10 @@ name: hotpath guard
 # waits for it: the check's completion runs this workflow instead. GitHub
 # sends the event for check runs another app creates, from the default
 # branch's copy of this file; the job runs only for a concluded hotpath check.
-# A check CI posts itself (the judge's `hotpath / <benchmark>-band`) starts
-# no workflow: GitHub starts none for what a workflow's token does, a
-# dispatch aside. Its poster dispatches this workflow with the commit and
-# the pull request instead.
+# A check CI posts itself (the judge's `hotpath / <benchmark>-band` on a
+# pull request, `-push` on main's push) starts no workflow: GitHub starts
+# none for what a workflow's token does, a dispatch aside. Its poster
+# dispatches this workflow with the commit and the pull request instead.
 on:
   check_run:
     types: [completed]

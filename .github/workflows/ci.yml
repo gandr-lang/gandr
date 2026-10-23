@@ -1494,18 +1494,20 @@ jobs:
   # (`mise run ci:hotpath-base`), and builds and runs the base in this job
   # only when no run left one.
   #
-  # hotpath Cloud judges one report a side and skips the rows under the
-  # policy's share floor (#2079). Each series also runs until HOTPATH_RUNS
-  # are kept, three on a pull request and five on main's push, as the
-  # artifact `hotpath-runs-<commit>`; a pull request's rows under the floor
-  # are judged over its runs and its base's kept ones, never rerun here
-  # (`mise run ci:hotpath-band`), and `hotpath-band` posts the checks.
+  # hotpath Cloud judges one report a side, skips the rows under the
+  # policy's share floor (#2079) and judges nothing on a push. Each series
+  # also runs until HOTPATH_RUNS are kept, three on a pull request and five
+  # on main's push, as the artifact `hotpath-runs-<commit>`, and is judged
+  # over its runs and its base's kept ones, never rerun here (`mise run
+  # ci:hotpath-judge`): a pull request's rows under the floor, and every row
+  # of main's push against the commit main stood at before it, so a chain
+  # pushed by hand is judged whole. `hotpath-judged` posts the checks.
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
     if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
     outputs:
-      band: ${{ steps.band.outputs.checks }}
+      judged: ${{ steps.judge.outputs.checks }}
     runs-on: *linux
     permissions:
       actions: read
@@ -1522,7 +1524,7 @@ jobs:
       HOTPATH_UPLOAD: fail-on-error
       HOTPATH_ALLOC_METRIC: count
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       HOTPATH_RUNS: ${{ github.event_name == 'pull_request' && '3' || '5' }}
       HOTPATH_FUNCTIONS_LIMIT: "0"
       HOTPATH_USER_METADATA: runner=linux-arm64,profile=test
@@ -1544,12 +1546,16 @@ jobs:
         run: mise run ci:hotpath gandr gandr-lang hotpath
       - name: run the store series
         run: mise run ci:hotpath store gandr-storage-schema store
-      - name: judge the rows under the share floor
-        id: band
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: judge the runs against the base's
+        id: judge
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HOTPATH_JUDGE_ALL: ${{ github.event_name == 'push' }}
         run: |
-          mise run ci:hotpath-band gandr store
-          if compgen -G 'target/hotpath/band/checks/*.json' > /dev/null; then
+          if [[ $HOTPATH_JUDGE_ALL == true ]]; then set -- --all; fi
+          mise run ci:hotpath-judge "$@" gandr store
+          if compgen -G 'target/hotpath/judged/checks/*.json' > /dev/null; then
             echo checks=true >> "$GITHUB_OUTPUT"
           fi
       # A lost artifact costs a later pull request one in-job base run, never
@@ -1570,12 +1576,12 @@ jobs:
           name: hotpath-runs-${{ github.event.pull_request.head.sha || github.sha }}
           path: target/hotpath/runs/*.json
           retention-days: 14
-      - name: keep the band checks
-        if: ${{ steps.band.outputs.checks == 'true' }}
+      - name: keep the judged checks
+        if: ${{ steps.judge.outputs.checks == 'true' }}
         uses: *upload-artifact
         with:
-          name: hotpath-band
-          path: target/hotpath/band/checks/*.json
+          name: hotpath-judged
+          path: target/hotpath/judged/checks/*.json
           retention-days: 14
       - name: keep the base head's reports measured here
         if: ${{ github.event_name == 'pull_request' && hashFiles('target/hotpath/base/measured/*.json') != '' }}
@@ -1587,16 +1593,17 @@ jobs:
           retention-days: 14
       - *lane-timing
 
-  # The judge's `hotpath / <benchmark>-band` checks, posted on the pull
-  # request's head from a bare runner, so the job running the change's code
-  # holds no write token. A check a workflow's token posts starts no
-  # workflow, so this job dispatches the hotpath guard for the head (on the
+  # The judge's `hotpath / <benchmark>-band` and `-push` checks, posted on
+  # the judged commit from a bare runner, so the job running the change's
+  # code holds no write token. A check a workflow's token posts starts no
+  # workflow, so this job dispatches the hotpath guard for the commit (on the
   # default branch's copy of it), which files a failed one as it files
-  # hotpath Cloud's and marks a passed one's rows fixed.
-  hotpath-band:
-    name: post the hotpath band checks
+  # hotpath Cloud's and marks a passed one's rows fixed. A push names no
+  # pull request: the guard looks up the one that carries the commit.
+  hotpath-judged:
+    name: post the judged hotpath checks
     needs: hotpath
-    if: ${{ !cancelled() && needs.hotpath.outputs.band == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
+    if: ${{ !cancelled() && needs.hotpath.outputs.judged == 'true' && (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork || github.event_name == 'push' && github.event.repository.fork == false) }}
     runs-on: *linux
     permissions:
       actions: write
@@ -1604,14 +1611,14 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - name: download the band checks
+      - name: download the judged checks
         uses: *download-artifact
         with:
-          name: hotpath-band
+          name: hotpath-judged
       - name: post the checks and dispatch the guard
         shell: bash
         run: |
@@ -1619,7 +1626,7 @@ jobs:
             jq --arg sha "$HEAD_SHA" '. + {head_sha: $sha, status: "completed"}' "$check" |
               gh api --method POST "repos/$GH_REPO/check-runs" --input - --silent
           done
-          gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA" -f pull="$PR_NUMBER"
+          gh workflow run hotpath-guard.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA" ${PR_NUMBER:+-f pull="$PR_NUMBER"}
 
   # A landing's hotpath verdicts become ledger rows (`mise run
   # ci:hotpath-landed`): main's push reads the `hotpath / <benchmark>` checks
