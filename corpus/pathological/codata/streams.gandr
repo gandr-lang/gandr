@@ -20,6 +20,22 @@ codata Point : Type {
   depth : Integer;
 }
 
+/// A pair of streams interleaved by swapping its parameters at the tail: a
+/// family names itself only at its own parameters in order (#2188).
+@[ refuses("CodataOccurrence") ]
+codata Swap(a : Type, b : Type) : Type[-] {
+  head : a;
+  tail : Swap(b, a);
+}
+
+/// A stream whose tail nests the family in its own argument: refused the same
+/// way (#2188).
+@[ refuses("CodataOccurrence") ]
+codata Twisted(a : Type) : Type[-] {
+  head : a;
+  tail : Twisted(Twisted(a));
+}
+
 /// Three readings of a position.
 @[ checks ]
 codata Spot : Type[-] {

@@ -79,10 +79,6 @@ const LOWERING: Issue = Issue(1788);
 /// ascription: the form a type family member's telescope is checked against.
 const ASCRIPTION: Issue = Issue(1321);
 
-/// The issue carrying a codata declaration's self reference at other
-/// arguments to the checker as it is written.
-const CODATA_SELF: Issue = Issue(2188);
-
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
@@ -122,7 +118,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 73_usize] = [
+const OWED: [(&str, Owed); 72_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -241,7 +237,7 @@ const OWED: [(&str, Owed); 73_usize] = [
     ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
     ("DependentStack", Owed::Unwritten(CHECKER)),
     ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
-    ("CodataOccurrence", Owed::Unwritten(CODATA_SELF)),
+
     ("CodataArity", Owed::Unwritten(CHECKER)),
     ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
     ("EntryUngranted", Owed::Unwritten(CHECKER)),

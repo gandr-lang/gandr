@@ -599,19 +599,9 @@ fn interpret<G>(
                 },
             },
             Frame::Argument(node) => {
-                if let ValueTypeView::Param(name) = node.view() {
-                    match *context.binding(name)? {
-                        TypeBinding::Value(value) => {
-                            arguments.push(value);
-                            continue;
-                        },
-                        TypeBinding::Parameter { level, .. } => {
-                            let value = parameter_value(arena, level, context.depth)?;
-                            arguments.push(value);
-                            continue;
-                        },
-                        TypeBinding::Type(_) | TypeBinding::Nominal { .. } => {},
-                    }
+                if let Some(value) = bound_argument(arena, node, context)? {
+                    arguments.push(value);
+                    continue;
                 }
                 pending.push(Frame::QuoteArgument);
                 pending.push(Frame::Type(node));
@@ -725,6 +715,77 @@ fn parameter_value(
         crate::Zone::Intuitionistic,
         gandr_kernel_term::DeBruijnIndex::from(index),
     ))
+}
+
+/// The value `argument` stands for when it names a value or a parameter
+/// `context` binds.
+///
+/// # Specification
+/// - ensures: a name bound to a value is that value, a parameter its variable
+///   at `context`'s depth; anything else is none.
+/// - fails: a name `context` does not bind, and a parameter outside the
+///   telescope.
+/// - panics: none.
+/// - executable: none — the value a binding stands for is the context's
+///   reading, which a predicate over the result would repeat.
+///
+/// # Errors
+/// Returns the binding's refusal or `ParameterArity`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`decode_argument`].
+/// - witness: `description::tests::an_argument_decodes_as_a_nominal_argument_does`
+fn bound_argument(
+    arena: &mut CoreArena,
+    argument: ValueTypeNode<'_>,
+    context: DecodeContext<'_>,
+) -> Result<Option<crate::ValueId>, DecodeError>
+{
+    let ValueTypeView::Param(name) = argument.view()
+    else {
+        return Ok(None);
+    };
+    match *context.binding(name)? {
+        TypeBinding::Value(value) => Ok(Some(value)),
+        TypeBinding::Parameter { level, .. } => {
+            parameter_value(arena, level, context.depth).map(Some)
+        },
+        TypeBinding::Type(_) | TypeBinding::Nominal { .. } => Ok(None),
+    }
+}
+
+/// Interpret `argument`, an argument a written type applies a family at, in
+/// the value language, as a nominal application's argument is interpreted.
+///
+/// # Specification
+/// - requires: `context`'s scopes are the ones the argument is written under.
+/// - ensures: a name `context` binds to a value or a parameter is that value or
+///   the parameter's variable; any other reference is the code of the type it
+///   interprets to.
+/// - fails: a name `context` does not bind and an unreadable type.
+/// - panics: none.
+///
+/// # Errors
+/// Returns the interpretation's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parameter is its variable at the telescope's depth and
+///   a primitive the code of its type, as when a nominal application applies to
+///   them.
+/// - witness: `description::tests::an_argument_decodes_as_a_nominal_argument_does`
+#[inline]
+#[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value(*id).is_some()))]
+pub fn decode_argument(
+    arena: &mut CoreArena,
+    argument: ValueTypeNode<'_>,
+    context: DecodeContext<'_>,
+) -> Result<crate::ValueId, DecodeError>
+{
+    if let Some(value) = bound_argument(arena, argument, context)? {
+        return Ok(value);
+    }
+    let ty = interpret::<()>(arena, vec![Frame::Type(argument)], context)?;
+    Ok(arena.value_quote(ty))
 }
 
 /// Interpret supported primitives without inventing opaque substitutes.

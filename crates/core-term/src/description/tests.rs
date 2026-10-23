@@ -591,6 +591,79 @@ fn native_indices_remain_values_under_telescope_scope()
     );
 }
 
+/// An argument decodes alone as it does inside a nominal application: a
+/// parameter is its variable at the telescope's depth, a primitive the code
+/// of its type, and a name nothing binds is refused.
+#[test]
+fn an_argument_decodes_as_a_nominal_argument_does()
+{
+    let mut arena = CoreArena::new();
+    let carrier = arena.value_type_unit();
+    let kind = arena.value_type_universe(
+        Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        Level::zero(),
+    );
+    let types = BTreeMap::new();
+    let (first, second) = (Name::from("a"), Name::from("b"));
+    let locals = [
+        super::LocalBinding {
+            name: &first,
+            binding: TypeBinding::Parameter {
+                level: super::ParameterLevel(0),
+                classifier: kind,
+            },
+        },
+        super::LocalBinding {
+            name: &second,
+            binding: TypeBinding::Parameter {
+                level: super::ParameterLevel(1),
+                classifier: kind,
+            },
+        },
+    ];
+    let context = DecodeContext {
+        locals: &locals,
+        depth: super::ParameterDepth(2),
+        ..context(carrier, &types)
+    };
+    let variable = |index: u32| Value::Variable {
+        zone: crate::Zone::Intuitionistic,
+        index: gandr_kernel_term::DeBruijnIndex::from(index),
+    };
+    let outer = decode_argument(&mut arena, ValueTypeRef::param("a").to_node(), context).unwrap();
+    let inner = decode_argument(&mut arena, ValueTypeRef::param("b").to_node(), context).unwrap();
+    assert_eq!(
+        arena.value(outer),
+        Some(&variable(1)),
+        "the first parameter"
+    );
+    assert_eq!(
+        arena.value(inner),
+        Some(&variable(0)),
+        "the second parameter"
+    );
+    let integer = arena.value_type_base(BaseType::Integer);
+    let quoted = decode_argument(
+        &mut arena,
+        ValueTypeRef::prim(PrimTy::Integer).to_node(),
+        context,
+    )
+    .unwrap();
+    let Some(&Value::Quote(code)) = arena.value(quoted)
+    else {
+        panic!("a primitive is quoted: {:?}", arena.value(quoted))
+    };
+    assert_eq!(
+        crate::equal_type_syntax(&arena, code, integer),
+        CertificateEquality::Equal,
+        "the code of `Integer`"
+    );
+    assert!(
+        decode_argument(&mut arena, ValueTypeRef::param("c").to_node(), context).is_err(),
+        "a name nothing binds"
+    );
+}
+
 /// Every refusal renders apart from the others, and one carrying a name
 /// names it.
 #[test]
