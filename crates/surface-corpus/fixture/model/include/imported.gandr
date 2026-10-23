@@ -78,9 +78,8 @@ module Successor : Model(PointedMonoid) {
 
 /// The chosen element, then doubling, at three.
 @[ runs("8") ]
-def pointed : () => Integer ;
-def pointed = thunk {
+def pointed() -> -F Integer {
   run p <- Successor.point() ;
   run h <- Successor.mul(p, fn (n) { become n * 2 }) ;
   become h(3)
-} ;
+}

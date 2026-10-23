@@ -127,16 +127,15 @@ def observe(m : Model(Counter)) -> -F Integer {
 
 /// The consumer reads counting up.
 @[ runs("1") ]
-def observedUp : () => Integer ;
-def observedUp = thunk { become observe(upModel) } ;
+def observedUp() -> -F Integer { become observe(upModel) }
 
 /// The consumer reads counting down alike.
 @[ runs("1") ]
-def observedDown : () => Integer ;
-def observedDown = thunk { become observe(downModel) } ;
+def observedDown() -> -F Integer { become observe(downModel) }
 
 /// The consumer reads both alike by construction, along the path between the
 /// models.
 @[ checks ]
-def observedAlike : () => Path(Integer, observe(upModel), observe(downModel)) ;
-def observedAlike = thunk { become cong(observe, oneCounter) } ;
+def observedAlike() -> -F Path(Integer, observe(upModel), observe(downModel)) {
+  become cong(observe, oneCounter)
+}

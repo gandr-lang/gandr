@@ -39,8 +39,7 @@ def rec plus_run(n : Nat, m : Nat) -> -F Nat {
 
 /// Two and three, added with the call returned.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five : () => Nat ;
-def five = thunk { become plus_returned(two, three) } ;
+def five() -> -F Nat { become plus_returned(two, three) }
 
 /// Two and three, added with the `return`s elided.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
@@ -59,5 +58,4 @@ def five_run = plus_run(two, three) ;
 
 /// One more than two and three, the nested addition inside a successor.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def six : () => Nat ;
-def six = thunk { Succ(plus(two, three)) } ;
+def six() -> -F Nat { Succ(plus(two, three)) }

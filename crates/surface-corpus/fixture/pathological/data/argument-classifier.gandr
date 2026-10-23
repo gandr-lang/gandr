@@ -22,8 +22,7 @@ def first(xs : List(Integer)) -> -F Integer {
 /// A string where the parameter takes integers is refused by the checker,
 /// not as unannotated (#1833).
 @[ refuses("TypeMismatch") ]
-def mistyped : () => Integer ;
-def mistyped = thunk { become first(Cons("no", Nil)) } ;
+def mistyped() -> -F Integer { become first(Cons("no", Nil)) }
 
 /// How many elements a list of any type holds.
 @[ checks ]

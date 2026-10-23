@@ -32,8 +32,7 @@ def left(n : Integer) -> -F Integer {
 
 /// `left` at five, by a run.
 @[ runs("5") ]
-def left_run : () => Integer ;
-def left_run = thunk { become left(5) } ;
+def left_run() -> -F Integer { become left(5) }
 
 /// The operation's clause discards its continuation and answers for the
 /// handler.
@@ -82,13 +81,11 @@ def branch(n : Integer) -> -F Integer {
 
 /// The returning arm, by a run.
 @[ runs("8") ]
-def branch_zero : () => Integer ;
-def branch_zero = thunk { become branch(0) } ;
+def branch_zero() -> -F Integer { become branch(0) }
 
 /// The continuing arm, through the operation and the `pure` clause.
 @[ runs("102") ]
-def branch_one : () => Integer ;
-def branch_one = thunk { become branch(1) } ;
+def branch_one() -> -F Integer { become branch(1) }
 
 /// A loop's `break` gives the loop's value to the body, which continues. The
 /// loop may run forever, so the row states `Div` (#1481), and the handler of

@@ -28,6 +28,8 @@ use gandr_surface_dispatcher::lay_out;
 use gandr_surface_format::Beside;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
+use gandr_surface_format::RewriteName;
+use gandr_surface_format::Selection;
 use gandr_surface_format::format_beside;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -195,15 +197,16 @@ fn typed(
     }
 }
 
-/// `written` formatted into `form` beside the siblings it imports: the text
-/// and the rewrites withdrawn from it.
+/// `written` formatted into `form` through the rewrites `rewrites` selects,
+/// beside the siblings it imports: the text and the rewrites withdrawn from
+/// it.
 ///
 /// # Specification
 /// trivial.
 fn formatted(
     grammar: &Pbg,
     written: Written<'_>,
-    form: gandr_surface_format::Form,
+    (form, rewrites): (gandr_surface_format::Form, Selection),
 ) -> Result<Formatted, String>
 {
     let text = written.text;
@@ -218,6 +221,7 @@ fn formatted(
     };
     let options = FormatOptions {
         form,
+        rewrites,
         ..FormatOptions::default()
     };
     format_beside(
@@ -228,6 +232,25 @@ fn formatted(
     )
     .map_err(|error| format!("does not format: {error}"))
 }
+
+/// Every rewrite but the merge of a signature with the definition after it:
+/// the signature parity reads each signature the formatter writes, which
+/// that merge writes into its function form.
+const SIGNED: &[RewriteName] = &[
+    RewriteName::Product,
+    RewriteName::Sum,
+    RewriteName::LazyProduct,
+    RewriteName::Tuple,
+    RewriteName::ValueFunction,
+    RewriteName::DefaultGrade,
+    RewriteName::PathComposite,
+    RewriteName::PathInverse,
+    RewriteName::PathAction,
+    RewriteName::TailReturn,
+    RewriteName::ShortAlias,
+    RewriteName::LinearRun,
+    RewriteName::InsertedThunk,
+];
 
 /// The printer's form the source `text` declares at its head, which the
 /// formatter writes it in whatever form it is asked for.
@@ -477,7 +500,7 @@ fn misses(
                 path: written.path,
                 text: SourceText::from(variant.as_str()),
             },
-            into,
+            (into, Selection::Only(SIGNED)),
         ) {
             Ok(out) => out.into_text(),
             Err(error) => {
@@ -1301,7 +1324,7 @@ fn bodies(
                 path: written.path,
                 text: SourceText::from(variant.as_str()),
             },
-            into,
+            (into, Selection::Every),
         ) {
             Ok(out) => out,
             Err(error) => {

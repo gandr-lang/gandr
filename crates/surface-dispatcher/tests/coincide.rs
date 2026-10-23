@@ -101,7 +101,8 @@ fn sources() -> BTreeSet<PathBuf>
 }
 
 /// The body of the thunk `name` is defined as in `text`: the bytes between
-/// `def name = thunk {` and the brace that closes it.
+/// `def name = thunk {`, or the `{` opening the function form of no
+/// parameter `def name() -> C {`, and the brace that closes it.
 ///
 /// # Specification
 /// - ensures: absent when `text` defines no thunk of that name; otherwise the
@@ -118,9 +119,27 @@ fn thunk_body(
     name: SourceFragment<'_>,
 ) -> Option<String>
 {
-    let opening = format!("def {name} = thunk {{");
     let text: &str = text.as_ref();
-    let start = text.find(&opening)?.saturating_add(opening.len());
+    let thunk = format!("def {name} = thunk {{");
+    let function = format!("def {name}() -> ");
+    let start = if let Some(at) = text.find(&thunk) {
+        at.saturating_add(thunk.len())
+    }
+    else {
+        let at = text.find(&function)?.saturating_add(function.len());
+        let codomain = text.get(at ..)?;
+        let mut depth = 0_usize;
+        let open = codomain.char_indices().find_map(|(offset, character)| {
+            match character {
+                '(' | '[' => depth = depth.saturating_add(1),
+                ')' | ']' => depth = depth.saturating_sub(1),
+                '{' if depth == 0 => return Some(offset),
+                _ => {},
+            }
+            None
+        })?;
+        at.saturating_add(open).saturating_add(1)
+    };
     let rest = text.get(start ..)?;
     let mut depth = 0_usize;
     for (offset, character) in rest.char_indices() {

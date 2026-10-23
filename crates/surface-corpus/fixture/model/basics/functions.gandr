@@ -17,8 +17,7 @@ def twice(x: Integer) -> -F Integer {
 /// returned: what follows the nested call lowers once, so the run fits its
 /// region (#1856).
 @[ runs("18") ]
-def chained : () => Integer ;
-def chained = thunk {
+def chained() -> -F Integer {
   run a <- inc(inc(0));
   run b <- inc(a);
   run c <- inc(b);
@@ -35,7 +34,7 @@ def chained = thunk {
   run n <- inc(m);
   run o <- inc(n);
   become inc(inc(o))
-} ;
+}
 
 /// The run target calls `twice`; the lowering reads no final expression as a
 /// run target yet (#1105).

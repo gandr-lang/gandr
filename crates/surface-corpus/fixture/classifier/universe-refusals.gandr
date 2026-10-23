@@ -13,8 +13,7 @@ def graded = +U[1] (-F Integer) ;
 @[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { return x }
 
-def chosen : +U (-F Type) ;
-def chosen = thunk { return Integer } ;
+def chosen() -> -F Type { return Integer }
 
 @[ refuses("TypeMismatch") ]
 def escaped : +U (Integer -> -F Integer) ;

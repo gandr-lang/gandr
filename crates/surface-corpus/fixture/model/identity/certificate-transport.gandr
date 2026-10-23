@@ -60,8 +60,7 @@ def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> -F Path(
 /// The carried consumer, run on a certificate of the join's boundary: it
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
-def carriedRun : () => Int ;
-def carriedRun = thunk {
+def carriedRun() -> -F Int {
   run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) }) ;
   g(here(S(Z)))
-} ;
+}

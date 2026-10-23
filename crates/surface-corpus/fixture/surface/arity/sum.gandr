@@ -32,8 +32,7 @@ def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer {
 }
 
 @[ runs("30") ]
-def gone : +U (-F Integer) ;
-def gone = thunk { become pick(+{.2 = unit}) } ;
+def gone() -> -F Integer { become pick(+{.2 = unit}) }
 
 @[ checks ]
 def unwrap(v : +{only : Integer}) -> -F Integer {
@@ -51,8 +50,7 @@ def nested(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
 }
 
 @[ runs("8") ]
-def inner : +U (-F Integer) ;
-def inner = thunk { become nested(#{+{.1 = 8}, 9}) } ;
+def inner() -> -F Integer { become nested(#{+{.1 = 8}, 9}) }
 
 /// A sum stated as the chain `A + B`, inside a product stated as `(A + B) * C`,
 /// is the braced `#{+{A, B}, C}`: a match reads its summands off either
@@ -67,8 +65,7 @@ def chained(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
 
 /// `chained` matches the second summand of its product's first component.
 @[ runs("8") ]
-def outer : +U (-F Integer) ;
-def outer = thunk { become chained(#{+{.1 = 8}, 9}) } ;
+def outer() -> -F Integer { become chained(#{+{.1 = 8}, 9}) }
 
 /// A pattern variable holds the type its position states: `s`, bound at the
 /// first component of `#{+{Integer, Integer}, Integer}`, is matched as the sum
@@ -85,5 +82,4 @@ def split(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
 
 /// `split` matches the second summand of its product's first component.
 @[ runs("8") ]
-def split_inner : +U (-F Integer) ;
-def split_inner = thunk { become split(#{+{.1 = 8}, 9}) } ;
+def split_inner() -> -F Integer { become split(#{+{.1 = 8}, 9}) }

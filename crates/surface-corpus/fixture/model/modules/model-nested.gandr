@@ -30,5 +30,4 @@ module Facts : Model(Faceted) {
 
 /// The nested answer, read through the outer model.
 @[ runs("41") ]
-def nested_answer : () => Integer ;
-def nested_answer = thunk { Facts.inner.answer } ;
+def nested_answer() -> -F Integer { Facts.inner.answer }

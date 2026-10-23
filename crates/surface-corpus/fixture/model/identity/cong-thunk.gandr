@@ -36,5 +36,6 @@ def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(
 
 /// Reflexivity at four carried along the suspended doubling by a run.
 @[ checks ]
-def delayed_four : +U (-F Path(+U (-F Integer), delay(4), delay(4)));
-def delayed_four = thunk { become cong_delay(4, 4, here(4)) };
+def delayed_four() -> -F Path(+U (-F Integer), delay(4), delay(4)) {
+  become cong_delay(4, 4, here(4))
+}

@@ -1,6 +1,5 @@
 @[ runs("1") ]
-def none : () => Integer ;
-def none = thunk { 1 } ;
+def none() -> -F Integer { 1 }
 
 @[ runs("fn (a) { a }") ]
 def one : Integer => Integer ;

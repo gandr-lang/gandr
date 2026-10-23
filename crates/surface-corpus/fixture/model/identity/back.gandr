@@ -14,5 +14,4 @@ def flip(a: Integer, b: Integer, q: Path(Integer, a, b)) -> -F Path(Integer, b, 
 
 /// Reflexivity at seven, reversed by a run.
 @[ checks ]
-def flipped_here : () => Path(Integer, 7, 7);
-def flipped_here = thunk { become flip(7, 7, p) };
+def flipped_here() -> -F Path(Integer, 7, 7) { become flip(7, 7, p) }

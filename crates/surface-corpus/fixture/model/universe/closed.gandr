@@ -62,8 +62,7 @@ def idAt(c : U, v : el(c)) -> -F el(c) { v }
 
 /// The identity at the natural code keeps one.
 @[ runs("Succ(Zero)") ]
-def kept : +U (-F Nat) ;
-def kept = thunk { idAt(NatC, one) } ;
+def kept() -> -F Nat { idAt(NatC, one) }
 
 /// The successor, at the decode of the arrow from naturals to naturals,
 /// which runs to `Nat => Nat`.
@@ -79,13 +78,11 @@ def applyAt(a : U, b : U, f : el(Arrow(a, b)), v : el(a)) -> -F el(b) { f(v) }
 
 /// The successor applied at its decoded type.
 @[ runs("Succ(Succ(Zero))") ]
-def stepped : +U (-F Nat) ;
-def stepped = thunk { succ(one) } ;
+def stepped() -> -F Nat { succ(one) }
 
 /// Application at the arrow from naturals to naturals: the successor of one.
 @[ runs("Succ(Succ(Zero))") ]
-def applied : +U (-F Nat) ;
-def applied = thunk { applyAt(NatC, NatC, succ, one) } ;
+def applied() -> -F Nat { applyAt(NatC, NatC, succ, one) }
 
 /// A function at the decode of an arrow whose domain is itself an arrow:
 /// it applies its argument to one.
@@ -95,8 +92,7 @@ def atOne = thunk { fn (g) { g(one) } } ;
 
 /// Application one code up: `atOne` at the successor.
 @[ runs("Succ(Succ(Zero))") ]
-def appliedAbove : +U (-F Nat) ;
-def appliedAbove = thunk { applyAt(Arrow(NatC, NatC), NatC, atOne, succ) } ;
+def appliedAbove() -> -F Nat { applyAt(Arrow(NatC, NatC), NatC, atOne, succ) }
 
 /// A value packed with its code: the second field's type is the decode of the
 /// first, so each constructor term carries its own type.
@@ -125,5 +121,4 @@ def codeOf(p : Coded) -> -F U {
 
 /// The successor's code, read back out of its pack.
 @[ runs("Arrow(NatC, NatC)") ]
-def unpacked : +U (-F U) ;
-def unpacked = thunk { codeOf(packedSucc) } ;
+def unpacked() -> -F U { codeOf(packedSucc) }

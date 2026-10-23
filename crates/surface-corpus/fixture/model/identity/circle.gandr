@@ -26,8 +26,7 @@ import "./equivalence.gandr" ;
 
 /// The loop's word: one letter before the empty word.
 @[ runs("loop ∷ here(Base)") ]
-def once : () => Path(Circle, Base, Base) ;
-def once = thunk { loop } ;
+def once() -> -F Path(Circle, Base, Base) { loop }
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion.
 @[ checks ]

@@ -16,8 +16,7 @@ def constantBeta = here(Z) ;
 
 /// A family that never reads its argument keeps the value, by a run.
 @[ runs("Z") ]
-def constantRun : () => Int ;
-def constantRun = thunk { transport(\X. Int, ua(winding), Z) } ;
+def constantRun() -> -F Int { transport(\X. Int, ua(winding), Z) }
 
 /// A pair carried along the loops' path carries each component, by
 /// conversion: the book's Theorem 2.6.4.
@@ -27,8 +26,7 @@ def pairBeta = here((S(Z), S(Z))) ;
 
 /// A pair carried along the loops' path carries each component, by a run.
 @[ runs("(S(Z), S(Z))") ]
-def pairRun : () => Int * Int ;
-def pairRun = thunk { transport(\X. X * X, ua(winding), (loop, loop)) } ;
+def pairRun() -> -F (Int * Int) { transport(\X. X * X, ua(winding), (loop, loop)) }
 
 /// An injection carried along the loops' path carries its payload in its own
 /// summand, by conversion: the book's § 2.12.
@@ -42,8 +40,7 @@ def sumBeta = here(+{.1 = S(Z)}) ;
 
 /// An injection carried along the loops' path carries its payload, by a run.
 @[ runs("+{.1 = S(Z)}") ]
-def sumRun : () => Unit + Int ;
-def sumRun = thunk { transport(\X. Unit + X, ua(winding), +{.1 = loop}) } ;
+def sumRun() -> -F (Unit + Int) { transport(\X. Unit + X, ua(winding), +{.1 = loop}) }
 
 /// A list carried along the loops' path carries every cell, by conversion.
 @[ checks ]
@@ -56,5 +53,4 @@ def listBeta = here(cons(S(Z), nil)) ;
 
 /// A list carried along the loops' path carries every cell, by a run.
 @[ runs("cons(S(Z), nil)") ]
-def listRun : () => List(Int) ;
-def listRun = thunk { transport(\X. List(X), ua(winding), cons(loop, nil)) } ;
+def listRun() -> -F List(Int) { transport(\X. List(X), ua(winding), cons(loop, nil)) }

@@ -68,8 +68,7 @@ def forward(receipt : Run(Seat.SeatEnd)) -> -F Run(Evolution.SeatEnd′) {
 
 /// The old run ridden forward by a run: the record is unchanged.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"), offered(retire), closed)") ]
-def moved : () => Run(Evolution.SeatEnd′) ;
-def moved = thunk { become forward(served) } ;
+def moved() -> -F Run(Evolution.SeatEnd′) { become forward(served) }
 
 /// A run of the new protocol that takes the pause.
 @[ checks ]

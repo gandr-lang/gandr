@@ -22,10 +22,8 @@ module Sealed :> Model(Counter) {
 
 /// An integer where the sealed carrier is asked.
 @[ refuses("TypeMismatch") ]
-def stepOne : () => Sealed.C ;
-def stepOne = thunk { become Sealed.step(1) } ;
+def stepOne() -> -F (Sealed.C) { become Sealed.step(1) }
 
 /// The sealed start read as an integer.
 @[ refuses("TypeMismatch") ]
-def leaked : () => Integer ;
-def leaked = thunk { become Sealed.start() } ;
+def leaked() -> -F Integer { become Sealed.start() }

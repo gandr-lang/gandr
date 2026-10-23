@@ -51,9 +51,7 @@ def armed(n : Nat) -> -F Nat {
 }
 
 @[ runs("Succ(Zero)") ]
-def armed_three : +U (-F Nat) ;
-def armed_three = thunk { armed(Succ(Succ(Succ(Zero)))) } ;
+def armed_three() -> -F Nat { armed(Succ(Succ(Succ(Zero)))) }
 
 @[ runs("Succ(Zero)") ]
-def kept_three : +U (-F Nat) ;
-def kept_three = thunk { run k <- kept(Succ(Succ(Zero))) ; force k } ;
+def kept_three() -> -F Nat { run k <- kept(Succ(Succ(Zero))) ; force k }

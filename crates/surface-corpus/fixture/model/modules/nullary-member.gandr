@@ -12,10 +12,8 @@ module Origin {
 
 /// The member called through its module's name.
 @[ runs("0") ]
-def started : () => Integer ;
-def started = thunk { become Origin.zero() } ;
+def started() -> -F Integer { become Origin.zero() }
 
 /// A top-level suspension called with no arguments by its own name.
 @[ runs("0") ]
-def restarted : () => Integer ;
-def restarted = thunk { become started() } ;
+def restarted() -> -F Integer { become started() }

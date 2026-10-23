@@ -47,8 +47,7 @@ def nested(n : Nat) -> -F Nat {
 }
 
 @[ checks ]
-def thunked : +U (-F Nat) ;
-def thunked = thunk { pure Zero } ;
+def thunked() -> -F Nat { pure Zero }
 
 @[ checks ]
 def lambda : +U (Nat -> -F Nat) ;

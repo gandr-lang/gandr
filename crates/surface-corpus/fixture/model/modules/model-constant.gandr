@@ -39,8 +39,7 @@ module Sevens : Model(Based) {
 
 /// A model's constant, read from outside the model.
 @[ runs("7") ]
-def seven : () => Integer ;
-def seven = thunk { Sevens.base } ;
+def seven() -> -F Integer { Sevens.base }
 
 /// A unital carrier: a constant, an operation, and a law over both.
 theory Unital {

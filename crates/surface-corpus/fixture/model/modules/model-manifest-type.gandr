@@ -46,12 +46,11 @@ def countersOn(x : Type) -> -F Type {
 /// The counters over either nesting are one type: two sharings that differ
 /// by an equivalence are one.
 @[ checks ]
-def oneSharing : () => Path(
+def oneSharing() -> -F Path(
   Type,
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
-) ;
-def oneSharing = thunk { become cong(countersOn, nestings) } ;
+) { become cong(countersOn, nestings) }
 
 /// One state on, modulo three, nested to the right.
 @[ checks ]
@@ -93,5 +92,4 @@ def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit 
 
 /// Counting modulo three stepped once: the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def second : () => Unit + (Unit + Unit) ;
-def second = thunk { become stepOnce(rightward) } ;
+def second() -> -F (Unit + (Unit + Unit)) { become stepOnce(rightward) }

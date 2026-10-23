@@ -19,5 +19,4 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 }
 
 @[ refuses("TypeMismatch") ]
-def unpaired : () => Integer ;
-def unpaired = thunk { become tag_of(loose) } ;
+def unpaired() -> -F Integer { become tag_of(loose) }

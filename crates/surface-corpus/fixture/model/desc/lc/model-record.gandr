@@ -109,9 +109,8 @@ def lcModel = lcSyntax ;
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
 /// argument into the body, to `λx. x`.
 @[ runs("Lam(Ix(Z))") ]
-def betaIdentity : () => Term ;
-def betaIdentity = thunk {
+def betaIdentity() -> -F Term {
   run q <- LCSyntax.qTm(Z);
   run identity <- LCSyntax.lam(Z, q);
   become LCSyntax.subTm(S(Z), Z, q, LCSyntax.singleTm(Z, identity))
-} ;
+}

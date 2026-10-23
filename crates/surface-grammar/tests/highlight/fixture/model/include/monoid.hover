@@ -343,42 +343,37 @@
 98:3-98:3 } ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @91:3-98:4
 99:1-99:1 } ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @99:1-99:2
 102:1-102:14 @[ runs("8") ] ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @102:1-103:1
-103:1-103:3 def ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-103:31
-103:5-103:12 composed ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:5-103:13
-103:14-103:14 : ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-103:31
-103:16-103:20 () => ⇒ () => Integer : Type[-] @103:16-103:29
+103:1-103:3 def ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-103:30
+103:5-103:13 composed( ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:5-103:13
+103:14-103:17 ) -> ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-103:30
+103:19-103:20 -F ⇒ -F Integer : Type[-] @103:19-103:29
 103:22-103:28 Integer ⇒ Integer : Type @103:22-103:29
-103:30-103:30 ; ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-103:31
-104:1-104:3 def ⇒ composed : () => Integer @104:1-107:4
-104:5-104:12 composed ⇒ composed : () => Integer @104:5-104:13
-104:14-104:14 = ⇒ composed : () => Integer @104:1-107:4
-104:16-104:22 thunk { ⇒ () => Integer @104:16-107:2
-105:3-105:5 run ⇒ -F Integer @105:3-105:6
-105:7-105:7 h ⇒ h : Integer => Integer @105:7-105:8
-105:9-105:10 <- ⇒ () => Integer @104:16-107:2
-105:12-105:16 Endo. ⇒ Endo.mul : (Integer => Integer, Integer => Integer) => Integer => Integer @105:12-105:20
-105:17-105:19 mul ⇒ mul : (Integer => Integer, Integer => Integer) => Integer => Integer @105:17-105:20
-105:20-105:20 ( ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @105:12-105:70
-105:21-105:24 fn ( ⇒ Integer -> -F Integer @105:21-105:44
-105:25-105:25 n ⇒ n : Integer @105:25-105:26
-105:26-105:35 ) { become ⇒ Integer -> -F Integer @105:21-105:44
-105:37-105:37 n ⇒ n : Integer @105:37-105:38
-105:39-105:39 + ⇒ -F Integer @105:37-105:42
-105:41-105:41 1 ⇒ Integer @105:41-105:42
-105:43-105:43 } ⇒ Integer -> -F Integer @105:21-105:44
-105:44-105:44 , ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @105:12-105:70
-105:46-105:49 fn ( ⇒ Integer -> -F Integer @105:46-105:69
-105:50-105:50 n ⇒ n : Integer @105:50-105:51
-105:51-105:60 ) { become ⇒ Integer -> -F Integer @105:46-105:69
-105:62-105:62 n ⇒ n : Integer @105:62-105:63
-105:64-105:64 * ⇒ -F Integer @105:62-105:67
-105:66-105:66 2 ⇒ Integer @105:66-105:67
-105:68-105:68 } ⇒ Integer -> -F Integer @105:46-105:69
-105:69-105:69 ) ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @105:12-105:70
-105:71-106:8 ;⏎  become ⇒ () => Integer @104:16-107:2
-106:10-106:10 h ⇒ h : Integer => Integer @106:10-106:11
-106:11-106:11 ( ⇒ -F Integer @106:10-106:14
-106:12-106:12 3 ⇒ Integer @106:12-106:13
-106:13-106:13 ) ⇒ -F Integer @106:10-106:14
-107:1-107:1 } ⇒ () => Integer @104:16-107:2
-107:3-107:3 ; ⇒ composed : () => Integer @104:1-107:4
+103:30-103:30 { ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2
+104:3-104:5 run ⇒ -F Integer @104:3-104:6
+104:7-104:7 h ⇒ h : Integer => Integer @104:7-104:8
+104:9-104:10 <- ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2
+104:12-104:16 Endo. ⇒ Endo.mul : (Integer => Integer, Integer => Integer) => Integer => Integer @104:12-104:20
+104:17-104:19 mul ⇒ mul : (Integer => Integer, Integer => Integer) => Integer => Integer @104:17-104:20
+104:20-104:20 ( ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @104:12-104:70
+104:21-104:24 fn ( ⇒ Integer -> -F Integer @104:21-104:44
+104:25-104:25 n ⇒ n : Integer @104:25-104:26
+104:26-104:35 ) { become ⇒ Integer -> -F Integer @104:21-104:44
+104:37-104:37 n ⇒ n : Integer @104:37-104:38
+104:39-104:39 + ⇒ -F Integer @104:37-104:42
+104:41-104:41 1 ⇒ Integer @104:41-104:42
+104:43-104:43 } ⇒ Integer -> -F Integer @104:21-104:44
+104:44-104:44 , ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @104:12-104:70
+104:46-104:49 fn ( ⇒ Integer -> -F Integer @104:46-104:69
+104:50-104:50 n ⇒ n : Integer @104:50-104:51
+104:51-104:60 ) { become ⇒ Integer -> -F Integer @104:46-104:69
+104:62-104:62 n ⇒ n : Integer @104:62-104:63
+104:64-104:64 * ⇒ -F Integer @104:62-104:67
+104:66-104:66 2 ⇒ Integer @104:66-104:67
+104:68-104:68 } ⇒ Integer -> -F Integer @104:46-104:69
+104:69-104:69 ) ⇒ Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) : -F (Integer => Integer) @104:12-104:70
+104:71-105:8 ;⏎  become ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2
+105:10-105:10 h ⇒ h : Integer => Integer @105:10-105:11
+105:11-105:11 ( ⇒ -F Integer @105:10-105:14
+105:12-105:12 3 ⇒ Integer @105:12-105:13
+105:13-105:13 ) ⇒ -F Integer @105:10-105:14
+106:1-106:1 } ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2

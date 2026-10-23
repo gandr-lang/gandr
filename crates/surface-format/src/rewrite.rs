@@ -38,6 +38,7 @@ use crate::leaf::Material;
 use crate::leaf::Owner;
 use crate::leaf::copied;
 use crate::linear::Runs;
+use crate::merge::Pairing;
 use crate::tail::Exit;
 use crate::tail::Tails;
 use crate::thunk::Thunk;
@@ -97,6 +98,9 @@ pub enum RewriteName
     /// checks `e` against a thunk type; only the sugared form moves it, and
     /// only beside a checker that elaborates both.
     InsertedThunk,
+    /// A signature and its definition, merged: `def f : () => B ; def f =
+    /// thunk { c } ;` and `def f() -> -F B { c }`; both forms move it.
+    FunctionForm,
 }
 
 impl fmt::Display for RewriteName
@@ -125,6 +129,7 @@ impl fmt::Display for RewriteName
             Self::ShortAlias => "short-alias",
             Self::LinearRun => "linear-run",
             Self::InsertedThunk => "inserted-thunk",
+            Self::FunctionForm => "function-form",
         })
     }
 }
@@ -168,7 +173,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 22] = [
+pub const REWRITES: [Rewrite; 24] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -345,6 +350,22 @@ pub const REWRITES: [Rewrite; 22] = [
         to: Spelling("e"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::FunctionForm,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f : () => B ; def f = thunk { c } ;"),
+        to: Spelling("def f() -> -F B { c }"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::FunctionForm,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f : +U (-F B) ; def f = thunk { c } ;"),
+        to: Spelling("def f() -> -F B { c }"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -414,6 +435,24 @@ impl Chosen
                     }
             })
             .map(|rewrite| rewrite.name)
+    }
+
+    /// How a signature and the definition after it are laid out:
+    /// [`Pairing::Merged`] when they are merged into one function form.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn pairing(self) -> Pairing
+    {
+        if self
+            .rewrites(MoldName("def_value"))
+            .any(|name| name == RewriteName::FunctionForm)
+        {
+            Pairing::Merged
+        }
+        else {
+            Pairing::Apart
+        }
     }
 }
 
@@ -1703,7 +1742,10 @@ impl<'source> Respelling<'_, 'source>
                 RewriteName::TailReturn | RewriteName::ShortAlias | RewriteName::InsertedThunk,
                 Direction::Desugar,
             )
-            | (RewriteName::LinearRun, Direction::Sugar | Direction::Desugar) => return None,
+            | (
+                RewriteName::LinearRun | RewriteName::FunctionForm,
+                Direction::Sugar | Direction::Desugar,
+            ) => return None,
         };
         self.changed = Changed::Yes;
         Some(Spelled {

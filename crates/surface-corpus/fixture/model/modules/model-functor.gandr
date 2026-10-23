@@ -32,8 +32,7 @@ module TimesSquared = Squaring(Times) ;
 
 /// Three squared.
 @[ runs("9") ]
-def nine : () => Integer ;
-def nine = thunk { become TimesSquared.square(3) } ;
+def nine() -> -F Integer { become TimesSquared.square(3) }
 
 /// The integers under addition, ascribed the record signature the magma
 /// presents rather than its model signature.
@@ -48,5 +47,4 @@ module PlusSquared = Squaring(Plus) ;
 
 /// Three doubled.
 @[ runs("6") ]
-def six : () => Integer ;
-def six = thunk { become PlusSquared.square(3) } ;
+def six() -> -F Integer { become PlusSquared.square(3) }

@@ -33,13 +33,10 @@ def rec faces(chain : Theory) -> -F Integer {
 
 /// The square heads the sort chain of `Cells`, with its six faces.
 @[ runs("6") ]
-def squareFaces : () => Integer ;
-def squareFaces = thunk {
-  case Cells {
-    Presents(sorts, opers, rules) => case sorts {
-      Shape(name, size, chain, rest) => become faces(chain),
-      _ => 0
-    },
+def squareFaces() -> -F Integer { case Cells {
+  Presents(sorts, opers, rules) => case sorts {
+    Shape(name, size, chain, rest) => become faces(chain),
     _ => 0
-  }
-} ;
+  },
+  _ => 0
+} }

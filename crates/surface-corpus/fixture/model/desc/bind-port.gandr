@@ -58,10 +58,7 @@ def rec abstracting(chain : Theory) -> -F Integer {
 
 /// Of the restriction signature's three operations, `nu` alone abstracts.
 @[ runs("1") ]
-def abstractions : () => Integer ;
-def abstractions = thunk {
-  case Restriction {
-    Presents(sorts, opers, rules) => become abstracting(opers),
-    _ => 0
-  }
-} ;
+def abstractions() -> -F Integer { case Restriction {
+  Presents(sorts, opers, rules) => become abstracting(opers),
+  _ => 0
+} }

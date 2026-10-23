@@ -20,5 +20,4 @@ def join(
 
 /// Reflexivity at seven composed with itself by a run.
 @[ checks ]
-def joined_here : () => Path(Integer, 7, 7);
-def joined_here = thunk { become join(7, 7, 7, p, p) };
+def joined_here() -> -F Path(Integer, 7, 7) { become join(7, 7, 7, p, p) }
