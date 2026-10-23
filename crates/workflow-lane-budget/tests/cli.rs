@@ -3,7 +3,8 @@
 //!
 //! The fake lists runs 3, 2 and 1; run `N` holds a Clippy job of `N`00
 //! seconds and a five-second detection job. Run 3's base is deep (its
-//! compare names a kernel file), run 2's surface. Its issue listing is
+//! compare names a kernel file), run 2's surface; with the cone `unbased`,
+//! run 3 is a push with no base to compare against. Its issue listing is
 //! `FAKE_GH_ISSUES`; it logs every invocation to `FAKE_GH_LOG` and the last
 //! body it was fed to `FAKE_GH_BODY`.
 //!
@@ -369,6 +370,46 @@ fn a_run_is_classified_by_the_cone_it_touched()
     );
     let log = log!(scratch);
     assert!(log.contains("compare/1111111111111111111111111111111111111111...3333333333333333333333333333333333333333"), "{log}");
+    assert!(log.contains("compare/2222222222222222222222222222222222222222...4444444444444444444444444444444444444444"), "{log}");
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn a_run_without_a_base_is_held_deep()
+{
+    let scratch = scratch!("unbased");
+    let output = run!(
+        scratch,
+        [
+            "--runs",
+            "2",
+            "--budget",
+            "check Clippy wall=250",
+            "--budget",
+            "check Clippy wall:deep=250",
+        ],
+        "[]",
+        "",
+        "unbased"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Run 3 names no base: nothing is compared and its 300 s sample is
+    // deep, where a comparison against nothing would read it surface.
+    assert!(
+        stdout.contains("| check Clippy wall | deep | 5m 0s | 4m 10s | 1 | **over** |"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("| check Clippy wall | surface | 3m 20s | 4m 10s | 1 | within |"),
+        "{stdout}"
+    );
+    let log = log!(scratch);
+    assert!(
+        !log.contains("...3333333333333333333333333333333333333333"),
+        "{log}"
+    );
     assert!(log.contains("compare/2222222222222222222222222222222222222222...4444444444444444444444444444444444444444"), "{log}");
     std::fs::remove_dir_all(&scratch).unwrap();
 }

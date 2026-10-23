@@ -30,6 +30,11 @@ impl fmt::Display for Cone
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the report's rows name both classes, so writing
+    ///   nothing changes the asserted rows.
+    /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
     #[inline]
     fn fmt(
         &self,
@@ -57,6 +62,11 @@ impl<'path> From<&'path str> for Path<'path>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a compare naming a kernel file holds its run deep,
+    ///   which an emptied path would hold surface.
+    /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
     #[inline]
     fn from(path: &'path str) -> Self
     {
@@ -116,6 +126,7 @@ fn file_cone(path: Path<'_>) -> Cone
 ///   whose base is unreadable; classifying a failed compare surface changes the
 ///   budget a deep landing is held to.
 /// - witness: `tests::cli::a_run_is_classified_by_the_cone_it_touched`
+/// - witness: `tests::cli::a_run_without_a_base_is_held_deep`
 #[inline]
 pub fn classify(run_id: RunId) -> Result<Cone, BudgetError>
 {
