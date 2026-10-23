@@ -47,6 +47,22 @@ stack_top() {
   open_prs | jq -c --arg own "$1" --arg trunk "$trunk" -f "$pr_stack_dir/top.jq"
 }
 
+# The top a new pull request on branch `$1` stacks on, once no `pr:land` holds
+# it (#1983): a held top is about to be restacked and queued, so the reading
+# waits, every 15 seconds, for the hold to clear, and answers the top then,
+# queued or not. The hold lasts while the landing waits on the chain's
+# required checks; after 30 minutes the wait gives up, naming the top.
+await_top() {
+  local top deadline=$((SECONDS + 1800))
+  while :; do
+    top=$(stack_top "$1")
+    [[ $(jq -r '.held // false' <<< "$top") == true ]] || { printf '%s\n' "$top"; return; }
+    (( SECONDS < deadline )) || { echo "the stack top #$(jq -r .number <<< "$top") has been held for landing for 30 minutes; run \`pr:open\` again once it is queued" >&2; return 2; }
+    echo "the stack top #$(jq -r .number <<< "$top") is being landed; waiting for the hold to clear" >&2
+    sleep 15
+  done
+}
+
 # The commit below the checked-out branch `$1`'s own commits, where its rebase
 # onto the top's branch `$2` starts (#1298). Its own commits are those above
 # `origin/$trunk` that no other open pull request's head holds and whose patch
