@@ -1390,6 +1390,7 @@ dependencies = [
  "quenchant-shape",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

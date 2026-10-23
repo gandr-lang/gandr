@@ -16,6 +16,10 @@ autotests = false
 name = "hotpath-guard"
 path = "src/main.rs"
 
+[[bin]]
+name = "hotpath-judge"
+path = "src/bin/judge.rs"
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -24,13 +28,15 @@ path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; the shape
 # crate the `Maybe` a commit without a pull request has for it. serde reads
-# `gh`'s answers.
+# `gh`'s answers and the hotpath reports the judge compares; toml the
+# regression policy it applies.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

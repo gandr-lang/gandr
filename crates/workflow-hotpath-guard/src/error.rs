@@ -38,6 +38,15 @@ pub enum GuardError
         /// The writer's description of the failure.
         message: String,
     },
+    /// A hotpath report or a regression policy the judge reads could not be
+    /// read, or holds what the judge does not read.
+    Input
+    {
+        /// The file, as given.
+        path: String,
+        /// Why it could not be read, or what it holds.
+        message: String,
+    },
 }
 
 impl fmt::Display for GuardError
@@ -74,6 +83,10 @@ impl fmt::Display for GuardError
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
             Self::Output { ref message } => write!(f, "standard output: {message}"),
+            Self::Input {
+                ref path,
+                ref message,
+            } => write!(f, "`{path}`: {message}"),
         }
     }
 }
@@ -116,6 +129,13 @@ mod tests
                     message: "broken pipe".into(),
                 },
                 "standard output: broken pipe",
+            ),
+            (
+                GuardError::Input {
+                    path: "target/hotpath/runs/store-1.json".into(),
+                    message: "the timing section is missing".into(),
+                },
+                "`target/hotpath/runs/store-1.json`: the timing section is missing",
             ),
         ];
         for (error, expected) in cases {

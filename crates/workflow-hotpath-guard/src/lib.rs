@@ -13,6 +13,10 @@
 //! - [`github`] lists the commit's checks, its pull request and the
 //!   `kind:performance` issues, and keeps each function's issue in step through
 //!   `gh`.
+//! - [`judge`] makes the judgement hotpath Cloud cannot: several runs a side, a
+//!   row under the policy's share floor judged on disjoint ranges. The
+//!   `hotpath-judge` binary writes it as a check's summary in hotpath Cloud's
+//!   shape, so the guard files it alike.
 //!
 //! # Decisions
 //!
@@ -69,6 +73,7 @@ pub mod check;
 pub mod error;
 pub mod github;
 pub mod index;
+pub mod judge;
 pub mod report;
 
 pub use crate::check::CommitSha;

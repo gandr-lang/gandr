@@ -31,6 +31,7 @@ The issue closes when no row is open and reopens on the next open row. The guard
 - `hotpath-guard --sha SHA` prints the report; `--repository OWNER/NAME` defaults to `GITHUB_REPOSITORY`; `--pull N` names the pull request instead of looking it up from the commit.
 - `--file-issue` records the run on each regressed function's issue (opened when it has none), edits or posts the pull request's one report comment there, marks the pull request's rows of passing benchmarks fixed, and closes or reopens each issue as its rows stand. A commit with no concluded hotpath check touches no issue.
 - `GuardError` names the argument or the `gh` invocation behind every refusal; a refusal exits 2.
+- `hotpath-judge` judges a commit's runs of one benchmark against its base's, several a side, under the benchmark's policy, and writes a `hotpath / <benchmark>` check run's body in hotpath Cloud's summary shape, which the guard files like the Cloud's own. hotpath Cloud never judges a function under the policy's `min_percent_total` share of the run; the judge does, down to 0.1 %, flagging such a row only when its median moved past the threshold and every run of the commit lies past every run of the base. `--band` judges only those rows, as CI does on a pull request (`mise run ci:hotpath-band`). The [module docs](src/judge.rs) record the decision.
 
 ## Expected features
 
@@ -40,12 +41,15 @@ The issue closes when no row is open and reopens on the next open row. The guard
 
 ```sh
 mise run ci:hotpath-guard --repository gandr-lang/gandr --sha 914a768fb32501be92e5cb4d28ce6613dfa01022
+cargo run -p gandr-workflow-hotpath-guard --bin hotpath-judge -- --repository gandr-lang/gandr \
+  --head 17756fc17 --base 8d13f30c8 --benchmark store-timing-band --policy hotpath/store-timing-policy.toml \
+  --band --base-run base-1.json --head-run head-1.json --output check.json
 cargo nextest run -p gandr-workflow-hotpath-guard
 ```
 
 ## Dependencies
 
-`serde` and `serde_json` read `gh`'s answers, with the features the root `Cargo.toml` records.
+`serde` and `serde_json` read `gh`'s answers and the hotpath reports; `toml` reads the regression policy the judge applies; each with the features the root `Cargo.toml` records.
 
 ## License
 
