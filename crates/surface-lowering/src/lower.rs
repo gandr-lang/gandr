@@ -2925,11 +2925,14 @@ struct Lowerer<'run, 'source>
     /// Each value argument of a data family's application, with its place.
     argued: BTreeMap<NodeIndex, native::Argued>,
     /// Each argument of a call naming a declaration, with the type the
-    /// declaration writes for the parameter at its place.
-    parameter_typed: BTreeMap<NodeIndex, Placed>,
+    /// declaration writes for the parameter at its place and the call's
+    /// arguments that type reads.
+    parameter_typed: BTreeMap<NodeIndex, native::CalledAt>,
     /// Each constructor classified by its place in a data family's
-    /// application, not yet minted: its classifier reads the arguments before
-    /// it, which the mint sweep reaches after it, so the application mints it.
+    /// application or a call's, or by a field, not yet minted: its classifier
+    /// reads the arguments or the fields before it, which the mint sweep
+    /// reaches after it, so the application, the call or the constructor
+    /// around it mints it.
     awaiting: BTreeSet<NodeIndex>,
     /// Each thunk a definition is, with the answer its signature states for
     /// its body: `C` for `+U C`, `-F B` for `() => B`.
@@ -12335,7 +12338,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.parameter_typed
                     .iter()
                     .filter(|&(argument, _)| owns(argument))
-                    .map(|(_, &declared)| declared),
+                    .map(|(_, declared)| declared.typed),
             )
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
@@ -12608,9 +12611,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return;
         }
         // A constructor classified by its place in a data family's application
-        // waits for the application, and one classified by a field for the
-        // constructor the field belongs to: each mints it once everything
-        // before it is minted.
+        // or in a call waits for the application or the call, and one
+        // classified by a field for the constructor the field belongs to: each
+        // mints it once everything before it is minted.
         if self.awaiting.contains(&position) {
             return;
         }
@@ -12622,20 +12625,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: as [`Self::mint_planned`], but for the constructors that
     ///   wait on the node.
-    /// - ensures: each argument of a data family's application and each field
-    ///   of a constructor that waits on it minted first, left to right, each
-    ///   after the constructors waiting on it in turn; then the node, as
-    ///   [`Self::mint_planned`].
+    /// - ensures: each argument of a data family's application or a call and
+    ///   each field of a constructor that waits on it minted first, left to
+    ///   right, each after the constructors waiting on it in turn; then the
+    ///   node, as [`Self::mint_planned`].
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the order is the claim, and the minted nodes keep
     ///   no record of it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a constructor written as a family's argument, and one
-    ///   written in a field typed by its family's parameter, each minted before
-    ///   the node it waits on.
+    /// - hypothesis: L3 — a constructor written as a family's argument, one
+    ///   written as a call's argument, and one written in a field typed by its
+    ///   family's parameter, each minted before the node it waits on.
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
     /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
     fn mint_released(
         &mut self,
@@ -12651,7 +12655,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut next = Some((position, false));
         while let Some((at, released)) = next {
             let waiting = match self.plans.get(at) {
-                Some(&Plan::Data(_, arguments)) if !released => Some(arguments),
+                Some(&(Plan::Data(_, arguments) | Plan::Application(_, arguments)))
+                    if !released =>
+                {
+                    Some(arguments)
+                },
                 Some(&Plan::Constructor(constructed)) if !released => Some(constructed.fields),
                 Some(_) | None => None,
             };

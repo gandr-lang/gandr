@@ -1946,8 +1946,8 @@ fn a_constructor_takes_its_classifier_from_the_type_it_answers_402()
 /// #1833: a constructor written as a call's argument took no classifier from
 /// the parameter it is passed to, so `count(Some(3))` was refused as
 /// unannotated where `count((Some(3) : Maybe(Integer)))` checked. The
-/// parameter's closed type classifies it. A type naming the parameter before
-/// it, and a binder's parameter, classify nothing: each stays unannotated.
+/// parameter's closed type classifies it. A binder's parameter classifies
+/// nothing: the argument stays unannotated.
 #[test]
 fn a_constructor_argument_takes_its_parameter_s_type_1833()
 {
@@ -1958,9 +1958,7 @@ fn a_constructor_argument_takes_its_parameter_s_type_1833()
          def bare : () => Integer ;\ndef bare = thunk {{ become count(None) }} ;\n\
          def annotated : () => Integer ;\n\
          def annotated = thunk {{ become count((Some(3) : Maybe(Integer))) }} ;\n\
-         def local(g : Maybe(Integer) => Integer) -> -F Integer {{ g(None) }}\n\
-         def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}\n\
-         def dependent : () => Integer ;\ndef dependent = thunk {{ become pick(Integer, None) }} ;\n"
+         def local(g : Maybe(Integer) => Integer) -> -F Integer {{ g(None) }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for name in ["passed", "bare", "annotated"].map(SurfaceName::from) {
@@ -1973,17 +1971,67 @@ fn a_constructor_argument_takes_its_parameter_s_type_1833()
             outcome_of(&module, name)
         );
     }
-    for name in ["local", "dependent"].map(SurfaceName::from) {
-        assert!(
-            matches!(refusal_of(&module, name), LoweringRefusal::OutOfFragment {
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("local")),
+            LoweringRefusal::OutOfFragment {
                 boundary: FragmentBoundary::Unannotated,
                 ..
-            }),
-            "`{name}`'s argument stays unannotated: {:?}",
+            }
+        ),
+        "`local`'s argument stays unannotated: {:?}",
+        outcome_of(&module, SurfaceName::from("local"))
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// #1876: a constructor written as a call's argument at a parameter whose
+/// type names a parameter before it took no classifier, though the arguments
+/// before it fix the type: `pick(Integer, None)` was refused as unannotated.
+/// The type, each parameter it names replaced by the argument the call writes
+/// for it, classifies it — a recursive declaration's own binder standing
+/// between them — and the argument is checked against that type.
+#[test]
+fn a_constructor_argument_reads_the_arguments_before_it_1876()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}data List(a : Type) : Type {{ Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }}\n\
+         def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}\n\
+         def dependent : () => Integer ;\ndef dependent = thunk {{ become pick(Integer, None) }} ;\n\
+         def filled : () => Integer ;\ndef filled = thunk {{ become pick(Integer, Some(3)) }} ;\n\
+         def rec size(a : Type, xs : List(a)) -> -F Integer {{\n\
+           case xs {{ Nil => 0, Cons(_, rest) => {{ run n <- size[<](a, rest); n + 1 }} }}\n\
+         }}\n\
+         def one : () => Integer ;\ndef one = thunk {{ become size(Integer, Cons(1, Nil)) }} ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for name in ["dependent", "filled", "one"].map(SurfaceName::from) {
+        assert!(
+            matches!(
+                outcome_of(&module, name),
+                DeclarationOutcome::Completed { .. }
+            ),
+            "`{name}` lowers: {:?}",
             outcome_of(&module, name)
         );
     }
     assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def pick(a : Type, m : Maybe(a)) -> -F Integer {{ return 0 }}\n\
+         def wrong : () => Integer ;\ndef wrong = thunk {{ become pick(Integer, Some(true)) }} ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert!(
+        report.judged().iter().any(|judged| !matches!(
+            judged.verdict(),
+            Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }
+        )),
+        "`Some(true)` is checked at `Maybe(Integer)`: {report:?}"
+    );
 }
 
 /// #1171: a constructor written in a field typed by another family took no

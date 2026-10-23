@@ -277,6 +277,7 @@
 //! pattern and body, keyed by the tree's root. A live match and a hole report
 //! read that one seam rather than parsing the tree back.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -987,8 +988,9 @@ pub(super) enum Classifier
     Slot(Argued),
     /// The constructor is written as an argument of a call naming a
     /// declaration: the type the declaration writes for the parameter at its
-    /// place, closed.
-    Parameter(NodeIndex),
+    /// place, under the parameters before it, with those replaced by the
+    /// arguments written for them.
+    Parameter(CalledAt),
     /// The constructor is written in a field of another: the field's declared
     /// type, read under the family's parameters and the fields before it, with
     /// those replaced by the arguments of the other's classifier and the fields
@@ -1067,6 +1069,30 @@ pub(super) struct Argued
     /// The argument's place among the family's parameters.
     pub place: usize,
     /// The application's arguments, in the operand store.
+    pub applied: Stretch,
+}
+
+/// The parameter a value argument stands at in a call naming a declaration.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `typed` is the type the declaration at `slot` writes for the
+///   parameter, read under the parameters before it, and `applied` the operand
+///   stretch of the call's arguments, one per explicit parameter from the
+///   first.
+/// - executable: none — the plan holds no store to check its stretch against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Classifier`]'s parameter row.
+/// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(super) struct CalledAt
+{
+    /// The type the declaration writes for the parameter.
+    pub typed: Placed,
+    /// The declaration's slot.
+    pub slot: SlotIndex,
+    /// The call's arguments, in the operand store.
     pub applied: Stretch,
 }
 
@@ -1982,19 +2008,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   place in the data family application it is an argument of, the
     ///   constructor then awaiting that application's mint; else, written as an
     ///   argument of a call naming a declaration, the type the declaration
-    ///   writes for the parameter at its place, when that type names no other
-    ///   parameter; else the one the constructor around it gives the field it
-    ///   stands in; else, for a family without, the one the lowering inserts. A
-    ///   field typed by the family over its own parameters takes the
-    ///   constructor's classifier, and one typed by a parameter the argument a
-    ///   written classifier gives it.
+    ///   writes for the parameter at its place, under the parameters before it
+    ///   replaced by the arguments written for them, the constructor then
+    ///   awaiting the call's mint; else the one the constructor around it gives
+    ///   the field it stands in; else, for a family without, the one the
+    ///   lowering inserts. A field typed by the family over its own parameters
+    ///   takes the constructor's classifier, and one typed by a parameter the
+    ///   argument a written classifier gives it.
     /// - provides: constructor application, bare and called.
     /// - fails: yields the arity refusal for a field count other than the
     ///   constructor's; the wrong-sort refusal outside value position; the
     ///   unannotated refusal for a constructor of a family with parameters
     ///   whose position states no type, that stands at no data family's
     ///   argument place, and that is passed at no parameter whose stated type
-    ///   names no other parameter.
+    ///   names no entry of an implicit telescope.
     /// - panics: none.
     ///
     /// # Errors
@@ -2057,12 +2084,19 @@ impl<'source> Lowerer<'_, 'source>
                 let _first = self.awaiting.insert(site.at.node);
                 Classifier::Slot(argued)
             },
-            (None, None, None, Some(&declared), _) => Classifier::Parameter(declared.node),
+            (None, None, None, Some(&declared), _) => {
+                // The parameter's type reads the arguments before it, which
+                // the mint sweep reaches after it, so the call mints it.
+                let _first = self.awaiting.insert(site.at.node);
+                Classifier::Parameter(declared)
+            },
             (None, None, None, None, Some(&inherited)) => {
                 // A field's classifier reads the constructor around it, which
                 // mints this one once that classifier and the fields before
-                // it are.
-                if let Classifier::Field(_) = inherited {
+                // it are; so does a call's parameter, handed down a field the
+                // family types over its own parameters, which reads the
+                // call's arguments.
+                if let Classifier::Field(_) | Classifier::Parameter(_) = inherited {
                     let _first = self.awaiting.insert(site.at.node);
                 }
                 inherited
@@ -2125,11 +2159,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   `applied` its arguments in the operand store.
     /// - ensures: when `head` is a bare name of a declaration written with a
     ///   parameter list, each argument at a parameter written with a type maps
-    ///   to that type in [`Lowerer::parameter_typed`], read by a constructor
-    ///   written there as [`Classifier::Parameter`]; an argument written as a
-    ///   thunk or a bare lambda is answered by that type as a signed
-    ///   definition's is ([`Self::signed_answer`]); nothing changes for any
-    ///   other head, a binder's name among them.
+    ///   to that type, the declaration and the call's arguments in
+    ///   [`Lowerer::parameter_typed`], read by a constructor written there as
+    ///   [`Classifier::Parameter`]; an argument written as a thunk or a bare
+    ///   lambda is answered by that type as a signed definition's is
+    ///   ([`Self::signed_answer`]); nothing changes for any other head, a
+    ///   binder's name among them.
     /// - fails: as [`Self::unwrapped`]; a name the head's own reading refuses
     ///   is refused there.
     /// - panics: none.
@@ -2139,10 +2174,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a list and a bare constructor passed to a function of
-    ///   a closed parameter type, and a local function's name, which classifies
-    ///   nothing; a lambda passed in a thunk and bare for a parameter typed
-    ///   `Empty => Integer` matches no arm on its binder.
+    ///   a closed parameter type, one passed where the type names the parameter
+    ///   before it, and a local function's name, which classifies nothing; a
+    ///   lambda passed in a thunk and bare for a parameter typed `Empty =>
+    ///   Integer` matches no arm on its binder.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
     #[spec(
         captures: before = (self.parameter_typed.len(), self.thunked.len()),
@@ -2181,13 +2218,17 @@ impl<'source> Lowerer<'_, 'source>
         };
         let typed: Vec<(NodeIndex, Placed)> = (applied.start .. applied.end)
             .zip(parameters)
-            .filter_map(|(position, declared)| match *declared {
+            .filter_map(|(position, parameter)| match parameter.declared {
                 Maybe::Present(declared) => Some((*self.operands.get(position)?, declared)),
                 Maybe::Absent(_) => None,
             })
             .collect();
         for (argument, declared) in typed {
-            let _first = self.parameter_typed.insert(argument, declared);
+            let _first = self.parameter_typed.insert(argument, CalledAt {
+                typed: declared,
+                slot,
+                applied,
+            });
             let opened = self.tree.node(argument).is_some_and(|node| {
                 matches!(
                     shape_of(self.pbg, node),
@@ -6412,12 +6453,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   returner returns carried from the answer's frame to the constructor's;
     ///   for a slot, the family's parameter at the constructor's place with the
     ///   parameters before it replaced by the arguments written for them; for a
-    ///   field, its declared type with the family's parameters replaced by the
-    ///   arguments of its constructor's classifier and the fields before it by
-    ///   the values written for them; or the family over no arguments; every
-    ///   node minted recorded at the classifier's inserted origin; nothing when
-    ///   a type or a value it reads did not lower, or the answer is no
-    ///   returner.
+    ///   declaration's parameter, its written type with the parameters before
+    ///   it replaced by the call's arguments for them; for a field, its
+    ///   declared type with the family's parameters replaced by the arguments
+    ///   of its constructor's classifier and the fields before it by the values
+    ///   written for them; or the family over no arguments; every node minted
+    ///   recorded at the classifier's inserted origin; nothing when a type or a
+    ///   value it reads did not lower, or the answer is no returner.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -6473,22 +6515,10 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
             Classifier::Parameter(declared) => {
-                // The parameter's type is read under its own declaration's
-                // parameters; only a closed one reads alike where the
-                // constructor stands.
-                let Maybe::Present(id) = self.value_type_at(declared)
-                else {
-                    return Maybe::Absent(lowered::Absent::Unminted);
-                };
-                let closed = sink.arena.value_type_support(id).is_some_and(|support| {
-                    [Zone::Intuitionistic, Zone::Linear]
-                        .into_iter()
-                        .all(|zone| support.indices(zone).next().is_none())
-                });
-                if !closed {
-                    return Maybe::Absent(lowered::Absent::Unminted);
+                match self.called_parameter_type(declared, sink, classified) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
                 }
-                id
             },
             Classifier::Answered { answer, frame } => {
                 let mark = sink.arena.watermark();
@@ -6707,6 +6737,134 @@ impl<'source> Lowerer<'_, 'source>
         let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
+        };
+
+        Maybe::Present(ty)
+    }
+
+    /// The type a declaration's parameter gives the argument a call writes for
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: the parameter's type and the call's arguments are minted or
+    ///   absent.
+    /// - ensures: the parameter's written type, read under the declaration's
+    ///   parameters before it, with each of those it names replaced by the
+    ///   argument the call writes for it, every node the substitution mints
+    ///   recorded at `origin`; the written type itself when it names none;
+    ///   nothing when it names a binder no argument stands for — a linear one,
+    ///   or one the declaration's parentheses do not bind — or a type or an
+    ///   argument it reads did not lower.
+    /// - provides: the classifier of a constructor written as a call's argument
+    ///   (#1833, #1876).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list passed for `xs : List(Integer)` is classified
+    ///   as written, and one passed for `xs : List(a)` after `Integer` for `a :
+    ///   Type` is classified `List(Integer)`, a recursive declaration's own
+    ///   binder standing between the two.
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn called_parameter_type(
+        &self,
+        declared: CalledAt,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let written = match self.value_type_at(declared.typed.node) {
+            Maybe::Present(written) => written,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(support) = sink.arena.value_type_support(written)
+        else {
+            return unminted;
+        };
+        if support.indices(Zone::Linear).next().is_some() {
+            return unminted;
+        }
+        let Some(parameters) = self.collected.parameters.get(&declared.slot)
+        else {
+            return unminted;
+        };
+        // The binders the type counts its indices by, innermost first: the
+        // parameters before it its signature names, and whatever else binds
+        // there, a recursive declaration's own binder among them.
+        let bound: Vec<ScopeId> = self
+            .scope
+            .chain(self.reading(declared.typed.node).frame())
+            .filter(|&binder| {
+                self.scope.zone(binder) != Zone::Linear
+                    && bool::from(self.scope.binds(binder, Telescope::Signature))
+            })
+            .collect();
+        let applied = stretch(&self.operands, declared.applied);
+        // Each parameter's argument, by the bytes its binder is written at.
+        let arguments: BTreeMap<ByteSpan, NodeIndex> = parameters
+            .iter()
+            .zip(applied)
+            .map(|(parameter, &argument)| (parameter.binder.span, argument))
+            .collect();
+        let mut environment: Vec<Option<ValueId>> = Vec::new();
+        for index in support.indices(Zone::Intuitionistic) {
+            let Ok(at) = usize::try_from(u32::from(index))
+            else {
+                return unminted;
+            };
+            let Some(&binder) = bound.get(at)
+            else {
+                return unminted;
+            };
+            let Maybe::Present(site) = self.scope.site(binder)
+            else {
+                return unminted;
+            };
+            let Some(&argument) = arguments.get(&site)
+            else {
+                return unminted;
+            };
+            let value = match self.value_at(argument) {
+                Maybe::Present(value) => value,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            if environment.len() <= at {
+                environment.resize(at.saturating_add(1), None);
+            }
+            if let Some(entry) = environment.get_mut(at) {
+                *entry = Some(value);
+            }
+        }
+        // A binder between the named ones that the type does not name takes
+        // any value: no index reaches it.
+        let Some(&filler) = environment.iter().flatten().next()
+        else {
+            return Maybe::Present(written);
+        };
+        let environment: Vec<ValueId> = environment
+            .into_iter()
+            .map(|entry| entry.unwrap_or(filler))
+            .collect();
+        let mark = sink.arena.watermark();
+        let code = sink.arena.value_quote(written);
+        let mut carried = Vec::new();
+        let substituted = gandr_core_term::substitute_environment_traced(
+            sink.arena,
+            TermId::Value(code),
+            &environment,
+            &mut carried,
+        );
+        exits::record_copies(sink, mark, &carried, origin);
+        let TermId::Value(substituted) = substituted
+        else {
+            return unminted;
+        };
+        let Some(&Value::Quote(ty)) = sink.arena.value(substituted)
+        else {
+            return unminted;
         };
 
         Maybe::Present(ty)
