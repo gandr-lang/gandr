@@ -8,8 +8,7 @@ def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> -F Inte
   case m {
     #{.start = s, .step = t} => {
       run zero <- s();
-      run one <- t(zero);
-      become t(one)
+      become t(t(zero))
     }
   }
 }
@@ -18,9 +17,6 @@ def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> -F Inte
 @[ checks ]
 def oneStep(m : #{start : () => Integer, step : Integer => Integer}) -> -F Integer {
   case m {
-    #{.start = s, .step = t} => {
-      run zero <- s();
-      become t(zero)
-    }
+    #{.start = s, .step = t} => become t(s())
   }
 }

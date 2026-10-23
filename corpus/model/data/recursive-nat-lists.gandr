@@ -1,10 +1,12 @@
 // The folds over a list of naturals — its length, appending and mapping — in
-// each spelling an arm admits: a `return` after a `run`, the same with both
-// elided, the calls nested in the constructor, and a `run` written inside a
-// constructor's field. Each spelling of one fold runs to the same value, and
-// the polymorphic length of `recursive-lists.gandr` checks at the naturals. A
-// structural recursive call stands one stage below the list it was read from
-// (Abel, _Termination checking with types_, doi:10.1051/ita:2004015).
+// the spellings an arm admits, each as the sugared form writes it: a `run`
+// that only sequences a call, its result returned or the `return` elided, is
+// written with the call nested in the constructor, and a `run` written inside
+// a constructor's field stays. Each spelling of one fold runs to the same
+// value, and the polymorphic length of `recursive-lists.gandr` checks at the
+// naturals. A structural recursive call stands one stage below the list it
+// was read from (Abel, _Termination checking with types_,
+// doi:10.1051/ita:2004015).
 
 // The naturals, the numerals two and three, and the lists.
 import "./data-base.gandr" ;
@@ -12,63 +14,60 @@ import "./data-base.gandr" ;
 // The polymorphic length, read at the naturals.
 import "./recursive-lists.gandr" ;
 
-/// The length of a list of naturals, returned.
+/// The length of a list of naturals, returned, the run written at its read.
 @[ checks ]
 def rec length_nat(xs : List(Nat)) -> -F Nat {
   case xs {
     Nil => Zero,
-    Cons(x, rest) => { run r <- length_nat[<](rest); Succ(r) }
+    Cons(x, rest) => Succ(length_nat[<](rest))
   }
 }
 
-/// The length of a list of naturals, the `return`s elided.
+/// The length of a list of naturals, the `return`s elided, the run written
+/// at its read.
 @[ checks ]
 def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
   case xs {
     Nil => Zero,
-    Cons(x, rest) => { run r <- length_nat_elided[<](rest); Succ(r) }
+    Cons(x, rest) => Succ(length_nat_elided[<](rest))
   }
 }
 
-/// Appending lists of naturals, returned.
+/// Appending lists of naturals, returned, the run written at its read.
 @[ checks ]
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => ys,
-    Cons(x, rest) => { run r <- append_nat[<](ys, rest); (Cons(x, r) : List(Nat)) }
+    Cons(x, rest) => (Cons(x, append_nat[<](ys, rest)) : List(Nat))
   }
 }
 
-/// Appending lists of naturals, the `return`s elided.
+/// Appending lists of naturals, the `return`s elided, the run written at its
+/// read.
 @[ checks ]
 def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => ys,
-    Cons(x, rest) => { run r <- append_nat_elided[<](ys, rest); (Cons(x, r) : List(Nat)) }
+    Cons(x, rest) => (Cons(x, append_nat_elided[<](ys, rest)) : List(Nat))
   }
 }
 
-/// Mapping over a list of naturals, returned.
+/// Mapping over a list of naturals, returned, the runs written at their reads.
 @[ checks ]
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
-    Cons(
-      x,
-      rest
-    ) => { run y <- f(x); run r <- map_nat[<](f, rest); (Cons(y, r) : List(Nat)) }
+    Cons(x, rest) => (Cons(f(x), map_nat[<](f, rest)) : List(Nat))
   }
 }
 
-/// Mapping over a list of naturals, the `return`s elided.
+/// Mapping over a list of naturals, the `return`s elided, the runs written at
+/// their reads.
 @[ checks ]
 def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
-    Cons(
-      x,
-      rest
-    ) => { run y <- f(x); run r <- map_nat_elided[<](f, rest); (Cons(y, r) : List(Nat)) }
+    Cons(x, rest) => (Cons(f(x), map_nat_elided[<](f, rest)) : List(Nat))
   }
 }
 

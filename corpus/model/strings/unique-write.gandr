@@ -24,7 +24,7 @@ import "./copy-on-write.gandr" ;
 def pushInPlace(s : Repr, b : Integer) -> -F Written {
   case s {
     Inline(bs) => become push(s, b),
-    Shared(n, bs) => { run grown <- beforeZero(bs, b) ; Written(Shared(n, grown), 0) }
+    Shared(n, bs) => Written(Shared(n, beforeZero(bs, b)), 0)
   }
 }
 

@@ -41,7 +41,7 @@ def rec fib(n : Nat) -> -F Nat {
     Zero => Zero,
     Succ(m) => case m {
       Zero => Succ(Zero),
-      Succ(q) => { run a <- fib[<](Succ(q)); run b <- fib[<](q); plusFirst(a, b) }
+      Succ(q) => plusFirst(fib[<](Succ(q)), fib[<](q))
     }
   }
 }

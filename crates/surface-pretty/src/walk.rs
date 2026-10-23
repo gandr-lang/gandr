@@ -3763,10 +3763,6 @@ enum Task<Node>
     /// Enter (`true`) or leave (`false`) the body a reset delimits, where a
     /// `return` a handler's subject writes is a shift.
     Unwound(bool),
-    /// Enter (`true`) or leave (`false`) a match's branch, where the sugared
-    /// form keeps a block's `run` statements: the formatter writes none away
-    /// there.
-    Branched(bool),
     /// Close the innermost binder.
     Unbind,
     /// Set the occurrences named so far aside, so the argument visited next
@@ -4457,8 +4453,6 @@ struct Walk<'walk, 'names>
     subjects: usize,
     /// How many bodies a reset delimits the walk is inside.
     unwinds: usize,
-    /// How many match branches the walk is inside.
-    branches: usize,
     /// The occurrences set aside by each [`Task::Hold`] whose argument has not
     /// yet been bound, the outermost first.
     held: Vec<BTreeSet<OpenBinders>>,
@@ -7059,14 +7053,12 @@ impl Walk<'_, '_>
             )),
             // A block's `run` statements that only sequence calls, read once
             // each in order, are written at their reads in the sugared form,
-            // as the formatter writes them (#1416); in a match's branch it
-            // keeps them, its lowering minting the branch more than once
-            // (#1935).
+            // as the formatter writes them (#1416), a match's branch's among
+            // them.
             Former::Bind(..)
                 if self.form == Form::Sugared
                     && self.surface == Surface::Expression
                     && self.bodies == Bodies::Spelled
-                    && self.branches == 0_usize
                     && let Some((bounds, rest)) = linear_runs(source, node) =>
             {
                 Self::read_at_binders(&bounds, rest, admits, below(depth, kind), tasks);
@@ -7190,13 +7182,6 @@ impl Walk<'_, '_>
             tasks.push(Task::Join(join));
         }
         let below = below(depth, kind);
-        // A match's branches, each a computation slot of a match no other
-        // spelling shapes.
-        let branched = shaped.is_none()
-            && matches!(
-                former,
-                Former::Case { .. } | Former::Split { .. } | Former::DataCase { .. }
-            );
         let slots = match shaped {
             Some(slots) => slots,
             None => children(source, node, &former, admits, self.bodies),
@@ -7256,12 +7241,8 @@ impl Walk<'_, '_>
             // the handler.
             let subject =
                 index == 0_usize && matches!(former, Former::Handle { .. } | Former::Scope { .. });
-            let branch = branched && matches!(slot.admits, Admits::Computation(_));
             if subject {
                 tasks.push(Task::Handled(false));
-            }
-            if branch {
-                tasks.push(Task::Branched(false));
             }
             for _ in 0_usize .. slot.binds.count {
                 tasks.push(Task::Unbind);
@@ -7336,9 +7317,6 @@ impl Walk<'_, '_>
             }
             if subject {
                 tasks.push(Task::Handled(true));
-            }
-            if branch {
-                tasks.push(Task::Branched(true));
             }
             if let Some(label) = slot.label {
                 tasks.push(Task::Label(label));
@@ -9710,7 +9688,6 @@ where
         loops: Vec::new(),
         subjects: 0_usize,
         unwinds: 0_usize,
-        branches: 0_usize,
         held: Vec::new(),
         substituted: BTreeMap::new(),
         context,
@@ -9817,14 +9794,6 @@ where
                 }
                 else {
                     walk.unwinds.saturating_sub(1_usize)
-                };
-            },
-            Task::Branched(entered) => {
-                walk.branches = if entered {
-                    walk.branches.saturating_add(1_usize)
-                }
-                else {
-                    walk.branches.saturating_sub(1_usize)
                 };
             },
             Task::Rebind(zone) => walk.rebind(zone),
@@ -10114,7 +10083,6 @@ mod tests
             loops: super::Vec::new(),
             subjects: 0_usize,
             unwinds: 0_usize,
-            branches: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],
@@ -10207,7 +10175,6 @@ mod tests
             loops: super::Vec::new(),
             subjects: 0_usize,
             unwinds: 0_usize,
-            branches: 0_usize,
             held: super::Vec::new(),
             substituted: super::BTreeMap::new(),
             context: &[],

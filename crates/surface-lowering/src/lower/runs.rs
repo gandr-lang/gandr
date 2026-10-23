@@ -377,15 +377,16 @@ impl Lowerer<'_, '_>
     /// minted into `arena` with its origins `origins`.
     ///
     /// # Specification
-    /// - requires: the mint sweep has run, so each statement's bind is recorded
-    ///   in `origins` at its `run` tile; the attribute pass has run, so every
-    ///   asking slot is marked.
+    /// - requires: the mint sweep has run, so each statement's binds are
+    ///   recorded in `origins` at its `run` tile; the attribute pass has run,
+    ///   so every asking slot is marked.
     /// - ensures: one entry per statement binding a plain name with its rest
     ///   bound, whose computation is a call and whose declaration no
-    ///   `explicit_runs` attribute reaches, when every statement after it in
-    ///   its block is one too, no later one's call reads its binder, and the
-    ///   tail reads the binders as [`linear_read`] finds; sorted, without
-    ///   duplicates.
+    ///   `explicit_runs` attribute reaches, when, at each bind minted for it,
+    ///   every statement after it in its block is one too, no later one's call
+    ///   reads its binder, and the tail reads the binders as [`linear_read`]
+    ///   finds, at one read for every bind: a match's branch, minted more than
+    ///   once, holds its statements once per copy; sorted, without duplicates.
     /// - provides: the lowering's half of the formatter's linear-run rewrite.
     /// - fails: never.
     /// - panics: none.
@@ -393,6 +394,7 @@ impl Lowerer<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`LinearRun`].
     /// - witness: `lower::runs::tests::a_run_read_once_first_is_linear`
+    /// - witness: `lower::runs::tests::a_run_in_a_match_branch_is_linear_1935`
     #[spec(ensures: |ret| ret.len() <= self.statements.len() && ret.is_sorted())]
     pub(super) fn linear_runs(
         &self,
@@ -400,63 +402,107 @@ impl Lowerer<'_, '_>
         origins: &OriginTable,
     ) -> Vec<LinearRun>
     {
-        let mut binds: BTreeMap<NodeIndex, Option<ComputationId>> = BTreeMap::new();
-        for &(id, origin) in origins.computations() {
-            if origin.provenance() == Provenance::Written
-                && matches!(arena.computation(id), Some(&Computation::Bind(..)))
-            {
-                // A bind copied, as an exit's commuting copies one, has no one
-                // rest to read.
-                let _held = binds
-                    .entry(origin.node())
-                    .and_modify(|held| *held = None)
-                    .or_insert(Some(id));
+        // Every bind minted for a statement, by the statement's `run` tile.
+        let mut binds: Vec<(NodeIndex, ComputationId)> = origins
+            .computations()
+            .iter()
+            .filter(|&&(id, origin)| {
+                origin.provenance() == Provenance::Written
+                    && matches!(arena.computation(id), Some(&Computation::Bind(..)))
+            })
+            .map(|&(id, origin)| (origin.node(), id))
+            .collect();
+        binds.sort_unstable();
+        let minted = |origin: NodeIndex| {
+            let start = binds.partition_point(|&(node, _)| node < origin);
+            binds
+                .get(start ..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(move |&&(node, _)| node == origin)
+                .map(|&(_, bind)| bind)
+        };
+        // Each statement's binds, beside the statement and the call it runs
+        // when the statement could be written away, as far as it alone says.
+        let mut statements: BTreeMap<ComputationId, (usize, Option<ByteSpan>)> = BTreeMap::new();
+        let mut listed: Vec<bool> = Vec::with_capacity(self.statements.len());
+        for (index, statement) in self.statements.iter().enumerate() {
+            let call = self.linear_call(statement);
+            listed.push(call.is_some());
+            for bind in minted(statement.origin) {
+                let _held = statements.insert(bind, (index, call));
             }
         }
-        // Each statement's bind, beside the call it runs when the statement
-        // could be written away, as far as the statement alone says.
-        let mut statements: BTreeMap<ComputationId, Option<ByteSpan>> = BTreeMap::new();
-        for statement in &self.statements {
-            let Some(&Some(bind)) = binds.get(&statement.origin)
+        // The run `bind` is, while the statements `listed` holds are written
+        // away.
+        let linear = |listed: &[bool], bind: ComputationId| {
+            let call = statements.get(&bind)?.1?;
+            let Some(&Computation::Bind(_, mut rest)) = arena.computation(bind)
             else {
-                continue;
+                return None;
             };
-            let _held = statements.insert(bind, self.linear_call(statement));
-        }
-        let mut found: Vec<LinearRun> = statements
-            .iter()
-            .filter_map(|(&bind, &call)| {
-                let call = call?;
-                let Some(&Computation::Bind(_, mut rest)) = arena.computation(bind)
-                else {
-                    return None;
-                };
-                // The statements after this one, each written away too: none
-                // of their calls may read a binder before it.
-                let mut depth = DeBruijnIndex::from(0_u32);
-                while let Some(&Computation::Bind(next, after)) = arena.computation(rest) {
-                    match statements.get(&rest) {
-                        Some(&Some(_))
-                            if reading(arena.computation_support(next), depth)
+            // The statements after this one, each written away too: none of
+            // their calls may read a binder before it.
+            let mut depth = DeBruijnIndex::from(0_u32);
+            while let Some(&Computation::Bind(next, after)) = arena.computation(rest) {
+                match statements.get(&rest) {
+                    Some(&(later, Some(_)))
+                        if listed.get(later).copied().unwrap_or_default()
+                            && reading(arena.computation_support(next), depth)
                                 == Reading::Unread =>
-                        {
-                            depth = DeBruijnIndex::from(u32::from(depth).checked_add(1)?);
-                            rest = after;
-                        },
-                        Some(&(Some(_) | None)) => return None,
-                        // A bind no statement wrote is the tail's own.
-                        None => break,
-                    }
+                    {
+                        depth = DeBruijnIndex::from(u32::from(depth).checked_add(1)?);
+                        rest = after;
+                    },
+                    Some(_) => return None,
+                    // A bind no statement wrote is the tail's own.
+                    None => break,
                 }
-                let Maybe::Present(read) = origins.value(linear_read(arena, rest, depth)?)
-                else {
-                    return None;
-                };
-                Some(LinearRun {
-                    bound: call,
-                    read: read.span(),
-                })
+            }
+            let Maybe::Present(read) = origins.value(linear_read(arena, rest, depth)?)
+            else {
+                return None;
+            };
+            Some(LinearRun {
+                bound: call,
+                read: read.span(),
             })
+        };
+        // A statement minted more than once, as a match's branch is, is
+        // written away only where every copy reads it at one read; an exit's
+        // commuting copies, each with its own rest, do not. Dropping one
+        // statement can drop one before it, so the listing settles first.
+        let run_of = |listed: &[bool], statement: &super::Statement| {
+            let mut runs = minted(statement.origin).map(|bind| linear(listed, bind));
+            let first = runs.next()??;
+            runs.all(|run| run == Some(first)).then_some(first)
+        };
+        loop {
+            let dropped: Vec<usize> = self
+                .statements
+                .iter()
+                .enumerate()
+                .filter(|&(index, statement)| {
+                    listed.get(index).copied().unwrap_or_default()
+                        && run_of(&listed, statement).is_none()
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if dropped.is_empty() {
+                break;
+            }
+            for index in dropped {
+                if let Some(held) = listed.get_mut(index) {
+                    *held = false;
+                }
+            }
+        }
+        let mut found: Vec<LinearRun> = self
+            .statements
+            .iter()
+            .enumerate()
+            .filter(|&(index, _)| listed.get(index).copied().unwrap_or_default())
+            .filter_map(|(_, statement)| run_of(&listed, statement))
             .collect();
         found.sort_unstable();
         found.dedup();

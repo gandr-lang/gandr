@@ -104,8 +104,7 @@ def walk(r : #{ids : Type, start : ids, next : ids => ids, label : ids => Intege
   case r {
     #{.start = s, .next = n, .label = l} => {
       run once <- n(s);
-      run twice <- n(once);
-      l(twice)
+      l(n(once))
     }
   }
 }

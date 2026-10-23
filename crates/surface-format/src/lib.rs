@@ -76,7 +76,9 @@
 //! `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared to its
 //! shortest, `A => B`. The `run x <- c ;` statements ending a block whose
 //! binders its tail reads once each, first and in order, are written away,
-//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`). A
+//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a match
+//! branch's as any other's; a block left with no statement is written as its
+//! one computation where that computation fits without the braces. A
 //! `thunk { e }` of one computation, no grade and no statement written, is
 //! written `e` where the checker would insert the thunk: where it checks `e`
 //! against a thunk type. Each moves its form on the concrete syntax tree: its

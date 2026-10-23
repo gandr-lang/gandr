@@ -118,10 +118,7 @@ def oneCounter = (countsNegated, (here(+{.0 = unit}), (stepNegated, readNegated)
 @[ checks ]
 def observe(m : Model(Counter)) -> -F Integer {
   case m {
-    #{.zero = z, .incr = i, .read = r} => {
-      run once <- i(z);
-      become r(once)
-    }
+    #{.zero = z, .incr = i, .read = r} => become r(i(z))
   }
 }
 

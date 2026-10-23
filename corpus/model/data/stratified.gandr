@@ -43,7 +43,7 @@ def judge(c : Chain) -> -F Two {
 def rec chainLength(c : Chain) -> -F Nat {
   case c {
     Start => Zero,
-    Link(prev, test) => { run n <- chainLength[<](prev); Succ(n) }
+    Link(prev, test) => Succ(chainLength[<](prev))
   }
 }
 
