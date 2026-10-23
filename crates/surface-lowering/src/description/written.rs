@@ -11,9 +11,11 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::ValueTypeRef;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -69,6 +71,18 @@ quenchant_shape::reason_enum! {
             /// A law an `ext` member generates, whose direction the generation
             /// fixes and no source writes.
             Generated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an observation states no application of its own family.
+    pub mod itself {
+        /// The reason the result is no self application.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The observation returns a value type its family does not head.
+            Returned,
         }
     }
 }
@@ -431,6 +445,22 @@ pub struct WrittenObservation
     /// The nodes of its type: the whole type, then each argument of an
     /// application in written order, each read the same way.
     pub ty: WrittenTerm,
+    /// The family applied as the observation's result writes it, at the
+    /// arguments written, when the family heads the result.
+    pub itself: Maybe<SelfApplication, itself::Absent>,
+}
+
+/// A codata family applied as an observation's result writes it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelfApplication
+{
+    /// The application, the family its head.
+    pub applied: ValueTypeRef,
+    /// The node it is written at.
+    pub at: NodeIndex,
 }
 
 /// A name a member writes for another member of its block: the bytes of the

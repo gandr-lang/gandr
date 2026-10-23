@@ -1416,7 +1416,8 @@ impl Reader<'_, '_>
     /// # Specification
     /// - ensures: retains observation name, grade and result code, and for a
     ///   nullary observation where its name and each node of its type are
-    ///   written.
+    ///   written, and the family applied as its result writes it when the
+    ///   family heads the result.
     /// - fails: constructor and operation leads refuse the wrong polarity.
     /// - panics: none.
     ///
@@ -1428,7 +1429,12 @@ impl Reader<'_, '_>
     ///   observations from data generators.
     /// - witness: `description::tests::codata_observations_preserve_their_codes`
     #[spec(ensures: |result| match result {
-        Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family && !written.ty.nodes.is_empty(),
+        Ok(Observation::Nullary(ref ctor, ref written)) => ctor.result == *family
+            && !written.ty.nodes.is_empty()
+            && match written.itself {
+                Maybe::Present(ref itself) => itself.applied.head_name() == *family,
+                Maybe::Absent(_) => true,
+            },
         Ok(Observation::Parameterized(ref operation)) => operation.arity.outputs.len() == 1,
         Err(_) => true,
     })]
@@ -1466,6 +1472,17 @@ impl Reader<'_, '_>
         }
         let ty = run.take()?;
         let (code, written) = self.field(ty, family, grade, &[])?;
+        // The code names the family alone; the arguments the result applies
+        // it at are kept beside it, for the decoder to state.
+        let itself = if code.recursive_sorts().next().is_some() {
+            Maybe::Present(written::SelfApplication {
+                applied: self.type_reference(ty)?.0,
+                at: ty.node,
+            })
+        }
+        else {
+            Maybe::Absent(written::itself::Absent::Returned)
+        };
         let attrs = self.attrs(run)?;
         run.end()?;
         Ok(Observation::Nullary(
@@ -1473,6 +1490,7 @@ impl Reader<'_, '_>
             written::WrittenObservation {
                 named: named.span,
                 ty: written,
+                itself,
             },
         ))
     }
