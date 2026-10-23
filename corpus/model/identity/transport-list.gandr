@@ -85,7 +85,7 @@ def kept_beta = here(both) ;
 @[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> -F (Bool * List(Bool)) {
   case entry {
-    #{b, xs} => { run c <- not(b); (c, xs) }
+    #{b, xs} => (not(b), xs)
   }
 }
 

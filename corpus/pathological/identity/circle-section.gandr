@@ -23,8 +23,8 @@ data Int : Type {
 def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
   case p {
     here => Z,
-    loop ∷ q => { run n <- wind[<](q); S(n) },
-    back(loop) ∷ q => { run n <- wind[<](q); P(n) }
+    loop ∷ q => S(wind[<](q)),
+    back(loop) ∷ q => P(wind[<](q))
   }
 }
 
@@ -32,8 +32,8 @@ def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
 def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
   case n {
     Z => here(Base),
-    S(x) => { run c <- spin[<](x); loop ∷ c },
-    P(x) => { run c <- spin[<](x); back(loop) ∷ c }
+    S(x) => loop ∷ spin[<](x),
+    P(x) => back(loop) ∷ spin[<](x)
   }
 }
 

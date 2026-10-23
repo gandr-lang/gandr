@@ -37,10 +37,7 @@ def rec beforeZero(bs : List(Integer), b : Integer) -> -F List(Integer) {
     Cons(x, rest) => {
       case rest {
         Nil => (Cons(b, Cons(x, Nil)) : List(Integer)),
-        Cons(y, more) => {
-          run tail <- beforeZero[<](rest, b);
-          (Cons(x, tail) : List(Integer))
-        }
+        Cons(y, more) => (Cons(x, beforeZero[<](rest, b)) : List(Integer))
       }
     }
   }

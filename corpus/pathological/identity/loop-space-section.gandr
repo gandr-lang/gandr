@@ -24,8 +24,8 @@ data Int : Type {
 def rec wind(c : Circle) -> -F Int {
   case c {
     Base => Z,
-    Loop(x) => { run n <- wind[<](x); S(n) },
-    Unloop(x) => { run n <- wind[<](x); P(n) }
+    Loop(x) => S(wind[<](x)),
+    Unloop(x) => P(wind[<](x))
   }
 }
 
@@ -33,8 +33,8 @@ def rec wind(c : Circle) -> -F Int {
 def rec spin(n : Int) -> -F Circle {
   case n {
     Z => Base,
-    S(x) => { run c <- spin[<](x); Loop(c) },
-    P(x) => { run c <- spin[<](x); Unloop(c) }
+    S(x) => Loop(spin[<](x)),
+    P(x) => Unloop(spin[<](x))
   }
 }
 

@@ -14,7 +14,7 @@ import "./circle-base.gandr" ;
 def rec doubleNat(n : Nat) -> -F Nat {
   case n {
     Zero => Zero,
-    Succ(p) => { run d <- doubleNat[<](p); Succ(Succ(d)) }
+    Succ(p) => Succ(Succ(doubleNat[<](p)))
   }
 }
 

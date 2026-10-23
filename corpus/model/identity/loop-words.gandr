@@ -74,8 +74,8 @@ def two_is_one() -> -F Path(Integer, 2, 1) {
 def rec mirror(c : Words) -> -F Words {
   case c {
     Nil => Nil,
-    Loop(x) => { run m <- mirror[<](x); Unloop(m) },
-    Unloop(x) => { run m <- mirror[<](x); Loop(m) }
+    Loop(x) => Unloop(mirror[<](x)),
+    Unloop(x) => Loop(mirror[<](x))
   }
 }
 

@@ -4196,7 +4196,7 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
     let read_once = call(&mut core, g, &[bound]);
     let chained = core.computation_bind(reading, read_once);
     let chained = core.computation_bind(first, chained);
-    // In a match's branch every statement stays, as the formatter keeps it.
+    // In a match's branch the runs are written away as anywhere else.
     let branched = core.computation_case(one, &[in_order]);
     let source = CoreSource::new(&core, &names);
     for (root, sugared, explicit) in [
@@ -4219,7 +4219,7 @@ fn a_run_only_sequencing_a_call_is_written_at_its_read_1416()
         ),
         (
             branched,
-            "case 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
+            "case 1 { +{.0 = a} => g(f(1), f(2)) }",
             "case 1 { +{.0 = a} => { run b <- f(1) ; run c <- f(2) ; g(b, c) } }",
         ),
     ] {
