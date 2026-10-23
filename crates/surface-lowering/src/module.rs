@@ -1370,6 +1370,11 @@ pub struct Collected<'source>
     /// ascription declares, or the witness checking the kind a transparent
     /// one states — with what the slot is built from.
     pub abstracts: BTreeMap<SlotIndex, AbstractSlot>,
+    /// Each type member whose attributes no component's check read, with the
+    /// refusal of the first as a misplaced tile of its module: they state the
+    /// verdict of the declaration the member yields when it refuses, and the
+    /// member is refused so when it yields none.
+    pub unread_expectations: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
     /// Every module form's documentation, each piece documenting its module
@@ -2560,6 +2565,7 @@ pub fn begin_collection<'source>(
         operation_names: BTreeMap::new(),
         derived: BTreeMap::new(),
         abstracts: BTreeMap::new(),
+        unread_expectations: BTreeMap::new(),
         decorated: Vec::new(),
         module_docs: Vec::new(),
         families: Vec::new(),

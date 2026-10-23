@@ -1158,8 +1158,11 @@ pub fn settle<'source>(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a module settled after its leading declarations' report
-///   answers what settling it whole answers.
+///   answers what settling it whole answers; a refused name an application
+///   binds reads the application's attribute, and a refused declaration writing
+///   its own halves keeps its own.
 /// - witness: `settle::tests::a_module_settled_after_its_leading_report_settles_as_a_whole_one_776`
+/// - witness: `settle::tests::an_application_s_attribute_states_its_refused_names_1274`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
@@ -2398,6 +2401,39 @@ data NatUnits : Type {{
             report.tally().settlement(),
             Settlement::Settled,
             "every name settles"
+        );
+    }
+
+    /// #1274: a name an application binds and refuses settles under the
+    /// attribute before the application, and a refused declaration that
+    /// writes its own halves keeps the expectation written before it.
+    #[test]
+    fn an_application_s_attribute_states_its_refused_names_1274()
+    {
+        let report = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(
+                r#"module Mk(C : #{ zero : Integer }) { @[ checks ] def seed = C.zero ; } module Bare { @[ checks ] def other = 1 ; } @[ refuses("UnknownMember") ] module Applied = Mk(Bare) ; @[ refuses("UnresolvedName") ] def b = z ;"#,
+            ),
+        );
+        let unsettled: Vec<_> = report
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.settlement() != Settlement::Settled)
+            .map(DeclarationReport::name)
+            .collect();
+        assert!(
+            unsettled.is_empty(),
+            "the applied `seed` settles under its application's attribute and `b` under its \
+             own, got {unsettled:?} unsettled in {:?}",
+            report.declarations()
+        );
+        assert!(
+            report
+                .declarations()
+                .iter()
+                .any(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(refusal) if refusal.name() == RefusalName::UnknownMember)),
+            "the application refuses its binding by name"
         );
     }
 

@@ -1894,7 +1894,7 @@ fn a_component_check_carries_its_members_expectation()
     let found = rows(&lower(unread));
     assert!(
         found.contains(&row(
-            "M",
+            "M.T",
             Role::Held,
             Amounts::Refused(LoweringRefusal::MalformedForm {
                 span: span_of(unread, "checks", 0_usize),
@@ -1902,8 +1902,27 @@ fn a_component_check_carries_its_members_expectation()
                 fault: FormFault::MisplacedTile,
             })
         )),
-        "an expectation no component's check reads states nothing, and is refused where it \
-             is written, got {found:?}"
+        "an expectation no component's check reads, on a member that yields nothing, states \
+             nothing, and the member is refused where it is written, got {found:?}"
+    );
+}
+
+#[test]
+fn a_type_member_s_refusal_is_reported_once_1087()
+{
+    let source = "module M : #{ count : Integer, type Q } {\n  def count = 3;\n  @[ checks ] type Q \
+                  = Path(Integer, count, 3);\n}\n";
+    let found = rows(&lower(source));
+    let refused: Vec<Role> = found
+        .iter()
+        .filter(|&&(_, _, ref amounts)| matches!(*amounts, Amounts::Refused(_)))
+        .map(|&(_, role, _)| role)
+        .collect();
+    assert_eq!(
+        refused,
+        [Role::Held],
+        "the member refused under a transparent ascription is reported at the member, and the \
+         component's witness, refused with it, yields nothing: {found:?}"
     );
 }
 

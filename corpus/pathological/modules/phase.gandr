@@ -1,0 +1,35 @@
+// The refusals beside `../../model/modules/phase.gandr`: a type member that
+// reads a module's or a parameter's value is refused by name at the value
+// (`PhaseDependence`). The attribute before the member states that refusal,
+// and it is reported once, at the member (#1087).
+
+// The sign and the point the model fixture defines.
+import "../../model/modules/phase.gandr" ;
+
+/// A module whose type member reads its own value member.
+module Counted {
+  /// Three, a value.
+  @[ runs("3") ]
+  def count = 3;
+  /// A path at that value, which a type cannot read.
+  @[ refuses("PhaseDependence") ]
+  type Q = Path(Integer, count, 3);
+}
+
+/// The same member under a transparent ascription: the component's witness
+/// reads the member's expectation, and the refusal is the member's alone.
+module Ascribed : #{ three : Integer, type R } {
+  /// Three, a value.
+  @[ runs("3") ]
+  def three = 3;
+  /// A path at that value, which a type cannot read.
+  @[ refuses("PhaseDependence") ]
+  type R = Path(Integer, three, 3);
+}
+
+/// A functor whose type member reads its argument's value.
+module Pointed(S : #{ type T, z : T }) {
+  /// A path at the argument's point.
+  @[ refuses("PhaseDependence") ]
+  type At = Path(S.T, S.z, S.z);
+}

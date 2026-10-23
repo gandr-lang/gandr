@@ -16792,10 +16792,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of an application is the declaration its renaming minted, unminted
     ///   when its template refused or its argument's type did not lower; a
     ///   module's own slot is [`Self::own_outcome`], except that one
-    ///   [`Self::own_outcome`] leaves absent while it holds a half that lowers
-    ///   to a core term — any but a top-level `oper`'s, or a witness of a
-    ///   member refused where it was written — is refused
-    ///   [`LoweringRefusal::Unminted`] at the declaration, by its name.
+    ///   [`Self::own_outcome`] leaves absent is refused by the expectation its
+    ///   type member states unread, when it states one, and otherwise, while it
+    ///   holds a half that lowers to a core term — any but a top-level
+    ///   `oper`'s, or a witness of a member refused where it was written — is
+    ///   refused [`LoweringRefusal::Unminted`] at the declaration, by its name;
+    ///   and a witness refused as the member it represents is, yields nothing,
+    ///   so the member's refusal is reported once.
     /// - provides: the per-slot row [`Self::assemble`] files, so a declaration
     ///   the lowering collected either lowers or is refused by name, never
     ///   dropped from the module.
@@ -16806,21 +16809,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a functor's body yields no declaration and each of
     ///   two applications yields its own; a function whose two halves the mint
     ///   left unminted, with no refusal filed, is refused by name rather than
-    ///   dropped silently.
+    ///   dropped silently; a type member's expectation states its refusal and
+    ///   is refused when the member yields nothing.
     /// - witness: `tests::modules::functors::a_functor_body_never_reaches_the_kernel`
     /// - witness: `tests::modules::functors::two_applications_mint_distinct_atoms`
     /// - witness: `lower::tests::a_declaration_minting_neither_half_is_refused_by_name_455`
+    /// - witness: `tests::modules::a_component_check_carries_its_members_expectation`
     #[spec(
         ensures: |ret| match self.collected.stratum_of(slot.container) {
             | Stratum::Module => match self.own_outcome(position, slot) {
+                | Maybe::Absent(_) if let Some(&refusal) = self.collected.unread_expectations.get(&position) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | Maybe::Absent(_) if self.lowers_a_half(slot) == Owed::Owed => ret == Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
                     span: slot.introduced_by.span,
                     name: slot.name,
                 })),
+                | Maybe::Present(DeclarationOutcome::Refused(refusal)) if self.represented_refusal(position) == Some(refusal) => ret == Maybe::Absent(lowered::Absent::Unminted),
                 | own => ret == own,
             },
             | Stratum::Functor(_) | Stratum::Parameter(_) => match self.own_outcome(position, slot) {
                 | Maybe::Present(DeclarationOutcome::Refused(refusal)) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
+                | Maybe::Absent(_) if let Some(&refusal) = self.collected.unread_expectations.get(&position) => ret == Maybe::Present(DeclarationOutcome::Refused(refusal)),
                 | _ => ret == Maybe::Absent(lowered::Absent::Templated),
             },
             | Stratum::Instance(_) => ret == self.instantiated.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
@@ -16834,14 +16842,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         match self.collected.stratum_of(slot.container) {
             Stratum::Module => match self.own_outcome(position, slot) {
-                Maybe::Absent(reason) => match self.lowers_a_half(slot) {
-                    Owed::Owed => {
-                        Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
-                            span: slot.introduced_by.span,
-                            name: slot.name,
-                        }))
-                    },
-                    Owed::Nothing => Maybe::Absent(reason),
+                Maybe::Absent(reason) => {
+                    if let Some(&refusal) = self.collected.unread_expectations.get(&position) {
+                        return Maybe::Present(DeclarationOutcome::Refused(refusal));
+                    }
+                    match self.lowers_a_half(slot) {
+                        Owed::Owed => {
+                            Maybe::Present(DeclarationOutcome::Refused(LoweringRefusal::Unminted {
+                                span: slot.introduced_by.span,
+                                name: slot.name,
+                            }))
+                        },
+                        Owed::Nothing => Maybe::Absent(reason),
+                    }
+                },
+                Maybe::Present(DeclarationOutcome::Refused(refusal))
+                    if self.represented_refusal(position) == Some(refusal) =>
+                {
+                    Maybe::Absent(lowered::Absent::Unminted)
                 },
                 Maybe::Present(outcome) => Maybe::Present(outcome),
             },
@@ -16849,13 +16867,42 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(DeclarationOutcome::Refused(refusal)) => {
                     Maybe::Present(DeclarationOutcome::Refused(refusal))
                 },
-                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Templated),
+                Maybe::Absent(_) => match self.collected.unread_expectations.get(&position) {
+                    Some(&refusal) => Maybe::Present(DeclarationOutcome::Refused(refusal)),
+                    None => Maybe::Absent(lowered::Absent::Templated),
+                },
+                Maybe::Present(_) => Maybe::Absent(lowered::Absent::Templated),
             },
             Stratum::Instance(_) => self
                 .instantiated
                 .get(&position)
                 .copied()
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+        }
+    }
+
+    /// The refusal of the type member the witness at `position` checks, when
+    /// it is a transparent component's witness and that member is refused;
+    /// the atom an opaque ascription seals carries its member's refusal on to
+    /// the declarations that read it, so it keeps it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn represented_refusal(
+        &self,
+        position: SlotIndex,
+    ) -> Option<LoweringRefusal<'source>>
+    {
+        if self.collected.slots.get(usize::from(position))?.role != Role::Witness {
+            return None;
+        }
+        let held = match self.collected.abstracts.get(&position)?.representation {
+            Maybe::Present(represented) => represented.held,
+            Maybe::Absent(_) => return None,
+        };
+        match self.collected.slots.get(usize::from(held))?.refusal {
+            Maybe::Present((_at, refusal)) => Some(refusal),
+            Maybe::Absent(_) => None,
         }
     }
 
