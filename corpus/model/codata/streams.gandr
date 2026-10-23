@@ -41,7 +41,7 @@ def first(s : +U Stream(Integer)) -> -F Integer {
 /// The head of a stream's tail.
 @[ checks ]
 def second(s : +U Stream(Integer)) -> -F Integer {
-  first(thunk { s.tail })
+  first(s.tail)
 }
 
 /// Two streams combined pointwise by `f`: every parameter varies from call
@@ -56,7 +56,7 @@ def rec zipWith(
     .head => {
       f(first(s), first(t))
     },
-    .tail => zipWith[>](f, thunk { s.tail }, thunk { t.tail })
+    .tail => zipWith[>](f, s.tail, t.tail)
   }
 }
 
@@ -73,26 +73,40 @@ def three = first(upward(3)) ;
 
 /// The integers from three, observed one further.
 @[ runs("4") ]
-def four() -> -F Integer { second(thunk { upward(3) }) }
+def four() -> -F Integer { second(upward(3)) }
 
 /// The integers from one added to the sevens, one further: `2 + 7`.
 @[ runs("9") ]
 def nine() -> -F Integer {
-  second(thunk { zipWith(add, thunk { upward(1) }, thunk { always(7) }) })
+  second(zipWith(add, upward(1), always(7)))
 }
 
 /// The ones, observed one further: the constant unfolds once.
 @[ runs("1") ]
-def unfolded() -> -F Integer { second(thunk { ones() }) }
+def unfolded() -> -F Integer { second(ones()) }
 
 /// An observation by its position, counted from zero in declaration order:
 /// `s.1` is `s.tail`, so this is `second`.
 @[ checks ]
 def onward(s : +U Stream(Integer)) -> -F Integer {
-  first(thunk { s.1 })
+  first(s.1)
 }
 
 /// The integers from three, observed one further by position.
 @[ runs("4") ]
 def fourth : () => Integer ;
 def fourth = onward(upward(3)) ;
+
+/// The integers from three, observed at the head off the call itself: the
+/// call runs to the stream, and the stream is observed.
+@[ runs("3") ]
+def headOfCall() -> -F Integer { upward(3).head }
+
+/// The integers from three, one further: the call's tail observed by
+/// position, then its head.
+@[ runs("4") ]
+def tailOfCall() -> -F Integer { first(upward(3).1) }
+
+/// Whether the head off a call is positive, read in an operand.
+@[ runs("+{.0 = unit}") ]
+def headAbove() -> -F Bool { upward(3).head >= 1 }

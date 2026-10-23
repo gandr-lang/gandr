@@ -1368,6 +1368,69 @@ fn an_observation_by_position_projects_its_entry_941()
     );
 }
 
+/// #1106: a call whose callee writes a codata family or a lazy record as its
+/// result is observed by running the call and projecting what it returns,
+/// with no force, by label, by position and in an operand.
+#[test]
+fn an_observation_off_a_call_projects_the_run_result_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "codata Trio : Type[-] { a : Integer; b : Integer; c : Integer; }\ndef trio(n : Integer) \
+         -> Trio { &{ .a => n, .b => n, .c => n } }\ndef pair(n : Integer) -> &{a : -F Integer, \
+         b : -F Integer} { &{ .a => n, .b => n } }\ndef named() -> -F Integer { trio(1).b \
+         }\ndef counted() -> -F Integer { trio(1).1 }\ndef recorded() -> -F Integer { \
+         pair(1).b }\ndef above() -> -F Bool { trio(1).c >= 1 }\n",
+        &mut arena,
+    );
+    // The projections, forces and applications of a body, in its walk's
+    // order, an application named without its ids.
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter_map(|token| {
+                if token.starts_with("Some(Application(") {
+                    Some(String::from("application"))
+                }
+                else {
+                    (token.starts_with("project") || token == "force").then_some(token)
+                }
+            })
+            .collect()
+    };
+
+    assert_eq!(
+        observed("named"),
+        ["project1", "application"],
+        "the call runs to the codata value, projected at the label's place unforced"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("named"),
+        "an observation by position off a call is the one its label names"
+    );
+    assert_eq!(
+        observed("recorded"),
+        ["project1", "application"],
+        "a lazy record a call returns is projected at its label's entry"
+    );
+    assert!(
+        matches!(
+            outcome(&module, "above"),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "an observation off a call stands as an operand: {:?}",
+        outcome(&module, "above")
+    );
+    let source = "codata Duo : Type[-] { a : Integer; b : Integer; }\ndef duo() -> Duo { &{ .a => \
+                  1, .b => 2 } }\ndef gone() -> -F Integer { duo().z }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
+        "a label the callee's family lacks is unresolved: {:?}",
+        refused(source)
+    );
+}
+
 #[test]
 fn a_telescope_binds_each_entry_in_the_ones_after_it()
 {
